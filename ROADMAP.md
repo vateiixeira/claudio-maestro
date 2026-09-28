@@ -21,7 +21,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 2. Multissessão | Colunas, estados e menu lateral | Não iniciado | 0 de 10 |
 | 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 7 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
-| 5. Controles | Modelo, raciocínio, modo, imagens, voz, perguntas e planos | Não iniciado | 0 de 12 |
+| 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Não iniciado | 0 de 13 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 9 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 
@@ -122,7 +122,8 @@ Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 - [ ] Colar e arrastar imagens, com miniatura e remoção
 - [ ] Perguntas do Claude respondidas pela interface
 - [ ] Aprovação de plano pela interface
-- [ ] Blocos de busca, subagente e lista de tarefas
+- [ ] Blocos de busca e lista de tarefas
+- [ ] Subagentes visíveis na sessão: um cartão por subagente com tipo, descrição e estado (rodando, concluído, com erro), e as ações dele (ferramentas, edições, comandos) aparecendo em tempo real dentro do cartão. Vale também para subagentes em segundo plano
 - [ ] Cartão genérico para ferramentas e MCPs sem bloco próprio
 - [ ] Saídas longas truncadas em 200 linhas
 - [ ] Ditado por voz: botão de microfone no campo de mensagem que transcreve a fala em texto, para revisar antes de enviar (tecnologia a definir, ver "Pontos em aberto")
@@ -190,6 +191,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 |---|---|
 | Docker | Adiado. Exigiria rodar o Claude dentro do container, com as pastas montadas no mesmo caminho do host. Não testado |
 | Mesma sessão aberta no app e no CLI ao mesmo tempo | Risco de embaralhar o histórico. O app só avisa |
+| O que o SDK entrega sobre subagentes | Verificar antes do marco 5. Candidatos: mensagens com `parent_tool_use_id`, a opção `forward_subagent_text`, as mensagens `TaskStartedMessage`, `TaskProgressMessage` e `TaskNotificationMessage`, e as funções `list_subagents` e `get_subagent_messages`. A conversão de mensagens já guarda `parent_tool_use_id` em cada item |
 | Tecnologia do ditado por voz | Decidir antes do marco 5. Opção A: reconhecimento de fala do navegador, sem dependência e leve, mas só no Chrome e no Edge, precisa de internet e envia o áudio ao Google. Opção B: Whisper rodando no backend, privado e offline, mas baixa um modelo de centenas de MB e usa CPU a cada ditado. Recomendação inicial: A |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
 
@@ -212,4 +214,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-28 | Renomear sessão entra no MVP, usando a função do SDK |
 | 2026-09-28 | Agrupador de sessões vira o marco 7, depois do MVP, guardado só no banco do backend |
 | 2026-09-28 | Ditado por voz entra no MVP, no marco 5 |
+| 2026-09-28 | Ações de subagentes visíveis na sessão entram no MVP, no marco 5 |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
