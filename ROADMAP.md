@@ -17,7 +17,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 |---|---|---|---|
 | Preparação | Requisitos, design e viabilidade | Concluído | 6 de 6 |
 | 0. Fundação | Backend e frontend no ar em modo de desenvolvimento | Concluído | 6 de 6 |
-| 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Em andamento | 0 de 13 |
+| 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Em andamento | 4 de 13 |
 | 2. Multissessão | Colunas, estados e menu lateral | Não iniciado | 0 de 10 |
 | 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 7 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
@@ -53,10 +53,10 @@ Objetivo: criar um projeto, abrir uma sessão, conversar com streaming e respond
 
 Backend
 
-- [ ] Configuração e banco SQLite com migrações
-- [ ] Proteção de `Host` e `Origin`, e validação de caminhos
-- [ ] Projetos: criar, listar, renomear, remover
-- [ ] Navegador de pastas limitado à pasta pessoal
+- [x] Configuração e banco SQLite com migrações (2026-09-28)
+- [x] Proteção de `Host` e `Origin`, e validação de caminhos (2026-09-28)
+- [x] Projetos: criar, listar, renomear, remover (2026-09-28)
+- [x] Navegador de pastas limitado à pasta pessoal (2026-09-28)
 - [ ] Interface do agente, cliente real sobre o SDK e cliente falso para testes
 - [ ] Conversão das mensagens do SDK em itens de conversa
 - [ ] Sessão ativa: enviar mensagem, interromper, máquina de estados
