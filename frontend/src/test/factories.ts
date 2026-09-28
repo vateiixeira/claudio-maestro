@@ -1,0 +1,51 @@
+import { vi } from 'vitest'
+import type { Project, Session } from '../types/api'
+
+export function makeProject(overrides: Partial<Project> = {}): Project {
+  return {
+    id: 1,
+    name: 'loja-online',
+    path: '/home/vi/dev/loja-online',
+    color: '#B28CFF',
+    position: 0,
+    created_at: 1_790_000_000,
+    available: true,
+    ...overrides,
+  }
+}
+
+export function makeSession(overrides: Partial<Session> = {}): Session {
+  return {
+    session_id: 's1',
+    project_id: 1,
+    cwd: '/home/vi/dev/loja-online',
+    title: 'Nova sessão',
+    created_at: 1_790_000_000,
+    last_activity_at: 1_790_000_000,
+    state: 'closed',
+    error: null,
+    ...overrides,
+  }
+}
+
+type Handler = (init: RequestInit | undefined) => Response | Promise<Response>
+
+/**
+ * Stubs `fetch` with handlers keyed by "METHOD url" (e.g. "GET /api/projects").
+ * Unknown requests fail the test with a 599 so they are easy to spot.
+ */
+export function routeFetch(handlers: Record<string, Handler>) {
+  return vi.fn(async (url: string, init?: RequestInit) => {
+    const key = `${init?.method ?? 'GET'} ${url}`
+    const handler = handlers[key]
+    if (!handler) return jsonResponse({ detail: `Sem resposta falsa para ${key}` }, 599)
+    return handler(init)
+  })
+}
+
+export function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(body === undefined ? null : JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}

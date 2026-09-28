@@ -1,31 +1,26 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted } from 'vue'
+import { RouterView } from 'vue-router'
+import AppSidebar from './components/sidebar/AppSidebar.vue'
+import ConnectionIndicator from './components/ConnectionIndicator.vue'
+import { useEventSocket } from './api/socket'
+import { loadEverything } from './stores/realtime'
 
-type BackendState = 'checking' | 'ok' | 'down'
+const socket = useEventSocket()
 
-const backend = ref<BackendState>('checking')
-
-onMounted(async () => {
-  try {
-    const response = await fetch('/api/health')
-    backend.value = response.ok ? 'ok' : 'down'
-  } catch {
-    backend.value = 'down'
-  }
+onMounted(() => {
+  loadEverything().catch(() => {
+    // The projects store keeps the error and the sidebar shows it.
+  })
 })
 </script>
 
 <template>
-  <main class="flex h-full items-center justify-center">
-    <div class="rounded-lg border border-line bg-panel px-8 py-6">
-      <h1 class="text-lg font-semibold">
-        <span class="text-primary">Vini7</span> Vibing
-      </h1>
-      <p class="mt-2 font-mono text-xs text-fg-muted">
-        <span v-if="backend === 'checking'">Verificando backend…</span>
-        <span v-else-if="backend === 'ok'" class="text-primary">Backend conectado</span>
-        <span v-else class="text-secondary">Backend indisponível</span>
-      </p>
-    </div>
-  </main>
+  <div class="flex h-full bg-bg text-sm leading-[1.45] text-fg">
+    <AppSidebar />
+    <main class="min-w-0 flex-1 overflow-y-auto">
+      <RouterView />
+    </main>
+    <ConnectionIndicator :status="socket.status.value" />
+  </div>
 </template>
