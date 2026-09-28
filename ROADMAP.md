@@ -24,8 +24,9 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Não iniciado | 0 de 13 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 9 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
+| 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
-Os marcos 0 a 6 formam o MVP. O marco 7 só começa com o MVP completo e funcionando.
+Os marcos 0 a 6 formam o MVP. Os marcos 7 e 8 só começam com o MVP completo e funcionando.
 
 ## Preparação
 
@@ -171,6 +172,32 @@ A definir quando o marco for desenhado:
 | Agrupador com todas as sessões finalizadas some do menu? | Segue ou não a regra de ocultação das sessões |
 | O agrupador tem cor ou só nome? | O projeto já tem cor; duas cores podem confundir |
 
+## Marco 8. Progresso de planos
+
+Objetivo: saber, sem perguntar ao Claude, em que etapa está cada sessão que executa um plano.
+
+Caso de uso que motivou: um plano de implementação com 15 tarefas roda por muito tempo, e o Claude não diz em qual tarefa está, embora controle isso internamente.
+
+Pedido pelo usuário em 2026-09-28. Só começa depois do MVP completo e funcionando.
+
+Fonte dos dados: o Claude registra o progresso pela ferramenta de lista de tarefas. Cada chamada traz a lista inteira com o estado de cada item (pendente, em andamento, concluído) e passa pelo app como qualquer outra ferramenta. Os planos do fluxo de brainstorming também ficam em arquivos `docs/superpowers/plans/*.md`, com caixas de marcação.
+
+- [ ] Guardar na sessão a lista de tarefas mais recente, a partir das chamadas da ferramenta de lista de tarefas
+- [ ] Barra fixa no topo da coluna da sessão: tarefa atual, posição ("7 de 15") e barra de progresso
+- [ ] Barra expansível para a lista completa, com o estado de cada tarefa
+- [ ] Indicação de plano em execução e etapa atual no menu lateral, ao lado da sessão
+- [ ] Tela do projeto destaca as sessões que executam um plano, com a etapa de cada uma
+- [ ] Ligar a sessão ao arquivo do plano em `docs/superpowers/plans/` quando ela o leu ou editou, com link para abrir
+- [ ] Lista de tarefas recuperada ao retomar uma sessão do histórico
+
+A definir quando o marco for desenhado:
+
+| Pergunta | Por que importa |
+|---|---|
+| Qual versão da ferramenta de lista de tarefas o Claude usa hoje? | Existe a ferramenta única que reenvia a lista inteira e uma família de ferramentas que cria e atualiza tarefas uma a uma. O formato dos dados muda |
+| Subagentes que executam tarefas do plano entram no progresso? | No fluxo com subagentes, quem executa é outro agente, mas quem atualiza a lista é a sessão principal |
+| O que mostrar quando a lista é abandonada no meio? | Uma lista velha fixa na tela engana mais do que ajuda |
+
 ## Fora do MVP
 
 Ideias registradas para depois. Não entram sem decisão do usuário.
@@ -215,4 +242,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-28 | Agrupador de sessões vira o marco 7, depois do MVP, guardado só no banco do backend |
 | 2026-09-28 | Ditado por voz entra no MVP, no marco 5 |
 | 2026-09-28 | Ações de subagentes visíveis na sessão entram no MVP, no marco 5 |
+| 2026-09-28 | Progresso de planos vira o marco 8, depois do MVP |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
