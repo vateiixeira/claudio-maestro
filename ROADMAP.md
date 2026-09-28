@@ -21,7 +21,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 2. Multissessão | Colunas, estados e menu lateral | Não iniciado | 0 de 10 |
 | 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 7 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
-| 5. Controles | Modelo, raciocínio, modo, imagens, perguntas e planos | Não iniciado | 0 de 11 |
+| 5. Controles | Modelo, raciocínio, modo, imagens, voz, perguntas e planos | Não iniciado | 0 de 12 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 9 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 
@@ -125,6 +125,7 @@ Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 - [ ] Blocos de busca, subagente e lista de tarefas
 - [ ] Cartão genérico para ferramentas e MCPs sem bloco próprio
 - [ ] Saídas longas truncadas em 200 linhas
+- [ ] Ditado por voz: botão de microfone no campo de mensagem que transcreve a fala em texto, para revisar antes de enviar (tecnologia a definir, ver "Pontos em aberto")
 
 ## Marco 6. Acabamento
 
@@ -189,6 +190,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 |---|---|
 | Docker | Adiado. Exigiria rodar o Claude dentro do container, com as pastas montadas no mesmo caminho do host. Não testado |
 | Mesma sessão aberta no app e no CLI ao mesmo tempo | Risco de embaralhar o histórico. O app só avisa |
+| Tecnologia do ditado por voz | Decidir antes do marco 5. Opção A: reconhecimento de fala do navegador, sem dependência e leve, mas só no Chrome e no Edge, precisa de internet e envia o áudio ao Google. Opção B: Whisper rodando no backend, privado e offline, mas baixa um modelo de centenas de MB e usa CPU a cada ditado. Recomendação inicial: A |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
 
 ## Decisões
@@ -209,4 +211,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-28 | Planejamento em uma sessão, execução em outra |
 | 2026-09-28 | Renomear sessão entra no MVP, usando a função do SDK |
 | 2026-09-28 | Agrupador de sessões vira o marco 7, depois do MVP, guardado só no banco do backend |
+| 2026-09-28 | Ditado por voz entra no MVP, no marco 5 |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
