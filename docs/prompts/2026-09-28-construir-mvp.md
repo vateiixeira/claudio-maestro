@@ -129,6 +129,12 @@ Permissões
 - O callback pode ficar pendente pelo tempo que for preciso.
 - Ferramentas já liberadas pelas minhas configurações não passam pelo callback.
 
+Turnos e interrupção (verificado em 2026-09-28)
+
+- Uma mensagem enviada com `query` durante um turno em andamento é respondida depois dele, em um turno próprio. Cada envio produz exatamente um `ResultMessage`.
+- `interrupt()` com permissão pendente cancela a tarefa do `can_use_tool`, que recebe `CancelledError`. A ferramenta não executa. Chegam um `UserMessage` com `ToolResultBlock` de recusa, um `UserMessage` com `TextBlock` "[Request interrupted by user for tool use]" e um `ResultMessage` com `subtype="error_during_execution"`, `is_error=True` e `terminal_reason="aborted_tools"`.
+- Depois da interrupção, a mesma sessão aceita novas mensagens normalmente.
+
 Histórico
 
 - `list_sessions(directory, limit, offset)` devolve `session_id`, `summary`, `custom_title`, `first_prompt`, `git_branch`, `cwd`, `created_at` e `last_modified`. Listar 40 pastas levou 0,15 s.
