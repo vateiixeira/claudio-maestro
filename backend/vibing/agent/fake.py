@@ -82,6 +82,8 @@ class PauseStep:
 
 Step = Message | PermissionStep | FailStep | PauseStep
 Script = Callable[[str | list[dict[str, Any]]], Iterable[Step]]
+# A fixed error, or one chosen from the options (e.g. fail only without resume).
+ConnectError = AgentError | Callable[[AgentOptions], AgentError | None]
 
 
 @dataclass
@@ -121,7 +123,7 @@ class FakeAgentClient:
         self,
         options: AgentOptions,
         script: Script | None = None,
-        connect_error: AgentError | None = None,
+        connect_error: ConnectError | None = None,
     ) -> None:
         self.options = options
         self.script: Script = script or (lambda content: [])
@@ -143,8 +145,11 @@ class FakeAgentClient:
         self._pending_tool_use_id: str | None = None
 
     async def connect(self) -> None:
-        if self.connect_error is not None:
-            raise self.connect_error
+        error = self.connect_error
+        if callable(error):
+            error = error(self.options)
+        if error is not None:
+            raise error
         self.connected = True
         self._worker = asyncio.create_task(self._run_turns())
 
@@ -259,7 +264,7 @@ class FakeAgentFactory:
     def __init__(
         self,
         script: Script | None = None,
-        connect_error: AgentError | None = None,
+        connect_error: ConnectError | None = None,
     ) -> None:
         self.script = script
         self.connect_error = connect_error

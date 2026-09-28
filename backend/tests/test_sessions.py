@@ -3,6 +3,7 @@
 All tests use the scripted fake agent; nothing here starts the `claude` process.
 """
 
+import asyncio
 import time
 from collections.abc import Callable
 from contextlib import closing
@@ -23,6 +24,7 @@ from vibing.agent.base import AgentError
 from vibing.agent.fake import (
     DEFAULT_FAILURE,
     FailStep,
+    FakeAgentClient,
     FakeAgentFactory,
     PauseStep,
     PermissionStep,
@@ -37,8 +39,10 @@ from vibing.sessions import (
     AlwaysNotAvailableError,
     EmptyMessageError,
     PromptNotFoundError,
+    SessionClosedError,
     SessionManager,
     SessionNotFoundError,
+    sdk_history_exists,
 )
 
 WAIT = 2  # seconds; every wait fails instead of hanging the suite
@@ -104,7 +108,7 @@ def session_row(db_path: Path, session_id: str) -> dict[str, Any]:
 
 
 class Env:
-    def __init__(self, tmp_path: Path, factory: FakeAgentFactory) -> None:
+    def __init__(self, tmp_path: Path, factory, history_exists=None) -> None:
         self.db_path = tmp_path / "data" / "vibing.db"
         db.init_db(self.db_path)
         self.project = make_project(self.db_path, tmp_path / "home" / "app")
@@ -114,7 +118,7 @@ class Env:
             self.db_path,
             self.recorder,
             agent_factory=factory,
-            history_exists=fake_history(factory),
+            history_exists=history_exists or fake_history(factory),
         )
 
     def new_session(self):
@@ -124,8 +128,9 @@ class Env:
 
 @pytest.fixture
 def make_env(tmp_path: Path):
-    def build(script=None, connect_error=None) -> Env:
-        return Env(tmp_path, FakeAgentFactory(script=script, connect_error=connect_error))
+    def build(script=None, connect_error=None, history_exists=None, factory=None) -> Env:
+        factory = factory or FakeAgentFactory(script=script, connect_error=connect_error)
+        return Env(tmp_path, factory, history_exists)
 
     return build
 
@@ -613,3 +618,278 @@ async def test_shutdown_closes_clients(make_env):
     assert len(env.factory.clients) == 2
     assert all(c.closed for c in env.factory.clients)
     assert one.state == two.state == "closed"
+
+
+# Resuming existing conversations ------------------------------------------
+
+IN_USE = "O processo do agente encerrou inesperadamente (código 1)."
+
+
+class CountingHistory:
+    """history_exists that answers from a list of results and counts calls."""
+
+    def __init__(self, *answers: bool) -> None:
+        self.answers = list(answers)
+        self.calls = 0
+
+    def __call__(self, session_id: str, cwd: str) -> bool:
+        self.calls += 1
+        return self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+
+
+def fails_without_resume(error: AgentError):
+    """Like the real SDK: a session already on disk cannot connect without resume."""
+    return lambda options: None if options.resume else error
+
+
+@pytest.mark.anyio
+async def test_reconnect_after_a_successful_connect_resumes_without_checking_disk(
+    make_env, env_cleanup
+):
+    history = CountingHistory(False)
+    script, ids = by_session(
+        lambda sid: [*text_turn(sid, "meio")[:3], FailStep()],
+        lambda sid: text_turn(sid, "voltei"),
+    )
+    env = make_env(script=script, history_exists=history)
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    ids.append(session.session_id)
+
+    await session.send("um")
+    await wait_until(lambda: session.state == "error")
+    await session.send("dois")
+    await wait_until(lambda: session.state == "idle")
+
+    assert [c.options.resume for c in env.factory.clients] == [False, True]
+    assert history.calls == 1
+
+
+@pytest.mark.anyio
+async def test_connect_failure_retries_with_resume_when_history_shows_up(make_env, env_cleanup):
+    history = CountingHistory(False, True)  # the check after the failure finds it
+    env = make_env(
+        script=lambda content: text_turn("x", "continuando"),
+        connect_error=fails_without_resume(AgentError(IN_USE)),
+        history_exists=history,
+    )
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    await session.send("continue")
+    await wait_until(lambda: session.state == "idle")
+
+    first, second = env.factory.clients
+    assert (first.options.resume, second.options.resume) == (False, True)
+    assert first.connected is False and first.closed is True
+    assert second.sent == ["continue"]
+    assert session.error is None
+    assert "error" not in env.recorder.states(session.session_id)
+    assert not [i for i in session.snapshot()["items"] if i["type"] == "notice"]
+
+
+@pytest.mark.anyio
+async def test_connect_failure_retries_with_resume_on_session_in_use_signal(
+    make_env, env_cleanup
+):
+    history = CountingHistory(False)  # disk never shows it; only the stderr signal
+    env = make_env(
+        script=lambda content: text_turn("x", "ok"),
+        connect_error=fails_without_resume(AgentError(IN_USE, session_in_use=True)),
+        history_exists=history,
+    )
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    await session.send("continue")
+    await wait_until(lambda: session.state == "idle")
+
+    assert [c.options.resume for c in env.factory.clients] == [False, True]
+
+
+@pytest.mark.anyio
+async def test_connect_failure_without_history_is_not_retried(make_env, env_cleanup):
+    env = make_env(
+        connect_error=AgentError("Não foi possível conectar ao agente."),
+        history_exists=CountingHistory(False),
+    )
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    await session.send("oi")
+
+    assert len(env.factory.clients) == 1
+    assert session.state == "error"
+
+
+@pytest.mark.anyio
+async def test_retry_is_attempted_only_once(make_env, env_cleanup):
+    env = make_env(
+        connect_error=AgentError(IN_USE, session_in_use=True),
+        history_exists=CountingHistory(False),
+    )
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    await session.send("oi")
+
+    assert [c.options.resume for c in env.factory.clients] == [False, True]
+    assert all(c.closed for c in env.factory.clients)
+    assert session.state == "error"
+    assert session.error == IN_USE
+
+
+def test_sdk_history_exists_uses_info_then_messages(monkeypatch):
+    import claude_agent_sdk
+
+    calls: list[tuple] = []
+
+    def info(session_id, directory=None):
+        calls.append(("info", session_id, directory))
+        return infos.pop(0)
+
+    def messages(session_id, directory=None, limit=None, offset=0):
+        calls.append(("messages", session_id, directory, limit))
+        return found.pop(0)
+
+    monkeypatch.setattr(claude_agent_sdk, "get_session_info", info)
+    monkeypatch.setattr(claude_agent_sdk, "get_session_messages", messages)
+    infos: list[Any] = [object(), None, None]
+    found: list[list] = [["entrada"], []]
+
+    assert sdk_history_exists("sid", "/p") is True
+    assert calls == [("info", "sid", "/p")]
+    assert sdk_history_exists("sid", "/p") is True
+    assert sdk_history_exists("sid", "/p") is False
+    assert calls[-1] == ("messages", "sid", "/p", 1)
+
+
+# Cancellation and concurrent close ----------------------------------------
+
+
+class GatedClient(FakeAgentClient):
+    """Fake client whose connect or send waits for the test to open a gate."""
+
+    def __init__(self, options, *, gate_connect: bool, gate_send: bool) -> None:
+        super().__init__(options, script=lambda content: text_turn(options.session_id, "ok"))
+        self.gate = asyncio.Event()
+        self.waiting = asyncio.Event()
+        self.gate_connect = gate_connect
+        self.gate_send = gate_send
+
+    async def connect(self) -> None:
+        if self.gate_connect:
+            self.waiting.set()
+            await self.gate.wait()
+        await super().connect()
+
+    async def send(self, content) -> None:
+        if self.gate_send:
+            self.waiting.set()
+            await self.gate.wait()
+        await super().send(content)
+
+
+class GatedFactory:
+    """Gates only the first client; later ones behave normally."""
+
+    def __init__(self, *, gate_connect: bool = False, gate_send: bool = False) -> None:
+        self.clients: list[FakeAgentClient] = []
+        self.gate_connect = gate_connect
+        self.gate_send = gate_send
+
+    def __call__(self, options) -> FakeAgentClient:
+        first = not self.clients
+        client = GatedClient(
+            options,
+            gate_connect=self.gate_connect and first,
+            gate_send=self.gate_send and first,
+        )
+        self.clients.append(client)
+        return client
+
+
+@pytest.mark.anyio
+async def test_cancel_during_connect_closes_client_and_restores_state(make_env, env_cleanup):
+    factory = GatedFactory(gate_connect=True)
+    env = make_env(factory=factory, history_exists=CountingHistory(False))
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    task = asyncio.create_task(session.send("oi"))
+    await wait_until(lambda: bool(factory.clients) and factory.clients[0].waiting.is_set())
+    assert session.state == "connecting"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        with anyio.fail_after(WAIT):
+            await task
+
+    assert factory.clients[0].closed is True
+    assert session.client is None
+    assert session.state == "closed"
+    assert env.recorder.states(session.session_id)[-1] == "closed"
+
+    await session.send("de novo")  # the lock was released; a new client works
+    await wait_until(lambda: session.state == "idle")
+    assert len(factory.clients) == 2
+
+
+@pytest.mark.anyio
+async def test_close_during_connect_discards_the_new_client(make_env, env_cleanup):
+    factory = GatedFactory(gate_connect=True)
+    env = make_env(factory=factory, history_exists=CountingHistory(False))
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    task = asyncio.create_task(session.send("oi"))
+    await wait_until(lambda: bool(factory.clients) and factory.clients[0].waiting.is_set())
+    await session.close()
+    factory.clients[0].gate.set()
+    with anyio.fail_after(WAIT):
+        await task
+
+    assert factory.clients[0].closed is True
+    assert factory.clients[0].sent == []
+    assert session.client is None
+    assert session.state == "closed"
+    assert session.pending_turns == 0
+
+
+@pytest.mark.anyio
+async def test_close_during_send_leaves_consistent_state(make_env, env_cleanup):
+    factory = GatedFactory(gate_send=True)
+    env = make_env(factory=factory, history_exists=CountingHistory(False))
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    task = asyncio.create_task(session.send("oi"))
+    await wait_until(lambda: bool(factory.clients) and factory.clients[0].waiting.is_set())
+    await session.close()
+    factory.clients[0].gate.set()  # the discarded client now fails to send
+    with anyio.fail_after(WAIT):
+        await task
+
+    assert session.state == "closed"
+    assert session.error is None
+    assert session.pending_turns == 0
+    assert not [i for i in session.snapshot()["items"] if i["type"] == "notice"]
+
+    await session.send("de novo")
+    await wait_until(lambda: session.state == "idle")
+    assert len(factory.clients) == 2
+    assert factory.clients[1].options.resume is True
+
+
+@pytest.mark.anyio
+async def test_send_after_shutdown_is_refused(make_env):
+    env = make_env(script=lambda content: text_turn("x", "ok"))
+    session = env.new_session()
+    await session.send("oi")
+    await wait_until(lambda: session.state == "idle")
+
+    await env.manager.shutdown()
+
+    with pytest.raises(SessionClosedError):
+        await session.send("depois")
+    assert len(env.factory.clients) == 1
+    assert session.state == "closed"

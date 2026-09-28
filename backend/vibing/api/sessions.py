@@ -52,6 +52,7 @@ _STATUS = {
     sessions.PromptNotFoundError: status.HTTP_409_CONFLICT,
     sessions.AlwaysNotAvailableError: status.HTTP_400_BAD_REQUEST,
     sessions.InvalidDecisionError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    sessions.SessionClosedError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
 

@@ -12,7 +12,7 @@ import sqlite3
 import time
 import uuid
 from collections.abc import Callable
-from contextlib import closing
+from contextlib import closing, suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -76,6 +76,10 @@ class InvalidDecisionError(SessionError):
     pass
 
 
+class SessionClosedError(SessionError):
+    """The app is shutting down; the session accepts nothing else."""
+
+
 # Records -------------------------------------------------------------------
 
 
@@ -133,10 +137,16 @@ class PendingPrompt:
 
 
 def sdk_history_exists(session_id: str, cwd: str) -> bool:
-    """Production check: the SDK has a conversation file for this session."""
-    from claude_agent_sdk import get_session_info
+    """Production check: the SDK has a conversation on disk for this session.
 
-    return get_session_info(session_id, directory=cwd) is not None
+    `get_session_info` returns None for a session without an extractable
+    summary (e.g. interrupted before any text), so messages are checked too.
+    """
+    import claude_agent_sdk
+
+    if claude_agent_sdk.get_session_info(session_id, directory=cwd) is not None:
+        return True
+    return bool(claude_agent_sdk.get_session_messages(session_id, directory=cwd, limit=1))
 
 
 def default_agent_factory(options: AgentOptions) -> AgentClient:
@@ -178,6 +188,12 @@ class ActiveSession:
         self._reader: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self._sent_messages = 0
+        # True once a client connected: the conversation then exists on disk.
+        self._has_connected = False
+        # Bumped whenever the client is discarded (close or failure), so an
+        # in-flight connect or send notices it lost its client.
+        self._generation = 0
+        self._final = False  # set by shutdown: nothing else is accepted
         self._published_state: tuple[str, str | None] = (self.state, None)
 
     @property
@@ -240,6 +256,8 @@ class ActiveSession:
         """
         if not text or not text.strip():
             raise EmptyMessageError("A mensagem está vazia.")
+        if self._final:
+            raise SessionClosedError("O servidor está encerrando. A mensagem não foi enviada.")
         # The user's message is recorded first so it is never lost.
         self._emit_events(self.builder.add_user_message(text))
         first = self._sent_messages == 0
@@ -248,6 +266,8 @@ class ActiveSession:
             self._set_title(text)
 
         async with self._lock:
+            if self._final:
+                return
             if self.client is None and not await self._connect():
                 return
             client = self.client
@@ -257,7 +277,9 @@ class ActiveSession:
             try:
                 await client.send(text)
             except AgentError as error:
-                await self._fail(error.message_pt)
+                # If close() discarded this client meanwhile, the error is expected.
+                if self.client is client:
+                    await self._fail(error.message_pt)
 
     def _set_title(self, text: str) -> None:
         title = " ".join(text.split())[:TITLE_MAX_LENGTH].rstrip()
@@ -271,38 +293,80 @@ class ActiveSession:
         self._emit("session.title", {"title": title})
 
     async def _connect(self) -> bool:
+        """Create and connect a client. Called with the lock held.
+
+        `resume` comes from memory (connected before) or from the disk check.
+        A fresh connect that fails is retried once with `resume=True` when the
+        error says the session is in use or the history now shows up.
+        """
+        generation = self._generation
         self._connecting = True
         self.error = None
         self._refresh_state()
         client: AgentClient | None = None
         try:
-            resume = await asyncio.to_thread(
-                self._history_exists, self.session_id, self.record.cwd
-            )
-            client = self._agent_factory(
-                AgentOptions(
-                    cwd=Path(self.record.cwd),
-                    session_id=self.session_id,
-                    resume=resume,
-                    can_use_tool=self._can_use_tool,
-                )
-            )
-            await client.connect()
+            resume = self._has_connected or await self._check_history()
+            client = self._new_client(resume)
+            try:
+                await client.connect()
+            except AgentError as error:
+                if resume or not (error.session_in_use or await self._check_history()):
+                    raise
+                logger.info("Sessão %s já existe; reconectando com resume", self.session_id)
+                await self._close_quietly(client)
+                client = self._new_client(resume=True)
+                await client.connect()
+        except asyncio.CancelledError:
+            self._connecting = False
+            if client is not None:
+                with suppress(asyncio.CancelledError):
+                    await asyncio.shield(self._close_quietly(client))
+            self._refresh_state()
+            raise
         except Exception as error:  # AgentError or anything unexpected
             self._connecting = False
-            message = (
-                error.message_pt
-                if isinstance(error, AgentError)
-                else f"Falha inesperada ao iniciar o agente: {error}"
-            )
-            if not isinstance(error, AgentError):
+            if generation != self._generation:
+                # Closed while connecting: nothing to report.
+                if client is not None:
+                    await self._close_quietly(client)
+                self._refresh_state()
+                return False
+            if isinstance(error, AgentError):
+                message = error.message_pt
+            else:
                 logger.exception("Falha ao conectar a sessão %s", self.session_id)
+                message = f"Falha inesperada ao iniciar o agente: {error}"
             await self._fail(message, client)
             return False
         self._connecting = False
+        if generation != self._generation:
+            # close() ran while connecting: discard the new client.
+            await self._close_quietly(client)
+            self._refresh_state()
+            return False
         self.client = client
+        self._has_connected = True
         self._reader = asyncio.create_task(self._read(client))
         return True
+
+    def _new_client(self, resume: bool) -> AgentClient:
+        return self._agent_factory(
+            AgentOptions(
+                cwd=Path(self.record.cwd),
+                session_id=self.session_id,
+                resume=resume,
+                can_use_tool=self._can_use_tool,
+            )
+        )
+
+    async def _check_history(self) -> bool:
+        try:
+            return await asyncio.to_thread(
+                self._history_exists, self.session_id, self.record.cwd
+            )
+        except Exception:
+            logger.exception("Falha ao consultar o histórico da sessão %s", self.session_id)
+            return False
 
     async def _read(self, client: AgentClient) -> None:
         try:
@@ -344,7 +408,8 @@ class ActiveSession:
         try:
             await client.interrupt()
         except AgentError as error:
-            await self._fail(error.message_pt)
+            if self.client is client:
+                await self._fail(error.message_pt)
             return
         # The SDK cancels the callback of a pending prompt; this catches any left.
         self._cancel_prompts()
@@ -353,6 +418,7 @@ class ActiveSession:
     async def _fail(self, message: str, client: AgentClient | None = None) -> None:
         client = client or self.client
         reader = self._reader
+        self._generation += 1
         self.client = None
         self._reader = None
         self.error = message
@@ -362,9 +428,16 @@ class ActiveSession:
         self._refresh_state()
         await self._dispose(client, reader)
 
-    async def close(self) -> None:
-        """Close the client, if any. The session goes back to `closed`."""
+    async def close(self, *, final: bool = False) -> None:
+        """Close the client, if any. The session goes back to `closed`.
+
+        An in-flight send or connect notices it through `_generation` and stops
+        without touching the discarded client. With `final`, later sends are refused.
+        """
+        if final:
+            self._final = True
         client, reader = self.client, self._reader
+        self._generation += 1
         self.client = None
         self._reader = None
         self.pending_turns = 0
@@ -372,14 +445,17 @@ class ActiveSession:
         self._refresh_state()
         await self._dispose(client, reader)
 
+    async def _close_quietly(self, client: AgentClient) -> None:
+        try:
+            await client.close()
+        except Exception:
+            logger.exception("Falha ao fechar o cliente da sessão %s", self.session_id)
+
     async def _dispose(
         self, client: AgentClient | None, reader: asyncio.Task[None] | None
     ) -> None:
         if client is not None:
-            try:
-                await client.close()
-            except Exception:
-                logger.exception("Falha ao fechar o cliente da sessão %s", self.session_id)
+            await self._close_quietly(client)
         if reader is not None and reader is not asyncio.current_task() and not reader.done():
             reader.cancel()
             await asyncio.wait([reader])
@@ -527,4 +603,4 @@ class SessionManager:
 
     async def shutdown(self) -> None:
         for session in list(self._sessions.values()):
-            await session.close()
+            await session.close(final=True)

@@ -324,3 +324,52 @@ def test_default_sdk_client_is_built_from_options(tmp_path):
     assert isinstance(client, AgentClient)
     assert client.sdk_options.model == "haiku"
     assert client.sdk_options.session_id == SESSION_ID
+
+
+def test_build_options_forwards_stderr_callback(tmp_path):
+    lines: list[str] = []
+    sdk = build_sdk_options(make_options(tmp_path), stderr=lines.append)
+
+    sdk.stderr("linha")
+
+    assert lines == ["linha"]
+
+
+@pytest.mark.anyio
+async def test_connect_failure_with_session_in_use_on_stderr_is_flagged(tmp_path):
+    stub = StubSdkClient(connect_error=ProcessError("Command failed", exit_code=1))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    # The real CLI writes this to stderr before exiting.
+    client.sdk_options.stderr(f"Error: Session ID {SESSION_ID} is already in use.")
+
+    with pytest.raises(AgentError) as info:
+        await client.connect()
+
+    assert info.value.session_in_use is True
+
+
+@pytest.mark.anyio
+async def test_connect_failure_with_session_in_use_in_process_error_is_flagged(tmp_path):
+    stub = StubSdkClient(
+        connect_error=ProcessError(
+            "Command failed", exit_code=1, stderr=f"Session ID {SESSION_ID} is already in use."
+        )
+    )
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+
+    with pytest.raises(AgentError) as info:
+        await client.connect()
+
+    assert info.value.session_in_use is True
+
+
+@pytest.mark.anyio
+async def test_other_connect_failures_are_not_flagged(tmp_path):
+    stub = StubSdkClient(connect_error=ProcessError("Command failed", exit_code=1))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    client.sdk_options.stderr("outra coisa")
+
+    with pytest.raises(AgentError) as info:
+        await client.connect()
+
+    assert info.value.session_in_use is False

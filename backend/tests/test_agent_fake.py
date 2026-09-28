@@ -479,3 +479,21 @@ def test_tool_turn_has_two_responses_and_tool_result():
     assert steps[permission_index].tool_use_id == "toolu_9"
     assert steps[user_index].tool_use_result == {"type": "create", "filePath": "/p/a.txt"}
     assert isinstance(steps[-1], ResultMessage)
+
+
+@pytest.mark.anyio
+async def test_connect_error_can_depend_on_options(tmp_path):
+    error = AgentError("em uso", session_in_use=True)
+    factory = FakeAgentFactory(connect_error=lambda options: None if options.resume else error)
+
+    fresh = factory(make_options(tmp_path))
+    with pytest.raises(AgentError) as info:
+        await fresh.connect()
+    resumed = factory(AgentOptions(cwd=tmp_path, session_id=SESSION_ID, resume=True,
+                                   can_use_tool=allow_all))
+    await resumed.connect()
+
+    assert info.value is error
+    assert fresh.connected is False
+    assert resumed.connected is True
+    await resumed.close()

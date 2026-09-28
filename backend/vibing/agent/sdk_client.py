@@ -4,7 +4,8 @@ Nothing here starts the `claude` process until `connect()` is called.
 """
 
 import os
-from collections.abc import AsyncIterator
+from collections import deque
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from claude_agent_sdk import (
@@ -41,6 +42,9 @@ INHERITED_ENV_VARS: tuple[str, ...] = (
 )
 
 CLI_NOT_FOUND_MESSAGE = "O comando `claude` não foi encontrado nesta máquina."
+# What the CLI prints when started with `session_id` of a session already on disk.
+SESSION_IN_USE_MARKER = "already in use"
+STDERR_LINES_KEPT = 50
 
 
 def clean_inherited_env() -> None:
@@ -49,13 +53,17 @@ def clean_inherited_env() -> None:
         os.environ.pop(name, None)
 
 
-def build_sdk_options(options: AgentOptions) -> ClaudeAgentOptions:
+def build_sdk_options(
+    options: AgentOptions, stderr: Callable[[str], None] | None = None
+) -> ClaudeAgentOptions:
     """Translate the app options into SDK options. Pure: starts nothing."""
     kwargs: dict[str, Any] = {
         "cwd": options.cwd,
         "include_partial_messages": True,
         "can_use_tool": options.can_use_tool,
     }
+    if stderr is not None:
+        kwargs["stderr"] = stderr
     if options.resume:
         kwargs["resume"] = options.session_id
     else:
@@ -98,14 +106,19 @@ class SdkAgentClient:
 
     def __init__(self, options: AgentOptions, sdk_client: Any | None = None) -> None:
         self.options = options
-        self.sdk_options = build_sdk_options(options)
+        self.stderr_lines: deque[str] = deque(maxlen=STDERR_LINES_KEPT)
+        self.sdk_options = build_sdk_options(options, stderr=self.stderr_lines.append)
         self._client = sdk_client or ClaudeSDKClient(self.sdk_options)
 
     async def connect(self) -> None:
         try:
             await self._client.connect()
         except Exception as error:
-            raise to_agent_error(error) from error
+            agent_error = to_agent_error(error)
+            texts = [*self.stderr_lines, str(error), getattr(error, "stderr", None) or ""]
+            if any(SESSION_IN_USE_MARKER in text for text in texts):
+                agent_error.session_in_use = True
+            raise agent_error from error
 
     async def send(self, content: str | list[dict[str, Any]]) -> None:
         try:

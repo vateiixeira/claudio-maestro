@@ -1,12 +1,12 @@
 """Session routes and the event WebSocket, with the scripted fake agent."""
 
-import json
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from pathlib import Path
 from typing import Any
 
-import anyio
 import pytest
 from claude_agent_sdk import PermissionUpdate
 from fastapi.testclient import TestClient
@@ -69,15 +69,17 @@ def connect_ws(api: TestClient, origin: str = APP_ORIGIN):
 
 
 def receive(ws) -> dict[str, Any]:
-    """Next event from a test WebSocket, failing after WAIT seconds instead of hanging."""
+    """Next event from a test WebSocket, failing after WAIT seconds instead of hanging.
 
-    async def get():
-        with anyio.fail_after(WAIT):
-            return await ws._send_rx.receive()
-
-    message = ws.portal.call(get)
-    assert message["type"] == "websocket.send", message
-    return json.loads(message["text"])
+    `receive_json` blocks with no timeout, so it runs in a worker thread.
+    """
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        return executor.submit(ws.receive_json).result(timeout=WAIT)
+    except FutureTimeout:
+        raise AssertionError(f"nenhum evento em {WAIT}s") from None
+    finally:
+        executor.shutdown(wait=False)
 
 
 def receive_until_idle(ws, session_id: str) -> list[dict[str, Any]]:

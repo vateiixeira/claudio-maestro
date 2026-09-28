@@ -22,11 +22,16 @@ PermissionCallback = Callable[
 
 
 class AgentError(Exception):
-    """Agent failure with a message ready to show to the user (pt-BR)."""
+    """Agent failure with a message ready to show to the user (pt-BR).
 
-    def __init__(self, message_pt: str) -> None:
+    `session_in_use` marks a connect that failed because the session id already
+    exists on disk (it must be resumed, not started again).
+    """
+
+    def __init__(self, message_pt: str, *, session_in_use: bool = False) -> None:
         super().__init__(message_pt)
         self.message_pt = message_pt
+        self.session_in_use = session_in_use
 
 
 @dataclass
