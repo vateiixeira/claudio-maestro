@@ -9,6 +9,12 @@ APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
 
 
+@pytest.fixture
+def anyio_backend() -> str:
+    """Async tests (`@pytest.mark.anyio`) run on asyncio only."""
+    return "asyncio"
+
+
 @pytest.fixture(autouse=True)
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point home and data dirs to temporary folders in every test."""

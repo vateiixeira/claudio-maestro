@@ -17,7 +17,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 |---|---|---|---|
 | Preparação | Requisitos, design e viabilidade | Concluído | 6 de 6 |
 | 0. Fundação | Backend e frontend no ar em modo de desenvolvimento | Concluído | 6 de 6 |
-| 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Em andamento | 4 de 13 |
+| 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Em andamento | 6 de 13 |
 | 2. Multissessão | Colunas, estados e menu lateral | Não iniciado | 0 de 10 |
 | 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 7 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
@@ -57,8 +57,8 @@ Backend
 - [x] Proteção de `Host` e `Origin`, e validação de caminhos (2026-09-28)
 - [x] Projetos: criar, listar, renomear, remover (2026-09-28)
 - [x] Navegador de pastas limitado à pasta pessoal (2026-09-28)
-- [ ] Interface do agente, cliente real sobre o SDK e cliente falso para testes
-- [ ] Conversão das mensagens do SDK em itens de conversa
+- [x] Interface do agente, cliente real sobre o SDK e cliente falso para testes (2026-09-28)
+- [x] Conversão das mensagens do SDK em itens de conversa (2026-09-28)
 - [ ] Sessão ativa: enviar mensagem, interromper, máquina de estados
 - [ ] Fila de permissões: pedir, responder, cancelar ao interromper
 - [ ] WebSocket de eventos e rotas de sessão

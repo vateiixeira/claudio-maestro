@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from vibing import db
+from vibing.agent.sdk_client import clean_inherited_env
 from vibing.api import router
 from vibing.config import Settings, load_settings
 from vibing.security import HostOriginMiddleware
@@ -16,6 +17,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        clean_inherited_env()
         app.state.settings = settings or load_settings()
         db.init_db(app.state.settings.db_path)
         yield
