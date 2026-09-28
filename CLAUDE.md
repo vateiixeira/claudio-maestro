@@ -73,6 +73,15 @@ uv run python scripts/sdk_smoke.py                                              
 - O agente `implementer` (`.claude/agents/implementer.md`) já vem com Opus e raciocínio baixo. Para usar o modelo da sessão ou outro, passe `model` ao chamá-lo.
 - Subagentes não fazem commit nem `git add`. Quem commita é a sessão principal, depois de conferir o trabalho e ver os testes passarem.
 
+### Revisão de código em duas camadas
+
+| Quando | Agente | Modelo |
+|---|---|---|
+| Depois de cada tarefa | `reviewer` | Sonnet 5, raciocínio médio |
+| No fim de cada marco | `milestone-reviewer` | Opus 5.5, raciocínio alto |
+
+Uma tarefa só é commitada depois de o `reviewer` aprovar. Um marco só é dado como concluído depois de o `milestone-reviewer` aprovar. Quando um revisor reprova, o `implementer` corrige e o mesmo revisor olha de novo.
+
 ## Segurança
 
 O app executa comandos na máquina, então qualquer site aberto no navegador é uma ameaça a um servidor local.
