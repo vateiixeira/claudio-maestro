@@ -134,6 +134,9 @@ Turnos e interrupção (verificado em 2026-09-28)
 - Uma mensagem enviada com `query` durante um turno em andamento é respondida depois dele, em um turno próprio. Cada envio produz exatamente um `ResultMessage`.
 - `interrupt()` com permissão pendente cancela a tarefa do `can_use_tool`, que recebe `CancelledError`. A ferramenta não executa. Chegam um `UserMessage` com `ToolResultBlock` de recusa, um `UserMessage` com `TextBlock` "[Request interrupted by user for tool use]" e um `ResultMessage` com `subtype="error_during_execution"`, `is_error=True` e `terminal_reason="aborted_tools"`.
 - Depois da interrupção, a mesma sessão aceita novas mensagens normalmente.
+- Interromper um turno com outra mensagem já na fila preserva a fila: o turno interrompido termina com `error_during_execution` e `terminal_reason="aborted_streaming"`, e a mensagem seguinte é respondida em seguida, com seu próprio `ResultMessage`.
+- Uma sessão interrompida no `message_start`, antes de qualquer texto, já existe em disco: aparece em `list_sessions` e `get_session_messages` devolve a mensagem do usuário.
+- Conectar com `session_id` de uma sessão que já existe, sem `resume`, faz o processo sair com erro: "Session ID ... is already in use", que chega como `ProcessError`. Com `resume` igual ao mesmo id, funciona. Por isso a checagem de histórico precisa ser confiável.
 
 Histórico
 
