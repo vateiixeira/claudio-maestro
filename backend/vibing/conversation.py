@@ -179,6 +179,10 @@ class ConversationBuilder:
     def add_user_message(self, text: str) -> list[Event]:
         return [self._put(UserItem(id=f"user-{uuid.uuid4().hex}", text=text))]
 
+    def add_notice(self, level: NoticeLevel, text: str) -> list[Event]:
+        """Notice raised by the app itself (e.g. the agent process failed)."""
+        return [self._notice(level, text)]
+
     def handle(self, message: Any) -> list[Event]:
         if isinstance(message, StreamEvent):
             return self._on_stream_event(message)

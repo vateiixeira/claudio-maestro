@@ -14,11 +14,13 @@ from claude_agent_sdk import (
     SystemMessage,
     TextBlock,
     ToolPermissionContext,
+    ToolResultBlock,
     ToolUseBlock,
     UserMessage,
 )
 from vibing.agent.base import AgentClient, AgentError, AgentOptions
 from vibing.agent.fake import (
+    INTERRUPTED_FOR_TOOL_USE,
     FailStep,
     FakeAgentClient,
     FakeAgentFactory,
@@ -29,6 +31,7 @@ from vibing.agent.fake import (
     text_turn,
     tool_turn,
 )
+from vibing.conversation import ConversationBuilder
 
 SESSION_ID = "0b6f2d1c-7e4a-4c3b-9d8e-1f2a3b4c5d6e"
 
@@ -293,6 +296,71 @@ async def test_interrupt_cancels_pending_permission(tmp_path):
     assert cancelled.is_set()
     assert messages[-1].subtype == "error_during_execution"
     assert client.permission_results == []
+
+
+@pytest.mark.anyio
+async def test_interrupt_with_pending_permission_mirrors_real_sdk(tmp_path):
+    started = asyncio.Event()
+
+    async def wait_forever(name, tool_input, context):
+        started.set()
+        await asyncio.Event().wait()
+
+    turn = tool_turn(SESSION_ID, tool_name="Bash", tool_use_id="toolu_x", ask_permission=True)
+    client = FakeAgentClient(
+        make_options(tmp_path, can_use_tool=wait_forever), script=scripted(turn)
+    )
+    await client.connect()
+    await client.send("vai")
+    async with asyncio.timeout(2):
+        await started.wait()
+
+    await client.interrupt()
+    messages = await collect_until_result(client)
+
+    refusal, interrupted, result = messages[-3:]
+    assert isinstance(refusal, UserMessage)
+    [block] = refusal.content
+    assert isinstance(block, ToolResultBlock)
+    assert block.tool_use_id == "toolu_x"
+    assert block.is_error is True
+    assert isinstance(interrupted, UserMessage)
+    assert interrupted.content == [TextBlock(text=INTERRUPTED_FOR_TOOL_USE)]
+    assert result.subtype == "error_during_execution"
+    assert result.is_error is True
+    assert result.terminal_reason == "aborted_tools"
+
+    builder = ConversationBuilder()
+    for message in messages:
+        builder.handle(message)
+    notices = [item for item in builder.items if item.type == "notice"]
+    assert [(n.level, n.text) for n in notices] == [("info", "Interrompido.")]
+    [tool] = [item for item in builder.items if item.type == "tool"]
+    assert tool.result["is_error"] is True
+    assert tool.streaming is False
+
+
+@pytest.mark.anyio
+async def test_interrupt_without_permission_is_aborted_streaming(tmp_path):
+    pause = PauseStep()
+    turn = text_turn(SESSION_ID, "nunca chega")
+    client = FakeAgentClient(
+        make_options(tmp_path), script=scripted([*turn[:2], pause, *turn[2:]])
+    )
+    await client.connect()
+    await client.send("vai")
+    async with asyncio.timeout(2):
+        await pause.reached.wait()
+
+    await client.interrupt()
+    messages = await collect_until_result(client)
+
+    assert not any(isinstance(m, UserMessage) for m in messages)
+    assert messages[-1].terminal_reason == "aborted_streaming"
+    builder = ConversationBuilder()
+    for message in messages:
+        builder.handle(message)
+    assert [(i.type, i.level) for i in builder.items] == [("notice", "info")]
 
 
 @pytest.mark.anyio

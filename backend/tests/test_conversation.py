@@ -581,3 +581,15 @@ def test_fake_tool_turn_converts_to_tool_and_text():
     assert tool.result["details"] == WRITE_RESULT
     assert text.text == "Editado."
     assert tool.id.split(":")[0] != text.id.split(":")[0]
+
+
+def test_add_notice_appends_notice_item():
+    builder = ConversationBuilder()
+
+    [event] = builder.add_notice("error", "O agente caiu.")
+
+    [item] = builder.items
+    assert isinstance(item, NoticeItem)
+    assert (item.level, item.text) == ("error", "O agente caiu.")
+    assert event.type == "item.upsert"
+    assert event.data["id"] == item.id

@@ -43,6 +43,13 @@ from vibing.agent.base import AgentError, AgentOptions
 
 DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_FAILURE = "O processo do agente encerrou inesperadamente."
+# Texts the real SDK sends when interrupt() cancels a pending permission.
+INTERRUPTED_FOR_TOOL_USE = "[Request interrupted by user for tool use]"
+TOOL_USE_REJECTED = (
+    "The user doesn't want to proceed with this tool use. The tool use was rejected"
+    " (eg. if it was a file edit, the new_string was NOT written to the file)."
+    " STOP what you are doing and wait for the user to tell you how to proceed."
+)
 
 
 # Control steps -------------------------------------------------------------
@@ -133,6 +140,7 @@ class FakeAgentClient:
         self._out: asyncio.Queue[Message | _Failure | _Closed] = asyncio.Queue()
         self._worker: asyncio.Task[None] | None = None
         self._current: asyncio.Task[None] | None = None
+        self._pending_tool_use_id: str | None = None
 
     async def connect(self) -> None:
         if self.connect_error is not None:
@@ -158,18 +166,35 @@ class FakeAgentClient:
             yield item
 
     async def interrupt(self) -> None:
+        """Mirrors the real SDK: with a permission pending, the callback task is
+        cancelled, the tool is refused and the turn ends with `aborted_tools`;
+        otherwise it ends with `aborted_streaming`."""
         self.interrupts += 1
         current = self._current
         if current is None or current.done():
             return
+        pending_tool_use_id = self._pending_tool_use_id
         current.cancel()
         await asyncio.wait([current])
+        self._pending_tool_use_id = None
+        reason = "aborted_streaming"
+        if pending_tool_use_id is not None:
+            reason = "aborted_tools"
+            await self._out.put(
+                tool_result_message(pending_tool_use_id, TOOL_USE_REJECTED, is_error=True)
+            )
+            await self._out.put(
+                UserMessage(
+                    content=[TextBlock(text=INTERRUPTED_FOR_TOOL_USE)],
+                    uuid=str(uuid.uuid4()),
+                )
+            )
         await self._out.put(
             result_message(
                 self.options.session_id,
                 subtype="error_during_execution",
                 is_error=True,
-                terminal_reason="aborted_streaming",
+                terminal_reason=reason,
             )
         )
 
@@ -220,7 +245,9 @@ class FakeAgentClient:
             tool_use_id=step.tool_use_id or new_tool_use_id(),
             display_name=step.tool_name,
         )
+        self._pending_tool_use_id = context.tool_use_id
         result = await self.options.can_use_tool(step.tool_name, step.input, context)
+        self._pending_tool_use_id = None
         self.permission_results.append(
             PermissionRecord(step.tool_name, step.input, context, result)
         )

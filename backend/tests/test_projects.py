@@ -254,7 +254,10 @@ def test_project_roots_feed_path_validation(client, home: Path, data_dir: Path):
     make_dir(home, "other")
     create(client, folder)
     conn = db.connect(data_dir / "vibing.db")
-    roots = project_roots(conn)
+    try:
+        roots = project_roots(conn)
+    finally:
+        conn.close()
     assert roots == [folder]
     assert resolve_within(folder / "src" / "main.py", roots) == folder / "src" / "main.py"
     with pytest.raises(PathNotAllowedError):
