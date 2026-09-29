@@ -2,7 +2,9 @@
 import { computed, nextTick, ref } from 'vue'
 import { errorMessage, updateSession } from '../../api/http'
 import { useConversationStore } from '../../stores/conversation'
+import { formatTokens } from '../../format'
 import { useModelsStore } from '../../stores/models'
+import { useSessionsStore } from '../../stores/sessions'
 import type { Effort, PermissionMode, SessionUpdate } from '../../types/api'
 import OptionMenu, { type MenuOption } from './OptionMenu.vue'
 
@@ -60,6 +62,21 @@ const effortOptions = computed<MenuOption[]>(() =>
 
 const mode = computed<string>(() => options.value?.permission_mode ?? 'default')
 const modeOptions: MenuOption[] = (Object.keys(MODE_LABELS) as PermissionMode[]).map((m) => ({ value: m, label: MODE_LABELS[m] }))
+
+// The session summary is refreshed by events; the snapshot only holds what it had at load.
+const sessionsStore = useSessionsStore()
+const context = computed(() => {
+  const fromList = sessionsStore.find(props.sessionId)?.context
+  return fromList !== undefined ? fromList : (conversations.get(props.sessionId)?.context ?? null)
+})
+const contextPercent = computed(() => (context.value ? Math.round(context.value.percent) : 0))
+const contextTitle = computed(() =>
+  context.value
+    // "1 milhão de tokens", but "200 mil tokens".
+    ? `${formatTokens(context.value.used_tokens)} de ${formatTokens(context.value.max_tokens)}${context.value.max_tokens >= 1_000_000 ? ' de' : ''} tokens`
+    : undefined,
+)
+const contextWarn = computed(() => contextPercent.value >= 80)
 
 const error = ref<string | null>(null)
 const saving = ref(false)
@@ -153,6 +170,13 @@ function onDialogKey(event: KeyboardEvent) {
       :disabled="saving"
       @select="selectMode"
     />
+    <span
+      v-if="context"
+      data-test="context-usage"
+      :title="contextTitle"
+      class="font-mono text-xs"
+      :class="contextWarn ? 'text-secondary' : 'text-fg-muted'"
+    >Contexto {{ contextPercent }}%</span>
     <span v-if="options.effort_pending" data-test="effort-pending" class="text-xs text-fg-muted">vale a partir do próximo turno</span>
     <p v-if="error" role="alert" class="m-0 w-full text-sm text-diff-del-fg">{{ error }}</p>
 

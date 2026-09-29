@@ -144,6 +144,17 @@ describe('session.updated na conversa', () => {
     applyConversationEvent(state, makeEvent('session.updated', { session_id: 's1', title: 'Novo', state: 'idle', error: null }, 1))
     expect(state.title).toBe('Novo')
   })
+
+  it('guarda o contexto do retrato e o atualizado por evento', () => {
+    const usage = { used_tokens: 84_000, max_tokens: 200_000, percent: 42 }
+    const state = conversationFromSnapshot({ ...makeSnapshot({ seq: 1 }), context: usage })
+    expect(state.context).toEqual(usage)
+    const next = { used_tokens: 100_000, max_tokens: 200_000, percent: 50 }
+    applyConversationEvent(state, makeEvent('session.updated', { session_id: 's1', title: '', context: next }, 2))
+    expect(state.context).toEqual(next)
+    applyConversationEvent(state, makeEvent('session.updated', { session_id: 's1', title: '' }, 3))
+    expect(state.context).toEqual(next)
+  })
 })
 
 describe('opções da sessão', () => {

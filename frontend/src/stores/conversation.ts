@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as api from '../api/http'
-import type { Session, SessionOptions, SessionState } from '../types/api'
+import type { ContextUsage, Session, SessionOptions, SessionState } from '../types/api'
 import { deriveTasks } from '../conversation/tasks'
 import { claimLocalImages, forgetSessionImages } from '../conversation/localImages'
 import type {
@@ -28,6 +28,7 @@ export interface Conversation {
   historyTruncated: boolean
   externalActivity: boolean
   options: SessionOptions
+  context: ContextUsage | null
 }
 
 /** Reads the options from a snapshot, a session or a `session.options` payload. */
@@ -57,6 +58,7 @@ export function emptyConversation(sessionId: string): Conversation {
     historyTruncated: false,
     externalActivity: false,
     options: optionsFrom({}),
+    context: null,
   }
 }
 
@@ -76,6 +78,7 @@ export function conversationFromSnapshot(snapshot: SessionSnapshot): Conversatio
     historyTruncated: snapshot.history_truncated === true,
     externalActivity: snapshot.external_activity === true,
     options: optionsFrom(snapshot),
+    context: snapshot.context ?? null,
   }
 }
 
@@ -111,6 +114,7 @@ export function applyConversationEvent(conv: Conversation, event: WsEvent): bool
       break
     case 'session.updated':
       if (typeof data.title === 'string' && data.title) conv.title = data.title
+      if ('context' in data) conv.context = (data.context as ContextUsage | null) ?? null
       break
     case 'session.options':
       conv.options = optionsFrom(data as Partial<SessionOptions>)

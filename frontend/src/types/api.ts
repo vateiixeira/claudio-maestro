@@ -68,6 +68,23 @@ export interface Session {
   effort?: Effort | null
   permission_mode?: PermissionMode | null
   effort_pending?: boolean
+  /** Context window use, updated at the end of each turn. */
+  context?: ContextUsage | null
+  /** Oldest tool permission request waiting (questions and plans are null). */
+  pending_permission?: PendingPermission | null
+}
+
+export interface ContextUsage {
+  used_tokens: number
+  max_tokens: number
+  percent: number
+}
+
+export interface PendingPermission {
+  prompt_id: string
+  tool_name: string
+  summary: string
+  can_allow_always: boolean
 }
 
 /** What the user sees: running, waiting for them, or marked as finished. */

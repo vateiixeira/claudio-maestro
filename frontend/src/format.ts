@@ -1,3 +1,13 @@
+const oneDecimal = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 })
+
+/** Token count in words: "950", "84 mil", "1,5 mil", "1 milhão", "2,5 milhões". */
+export function formatTokens(tokens: number): string {
+  if (tokens < 1000) return String(Math.round(tokens))
+  if (tokens < 1_000_000) return `${oneDecimal.format(tokens / 1000)} mil`
+  const millions = Math.round((tokens / 1_000_000) * 10) / 10
+  return `${oneDecimal.format(millions)} ${millions === 1 ? 'milhão' : 'milhões'}`
+}
+
 /** Shows `path` relative to the home folder as `~/...` when it is inside it. */
 export function tildePath(path: string, home: string | null): string {
   if (!home) return path

@@ -2,12 +2,13 @@
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
-import { errorMessage } from '../../api/http'
+import { ApiError, answerPrompt, errorMessage } from '../../api/http'
 import { formatActivity } from '../../format'
 import { displayStateLabels } from '../../sessionState'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import type { Session } from '../../types/api'
+import type { PromptDecision } from '../../types/conversation'
 
 // One session in a list: opens it as a column, and finishes or reopens it.
 const props = withDefaults(defineProps<{ session: Session; showProject?: boolean }>(), { showProject: false })
@@ -25,6 +26,30 @@ const subtitle = computed(() => {
   if (props.session.state === 'error') return 'Erro'
   return displayStateLabels[props.session.display_state]
 })
+
+// Tool permission answered from the list, without opening the session.
+const pending = computed(() => props.session.pending_permission ?? null)
+const sending = ref<PromptDecision | null>(null)
+const answeredPrompt = ref<string | null>(null)
+const pendingError = ref<string | null>(null)
+const pendingAnswered = computed(() => pending.value != null && answeredPrompt.value === pending.value.prompt_id)
+
+async function decide(decision: PromptDecision): Promise<void> {
+  const prompt = pending.value
+  if (!prompt || sending.value) return
+  sending.value = decision
+  pendingError.value = null
+  try {
+    await answerPrompt(props.session.session_id, prompt.prompt_id, decision)
+    answeredPrompt.value = prompt.prompt_id
+  } catch (e) {
+    // 409: already answered (maybe in another tab). Nothing to warn about.
+    if (e instanceof ApiError && e.status === 409) answeredPrompt.value = prompt.prompt_id
+    else pendingError.value = errorMessage(e)
+  } finally {
+    sending.value = null
+  }
+}
 
 async function toggle(): Promise<void> {
   busy.value = true
@@ -67,10 +92,11 @@ async function toggle(): Promise<void> {
   </div>
   <div
     v-else
-    class="flex items-center gap-2 rounded-lg border bg-card pr-2"
+    class="flex flex-col rounded-lg border bg-card"
     :class="session.awaiting_decision ? 'border-secondary/50' : session.display_state === 'running' ? 'border-primary/30' : 'border-line'"
     :data-unread="String(session.unread)"
   >
+  <div class="flex items-center gap-2 pr-2">
     <RouterLink
       data-test="session-row"
       :to="{ name: 'session', params: { id: session.session_id } }"
@@ -107,5 +133,43 @@ async function toggle(): Promise<void> {
     >
       Finalizar
     </button>
+  </div>
+  <div v-if="pending" data-test="pending-permission" class="flex flex-col gap-2.5 px-4 pt-1 pb-3">
+    <p class="m-0 text-xs text-secondary-soft">
+      Pede permissão para usar <span class="font-mono">{{ pending.tool_name }}</span>
+    </p>
+    <pre
+      data-test="pending-summary"
+      class="m-0 max-h-24 overflow-auto rounded-md border border-line bg-bg px-2.5 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-fg"
+    >{{ pending.summary }}</pre>
+    <p v-if="pendingAnswered" data-test="pending-status" role="status" class="m-0 text-sm text-fg-muted">
+      Resposta enviada. Atualizando…
+    </p>
+    <template v-else>
+      <p v-if="pendingError" role="alert" class="m-0 text-sm text-diff-del-fg">{{ pendingError }}</p>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          data-test="pending-allow"
+          class="h-11 grow cursor-pointer rounded-lg border-none bg-secondary text-sm font-semibold text-secondary-fg disabled:cursor-default disabled:opacity-60"
+          :disabled="sending !== null"
+          :aria-label="`Permitir ${pending.tool_name} em ${session.title}`"
+          @click="decide('allow_once')"
+        >
+          Permitir
+        </button>
+        <button
+          type="button"
+          data-test="pending-deny"
+          class="h-11 grow cursor-pointer rounded-lg border border-secondary/50 bg-transparent text-sm font-medium text-secondary-soft disabled:cursor-default disabled:opacity-60"
+          :disabled="sending !== null"
+          :aria-label="`Negar ${pending.tool_name} em ${session.title}`"
+          @click="decide('deny')"
+        >
+          Negar
+        </button>
+      </div>
+    </template>
+  </div>
   </div>
 </template>

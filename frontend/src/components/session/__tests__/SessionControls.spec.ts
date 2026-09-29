@@ -3,6 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import SessionControls from '../SessionControls.vue'
 import { conversationFromSnapshot, useConversationStore } from '../../../stores/conversation'
+import { useSessionsStore } from '../../../stores/sessions'
 import { jsonResponse, makeEvent, makeSession, makeSnapshot, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
@@ -239,5 +240,43 @@ describe('resposta do PATCH', () => {
     release(jsonResponse({ ...makeSession(), model: 'haiku', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false, model_resolved: null }))
     await flushPromises()
     expect(button(w, 'Modo').text()).toBe('Planejamento')
+  })
+})
+
+describe('uso do contexto', () => {
+  const contextText = (w: ReturnType<typeof mount>) => w.find('[data-test="context-usage"]')
+
+  it('mostra a porcentagem com os tokens no título', async () => {
+    setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 42 } })
+    const w = await mountControls()
+    const el = contextText(w)
+    expect(el.text()).toBe('Contexto 42%')
+    expect(el.attributes('title')).toBe('84 mil de 200 mil tokens')
+    expect(el.classes()).not.toContain('text-secondary')
+  })
+
+  it('usa cor de alerta a partir de 80%', async () => {
+    setup({ context: { used_tokens: 160_000, max_tokens: 200_000, percent: 80 } })
+    expect(contextText(await mountControls()).classes()).toContain('text-secondary')
+  })
+
+  it('arredonda a porcentagem e formata milhões e tokens soltos', async () => {
+    setup({ context: { used_tokens: 950, max_tokens: 1_000_000, percent: 0.4 } })
+    const el = contextText(await mountControls())
+    expect(el.text()).toBe('Contexto 0%')
+    expect(el.attributes('title')).toBe('950 de 1 milhão de tokens')
+  })
+
+  it('não mostra nada sem contexto', async () => {
+    setup({ context: null })
+    expect(contextText(await mountControls()).exists()).toBe(false)
+  })
+
+  it('o resumo da sessão mais novo vence o retrato', async () => {
+    setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 42 } })
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 's1', context: { used_tokens: 120_000, max_tokens: 200_000, percent: 60 } }),
+    ])
+    expect(contextText(await mountControls()).text()).toBe('Contexto 60%')
   })
 })
