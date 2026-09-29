@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Elementos do chat</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0A;font-family:'Geist',system-ui,sans-serif;color:#FAFAFA}
+a{color:#86EFAC}a:hover{color:#4ADE80}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.cap{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+</style>
+</helmet>
+<div style="width: 680px; height: 1360px; box-sizing: border-box; padding: 32px 28px; background: #0A0A0A; display: flex; flex-direction: column; gap: 28px">
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span class="cap" style="color: #A1A1A1">Vocabulário</span>
+<h1 style="margin: 0; font-size: 24px; font-weight: 600">Elementos do chat</h1>
+<p style="margin: 0; font-size: 14px; line-height: 1.55; color: #A1A1A1; max-width: 560px">Cada elemento tem forma, rótulo e posição próprios. A cor só reforça.</p>
+</div>
+
+<!-- Estrutura -->
+<div style="display: flex; flex-direction: column; gap: 12px">
+<span class="cap" style="color: #FAFAFA">Estrutura do turno</span>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid #262626; border-radius: 8px; background: #111111">
+<span style="font-size: 13px; font-weight: 600">Barra do turno</span>
+<span style="font-size: 12.5px; line-height: 1.5; color: #A1A1A1">Fica no topo ao rolar. Mostra o turno e a sua mensagem; setas pulam entre turnos.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid #262626; border-radius: 8px; background: #111111">
+<span style="font-size: 13px; font-weight: 600">Sua mensagem</span>
+<span style="font-size: 12.5px; line-height: 1.5; color: #A1A1A1">Largura total, fundo elevado, rótulo VOCÊ e hora. Abre o turno.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid #262626; border-radius: 8px; background: #111111">
+<span style="font-size: 13px; font-weight: 600">Trilho</span>
+<span style="font-size: 12.5px; line-height: 1.5; color: #A1A1A1">Linha vertical com um nó por elemento. Tudo que está nela é do assistente.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid #262626; border-radius: 8px; background: #111111">
+<span style="font-size: 13px; font-weight: 600">Fim do turno</span>
+<span style="font-size: 12.5px; line-height: 1.5; color: #A1A1A1">Fecha o trilho com o total de ações, arquivos alterados e duração.</span>
+</div>
+</div>
+</div>
+
+<!-- Nós -->
+<div style="display: flex; flex-direction: column; gap: 12px">
+<span class="cap" style="color: #FAFAFA">Nós do trilho</span>
+<div style="display: flex; flex-direction: column; border: 1px solid #262626; border-radius: 8px; overflow: hidden">
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 8px; height: 8px; border-radius: 4px; background: #FAFAFA"></span></div>
+<span class="cap" style="width: 96px; color: #FAFAFA">Texto</span>
+<span style="font-size: 12.5px; color: #A1A1A1">Ponto cheio. Sem moldura, largura máxima de leitura.</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-top: 1px solid #1A1A1A">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 14px; height: 14px; box-sizing: border-box; border-radius: 7px; border: 1.5px dashed #A1A1A1"></span></div>
+<span class="cap" style="width: 96px; color: #FAFAFA">Pensamento</span>
+<span style="font-size: 12.5px; color: #A1A1A1">Círculo tracejado. Recolhido, com a duração.</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-top: 1px solid #1A1A1A">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 26px; height: 26px; box-sizing: border-box; border-radius: 6px; border: 1px solid #333333; background: #171717; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></span></div>
+<span class="cap" style="width: 96px; color: #FAFAFA">Grupo</span>
+<span style="font-size: 12.5px; color: #A1A1A1">Leituras, buscas e comandos seguidos viram uma linha só.</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-top: 1px solid #1A1A1A">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 26px; height: 26px; box-sizing: border-box; border-radius: 6px; border: 1px solid #333333; background: #171717; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FAFAFA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6"></path><line x1="12" y1="19" x2="20" y2="19"></line></svg></span></div>
+<span class="cap" style="width: 96px; color: #FAFAFA">Comando</span>
+<span style="font-size: 12.5px; color: #A1A1A1">Quadrado com prompt. Saída limitada a 8 linhas.</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-top: 1px solid #1A1A1A">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 26px; height: 26px; box-sizing: border-box; border-radius: 6px; border: 1px solid #333333; background: #171717; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FAFAFA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg></span></div>
+<span class="cap" style="width: 96px; color: #FAFAFA">Edição</span>
+<span style="font-size: 12.5px; color: #A1A1A1">Quadrado com lápis. Sempre visível, com +/− e diff.</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-top: 1px solid #1A1A1A">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 26px; height: 26px; box-sizing: border-box; border-radius: 13px; border: 1px solid #333333; background: #171717; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FAFAFA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></span></div>
+<span class="cap" style="width: 96px; color: #FAFAFA">Subagente</span>
+<span style="font-size: 12.5px; color: #A1A1A1">Círculo com pessoa. Resumo à vista, ações recolhidas.</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-top: 1px solid #1A1A1A">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 26px; height: 26px; box-sizing: border-box; border-radius: 6px; border: 1px solid #333333; background: #171717; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"></path></svg></span></div>
+<span class="cap" style="width: 96px; color: #FAFAFA">Ferramenta</span>
+<span style="font-size: 12.5px; color: #A1A1A1">Chave inglesa e o nome da ferramenta em mono.</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-top: 1px solid #1A1A1A">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 26px; height: 26px; box-sizing: border-box; border-radius: 6px; border: 1px solid #4ADE80; background: #0F2A1A; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9"></path></svg></span></div>
+<span class="cap" style="width: 96px; color: #86EFAC">Rodando</span>
+<span style="font-size: 12.5px; color: #A1A1A1">Nó verde com arco girando e tempo decorrido.</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-top: 1px solid #1A1A1A">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 26px; height: 26px; box-sizing: border-box; border-radius: 6px; border: 1px solid #FB923C; background: #2A1200; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FB923C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"></path><line x1="12" y1="10" x2="12" y2="14"></line></svg></span></div>
+<span class="cap" style="width: 96px; color: #FDBA74">Espera você</span>
+<span style="font-size: 12.5px; color: #A1A1A1">Triângulo laranja: permissão, plano ou pergunta.</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-top: 1px solid #1A1A1A">
+<div style="width: 28px; display: flex; justify-content: center"><span style="width: 26px; height: 26px; box-sizing: border-box; border-radius: 6px; border: 1px solid #FCA5A5; background: #2D1215; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg></span></div>
+<span class="cap" style="width: 96px; color: #FCA5A5">Falhou</span>
+<span style="font-size: 12.5px; color: #A1A1A1">X vermelho. O grupo mostra quantas falharam.</span>
+</div>
+
+</div>
+</div>
+
+<!-- Regras -->
+<div style="display: flex; flex-direction: column; gap: 12px">
+<span class="cap" style="color: #FAFAFA">Regras de densidade</span>
+<div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.55">
+<div style="display: flex; gap: 10px"><span class="mono" style="width: 22px; color: #A1A1A1">01</span><span>Texto do assistente sem moldura; ações em moldura. Assim a resposta se destaca do trabalho.</span></div>
+<div style="display: flex; gap: 10px"><span class="mono" style="width: 22px; color: #A1A1A1">02</span><span>Leituras e buscas seguidas entram num grupo. Recolhido depois que o turno termina.</span></div>
+<div style="display: flex; gap: 10px"><span class="mono" style="width: 22px; color: #A1A1A1">03</span><span>Saída de comando e resultado de ferramenta mostram até 8 linhas, com esmaecimento e contagem do resto.</span></div>
+<div style="display: flex; gap: 10px"><span class="mono" style="width: 22px; color: #A1A1A1">04</span><span>Edições, erros e o que espera você nunca entram no grupo.</span></div>
+<div style="display: flex; gap: 10px"><span class="mono" style="width: 22px; color: #A1A1A1">05</span><span>Texto limitado a 580 px de largura, títulos em 15 px peso 600.</span></div>
+</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":680,"height":1360}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

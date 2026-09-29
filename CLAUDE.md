@@ -12,6 +12,7 @@ Resolve dois problemas: a extensão do VSCode é pesada e ruim para multiprojeto
 | `docs/prompts/2026-09-28-construir-mvp.md` | Requisitos completos, identidade visual e fatos verificados do SDK |
 | `docs/superpowers/specs/2026-09-28-vini7-vibing-design.md` | Detalhamento de dados, estados, rotas e erros |
 | `docs/design/project/*.dc.html` | Telas aprovadas (cópia local do artefato https://claude.ai/artifact/JAVD4f5uhJMr5WZodBe97A) |
+| `docs/design/project/Chat*.dc.html` | Novo desenho do chat, aprovado em 2026-09-29 (cópia local do artefato https://claude.ai/artifact/B6MJz27qejqyqorFhskF11) |
 
 Em caso de divergência, a ordem é: este arquivo, depois o prompt, depois a spec. As portas e a forma de execução descritas aqui substituem as da seção 16 da spec.
 
