@@ -9,16 +9,21 @@ import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { jsonResponse, makeGitRepo, makeProject, makeSession, routeFetch } from '../../test/factories'
 
+vi.mock('../../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
+import { loadEverything } from '../../stores/realtime'
+
 enableAutoUnmount(afterEach)
 let pinia: Pinia
 const now = Math.floor(Date.now() / 1000)
 
 beforeEach(() => {
+  vi.mocked(loadEverything).mockClear()
   pinia = createPinia()
   setActivePinia(pinia)
   const projects = useProjectsStore(pinia)
   projects.projects = [makeProject({ id: 1, name: 'a' }), makeProject({ id: 2, name: 'b', path: '/b' })]
   projects.loaded = true
+  useSessionsStore(pinia).loaded = true
   useGitStore(pinia).set(1, [makeGitRepo({ changed: { staged: 0, unstaged: 2, untracked: 1 } })])
   useGitStore(pinia).set(2, [makeGitRepo({ path: '/b' })])
   useSessionsStore(pinia).setForProject(1, [
@@ -94,5 +99,37 @@ describe('Dashboard', () => {
     useSessionsStore(pinia).setForProject(1, [])
     const { wrapper } = await mountDashboard()
     expect(wrapper.find('[data-test="now-empty"]').text()).toBe('Nenhuma conversa ativa agora.')
+  })
+
+  it('uma conversa reaberta com finished_at antigo não conta como finalizada hoje', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'f', title: 'Feita', display_state: 'finished', finished: true, finished_at: now, last_activity_at: now }),
+      makeSession({ session_id: 're', title: 'Reaberta', display_state: 'running', finished: false, finished_at: now, last_activity_at: now }),
+    ])
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.find('[data-test="stat-finished-today"] span').text()).toBe('1')
+  })
+
+  it('enquanto as conversas carregam mostra "Carregando…" e nenhum zero nem aviso de vazio', async () => {
+    useSessionsStore(pinia).loaded = false
+    useSessionsStore(pinia).setForProject(1, [])
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.find('[data-test="load-loading"]').text()).toBe('Carregando…')
+    expect(wrapper.find('[data-test="now-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="stat-running"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="recent-list"]').exists()).toBe(false)
+  })
+
+  it('se os projetos falharam mostra o erro com "Tentar de novo" e mantém o gráfico', async () => {
+    useSessionsStore(pinia).loaded = false
+    useSessionsStore(pinia).setForProject(1, [])
+    useProjectsStore(pinia).loadError = 'Servidor caiu.'
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.find('[data-test="load-error"]').text()).toContain('Servidor caiu.')
+    expect(wrapper.find('[data-test="now-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="stat-waiting"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="activity-empty"]').exists()).toBe(true)
+    await wrapper.find('[data-test="load-retry"]').trigger('click')
+    expect(loadEverything).toHaveBeenCalledTimes(1)
   })
 })

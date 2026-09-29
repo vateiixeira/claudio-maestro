@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import ConversationHeader from '../components/conversation/ConversationHeader.vue'
 import ConversationThread from '../components/conversation/ConversationThread.vue'
@@ -39,6 +39,23 @@ function toggleDetails() {
     drawerOpen.value = !drawerOpen.value
   }
 }
+// The drawer takes focus when it opens; Esc closes it and hands focus back to the toggle.
+const toggleButton = ref<HTMLButtonElement | null>(null)
+const drawer = ref<HTMLElement | null>(null)
+function onDrawerKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  drawerOpen.value = false
+  toggleButton.value?.focus()
+}
+watch(drawerOpen, async (open) => {
+  document.removeEventListener('keydown', onDrawerKeydown)
+  if (!open) return
+  document.addEventListener('keydown', onDrawerKeydown)
+  await nextTick()
+  drawer.value?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')?.focus()
+})
+onBeforeUnmount(() => document.removeEventListener('keydown', onDrawerKeydown))
+
 // "Ver alterações" in an edit card opens the panel (the drawer on narrow screens).
 watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (open) => {
   if (!open) return
@@ -64,6 +81,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
         </nav>
         <button
           v-if="!missing"
+          ref="toggleButton"
           type="button"
           data-test="toggle-details"
           :aria-pressed="wideScreen ? sideOpen : drawerOpen"
@@ -80,12 +98,13 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
         <RouterLink to="/sessions" class="text-primary-soft">Ver todas as conversas</RouterLink>
       </div>
       <template v-else>
-        <ConversationHeader :id="id" />
-        <ConversationThread :id="id" @missing="missing = true" />
+        <!-- Keyed by id: a rename in progress or the scroll position must not carry over to another conversation. -->
+        <ConversationHeader :key="id" :id="id" />
+        <ConversationThread :key="id" :id="id" @missing="missing = true" />
       </template>
     </div>
     <DetailsPanel v-if="!missing && wideScreen && sideOpen" :session-id="id" />
-    <div v-if="!missing && !wideScreen && drawerOpen" data-test="details-drawer" class="absolute inset-y-0 right-0 z-30 flex shadow-2xl">
+    <div v-if="!missing && !wideScreen && drawerOpen" ref="drawer" data-test="details-drawer" class="absolute inset-y-0 right-0 z-30 flex shadow-2xl">
       <DetailsPanel :session-id="id" drawer @close="drawerOpen = false" />
     </div>
   </div>

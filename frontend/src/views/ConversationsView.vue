@@ -2,7 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConversationRow from '../components/conversation/ConversationRow.vue'
+import LoadStatus from '../components/LoadStatus.vue'
 import { groupByDate } from '../conversationList'
+import { useLoadState } from '../loadState'
 import { useGitStore } from '../stores/git'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useProjectsStore } from '../stores/projects'
@@ -16,6 +18,7 @@ const router = useRouter()
 const sessions = useSessionsStore()
 const projects = useProjectsStore()
 const git = useGitStore()
+const loadState = useLoadState()
 const newConversation = useNewConversationStore()
 
 const text = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -69,13 +72,16 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
       </select>
     </div>
     <p v-if="error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
-    <p v-if="groups.length === 0" data-test="empty" class="m-0 py-10 text-center text-fg-muted">Nenhuma conversa aqui.</p>
-    <section v-for="group in groups" :key="group.label" :aria-label="group.label" class="flex flex-col">
-      <div class="flex items-center gap-3 py-2">
-        <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
-      </div>
-      <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" @error="error = $event" />
-    </section>
-    <button v-if="filtered.length > limit" type="button" data-test="show-more" class="h-10 self-center rounded-md border border-line-strong px-4 text-sm text-fg hover:bg-card" @click="limit += PAGE">Mostrar mais</button>
+    <LoadStatus v-if="loadState !== 'ready'" :state="loadState" />
+    <p v-else-if="groups.length === 0" data-test="empty" class="m-0 py-10 text-center text-fg-muted">Nenhuma conversa aqui.</p>
+    <template v-else>
+      <section v-for="group in groups" :key="group.label" :aria-label="group.label" class="flex flex-col">
+        <div class="flex items-center gap-3 py-2">
+          <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
+        </div>
+        <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" @error="error = $event" />
+      </section>
+    </template>
+    <button v-if="loadState === 'ready' && filtered.length > limit" type="button" data-test="show-more" class="h-10 self-center rounded-md border border-line-strong px-4 text-sm text-fg hover:bg-card" @click="limit += PAGE">Mostrar mais</button>
   </div>
 </template>

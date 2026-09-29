@@ -3,7 +3,9 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConversationRow from '../components/conversation/ConversationRow.vue'
 import FirstSteps from '../components/FirstSteps.vue'
+import LoadStatus from '../components/LoadStatus.vue'
 import { errorMessage, markSessionsSeen } from '../api/http'
+import { useLoadState } from '../loadState'
 import { INBOX_TABS, groupByDate, inInbox, isInboxTab, type InboxTab } from '../conversationList'
 import { useGitStore } from '../stores/git'
 import { useProjectsStore } from '../stores/projects'
@@ -14,6 +16,7 @@ const router = useRouter()
 const sessions = useSessionsStore()
 const projects = useProjectsStore()
 const git = useGitStore()
+const loadState = useLoadState()
 
 const tab = computed<InboxTab>(() => (isInboxTab(route.query.aba) ? route.query.aba : 'pede-voce'))
 function selectTab(id: InboxTab) {
@@ -54,7 +57,7 @@ async function markAll() {
 <template>
   <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-6 py-6">
     <h1 class="m-0 font-mono text-sm tracking-[0.08em] text-fg uppercase">Inbox</h1>
-    <FirstSteps v-if="projects.loaded && projects.projects.length === 0" />
+    <FirstSteps v-if="projects.loaded && !projects.loadError && projects.projects.length === 0" />
     <template v-else>
       <div class="flex flex-wrap items-center gap-3">
         <div role="tablist" aria-label="Filtro da Inbox" class="flex gap-1">
@@ -79,13 +82,16 @@ async function markAll() {
         <button type="button" data-test="mark-all-read" class="h-9 rounded-md border border-line-strong px-3 text-sm text-fg hover:bg-card disabled:opacity-40" :disabled="marking" @click="markAll">Marcar todas como lidas</button>
       </div>
       <p v-if="error" data-test="inbox-error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
-      <p v-if="groups.length === 0" data-test="empty" class="m-0 py-10 text-center text-fg-muted">{{ tab === 'pede-voce' ? 'Nada pedindo você agora.' : 'Nenhuma conversa aqui.' }}</p>
-      <section v-for="group in groups" :key="group.label" :aria-label="group.label" class="flex flex-col">
-        <div class="flex items-center gap-3 py-2">
-          <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
-        </div>
-        <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" variant="inbox" @error="error = $event" />
-      </section>
+      <LoadStatus v-if="loadState !== 'ready'" :state="loadState" />
+      <p v-else-if="groups.length === 0" data-test="empty" class="m-0 py-10 text-center text-fg-muted">{{ tab === 'pede-voce' ? 'Nada pedindo você agora.' : 'Nenhuma conversa aqui.' }}</p>
+      <template v-else>
+        <section v-for="group in groups" :key="group.label" :aria-label="group.label" class="flex flex-col">
+          <div class="flex items-center gap-3 py-2">
+            <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
+          </div>
+          <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" variant="inbox" @error="error = $event" />
+        </section>
+      </template>
     </template>
   </div>
 </template>

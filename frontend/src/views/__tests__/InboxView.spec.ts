@@ -8,16 +8,21 @@ import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { jsonResponse, makeProject, makeSession, routeFetch } from '../../test/factories'
 
+vi.mock('../../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
+import { loadEverything } from '../../stores/realtime'
+
 enableAutoUnmount(afterEach)
 let pinia: Pinia
 const now = Date.now() / 1000
 
 beforeEach(() => {
+  vi.mocked(loadEverything).mockClear()
   pinia = createPinia()
   setActivePinia(pinia)
   const projects = useProjectsStore(pinia)
   projects.projects = [makeProject({ id: 1, name: 'a' }), makeProject({ id: 2, name: 'b', path: '/b' })]
   projects.loaded = true
+  useSessionsStore(pinia).loaded = true
   useSessionsStore(pinia).setForProject(1, [
     makeSession({ session_id: 'w1', title: 'Espera 1', display_state: 'waiting', last_activity_at: now }),
     makeSession({ session_id: 'r1', title: 'Roda 1', display_state: 'running', unread: true, last_activity_at: now }),
@@ -108,5 +113,26 @@ describe('Inbox', () => {
     useProjectsStore(pinia).projects = []
     const { wrapper } = await mountInbox()
     expect(wrapper.find('[data-test="first-steps"]').exists()).toBe(true)
+  })
+
+  it('enquanto as conversas carregam mostra "Carregando…" e não o aviso de vazio', async () => {
+    useSessionsStore(pinia).loaded = false
+    useSessionsStore(pinia).setForProject(1, [])
+    useSessionsStore(pinia).setForProject(2, [])
+    const { wrapper } = await mountInbox()
+    expect(wrapper.find('[data-test="load-loading"]').text()).toBe('Carregando…')
+    expect(wrapper.find('[data-test="empty"]').exists()).toBe(false)
+  })
+
+  it('se os projetos falharam mostra o erro com "Tentar de novo", que recarrega tudo', async () => {
+    useSessionsStore(pinia).loaded = false
+    useSessionsStore(pinia).setForProject(1, [])
+    useSessionsStore(pinia).setForProject(2, [])
+    useProjectsStore(pinia).loadError = 'Servidor caiu.'
+    const { wrapper } = await mountInbox()
+    expect(wrapper.find('[data-test="load-error"]').text()).toContain('Servidor caiu.')
+    expect(wrapper.find('[data-test="empty"]').exists()).toBe(false)
+    await wrapper.find('[data-test="load-retry"]').trigger('click')
+    expect(loadEverything).toHaveBeenCalledTimes(1)
   })
 })

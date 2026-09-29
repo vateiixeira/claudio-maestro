@@ -56,6 +56,24 @@ describe('tela do projeto', () => {
     expect(rows[0]!.find('[data-test="row-link"]').attributes('href')).toBe('/sessions/a')
   })
 
+  it('ordena as conversas por última atividade mesmo com a lista fora de ordem', async () => {
+    seed()
+    const now = Math.floor(Date.now() / 1000)
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([
+        makeSession({ session_id: 'velha', title: 'Velha', last_activity_at: now - 60, created_at: now - 900 }),
+        makeSession({ session_id: 'nova', title: 'Nova', last_activity_at: now - 5, created_at: now - 800 }),
+        makeSession({ session_id: 'empate-a', title: 'Empate criada antes', last_activity_at: now - 30, created_at: now - 700 }),
+        makeSession({ session_id: 'empate-b', title: 'Empate criada depois', last_activity_at: now - 30, created_at: now - 600 }),
+      ]),
+    }))
+    const wrapper = await mountView()
+
+    expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual([
+      'Nova', 'Empate criada depois', 'Empate criada antes', 'Velha',
+    ])
+  })
+
   it('lista as conversas do projeto por data com a linha de conversa', async () => {
     seed()
     const now = Date.now() / 1000

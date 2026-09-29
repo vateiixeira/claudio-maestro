@@ -91,4 +91,40 @@ describe('linha de conversa', () => {
 
     expect(wrapper.emitted('error')).toEqual([['Falhou.']])
   })
+
+  describe('alinhamento e foco', () => {
+    it('as ações flutuam sobre o fim da linha em qualquer variante, sem tirar largura das colunas', () => {
+      const rows = [
+        mountRow(makeSession({ unread: true }), 'inbox'),
+        mountRow(makeSession({ unread: false }), 'inbox'),
+        mountRow(makeSession({ display_state: 'finished', finished: true }), 'list'),
+      ]
+      for (const row of rows) {
+        const actions = row.find('[data-test="row-actions"]')
+        expect(actions.classes()).toContain('absolute')
+        expect(actions.classes()).not.toContain('shrink-0')
+      }
+    })
+
+    it('projeto, branch e horário têm largura fixa, também numa linha sem branch', () => {
+      const withRepo = mountRow(makeSession({ project_id: 1 }))
+      useGitStore(pinia).set(2, [])
+      useProjectsStore(pinia).projects.push(makeProject({ id: 2, name: 'sem-git', path: '/x' }))
+      const noRepo = mountRow(makeSession({ project_id: 2 }))
+
+      for (const row of [withRepo, noRepo]) {
+        expect(row.find('[data-test="row-project"]').classes()).toContain('w-36')
+        expect(row.find('[data-test="row-branch"]').classes()).toContain('w-40')
+        expect(row.find('.text-right').classes()).toContain('w-20')
+      }
+      expect(noRepo.find('[data-test="row-branch"]').text()).toBe('')
+    })
+
+    it('o link tem um anel visível quando recebe foco pelo teclado', () => {
+      const link = mountRow().find('[data-test="row-link"]')
+      expect(link.classes()).toEqual(expect.arrayContaining([
+        'focus-visible:after:ring-2', 'focus-visible:after:ring-primary',
+      ]))
+    })
+  })
 })

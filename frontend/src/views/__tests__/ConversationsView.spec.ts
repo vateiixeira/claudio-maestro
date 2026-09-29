@@ -9,16 +9,21 @@ import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { jsonResponse, makeProject, makeSession, routeFetch } from '../../test/factories'
 
+vi.mock('../../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
+import { loadEverything } from '../../stores/realtime'
+
 enableAutoUnmount(afterEach)
 let pinia: Pinia
 const now = Date.now() / 1000
 
 beforeEach(() => {
+  vi.mocked(loadEverything).mockClear()
   pinia = createPinia()
   setActivePinia(pinia)
   const projects = useProjectsStore(pinia)
   projects.projects = [makeProject({ id: 1, name: 'a' }), makeProject({ id: 2, name: 'b', path: '/b' })]
   projects.loaded = true
+  useSessionsStore(pinia).loaded = true
   vi.stubGlobal('fetch', routeFetch({
     'GET /api/projects/1/git': () => jsonResponse({ repos: [] }),
     'GET /api/projects/2/git': () => jsonResponse({ repos: [] }),
@@ -107,5 +112,22 @@ describe('Conversas', () => {
     expect(spy).toHaveBeenCalledTimes(2)
     expect(router.currentRoute.value.query).toMatchObject({ projeto: '2' })
     spy.mockRestore()
+  })
+
+  it('enquanto as conversas carregam mostra "Carregando…" e não o aviso de vazio', async () => {
+    useSessionsStore(pinia).loaded = false
+    const { wrapper } = await mountList()
+    expect(wrapper.find('[data-test="load-loading"]').text()).toBe('Carregando…')
+    expect(wrapper.find('[data-test="empty"]').exists()).toBe(false)
+  })
+
+  it('se os projetos falharam mostra o erro com "Tentar de novo"', async () => {
+    useSessionsStore(pinia).loaded = false
+    useProjectsStore(pinia).loadError = 'Servidor caiu.'
+    const { wrapper } = await mountList()
+    expect(wrapper.find('[data-test="load-error"]').text()).toContain('Servidor caiu.')
+    expect(wrapper.find('[data-test="empty"]').exists()).toBe(false)
+    await wrapper.find('[data-test="load-retry"]').trigger('click')
+    expect(loadEverything).toHaveBeenCalledTimes(1)
   })
 })

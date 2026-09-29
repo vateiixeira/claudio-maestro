@@ -75,6 +75,20 @@ describe('menu lateral', () => {
     expect(recent[0]!.attributes('href')).toBe('/sessions/s6')
   })
 
+  it('marca com aria-current só o link da conversa aberta em Recentes', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 's1', title: 'A', last_seen_at: 1_790_000_002 }),
+      makeSession({ session_id: 's2', title: 'B', last_seen_at: 1_790_000_001 }),
+    ])
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s2')
+    const wrapper = mount(AppSidebar, { global: { plugins: [pinia, router] } })
+
+    const links = wrapper.findAll('[data-test="recent"]')
+    expect(links.map((l) => l.attributes('aria-current'))).toEqual([undefined, 'page'])
+  })
+
   it('"Nova conversa" abre o modal', async () => {
     const wrapper = mountSidebar()
     await wrapper.find('[data-test="nav-new"]').trigger('click')

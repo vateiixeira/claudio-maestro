@@ -98,6 +98,7 @@ const itemClass = (active: boolean) => [
           data-test="recent"
           :to="{ name: 'session', params: { id: session.session_id } }"
           :class="itemClass(route.name === 'session' && route.params.id === session.session_id)"
+          :aria-current="route.name === 'session' && route.params.id === session.session_id ? 'page' : undefined"
         >
           <DisplayStateIcon :display="session.display_state" :size="11" />
           <span class="min-w-0 grow truncate text-[13px]">{{ session.title }}</span>

@@ -7,6 +7,7 @@ import { useConversationStore } from '../../stores/conversation'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import { displayStateLabels } from '../../sessionState'
 
 const props = defineProps<{ id: string }>()
 
@@ -22,6 +23,14 @@ const projectId = computed(() => listed.value?.project_id ?? conv.value?.project
 const project = computed(() => (projectId.value != null ? projects.byId(projectId.value) : undefined))
 const repos = computed(() => (projectId.value != null ? git.reposFor(projectId.value) : []))
 watch(projectId, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
+// Announced politely when it changes, for people who cannot see the state icon.
+const stateLabel = computed(() => {
+  if (!listed.value) return ''
+  const state = listed.value.state
+  if (state === 'error') return 'Erro'
+  if (state === 'awaiting_decision') return 'Pede sua decisão'
+  return displayStateLabels[listed.value.display_state]
+})
 const isFinished = computed(() => listed.value?.display_state === 'finished')
 
 const error = ref<string | null>(null)
@@ -116,6 +125,7 @@ async function openProject() {
 
 <template>
   <header class="mx-auto flex w-full max-w-[760px] flex-col gap-2 px-4 pt-5 pb-3">
+    <span data-test="state-live" role="status" aria-live="polite" class="sr-only">{{ stateLabel }}</span>
     <div class="flex items-start gap-3">
       <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" class="mt-2" />
       <input

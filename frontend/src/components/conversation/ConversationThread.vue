@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, provide, reactive, ref, watch } from 'vue'
-import { SESSION_ID_KEY } from '../../stores/changesPanel'
+import { SESSION_ID_KEY, useChangesPanelStore } from '../../stores/changesPanel'
 import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
 import { useEventSocket } from '../../api/socket'
 import ConversationBlock from './ConversationBlock.vue'
@@ -23,6 +23,7 @@ const props = withDefaults(defineProps<{ id: string; visible?: boolean }>(), { v
 const emit = defineEmits<{ missing: [] }>()
 
 const conversations = useConversationStore()
+const changesPanel = useChangesPanelStore()
 const projects = useProjectsStore()
 const socket = useEventSocket()
 
@@ -84,11 +85,19 @@ watch(() => conv.value?.lastResult, (result, before) => {
 watch(() => props.visible, (visible) => (visible ? markSeenSoon() : cancelSeen()))
 onBeforeUnmount(cancelSeen)
 
+// Leaving a conversation drops what the store kept of it: the next visit starts from
+// its snapshot (no stale turn result or decision card), and its images and diff go.
+function leave(id: string) {
+  conversations.forget(id)
+  if (changesPanel.sessionId === id) changesPanel.close()
+}
+
 let offs: Array<() => void> = []
 watch(
   () => props.id,
-  (id) => {
+  (id, previous) => {
     offs.forEach((off) => off())
+    if (previous !== undefined && previous !== id) leave(previous)
     offs = [
       socket.onSession(id, (event) => conversations.receive(event)),
       // Every opening, the first included: events between the snapshot and it were lost.
@@ -99,7 +108,10 @@ watch(
   },
   { immediate: true },
 )
-onBeforeUnmount(() => offs.forEach((off) => off()))
+onBeforeUnmount(() => {
+  offs.forEach((off) => off())
+  leave(props.id)
+})
 
 // Items with a parent tool are shown inside that tool's block (subagent card or indent).
 const tree = computed(() => {

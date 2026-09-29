@@ -297,4 +297,97 @@ describe('página da conversa', () => {
       }
     })
   })
+
+  it('ao trocar de conversa, a renomeação em curso de uma não vaza para a outra', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting' }),
+      makeSession({ session_id: 's2', title: 'Outra conversa', display_state: 'waiting' }),
+    ])
+    const fetch = routeFetch({
+      ...baseFetch,
+      'GET /api/sessions/s2': () => jsonResponse(makeSnapshot({ session_id: 's2', title: 'Outra conversa' })),
+      'GET /api/sessions/s2/changes': () => jsonResponse({ repos: [] }),
+      'POST /api/sessions/s2/seen': () => jsonResponse(makeSession()),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1')
+    const wrapper = mount(ConversationView, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+
+    await wrapper.find('[data-test="conversation-title"]').trigger('click')
+    await wrapper.find('[data-test="title-input"]').setValue('Nome novo da A')
+    await wrapper.setProps({ id: 's2' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="title-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="conversation-title"]').text()).toBe('Outra conversa')
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
+  })
+
+  describe('gaveta em tela estreita', () => {
+    async function mountNarrow() {
+      stubMedia(false)
+      vi.stubGlobal('fetch', routeFetch(baseFetch))
+      const router = createAppRouter(createMemoryHistory())
+      await router.push('/sessions/s1')
+      const wrapper = mount(ConversationView, { props: { id: 's1' }, attachTo: document.body, global: { plugins: [pinia, router] } })
+      await flushPromises()
+      return wrapper
+    }
+
+    it('ao abrir, o foco vai para dentro do painel', async () => {
+      const wrapper = await mountNarrow()
+      await wrapper.find('[data-test="toggle-details"]').trigger('click')
+      await flushPromises()
+
+      const drawer = wrapper.find('[data-test="details-drawer"]').element
+      expect(drawer.contains(document.activeElement)).toBe(true)
+    })
+
+    it('Esc fecha a gaveta e devolve o foco ao botão que a abriu', async () => {
+      const wrapper = await mountNarrow()
+      const toggle = wrapper.find('[data-test="toggle-details"]')
+      await toggle.trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(true)
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+
+      expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(toggle.element)
+    })
+
+    it('Esc sem a gaveta aberta não faz nada', async () => {
+      const wrapper = await mountNarrow()
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+      expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(false)
+    })
+  })
+
+  describe('anúncio do estado', () => {
+    it('avisa o estado em uma região viva discreta e acompanha as mudanças', async () => {
+      const { wrapper } = await mountAt('/sessions/s1')
+      const live = () => wrapper.find('[data-test="state-live"]')
+      expect(live().attributes('role')).toBe('status')
+      expect(live().attributes('aria-live')).toBe('polite')
+      expect(live().classes()).toContain('sr-only')
+      expect(live().text()).toBe('Aguardando você')
+
+      const sessions = useSessionsStore(pinia)
+      sessions.setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'running', state: 'running' })])
+      await flushPromises()
+      expect(live().text()).toBe('Em execução')
+
+      sessions.setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting', state: 'awaiting_decision', awaiting_decision: true })])
+      await flushPromises()
+      expect(live().text()).toBe('Pede sua decisão')
+
+      sessions.setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting', state: 'error' })])
+      await flushPromises()
+      expect(live().text()).toBe('Erro')
+    })
+  })
 })

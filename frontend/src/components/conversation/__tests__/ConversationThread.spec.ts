@@ -5,6 +5,8 @@ import { createMemoryHistory } from 'vue-router'
 import { createAppRouter } from '../../../router'
 import { jsonResponse, makeEvent, makeProject, makeSnapshot, routeFetch } from '../../../test/factories'
 import { useProjectsStore } from '../../../stores/projects'
+import { useConversationStore } from '../../../stores/conversation'
+import { useChangesPanelStore } from '../../../stores/changesPanel'
 import type { WsEvent } from '../../../types/events'
 
 const fake = vi.hoisted(() => ({
@@ -246,6 +248,68 @@ describe('corpo da conversa', () => {
     expect(w.find('[data-test="history-truncated"]').text()).toBe('Mostrando as mensagens mais recentes.')
   })
 
+})
+
+describe('ao sair da conversa', () => {
+  const editItem = {
+    type: 'tool', id: 'e1', tool_use_id: 'e1', name: 'Edit', input: { file_path: '/p/a.ts' },
+    result: null, streaming: false, parent_tool_use_id: null,
+  } as never
+  const result = (ms: number, seq: number) => makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: ms, total_cost_usd: 0 }, seq)
+
+  it('esquece a conversa ao desmontar: a volta não herda o último resultado', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })) }))
+    const conversations = useConversationStore(pinia)
+    const first = await mountView()
+    fake.session.get('s1')!(result(1500, 2))
+    await flushPromises()
+    expect(conversations.get('s1')?.lastResult?.duration_ms).toBe(1500)
+
+    first.unmount()
+    expect(conversations.get('s1')).toBeUndefined()
+    expect(fake.session.has('s1')).toBe(false)
+
+    const second = await mountView()
+    expect(conversations.get('s1')?.lastResult).toBeNull()
+    expect(second.text()).not.toContain('1,5 s')
+  })
+
+  it('fecha o painel de alterações que era desta conversa ao desmontar', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })) }))
+    const panel = useChangesPanelStore(pinia)
+    const w = await mountView()
+    panel.open('s1', editItem)
+    w.unmount()
+    expect(panel.sessionId).toBeNull()
+    expect(panel.edit).toBeNull()
+  })
+
+  it('deixa em paz o painel de outra conversa', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })) }))
+    const panel = useChangesPanelStore(pinia)
+    const w = await mountView()
+    panel.open('outra', editItem)
+    w.unmount()
+    expect(panel.sessionId).toBe('outra')
+  })
+
+  it('ao trocar o id esquece a conversa anterior e fecha o painel dela', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })),
+      'GET /api/sessions/s2': () => jsonResponse(makeSnapshot({ session_id: 's2', seq: 1 })),
+    }))
+    const conversations = useConversationStore(pinia)
+    const panel = useChangesPanelStore(pinia)
+    const w = await mountView()
+    panel.open('s1', editItem)
+    await w.setProps({ id: 's2' })
+    await flushPromises()
+
+    expect(conversations.get('s1')).toBeUndefined()
+    expect(conversations.get('s2')).toBeDefined()
+    expect(panel.sessionId).toBeNull()
+    expect(fake.session.has('s1')).toBe(false)
+  })
 })
 
 describe('controles e imagens na conversa', () => {

@@ -54,22 +54,26 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     <RouterLink
       data-test="row-link"
       :to="{ name: 'session', params: { id: session.session_id } }"
-      class="min-w-0 grow truncate no-underline after:absolute after:inset-0 focus-visible:outline-none"
+      class="min-w-0 grow truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
       :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal']"
     >{{ session.title }}</RouterLink>
     <span class="sr-only">{{ displayStateLabels[session.display_state] }}{{ session.unread ? ', com novidade' : '' }}</span>
     <span v-if="reason" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs text-secondary-soft">{{ reason }}</span>
-    <span v-if="project" data-test="row-project" class="hidden shrink-0 items-center gap-1.5 text-xs text-fg-muted md:flex">
-      <span class="size-2 rounded-[3px]" :style="{ backgroundColor: project.color }" />
-      <span class="max-w-40 truncate">{{ project.name }}</span>
+    <!-- Fixed widths, kept even when empty, so the columns line up from row to row. The actions float over the right end instead of taking room from them. -->
+    <span data-test="row-project" class="hidden w-36 shrink-0 items-center gap-1.5 text-xs text-fg-muted md:flex">
+      <template v-if="project">
+        <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
+        <span class="truncate">{{ project.name }}</span>
+      </template>
     </span>
-    <span v-if="repo" data-test="row-branch" class="hidden max-w-40 shrink-0 lg:flex">
-      <BranchLabel :text="repoLabel(repo)" muted />
+    <span data-test="row-branch" class="hidden w-40 shrink-0 lg:flex">
+      <BranchLabel v-if="repo" :text="repoLabel(repo)" muted />
     </span>
     <span class="w-20 shrink-0 text-right text-xs text-fg-muted">{{ formatActivity(session.last_activity_at) }}</span>
     <div
       v-if="variant !== 'compact'"
-      class="relative z-10 flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+      data-test="row-actions"
+      class="absolute inset-y-0 right-2 z-10 flex items-center gap-1 rounded-md bg-card pl-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100"
     >
       <button
         v-if="variant === 'inbox' && session.unread"

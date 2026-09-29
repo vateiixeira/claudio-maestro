@@ -38,7 +38,12 @@ async function openEditor(): Promise<void> {
 const router = useRouter()
 
 const project = computed(() => projects.byId(props.id))
-const projectSessions = computed(() => sessions.forProject(props.id))
+// The store keeps the order of the last listing, not of later `session.updated` events.
+const projectSessions = computed(() =>
+  [...sessions.forProject(props.id)].sort(
+    (a, b) => b.last_activity_at - a.last_activity_at || b.created_at - a.created_at,
+  ),
+)
 
 const dateGroups = computed(() => groupByDate(projectSessions.value, new Date(), true))
 
