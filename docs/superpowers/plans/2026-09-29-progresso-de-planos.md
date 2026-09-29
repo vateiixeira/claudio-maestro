@@ -98,7 +98,7 @@ export interface ProjectPlan { path: string; title: string; total: number; done:
   - `class PlanCache: def read(self, path: Path) -> PlanProgress | None` (lê com cache por `(st_mtime_ns, st_size)`; `None` para ausente, ilegível, > 2 MB ou sem tarefas)
   - `MAX_PLAN_BYTES = 2 * 1024 * 1024`
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```python
 # backend/tests/test_plans.py
@@ -236,12 +236,12 @@ def test_cache_missing_big_and_invalid(tmp_path: Path):
     assert cache.read(bad) is None
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `uv run pytest -q backend/tests/test_plans.py`
 Expected: FAIL com `ModuleNotFoundError: No module named 'vibing.plans'`.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```python
 # backend/vibing/plans.py
@@ -392,12 +392,12 @@ class PlanCache:
             self._entries.pop(path, None)
 ```
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `uv run pytest -q backend/tests/test_plans.py` e depois `uv run pytest -q`
 Expected: todos PASS.
 
-- [ ] **Step 5: Commit (sessão principal)**
+- [x] **Step 5: Commit (sessão principal)**
 
 `[Feat] Interpretar progresso de planos em docs/superpowers/plans`
 

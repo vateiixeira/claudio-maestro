@@ -25,7 +25,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
-| 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Em andamento | 0 de 8 |
+| 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Em andamento | 2 de 8 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. Os marcos 8 e 9 só começam quando o usuário pedir.
 
@@ -271,8 +271,8 @@ Pedido pelo usuário em 2026-09-28. Só começa depois do MVP completo e funcion
 
 Fonte dos dados: o arquivo do plano em `docs/superpowers/plans/`. Uma regra no `~/.claude/CLAUDE.md` do usuário manda quem orquestra marcar todas as caixas de uma tarefa quando ela é concluída.
 
-- [ ] Regra de marcar a tarefa concluída no plano, no `~/.claude/CLAUDE.md` do usuário
-- [ ] Leitura do plano: tarefas por `### Tarefa N`, concluída com todas as caixas marcadas, tarefa atual, cache por data de modificação
+- [x] Regra de marcar a tarefa concluída no plano, no `~/.claude/CLAUDE.md` do usuário (2026-09-29)
+- [x] Leitura do plano: tarefas por `### Tarefa N`, concluída com todas as caixas marcadas, tarefa atual, cache por data de modificação (2026-09-29)
 - [ ] Vínculo automático da conversa ao último plano lido ou editado, ao vivo, pelo observador do CLI e na retomada; guardado no SQLite
 - [ ] Progresso no resumo da sessão, atualizado ao editar o plano, ao fim do turno e numa varredura de 30 s
 - [ ] Rotas para listar planos do projeto, vincular e desligar
