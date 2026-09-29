@@ -15,3 +15,6 @@ frontend/dist/
 # Editores
 .idea/
 .vscode/
+
+# Worktrees temporários dos subagentes
+.claude/worktrees/
