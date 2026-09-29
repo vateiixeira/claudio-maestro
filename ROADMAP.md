@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 29 |
+| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 0 de 30 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -138,6 +138,7 @@ Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 
 Objetivo: o app aguenta o uso diário sem surpresas.
 
+- [ ] Sessão nova do app começa no `defaultMode` do `~/.claude/settings.json` do usuário (o SDK não herda o `auto`)
 - [ ] Mensagem enviada durante um turno ou com permissão pendente não se perde
 - [ ] Recarregar a página no meio de uma resposta preserva texto e permissão pendente
 - [ ] Salto de `seq` nos eventos de uma conversa recarrega o retrato (evento perdido entre retrato e abertura do WebSocket)
@@ -272,4 +273,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-28 | Progresso de planos vira o marco 8, depois do MVP |
 | 2026-09-29 | Sessões do CLI atualizadas em tempo real entram no marco 5 |
 | 2026-09-29 | Modos `auto` ("Automático") e `dontAsk` ("Só o pré-aprovado") aceitos sem confirmação; só `bypassPermissions` pede confirmação |
+| 2026-09-29 | Sessões do app herdam o modo padrão do CLI do usuário |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
