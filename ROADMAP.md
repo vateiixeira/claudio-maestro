@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Em andamento | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Não iniciado | 0 de 13 |
-| 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 15 |
+| 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 22 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -144,6 +144,13 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [ ] Sessão criada em uma aba aparece nas outras e não some por listagem em andamento
 - [ ] Remover projeto espera conexões em andamento das sessões dele
 - [ ] Fechamentos de cliente disparados por cancelamento durante a conexão passam pelo mesmo controle de descarte
+- [ ] Aviso de atividade externa sem falso positivo depois de reinício do backend ou de falha do processo
+- [ ] Limite total de tamanho do retrato, incluindo entradas de ferramentas e leitura de arquivos de sessão enormes
+- [ ] Checagem de modificação de sessão por `stat` do arquivo em vez de listar a pasta; custo da sincronização com milhares de sessões
+- [ ] Aviso para transcrição corrompida e resumo de compactação exibido como aviso, não como mensagem do usuário
+- [ ] Nova tentativa de carregar a conversa depois de uma falha
+- [ ] Aviso na interface quando um projeto passa de 50 repositórios
+- [ ] Preservar nomes dados no app antes da migração do marco 3
 - [ ] Duas abas abertas ficam consistentes; resposta duplicada é recusada sem erro
 - [ ] Processo do Claude morto, CLI ausente e login expirado mostram erro legível
 - [ ] Limite da assinatura atingido mostra o horário de liberação
