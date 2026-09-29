@@ -764,7 +764,7 @@ Expected: PASS.
 - Consumes: contrato; `getSessionPlan`, `linkSessionPlan`, `unlinkSessionPlan`, `listProjectPlans` (assinaturas da Tarefa 5); `planPosition` pode ser duplicado localmente se `planText.ts` ainda não existir no worktree (a integração remove a duplicata).
 - Produces: `PlanProperty.vue` props `{ sessionId: string; projectId: number }`.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 1. Sem vínculo → "Plano: Nenhum" e botão "Escolher plano…".
 2. Com plano → nome e "4 de 12"; com 100% → "Concluído".
@@ -774,21 +774,21 @@ Expected: PASS.
 6. Erros das rotas aparecem legíveis (`role="alert"`) e os botões reabilitam; a lista abre e fecha por teclado (Esc fecha consumindo o evento com `preventDefault`, pelo contrato de camadas do app).
 7. O `PlanState` é buscado de novo quando `session.plan` muda no store (evento `session.updated`).
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/plan/__tests__/PlanProperty.spec.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 `PlanProperty.vue` segue o estilo das outras propriedades do `DetailsPanel.vue` (mesmo rótulo à esquerda, valor à direita, menu de ações como os já existentes no painel). Inclua-o na seção de propriedades do `DetailsPanel.vue`, depois das propriedades existentes.
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `pnpm --dir frontend test` e `pnpm --dir frontend build`
 Expected: PASS.
 
-- [ ] **Step 5: Commit (sessão principal)**
+- [x] **Step 5: Commit (sessão principal)**
 
 `[Feat] Mostrar e trocar o plano no painel Detalhes`
 
