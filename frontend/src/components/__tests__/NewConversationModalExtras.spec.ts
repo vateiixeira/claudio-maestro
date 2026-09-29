@@ -9,6 +9,7 @@ import { claimLocalImages, localImagesFor, resetLocalImages } from '../../conver
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { jsonResponse, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { resetFileReads, settleReads, trackFileReads } from '../../test/fileReader'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -24,6 +25,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
   resetLocalImages()
+  resetFileReads()
 })
 
 function handlers(extra = {}) {
@@ -37,6 +39,7 @@ function handlers(extra = {}) {
 }
 
 async function openModal(extra = {}) {
+  trackFileReads()
   const fetch = routeFetch(handlers(extra))
   vi.stubGlobal('fetch', fetch)
   const router = createAppRouter(createMemoryHistory())
@@ -52,26 +55,19 @@ function png(name = 'tela.png', bytes = 3, type = 'image/png') {
   return new File([new Uint8Array(bytes).fill(65)], name, { type })
 }
 const chips = (w: Wrapper) => w.findAll('[data-test="attachment-draft"]')
-// jsdom's FileReader is not instantaneous: let the thumbnails settle.
-async function settle() {
-  for (let i = 0; i < 5; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 5))
-    await flushPromises()
-  }
-}
 async function pickFiles(w: Wrapper, files: File[]) {
   const input = w.find('[data-test="nc-file-input"]')
   Object.defineProperty(input.element, 'files', { value: files, configurable: true })
   await input.trigger('change')
-  await settle()
+  await settleReads()
 }
 async function paste(w: Wrapper, files: File[]) {
   await w.find('[data-test="nc-prompt"]').trigger('paste', { clipboardData: { files, items: [] } })
-  await settle()
+  await settleReads()
 }
 async function drop(w: Wrapper, files: File[]) {
   await w.trigger('drop', { dataTransfer: { files, types: ['Files'] } })
-  await settle()
+  await settleReads()
 }
 
 describe('modal de nova conversa: imagens', () => {
