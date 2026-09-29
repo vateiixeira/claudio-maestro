@@ -159,10 +159,19 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   // One snapshot load per session; a request during it asks for one more at the end.
-  const loading = new Map<string, Promise<Conversation>>()
+  const loading = new Map<string, Promise<Conversation | null>>()
   const reloadRequested = new Set<string>()
 
-  function load(sessionId: string): Promise<Conversation> {
+  // Bumped by `forget`: a snapshot requested before it belongs to a conversation that was left.
+  const generations = new Map<string, number>()
+  const generationOf = (sessionId: string) => generations.get(sessionId) ?? 0
+  const DISCARDED = Symbol('discarded')
+
+  /**
+   * Loads the conversation's snapshot into the store. Resolves to null when the
+   * conversation was forgotten meanwhile (the response is dropped, nothing is stored).
+   */
+  function load(sessionId: string): Promise<Conversation | null> {
     const current = loading.get(sessionId)
     if (current) {
       reloadRequested.add(sessionId)
@@ -176,20 +185,25 @@ export const useConversationStore = defineStore('conversation', () => {
     return promise
   }
 
-  async function loadUntilCurrent(sessionId: string): Promise<Conversation> {
+  async function loadUntilCurrent(sessionId: string): Promise<Conversation | null> {
     for (;;) {
       reloadRequested.delete(sessionId)
       const conv = await loadOnce(sessionId)
+      if (conv === DISCARDED) return null
       if (conv && !reloadRequested.has(sessionId)) return conv
     }
   }
 
   /** Fetches and applies one snapshot; null when a newer one is needed. */
-  async function loadOnce(sessionId: string): Promise<Conversation | null> {
+  async function loadOnce(sessionId: string): Promise<Conversation | null | typeof DISCARDED> {
+    const generation = generationOf(sessionId)
     const buffer: WsEvent[] = []
     buffers.set(sessionId, buffer)
     try {
       const snapshot = await api.getSession(sessionId)
+      // Forgotten while the request was out and not opened again since (opening asks
+      // for a reload, which wins below): nobody listens to this conversation any more.
+      if (generationOf(sessionId) !== generation && !reloadRequested.has(sessionId)) return DISCARDED
       // Another load was asked for, or the backend reloaded the conversation after
       // this snapshot: fetch it again.
       if (
@@ -285,6 +299,9 @@ export const useConversationStore = defineStore('conversation', () => {
     clearExternalTimer(sessionId)
     delete bySession.value[sessionId]
     buffers.delete(sessionId)
+    generations.set(sessionId, generationOf(sessionId) + 1)
+    // A reload asked before leaving is moot; opening again asks for a new one.
+    reloadRequested.delete(sessionId)
   }
 
   return { bySession, get, load, receive, resolvePrompt, taskList, setOptions, optionsStamp, noteExternalActivity, forget }

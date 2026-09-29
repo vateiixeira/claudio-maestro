@@ -117,7 +117,7 @@ describe('store da conversa', () => {
     releases[1]!(jsonResponse(makeSnapshot({ seq: 2, items: [text('b', 'novo') as never] })))
     const results = await Promise.all([first, second, third])
     expect(releases).toHaveLength(2)
-    for (const conv of results) expect(conv.items.map((i) => (i as { text: string }).text)).toEqual(['novo'])
+    for (const conv of results) expect(conv!.items.map((i) => (i as { text: string }).text)).toEqual(['novo'])
     expect(store.get('s1')!.seq).toBe(2)
   })
 
@@ -171,5 +171,80 @@ describe('opções da sessão', () => {
   it('retrato sem opções usa nulos', () => {
     const conv = conversationFromSnapshot(makeSnapshot() as never)
     expect(conv.options).toEqual({ model: null, model_resolved: null, effort: null, permission_mode: null, effort_pending: false })
+  })
+})
+
+describe('conversa fechada antes do retrato chegar', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function pendingFetch() {
+    const resolvers: Array<(response: Response) => void> = []
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => { resolvers.push(resolve) }))
+    vi.stubGlobal('fetch', fetchMock)
+    return { fetchMock, respond: (index: number, body: unknown) => resolvers[index]!(jsonResponse(body)) }
+  }
+
+  it('descarta a resposta de uma conversa que foi liberada no meio da carga', async () => {
+    const { respond } = pendingFetch()
+    const store = useConversationStore()
+    const loaded = store.load('s1')
+    store.forget('s1')
+    respond(0, makeSnapshot({ seq: 3, items: [text('a', 'Tarde demais') as never] }))
+    await expect(loaded).resolves.toBeNull()
+    await flushPromises()
+    expect(store.get('s1')).toBeUndefined()
+    expect(Object.keys(store.bySession)).toEqual([])
+  })
+
+  it('não reinicia o aviso de atividade externa de uma conversa descartada', async () => {
+    vi.useFakeTimers()
+    try {
+      const { respond } = pendingFetch()
+      const store = useConversationStore()
+      const loaded = store.load('s1')
+      store.forget('s1')
+      respond(0, makeSnapshot({ seq: 1, external_activity: true }))
+      await loaded
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reabrir a conversa logo em seguida prevalece: busca de novo e grava o retrato novo', async () => {
+    const { fetchMock, respond } = pendingFetch()
+    const store = useConversationStore()
+    const first = store.load('s1')
+    store.forget('s1')
+    const second = store.load('s1')
+    respond(0, makeSnapshot({ seq: 1, items: [text('a', 'Velho') as never] }))
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    respond(1, makeSnapshot({ seq: 2, items: [text('a', 'Novo') as never] }))
+    const [a, b] = await Promise.all([first, second])
+    expect(a).not.toBeNull()
+    expect(b).not.toBeNull()
+    expect((store.get('s1')!.items[0] as { text: string }).text).toBe('Novo')
+  })
+
+  it('uma recarga já pedida não ressuscita a conversa liberada', async () => {
+    const { fetchMock, respond } = pendingFetch()
+    const store = useConversationStore()
+    const first = store.load('s1')
+    void store.load('s1') // e.g. the socket reopened
+    store.forget('s1')
+    respond(0, makeSnapshot({ seq: 1 }))
+    await first
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(store.get('s1')).toBeUndefined()
+  })
+
+  it('carregar de novo depois de liberada continua funcionando', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })) }))
+    const store = useConversationStore()
+    await store.load('s1')
+    store.forget('s1')
+    await expect(store.load('s1')).resolves.not.toBeNull()
+    expect(store.get('s1')).toBeDefined()
   })
 })

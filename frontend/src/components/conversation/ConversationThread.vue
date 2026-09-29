@@ -40,17 +40,30 @@ const unavailableReason = computed(() =>
 // "Ver alterações" in an edit card opens the changes panel for this session.
 provide(SESSION_ID_KEY, computed(() => props.id))
 
+// Loads in flight; "Tentar de novo" stays disabled while any is out.
+const reloads = ref(0)
+const reloading = computed(() => reloads.value > 0)
+let unmounted = false
+onBeforeUnmount(() => { unmounted = true })
+
 async function reload() {
+  const id = props.id
+  reloads.value++
   try {
-    await conversations.load(props.id)
+    const loaded = await conversations.load(id)
+    // Left the conversation while it loaded: the store dropped the answer, nothing to show or mark.
+    if (unmounted || id !== props.id || !loaded) return
     loadError.value = null
     markSeenSoon()
   } catch (e) {
+    if (unmounted || id !== props.id) return
     if (e instanceof ApiError && e.status === 404) {
       emit('missing')
       return
     }
     loadError.value = errorMessage(e)
+  } finally {
+    reloads.value--
   }
 }
 
@@ -427,7 +440,9 @@ function resolvePrompt(promptId: string) {
         <button
           type="button"
           data-test="retry-load"
-          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          :disabled="reloading"
+          :aria-busy="reloading"
+          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-elevated"
           @click="reload"
         >
           Tentar de novo

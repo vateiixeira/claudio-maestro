@@ -131,6 +131,57 @@ describe('corpo da conversa', () => {
     expect(w.text()).toContain('Voltou')
   })
 
+  it('"Tentar de novo" fica desabilitado enquanto recarrega e volta a habilitar se falhar de novo', async () => {
+    const pending: Array<(r: Response) => void> = []
+    let calls = 0
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => {
+        calls++
+        if (calls === 1) return jsonResponse({ detail: 'Servidor caiu.' }, 500)
+        return new Promise<Response>((resolve) => pending.push(resolve)) as never
+      },
+    }))
+    const w = await mountView()
+    const retry = () => w.find('[data-test="retry-load"]')
+    expect(retry().attributes('disabled')).toBeUndefined()
+    await retry().trigger('click')
+    await flushPromises()
+    expect(calls).toBe(2)
+    expect(retry().exists()).toBe(true)
+    expect(retry().attributes('disabled')).toBeDefined()
+    // A second click while reloading does not start another request.
+    await retry().trigger('click')
+    expect(calls).toBe(2)
+    pending[0]!(jsonResponse({ detail: 'Ainda fora.' }, 500))
+    await flushPromises()
+    expect(w.find('[role="alert"]').text()).toContain('Ainda fora.')
+    expect(retry().attributes('disabled')).toBeUndefined()
+  })
+
+  it('sair da conversa antes do retrato chegar não a devolve ao store nem marca como vista', async () => {
+    vi.useFakeTimers()
+    try {
+      const pending: Array<(r: Response) => void> = []
+      const fetchMock = routeFetch({
+        'GET /api/sessions/s1': () => new Promise<Response>((resolve) => pending.push(resolve)) as never,
+        'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const router = createAppRouter(createMemoryHistory())
+      await router.push('/sessions/s1')
+      const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] } })
+      await flushPromises()
+      w.unmount()
+      pending[0]!(jsonResponse(makeSnapshot({ seq: 1 })))
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(useConversationStore(pinia).get('s1')).toBeUndefined()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/sessions/s1/seen', expect.anything())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('marca como vista ao receber foco e ao chegar item novo, só se visível', async () => {
     vi.useFakeTimers()
     const fetchMock = routeFetch({
