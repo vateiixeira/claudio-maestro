@@ -1,7 +1,7 @@
 import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { applyConversationEvent, emptyConversation, useConversationStore } from '../conversation'
+import { applyConversationEvent, conversationFromSnapshot, emptyConversation, useConversationStore } from '../conversation'
 import { jsonResponse, makeEvent, makeSnapshot, routeFetch } from '../../test/factories'
 
 const text = (id: string, t: string, streaming = false) => ({
@@ -143,5 +143,22 @@ describe('session.updated na conversa', () => {
     state.title = 'Antigo'
     applyConversationEvent(state, makeEvent('session.updated', { session_id: 's1', title: 'Novo', state: 'idle', error: null }, 1))
     expect(state.title).toBe('Novo')
+  })
+})
+
+describe('opções da sessão', () => {
+  it('lê do retrato e aplica session.options', () => {
+    const conv = conversationFromSnapshot({
+      ...makeSnapshot({ seq: 1 }),
+      model: 'sonnet', model_resolved: 'claude-sonnet-5', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false,
+    } as never)
+    expect(conv.options).toEqual({ model: 'sonnet', model_resolved: 'claude-sonnet-5', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false })
+    applyConversationEvent(conv, makeEvent('session.options', { model: 'opus', model_resolved: null, effort: 'high', permission_mode: 'plan', effort_pending: true }, 2))
+    expect(conv.options).toEqual({ model: 'opus', model_resolved: null, effort: 'high', permission_mode: 'plan', effort_pending: true })
+  })
+
+  it('retrato sem opções usa nulos', () => {
+    const conv = conversationFromSnapshot(makeSnapshot() as never)
+    expect(conv.options).toEqual({ model: null, model_resolved: null, effort: null, permission_mode: null, effort_pending: false })
   })
 })

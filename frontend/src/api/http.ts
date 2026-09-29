@@ -4,6 +4,8 @@ import type {
   DisplayState,
   FileDiff,
   GitRepo,
+  ImageInput,
+  ModelInfo,
   Project,
   ProjectCreate,
   ProjectUpdate,
@@ -148,8 +150,14 @@ export function getSession(sessionId: string): Promise<SessionSnapshot> {
   return request('GET', `/api/sessions/${encodeURIComponent(sessionId)}`)
 }
 
-export function sendMessage(sessionId: string, text: string): Promise<SendResult> {
-  return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/messages`, { text })
+export function sendMessage(sessionId: string, text: string, images: ImageInput[] = []): Promise<SendResult> {
+  const body = images.length ? { text, images } : { text }
+  return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/messages`, body)
+}
+
+/** Models the agent offers (or a fixed list before the first connection). */
+export function listModels(): Promise<ModelInfo[]> {
+  return request('GET', '/api/models')
 }
 
 export function interruptSession(sessionId: string): Promise<void> {

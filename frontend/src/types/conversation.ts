@@ -1,4 +1,4 @@
-import type { DisplayState, SessionState } from './api'
+import type { DisplayState, Effort, PermissionMode, SessionState } from './api'
 
 // Conversation items as the backend sends them (snapshot `items` and `item.upsert`).
 
@@ -97,6 +97,11 @@ export interface SessionSnapshot {
   awaiting_decision?: boolean
   history_truncated?: boolean
   external_activity?: boolean
+  model?: string | null
+  model_resolved?: string | null
+  effort?: Effort | null
+  permission_mode?: PermissionMode | null
+  effort_pending?: boolean
 }
 
 export type PromptDecision = 'allow_once' | 'allow_always' | 'deny'

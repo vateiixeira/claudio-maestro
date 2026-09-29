@@ -123,9 +123,11 @@ describe('coluna da sessão', () => {
     const fetchMock = routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot()) })
     vi.stubGlobal('fetch', fetchMock)
     const w = await mountView()
+    const before = fetchMock.mock.calls.length
     await w.find('button[aria-label="Fechar coluna"]').trigger('click')
+    await flushPromises()
     expect(w.emitted('close')).toHaveLength(1)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls.length).toBe(before)
   })
 
   it('marca como vista ao receber foco e ao chegar item novo, só se visível', async () => {
@@ -313,5 +315,23 @@ describe('coluna da sessão', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('controles e imagens na coluna', () => {
+  it('mostra os seletores e aceita imagem arrastada para a coluna', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse({ ...makeSnapshot({ seq: 1 }), model: null, effort: null, permission_mode: 'default' }),
+      'GET /api/models': () => jsonResponse([{ value: 'default', displayName: 'Padrão', description: '', supportsEffort: false }]),
+    }))
+    const w = await mountView()
+    expect(w.find('button[aria-label="Modelo: Padrão"]').exists()).toBe(true)
+    expect(w.find('button[aria-label="Modo: pede permissão"]').exists()).toBe(true)
+    const file = new File([new Uint8Array([65, 65, 65])], 'col.png', { type: 'image/png' })
+    await w.find('section').trigger('drop', { dataTransfer: { files: [file], types: ['Files'] } })
+    await flushPromises()
+    await new Promise((r) => setTimeout(r, 0))
+    await flushPromises()
+    expect(w.find('[data-test="attachment-draft"]').text()).toContain('col.png')
   })
 })

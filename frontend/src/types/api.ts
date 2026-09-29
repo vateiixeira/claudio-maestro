@@ -63,6 +63,11 @@ export interface Session {
   awaiting_decision: boolean
   summary?: string | null
   first_prompt?: string | null
+  model?: string | null
+  model_resolved?: string | null
+  effort?: Effort | null
+  permission_mode?: PermissionMode | null
+  effort_pending?: boolean
 }
 
 /** What the user sees: running, waiting for them, or marked as finished. */
@@ -73,9 +78,42 @@ export interface SendResult {
   external_activity: boolean
 }
 
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'
+
+/** Model, reasoning and permission mode of a session (`session.options`). */
+export interface SessionOptions {
+  /** Alias chosen by the user, or null for the account default. */
+  model: string | null
+  /** Model id actually in use; only for display. */
+  model_resolved: string | null
+  effort: Effort | null
+  permission_mode: PermissionMode | null
+  /** The new effort applies from the next turn. */
+  effort_pending: boolean
+}
+
+export interface ModelInfo {
+  value: string
+  displayName: string
+  description: string
+  supportsEffort?: boolean
+  supportedEffortLevels?: Effort[]
+}
+
 export interface SessionUpdate {
   finished?: boolean
   title?: string
+  model?: string
+  effort?: Effort
+  permission_mode?: PermissionMode
+  confirm_bypass?: boolean
+}
+
+/** Image sent with a message: base64 without the `data:` prefix. */
+export interface ImageInput {
+  media_type: string
+  data: string
 }
 
 export interface GitRepo {

@@ -21,7 +21,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 2. Multissessão | Colunas, estados e menu lateral | Concluído | 12 de 12 |
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
-| 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Em andamento | 1 de 15 |
+| 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Em andamento | 9 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 27 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
@@ -118,12 +118,12 @@ Objetivo: saber em que branch cada repositório está e ver o que o Claude alter
 
 Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 
-- [ ] Lista de modelos vinda do SDK
-- [ ] Troca de modelo com a sessão ativa
-- [ ] Troca de modo de permissão, com confirmação para "Sem perguntas"
-- [ ] Troca de raciocínio por reconexão entre turnos
-- [ ] Campo de mensagem que cresce até 40% da coluna
-- [ ] Colar e arrastar imagens, com miniatura e remoção
+- [x] Lista de modelos vinda do SDK (2026-09-29)
+- [x] Troca de modelo com a sessão ativa (2026-09-29)
+- [x] Troca de modo de permissão, com confirmação para "Sem perguntas" (2026-09-29)
+- [x] Troca de raciocínio por reconexão entre turnos (2026-09-29)
+- [x] Campo de mensagem que cresce até 40% da coluna (2026-09-29)
+- [x] Colar e arrastar imagens, com miniatura e remoção (2026-09-29)
 - [ ] Perguntas do Claude respondidas pela interface
 - [ ] Aprovação de plano pela interface
 - [ ] Blocos de busca e lista de tarefas
@@ -131,8 +131,8 @@ Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 - [ ] Cartão genérico para ferramentas e MCPs sem bloco próprio
 - [ ] Saídas longas truncadas em 200 linhas
 - [x] Sessões do CLI em tempo real: observar `~/.claude/projects` e atualizar índice, menu e colunas abertas em até 1 s após cada mudança, sem esperar a sincronização de 60 s (2026-09-29)
-- [ ] Raciocínio visível enquanto o Claude pensa: bloco aberto durante o streaming, recolhido ao terminar, com indicação de tempo. Só em sessões conduzidas pelo app; o CLI não grava o texto do raciocínio no arquivo da sessão
-- [ ] Ditado por voz: botão de microfone no campo de mensagem que transcreve a fala em texto, para revisar antes de enviar (tecnologia a definir, ver "Pontos em aberto")
+- [x] Raciocínio visível enquanto o Claude pensa: bloco aberto durante o streaming, recolhido ao terminar, com indicação de tempo. Só em sessões conduzidas pelo app; o CLI não grava o texto do raciocínio no arquivo da sessão (2026-09-29)
+- [x] Ditado por voz: botão de microfone no campo de mensagem que transcreve a fala em texto, para revisar antes de enviar (tecnologia a definir, ver "Pontos em aberto") (2026-09-29)
 
 ## Marco 6. Acabamento
 

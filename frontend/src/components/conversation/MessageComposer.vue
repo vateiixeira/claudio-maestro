@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { errorMessage, interruptSession, sendMessage } from '../../api/http'
+import { useDictation } from '../../conversation/dictation'
+import { type DraftImage, MAX_IMAGES, base64Of, filesFrom, formatSize, imageProblem, readImage } from '../../conversation/images'
+import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
 import type { SessionState } from '../../types/api'
 
@@ -11,6 +14,65 @@ const sending = ref(false)
 const interrupting = ref(false)
 const error = ref<string | null>(null)
 const textarea = ref<HTMLTextAreaElement | null>(null)
+
+const images = ref<DraftImage[]>([])
+const canSend = computed(() => !sending.value && (text.value.trim() !== '' || images.value.length > 0))
+
+/** Attaches image files after checking format, size and count. Used by paste and drop. */
+async function addFiles(files: File[]) {
+  const problems: string[] = []
+  const accepted: File[] = []
+  for (const file of files) {
+    const problem = imageProblem(file)
+    if (problem) problems.push(problem)
+    else if (images.value.length + accepted.length >= MAX_IMAGES) {
+      problems.push(`Até ${MAX_IMAGES} imagens por mensagem.`)
+      break
+    } else accepted.push(file)
+  }
+  error.value = problems.length ? problems.join(' ') : null
+  const read = await Promise.allSettled(accepted.map(readImage))
+  for (const result of read) {
+    if (result.status === 'fulfilled') images.value.push(result.value)
+    else error.value = 'Não foi possível ler uma das imagens.'
+  }
+}
+defineExpose({ addFiles })
+
+function removeImage(id: number) {
+  images.value = images.value.filter((i) => i.id !== id)
+}
+
+function onPaste(event: ClipboardEvent) {
+  const files = filesFrom(event.clipboardData)
+  if (!files.length) return
+  event.preventDefault()
+  void addFiles(files)
+}
+
+function onDrop(event: DragEvent) {
+  const files = filesFrom(event.dataTransfer)
+  if (!files.length) return
+  event.preventDefault()
+  event.stopPropagation()
+  void addFiles(files)
+}
+
+const dictation = useDictation({
+  begin() {
+    const el = textarea.value
+    return { text: text.value, cursor: el?.selectionStart ?? text.value.length }
+  },
+  update(value, cursor) {
+    text.value = value
+    const el = textarea.value
+    if (el) {
+      el.value = value
+      el.setSelectionRange(cursor, cursor)
+    }
+    nextTick(resize)
+  },
+})
 
 const busy = computed(() => props.state === 'running' || props.state === 'awaiting_decision')
 
@@ -23,6 +85,12 @@ function resize() {
   el.style.height = 'auto'
   el.style.height = `${Math.min(el.scrollHeight, max)}px`
   el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
+}
+
+// Typing while dictating stops the dictation, so it does not overwrite what was typed.
+function onInput() {
+  if (dictation.recording.value) dictation.stop()
+  resize()
 }
 
 function insertNewline() {
@@ -46,16 +114,26 @@ function onKeydown(event: KeyboardEvent) {
 
 async function send() {
   const message = text.value
-  if (!message.trim() || sending.value) return
+  const attached = images.value
+  if (!canSend.value) return
+  if (dictation.recording.value) dictation.stop()
   sending.value = true
   error.value = null
+  // Registered before the request: the user item may arrive over the socket first.
+  const forget = attached.length ? rememberSentImages(props.sessionId, attached.map((i) => ({ url: i.url, mediaType: i.mediaType, size: i.size }))) : () => {}
   try {
-    const result = await sendMessage(props.sessionId, message)
+    const result = await sendMessage(
+      props.sessionId,
+      message,
+      attached.map((i) => ({ media_type: i.mediaType, data: base64Of(i) })),
+    )
     if (result?.external_activity) useConversationStore().noteExternalActivity(props.sessionId)
     // Only clear if the user did not keep typing meanwhile.
     if (text.value === message) text.value = ''
+    images.value = images.value.filter((i) => !attached.includes(i))
     nextTick(resize)
   } catch (e) {
+    forget()
     error.value = errorMessage(e)
   } finally {
     sending.value = false
@@ -76,8 +154,31 @@ async function interrupt() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2.5">
+  <div class="flex flex-col gap-2.5" @dragover.prevent @drop="onDrop">
     <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
+    <p v-else-if="dictation.error.value" role="alert" class="m-0 text-sm text-diff-del-fg">{{ dictation.error.value }}</p>
+    <div v-if="images.length" class="flex flex-wrap gap-2">
+      <div
+        v-for="image in images"
+        :key="image.id"
+        data-test="attachment-draft"
+        class="flex items-center gap-2.5 rounded-lg border border-line-strong bg-card p-1.5"
+      >
+        <img :src="image.url" alt="" class="size-11 rounded-md bg-line object-cover" />
+        <div class="flex min-w-0 flex-col">
+          <span class="max-w-40 truncate text-[13px] font-medium">{{ image.name }}</span>
+          <span class="text-xs text-fg-muted">{{ formatSize(image.size) }}</span>
+        </div>
+        <button
+          type="button"
+          :aria-label="`Remover imagem ${image.name}`"
+          class="flex size-11 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-fg-muted hover:bg-elevated hover:text-fg"
+          @click="removeImage(image.id)"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+        </button>
+      </div>
+    </div>
     <div class="flex items-end gap-2">
       <label :for="`msg-${sessionId}`" class="sr-only">Mensagem para a sessão</label>
       <textarea
@@ -85,11 +186,25 @@ async function interrupt() {
         ref="textarea"
         v-model="text"
         rows="1"
-        placeholder="Mensagem"
+        placeholder="Mensagem (Ctrl+V cola imagens)"
         class="min-h-11 min-w-0 grow resize-none overflow-hidden rounded-lg border border-line-strong bg-panel px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
-        @input="resize"
+        @input="onInput"
         @keydown="onKeydown"
+        @paste="onPaste"
       />
+      <button
+        v-if="dictation.supported"
+        type="button"
+        data-test="dictate"
+        :aria-label="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+        :aria-pressed="dictation.recording.value"
+        :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+        class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border"
+        :class="dictation.recording.value ? 'border-secondary/60 bg-secondary/10 text-secondary' : 'border-line-strong bg-transparent text-fg-muted hover:text-fg'"
+        @click="dictation.toggle"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+      </button>
       <button
         v-if="busy"
         type="button"
@@ -105,12 +220,18 @@ async function interrupt() {
         type="button"
         data-test="send"
         class="h-11 cursor-pointer rounded-lg border-none bg-primary px-4 text-sm font-semibold text-primary-fg disabled:cursor-default disabled:opacity-50"
-        :disabled="sending || !text.trim()"
+        :disabled="!canSend"
         @click="send"
       >
         Enviar
       </button>
     </div>
-    <span class="self-end font-mono text-xs text-fg-muted">Enter envia · Ctrl+Enter quebra linha</span>
+    <div class="flex flex-wrap items-center gap-2">
+      <slot name="controls" />
+      <span v-if="dictation.recording.value" data-test="recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
+        <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
+      </span>
+      <span class="ml-auto font-mono text-xs text-fg-muted">Enter envia · Ctrl+Enter quebra linha</span>
+    </div>
   </div>
 </template>

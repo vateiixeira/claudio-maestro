@@ -1,0 +1,198 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia, type Pinia } from 'pinia'
+import SessionControls from '../SessionControls.vue'
+import { conversationFromSnapshot, useConversationStore } from '../../../stores/conversation'
+import { jsonResponse, makeEvent, makeSession, makeSnapshot, routeFetch } from '../../../test/factories'
+
+enableAutoUnmount(afterEach)
+afterEach(() => vi.unstubAllGlobals())
+
+const MODELS = [
+  { value: 'default', displayName: 'Padrão', description: 'Recomendado', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] },
+  { value: 'sonnet', displayName: 'Sonnet 5', description: 'Equilíbrio', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { value: 'haiku', displayName: 'Haiku', description: 'Rápido', supportsEffort: false },
+]
+
+let pinia: Pinia
+let patches: unknown[]
+
+function setup(options: Record<string, unknown> = {}, patchStatus = 200) {
+  pinia = createPinia()
+  setActivePinia(pinia)
+  patches = []
+  const store = useConversationStore(pinia)
+  store.bySession['s1'] = conversationFromSnapshot({
+    ...makeSnapshot({ seq: 1 }),
+    model: 'sonnet', model_resolved: 'claude-sonnet-5-20260901', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false,
+    ...options,
+  } as never)
+  const fetchMock = routeFetch({
+    'GET /api/models': () => jsonResponse(MODELS),
+    'PATCH /api/sessions/s1': (init) => {
+      const body = JSON.parse(init!.body as string)
+      patches.push(body)
+      if (patchStatus !== 200) return jsonResponse({ detail: 'Não deu.' }, patchStatus)
+      return jsonResponse({ ...makeSession(), model: 'sonnet', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false, model_resolved: null, ...body })
+    },
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return { store }
+}
+
+async function mountControls() {
+  const w = mount(SessionControls, { props: { sessionId: 's1' }, global: { plugins: [pinia] }, attachTo: document.body })
+  await flushPromises()
+  return w
+}
+const button = (w: ReturnType<typeof mount>, prefix: string) => w.find(`button[aria-label^="${prefix}"]`)
+
+describe('seletores da sessão', () => {
+  beforeEach(() => setup())
+
+  it('mostra modelo, raciocínio e modo como no design', async () => {
+    const w = await mountControls()
+    expect(button(w, 'Modelo').text()).toBe('Sonnet 5')
+    expect(button(w, 'Modelo').attributes('title')).toContain('claude-sonnet-5-20260901')
+    expect(button(w, 'Raciocínio').text()).toBe('Raciocínio médio')
+    expect(button(w, 'Modo').text()).toBe('Aceita edições')
+  })
+
+  it('lista os modelos da API num menu e troca com PATCH', async () => {
+    const w = await mountControls()
+    await button(w, 'Modelo').trigger('click')
+    const items = w.findAll('[role="menu"] [role="menuitemradio"]')
+    expect(items).toHaveLength(3)
+    expect(items[1]!.text()).toContain('Sonnet 5')
+    expect(items[1]!.text()).toContain('Equilíbrio')
+    await items.find((i) => i.text().includes('Haiku'))!.trigger('click')
+    await flushPromises()
+    expect(patches).toEqual([{ model: 'haiku' }])
+    expect(w.find('[role="menu"]').exists()).toBe(false)
+  })
+
+  it('foco volta ao seletor depois de salvar', async () => {
+    const w = await mountControls()
+    await button(w, 'Modelo').trigger('click')
+    await w.findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(button(w, 'Modelo').element)
+  })
+
+  it('raciocínio só com os níveis do modelo e oculto se o modelo não suporta', async () => {
+    const { store } = setup({ model: 'default' })
+    const w = await mountControls()
+    await button(w, 'Raciocínio').trigger('click')
+    expect(w.findAll('[role="menuitemradio"]').map((i) => i.text())).toEqual(['Baixo', 'Médio', 'Alto'])
+    store.get('s1')!.options.model = 'haiku'
+    await flushPromises()
+    expect(button(w, 'Raciocínio').exists()).toBe(false)
+  })
+
+  it('troca o raciocínio com PATCH', async () => {
+    const w = await mountControls()
+    await button(w, 'Raciocínio').trigger('click')
+    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === 'Máximo')!.trigger('click')
+    await flushPromises()
+    expect(patches).toEqual([{ effort: 'max' }])
+  })
+
+  it('menu navega por setas e fecha com Esc', async () => {
+    const w = await mountControls()
+    const trigger = button(w, 'Modo')
+    await trigger.trigger('click')
+    const items = w.findAll('[role="menuitemradio"]')
+    expect(document.activeElement).toBe(items.find((i) => i.attributes('aria-checked') === 'true')!.element)
+    await w.find('[role="menu"]').trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement?.textContent?.trim()).toBe('Planejamento')
+    await w.find('[role="menu"]').trigger('keydown', { key: 'Escape' })
+    expect(w.find('[role="menu"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
+  })
+
+  it('"Sem perguntas" pede confirmação antes do PATCH', async () => {
+    const w = await mountControls()
+    await button(w, 'Modo').trigger('click')
+    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
+    const dialog = w.find('[role="alertdialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.text()).toContain('sem pedir')
+    expect(patches).toEqual([])
+    await dialog.find('[data-test="bypass-cancel"]').trigger('click')
+    expect(w.find('[role="alertdialog"]').exists()).toBe(false)
+    expect(patches).toEqual([])
+
+    await button(w, 'Modo').trigger('click')
+    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
+    await w.find('[data-test="bypass-confirm"]').trigger('click')
+    await flushPromises()
+    expect(patches).toEqual([{ permission_mode: 'bypassPermissions', confirm_bypass: true }])
+  })
+
+  it('"Sem perguntas" ativo fica destacado', async () => {
+    setup({ permission_mode: 'bypassPermissions' })
+    const w = await mountControls()
+    expect(button(w, 'Modo').text()).toBe('Sem perguntas')
+    expect(button(w, 'Modo').classes()).toContain('text-secondary')
+  })
+
+  it('aplica session.options e mostra o pendente', async () => {
+    const w = await mountControls()
+    expect(w.text()).not.toContain('vale a partir do próximo turno')
+    useConversationStore(pinia).receive(makeEvent('session.options', {
+      model: 'default', model_resolved: null, effort: 'high', permission_mode: 'plan', effort_pending: true,
+    }, 5))
+    await flushPromises()
+    expect(button(w, 'Modelo').text()).toBe('Padrão')
+    expect(button(w, 'Raciocínio').text()).toBe('Raciocínio alto')
+    expect(button(w, 'Modo').text()).toBe('Planejamento')
+    expect(w.text()).toContain('vale a partir do próximo turno')
+  })
+
+  it('erro do PATCH aparece', async () => {
+    setup({}, 400)
+    const w = await mountControls()
+    await button(w, 'Modelo').trigger('click')
+    await w.findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
+    await flushPromises()
+    expect(w.find('[role="alert"]').text()).toContain('Não deu.')
+  })
+
+  async function openBypass(w: ReturnType<typeof mount>) {
+    const trigger = button(w, 'Modo')
+    ;(trigger.element as HTMLElement).focus()
+    await trigger.trigger('click')
+    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
+    await flushPromises()
+    return trigger
+  }
+
+  it('diálogo prende Tab entre Cancelar e Ativar', async () => {
+    const w = await mountControls()
+    await openBypass(w)
+    const cancel = w.find('[data-test="bypass-cancel"]').element
+    const confirm = w.find('[data-test="bypass-confirm"]').element
+    expect(document.activeElement).toBe(confirm)
+    await w.find('[role="alertdialog"]').trigger('keydown', { key: 'Tab' })
+    expect(document.activeElement).toBe(cancel)
+    await w.find('[role="alertdialog"]').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(confirm)
+  })
+
+  for (const [how, act] of [
+    ['cancelar', (w: ReturnType<typeof mount>) => w.find('[data-test="bypass-cancel"]').trigger('click')],
+    ['confirmar', (w: ReturnType<typeof mount>) => w.find('[data-test="bypass-confirm"]').trigger('click')],
+    ['Esc', (w: ReturnType<typeof mount>) => w.find('[role="alertdialog"]').trigger('keydown', { key: 'Escape' })],
+    ['Esc no fundo', (w: ReturnType<typeof mount>) => w.find('[data-test="bypass-overlay"]').trigger('keydown', { key: 'Escape' })],
+    ['clique no fundo', (w: ReturnType<typeof mount>) => w.find('[data-test="bypass-overlay"]').trigger('click')],
+  ] as const) {
+    it(`devolve o foco ao seletor de modo ao ${how}`, async () => {
+      const w = await mountControls()
+      const trigger = await openBypass(w)
+      await act(w)
+      await flushPromises()
+      expect(w.find('[role="alertdialog"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(trigger.element)
+    })
+  }
+})

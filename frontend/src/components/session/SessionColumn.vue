@@ -10,6 +10,7 @@ import { repoLabel, useGitStore } from '../../stores/git'
 import ConversationBlock from '../conversation/ConversationBlock.vue'
 import MessageComposer from '../conversation/MessageComposer.vue'
 import PermissionCard from '../conversation/PermissionCard.vue'
+import SessionControls from './SessionControls.vue'
 import { deriveDisplay, displayStateLabels } from '../../sessionState'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
@@ -206,13 +207,25 @@ watch(
   },
 )
 
+// Images dropped anywhere on the column go to the message field.
+const composer = ref<InstanceType<typeof MessageComposer> | null>(null)
+function onDrop(event: DragEvent) {
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (!files.length || !composer.value) return
+  event.preventDefault()
+  void composer.value.addFiles(files)
+}
+function onDragOver(event: DragEvent) {
+  if (event.dataTransfer?.types?.includes('Files')) event.preventDefault()
+}
+
 function resolvePrompt(promptId: string) {
   conversations.resolvePrompt(props.id, promptId)
 }
 </script>
 
 <template>
-  <section :aria-label="conv ? `Sessão: ${conv.title}` : 'Sessão'" class="flex h-full min-w-0 flex-col" @focusin="markSeenSoon">
+  <section :aria-label="conv ? `Sessão: ${conv.title}` : 'Sessão'" class="flex h-full min-w-0 flex-col" @focusin="markSeenSoon" @dragover="onDragOver" @drop="onDrop">
     <template v-if="conv">
       <header class="flex flex-col gap-2 border-b border-line px-4 pt-4 pb-3">
         <div class="flex items-center gap-2">
@@ -355,7 +368,9 @@ function resolvePrompt(promptId: string) {
           {{ conv.error || 'A sessão parou com erro.' }} Você pode enviar de novo.
         </p>
         <p v-if="loadError" role="alert" class="m-0 text-sm text-secondary-soft">{{ loadError }}</p>
-        <MessageComposer :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" />
+        <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state">
+          <template #controls><SessionControls :session-id="conv.sessionId" /></template>
+        </MessageComposer>
       </div>
     </template>
     <div v-else class="flex flex-col items-start gap-3 px-6 py-8">

@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as api from '../api/http'
-import type { SessionState } from '../types/api'
+import type { Session, SessionOptions, SessionState } from '../types/api'
+import { claimLocalImages, forgetSessionImages } from '../conversation/localImages'
 import type {
   ConversationItem,
   PermissionPrompt,
@@ -25,6 +26,18 @@ export interface Conversation {
   lastResult: TurnResult | null
   historyTruncated: boolean
   externalActivity: boolean
+  options: SessionOptions
+}
+
+/** Reads the options from a snapshot, a session or a `session.options` payload. */
+export function optionsFrom(data: Partial<SessionOptions> | Partial<Session>): SessionOptions {
+  return {
+    model: data.model ?? null,
+    model_resolved: data.model_resolved ?? null,
+    effort: data.effort ?? null,
+    permission_mode: data.permission_mode ?? null,
+    effort_pending: data.effort_pending === true,
+  }
 }
 
 export function emptyConversation(sessionId: string): Conversation {
@@ -42,6 +55,7 @@ export function emptyConversation(sessionId: string): Conversation {
     lastResult: null,
     historyTruncated: false,
     externalActivity: false,
+    options: optionsFrom({}),
   }
 }
 
@@ -60,6 +74,7 @@ export function conversationFromSnapshot(snapshot: SessionSnapshot): Conversatio
     lastResult: null,
     historyTruncated: snapshot.history_truncated === true,
     externalActivity: snapshot.external_activity === true,
+    options: optionsFrom(snapshot),
   }
 }
 
@@ -95,6 +110,9 @@ export function applyConversationEvent(conv: Conversation, event: WsEvent): bool
       break
     case 'session.updated':
       if (typeof data.title === 'string' && data.title) conv.title = data.title
+      break
+    case 'session.options':
+      conv.options = optionsFrom(data as Partial<SessionOptions>)
       break
     case 'session.init':
       conv.init = data as unknown as SessionInit
@@ -202,7 +220,16 @@ export const useConversationStore = defineStore('conversation', () => {
       if (event.seq > conv.seq) load(event.session_id).catch(() => {})
       return
     }
-    applyConversationEvent(conv, event)
+    if (applyConversationEvent(conv, event) && event.type === 'item.upsert') {
+      const item = event.data as ConversationItem
+      if (item.type === 'user') claimLocalImages(event.session_id, item)
+    }
+  }
+
+  /** Applies the options returned by a PATCH. */
+  function setOptions(sessionId: string, session: Partial<Session>): void {
+    const conv = bySession.value[sessionId]
+    if (conv && 'model' in session) conv.options = optionsFrom(session)
   }
 
   function resolvePrompt(sessionId: string, promptId: string): void {
@@ -230,10 +257,11 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   function forget(sessionId: string): void {
+    forgetSessionImages(sessionId)
     clearExternalTimer(sessionId)
     delete bySession.value[sessionId]
     buffers.delete(sessionId)
   }
 
-  return { bySession, get, load, receive, resolvePrompt, noteExternalActivity, forget }
+  return { bySession, get, load, receive, resolvePrompt, setOptions, noteExternalActivity, forget }
 })

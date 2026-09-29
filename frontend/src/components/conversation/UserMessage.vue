@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { localImagesFor } from '../../conversation/localImages'
 import type { Attachment, UserItem } from '../../types/conversation'
 
-defineProps<{ item: UserItem }>()
+const props = defineProps<{ item: UserItem }>()
+// Thumbnails exist only for images sent from this tab; the history keeps type and size.
+const previews = computed(() => localImagesFor(props.item.id))
 
 function subtype(mediaType: string | null): string {
   return (mediaType ?? '').split('/')[1]?.split('+')[0] ?? ''
@@ -24,11 +28,22 @@ function label(attachment: Attachment): string {
 
 <template>
   <div class="flex max-w-[85%] flex-col items-end gap-1 self-end">
+    <div v-if="previews?.length" class="flex flex-wrap justify-end gap-1.5">
+      <img
+        v-for="(url, index) in previews"
+        :key="index"
+        :src="url"
+        :alt="`Imagem enviada ${index + 1}`"
+        data-test="attachment-thumb"
+        class="max-h-32 max-w-48 rounded-md border border-line-strong object-cover"
+      />
+    </div>
     <div
+      v-if="item.text"
       data-test="user-message"
       class="whitespace-pre-wrap break-words rounded-[12px_12px_2px_12px] border border-line-strong bg-elevated px-3.5 py-2.5"
     >{{ item.text }}</div>
-    <div v-if="item.images?.length" class="flex flex-wrap justify-end gap-1">
+    <div v-if="item.images?.length && !previews?.length" class="flex flex-wrap justify-end gap-1">
       <span
         v-for="(attachment, index) in item.images"
         :key="index"
