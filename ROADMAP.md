@@ -23,7 +23,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
-| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Em andamento | 24 de 27 |
+| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Em andamento | 25 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -228,7 +228,7 @@ Pendências da revisão do marco 7 e sugestões que sobraram das revisões do ma
 - [x] Teste intermitente de imagem arrastada em `ConversationThread.spec.ts` estabilizado (2026-09-29)
 - [ ] Modal de nova conversa com sessão já criada: fechar ou descartar leva à conversa criada com o rascunho no campo de mensagem, e o modal não fecha durante o envio (achado bloqueante da revisão das pendências)
 - [ ] Soltar no modal só intercepta arquivos; "Tentar de novo" mantém o foco; anexos simultâneos respeitam os limites; aviso de que imagens não ficam no rascunho; Esc de renomear no projeto segue o contrato
-- [ ] `mark_seen_many` aplica na memória exatamente o valor gravado no banco
+- [x] `mark_seen_many` aplica na memória exatamente o valor gravado no banco (2026-09-29)
 
 ## Marco 8. Agrupador de sessões
 
