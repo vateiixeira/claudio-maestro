@@ -70,6 +70,27 @@ async def test_finish_sets_and_reopen_clears_finished_at(make_env, env_cleanup):
 
 
 @pytest.mark.anyio
+async def test_sending_to_a_finished_session_reopens_it_and_clears_finished_at(make_env, env_cleanup):
+    script, ids = by_session(lambda sid: text_turn(sid, "ok"))
+    env = make_env(script=script)
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    ids.append(session.session_id)
+    sid = session.session_id
+
+    await env.manager.update(sid, finished=True)
+    assert session_row(env.db_path, sid)["finished_at"] is not None
+
+    await session.send("de novo")
+    await wait_until(lambda: session.state == "idle")
+
+    row = session_row(env.db_path, sid)
+    assert row["finished"] == 0
+    assert row["finished_at"] is None
+    assert session.summary()["finished_at"] is None
+
+
+@pytest.mark.anyio
 async def test_new_session_has_no_finished_at(make_env, env_cleanup):
     env = make_env()
     env_cleanup.append(env.manager)

@@ -997,7 +997,7 @@ class ActiveSession:
         self._emit_events(self.builder.add_user_message(text, markers))
         self._touch()
         if self.record.finished:
-            self.save(finished=False)
+            self.save(finished=False, finished_at=None)
         self.emit_updated()
         first = self._sent_messages == 0
         self._sent_messages += 1
