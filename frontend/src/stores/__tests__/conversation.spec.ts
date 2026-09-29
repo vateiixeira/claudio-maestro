@@ -78,3 +78,12 @@ describe('store da conversa', () => {
     expect(conv.seq).toBe(4)
   })
 })
+
+describe('session.updated na conversa', () => {
+  it('aplica o título vindo de outra aba', () => {
+    const state = emptyConversation('s1')
+    state.title = 'Antigo'
+    applyConversationEvent(state, makeEvent('session.updated', { session_id: 's1', title: 'Novo', state: 'idle', error: null }, 1))
+    expect(state.title).toBe('Novo')
+  })
+})

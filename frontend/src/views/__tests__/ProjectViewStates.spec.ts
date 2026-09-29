@@ -49,4 +49,29 @@ describe('tela do projeto em três blocos', () => {
     expect(block('waiting').text()).toContain('Acabou')
     expect(block('finished').exists()).toBe(false)
   })
+
+  it('Finalizar só nas aguardando, finalizadas compactas e sem estados internos', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([
+        makeSession({ session_id: 'r', title: 'Rodando', display_state: 'running', state: 'running' }),
+        makeSession({ session_id: 'w', title: 'Esperando', display_state: 'waiting', state: 'idle' }),
+        makeSession({ session_id: 'c', title: 'Fechadinha', display_state: 'waiting', state: 'closed' }),
+        makeSession({ session_id: 'f', title: 'Acabou', display_state: 'finished', finished: true, state: 'closed' }),
+      ]),
+    }))
+    const wrapper = mount(ProjectView, { props: { id: 1 }, global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
+    await flushPromises()
+    const block = (name: string) => wrapper.find(`[data-test="block-${name}"]`)
+
+    expect(block('running').find('[data-test="finish"]').exists()).toBe(false)
+    expect(block('waiting').findAll('[data-test="finish"]')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('Parada')
+    expect(wrapper.text()).not.toContain('Fechada')
+
+    const finished = block('finished').find('[data-test="finished-row"]')
+    expect(finished.exists()).toBe(true)
+    expect(finished.text()).toContain('Acabou')
+    expect(finished.text()).toContain('Reabrir')
+    expect(finished.text()).not.toContain('Finalizada')
+  })
 })

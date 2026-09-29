@@ -7,7 +7,7 @@ import SessionStateIcon from '../SessionStateIcon.vue'
 import ConversationBlock from '../conversation/ConversationBlock.vue'
 import MessageComposer from '../conversation/MessageComposer.vue'
 import PermissionCard from '../conversation/PermissionCard.vue'
-import { sessionStateLabels } from '../../sessionState'
+import { deriveDisplay, displayStateLabels } from '../../sessionState'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
@@ -22,6 +22,15 @@ const socket = useEventSocket()
 const sessions = useSessionsStore()
 const listed = computed(() => sessions.find(props.id))
 const isFinished = computed(() => listed.value?.display_state === 'finished')
+// Label the user sees: the display state, except errors and pending decisions.
+const stateLabel = computed(() => {
+  const c = conv.value
+  if (!c) return ''
+  if (c.state === 'error') return 'Erro'
+  if (c.state === 'awaiting_decision') return 'Pede sua decisão'
+  const shown = deriveDisplay(c.state, listed.value?.finished ?? false, listed.value?.display_state)
+  return displayStateLabels[shown.display_state]
+})
 
 const headerError = ref<string | null>(null)
 const toggling = ref(false)
@@ -109,6 +118,10 @@ function markSeenSoon() {
 }
 watch(() => conv.value?.items.length, (length, before) => {
   if (length !== undefined && before !== undefined && length > before) markSeenSoon()
+})
+// A turn can end by updating existing items only; its result still counts as news.
+watch(() => conv.value?.lastResult, (result, before) => {
+  if (result && result !== before) markSeenSoon()
 })
 watch(() => props.visible, (visible) => (visible ? markSeenSoon() : cancelSeen()))
 onBeforeUnmount(cancelSeen)
@@ -213,7 +226,7 @@ function resolvePrompt(promptId: string) {
             }"
           >
             <SessionStateIcon :state="conv.state" />
-            {{ sessionStateLabels[conv.state] }}
+            {{ stateLabel }}
           </span>
           <button
             type="button"

@@ -273,6 +273,8 @@ class ActiveSession:
         self._describe = describe
         # Monotonic time the session last became idle; None while not idle.
         self.idle_since: float | None = None
+        # Disposal of a discarded client still in progress.
+        self._disposal: asyncio.Task[None] | None = None
 
     @property
     def session_id(self) -> str:
@@ -372,13 +374,16 @@ class ActiveSession:
         self._touch()
         if self.record.finished:
             self.save(finished=False)
-            self.emit_updated()
+        self.emit_updated()
         first = self._sent_messages == 0
         self._sent_messages += 1
         if first and self.record.title == DEFAULT_TITLE:
             self._set_title(text)
 
         async with self._lock:
+            # A close still disposing of the old client must finish first, or
+            # two processes would run the same session.
+            await self._wait_disposal()
             if self._final:
                 return
             if self.client is None and not await self._connect():
@@ -490,6 +495,7 @@ class ActiveSession:
                 if isinstance(message, ResultMessage):
                     self.pending_turns = max(0, self.pending_turns - 1)
                     self._touch()
+                    self.emit_updated()
                 self._refresh_state()
         except asyncio.CancelledError:
             raise
@@ -562,12 +568,30 @@ class ActiveSession:
         except Exception:
             logger.exception("Falha ao fechar o cliente da sessão %s", self.session_id)
 
+    async def _wait_disposal(self) -> None:
+        disposal = self._disposal
+        if disposal is not None and disposal is not asyncio.current_task():
+            await asyncio.wait([disposal])
+
     async def _dispose(
+        self, client: AgentClient | None, reader: asyncio.Task[None] | None
+    ) -> None:
+        if reader is asyncio.current_task():
+            reader = None  # the reader is failing itself: it must not be cancelled
+        task = asyncio.create_task(self._do_dispose(client, reader))
+        self._disposal = task
+        try:
+            await asyncio.shield(task)
+        finally:
+            if self._disposal is task and task.done():
+                self._disposal = None
+
+    async def _do_dispose(
         self, client: AgentClient | None, reader: asyncio.Task[None] | None
     ) -> None:
         if client is not None:
             await self._close_quietly(client)
-        if reader is not None and reader is not asyncio.current_task() and not reader.done():
+        if reader is not None and not reader.done():
             reader.cancel()
             await asyncio.wait([reader])
 
@@ -797,6 +821,10 @@ class SessionManager:
         changes: dict[str, Any] = {}
         if finished is not None and finished != session.record.finished:
             changes["finished"] = finished
+        if finished is False and session.summary()["display_state"] == "finished":
+            # Finished by inactivity: fresh activity brings it back.
+            changes["finished"] = False
+            changes["last_activity_at"] = _now()
         if title is not None:
             title = title.strip()
             if title and title != session.record.title:

@@ -437,3 +437,79 @@ async def test_list_sessions_filters(env, tmp_path):
     ]
     assert env.manager.list_sessions(project_id=other.id, display_state="waiting") == []
 
+
+
+# Review fixes ----------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_reopen_session_finished_by_inactivity(env, env_cleanup):
+    manager = build_manager(env, finished_after_days=3)
+    env_cleanup.append(manager)
+    session = manager.get(manager.create_session(env.project).session_id)
+    session.save(last_activity_at=int(time.time()) - 4 * DAY)
+    assert manager.summary(session.session_id)["display_state"] == "finished"
+
+    summary = await manager.update(session.session_id, finished=False)
+
+    assert summary["display_state"] != "finished"
+    assert session_row(env.db_path, session.session_id)["last_activity_at"] >= int(time.time()) - 1
+    [event] = env.recorder.of(session.session_id, "session.updated")
+    assert event["data"]["display_state"] != "finished"
+
+
+@pytest.mark.anyio
+async def test_turn_end_emits_updated_with_unread(env):
+    env.factory.script = lambda content: text_turn("x", "ok")
+    session = env.new_session()
+    session.save(last_seen_at=0)
+    await session.send("oi")
+    await wait_until(lambda: session.state == "idle")
+    await wait_until(lambda: any(
+        e["data"]["unread"] for e in env.recorder.of(session.session_id, "session.updated")
+    ))
+    last = env.recorder.of(session.session_id, "session.updated")[-1]
+    assert last["data"]["unread"] is True
+    assert last["data"]["last_activity_at"] == session.record.last_activity_at
+
+
+@pytest.mark.anyio
+async def test_send_emits_updated(env):
+    env.factory.script = lambda content: [PauseStep()]
+    session = env.new_session()
+    await session.send("oi")
+    assert env.recorder.of(session.session_id, "session.updated")
+    await session.close()
+
+
+@pytest.mark.anyio
+async def test_send_waits_pending_close_before_connecting(env, env_cleanup):
+    manager = build_manager(env, idle_timeout=0)
+    env_cleanup.append(manager)
+    env.factory.script = lambda content: text_turn("x", "ok")
+    session = manager.get(manager.create_session(env.project).session_id)
+    await session.send("oi")
+    await wait_until(lambda: session.state == "idle")
+
+    gate = asyncio.Event()
+    first = env.factory.clients[0]
+    original_close = first.close
+
+    async def slow_close():
+        await gate.wait()
+        await original_close()
+
+    first.close = slow_close
+    await asyncio.sleep(0.01)
+    sweep = asyncio.create_task(manager.close_idle())
+    await wait_until(lambda: session.state == "closed")
+    send = asyncio.create_task(session.send("de novo"))
+    await asyncio.sleep(0.02)
+    assert len(env.factory.clients) == 1  # no second process while the first closes
+
+    gate.set()
+    await sweep
+    await send
+    await wait_until(lambda: session.state == "idle")
+    assert len(env.factory.clients) == 2
+    assert first.closed

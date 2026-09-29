@@ -72,3 +72,23 @@ describe('menu com session.state', () => {
     expect(c!.text()).toContain('Em execução')
   })
 })
+
+describe('menu com session.updated', () => {
+  it('fim de turno marca novidade', async () => {
+    const projects = useProjectsStore(pinia)
+    projects.projects = [makeProject({ id: 1 })]
+    projects.loaded = true
+    const sessions = useSessionsStore(pinia)
+    sessions.setForProject(1, [makeSession({ session_id: 's', title: 'Tarefa', display_state: 'running', state: 'running' })])
+    const wrapper = mount(AppSidebar, { global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
+    sessions.applyEvent({
+      session_id: 's', seq: 5, type: 'session.updated',
+      data: makeSession({ session_id: 's', title: 'Tarefa', state: 'idle', display_state: 'waiting', unread: true, seq: 5 }),
+    })
+    await wrapper.vm.$nextTick()
+    const row = wrapper.find('[data-test="session"]')
+    expect(sessions.find('s')!.unread).toBe(true)
+    expect(row.attributes('data-unread')).toBe('true')
+    expect(row.text()).toContain('com novidade')
+  })
+})

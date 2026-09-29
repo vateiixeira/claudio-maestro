@@ -52,7 +52,8 @@ describe('coluna da sessão', () => {
     const w = await mountView()
     expect(w.find('h2').text()).toBe('Cupom expirado')
     expect(w.text()).toContain('loja-online')
-    expect(w.text()).toContain('Parada')
+    expect(w.find('[data-test="session-state"]').text()).toBe('Aguardando você')
+    expect(w.text()).not.toContain('Parada')
     expect(w.text()).toContain('Olá do retrato')
     expect(w.find('textarea').exists()).toBe(true)
     expect(w.find('[data-test="interrupt"]').exists()).toBe(false)
@@ -207,6 +208,43 @@ describe('coluna da sessão', () => {
     await vi.advanceTimersByTimeAsync(1000)
     spy.mockRestore()
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/sessions/s1/seen')).toHaveLength(0)
+    vi.useRealTimers()
+  })
+
+  it('estado do cabeçalho usa rótulos visíveis e mantém erro e decisão', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ state: 'closed', seq: 1 })),
+      'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
+    }))
+    const w = await mountView()
+    const label = () => w.find('[data-test="session-state"]').text()
+    expect(label()).toBe('Aguardando você')
+    fake.session.get('s1')!(makeEvent('session.state', { state: 'running', error: null }, 2))
+    await flushPromises()
+    expect(label()).toBe('Em execução')
+    fake.session.get('s1')!(makeEvent('session.state', { state: 'awaiting_decision', error: null }, 3))
+    await flushPromises()
+    expect(label()).toBe('Pede sua decisão')
+    fake.session.get('s1')!(makeEvent('session.state', { state: 'error', error: 'x' }, 4))
+    await flushPromises()
+    expect(label()).toBe('Erro')
+  })
+
+  it('marca como vista quando o turno termina sem item novo', async () => {
+    vi.useFakeTimers()
+    const fetchMock = routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, items: [text('a', 'x') as never] })),
+      'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await mountView()
+    const seen = () => fetchMock.mock.calls.filter(([url]) => url === '/api/sessions/s1/seen').length
+    await vi.advanceTimersByTimeAsync(1000)
+    const before = seen()
+    fake.session.get('s1')!(makeEvent('item.upsert', text('a', 'x final'), 2))
+    fake.session.get('s1')!(makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 1, total_cost_usd: 0 }, 3))
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(seen()).toBe(before + 1)
     vi.useRealTimers()
   })
 })

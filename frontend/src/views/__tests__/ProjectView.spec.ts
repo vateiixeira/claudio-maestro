@@ -40,7 +40,7 @@ describe('tela do projeto', () => {
       'fetch',
       routeFetch({
         'GET /api/projects/1/sessions': () =>
-          jsonResponse([makeSession({ session_id: 'a', title: 'Cupom expirado', state: 'running' })]),
+          jsonResponse([makeSession({ session_id: 'a', title: 'Cupom expirado', state: 'idle' })]),
       }),
     )
     const wrapper = await mountView()
@@ -50,7 +50,7 @@ describe('tela do projeto', () => {
     const rows = wrapper.findAll('[data-test="session-row"]')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('Cupom expirado')
-    expect(rows[0]!.text()).toContain('Rodando')
+    expect(rows[0]!.text()).toContain('Aguardando você')
     expect(rows[0]!.attributes('href')).toBe('/sessions/a')
   })
 

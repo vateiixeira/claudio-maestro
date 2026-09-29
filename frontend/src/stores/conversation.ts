@@ -87,6 +87,9 @@ export function applyConversationEvent(conv: Conversation, event: WsEvent): bool
     case 'session.title':
       conv.title = String(data.title ?? '')
       break
+    case 'session.updated':
+      if (typeof data.title === 'string' && data.title) conv.title = data.title
+      break
     case 'session.init':
       conv.init = data as unknown as SessionInit
       break
