@@ -423,7 +423,7 @@ Expected: todos PASS.
   - `SessionOut.plan: PlanOut | None` com `PlanOut(path, title, total, done, current: PlanCurrentOut | None)`.
   - Constante `PLAN_TOOLS = {"Read", "Edit", "MultiEdit", "Write"}`.
 
-- [ ] **Step 1: Escrever os testes** (use os fixtures e o cliente falso já usados em `backend/tests/test_context_permission.py` e `test_multisession.py`; crie projetos em `tmp_path` com um `docs/superpowers/plans/p.md`)
+- [x] **Step 1: Escrever os testes** (use os fixtures e o cliente falso já usados em `backend/tests/test_context_permission.py` e `test_multisession.py`; crie projetos em `tmp_path` com um `docs/superpowers/plans/p.md`)
 
 Casos obrigatórios, cada um um teste:
 1. Migração: banco novo tem as colunas `plan_path` e `plan_link`; banco na versão anterior migra sem perder linhas.
@@ -437,12 +437,12 @@ Casos obrigatórios, cada um um teste:
 9. `list_sessions()`/busca/listagem do projeto não leem arquivo de plano (conte chamadas de `PlanCache.read` com um espião): `plan` vem do cache em memória, `None` para vínculo ainda não lido.
 10. O vínculo sobrevive a recriar o `SessionManager` sobre o mesmo banco (reinício do backend): `record.plan_path` volta e, depois de `refresh_plan`, `plan` aparece.
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `uv run pytest -q backend/tests/test_plan_sessions.py`
 Expected: FAIL (colunas e métodos ausentes).
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 Migração (acrescente no fim de `MIGRATIONS` em `db.py`, no mesmo estilo):
 
@@ -511,12 +511,12 @@ class PlanOut(BaseModel):
     plan: PlanOut | None = None
 ```
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `uv run pytest -q` (suíte inteira, pelo menos 2 vezes)
 Expected: PASS.
 
-- [ ] **Step 5: Commit (sessão principal)**
+- [x] **Step 5: Commit (sessão principal)**
 
 `[Feat] Vincular conversa ao plano e publicar progresso no resumo`
 
