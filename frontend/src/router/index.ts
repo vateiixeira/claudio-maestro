@@ -4,6 +4,7 @@ import {
   type RouteRecordRaw,
   type RouterHistory,
 } from 'vue-router'
+import DashboardView from '../views/DashboardView.vue'
 import ConversationView from '../views/ConversationView.vue'
 import ConversationsView from '../views/ConversationsView.vue'
 import InboxView from '../views/InboxView.vue'
@@ -25,8 +26,7 @@ export const routes: RouteRecordRaw[] = [
   },
   { path: '/preferencias', name: 'preferences', component: PreferencesView },
   { path: '/inbox', name: 'inbox', component: InboxView },
-  // Provisional: Task 10 replaces this view.
-  { path: '/dashboard', name: 'dashboard', component: () => import('../views/HomeView.vue') },
+  { path: '/dashboard', name: 'dashboard', component: DashboardView },
   { path: '/sessions', name: 'sessions', component: ConversationsView },
   {
     path: '/sessions/:id',
