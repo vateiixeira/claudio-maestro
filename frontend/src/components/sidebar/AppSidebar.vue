@@ -3,181 +3,105 @@ import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BrandMark from '../BrandMark.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
-import StateCounters from '../StateCounters.vue'
 import SessionSearch from './SessionSearch.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import { repoLabel, useGitStore } from '../../stores/git'
+import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import { useLayoutStore } from '../../stores/layout'
-import { displayStateLabels } from '../../sessionState'
-import type { Session } from '../../types/api'
 
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
-const layout = useLayoutStore()
 const git = useGitStore()
+const newConversation = useNewConversationStore()
 const route = useRoute()
 
-// The project being looked at, directly or through one of its sessions.
+const waitingCount = computed(() => sessions.all.filter((s) => s.display_state === 'waiting').length)
+function waitingIn(projectId: number): number {
+  return sessions.forProject(projectId).filter((s) => s.display_state === 'waiting').length
+}
+const recent = computed(() =>
+  sessions.all
+    .filter((s) => s.last_seen_at != null)
+    .sort((a, b) => (b.last_seen_at ?? 0) - (a.last_seen_at ?? 0))
+    .slice(0, 5),
+)
+// The project being looked at, directly or through one of its conversations.
 const activeProjectId = computed<number | null>(() => {
   if (route.name === 'project') return Number(route.params.id)
   if (route.name === 'session') return sessions.find(String(route.params.id))?.project_id ?? null
   return null
 })
-
-const activeSessionId = computed(() => (route.name === 'session' ? String(route.params.id) : null))
-
-// The menu lists only what is alive: finished sessions stay on the project page.
-function openSessions(projectId: number): Session[] {
-  return sessions.forProject(projectId).filter((s) => s.display_state !== 'finished')
-}
-
-function count(list: Session[], display: 'running' | 'waiting'): number {
-  return list.filter((s) => s.display_state === display).length
-}
-
-function sessionTone(session: Session): string {
-  return session.awaiting_decision ? 'text-secondary-soft' : 'text-fg'
-}
+const currentProjectId = computed(() => activeProjectId.value)
+const itemClass = (active: boolean) => [
+  'flex min-h-10 items-center gap-2.5 rounded-lg px-3 no-underline hover:bg-card',
+  active ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg',
+]
 </script>
 
 <template>
-  <nav
-    aria-label="Projetos e sessões"
-    class="flex h-full w-72 shrink-0 flex-col gap-3.5 border-r border-line bg-panel px-3 pt-5 pb-3 text-sm"
-  >
-    <RouterLink to="/" class="flex min-h-11 items-center gap-2.5 rounded-lg px-2 text-fg no-underline">
+  <nav aria-label="Navegação" class="flex h-full w-64 shrink-0 flex-col gap-3 border-r border-line bg-panel px-3 pt-5 pb-3 text-sm">
+    <RouterLink to="/inbox" class="flex min-h-11 items-center gap-2.5 rounded-lg px-2 text-fg no-underline">
       <BrandMark />
       <span class="text-xl font-bold tracking-tight">Vini7 Vibing</span>
     </RouterLink>
 
-    <SessionSearch />
-
-    <RouterLink
-      to="/sessions"
-      data-test="all-sessions"
-      class="flex min-h-11 items-center gap-2.5 rounded-lg border px-3 text-fg no-underline hover:bg-card"
-      :class="route.name === 'sessions' ? 'border-line-strong bg-elevated' : 'border-line'"
-      :aria-current="route.name === 'sessions' ? 'page' : undefined"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="3" y="4" width="5" height="16" rx="1" />
-        <rect x="10" y="4" width="5" height="10" rx="1" />
-        <rect x="17" y="4" width="4" height="13" rx="1" />
-      </svg>
-      <span class="grow font-medium">Todas as sessões</span>
-      <StateCounters :running="count(sessions.all, 'running')" :waiting="count(sessions.all, 'waiting')" />
-    </RouterLink>
-
-    <div class="flex min-h-0 flex-1 flex-col gap-1">
-      <div class="px-3 pb-0.5 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Projetos</div>
-
-      <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-        <p v-if="projects.loadError" class="px-3 py-2 text-xs text-secondary-soft" role="alert">
-          Não foi possível carregar os projetos. {{ projects.loadError }}
-        </p>
-        <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-3 py-2 text-xs text-fg-muted">
-          Nenhum projeto ainda.
-        </p>
-
-        <div
-          v-for="project in projects.projects"
-          :key="project.id"
-          data-test="project"
-          :data-available="String(project.available)"
-          class="flex flex-col gap-1 rounded-lg border px-3 py-1.5"
-          :class="activeProjectId === project.id ? 'border-line-strong bg-elevated' : 'border-transparent'"
-        >
-          <RouterLink
-            :to="{ name: 'project', params: { id: project.id } }"
-            class="flex min-h-11 items-center gap-2.5 text-fg no-underline"
-            :class="{ 'opacity-50': !project.available }"
-            :aria-current="route.name === 'project' && activeProjectId === project.id ? 'page' : undefined"
-          >
-            <span
-              data-test="project-color"
-              class="size-2.5 shrink-0 rounded-[3px]"
-              :style="{ backgroundColor: project.color }"
-            />
-            <span class="flex min-w-0 flex-1 flex-col">
-              <span data-test="project-name" class="truncate font-semibold">{{ project.name }}</span>
-              <span v-if="!project.available" class="text-xs text-fg-muted">pasta indisponível</span>
-              <template v-else-if="git.isLoaded(project.id)">
-                <BranchLabel
-                  v-for="repo in git.reposFor(project.id)"
-                  :key="repo.path"
-                  data-test="branch"
-                  :text="repoLabel(repo)"
-                  :muted="!!repo.error"
-                />
-                <span v-if="git.reposFor(project.id).length === 0" class="text-xs text-fg-muted">sem repositório git</span>
-                <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-secondary-soft">Só os 50 primeiros repositórios</span>
-              </template>
-            </span>
-            <StateCounters
-              :running="count(openSessions(project.id), 'running')"
-              :waiting="count(openSessions(project.id), 'waiting')"
-            />
-          </RouterLink>
-
-          <div
-            v-if="openSessions(project.id).length > 0"
-            class="flex flex-col border-t border-line pt-1"
-          >
-            <RouterLink
-              v-for="session in openSessions(project.id)"
-              :key="session.session_id"
-              data-test="session"
-              :to="{ name: 'session', params: { id: session.session_id } }"
-              class="flex min-h-11 items-center gap-2 rounded-md px-1 no-underline hover:bg-card"
-              :data-unread="String(session.unread)"
-              :class="[sessionTone(session), { 'bg-card': activeSessionId === session.session_id, 'font-semibold': session.unread }]"
-              :title="`${session.title} · ${displayStateLabels[session.display_state]}`"
-              :aria-current="activeSessionId === session.session_id ? 'page' : undefined"
-            >
-              <DisplayStateIcon :display="session.display_state" />
-              <span class="min-w-0 flex-1 truncate text-[13px]">{{ session.title }}</span>
-              <span v-if="session.unread" class="size-1.5 shrink-0 rounded-full bg-primary-soft" aria-hidden="true" />
-              <span class="sr-only">
-                {{ displayStateLabels[session.display_state] }}{{ session.unread ? ', com novidade' : '' }}
-              </span>
-            </RouterLink>
-          </div>
-          <RouterLink
-            v-if="project.hidden_sessions > 0"
-            data-test="hidden-sessions"
-            :to="{ name: 'project', params: { id: project.id }, hash: '#finalizadas' }"
-            class="flex min-h-8 items-center px-1 pl-6 text-xs text-fg-muted no-underline hover:text-fg"
-          >{{ project.hidden_sessions }} {{ project.hidden_sessions === 1 ? 'oculta, parada' : 'ocultas, paradas' }} há mais de {{ layout.finishedAfterDays }} {{ layout.finishedAfterDays === 1 ? 'dia' : 'dias' }}</RouterLink>
-        </div>
-      </div>
+    <div class="flex flex-col gap-0.5">
+      <button type="button" data-test="nav-new" :class="itemClass(false)" class="w-full text-left" @click="newConversation.open(currentProjectId)">
+        <span aria-hidden="true">＋</span><span class="grow">Nova conversa</span><kbd class="font-mono text-[11px] text-fg-muted">C</kbd>
+      </button>
+      <SessionSearch />
+      <RouterLink to="/dashboard" data-test="nav-dashboard" :class="itemClass(route.name === 'dashboard')" :aria-current="route.name === 'dashboard' ? 'page' : undefined">Dashboard</RouterLink>
+      <RouterLink to="/inbox" data-test="nav-inbox" :class="itemClass(route.name === 'inbox')" :aria-current="route.name === 'inbox' ? 'page' : undefined">
+        <span class="grow">Inbox</span>
+        <span v-if="waitingCount" data-test="inbox-count" class="rounded-full bg-secondary px-2 text-xs font-semibold text-secondary-fg">{{ waitingCount }}</span>
+      </RouterLink>
+      <RouterLink to="/sessions" data-test="nav-conversations" :class="itemClass(route.name === 'sessions')" :aria-current="route.name === 'sessions' ? 'page' : undefined">Conversas</RouterLink>
     </div>
 
-    <RouterLink
-      to="/preferencias"
-      data-test="preferences"
-      class="flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-fg-muted no-underline hover:bg-card hover:text-fg"
-      :class="{ 'bg-elevated text-fg': route.name === 'preferences' }"
-      :aria-current="route.name === 'preferences' ? 'page' : undefined"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="17" x2="20" y2="17" />
-        <circle cx="9" cy="7" r="2.2" fill="var(--color-panel)" /><circle cx="15" cy="17" r="2.2" fill="var(--color-panel)" />
-      </svg>
-      Preferências
-    </RouterLink>
+    <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+      <div class="flex items-center px-3 pt-2 pb-0.5">
+        <span class="grow font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Projetos</span>
+        <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-7 items-center justify-center rounded-md text-fg-muted no-underline hover:bg-card hover:text-fg">＋</RouterLink>
+      </div>
+      <p v-if="projects.loadError" class="px-3 py-2 text-xs text-secondary-soft" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
+      <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-3 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
+      <RouterLink
+        v-for="project in projects.projects"
+        :key="project.id"
+        data-test="project"
+        :data-available="String(project.available)"
+        :to="{ name: 'project', params: { id: project.id } }"
+        :class="[itemClass(activeProjectId === project.id), { 'opacity-50': !project.available }]"
+        :aria-current="route.name === 'project' && activeProjectId === project.id ? 'page' : undefined"
+      >
+        <span data-test="project-color" class="size-2.5 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
+        <span class="flex min-w-0 grow flex-col">
+          <span data-test="project-name" class="truncate font-medium text-fg">{{ project.name }}</span>
+          <span v-if="!project.available" class="text-xs">pasta indisponível</span>
+          <span v-else-if="git.reposFor(project.id)[0]" data-test="project-branch"><BranchLabel :text="repoLabel(git.reposFor(project.id)[0]!)" muted /></span>
+          <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-secondary-soft">Só os 50 primeiros repositórios</span>
+        </span>
+        <span v-if="waitingIn(project.id)" data-test="project-waiting" class="flex items-center gap-1 text-xs text-secondary">
+          <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}
+        </span>
+      </RouterLink>
 
-    <RouterLink
-      to="/projects/new"
-      data-test="new-project"
-      class="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong font-medium text-fg no-underline hover:bg-card"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <line x1="12" y1="5" x2="12" y2="19" />
-        <line x1="5" y1="12" x2="19" y2="12" />
-      </svg>
-      Novo projeto
-    </RouterLink>
+      <template v-if="recent.length">
+        <div class="px-3 pt-4 pb-0.5 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Recentes</div>
+        <RouterLink
+          v-for="session in recent"
+          :key="session.session_id"
+          data-test="recent"
+          :to="{ name: 'session', params: { id: session.session_id } }"
+          :class="itemClass(route.name === 'session' && route.params.id === session.session_id)"
+        >
+          <DisplayStateIcon :display="session.display_state" :size="11" />
+          <span class="min-w-0 grow truncate text-[13px]">{{ session.title }}</span>
+        </RouterLink>
+      </template>
+    </div>
+
+    <RouterLink to="/preferencias" data-test="preferences" :class="itemClass(route.name === 'preferences')" :aria-current="route.name === 'preferences' ? 'page' : undefined">Preferências</RouterLink>
   </nav>
 </template>

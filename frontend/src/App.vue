@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted, watchEffect } from 'vue'
 import { RouterView } from 'vue-router'
 import AppSidebar from './components/sidebar/AppSidebar.vue'
 import ConnectionIndicator from './components/ConnectionIndicator.vue'
 import { useEventSocket } from './api/socket'
 import { loadEverything } from './stores/realtime'
 import { useLayoutStore } from './stores/layout'
+import { documentTitle } from './documentTitle'
+import { useSessionsStore } from './stores/sessions'
 
 const socket = useEventSocket()
 const layout = useLayoutStore()
+const sessions = useSessionsStore()
+
+const waiting = computed(() => sessions.all.filter((s) => s.display_state === 'waiting').length)
+watchEffect(() => { document.title = documentTitle(waiting.value) })
 
 onMounted(() => {
   void layout.restore()

@@ -37,12 +37,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('branches no menu lateral', () => {
-  it('um por repositório, HEAD solto, erro e sem git', () => {
+  it('mostra a branch do primeiro repositório, HEAD solto e projeto sem git', () => {
     const w = mount(AppSidebar, { global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
     const [loja, solta, nada] = w.findAll('[data-test="project"]')
-    expect(loja!.findAll('[data-test="branch"]').map((b) => b.text())).toEqual(['main', 'api · feat/x', 'web · branch indisponível'])
-    expect(solta!.find('[data-test="branch"]').text()).toBe('HEAD solto · abc1234')
-    expect(nada!.text()).toContain('sem repositório git')
+    expect(loja!.find('[data-test="project-branch"]').text()).toBe('main')
+    expect(solta!.find('[data-test="project-branch"]').text()).toBe('HEAD solto · abc1234')
+    expect(nada!.find('[data-test="project-branch"]').exists()).toBe(false)
   })
 })
 

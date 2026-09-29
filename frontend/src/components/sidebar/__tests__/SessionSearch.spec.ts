@@ -5,7 +5,6 @@ import { createMemoryHistory, type Router } from 'vue-router'
 import AppSidebar from '../AppSidebar.vue'
 import { createAppRouter } from '../../../router'
 import { useProjectsStore } from '../../../stores/projects'
-import { useLayoutStore } from '../../../stores/layout'
 import { jsonResponse, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
@@ -131,28 +130,5 @@ describe('busca no menu lateral', () => {
     await w.find('[data-test="search-input"]').trigger('keydown', { key: 'Escape' })
     expect((w.find('[data-test="search-input"]').element as HTMLInputElement).value).toBe('')
     expect(w.text()).not.toContain('Achada')
-  })
-})
-
-describe('sessões ocultas no menu', () => {
-  it('mostra a linha quando há ocultas e leva à tela do projeto', () => {
-    const projects = useProjectsStore(pinia)
-    projects.projects = [
-      makeProject({ id: 1, name: 'com', hidden_sessions: 3 }),
-      makeProject({ id: 2, name: 'sem', hidden_sessions: 0 }),
-    ]
-    const w = mountSidebar()
-    const links = w.findAll('[data-test="hidden-sessions"]')
-    expect(links).toHaveLength(1)
-    expect(links[0]!.text()).toBe('3 ocultas, paradas há mais de 3 dias')
-    expect(links[0]!.attributes('href')).toContain('/projects/1')
-  })
-
-  it('usa o prazo das preferências', () => {
-    const projects = useProjectsStore(pinia)
-    projects.projects = [makeProject({ id: 1, name: 'com', hidden_sessions: 1 })]
-    useLayoutStore(pinia).finishedAfterDays = 7
-    const w = mountSidebar()
-    expect(w.find('[data-test="hidden-sessions"]').text()).toBe('1 oculta, parada há mais de 7 dias')
   })
 })

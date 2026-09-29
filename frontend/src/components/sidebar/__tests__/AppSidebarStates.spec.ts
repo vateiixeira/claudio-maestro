@@ -4,9 +4,10 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import AppSidebar from '../AppSidebar.vue'
 import { createAppRouter } from '../../../router'
+import { useGitStore } from '../../../stores/git'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
-import { makeProject, makeSession } from '../../../test/factories'
+import { makeGitRepo, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -15,80 +16,73 @@ beforeEach(() => {
   setActivePinia(pinia)
 })
 
+function mountSidebar() {
+  return mount(AppSidebar, { global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
+}
+
 describe('menu lateral com estados', () => {
-  it('esconde finalizadas e conta rodando e aguardando', () => {
+  it('marca o projeto com pasta indisponível', () => {
     const projects = useProjectsStore(pinia)
-    projects.projects = [makeProject({ id: 1 }), makeProject({ id: 2, name: 'blog' })]
+    projects.projects = [makeProject({ id: 1, name: 'ok' }), makeProject({ id: 2, name: 'sumiu', available: false })]
     projects.loaded = true
-    const sessions = useSessionsStore(pinia)
-    sessions.setForProject(1, [
-      makeSession({ session_id: 'r', title: 'Rodando', display_state: 'running', state: 'running' }),
-      makeSession({ session_id: 'w', title: 'Esperando', display_state: 'waiting', awaiting_decision: true, unread: true }),
-      makeSession({ session_id: 'f', title: 'Acabou', display_state: 'finished', finished: true }),
-    ])
-    sessions.setForProject(2, [makeSession({ session_id: 'r2', project_id: 2, display_state: 'running' })])
 
-    const wrapper = mount(AppSidebar, { global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
+    const [ok, gone] = mountSidebar().findAll('[data-test="project"]')
 
-    const [first, second] = wrapper.findAll('[data-test="project"]')
-    const titles = first!.findAll('[data-test="session"]').map((s) => s.text())
-    expect(titles.join()).toContain('Rodando')
-    expect(titles.join()).toContain('Esperando')
-    expect(titles.join()).not.toContain('Acabou')
-    expect(first!.find('[data-test="count-running"]').text()).toBe('1')
-    expect(first!.find('[data-test="count-waiting"]').text()).toBe('1')
-    expect(second!.find('[data-test="count-running"]').text()).toBe('1')
-    expect(second!.find('[data-test="count-waiting"]').exists()).toBe(false)
+    expect(ok!.attributes('data-available')).toBe('true')
+    expect(ok!.text()).not.toContain('pasta indisponível')
+    expect(gone!.attributes('data-available')).toBe('false')
+    expect(gone!.text()).toContain('pasta indisponível')
+  })
 
-    const allLink = wrapper.find('[data-test="all-sessions"]')
-    expect(allLink.attributes('href')).toBe('/sessions')
-    expect(allLink.find('[data-test="count-running"]').text()).toBe('2')
-    expect(allLink.find('[data-test="count-waiting"]').text()).toBe('1')
+  it('mostra o erro ao carregar os projetos', () => {
+    useProjectsStore(pinia).loadError = 'sem conexão'
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[role="alert"]').text()).toContain('Não foi possível carregar os projetos')
+    expect(wrapper.find('[role="alert"]').text()).toContain('sem conexão')
+  })
 
-    const waiting = first!.findAll('[data-test="session"]').find((s) => s.text().includes('Esperando'))!
-    expect(waiting.attributes('data-unread')).toBe('true')
-    expect(waiting.find('[data-shape]').attributes('data-shape')).toBe('triangle')
+  it('convida a criar projeto quando não há nenhum', () => {
+    useProjectsStore(pinia).loaded = true
+    const wrapper = mountSidebar()
+    expect(wrapper.findAll('[data-test="project"]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('Nenhum projeto ainda')
+  })
+
+  it('avisa com texto curto quando o projeto passa de 50 repositórios', () => {
+    const projects = useProjectsStore(pinia)
+    projects.projects = [makeProject({ id: 1 }), makeProject({ id: 2, name: 'outro', path: '/home/vi/outro' })]
+    projects.loaded = true
+    useGitStore(pinia).set(1, [makeGitRepo()], true)
+    useGitStore(pinia).set(2, [makeGitRepo({ path: '/home/vi/outro' })], false)
+    const items = mountSidebar().findAll('[data-test="project"]')
+    expect(items[0]!.find('[data-test="repo-limit"]').text()).toBe('Só os 50 primeiros repositórios')
+    expect(items[1]!.find('[data-test="repo-limit"]').exists()).toBe(false)
+  })
+
+  it('não mostra contagem na Inbox quando nada aguarda', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ display_state: 'running' })])
+    expect(mountSidebar().find('[data-test="inbox-count"]').exists()).toBe(false)
   })
 })
 
-describe('menu com session.state', () => {
-  it('error vira triângulo e connecting vira círculo', async () => {
-    const projects = useProjectsStore(pinia)
-    projects.projects = [makeProject({ id: 1 })]
-    projects.loaded = true
-    const sessions = useSessionsStore(pinia)
-    sessions.setForProject(1, [
-      makeSession({ session_id: 'e', title: 'Quebrou', display_state: 'running', state: 'running' }),
-      makeSession({ session_id: 'c', title: 'Conectando', display_state: 'waiting' }),
-    ])
-    const wrapper = mount(AppSidebar, { global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
-    sessions.applyEvent({ session_id: 'e', seq: 1, type: 'session.state', data: { state: 'error', error: 'x' } })
-    sessions.applyEvent({ session_id: 'c', seq: 1, type: 'session.state', data: { state: 'connecting', error: null } })
-    await wrapper.vm.$nextTick()
-    const [e, c] = wrapper.findAll('[data-test="session"]')
-    expect(e!.find('[data-shape]').attributes('data-shape')).toBe('triangle')
-    expect(e!.text()).toContain('Aguardando você')
-    expect(c!.find('[data-shape]').attributes('data-shape')).toBe('circle')
-    expect(c!.text()).toContain('Em execução')
-  })
-})
-
-describe('menu com session.updated', () => {
-  it('fim de turno marca novidade', async () => {
+describe('menu com eventos de sessão', () => {
+  it('fim de turno atualiza a contagem da Inbox e do projeto', async () => {
     const projects = useProjectsStore(pinia)
     projects.projects = [makeProject({ id: 1 })]
     projects.loaded = true
     const sessions = useSessionsStore(pinia)
     sessions.setForProject(1, [makeSession({ session_id: 's', title: 'Tarefa', display_state: 'running', state: 'running' })])
-    const wrapper = mount(AppSidebar, { global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="inbox-count"]').exists()).toBe(false)
+
     sessions.applyEvent({
       session_id: 's', seq: 5, type: 'session.updated',
       data: makeSession({ session_id: 's', title: 'Tarefa', state: 'idle', display_state: 'waiting', unread: true, seq: 5 }),
     })
     await wrapper.vm.$nextTick()
-    const row = wrapper.find('[data-test="session"]')
-    expect(sessions.find('s')!.unread).toBe(true)
-    expect(row.attributes('data-unread')).toBe('true')
-    expect(row.text()).toContain('com novidade')
+
+    expect(wrapper.find('[data-test="inbox-count"]').text()).toBe('1')
+    expect(wrapper.find('[data-test="project-waiting"]').text()).toContain('1')
   })
 })

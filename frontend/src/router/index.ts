@@ -23,6 +23,9 @@ export const routes: RouteRecordRaw[] = [
     props: (route) => ({ id: Number(route.params.id) }),
   },
   { path: '/preferencias', name: 'preferences', component: PreferencesView },
+  // Provisional: Tasks 8 and 10 replace these views.
+  { path: '/inbox', name: 'inbox', component: () => import('../views/HomeView.vue') },
+  { path: '/dashboard', name: 'dashboard', component: () => import('../views/HomeView.vue') },
   { path: '/sessions', name: 'sessions', component: AllSessionsView },
   {
     path: '/sessions/:id',
