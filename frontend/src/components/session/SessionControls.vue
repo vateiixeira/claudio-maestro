@@ -66,8 +66,8 @@ const modeOptions: MenuOption[] = (Object.keys(MODE_LABELS) as PermissionMode[])
 // The session summary is refreshed by events; the snapshot only holds what it had at load.
 const sessionsStore = useSessionsStore()
 const context = computed(() => {
-  const fromList = sessionsStore.find(props.sessionId)?.context
-  return fromList !== undefined ? fromList : (conversations.get(props.sessionId)?.context ?? null)
+  // The list can carry `null` (no connected client); the snapshot then holds the value from the history.
+  return sessionsStore.find(props.sessionId)?.context ?? conversations.get(props.sessionId)?.context ?? null
 })
 const contextPercent = computed(() => (context.value ? Math.round(context.value.percent) : 0))
 const contextTitle = computed(() =>

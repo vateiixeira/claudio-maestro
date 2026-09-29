@@ -279,4 +279,18 @@ describe('uso do contexto', () => {
     ])
     expect(contextText(await mountControls()).text()).toBe('Contexto 60%')
   })
+
+  it('lista com contexto nulo cai no valor do retrato', async () => {
+    setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 42 } })
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', context: null })])
+    expect(contextText(await mountControls()).text()).toBe('Contexto 42%')
+  })
+
+  it('lista com contexto e retrato sem contexto mostra o da lista', async () => {
+    setup({ context: null })
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 's1', context: { used_tokens: 120_000, max_tokens: 200_000, percent: 60 } }),
+    ])
+    expect(contextText(await mountControls()).text()).toBe('Contexto 60%')
+  })
 })
