@@ -95,22 +95,19 @@ describe('salto de seq', () => {
   })
 })
 
-describe('layout na reconexão', () => {
-  it('lê de novo o layout se a primeira leitura falhou, e volta a salvar', async () => {
+describe('preferências na reconexão', () => {
+  it('lê de novo as preferências se a primeira leitura falhou, sem gravar nada', async () => {
     vi.useFakeTimers()
     let fail = true
-    const puts: unknown[] = []
-    vi.stubGlobal('fetch', routeFetch({
-      'GET /api/state': () => (fail ? jsonResponse({ detail: 'x' }, 500) : jsonResponse({ layout: { columns: ['a'], widths: {} } })),
-      'PUT /api/state/layout': (init) => { puts.push(JSON.parse(init!.body as string)); return jsonResponse({}) },
+    const fetchMock = routeFetch({
+      'GET /api/state': () => (fail ? jsonResponse({ detail: 'x' }, 500) : jsonResponse({ preferences: { finished_after_days: 6 } })),
       'GET /api/projects': () => jsonResponse([]),
       'GET /api/models': () => jsonResponse([]),
-    }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
     const layout = useLayoutStore()
     await layout.restore()
-    layout.open('b')
-    await vi.advanceTimersByTimeAsync(600)
-    expect(puts).toHaveLength(0)
+    expect(layout.loadedFromServer).toBe(false)
 
     fail = false
     const { socket, sockets } = makeSocket()
@@ -120,8 +117,9 @@ describe('layout na reconexão', () => {
     await vi.advanceTimersByTimeAsync(10)
     sockets[1]!.onopen?.({})
     await vi.advanceTimersByTimeAsync(600)
-    expect(layout.columns).toEqual(['a', 'b'])
-    expect(puts.at(-1)).toMatchObject({ columns: ['a', 'b'] })
+    expect(layout.loadedFromServer).toBe(true)
+    expect(layout.finishedAfterDays).toBe(6)
+    expect(fetchMock.mock.calls.every(([, init]) => (init?.method ?? 'GET') === 'GET')).toBe(true)
   })
 })
 

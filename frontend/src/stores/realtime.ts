@@ -39,7 +39,7 @@ export function bindRealtime(socket: EventSocket): () => void {
       useModelsStore().apply((event.data as { models?: unknown } | null)?.models)
     }),
     socket.onReconnect(() => {
-      // Without the saved layout the tab never saves; read it again now.
+      // The startup read of the preferences failed: read them again now.
       const layout = useLayoutStore()
       if (!layout.loadedFromServer) void layout.restore()
       loadEverything().catch(() => {

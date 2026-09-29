@@ -1,7 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
+import { ref } from 'vue'
+import type { ConnectionStatus } from '../../../types/events'
+
+const socketStatus = vi.hoisted(() => ({ current: null as unknown as { value: ConnectionStatus } }))
+vi.mock('../../../api/socket', () => ({
+  useEventSocket: () => ({ status: socketStatus.current }),
+}))
+
 import AppSidebar from '../AppSidebar.vue'
 import { createAppRouter } from '../../../router'
 import { useGitStore } from '../../../stores/git'
@@ -15,6 +23,7 @@ let pinia: Pinia
 beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
+  socketStatus.current = ref<ConnectionStatus>('connected')
 })
 
 function mountSidebar() {
@@ -70,5 +79,18 @@ describe('menu lateral', () => {
     const wrapper = mountSidebar()
     await wrapper.find('[data-test="nav-new"]').trigger('click')
     expect(useNewConversationStore(pinia).isOpen).toBe(true)
+  })
+
+  it('mostra o indicador de conexão no rodapé, abaixo de Preferências, só sem conexão', async () => {
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="connection-lost"]').exists()).toBe(false)
+
+    socketStatus.current.value = 'reconnecting'
+    await wrapper.vm.$nextTick()
+    const lost = wrapper.find('[data-test="connection-lost"]')
+    expect(lost.text()).toContain('Sem conexão com o servidor')
+    const preferences = wrapper.find('[data-test="preferences"]').element
+    expect(preferences.compareDocumentPosition(lost.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.element.contains(lost.element)).toBe(true)
   })
 })

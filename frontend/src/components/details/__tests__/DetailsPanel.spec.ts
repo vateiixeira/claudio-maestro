@@ -9,7 +9,7 @@ import { useConversationStore } from '../../../stores/conversation'
 import { useGitStore } from '../../../stores/git'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
-import { jsonResponse, makeGitRepo, makeProject, makeSession, makeSnapshot, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeEvent, makeGitRepo, makeProject, makeSession, makeSnapshot, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -119,5 +119,73 @@ describe('painel Detalhes', () => {
     await wrapper.find('[data-test="changes-retry"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="changed-file"]').exists()).toBe(true)
+  })
+
+  describe('lista de alterações da conversa', () => {
+    const repo = (files: Array<{ rel: string; added: number | null; removed: number | null }>, rel_path = '.') => ({
+      path: `/home/vi/dev/loja-online/${rel_path}`, rel_path, branch: 'main', detached: false, head: 'abc',
+      files: files.map((f) => ({ path: `/home/vi/dev/loja-online/${f.rel}`, rel_path: f.rel, added: f.added, removed: f.removed, uncommitted: true })),
+    })
+    const turnResult = (seq: number) => makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 1, total_cost_usd: 0 }, seq)
+
+    it('soma os arquivos de todos os repositórios no total "+N −N"', async () => {
+      const wrapper = await mountPanel({
+        'GET /api/sessions/s1/changes': () => jsonResponse({
+          repos: [
+            repo([{ rel: 'a.py', added: 3, removed: 1 }, { rel: 'b.py', added: 4, removed: 2 }]),
+            repo([{ rel: 'c.py', added: null, removed: null }, { rel: 'd.py', added: 5, removed: 0 }], 'api'),
+          ],
+        }),
+      })
+      const total = wrapper.find('#changes-title').text()
+      expect(total).toContain('+12')
+      expect(total).toContain('−3')
+    })
+
+    it('busca a lista de novo quando um turno termina', async () => {
+      let calls = 0
+      const wrapper = await mountPanel({
+        'GET /api/sessions/s1/changes': () => {
+          calls += 1
+          return jsonResponse({ repos: [repo(calls === 1 ? [{ rel: 'a.py', added: 1, removed: 0 }] : [{ rel: 'a.py', added: 1, removed: 0 }, { rel: 'novo.py', added: 7, removed: 2 }])] })
+        },
+      })
+      expect(calls).toBe(1)
+      expect(wrapper.findAll('[data-test="changed-file"]')).toHaveLength(1)
+
+      useConversationStore(pinia).receive(turnResult(1))
+      await flushPromises()
+      expect(calls).toBe(2)
+      expect(wrapper.findAll('[data-test="changed-file"]')).toHaveLength(2)
+      expect(wrapper.find('#changes-title').text()).toContain('+8')
+    })
+
+    it('ignora a resposta mais antiga que chega depois da mais nova', async () => {
+      const resolvers: Array<(r: Response) => void> = []
+      let calls = 0
+      const wrapper = await mountPanel({
+        'GET /api/sessions/s1/changes': () => {
+          calls += 1
+          if (calls === 1) return jsonResponse({ repos: [repo([{ rel: 'inicial.py', added: 1, removed: 0 }])] })
+          return new Promise<Response>((resolve) => { resolvers.push(resolve) }) as unknown as Response
+        },
+      })
+      const store = useConversationStore(pinia)
+      store.receive(turnResult(1))
+      await flushPromises()
+      store.receive(turnResult(2))
+      await flushPromises()
+      expect(resolvers).toHaveLength(2)
+
+      resolvers[1]!(jsonResponse({ repos: [repo([{ rel: 'novo.py', added: 9, removed: 0 }])] }))
+      await flushPromises()
+      resolvers[0]!(jsonResponse({ repos: [repo([{ rel: 'velho.py', added: 2, removed: 0 }])] }))
+      await flushPromises()
+
+      const names = wrapper.findAll('[data-test="changed-file"]').map((f) => f.text())
+      expect(names).toHaveLength(1)
+      expect(names[0]).toContain('novo.py')
+      expect(wrapper.find('#changes-title').text()).toContain('+9')
+    })
   })
 })

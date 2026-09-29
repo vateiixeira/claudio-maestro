@@ -2,8 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, watchEffect } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AppSidebar from './components/sidebar/AppSidebar.vue'
-import ConnectionIndicator from './components/ConnectionIndicator.vue'
-import { useEventSocket } from './api/socket'
 import { loadEverything } from './stores/realtime'
 import { useLayoutStore } from './stores/layout'
 import { documentTitle } from './documentTitle'
@@ -12,7 +10,6 @@ import NewConversationModal from './components/NewConversationModal.vue'
 import { shouldOpenNewConversation } from './newConversationShortcut'
 import { useNewConversationStore } from './stores/newConversation'
 
-const socket = useEventSocket()
 const layout = useLayoutStore()
 const sessions = useSessionsStore()
 
@@ -50,6 +47,5 @@ onMounted(() => {
       <RouterView />
     </main>
     <NewConversationModal v-if="newConversation.isOpen" />
-    <ConnectionIndicator :status="socket.status.value" />
   </div>
 </template>

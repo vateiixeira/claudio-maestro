@@ -4,6 +4,15 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import type { ToolItem } from '../../types/conversation'
 import { useChangesPanelStore } from '../../stores/changesPanel'
+const fake = vi.hoisted(() => ({ reconnect: new Set<() => void>() }))
+vi.mock('../../api/socket', () => ({
+  useEventSocket: () => ({
+    onSession: () => () => {},
+    onReconnect: (h: () => void) => { fake.reconnect.add(h); return () => fake.reconnect.delete(h) },
+    onOpen: (h: () => void) => { fake.reconnect.add(h); return () => fake.reconnect.delete(h) },
+  }),
+}))
+
 import ConversationView from '../ConversationView.vue'
 import { createAppRouter } from '../../router'
 import { useProjectsStore } from '../../stores/projects'
@@ -26,6 +35,7 @@ beforeEach(() => {
   projects.projects = [makeProject({ id: 1, name: 'loja-online' })]
   projects.loaded = true
   useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting' })])
+  fake.reconnect.clear()
   localStorage.clear()
   stubMedia(true)
 })
@@ -242,5 +252,49 @@ describe('página da conversa', () => {
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await flushPromises()
     expect(wrapper.find('[data-test="menu-copy-id"]').exists()).toBe(false)
+  })
+
+  describe('aviso de atividade externa', () => {
+    const external = (value: boolean) => makeSnapshot({ external_activity: value } as never)
+
+    it('avisa atividade externa vinda do retrato', async () => {
+      const { wrapper } = await mountAt('/sessions/s1', { 'GET /api/sessions/s1': () => jsonResponse(external(true)) })
+      expect(wrapper.find('[data-test="external-activity"]').text()).toContain('Esta sessão foi modificada fora do app no último minuto.')
+    })
+
+    it('avisa atividade externa vinda do envio', async () => {
+      const { wrapper } = await mountAt('/sessions/s1', {
+        'POST /api/sessions/s1/messages': () => jsonResponse({ state: 'connecting', external_activity: true }),
+      })
+      expect(wrapper.find('[data-test="external-activity"]').exists()).toBe(false)
+      await wrapper.find('textarea').setValue('oi')
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+      expect(wrapper.find('[data-test="external-activity"]').text()).toContain('pode embaralhar o histórico')
+    })
+
+    it('retrato posterior com external_activity false limpa o aviso', async () => {
+      let active = true
+      const { wrapper } = await mountAt('/sessions/s1', { 'GET /api/sessions/s1': () => jsonResponse(external(active)) })
+      expect(wrapper.find('[data-test="external-activity"]').exists()).toBe(true)
+      active = false
+      fake.reconnect.forEach((h) => h())
+      await flushPromises()
+      expect(wrapper.find('[data-test="external-activity"]').exists()).toBe(false)
+    })
+
+    it('o aviso some depois de 60 s', async () => {
+      vi.useFakeTimers()
+      try {
+        const { wrapper } = await mountAt('/sessions/s1', { 'GET /api/sessions/s1': () => jsonResponse(external(true)) })
+        expect(wrapper.find('[data-test="external-activity"]').attributes('role')).toBe('status')
+        await vi.advanceTimersByTimeAsync(59_000)
+        expect(wrapper.find('[data-test="external-activity"]').exists()).toBe(true)
+        await vi.advanceTimersByTimeAsync(2_000)
+        expect(wrapper.find('[data-test="external-activity"]').exists()).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 })

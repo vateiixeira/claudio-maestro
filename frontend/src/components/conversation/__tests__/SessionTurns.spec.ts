@@ -16,7 +16,7 @@ vi.mock('../../../api/socket', () => ({
   }),
 }))
 
-import SessionColumn from '../SessionColumn.vue'
+import ConversationThread from '../ConversationThread.vue'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -42,7 +42,7 @@ async function mountWith(snapshot: Record<string, unknown>) {
   vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, ...snapshot })) }))
   const router = createAppRouter(createMemoryHistory())
   await router.push('/sessions/s1')
-  const w = mount(SessionColumn, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] } })
+  const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] } })
   await flushPromises()
   return w
 }

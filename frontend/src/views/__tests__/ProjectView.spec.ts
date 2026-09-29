@@ -128,7 +128,7 @@ describe('tela do projeto', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/projects/1', expect.objectContaining({ method: 'DELETE' }))
     expect(useProjectsStore(pinia).projects).toEqual([])
-    expect(router.currentRoute.value.fullPath).toBe('/')
+    expect(router.currentRoute.value.fullPath).toBe('/inbox')
   })
 
   it('renomeia o projeto', async () => {

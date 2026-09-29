@@ -3,17 +3,17 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import { createAppRouter } from '../../../router'
-import { jsonResponse, makeGitRepo, makeProject, makeSession, makeSnapshot, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeGitRepo, makeProject, makeSession, routeFetch } from '../../../test/factories'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 import { useGitStore } from '../../../stores/git'
 
 vi.mock('../../../api/socket', () => ({
-  useEventSocket: () => ({ onSession: () => () => {}, onReconnect: () => () => {}, onOpen: () => () => {} }),
+  useEventSocket: () => ({ status: { value: 'connected' }, onSession: () => () => {}, onReconnect: () => () => {}, onOpen: () => () => {} }),
 }))
 
 import AppSidebar from '../../sidebar/AppSidebar.vue'
-import SessionColumn from '../../session/SessionColumn.vue'
+import ConversationHeader from '../../conversation/ConversationHeader.vue'
 import ProjectView from '../../../views/ProjectView.vue'
 import NewProjectView from '../../../views/NewProjectView.vue'
 
@@ -46,19 +46,16 @@ describe('branches no menu lateral', () => {
   })
 })
 
-describe('branches no cabeçalho da coluna', () => {
-  it('mostra chips', async () => {
+describe('branches no cabeçalho da conversa', () => {
+  it('mostra uma branch por repositório', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1' })])
-    vi.stubGlobal('fetch', routeFetch({
-      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot()),
-      'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
-    }))
     const router = createAppRouter(createMemoryHistory())
     await router.push('/sessions/s1')
-    const w = mount(SessionColumn, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    const w = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
     await flushPromises()
-    expect(w.find('[role="group"][aria-label="Branches"]').exists()).toBe(true)
-    expect(w.findAll('[data-test="branch-chip"]').map((b) => b.text())).toEqual(['main', 'api · feat/x', 'web · branch indisponível'])
+    expect(w.find('header').text()).toContain('main')
+    expect(w.find('header').text()).toContain('api · feat/x')
+    expect(w.find('header').text()).toContain('web · branch indisponível')
   })
 })
 

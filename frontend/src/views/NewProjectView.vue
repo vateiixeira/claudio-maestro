@@ -132,7 +132,7 @@ async function submit(): Promise<void> {
 
 function cancel(): void {
   if (router.options.history.state.back) router.back()
-  else router.push('/')
+  else router.push('/inbox')
 }
 </script>
 

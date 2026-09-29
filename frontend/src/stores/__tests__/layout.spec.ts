@@ -1,157 +1,75 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { DEFAULT_WIDTH, MIN_WIDTH, useLayoutStore } from '../layout'
+import { DEFAULT_FINISHED_AFTER_DAYS, useLayoutStore } from '../layout'
 import { jsonResponse, routeFetch } from '../../test/factories'
 
 beforeEach(() => {
   setActivePinia(createPinia())
-  vi.useFakeTimers()
 })
 afterEach(() => {
-  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
-function putCalls(fetchMock: ReturnType<typeof routeFetch>) {
-  return fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')
-}
-
-describe('store de layout', () => {
-  it('abrir adiciona a coluna uma vez só, na ordem', () => {
+describe('store de preferências', () => {
+  it('lê os dias para finalizar das preferências', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/state': () => jsonResponse({ preferences: { finished_after_days: 5 } }) }))
     const layout = useLayoutStore()
-    layout.open('a')
-    layout.open('b')
-    layout.open('a')
-    expect(layout.columns).toEqual(['a', 'b'])
-    expect(layout.widthOf('a')).toBe(DEFAULT_WIDTH)
+    expect(layout.finishedAfterDays).toBe(DEFAULT_FINISHED_AFTER_DAYS)
+    await layout.restore()
+    expect(layout.finishedAfterDays).toBe(5)
+    expect(layout.loadedFromServer).toBe(true)
+    expect(layout.restored).toBe(true)
   })
 
-  it('fechar remove só aquela coluna', () => {
-    const layout = useLayoutStore()
-    layout.open('a')
-    layout.open('b')
-    layout.setWidth('a', 700)
-    layout.close('a')
-    expect(layout.columns).toEqual(['b'])
-    expect(layout.widths.a).toBeUndefined()
-  })
-
-  it('a largura respeita o mínimo', () => {
-    const layout = useLayoutStore()
-    layout.open('a')
-    layout.setWidth('a', 100)
-    expect(layout.widthOf('a')).toBe(MIN_WIDTH)
-    layout.setWidth('a', 812.6)
-    expect(layout.widthOf('a')).toBe(813)
-  })
-
-  it('restaura do servidor e grava com atraso depois de mudanças', async () => {
-    const fetchMock = routeFetch({
-      'GET /api/state': () => jsonResponse({ layout: { columns: ['x', 'y'], widths: { x: 600, y: 200 } } }),
-      'PUT /api/state/layout': (init) => jsonResponse(JSON.parse(String(init?.body))),
-    })
-    vi.stubGlobal('fetch', fetchMock)
+  it('valor inválido mantém o padrão', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/state': () => jsonResponse({ preferences: { finished_after_days: -2 } }) }))
     const layout = useLayoutStore()
     await layout.restore()
-    expect(layout.columns).toEqual(['x', 'y'])
-    expect(layout.widthOf('x')).toBe(600)
-    expect(layout.widthOf('y')).toBe(MIN_WIDTH)
-    await vi.advanceTimersByTimeAsync(1000)
-    expect(putCalls(fetchMock)).toHaveLength(0)
-
-    layout.open('z')
-    layout.setWidth('z', 400)
-    await flushPromises()
-    await vi.advanceTimersByTimeAsync(300)
-    expect(putCalls(fetchMock)).toHaveLength(0)
-    await vi.advanceTimersByTimeAsync(300)
-    const puts = putCalls(fetchMock)
-    expect(puts).toHaveLength(1)
-    expect(JSON.parse(String(puts[0]![1]!.body))).toEqual({
-      columns: ['x', 'y', 'z'],
-      widths: { x: 600, y: MIN_WIDTH, z: 400 },
-    })
+    expect(layout.finishedAfterDays).toBe(DEFAULT_FINISHED_AFTER_DAYS)
   })
 
-  it('não grava antes de restaurar e junta colunas abertas antes disso', async () => {
-    let resolveGet!: (r: Response) => void
-    const fetchMock = routeFetch({
-      'GET /api/state': () => new Promise<Response>((r) => { resolveGet = r }),
-      'PUT /api/state/layout': () => jsonResponse({}),
-    })
-    vi.stubGlobal('fetch', fetchMock)
+  it('não grava nada no estado do app', async () => {
+    const fetch = routeFetch({ 'GET /api/state': () => jsonResponse({}) })
+    vi.stubGlobal('fetch', fetch)
+    await useLayoutStore().restore()
+    await new Promise((r) => setTimeout(r, 600))
+    expect(fetch.mock.calls.every(([, init]) => (init?.method ?? 'GET') === 'GET')).toBe(true)
+  })
+
+  it('só expõe as preferências', () => {
     const layout = useLayoutStore()
-    const done = layout.restore()
-    layout.open('novo')
-    await vi.advanceTimersByTimeAsync(1000)
-    expect(putCalls(fetchMock)).toHaveLength(0)
-    resolveGet(jsonResponse({ layout: { columns: ['velho'], widths: {} } }))
-    await done
-    expect(layout.columns).toEqual(['velho', 'novo'])
-    await vi.advanceTimersByTimeAsync(600)
-    expect(putCalls(fetchMock)).toHaveLength(1)
+    expect('columns' in layout).toBe(false)
+    expect('setWidth' in layout).toBe(false)
   })
 
-  it('duas restaurações ao mesmo tempo fazem uma leitura só', async () => {
+  it('duas leituras ao mesmo tempo fazem uma requisição só', async () => {
     let gets = 0
     let resolveGet!: (r: Response) => void
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/state': () => { gets += 1; return new Promise<Response>((r) => { resolveGet = r }) },
-      'PUT /api/state/layout': () => jsonResponse({}),
     }))
     const layout = useLayoutStore()
     const first = layout.restore()
     const second = layout.restore()
-    resolveGet(jsonResponse({ layout: { columns: ['a'], widths: {} } }))
+    resolveGet(jsonResponse({ preferences: { finished_after_days: 9 } }))
     await Promise.all([first, second])
     expect(gets).toBe(1)
-    expect(layout.columns).toEqual(['a'])
+    expect(layout.finishedAfterDays).toBe(9)
   })
 
-  it('ignora layout salvo inválido ou falha ao ler', async () => {
-    vi.stubGlobal('fetch', routeFetch({ 'GET /api/state': () => jsonResponse({ layout: 'lixo' }) }))
+  it('se a leitura falhar mantém o padrão e tenta de novo depois', async () => {
+    let fail = true
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/state': () => (fail ? jsonResponse({ detail: 'erro' }, 500) : jsonResponse({ preferences: { finished_after_days: 8 } })),
+    }))
     const layout = useLayoutStore()
     await layout.restore()
-    expect(layout.columns).toEqual([])
     expect(layout.restored).toBe(true)
-  })
-
-  it('se a leitura falhar não grava por cima do layout salvo', async () => {
-    const fetchMock = routeFetch({
-      'GET /api/state': () => jsonResponse({ detail: 'erro' }, 500),
-      'PUT /api/state/layout': () => jsonResponse({}),
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    const layout = useLayoutStore()
+    expect(layout.loadedFromServer).toBe(false)
+    expect(layout.finishedAfterDays).toBe(DEFAULT_FINISHED_AFTER_DAYS)
+    fail = false
     await layout.restore()
-    layout.open('a')
-    await vi.advanceTimersByTimeAsync(1000)
-    expect(putCalls(fetchMock)).toHaveLength(0)
-  })
-
-  it('coluna fechada durante a restauração não volta', async () => {
-    let resolveGet!: (r: Response) => void
-    vi.stubGlobal('fetch', routeFetch({
-      'GET /api/state': () => new Promise<Response>((r) => { resolveGet = r }),
-      'PUT /api/state/layout': () => jsonResponse({}),
-    }))
-    const layout = useLayoutStore()
-    const done = layout.restore()
-    layout.open('velho')
-    layout.close('velho')
-    resolveGet(jsonResponse({ layout: { columns: ['velho', 'outro'], widths: {} } }))
-    await done
-    expect(layout.columns).toEqual(['outro'])
-  })
-
-  it('lê finished_after_days das preferências, padrão 3', async () => {
-    vi.stubGlobal('fetch', routeFetch({
-      'GET /api/state': () => jsonResponse({ preferences: { finished_after_days: 7 } }),
-    }))
-    const layout = useLayoutStore()
-    expect(layout.finishedAfterDays).toBe(3)
-    await layout.restore()
-    expect(layout.finishedAfterDays).toBe(7)
+    expect(layout.loadedFromServer).toBe(true)
+    expect(layout.finishedAfterDays).toBe(8)
   })
 })

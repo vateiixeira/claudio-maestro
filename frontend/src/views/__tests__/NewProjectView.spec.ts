@@ -170,7 +170,7 @@ describe('tela de novo projeto', () => {
     const wrapper = await mountView()
     await wrapper.find('[data-test="cancel"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/')
+    expect(router.currentRoute.value.fullPath).toBe('/inbox')
   })
 
   describe('escolher pasta pelo sistema', () => {

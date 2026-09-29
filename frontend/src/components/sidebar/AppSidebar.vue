@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BrandMark from '../BrandMark.vue'
+import ConnectionIndicator from '../ConnectionIndicator.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import SessionSearch from './SessionSearch.vue'
 import BranchLabel from '../git/BranchLabel.vue'
+import { useEventSocket } from '../../api/socket'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
@@ -15,6 +17,7 @@ const sessions = useSessionsStore()
 const git = useGitStore()
 const newConversation = useNewConversationStore()
 const route = useRoute()
+const socket = useEventSocket()
 
 const waitingCount = computed(() => sessions.all.filter((s) => s.display_state === 'waiting').length)
 function waitingIn(projectId: number): number {
@@ -103,5 +106,6 @@ const itemClass = (active: boolean) => [
     </div>
 
     <RouterLink to="/preferencias" data-test="preferences" :class="itemClass(route.name === 'preferences')" :aria-current="route.name === 'preferences' ? 'page' : undefined">Preferências</RouterLink>
+    <ConnectionIndicator :status="socket.status.value" />
   </nav>
 </template>

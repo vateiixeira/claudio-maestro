@@ -16,7 +16,7 @@ vi.mock('../../../api/socket', () => ({
   }),
 }))
 
-import SessionColumn from '../SessionColumn.vue'
+import ConversationThread from '../ConversationThread.vue'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -48,12 +48,12 @@ async function mountWith(snapshot: Record<string, unknown>) {
   vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, ...snapshot })) }))
   const router = createAppRouter(createMemoryHistory())
   await router.push('/sessions/s1')
-  const w = mount(SessionColumn, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] }, attachTo: document.body })
+  const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] }, attachTo: document.body })
   await flushPromises()
   return w
 }
 
-describe('faixa de subagentes na coluna da sessão', () => {
+describe('faixa de subagentes na conversa', () => {
   it('aparece acima do campo de mensagem enquanto há subagente rodando', async () => {
     const w = await mountWith({
       state: 'running',
@@ -75,7 +75,7 @@ describe('faixa de subagentes na coluna da sessão', () => {
     vi.stubGlobal('fetch', fetchMock)
     const router = createAppRouter(createMemoryHistory())
     await router.push('/sessions/s1')
-    const w = mount(SessionColumn, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] }, attachTo: document.body })
+    const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] }, attachTo: document.body })
     await flushPromises()
     expect(w.find('[data-test="interrupt"]').exists()).toBe(false)
     const stop = w.find('[data-test="subagent-stop"]')

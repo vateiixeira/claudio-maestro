@@ -54,7 +54,7 @@ async function reload() {
 }
 
 // Tells the backend the user has looked at this session: after loading, when the
-// column gets focus and when new items arrive, but only while the column is visible.
+// conversation gets focus and when new items arrive, but only while it is visible.
 const SEEN_DELAY = 300
 let seenTimer: ReturnType<typeof setTimeout> | null = null
 const canSee = () => props.visible && document.visibilityState !== 'hidden'
@@ -257,7 +257,7 @@ watch(
   },
 )
 
-// Images dropped anywhere on the column go to the message field.
+// Images dropped anywhere on the conversation go to the message field.
 const composer = ref<InstanceType<typeof MessageComposer> | null>(null)
 function onDrop(event: DragEvent) {
   const files = Array.from(event.dataTransfer?.files ?? [])
@@ -420,8 +420,6 @@ function resolvePrompt(promptId: string) {
         >
           Tentar de novo
         </button>
-        <!-- Extra actions of the host (the column adds "Fechar coluna" here). -->
-        <slot name="load-error-actions" />
       </div>
       <p v-else class="text-fg-muted">Carregando…</p>
     </div>

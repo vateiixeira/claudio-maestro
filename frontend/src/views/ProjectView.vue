@@ -141,7 +141,7 @@ async function remove(): Promise<void> {
   actionError.value = null
   try {
     await projects.remove(props.id)
-    await router.push('/')
+    await router.push('/inbox')
   } catch (e) {
     actionError.value = errorMessage(e)
     confirmingRemove.value = false
@@ -155,7 +155,7 @@ async function remove(): Promise<void> {
   <div v-if="!project" class="px-10 py-8">
     <p v-if="projects.loaded" class="text-fg-muted">
       Projeto não encontrado.
-      <RouterLink to="/" class="text-primary-soft hover:underline">Voltar ao início</RouterLink>
+      <RouterLink to="/inbox" class="text-primary-soft hover:underline">Voltar ao início</RouterLink>
     </p>
     <p v-else class="text-fg-muted">Carregando…</p>
   </div>
