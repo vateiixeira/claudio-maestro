@@ -78,4 +78,12 @@ describe('campo de mensagem', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s1/interrupt', expect.objectContaining({ method: 'POST' }))
   })
+
+  it('"Interromper" aparece aguardando decisão e some conectando', async () => {
+    const { w } = setup()
+    await w.setProps({ state: 'awaiting_decision' })
+    expect(w.find('[data-test="interrupt"]').exists()).toBe(true)
+    await w.setProps({ state: 'connecting' })
+    expect(w.find('[data-test="interrupt"]').exists()).toBe(false)
+  })
 })

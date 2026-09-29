@@ -4,11 +4,11 @@ import { resultText, str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 import TruncatedText from './TruncatedText.vue'
 
-const props = defineProps<{ item: ToolItem }>()
+const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
 const open = ref(true)
 
 const output = computed(() => resultText(props.item.result?.content))
-const running = computed(() => !props.item.result)
+const running = computed(() => props.item.streaming || (!props.item.result && props.sessionActive))
 const isError = computed(() => props.item.result?.is_error === true)
 </script>
 
@@ -24,6 +24,7 @@ const isError = computed(() => props.item.result?.is_error === true)
       <span class="grow" />
       <span v-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
       <span v-else-if="isError" class="text-xs text-diff-del-fg">falhou</span>
+      <span v-else-if="!item.result" class="text-xs text-fg-muted">sem resultado</span>
       <button
         v-if="!running && output"
         type="button"

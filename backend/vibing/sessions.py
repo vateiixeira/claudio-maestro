@@ -305,6 +305,8 @@ class ActiveSession:
         self._refresh_state()
         client: AgentClient | None = None
         try:
+            if not Path(self.record.cwd).is_dir():
+                raise AgentError(f"A pasta do projeto não existe mais: {self.record.cwd}")
             resume = self._has_connected or await self._check_history()
             client = self._new_client(resume)
             try:
@@ -423,6 +425,7 @@ class ActiveSession:
         self._reader = None
         self.error = message
         self.pending_turns = 0
+        self._emit_events(self.builder.close_open_items())
         self._emit_events(self.builder.add_notice("error", message))
         self._cancel_prompts()
         self._refresh_state()

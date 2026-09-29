@@ -149,7 +149,7 @@ function resolvePrompt(promptId: string) {
             :class="{ 'border-l border-line pl-4': row.depth > 0 }"
             :style="row.depth > 1 ? { marginLeft: `${(row.depth - 1) * 16}px` } : undefined"
           >
-            <ConversationBlock :item="row.item" />
+            <ConversationBlock :item="row.item" :session-active="conv.state === 'running' || conv.state === 'awaiting_decision'" />
           </div>
           <PermissionCard
             v-for="prompt in conv.prompts"
@@ -172,7 +172,7 @@ function resolvePrompt(promptId: string) {
           {{ conv.error || 'A sessão parou com erro.' }} Você pode enviar de novo.
         </p>
         <p v-if="loadError" role="alert" class="m-0 text-sm text-secondary-soft">{{ loadError }}</p>
-        <MessageComposer :session-id="conv.sessionId" :state="conv.state" />
+        <MessageComposer :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" />
       </div>
     </template>
     <div v-else class="px-10 py-8">

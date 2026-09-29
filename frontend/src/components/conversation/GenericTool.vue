@@ -4,12 +4,13 @@ import { prettyJson, resultText } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 import TruncatedText from './TruncatedText.vue'
 
-const props = defineProps<{ item: ToolItem }>()
+const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
 const open = ref(false)
 
 const input = computed(() => prettyJson(props.item.input))
 const output = computed(() => resultText(props.item.result?.content))
 const isError = computed(() => props.item.result?.is_error === true)
+const running = computed(() => props.item.streaming || (!props.item.result && props.sessionActive))
 </script>
 
 <template>
@@ -23,8 +24,9 @@ const isError = computed(() => props.item.result?.is_error === true)
       <span aria-hidden="true" class="text-xs text-fg-muted">{{ open ? '▾' : '▸' }}</span>
       <span class="text-xs font-semibold text-fg-muted">Ferramenta</span>
       <span class="min-w-0 grow truncate font-mono text-xs">{{ item.name }}</span>
-      <span v-if="!item.result" class="animate-pulse text-xs text-primary-soft">rodando…</span>
+      <span v-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
       <span v-else-if="isError" class="text-xs text-diff-del-fg">erro</span>
+      <span v-else-if="!item.result" class="text-xs text-fg-muted">sem resultado</span>
     </button>
     <div v-show="open" class="flex flex-col gap-2 border-t border-line px-3 py-2">
       <div>

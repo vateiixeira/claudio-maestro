@@ -7,7 +7,7 @@ import type { ConversationItem } from '../../../types/conversation'
 function tool(name: string, input: Record<string, unknown>, result: unknown = null): ConversationItem {
   return { type: 'tool', id: 't1', tool_use_id: 'tu1', name, input, result: result as never, streaming: false, parent_tool_use_id: null }
 }
-const mountItem = (item: ConversationItem) => mount(ConversationBlock, { props: { item } })
+const mountItem = (item: ConversationItem, sessionActive = true) => mount(ConversationBlock, { props: { item, sessionActive } })
 
 describe('blocos da conversa', () => {
   it('mensagem do usuário', () => {
@@ -92,5 +92,17 @@ describe('TruncatedText', () => {
     expect(w.text()).not.toContain('linha 201')
     await w.find('[data-test="show-all"]').trigger('click')
     expect(w.text()).toContain('linha 250')
+  })
+
+  it('ferramenta sem resultado só aparece rodando com a sessão ativa ou em streaming', () => {
+    for (const name of ['Bash', 'Read', 'Edit', 'Grep']) {
+      const idle = mountItem(tool(name, { command: 'x', file_path: '/p/a.py' }), false)
+      expect(idle.text()).not.toMatch(/rodando|lendo|aplicando/)
+      if (name !== 'Edit') expect(idle.text()).toContain('sem resultado')
+      const active = mountItem(tool(name, { command: 'x', file_path: '/p/a.py' }), true)
+      expect(active.text()).toMatch(/rodando|lendo|aplicando/)
+      const streaming = mountItem({ ...(tool(name, { command: 'x', file_path: '/p/a.py' }) as object), streaming: true } as ConversationItem, false)
+      expect(streaming.text()).toMatch(/rodando|lendo|aplicando/)
+    }
   })
 })

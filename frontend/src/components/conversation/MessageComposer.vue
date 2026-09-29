@@ -11,7 +11,7 @@ const interrupting = ref(false)
 const error = ref<string | null>(null)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 
-const busy = computed(() => props.state === 'running' || props.state === 'connecting')
+const busy = computed(() => props.state === 'running' || props.state === 'awaiting_decision')
 
 // Grows with the text up to 40% of the column, then scrolls.
 function resize() {

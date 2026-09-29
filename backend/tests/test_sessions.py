@@ -893,3 +893,51 @@ async def test_send_after_shutdown_is_refused(make_env):
         await session.send("depois")
     assert len(env.factory.clients) == 1
     assert session.state == "closed"
+
+
+# Open items are closed on failure -------------------------------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "failing",
+    [
+        pytest.param(lambda sid: [*text_turn(sid, "meio")[:5], FailStep()], id="mid-text"),
+        pytest.param(
+            lambda sid: [*tool_turn(sid, tool_name="Bash")[:5], FailStep()], id="mid-tool"
+        ),
+    ],
+)
+async def test_failure_closes_open_items(make_env, env_cleanup, failing):
+    script, ids = by_session(failing)
+    env = make_env(script=script)
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    ids.append(session.session_id)
+
+    await session.send("comece")
+    await wait_until(lambda: session.state == "error")
+
+    items = session.snapshot()["items"]
+    opened = [i for i in items if i["type"] in ("text", "tool")]
+    assert opened, "the script should have produced an open item"
+    assert all(i.get("streaming") is False for i in items if "streaming" in i)
+    upserts = env.recorder.of(session.session_id, "item.upsert")
+    last_by_id = {e["data"]["id"]: e["data"] for e in upserts}
+    assert all(d.get("streaming") is not True for d in last_by_id.values())
+
+
+@pytest.mark.anyio
+async def test_connect_fails_when_project_folder_is_gone(make_env, env_cleanup):
+    import shutil
+
+    env = make_env(script=lambda content: [])
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    shutil.rmtree(env.project.path)
+
+    await session.send("oi")
+
+    assert session.state == "error"
+    assert session.error == f"A pasta do projeto não existe mais: {env.project.path}"
+    assert env.factory.clients == []

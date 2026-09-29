@@ -119,4 +119,16 @@ describe('tela da sessão', () => {
     expect(fake.session.size).toBe(0)
     expect(fake.reconnect.size).toBe(0)
   })
+
+  it('o rascunho não vaza de uma sessão para outra', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot()),
+      'GET /api/sessions/s2': () => jsonResponse(makeSnapshot({ session_id: 's2' })),
+    }))
+    const w = await mountView()
+    await w.find('textarea').setValue('rascunho da A')
+    await w.setProps({ id: 's2' })
+    await flushPromises()
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+  })
 })

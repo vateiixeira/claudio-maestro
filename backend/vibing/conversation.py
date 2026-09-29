@@ -402,13 +402,18 @@ class ConversationBuilder:
         )
         return [Event("session.init", asdict(self.init))]
 
-    def _on_result(self, message: ResultMessage) -> list[Event]:
+    def close_open_items(self) -> list[Event]:
+        """End every item still streaming; used at the end of a turn or on failure."""
         events: list[Event] = []
         for item in self.items:
             if getattr(item, "streaming", False):
                 item.streaming = False  # type: ignore[union-attr]
                 events.append(self._put(item))
         self._streams.clear()
+        return events
+
+    def _on_result(self, message: ResultMessage) -> list[Event]:
+        events = self.close_open_items()
 
         if message.terminal_reason in INTERRUPTED_REASONS:
             events.append(self._notice("info", "Interrompido."))

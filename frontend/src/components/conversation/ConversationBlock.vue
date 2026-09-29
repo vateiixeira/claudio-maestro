@@ -9,7 +9,7 @@ import TextBlock from './TextBlock.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import UserMessage from './UserMessage.vue'
 
-defineProps<{ item: ConversationItem }>()
+withDefaults(defineProps<{ item: ConversationItem; sessionActive?: boolean }>(), { sessionActive: false })
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit'])
 </script>
@@ -20,9 +20,9 @@ const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit'])
   <ThinkingBlock v-else-if="item.type === 'thinking'" :item="item" />
   <NoticeBlock v-else-if="item.type === 'notice'" :item="item" />
   <template v-else-if="item.type === 'tool'">
-    <ReadTool v-if="item.name === 'Read'" :item="item" />
-    <EditTool v-else-if="EDIT_TOOLS.has(item.name)" :item="item" />
-    <BashTool v-else-if="item.name === 'Bash'" :item="item" />
-    <GenericTool v-else :item="item" />
+    <ReadTool v-if="item.name === 'Read'" :item="item" :session-active="sessionActive" />
+    <EditTool v-else-if="EDIT_TOOLS.has(item.name)" :item="item" :session-active="sessionActive" />
+    <BashTool v-else-if="item.name === 'Bash'" :item="item" :session-active="sessionActive" />
+    <GenericTool v-else :item="item" :session-active="sessionActive" />
   </template>
 </template>
