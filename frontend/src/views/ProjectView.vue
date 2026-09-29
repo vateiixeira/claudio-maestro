@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import SessionStateIcon from '../components/SessionStateIcon.vue'
-import SessionGroup from '../components/session/SessionGroup.vue'
+import ConversationRow from '../components/conversation/ConversationRow.vue'
 import BranchLabel from '../components/git/BranchLabel.vue'
 import { branchText, changedCount, useGitStore } from '../stores/git'
 import type { GitRepo } from '../types/api'
 import { errorMessage, openInEditor } from '../api/http'
-import { displayStateLabels } from '../sessionState'
-import type { DisplayState } from '../types/api'
+import { groupByDate } from '../conversationList'
 import { useProjectsStore } from '../stores/projects'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useSessionsStore } from '../stores/sessions'
@@ -37,25 +36,11 @@ async function openEditor(): Promise<void> {
   }
 }
 const router = useRouter()
-const route = useRoute()
-
-// Coming from the menu's hidden sessions line: scroll to Finalizadas once listed.
-async function scrollToHash(): Promise<void> {
-  if (route.hash !== '#finalizadas') return
-  await nextTick()
-  document.getElementById('finalizadas')?.scrollIntoView({ block: 'start' })
-}
 
 const project = computed(() => projects.byId(props.id))
 const projectSessions = computed(() => sessions.forProject(props.id))
 
-const groups = computed(() =>
-  (['running', 'waiting', 'finished'] as DisplayState[]).map((display) => ({
-    display,
-    title: display === 'finished' ? 'Finalizadas' : displayStateLabels[display],
-    sessions: projectSessions.value.filter((s) => s.display_state === display),
-  })),
-)
+const dateGroups = computed(() => groupByDate(projectSessions.value, new Date(), true))
 
 const sessionsError = ref<string | null>(null)
 const actionError = ref<string | null>(null)
@@ -103,11 +88,9 @@ async function load(): Promise<void> {
   } catch (e) {
     sessionsError.value = errorMessage(e)
   }
-  await scrollToHash()
 }
 
 watch(() => props.id, load, { immediate: true })
-watch(() => route.hash, () => void scrollToHash())
 
 const syncing = ref(false)
 async function sync(): Promise<void> {
@@ -347,19 +330,15 @@ async function remove(): Promise<void> {
 
     <p v-if="sessionsError" role="alert" class="text-sm text-secondary-soft">{{ sessionsError }}</p>
     <p v-else-if="projectSessions.length === 0" class="text-sm text-fg-muted">
-      Nenhuma sessão ainda. Use "Nova sessão" para começar uma conversa nesta pasta.
+      Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa nesta pasta.
     </p>
     <template v-else>
-      <template v-for="group in groups" :key="group.display">
-        <SessionGroup
-          v-if="group.sessions.length > 0"
-          :data-test="`block-${group.display}`"
-          :display="group.display"
-          :title="group.title"
-          :sessions="group.sessions"
-          @error="actionError = $event"
-        />
-      </template>
+      <section v-for="group in dateGroups" :key="group.label" :aria-label="group.label" class="flex flex-col">
+        <div class="flex items-center gap-3 py-2">
+          <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
+        </div>
+        <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" @error="actionError = $event" />
+      </section>
     </template>
   </div>
 </template>

@@ -18,8 +18,17 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-describe('tela do projeto em três blocos', () => {
-  it('separa em execução, aguardando e finalizadas, e reabre', async () => {
+async function mountProject() {
+  const wrapper = mount(ProjectView, { props: { id: 1 }, global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
+  await flushPromises()
+  return wrapper
+}
+
+const rowOf = (wrapper: ReturnType<typeof mount>, title: string) =>
+  wrapper.findAll('[data-test="conversation-row"]').find((r) => r.text().includes(title))!
+
+describe('tela do projeto com a linha de conversa', () => {
+  it('mostra todas as conversas na mesma lista, sem blocos por estado, e reabre pela linha', async () => {
     const patches: unknown[] = []
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/projects/1/sessions': () => jsonResponse([
@@ -32,25 +41,20 @@ describe('tela do projeto em três blocos', () => {
         return jsonResponse(makeSession({ session_id: 'f', title: 'Acabou', seq: 9, display_state: 'waiting' }))
       },
     }))
-    const wrapper = mount(ProjectView, { props: { id: 1 }, global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
-    await flushPromises()
+    const wrapper = await mountProject()
 
-    const block = (name: string) => wrapper.find(`[data-test="block-${name}"]`)
-    expect(block('running').text()).toContain('Em execução')
-    expect(block('running').text()).toContain('Rodando')
-    expect(block('waiting').text()).toContain('Aguardando você')
-    expect(block('waiting').text()).toContain('Esperando')
-    expect(block('finished').text()).toContain('Finalizadas')
-    expect(block('finished').text()).toContain('Acabou')
+    expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Rodando', 'Esperando', 'Acabou'])
+    expect(wrapper.find('[data-test="block-running"]').exists()).toBe(false)
+    expect(wrapper.find('#finalizadas').exists()).toBe(false)
 
-    await block('finished').find('[data-test="reopen"]').trigger('click')
+    await rowOf(wrapper, 'Acabou').find('[data-test="row-reopen"]').trigger('click')
     await flushPromises()
     expect(patches).toEqual([{ finished: false }])
-    expect(block('waiting').text()).toContain('Acabou')
-    expect(block('finished').exists()).toBe(false)
+    expect(rowOf(wrapper, 'Acabou').find('[data-test="row-reopen"]').exists()).toBe(false)
+    expect(rowOf(wrapper, 'Acabou').find('[data-test="row-finish"]').exists()).toBe(true)
   })
 
-  it('Finalizar só nas aguardando, finalizadas compactas e sem estados internos', async () => {
+  it('Finalizar só nas que não estão finalizadas, Reabrir só na finalizada, e sem estados internos', async () => {
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/projects/1/sessions': () => jsonResponse([
         makeSession({ session_id: 'r', title: 'Rodando', display_state: 'running', state: 'running' }),
@@ -59,19 +63,26 @@ describe('tela do projeto em três blocos', () => {
         makeSession({ session_id: 'f', title: 'Acabou', display_state: 'finished', finished: true, state: 'closed' }),
       ]),
     }))
-    const wrapper = mount(ProjectView, { props: { id: 1 }, global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
-    await flushPromises()
-    const block = (name: string) => wrapper.find(`[data-test="block-${name}"]`)
+    const wrapper = await mountProject()
 
-    expect(block('running').find('[data-test="finish"]').exists()).toBe(false)
-    expect(block('waiting').findAll('[data-test="finish"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-test="row-finish"]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-test="row-reopen"]')).toHaveLength(1)
+    expect(rowOf(wrapper, 'Acabou').find('[data-test="row-reopen"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Parada')
     expect(wrapper.text()).not.toContain('Fechada')
+  })
 
-    const finished = block('finished').find('[data-test="finished-row"]')
-    expect(finished.exists()).toBe(true)
-    expect(finished.text()).toContain('Acabou')
-    expect(finished.text()).toContain('Reabrir')
-    expect(finished.text()).not.toContain('Finalizada')
+  it('mostra na página o erro de uma ação da linha', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([
+        makeSession({ session_id: 'f', title: 'Acabou', display_state: 'finished', finished: true }),
+      ]),
+      'PATCH /api/sessions/f': () => jsonResponse({ detail: 'Não foi possível reabrir.' }, 500),
+    }))
+    const wrapper = await mountProject()
+
+    await rowOf(wrapper, 'Acabou').find('[data-test="row-reopen"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').text()).toContain('Não foi possível reabrir.')
   })
 })

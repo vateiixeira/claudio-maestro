@@ -36,7 +36,7 @@ async function mountView() {
 }
 
 describe('tela do projeto', () => {
-  it('mostra nome, caminho e sessões', async () => {
+  it('mostra nome, caminho e conversas', async () => {
     seed()
     vi.stubGlobal(
       'fetch',
@@ -49,11 +49,33 @@ describe('tela do projeto', () => {
 
     expect(wrapper.find('h1').text()).toBe('loja-online')
     expect(wrapper.text()).toContain('/home/vi/dev/loja-online')
-    const rows = wrapper.findAll('[data-test="session-row"]')
+    const rows = wrapper.findAll('[data-test="conversation-row"]')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('Cupom expirado')
     expect(rows[0]!.text()).toContain('Aguardando você')
-    expect(rows[0]!.attributes('href')).toBe('/sessions/a')
+    expect(rows[0]!.find('[data-test="row-link"]').attributes('href')).toBe('/sessions/a')
+  })
+
+  it('lista as conversas do projeto por data com a linha de conversa', async () => {
+    seed()
+    const now = Date.now() / 1000
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Hoje', last_activity_at: now }),
+      makeSession({ session_id: 'b', title: 'Velha', last_activity_at: now - 30 * 86400, display_state: 'finished' }),
+    ]) }))
+    const wrapper = await mountView()
+
+    expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Hoje', 'Velha'])
+    expect(wrapper.findAll('[data-test="date-group"]').map((g) => g.text())).toEqual(['Hoje', 'Antes'])
+  })
+
+  it('sem conversas mostra a orientação para começar uma', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa nesta pasta.')
+    expect(wrapper.find('[data-test="conversation-row"]').exists()).toBe(false)
   })
 
   it('"Nova sessão" abre o modal de nova conversa neste projeto', async () => {
@@ -165,21 +187,6 @@ describe('tela do projeto', () => {
     await flushPromises()
     expect(list).toHaveBeenCalledTimes(1)
     expect(useProjectsStore(pinia).byId(1)?.hidden_sessions).toBe(2)
-  })
-
-  it('rola até Finalizadas quando chega com #finalizadas, depois de carregar', async () => {
-    seed()
-    const scroll = vi.fn()
-    Element.prototype.scrollIntoView = scroll
-    vi.stubGlobal('fetch', routeFetch({
-      'GET /api/projects/1/sessions': () => jsonResponse([makeSession({ display_state: 'finished', finished: true })]),
-    }))
-    await router.push('/projects/1#finalizadas')
-    const wrapper = mount(ProjectView, { props: { id: 1 }, attachTo: document.body, global: { plugins: [pinia, router] } })
-    await flushPromises()
-    expect(scroll).toHaveBeenCalledTimes(1)
-    expect((scroll.mock.contexts[0] as HTMLElement).id).toBe('finalizadas')
-    wrapper.unmount()
   })
 
   it('confirmação de remoção: foco vai para Cancelar, Esc fecha e devolve o foco a Remover', async () => {
