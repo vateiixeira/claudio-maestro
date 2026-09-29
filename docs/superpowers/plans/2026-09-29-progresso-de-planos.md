@@ -630,7 +630,7 @@ Expected: PASS.
 - Consumes (Tarefas 1 e 2): `PlanCache`, `is_plan_path`, `SessionManager.link_plan/unlink_plan/auto_plan/refresh_plan/project_roots`, `gitinfo.discover_scan` (descoberta de repositórios do projeto).
 - Produces: as rotas do contrato.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 1. `GET /api/projects/{id}/plans`: projeto com `docs/superpowers/plans/a.md` (plano) e `b.md` (sem tarefas) na raiz, e um repositório `sub/` com `docs/superpowers/plans/c.md` → devolve `a` e `c` (não `b`), mais recente primeiro, com `title/total/done`; projeto inexistente → 404; projeto indisponível → `[]`.
 2. `GET /api/sessions/{id}/plan` sem vínculo → `{"link": "auto", "path": null, "plan": null, "tasks": []}`; com vínculo → `tasks` com `number/title/done`; plano apagado → `path` preenchido, `plan: null`, `tasks: []`.
@@ -638,12 +638,12 @@ Expected: PASS.
 4. `DELETE` → `link == "off"`, `path: null`, e um `Read` posterior do plano pela conversa não religa (reaproveite o cliente falso da Tarefa 2).
 5. Proteção: sem `X-Vibing` → 403; `Origin` estrangeira → 403 (como em `test_fs_pick_api.py::test_pick_is_protected`).
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `uv run pytest -q backend/tests/test_plans_api.py`
 Expected: FAIL (404 nas rotas).
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```python
 # backend/vibing/api/plans.py
@@ -673,12 +673,12 @@ class PlanLinkIn(BaseModel):
 
 Implemente `GET /projects/{project_id}/plans` (listagem em `asyncio.to_thread`: raiz do projeto + repositórios de `gitinfo.discover_scan`, `glob("docs/superpowers/plans/*.md")`, `is_plan_path` + `plan_cache.read`, ordenado por `st_mtime` decrescente), e `GET/PUT/DELETE /sessions/{session_id}/plan` usando os métodos do `SessionManager` da Tarefa 2; o `PlanState` é montado lendo o plano pelo `plan_cache` em `to_thread`. Converta a validação do corpo em 400 com `detail` em português (um `ValueError` do validador vira 422 no FastAPI: trate com `RequestValidationError` só nesta rota ou valide manualmente dentro da rota — escolha a validação manual para devolver 400). `is_plan_path` falhando por estar fora de projeto → 403 ("O plano precisa estar dentro de um projeto registrado."); arquivo que não é plano (pasta errada, sem tarefas) → 400 ("O arquivo não é um plano com tarefas.").
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `uv run pytest -q` (2 vezes)
 Expected: PASS.
 
-- [ ] **Step 5: Commit (sessão principal)**
+- [x] **Step 5: Commit (sessão principal)**
 
 `[Feat] Adicionar rotas para listar, vincular e desligar planos`
 
