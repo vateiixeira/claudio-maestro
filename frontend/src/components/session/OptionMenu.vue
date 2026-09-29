@@ -67,7 +67,9 @@ function onMenuKey(event: KeyboardEvent) {
   else if (event.key === 'Home') next = 0
   else if (event.key === 'End') next = list.length - 1
   else if (event.key === 'Escape') {
+    // Only the menu closes: a dialog around it must not see this Esc.
     event.preventDefault()
+    event.stopPropagation()
     hide()
     return
   } else if (event.key === 'Tab') {

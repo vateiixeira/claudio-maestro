@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from 'vue'
 import { errorMessage, interruptSession, sendMessage } from '../../api/http'
 import { useDictation } from '../../conversation/dictation'
 import { type DraftImage, MAX_IMAGES, MAX_TOTAL_BYTES, base64Of, filesFrom, formatSize, imageProblem, readImage } from '../../conversation/images'
+import { takePendingDraft } from '../../conversation/pendingDrafts'
 import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
 import type { SessionState } from '../../types/api'
@@ -10,10 +11,11 @@ import type { SessionState } from '../../types/api'
 // `blockedReason`: why sending is not possible now (e.g. the project folder is gone).
 const props = defineProps<{ sessionId: string; state: SessionState; blockedReason?: string | null }>()
 
-const text = ref('')
+const pendingDraft = takePendingDraft(props.sessionId)
+const text = ref(pendingDraft?.text ?? '')
 const sending = ref(false)
 const interrupting = ref(false)
-const error = ref<string | null>(null)
+const error = ref<string | null>(pendingDraft?.error ?? null)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 
 const images = ref<DraftImage[]>([])

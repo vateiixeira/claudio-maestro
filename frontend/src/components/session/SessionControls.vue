@@ -6,6 +6,7 @@ import { formatTokens } from '../../format'
 import { useModelsStore } from '../../stores/models'
 import { useSessionsStore } from '../../stores/sessions'
 import type { Effort, PermissionMode, SessionUpdate } from '../../types/api'
+import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, modeLabel } from '../../sessionOptions'
 import OptionMenu, { type MenuOption } from './OptionMenu.vue'
 
 const props = defineProps<{ sessionId: string }>()
@@ -15,25 +16,6 @@ const modelsStore = useModelsStore()
 void modelsStore.ensure()
 
 const options = computed(() => conversations.get(props.sessionId)?.options)
-
-const EFFORT_LABELS: Record<Effort, string> = {
-  low: 'baixo',
-  medium: 'médio',
-  high: 'alto',
-  xhigh: 'muito alto',
-  max: 'máximo',
-}
-const ALL_EFFORTS = Object.keys(EFFORT_LABELS) as Effort[]
-const MODE_LABELS: Record<PermissionMode, string> = {
-  default: 'Pede permissão',
-  acceptEdits: 'Aceita edições',
-  plan: 'Planejamento',
-  bypassPermissions: 'Sem perguntas',
-  auto: 'Automático',
-  dontAsk: 'Só o pré-aprovado',
-}
-// A mode the CLI knows but the app does not shows its raw value.
-const modeLabel = (m: string) => MODE_LABELS[m as PermissionMode] ?? m
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 

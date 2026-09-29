@@ -7,6 +7,7 @@ import { createAppRouter } from '../../router'
 import { jsonResponse, makeGitRepo, makeProject, makeSession, routeFetch } from '../../test/factories'
 import { useProjectsStore } from '../../stores/projects'
 import { useGitStore } from '../../stores/git'
+import { useNewConversationStore } from '../../stores/newConversation'
 
 enableAutoUnmount(afterEach)
 
@@ -55,36 +56,19 @@ describe('tela do projeto', () => {
     expect(rows[0]!.attributes('href')).toBe('/sessions/a')
   })
 
-  it('"Nova sessão" cria a sessão e navega para ela', async () => {
+  it('"Nova sessão" abre o modal de nova conversa neste projeto', async () => {
     seed()
-    const fetchMock = routeFetch({
-      'GET /api/projects/1/sessions': () => jsonResponse([]),
-      'POST /api/projects/1/sessions': () => jsonResponse(makeSession({ session_id: 'nova' }), 201),
-    })
+    const fetchMock = routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = await mountView()
 
     await wrapper.find('[data-test="new-session"]').trigger('click')
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/projects/1/sessions', expect.objectContaining({ method: 'POST' }))
-    expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
-  })
-
-  it('mostra o erro ao criar sessão', async () => {
-    seed()
-    vi.stubGlobal(
-      'fetch',
-      routeFetch({
-        'GET /api/projects/1/sessions': () => jsonResponse([]),
-        'POST /api/projects/1/sessions': () => jsonResponse({ detail: 'A pasta do projeto não existe.' }, 409),
-      }),
-    )
-    const wrapper = await mountView()
-    await wrapper.find('[data-test="new-session"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[role="alert"]').text()).toContain('A pasta do projeto não existe.')
-    expect(router.currentRoute.value.fullPath).toBe('/projects/1')
+    const store = useNewConversationStore(pinia)
+    expect(store.isOpen).toBe(true)
+    expect(store.presetProjectId).toBe(1)
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/projects/1/sessions', expect.objectContaining({ method: 'POST' }))
   })
 
   it('desabilita "Nova sessão" com explicação quando a pasta está indisponível', async () => {

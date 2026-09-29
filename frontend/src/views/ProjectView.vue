@@ -10,6 +10,7 @@ import { errorMessage, openInEditor } from '../api/http'
 import { displayStateLabels } from '../sessionState'
 import type { DisplayState } from '../types/api'
 import { useProjectsStore } from '../stores/projects'
+import { useNewConversationStore } from '../stores/newConversation'
 import { useSessionsStore } from '../stores/sessions'
 
 const props = defineProps<{ id: number }>()
@@ -58,7 +59,6 @@ const groups = computed(() =>
 
 const sessionsError = ref<string | null>(null)
 const actionError = ref<string | null>(null)
-const creating = ref(false)
 
 const renaming = ref(false)
 const renameValue = ref('')
@@ -125,18 +125,9 @@ async function sync(): Promise<void> {
   }
 }
 
-async function newSession(): Promise<void> {
-  if (!project.value?.available || creating.value) return
-  creating.value = true
-  actionError.value = null
-  try {
-    const session = await sessions.create(props.id)
-    await router.push({ name: 'session', params: { id: session.session_id } })
-  } catch (e) {
-    actionError.value = errorMessage(e)
-  } finally {
-    creating.value = false
-  }
+function newSession(): void {
+  if (!project.value?.available) return
+  useNewConversationStore().open(props.id)
 }
 
 async function startRename(): Promise<void> {
@@ -264,7 +255,7 @@ async function remove(): Promise<void> {
           type="button"
           data-test="new-session"
           class="flex h-11 items-center gap-2 rounded-lg bg-primary px-4 font-semibold text-primary-fg hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"
-          :disabled="!project.available || creating"
+          :disabled="!project.available"
           :aria-describedby="project.available ? undefined : 'new-session-hint'"
           @click="newSession"
         >
@@ -272,7 +263,7 @@ async function remove(): Promise<void> {
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          {{ creating ? 'Abrindo…' : 'Nova sessão' }}
+          Nova sessão
         </button>
       </div>
     </header>
