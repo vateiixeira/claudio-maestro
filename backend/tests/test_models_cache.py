@@ -132,6 +132,8 @@ async def test_refresh_uses_temporary_client_and_closes_it(tmp_path):
     assert client.options.cwd == Path.home() or client.options.cwd.exists()
     assert client.sent == []
     assert client.closed
+    # No hooks, plugins or settings of the user or project run for this client.
+    assert client.options.setting_sources == []
 
 
 @pytest.mark.anyio

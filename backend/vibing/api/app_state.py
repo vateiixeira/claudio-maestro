@@ -24,9 +24,10 @@ def valid_finished_after_days(days: object) -> bool:
 
 @router.get("")
 def get_state(conn: DbDep) -> dict[str, Any]:
+    # Other keys (e.g. the models cache) are internal to the backend.
     return {row["key"]: json.loads(row["value"]) for row in conn.execute(
         "SELECT key, value FROM app_state ORDER BY key"
-    )}
+    ) if row["key"] in ALLOWED_KEYS}
 
 
 @router.put("/{key}")

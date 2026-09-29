@@ -41,11 +41,15 @@ def create_app(
     read_tool_results: history.ReadToolResults | None = None,
     spawn_editor: SpawnEditor | None = None,
     pick_folder: PickFolder | None = None,
+    refresh_models: bool | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
     `agent_factory`, `history_exists`, `rename_session`, `list_sessions` and
     `get_session_messages` default to the real SDK; tests pass fakes.
+    `refresh_models` turns on the periodic refresh of the models list, which starts
+    a throwaway agent client: by default it runs only with the real agent, so
+    tests with a fake factory keep seeing only the clients of their sessions.
     """
 
     @asynccontextmanager
@@ -100,6 +104,14 @@ def create_app(
                 )
             ),
         ]
+        if refresh_models if refresh_models is not None else agent_factory is None:
+            tasks.append(
+                asyncio.create_task(
+                    app.state.sessions.run_models_refresh(
+                        app.state.settings.models_refresh_interval_seconds
+                    )
+                )
+            )
         claude_projects = (
             app.state.settings.claude_projects_dir or claude_projects_dir()
         )

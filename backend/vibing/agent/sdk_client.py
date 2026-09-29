@@ -81,6 +81,8 @@ def build_sdk_options(
         kwargs["effort"] = options.effort
     if options.permission_mode is not None:
         kwargs["permission_mode"] = options.permission_mode
+    if options.setting_sources is not None:
+        kwargs["setting_sources"] = options.setting_sources
     return ClaudeAgentOptions(**kwargs)
 
 

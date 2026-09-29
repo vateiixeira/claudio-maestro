@@ -43,6 +43,9 @@ class AgentOptions:
     model: str | None = None
     effort: str | None = None  # "low" | "medium" | "high" | "xhigh" | "max"
     permission_mode: str | None = None  # "default" | "acceptEdits" | "plan" | "bypassPermissions" | "auto" | "dontAsk"
+    # None: SDK default (user, project and local settings, hooks and plugins load).
+    # []: none of them, for throwaway clients that only query the CLI.
+    setting_sources: list[str] | None = None
 
 
 @runtime_checkable

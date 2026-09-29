@@ -26,6 +26,8 @@ class Settings:
     history_sync_interval_seconds: float = 60
     # Git branches are refreshed this often while a WebSocket is connected.
     git_refresh_interval_seconds: float = 30
+    # The stored models list is checked at startup and then this often (3 times a day).
+    models_refresh_interval_seconds: float = 8 * 3600
     # Folder where the CLI saves conversations, watched for real-time updates.
     # None: `$CLAUDE_CONFIG_DIR/projects` or `~/.claude/projects`, resolved at startup.
     claude_projects_dir: Path | None = None

@@ -90,6 +90,18 @@ def test_build_options_does_not_set_setting_sources(tmp_path):
     assert sdk.setting_sources == ClaudeAgentOptions().setting_sources
 
 
+def test_build_options_passes_empty_setting_sources(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, setting_sources=[]))
+
+    assert sdk.setting_sources == []
+
+
+def test_build_options_passes_given_setting_sources(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, setting_sources=["user"]))
+
+    assert sdk.setting_sources == ["user"]
+
+
 # clean_inherited_env -------------------------------------------------------
 
 

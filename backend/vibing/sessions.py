@@ -71,7 +71,10 @@ PERMISSION_MODES: tuple[str, ...] = (
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._\[\]-]{1,100}$")
 DEFAULT_MODEL_VALUE = "default"
 MODEL_FIELDS = ("value", "displayName", "description", "supportsEffort", "supportedEffortLevels")
-# Shown by GET /api/models until a session connects and the SDK lists the real ones.
+# The stored models list is asked again after this long (3 times a day).
+MODELS_MAX_AGE = 8 * 3600
+MODELS_CACHE_KEY = "models_cache"
+# Shown by GET /api/models while no list is stored yet.
 FALLBACK_MODELS: list[dict[str, Any]] = [
     {
         "value": value,
@@ -464,6 +467,13 @@ def default_agent_factory(options: AgentOptions) -> AgentClient:
 
 def _now() -> int:
     return int(time.time())
+
+
+async def _deny_all(
+    tool_name: str, tool_input: dict[str, Any], context: Any
+) -> PermissionResultDeny:
+    """Permission callback of the throwaway client that only lists the models."""
+    return PermissionResultDeny(message="Cliente só de consulta.")
 
 
 # Active session ------------------------------------------------------------
@@ -1424,7 +1434,9 @@ class SessionManager:
         default_permission_mode: Callable[[], str | None] | None = None,
         read_transcript: history_module.ReadTranscript | None = None,
         read_edits: history_module.ReadEdits | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
+        self._clock = clock
         # Mode of new sessions (the user's CLI `defaultMode`).
         self._default_permission_mode = default_permission_mode or user_default_permission_mode
         # One pass over the transcript file. Only by default: tests that inject
@@ -1453,27 +1465,113 @@ class SessionManager:
         self._idle_timeout = idle_timeout
         self._finished_after_days = finished_after_days
         self._sessions: dict[str, ActiveSession] = {}
-        # Models of `get_server_info()`, cached after the first connected session.
+        # Models of `get_server_info()`, kept in `app_state` so a restart starts
+        # with the last list. `_models_fetched_at` is when it was last confirmed.
         self._models: list[dict[str, Any]] | None = None
+        self._models_fetched_at = 0.0
+        self._load_models()
 
     def list_models(self) -> list[dict[str, Any]]:
         return [dict(m) for m in (self._models or FALLBACK_MODELS)]
 
-    async def _on_connected(self, client: AgentClient) -> None:
-        if self._models is not None:
+    def _load_models(self) -> None:
+        try:
+            with closing(db.connect(self._db_path)) as conn:
+                row = conn.execute(
+                    "SELECT value FROM app_state WHERE key = ?", (MODELS_CACHE_KEY,)
+                ).fetchone()
+            stored = json.loads(row["value"]) if row is not None else None
+            models = normalize_models(stored)
+            fetched_at = stored.get("fetched_at") if isinstance(stored, dict) else None
+        except (sqlite3.Error, ValueError):
+            logger.exception("Falha ao ler a lista de modelos guardada")
             return
+        if models is not None and isinstance(fetched_at, int | float):
+            self._models = models
+            self._models_fetched_at = float(fetched_at)
+
+    def _save_models(self) -> None:
+        value = json.dumps(
+            {"models": self._models, "fetched_at": self._models_fetched_at}, ensure_ascii=False
+        )
+        try:
+            with closing(db.connect(self._db_path)) as conn:
+                conn.execute(
+                    "INSERT INTO app_state (key, value) VALUES (?, ?)"
+                    " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (MODELS_CACHE_KEY, value),
+                )
+        except sqlite3.Error:
+            logger.exception("Falha ao guardar a lista de modelos")
+
+    def _models_stale(self) -> bool:
+        return (
+            self._models is None
+            or self._clock() - self._models_fetched_at >= MODELS_MAX_AGE
+        )
+
+    async def _fetch_models(self, client: AgentClient) -> bool:
+        """Ask the client for the models. True when a valid list was received."""
         try:
             info = await client.get_server_info()
         except Exception:
             logger.exception("Falha ao consultar os modelos do agente")
-            return
+            return False
         models = normalize_models(info)
-        if models is not None and self._models is None:
-            self._models = models
+        if models is None:
+            return False
+        changed = models != self._models
+        self._models = models
+        self._models_fetched_at = self._clock()
+        self._save_models()
+        if changed:
             self._publish({
                 "session_id": None, "seq": 0, "type": "models.updated",
                 "data": {"models": self.list_models()},
             })
+        return True
+
+    async def _on_connected(self, client: AgentClient) -> None:
+        if self._models_stale():
+            await self._fetch_models(client)
+
+    async def refresh_models_if_stale(self) -> bool:
+        """Ask the SDK for the models with a throwaway client, when the stored
+        list is missing or old. True when a new list was received; failures are
+        logged and leave the stored list as it is."""
+        if not self._models_stale():
+            return False
+        client: AgentClient | None = None
+        try:
+            client = self._agent_factory(
+                AgentOptions(
+                    cwd=Path.home(),
+                    session_id=str(uuid.uuid4()),
+                    resume=False,
+                    can_use_tool=_deny_all,
+                    setting_sources=[],
+                )
+            )
+            await client.connect()
+            return await self._fetch_models(client)
+        except Exception:
+            logger.exception("Falha ao atualizar a lista de modelos")
+            return False
+        finally:
+            if client is not None:
+                with suppress(Exception):
+                    await client.close()
+
+    async def run_models_refresh(
+        self, interval: float, sleep: Callable[[float], Any] = asyncio.sleep
+    ) -> None:
+        """At startup and every `interval` seconds, refreshes a stale models list."""
+        while True:
+            try:
+                await self.refresh_models_if_stale()
+            except Exception:
+                logger.exception("Falha na atualização periódica dos modelos")
+            await sleep(interval)
 
     def create_session(self, project: Project) -> SessionRecord:
         if not project.available:
