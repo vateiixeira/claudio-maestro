@@ -13,7 +13,7 @@ import type {
   Session,
   SessionUpdate,
 } from '../types/api'
-import type { PromptDecision, SessionSnapshot } from '../types/conversation'
+import type { PromptDecision, PromptExtra, SessionSnapshot } from '../types/conversation'
 
 /** HTTP error carrying the status and the backend `detail` (already in Portuguese). */
 export class ApiError extends Error {
@@ -164,11 +164,16 @@ export function interruptSession(sessionId: string): Promise<void> {
   return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/interrupt`)
 }
 
-export function answerPrompt(sessionId: string, promptId: string, decision: PromptDecision): Promise<void> {
+export function answerPrompt(
+  sessionId: string,
+  promptId: string,
+  decision: PromptDecision,
+  extra: PromptExtra = {},
+): Promise<void> {
   return request(
     'POST',
     `/api/sessions/${encodeURIComponent(sessionId)}/prompts/${encodeURIComponent(promptId)}`,
-    { decision },
+    { decision, ...extra },
   )
 }
 

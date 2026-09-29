@@ -41,6 +41,20 @@ export interface ToolItem {
   parent_tool_use_id: string | null
   /** Old session whose transcript has no result for this call. */
   result_missing?: boolean
+  /** Present on `Agent`/`Task` calls. */
+  subagent?: Subagent | null
+}
+
+export type SubagentStatus = 'running' | 'completed' | 'failed' | 'stopped'
+
+export interface Subagent {
+  task_id: string | null
+  subagent_type: string | null
+  description: string | null
+  status: SubagentStatus
+  last_activity: string | null
+  usage: { total_tokens?: number | null; tool_uses?: number | null; duration_ms?: number | null } | null
+  summary: string | null
 }
 
 export interface NoticeItem {
@@ -52,7 +66,22 @@ export interface NoticeItem {
 
 export type ConversationItem = UserItem | TextItem | ToolItem | NoticeItem
 
+export interface QuestionOption {
+  label: string
+  description?: string | null
+}
+
+export interface Question {
+  question: string
+  header?: string | null
+  options: QuestionOption[]
+  multiSelect?: boolean
+}
+
 export interface PermissionPrompt {
+  kind?: 'tool' | 'question' | 'plan'
+  questions?: Question[]
+  plan?: string
   prompt_id: string
   tool_name: string
   input: Record<string, unknown>
@@ -104,4 +133,9 @@ export interface SessionSnapshot {
   effort_pending?: boolean
 }
 
-export type PromptDecision = 'allow_once' | 'allow_always' | 'deny'
+export type PromptDecision = 'allow_once' | 'allow_always' | 'deny' | 'answer' | 'approve' | 'reject'
+
+export interface PromptExtra {
+  answers?: Record<string, string | string[]>
+  message?: string
+}

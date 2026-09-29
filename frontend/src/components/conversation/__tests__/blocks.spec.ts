@@ -72,8 +72,8 @@ describe('blocos da conversa', () => {
   })
 
   it('ferramenta genérica mostra nome, entrada e resultado em JSON', () => {
-    const w = mountItem(tool('Grep', { pattern: 'foo' }, { content: [{ type: 'text', text: 'achou' }], is_error: false, details: null }))
-    expect(w.text()).toContain('Grep')
+    const w = mountItem(tool('NotebookEdit', { pattern: 'foo' }, { content: [{ type: 'text', text: 'achou' }], is_error: false, details: null }))
+    expect(w.text()).toContain('NotebookEdit')
     expect(w.text()).toContain('"pattern": "foo"')
     expect(w.text()).toContain('achou')
   })

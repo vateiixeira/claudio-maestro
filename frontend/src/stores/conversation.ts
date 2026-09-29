@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as api from '../api/http'
 import type { Session, SessionOptions, SessionState } from '../types/api'
+import { deriveTasks } from '../conversation/tasks'
 import { claimLocalImages, forgetSessionImages } from '../conversation/localImages'
 import type {
   ConversationItem,
@@ -256,6 +257,11 @@ export const useConversationStore = defineStore('conversation', () => {
     }, EXTERNAL_ACTIVITY_MS))
   }
 
+  /** The session's task list rebuilt from its task tool calls. */
+  function taskList(sessionId: string): ReturnType<typeof deriveTasks> {
+    return deriveTasks(bySession.value[sessionId]?.items ?? [])
+  }
+
   function forget(sessionId: string): void {
     forgetSessionImages(sessionId)
     clearExternalTimer(sessionId)
@@ -263,5 +269,5 @@ export const useConversationStore = defineStore('conversation', () => {
     buffers.delete(sessionId)
   }
 
-  return { bySession, get, load, receive, resolvePrompt, setOptions, noteExternalActivity, forget }
+  return { bySession, get, load, receive, resolvePrompt, taskList, setOptions, noteExternalActivity, forget }
 })

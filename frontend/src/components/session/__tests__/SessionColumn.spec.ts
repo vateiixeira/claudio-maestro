@@ -334,4 +334,57 @@ describe('controles e imagens na coluna', () => {
     await flushPromises()
     expect(w.find('[data-test="attachment-draft"]').text()).toContain('col.png')
   })
+
+  describe('prompts e árvore de itens', () => {
+    const toolItem = (id: string, name: string, parent: string | null, extra: Record<string, unknown> = {}) => ({
+      type: 'tool', id, tool_use_id: `tu-${id}`, name, input: { file_path: `/p/${id}.py`, description: `desc ${id}` },
+      result: null, streaming: false, parent_tool_use_id: parent, ...extra,
+    })
+    const agent = (id: string, parent: string | null) => toolItem(id, 'Agent', parent, {
+      subagent: { task_id: id, subagent_type: 'Explore', description: `agente ${id}`, status: 'running', last_activity: null, usage: null, summary: null },
+    })
+    const load = (items: unknown[], prompts: unknown[] = []) =>
+      vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, state: 'running', items: items as never, prompts: prompts as never })) }))
+
+    it('escolhe o cartão pelo kind', async () => {
+      load([], [
+        { prompt_id: 'q', kind: 'question', tool_name: 'AskUserQuestion', input: {}, can_always: false, questions: [{ question: 'Q?', options: [{ label: 'A' }] }] },
+        { prompt_id: 'pl', kind: 'plan', tool_name: 'ExitPlanMode', input: {}, can_always: false, plan: '# P' },
+        { prompt_id: 't', kind: 'tool', tool_name: 'Bash', input: { command: 'ls' }, can_always: false },
+      ])
+      const w = await mountView()
+      expect(w.findAll('[data-test="question-card"]')).toHaveLength(1)
+      expect(w.findAll('[data-test="plan-card"]')).toHaveLength(1)
+      expect(w.findAll('[data-test="permission-card"]')).toHaveLength(1)
+    })
+
+    it('filho cujo pai não chegou aparece no topo', async () => {
+      load([toolItem('orfao', 'Read', 'tu-ausente')])
+      const w = await mountView()
+      expect(w.text()).toContain('/p/orfao.py')
+    })
+
+    it('subagente dentro de subagente aninha os filhos nos cartões', async () => {
+      load([agent('a1', null), agent('a2', 'tu-a1'), toolItem('r', 'Read', 'tu-a2')])
+      const w = await mountView()
+      const outer = w.findAll('[data-test="subagent-card"]')
+      expect(outer).toHaveLength(2)
+      const inner = outer[0]!.find('[data-test="subagent-children"] [data-test="subagent-card"]')
+      expect(inner.exists()).toBe(true)
+      expect(inner.find('[data-test="subagent-children"]').text()).toContain('/p/r.py')
+    })
+
+    it('filho de ferramenta comum aparece recuado', async () => {
+      load([toolItem('b', 'Bash', null), toolItem('c', 'Read', 'tu-b')])
+      const w = await mountView()
+      const indent = w.find('[data-test="tool-children"]')
+      expect(indent.text()).toContain('/p/c.py')
+    })
+
+    it('pedido de permissão de um subagente aparece', async () => {
+      load([agent('a1', null)], [{ prompt_id: 'p', tool_name: 'Bash', input: { command: 'rm x' }, can_always: false, tool_use_id: 'tu-sub' }])
+      const w = await mountView()
+      expect(w.find('[data-test="permission-card"]').text()).toContain('rm x')
+    })
+  })
 })

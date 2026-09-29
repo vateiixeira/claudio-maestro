@@ -10,6 +10,8 @@ import { repoLabel, useGitStore } from '../../stores/git'
 import ConversationBlock from '../conversation/ConversationBlock.vue'
 import MessageComposer from '../conversation/MessageComposer.vue'
 import PermissionCard from '../conversation/PermissionCard.vue'
+import PlanCard from '../conversation/PlanCard.vue'
+import QuestionCard from '../conversation/QuestionCard.vue'
 import SessionControls from './SessionControls.vue'
 import { deriveDisplay, displayStateLabels } from '../../sessionState'
 import { useConversationStore } from '../../stores/conversation'
@@ -152,8 +154,8 @@ watch(
 )
 onBeforeUnmount(() => offs.forEach((off) => off()))
 
-// Items with a parent tool are shown indented under that tool.
-const rows = computed(() => {
+// Items with a parent tool are shown inside that tool's block (subagent card or indent).
+const tree = computed(() => {
   const items = conv.value?.items ?? []
   const toolIds = new Set(items.flatMap((i) => (i.type === 'tool' ? [i.tool_use_id] : [])))
   const children = new Map<string, ConversationItem[]>()
@@ -166,14 +168,10 @@ const rows = computed(() => {
       children.set(parent, list)
     } else top.push(item)
   }
-  const rows: Array<{ item: ConversationItem; depth: number }> = []
-  const visit = (item: ConversationItem, depth: number) => {
-    rows.push({ item, depth })
-    if (item.type === 'tool') children.get(item.tool_use_id)?.forEach((child) => visit(child, depth + 1))
-  }
-  top.forEach((item) => visit(item, 'parent_tool_use_id' in item && item.parent_tool_use_id ? 1 : 0))
-  return rows
+  return { top, childrenOf: (toolUseId: string) => children.get(toolUseId) ?? [] }
 })
+const rows = computed(() => tree.value.top)
+const taskList = computed(() => conversations.taskList(props.id))
 
 const footer = computed(() => {
   const result = conv.value?.lastResult
@@ -339,21 +337,38 @@ function resolvePrompt(promptId: string) {
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
           <div
-            v-for="row in rows"
-            :key="row.item.id"
+            v-for="item in rows"
+            :key="item.id"
             class="flex min-w-0 flex-col"
-            :class="{ 'border-l border-line pl-4': row.depth > 0 }"
-            :style="row.depth > 1 ? { marginLeft: `${(row.depth - 1) * 16}px` } : undefined"
+            :class="{ 'border-l border-line pl-4': 'parent_tool_use_id' in item && item.parent_tool_use_id }"
           >
-            <ConversationBlock :item="row.item" :session-active="conv.state === 'running' || conv.state === 'awaiting_decision'" />
+            <ConversationBlock
+              :item="item"
+              :session-active="conv.state === 'running' || conv.state === 'awaiting_decision'"
+              :children-of="tree.childrenOf"
+              :task-list="taskList"
+            />
           </div>
-          <PermissionCard
-            v-for="prompt in conv.prompts"
-            :key="prompt.prompt_id"
-            :session-id="conv.sessionId"
-            :prompt="prompt"
-            @resolved="resolvePrompt(prompt.prompt_id)"
-          />
+          <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
+            <QuestionCard
+              v-if="prompt.kind === 'question'"
+              :session-id="conv.sessionId"
+              :prompt="prompt"
+              @resolved="resolvePrompt(prompt.prompt_id)"
+            />
+            <PlanCard
+              v-else-if="prompt.kind === 'plan'"
+              :session-id="conv.sessionId"
+              :prompt="prompt"
+              @resolved="resolvePrompt(prompt.prompt_id)"
+            />
+            <PermissionCard
+              v-else
+              :session-id="conv.sessionId"
+              :prompt="prompt"
+              @resolved="resolvePrompt(prompt.prompt_id)"
+            />
+          </template>
           <p v-if="footer" data-test="turn-footer" class="m-0 font-mono text-xs text-fg-muted">{{ footer }}</p>
         </div>
       </div>

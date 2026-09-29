@@ -21,7 +21,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 2. Multissessão | Colunas, estados e menu lateral | Concluído | 12 de 12 |
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
-| 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Em andamento | 9 de 15 |
+| 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Em andamento | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 27 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
@@ -124,12 +124,12 @@ Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 - [x] Troca de raciocínio por reconexão entre turnos (2026-09-29)
 - [x] Campo de mensagem que cresce até 40% da coluna (2026-09-29)
 - [x] Colar e arrastar imagens, com miniatura e remoção (2026-09-29)
-- [ ] Perguntas do Claude respondidas pela interface
-- [ ] Aprovação de plano pela interface
-- [ ] Blocos de busca e lista de tarefas
-- [ ] Subagentes visíveis na sessão: um cartão por subagente com tipo, descrição e estado (rodando, concluído, com erro), e as ações dele (ferramentas, edições, comandos) aparecendo em tempo real dentro do cartão. Vale também para subagentes em segundo plano
-- [ ] Cartão genérico para ferramentas e MCPs sem bloco próprio
-- [ ] Saídas longas truncadas em 200 linhas
+- [x] Perguntas do Claude respondidas pela interface (2026-09-29)
+- [x] Aprovação de plano pela interface (2026-09-29)
+- [x] Blocos de busca e lista de tarefas (2026-09-29)
+- [x] Subagentes visíveis na sessão: um cartão por subagente com tipo, descrição e estado (rodando, concluído, com erro), e as ações dele (ferramentas, edições, comandos) aparecendo em tempo real dentro do cartão. Vale também para subagentes em segundo plano (2026-09-29)
+- [x] Cartão genérico para ferramentas e MCPs sem bloco próprio (2026-09-29)
+- [x] Saídas longas truncadas em 200 linhas (2026-09-29)
 - [x] Sessões do CLI em tempo real: observar `~/.claude/projects` e atualizar índice, menu e colunas abertas em até 1 s após cada mudança, sem esperar a sincronização de 60 s (2026-09-29)
 - [x] Raciocínio visível enquanto o Claude pensa: bloco aberto durante o streaming, recolhido ao terminar, com indicação de tempo. Só em sessões conduzidas pelo app; o CLI não grava o texto do raciocínio no arquivo da sessão (2026-09-29)
 - [x] Ditado por voz: botão de microfone no campo de mensagem que transcreve a fala em texto, para revisar antes de enviar (tecnologia a definir, ver "Pontos em aberto") (2026-09-29)
