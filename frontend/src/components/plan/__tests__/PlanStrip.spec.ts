@@ -51,9 +51,21 @@ describe('faixa do plano', () => {
     expect(w.find('[data-test="plan-strip"]').classes()).not.toContain('opacity-60')
   })
 
-  it('sessão parada aparece apagada e com "· parado"', () => {
+  it('sessão parada mostra "· parado" e barra cinza, sem reduzir a opacidade do texto', () => {
     const w = mount(PlanStrip, { props: { session: session({ display_state: 'waiting' }) } })
-    expect(w.find('[data-test="plan-strip"]').classes()).toContain('opacity-60')
+    expect(w.find('[data-test="plan-strip"]').classes()).not.toContain('opacity-60')
+    expect(w.find('[role="progressbar"] > div').classes()).toContain('bg-fg-muted')
+    expect(w.text()).toContain('· parado')
+  })
+
+  it('CLI no meio de um turno não aparece como parado', () => {
+    const w = mount(PlanStrip, { props: { session: session({ display_state: 'waiting', cli_running: true }) } })
+    expect(w.text()).not.toContain('parado')
+    expect(w.find('[role="progressbar"] > div').classes()).toContain('bg-primary')
+  })
+
+  it('CLI parado aparece como parado', () => {
+    const w = mount(PlanStrip, { props: { session: session({ display_state: 'waiting', cli_running: false }) } })
     expect(w.text()).toContain('· parado')
   })
 
@@ -100,6 +112,43 @@ describe('faixa do plano', () => {
     await w.setProps({ session: session({ plan: summary({ done: 4, current: { number: 5, title: 'Quinta' } }) }) })
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('busca a lista de novo quando o caminho do plano muda com a lista aberta', async () => {
+    const fetchMock = routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())) })
+    vi.stubGlobal('fetch', fetchMock)
+    const w = mount(PlanStrip, { props: { session: session() } })
+    await toggle(w).trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await w.setProps({ session: session({ plan: summary({ path: '/home/vi/dev/loja-online/docs/outro.md' }) }) })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('lista com números de tarefa repetidos mostra todas com o estado certo', async () => {
+    const dup = summary({ current: { number: 1, title: 'Repetida A' }, done: 0, total: 3 })
+    const state: PlanState = {
+      link: 'auto',
+      path: dup.path,
+      plan: dup,
+      tasks: [
+        { number: 1, title: 'Repetida A', done: false },
+        { number: 1, title: 'Repetida B', done: false },
+        { number: 2, title: 'Depois', done: false },
+      ],
+    }
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(state) }))
+    const w = mount(PlanStrip, { props: { session: session({ plan: dup }) } })
+    await toggle(w).trigger('click')
+    await flushPromises()
+    const items = w.findAll('[data-test="plan-task"]')
+    expect(items.map((i) => i.text())).toEqual([
+      expect.stringContaining('Repetida A'),
+      expect.stringContaining('Repetida B'),
+      expect.stringContaining('Depois'),
+    ])
+    expect(items.map((i) => i.attributes('data-status'))).toEqual(['current', 'queued', 'queued'])
   })
 
   it('não busca de novo quando done muda com a lista fechada', async () => {

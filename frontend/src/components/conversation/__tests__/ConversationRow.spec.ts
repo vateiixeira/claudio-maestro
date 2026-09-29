@@ -114,6 +114,16 @@ describe('linha de conversa', () => {
       expect(wrapper.find('.text-right').classes()).toContain('w-20')
     })
 
+    it('repete a posição da tarefa no title do link da linha, que cobre o selo', () => {
+      const wrapper = mountRow(makeSession({ display_state: 'running', plan }))
+      expect(wrapper.find('[data-test="row-link"]').attributes('title')).toBe('Tarefa 4 de 12: Criar o selo')
+      expect(wrapper.find('[data-test="plan-badge"]').attributes('aria-label')).toBe('Tarefa 4 de 12: Criar o selo')
+    })
+
+    it('não põe title no link quando não há plano visível', () => {
+      expect(mountRow(makeSession({ plan: null })).find('[data-test="row-link"]').attributes('title')).toBeUndefined()
+    })
+
     it('não aparece sem plano, com plano concluído nem em conversa finalizada', () => {
       const done = { ...plan, done: 12, current: null }
 

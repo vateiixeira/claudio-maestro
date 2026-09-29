@@ -31,4 +31,12 @@ describe('planText', () => {
     expect(planStopped({ display_state: 'waiting' })).toBe(true)
     expect(planStopped({ display_state: 'finished' })).toBe(true)
   })
+
+  it('planStopped considera o CLI rodando como em andamento', () => {
+    expect(planStopped({ display_state: 'waiting', cli_running: true })).toBe(false)
+    expect(planStopped({ display_state: 'finished', cli_running: true })).toBe(false)
+    expect(planStopped({ display_state: 'waiting', cli_running: false })).toBe(true)
+    expect(planStopped({ display_state: 'waiting' })).toBe(true)
+    expect(planStopped({ display_state: 'running', cli_running: false })).toBe(false)
+  })
 })

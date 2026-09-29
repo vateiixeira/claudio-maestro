@@ -15,7 +15,7 @@ export function planVisible(session: Pick<Session, 'plan' | 'finished' | 'displa
   return !!session.plan && !session.finished && session.display_state !== 'finished' && !!session.plan.current
 }
 
-/** True while the conversation is not running: the strip is shown dimmed. */
-export function planStopped(session: Pick<Session, 'display_state'>): boolean {
-  return session.display_state !== 'running'
+/** True while nothing is running the conversation (neither the app nor the CLI): the strip shows "parado". */
+export function planStopped(session: Pick<Session, 'display_state' | 'cli_running'>): boolean {
+  return session.display_state !== 'running' && !session.cli_running
 }

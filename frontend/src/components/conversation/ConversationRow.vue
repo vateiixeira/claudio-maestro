@@ -7,6 +7,7 @@ import PlanBadge from '../plan/PlanBadge.vue'
 import { errorMessage, markSessionSeen } from '../../api/http'
 import { waitingReason } from '../../conversationList'
 import { formatActivity } from '../../format'
+import { planPosition, planVisible } from '../plan/planText'
 import { displayStateLabels } from '../../sessionState'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useProjectsStore } from '../../stores/projects'
@@ -25,6 +26,8 @@ const project = computed(() => projects.byId(props.session.project_id))
 const repo = computed(() => git.reposFor(props.session.project_id)[0])
 const finished = computed(() => props.session.display_state === 'finished')
 const reason = computed(() => waitingReason(props.session))
+// The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it here.
+const planTitle = computed(() => (planVisible(props.session) ? planPosition(props.session.plan!) : undefined))
 const busy = ref(false)
 
 async function run(action: () => Promise<unknown>) {
@@ -57,6 +60,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       <RouterLink
         data-test="row-link"
         :to="{ name: 'session', params: { id: session.session_id } }"
+        :title="planTitle"
         class="min-w-0 truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
         :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal']"
       >{{ session.title }}</RouterLink>

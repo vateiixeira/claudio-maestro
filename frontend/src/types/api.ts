@@ -98,6 +98,8 @@ export interface Session {
   pending_kind?: 'tool' | 'question' | 'plan' | null
   /** Progress of the plan file linked to the session; null when there is none. */
   plan?: PlanSummary | null
+  /** True when the app has no client for the conversation but the CLI is mid-turn (subagents included). */
+  cli_running?: boolean
 }
 
 export interface PlanCurrent { number: number; title: string }

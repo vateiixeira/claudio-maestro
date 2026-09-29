@@ -17,7 +17,6 @@ const percent = computed(() => (plan.value && plan.value.total > 0 ? Math.round(
     data-test="plan-badge"
     role="img"
     class="inline-flex shrink-0 items-center gap-1.5 font-mono text-[11px] text-fg-muted"
-    :class="stopped ? 'opacity-60' : ''"
     :title="planPosition(plan)"
     :aria-label="planPosition(plan)"
   >

@@ -43,8 +43,8 @@ function toggle() {
   }
 }
 
-// A task got done while the list is open: refresh it.
-watch(() => plan.value?.done, () => { if (open.value) load() })
+// A task got done or the plan file changed while the list is open: refresh it.
+watch(() => [plan.value?.done, plan.value?.path], () => { if (open.value) load() })
 // Another conversation or a plan that went away starts over.
 watch(() => props.session.session_id, () => {
   open.value = false
@@ -53,9 +53,11 @@ watch(() => props.session.session_id, () => {
   error.value = null
 })
 
-function statusOf(task: PlanTask): 'done' | 'current' | 'queued' {
+// Task numbers can repeat in a plan, so the state goes by position: the first task left is the current one.
+const currentIndex = computed(() => tasks.value.findIndex((t) => !t.done))
+function statusOf(task: PlanTask, index: number): 'done' | 'current' | 'queued' {
   if (task.done) return 'done'
-  return task.number === plan.value?.current?.number ? 'current' : 'queued'
+  return index === currentIndex.value ? 'current' : 'queued'
 }
 const marks = { done: '✓', current: '●', queued: '○' } as const
 
@@ -76,7 +78,6 @@ async function openPlan() {
     data-test="plan-strip"
     aria-label="Plano"
     class="mx-auto flex w-full max-w-[760px] flex-col gap-1.5 px-4 pb-3"
-    :class="stopped ? 'opacity-60' : ''"
   >
     <div class="flex items-center gap-2">
       <button
@@ -114,22 +115,22 @@ async function openPlan() {
     </div>
     <ol v-if="open && tasks.length" ref="list" class="m-0 flex max-h-56 list-none flex-col gap-0.5 overflow-y-auto p-0 pt-1">
       <li
-        v-for="task in tasks"
-        :key="task.number"
+        v-for="(task, index) in tasks"
+        :key="index"
         data-test="plan-task"
-        :data-status="statusOf(task)"
-        :aria-current="statusOf(task) === 'current' ? 'step' : undefined"
+        :data-status="statusOf(task, index)"
+        :aria-current="statusOf(task, index) === 'current' ? 'step' : undefined"
         class="flex items-baseline gap-2 text-sm"
         :class="{
-          'text-fg-muted': statusOf(task) === 'done',
-          'font-medium text-primary-soft': statusOf(task) === 'current',
-          'text-fg': statusOf(task) === 'queued',
+          'text-fg-muted': statusOf(task, index) === 'done',
+          'font-medium text-primary-soft': statusOf(task, index) === 'current',
+          'text-fg': statusOf(task, index) === 'queued',
         }"
       >
-        <span aria-hidden="true" class="w-4 shrink-0 text-center text-xs">{{ marks[statusOf(task)] }}</span>
+        <span aria-hidden="true" class="w-4 shrink-0 text-center text-xs">{{ marks[statusOf(task, index)] }}</span>
         <span class="shrink-0 font-mono text-xs">{{ task.number }}.</span>
         <span class="min-w-0">{{ task.title }}</span>
-        <span class="sr-only">{{ { done: '(concluída)', current: '(atual)', queued: '(na fila)' }[statusOf(task)] }}</span>
+        <span class="sr-only">{{ { done: '(concluída)', current: '(atual)', queued: '(na fila)' }[statusOf(task, index)] }}</span>
       </li>
     </ol>
     <p v-if="error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>

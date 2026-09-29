@@ -24,17 +24,28 @@ describe('selo do plano', () => {
     expect(wrapper.find('[data-test="plan-badge-fill"]').attributes('style')).toContain('width: 25%')
   })
 
-  it('apaga o selo quando a conversa está parada', () => {
+  it('apaga só a barra quando a conversa está parada, sem reduzir a opacidade do texto', () => {
     const wrapper = mountBadge(makeSession({ display_state: 'waiting', plan: makePlan() }))
 
-    expect(wrapper.classes()).toContain('opacity-60')
+    expect(wrapper.classes()).not.toContain('opacity-60')
+    expect(wrapper.find('[data-test="plan-badge-fill"]').classes()).toContain('bg-fg-muted')
+  })
+
+  it('mantém o selo normal quando o CLI está no meio de um turno', () => {
+    const wrapper = mountBadge(makeSession({ display_state: 'waiting', cli_running: true, plan: makePlan() }))
+
+    expect(wrapper.find('[data-test="plan-badge-fill"]').classes()).toContain('bg-primary')
+  })
+
+  it('apaga a barra quando o CLI está parado', () => {
+    const wrapper = mountBadge(makeSession({ display_state: 'waiting', cli_running: false, plan: makePlan() }))
+
     expect(wrapper.find('[data-test="plan-badge-fill"]').classes()).toContain('bg-fg-muted')
   })
 
   it('não destaca o selo quando a conversa está rodando', () => {
     const wrapper = mountBadge()
 
-    expect(wrapper.classes()).not.toContain('opacity-60')
     expect(wrapper.find('[data-test="plan-badge-fill"]').classes()).toContain('bg-primary')
   })
 
