@@ -699,7 +699,7 @@ Expected: PASS.
   - `planText.ts`: `planPosition(plan: PlanSummary): string` → `"Tarefa 4 de 12: título"` (com `current`; `"Concluído"` sem), `planBadge(plan: PlanSummary): string` → `"4/12"` (número da tarefa atual e total; `"12/12"` sem atual), `planVisible(session: Pick<Session, 'plan' | 'finished' | 'display_state'>): boolean` → plano não nulo, conversa não finalizada, e `current` não nulo; `planStopped(session): boolean` → `display_state !== 'running'`.
   - `PlanStrip.vue` props `{ session: Session }`.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 `planText.spec.ts`: as quatro funções com plano em andamento, 100%, conversa finalizada, rodando e parada.
 
@@ -711,12 +711,12 @@ Expected: PASS.
 5. Quando `session.plan.done` muda com a lista aberta, a lista é buscada de novo.
 6. "Abrir plano" chama `POST /api/open-in-editor` com o `path`; erro vira mensagem legível (`role="alert"`).
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/plan`
 Expected: FAIL (arquivos ausentes).
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 // frontend/src/components/plan/planText.ts
@@ -741,12 +741,12 @@ export function planStopped(session: Pick<Session, 'display_state'>): boolean {
 
 `PlanStrip.vue`: um `<section aria-label="Plano">` com um `<button type="button" :aria-expanded>` contendo o título do plano (texto secundário), `planPosition` e "· parado" quando `planStopped`; abaixo, `<div role="progressbar" :aria-valuenow="plan.done" :aria-valuemax="plan.total" aria-label="Progresso do plano">` com a barra (largura `done/total`, cor primária; cinza quando parada); à direita, botão "Abrir plano". Com a lista aberta, `<ol>` com cada tarefa: ✓ concluída (texto apagado), ● atual (destaque), ○ na fila, e `scrollIntoView({ block: 'nearest' })` na atual. Visual discreto, coerente com o cabeçalho da conversa (mesmas cores e espaçamentos). Encaixe em `ConversationView.vue` logo abaixo de `<ConversationHeader>`, com a sessão vinda do store de sessões (`sessions.find(id)`), só quando `planVisible`.
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `pnpm --dir frontend test` e `pnpm --dir frontend build`
 Expected: PASS.
 
-- [ ] **Step 5: Commit (sessão principal)**
+- [x] **Step 5: Commit (sessão principal)**
 
 `[Feat] Mostrar faixa do plano na página da conversa`
 
