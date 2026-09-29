@@ -11,7 +11,9 @@ so the block index comes from the `content_block_start` that is open.
 """
 
 import re
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -155,6 +157,8 @@ ECHO_PREFIXES = ("Set model to ",)
 
 SUBAGENT_TOOLS = {"Agent", "Task"}
 # SDK task status -> status shown ("running" | "completed" | "failed" | "stopped").
+# A subagent running longer than this is assumed lost (never blocks closing).
+SUBAGENT_MAX_SECONDS = 3 * 60 * 60
 _SUBAGENT_STATUS = {
     "pending": "running",
     "running": "running",
@@ -190,6 +194,8 @@ class ConversationBuilder:
         # Subagent state by tool_use_id of the Agent/Task call, and task_id -> tool_use_id.
         self._subagents: dict[str, dict[str, Any]] = {}
         self._task_tools: dict[str, str] = {}
+        # Monotonic time each subagent was first seen, by tool_use_id.
+        self._subagent_started: dict[str, float] = {}
         # Echoes still expected from live changes by the app, counted by prefix.
         self._expected_echoes: dict[str, int] = {}
         self.init: SessionInit | None = None
@@ -364,6 +370,7 @@ class ConversationBuilder:
                 "summary": None,
             }
             self._subagents[item.tool_use_id] = sub
+            self._subagent_started[item.tool_use_id] = time.monotonic()
         if sub["subagent_type"] is None and isinstance(item.input.get("subagent_type"), str):
             sub["subagent_type"] = item.input["subagent_type"]
         if sub["description"] is None and isinstance(item.input.get("description"), str):
@@ -558,6 +565,8 @@ class ConversationBuilder:
             "details": slim_details(tool.name, details),
         }
         tool.streaming = False
+        if block.is_error and tool.subagent is not None and tool.subagent["status"] == "running":
+            tool.subagent["status"] = "failed"
         return [self._put(tool)]
 
     # System, result, rate limit ------------------------------------------
@@ -598,6 +607,8 @@ class ConversationBuilder:
             (TaskStartedMessage, TaskProgressMessage, TaskUpdatedMessage, TaskNotificationMessage),
         ):
             return self._on_task(message)
+        if message.subtype == "background_tasks_changed":
+            return self._on_background_tasks(message.data)
         if message.subtype != "init":
             return []
         data = message.data
@@ -607,6 +618,46 @@ class ConversationBuilder:
             permission_mode=data.get("permissionMode"),
         )
         return [Event("session.init", asdict(self.init))]
+
+    @property
+    def subagents_running(self) -> bool:
+        """Some subagent (usually in the background) has not finished yet.
+
+        Last resort: one running for longer than SUBAGENT_MAX_SECONDS no longer counts.
+        """
+        now = time.monotonic()
+        return any(
+            sub["status"] == "running"
+            and now - self._subagent_started.get(tool_use_id, now) <= SUBAGENT_MAX_SECONDS
+            for tool_use_id, sub in self._subagents.items()
+        )
+
+    def _end_subagents(self, status_for: Callable[[str, ToolItem], str | None]) -> list[Event]:
+        """Give running subagents the status `status_for` returns (None keeps them)."""
+        events: list[Event] = []
+        for tool_use_id, sub in self._subagents.items():
+            tool = self._tool_item(tool_use_id)
+            if sub["status"] != "running" or tool is None:
+                continue
+            status = status_for(tool_use_id, tool)
+            if status is not None:
+                sub["status"] = status
+                events.append(self._put(tool))
+        return events
+
+    def stop_running_subagents(self) -> list[Event]:
+        """The client went away: subagents still running died with it."""
+        return self._end_subagents(lambda _id, _tool: "stopped")
+
+    def _on_background_tasks(self, data: Any) -> list[Event]:
+        """No background task left: every subagent still running has ended.
+        Any other shape of `tasks` is ignored."""
+        tasks = data.get("tasks") if isinstance(data, dict) else None
+        if not isinstance(tasks, list) or tasks:
+            return []
+        return self._end_subagents(
+            lambda _id, tool: "completed" if tool.result is not None else "stopped"
+        )
 
     def close_open_items(self) -> list[Event]:
         """End every item still streaming; used at the end of a turn or on failure."""
@@ -620,6 +671,12 @@ class ConversationBuilder:
 
     def _on_result(self, message: ResultMessage) -> list[Event]:
         events = self.close_open_items()
+        # A subagent that never got a task_id did not survive the turn.
+        events.extend(self._end_subagents(
+            lambda tool_use_id, _tool: (
+                "stopped" if self._subagents[tool_use_id]["task_id"] is None else None
+            )
+        ))
 
         if message.terminal_reason in INTERRUPTED_REASONS:
             events.append(self._notice("info", "Interrompido."))

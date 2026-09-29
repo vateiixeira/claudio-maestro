@@ -79,7 +79,7 @@ export interface SendResult {
 }
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'
+export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'auto' | 'dontAsk'
 
 /** Model, reasoning and permission mode of a session (`session.options`). */
 export interface SessionOptions {

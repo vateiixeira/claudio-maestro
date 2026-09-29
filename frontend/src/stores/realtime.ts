@@ -1,5 +1,6 @@
 import type { EventSocket } from '../api/socket'
 import { useGitStore } from './git'
+import { useModelsStore } from './models'
 import { useProjectsStore } from './projects'
 import { useSessionsStore } from './sessions'
 
@@ -11,6 +12,7 @@ export async function loadEverything(): Promise<void> {
   const git = useGitStore()
   // Branches are secondary: a failure leaves the project without them.
   projects.projects.forEach((p) => void git.load(p.id).catch(() => {}))
+  void useModelsStore().reload()
   await sessions.loadAll(projects.projects.map((p) => p.id))
 }
 
@@ -32,6 +34,9 @@ export function bindRealtime(socket: EventSocket): () => void {
       useProjectsStore().load().catch(() => {})
     }),
     socket.on('project.git', (event) => useGitStore().applyEvent(event)),
+    socket.on('models.updated', (event) => {
+      useModelsStore().apply((event.data as { models?: unknown } | null)?.models)
+    }),
     socket.onReconnect(() => {
       loadEverything().catch(() => {
         // The projects store keeps the error; the sidebar shows it.

@@ -76,6 +76,18 @@ describe('imagens no campo', () => {
     expect(w.find('[role="alert"]').text()).toContain('10 imagens')
   })
 
+  it('recusa passar de 30 MB somando as imagens', async () => {
+    const { w, ta } = setup()
+    const big = (i: number) => {
+      const file = png(`g${i}.png`)
+      Object.defineProperty(file, 'size', { value: 5 * 1024 * 1024 })
+      return file
+    }
+    await paste(ta, Array.from({ length: 7 }, (_, i) => big(i)))
+    expect(w.findAll('[data-test="attachment-draft"]')).toHaveLength(6)
+    expect(w.find('[role="alert"]').text()).toContain('30 MB')
+  })
+
   it('colar texto sem imagem segue o normal', async () => {
     const { w, ta } = setup()
     await ta.trigger('paste', { clipboardData: { files: [], items: [] } })
@@ -196,6 +208,21 @@ describe('ditado por voz', () => {
     await flushPromises()
     expect(w.find('[role="alert"]').text()).toContain('microfone')
     expect(w.find('[data-test="dictate"]').attributes('aria-pressed')).toBe('false')
+  })
+})
+
+describe('erros do ditado', () => {
+  it.each([
+    ['audio-capture', 'Nenhum microfone encontrado.'],
+    ['network', 'Sem conexão para o ditado.'],
+  ])('%s mostra mensagem legível', async (code, message) => {
+    vi.stubGlobal('SpeechRecognition', FakeRecognition)
+    const { w } = setup()
+    await w.find('[data-test="dictate"]').trigger('click')
+    FakeRecognition.last!.onerror?.({ error: code })
+    FakeRecognition.last!.onend?.()
+    await flushPromises()
+    expect(w.find('[role="alert"]').text()).toBe(message)
   })
 })
 

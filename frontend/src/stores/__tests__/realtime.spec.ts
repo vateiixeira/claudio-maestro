@@ -6,6 +6,7 @@ import { bindRealtime } from '../realtime'
 import { useSessionsStore } from '../sessions'
 import { useProjectsStore } from '../projects'
 import { useGitStore } from '../git'
+import { useModelsStore } from '../models'
 import { jsonResponse, makeProject, makeSession } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
@@ -69,6 +70,7 @@ describe('bindRealtime', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/projects', expect.anything())
     expect(fetchMock).toHaveBeenCalledWith('/api/projects/1/sessions', expect.anything())
     expect(sessions.find('a')?.state).toBe('idle')
+    expect(fetchMock).toHaveBeenCalledWith('/api/models', expect.anything())
   })
 
   it('project.synced recarrega as sessões do projeto', async () => {
@@ -101,5 +103,16 @@ describe('bindRealtime', () => {
       data: JSON.stringify({ session_id: null, seq: 0, type: 'project.git', data: { project_id: 1, repos: [{ rel_path: '.', branch: 'dev' }] } }),
     })
     expect(useGitStore().reposFor(1)[0]?.branch).toBe('dev')
+  })
+
+  it('models.updated troca a lista de modelos', () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s } })
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    const models = [{ value: 'x', displayName: 'X', description: 'd', supportsEffort: false, supportedEffortLevels: [] }]
+    sockets[0]!.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type: 'models.updated', data: { models } }) })
+    expect(useModelsStore().models.map((m) => m.value)).toEqual(['x'])
   })
 })

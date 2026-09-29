@@ -351,7 +351,7 @@ async def test_reload_on_send_emits_reset_before_user_message(make_env):
         if e["type"] == "item.upsert" and e["data"].get("text") == "nova"
     )
     assert types.index("conversation.reset") < first_upsert
-    seqs = [e["seq"] for e in env.events]
+    seqs = [e["seq"] for e in env.events if e["session_id"] == sid]
     assert seqs == sorted(seqs)
 
 
@@ -420,3 +420,25 @@ async def test_forgotten_session_send_emits_reset_before_message(make_env):
     assert 0 < first_upsert
     texts = [i.get("text") for i in env.manager.get(sid).builder.snapshot() if i["type"] == "user"]
     assert texts[:3] == ["oi", "fora", "nova"]
+
+
+@pytest.mark.anyio
+async def test_external_change_on_forgotten_session_resets_column(make_env):
+    env = make_env()
+    sid = env.add_old_session()
+    env.mtimes[sid] = 100.0
+    await env.manager.open(sid)
+    seq = env.manager.get(sid).seq
+    await env.manager.close_idle()
+    env.manager.forget_closed()
+    assert sid not in env.manager.active_ids()
+    env.events.clear()
+
+    assert await env.manager.apply_external_change(sid) is True
+
+    resets = [e for e in env.events if e["type"] == "conversation.reset"]
+    assert len(resets) == 1 and resets[0]["session_id"] == sid
+    assert resets[0]["seq"] > seq
+    # Reopening continues after the reset.
+    await env.manager.open(sid)
+    assert env.manager.get(sid).seq > resets[0]["seq"]

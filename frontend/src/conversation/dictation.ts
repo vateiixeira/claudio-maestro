@@ -31,7 +31,10 @@ export interface DictationTarget {
   update(text: string, cursor: number): void
 }
 
-/** Browser speech-to-text in Portuguese. Never sends anything: the text stays in the field. */
+/**
+ * Browser speech-to-text in Portuguese. The message is never sent by itself: the text
+ * stays in the field. Chrome sends the audio to its speech recognition service.
+ */
 export function useDictation(target: DictationTarget) {
   const Ctor = recognitionCtor()
   const supported = Ctor !== null
@@ -64,6 +67,10 @@ export function useDictation(target: DictationTarget) {
         ? 'Sem permissão para usar o microfone. Libere o acesso no navegador e tente de novo.'
         : event.error === 'no-speech'
           ? 'Nenhuma fala detectada.'
+          : event.error === 'audio-capture'
+            ? 'Nenhum microfone encontrado.'
+            : event.error === 'network'
+              ? 'Sem conexão para o ditado.'
           : `O ditado parou (${event.error}).`
     }
     rec.onend = () => {

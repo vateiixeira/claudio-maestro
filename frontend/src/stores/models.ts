@@ -15,5 +15,18 @@ export const useModelsStore = defineStore('models', () => {
     return loading
   }
 
-  return { models, ensure }
+  /** Fetches again (after the socket comes back, a `models.updated` may have been lost). */
+  function reload(): Promise<void> {
+    loading = null
+    return ensure()
+  }
+
+  /** The backend learned the real list from the agent (`models.updated`). */
+  function apply(list: unknown): void {
+    if (!Array.isArray(list)) return
+    models.value = list as ModelInfo[]
+    loading ??= Promise.resolve()
+  }
+
+  return { models, ensure, apply, reload }
 })

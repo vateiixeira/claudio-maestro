@@ -27,7 +27,11 @@ const MODE_LABELS: Record<PermissionMode, string> = {
   acceptEdits: 'Aceita edições',
   plan: 'Planejamento',
   bypassPermissions: 'Sem perguntas',
+  auto: 'Automático',
+  dontAsk: 'Só o pré-aprovado',
 }
+// A mode the CLI knows but the app does not shows its raw value.
+const modeLabel = (m: string) => MODE_LABELS[m as PermissionMode] ?? m
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -54,7 +58,7 @@ const effortOptions = computed<MenuOption[]>(() =>
   effortLevels.value.map((e) => ({ value: e, label: capitalize(EFFORT_LABELS[e]) })),
 )
 
-const mode = computed<PermissionMode>(() => options.value?.permission_mode ?? 'default')
+const mode = computed<string>(() => options.value?.permission_mode ?? 'default')
 const modeOptions: MenuOption[] = (Object.keys(MODE_LABELS) as PermissionMode[]).map((m) => ({ value: m, label: MODE_LABELS[m] }))
 
 const error = ref<string | null>(null)
@@ -62,9 +66,13 @@ const saving = ref(false)
 async function apply(changes: SessionUpdate) {
   saving.value = true
   error.value = null
+  // A `session.options` newer than this request wins over its response.
+  const stamp = conversations.optionsStamp(props.sessionId)
   try {
     const session = await updateSession(props.sessionId, changes)
-    if (session) conversations.setOptions(props.sessionId, session)
+    if (session && conversations.optionsStamp(props.sessionId) === stamp) {
+      conversations.setOptions(props.sessionId, session)
+    }
   } catch (e) {
     error.value = errorMessage(e)
   } finally {
@@ -137,8 +145,8 @@ function onDialogKey(event: KeyboardEvent) {
       @select="(v) => apply({ effort: v as Effort })"
     />
     <OptionMenu
-      :name="`Modo: ${MODE_LABELS[mode].toLowerCase()}`"
-      :text="MODE_LABELS[mode]"
+      :name="`Modo: ${modeLabel(mode).toLowerCase()}`"
+      :text="modeLabel(mode)"
       :options="modeOptions"
       :selected="mode"
       :highlight="mode === 'bypassPermissions'"

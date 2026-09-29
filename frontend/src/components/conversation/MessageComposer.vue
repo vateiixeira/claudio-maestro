@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { errorMessage, interruptSession, sendMessage } from '../../api/http'
 import { useDictation } from '../../conversation/dictation'
-import { type DraftImage, MAX_IMAGES, base64Of, filesFrom, formatSize, imageProblem, readImage } from '../../conversation/images'
+import { type DraftImage, MAX_IMAGES, MAX_TOTAL_BYTES, base64Of, filesFrom, formatSize, imageProblem, readImage } from '../../conversation/images'
 import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
 import type { SessionState } from '../../types/api'
@@ -22,13 +22,20 @@ const canSend = computed(() => !sending.value && (text.value.trim() !== '' || im
 async function addFiles(files: File[]) {
   const problems: string[] = []
   const accepted: File[] = []
+  let total = images.value.reduce((sum, i) => sum + i.size, 0)
   for (const file of files) {
     const problem = imageProblem(file)
     if (problem) problems.push(problem)
     else if (images.value.length + accepted.length >= MAX_IMAGES) {
       problems.push(`Até ${MAX_IMAGES} imagens por mensagem.`)
       break
-    } else accepted.push(file)
+    } else if (total + file.size > MAX_TOTAL_BYTES) {
+      problems.push('As imagens de uma mensagem somam no máximo 30 MB.')
+      break
+    } else {
+      accepted.push(file)
+      total += file.size
+    }
   }
   error.value = problems.length ? problems.join(' ') : null
   const read = await Promise.allSettled(accepted.map(readImage))

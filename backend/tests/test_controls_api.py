@@ -173,3 +173,21 @@ def test_chunked_body_over_limit_is_refused(api, home, monkeypatch):
         content=chunks(), headers={"content-type": "application/json"},
     )
     assert response.status_code == 413
+
+
+def test_patch_auto_and_dont_ask_modes(api, home):
+    session = new_session(api, home)
+    url = f"/api/sessions/{session['session_id']}"
+
+    for mode in ("auto", "dontAsk"):
+        response = api.patch(url, json={"permission_mode": mode})
+        assert response.status_code == 200
+        assert response.json()["permission_mode"] == mode
+
+
+def test_patch_invalid_model(api, home):
+    session = new_session(api, home)
+    url = f"/api/sessions/{session['session_id']}"
+
+    assert api.patch(url, json={"model": "opus; rm"}).status_code == 422
+    assert api.patch(url, json={"model": "opus[1m]"}).status_code == 200

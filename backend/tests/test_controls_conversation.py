@@ -8,6 +8,7 @@ from vibing.agent.fake import (
     background_tasks_changed_message,
     local_command_message,
     response_messages,
+    result_message,
     task_notification_message,
     task_progress_message,
     task_started_message,
@@ -198,3 +199,76 @@ def test_history_marks_subagent_completed_when_result_exists():
     assert done["description"] == "Rever"
     # Without a result the subagent is not left "running" forever.
     assert tool_item(builder, "toolu_b")["subagent"]["status"] == "stopped"
+
+
+# Subagents stuck in running -------------------------------------------------
+
+
+def status_of(builder: ConversationBuilder) -> str:
+    return tool_item(builder, "toolu_agent")["subagent"]["status"]
+
+
+def test_error_result_fails_the_subagent():
+    builder = ConversationBuilder()
+    feed(builder, agent_call())
+    feed(builder, [task_started_message(SID, "task-1", "toolu_agent")])
+
+    events = feed(builder, [tool_result_message("toolu_agent", "quebrou", is_error=True)])
+
+    assert status_of(builder) == "failed"
+    assert events[-1].data["subagent"]["status"] == "failed"
+    assert not builder.subagents_running
+
+
+def test_turn_result_stops_subagent_without_task_id():
+    builder = ConversationBuilder()
+    feed(builder, agent_call())
+    feed(builder, agent_call("toolu_bg"))
+    feed(builder, [task_started_message(SID, "task-2", "toolu_bg")])
+
+    events = feed(builder, [result_message(SID)])
+
+    assert status_of(builder) == "stopped"
+    assert tool_item(builder, "toolu_bg")["subagent"]["status"] == "running"
+    assert any(e.type == "item.upsert" and e.data["tool_use_id"] == "toolu_agent" for e in events)
+
+
+def test_empty_background_tasks_ends_running_subagents():
+    builder = ConversationBuilder()
+    feed(builder, agent_call())
+    feed(builder, agent_call("toolu_bg"))
+    feed(builder, [task_started_message(SID, "task-1", "toolu_agent"),
+                   task_started_message(SID, "task-2", "toolu_bg"),
+                   tool_result_message("toolu_agent", "launched")])
+
+    events = feed(builder, [background_tasks_changed_message(SID, [])])
+
+    assert status_of(builder) == "completed"
+    assert tool_item(builder, "toolu_bg")["subagent"]["status"] == "stopped"
+    assert len(events) == 2
+    assert not builder.subagents_running
+
+
+def test_background_tasks_in_other_formats_are_ignored():
+    builder = ConversationBuilder()
+    feed(builder, agent_call())
+    feed(builder, [task_started_message(SID, "task-1", "toolu_agent")])
+
+    for tasks in ([{"id": "task-1"}], ["task-1"]):
+        assert feed(builder, [background_tasks_changed_message(SID, tasks)]) == []
+    message = background_tasks_changed_message(SID)
+    message.data["tasks"] = "estranho"
+    assert feed(builder, [message]) == []
+    assert status_of(builder) == "running"
+
+
+def test_subagent_running_for_hours_no_longer_counts():
+    builder = ConversationBuilder()
+    feed(builder, agent_call())
+    feed(builder, [task_started_message(SID, "task-1", "toolu_agent")])
+    assert builder.subagents_running
+
+    builder._subagent_started["toolu_agent"] -= 3 * 60 * 60 + 1
+
+    assert not builder.subagents_running
+    assert status_of(builder) == "running"

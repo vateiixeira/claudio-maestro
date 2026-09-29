@@ -78,9 +78,13 @@ class SessionPatch(BaseModel):
 
     finished: bool | None = None
     title: Title | None = None
-    model: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
+    model: Annotated[
+        str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9._\[\]-]{1,100}$")
+    ] | None = None
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
-    permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] | None = None
+    permission_mode: Literal[
+        "default", "acceptEdits", "plan", "bypassPermissions", "auto", "dontAsk"
+    ] | None = None
     confirm_bypass: bool = False
 
 

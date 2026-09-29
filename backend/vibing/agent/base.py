@@ -42,7 +42,7 @@ class AgentOptions:
     can_use_tool: PermissionCallback
     model: str | None = None
     effort: str | None = None  # "low" | "medium" | "high" | "xhigh" | "max"
-    permission_mode: str | None = None  # "default" | "acceptEdits" | "plan" | "bypassPermissions"
+    permission_mode: str | None = None  # "default" | "acceptEdits" | "plan" | "bypassPermissions" | "auto" | "dontAsk"
 
 
 @runtime_checkable

@@ -148,6 +148,7 @@ export const useConversationStore = defineStore('conversation', () => {
   const bySession = ref<Record<string, Conversation>>({})
   const buffers = new Map<string, WsEvent[]>()
   const externalTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const optionsStamps = new Map<string, number>()
 
   function get(sessionId: string): Conversation | undefined {
     return bySession.value[sessionId]
@@ -209,6 +210,9 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   function receive(event: WsEvent): void {
+    if (event.type === 'session.options') {
+      optionsStamps.set(event.session_id, (optionsStamps.get(event.session_id) ?? 0) + 1)
+    }
     const buffer = buffers.get(event.session_id)
     if (buffer) {
       buffer.push(event)
@@ -228,6 +232,11 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   /** Applies the options returned by a PATCH. */
+  /** Changes each time a `session.options` event arrives for the session. */
+  function optionsStamp(sessionId: string): number {
+    return optionsStamps.get(sessionId) ?? 0
+  }
+
   function setOptions(sessionId: string, session: Partial<Session>): void {
     const conv = bySession.value[sessionId]
     if (conv && 'model' in session) conv.options = optionsFrom(session)
@@ -269,5 +278,5 @@ export const useConversationStore = defineStore('conversation', () => {
     buffers.delete(sessionId)
   }
 
-  return { bySession, get, load, receive, resolvePrompt, taskList, setOptions, noteExternalActivity, forget }
+  return { bySession, get, load, receive, resolvePrompt, taskList, setOptions, optionsStamp, noteExternalActivity, forget }
 })

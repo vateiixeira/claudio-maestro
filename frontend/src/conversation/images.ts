@@ -3,6 +3,8 @@
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 export const MAX_IMAGES = 10
+/** Sum of the images of one message, decoded. */
+export const MAX_TOTAL_BYTES = 30 * 1024 * 1024
 
 export interface DraftImage {
   id: number

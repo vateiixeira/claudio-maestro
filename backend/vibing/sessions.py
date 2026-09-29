@@ -11,6 +11,7 @@ import base64
 import binascii
 import json
 import logging
+import re
 import sqlite3
 import time
 import unicodedata
@@ -61,7 +62,11 @@ MULTI_ANSWER_SEPARATOR = ", "
 MAX_ANSWER_LENGTH = 2000
 
 EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
-PERMISSION_MODES: tuple[str, ...] = ("default", "acceptEdits", "plan", "bypassPermissions")
+PERMISSION_MODES: tuple[str, ...] = (
+    "default", "acceptEdits", "plan", "bypassPermissions", "auto", "dontAsk"
+)
+# Model ids and aliases, e.g. "opus", "claude-opus-5-5", "opus[1m]".
+MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._\[\]-]{1,100}$")
 DEFAULT_MODEL_VALUE = "default"
 MODEL_FIELDS = ("value", "displayName", "description", "supportsEffort", "supportedEffortLevels")
 # Shown by GET /api/models until a session connects and the SDK lists the real ones.
@@ -84,6 +89,7 @@ FALLBACK_MODELS: list[dict[str, Any]] = [
 IMAGE_MEDIA_TYPES: tuple[str, ...] = ("image/png", "image/jpeg", "image/gif", "image/webp")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_IMAGES = 10
+MAX_IMAGES_TOTAL_BYTES = 30 * 1024 * 1024
 
 DisplayState = Literal["running", "waiting", "finished"]
 DISPLAY_STATES: tuple[str, ...] = ("running", "waiting", "finished")
@@ -348,6 +354,8 @@ def validate_images(images: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if size > MAX_IMAGE_BYTES:
             raise InvalidImageError(f"Imagem {position}: maior que 5 MB.")
         markers.append({"type": "image", "media_type": media_type, "size": size})
+    if sum(marker["size"] for marker in markers) > MAX_IMAGES_TOTAL_BYTES:
+        raise InvalidImageError("As imagens somam mais de 30 MB. Envie menos imagens.")
     return markers
 
 
@@ -525,6 +533,11 @@ class ActiveSession:
         if self.pending_turns > 0 or self._autonomous_turn:
             return "running"
         return "idle"
+
+    @property
+    def subagents_running(self) -> bool:
+        """A subagent (usually in the background) is still running in the client."""
+        return self.builder.subagents_running
 
     @property
     def busy(self) -> bool:
@@ -811,6 +824,7 @@ class ActiveSession:
             resume = (
                 self._has_connected or self._connected_before or await self._check_history()
             )
+            options = self._client_options()
             client = self._new_client(resume)
             try:
                 await client.connect()
@@ -852,11 +866,34 @@ class ActiveSession:
         self.client = client
         self._has_connected = True
         self._reader = asyncio.create_task(self._read(client))
+        if not await self._reconcile_options(client, options):
+            return False
         if self._on_connected is not None:
             try:
                 await self._on_connected(client)
             except Exception:
                 logger.exception("Falha após conectar a sessão %s", self.session_id)
+        return True
+
+    def _client_options(self) -> tuple[str | None, str | None]:
+        return self.record.model, self.record.permission_mode
+
+    async def _reconcile_options(
+        self, client: AgentClient, used: tuple[str | None, str | None]
+    ) -> bool:
+        """Model or mode changed while connecting: apply them live now.
+        Returns False when the client failed meanwhile."""
+        model, mode = self.record.model, self.record.permission_mode
+        try:
+            if model != used[0]:
+                self.builder.expect_local_echo(f"Set model to {model}")
+                await client.set_model(None if model in (None, DEFAULT_MODEL_VALUE) else model)
+            if mode != used[1] and mode is not None:
+                await client.set_permission_mode(mode)
+        except AgentError as error:
+            if self.client is client:
+                await self._fail(error.message_pt)
+            return False
         return True
 
     def _new_client(self, resume: bool) -> AgentClient:
@@ -1009,6 +1046,7 @@ class ActiveSession:
             or self.pending_turns
             or self._autonomous_turn
             or self.prompts
+            or self.subagents_running
             or (self._effort_task is not None and not self._effort_task.done())
         ):
             return
@@ -1027,14 +1065,15 @@ class ActiveSession:
             self.effort_pending = False
             self._emit_options()
             return True
-        if self.pending_turns or self._autonomous_turn or self.prompts:
-            return True  # a turn is running: tried again when it ends
+        if self.pending_turns or self._autonomous_turn or self.prompts or self.subagents_running:
+            return True  # a turn or subagent is running: tried again when it ends
         client, reader = self.client, self._reader
         self._generation += 1
         generation = self._generation
         self.client = None
         self._reader = None
         self.builder.clear_local_echo()
+        self._emit_events(self.builder.stop_running_subagents())
         await self._dispose(client, reader)
         if self._final or generation != self._generation:
             # close() ran meanwhile: no new client.
@@ -1079,6 +1118,7 @@ class ActiveSession:
         self._autonomous_turn = False
         self.builder.clear_local_echo()
         self._emit_events(self.builder.close_open_items())
+        self._emit_events(self.builder.stop_running_subagents())
         self._emit_events(self.builder.add_notice("error", message))
         self._cancel_prompts()
         self._refresh_state()
@@ -1111,6 +1151,8 @@ class ActiveSession:
         self.pending_turns = 0
         self._autonomous_turn = False
         self.builder.clear_local_echo()
+        if client is not None:
+            self._emit_events(self.builder.stop_running_subagents())
         self._cancel_prompts()
         self._refresh_state()
         await self._dispose(client, reader)
@@ -1215,6 +1257,10 @@ class ActiveSession:
         del self.prompts[prompt_id]
         prompt.future.set_result(result)
         self._emit_resolved(prompt_id, decision)
+        if decision == "approve" and self.record.permission_mode != "default":
+            # The CLI leaves plan mode on approval; the init that confirms it may come late.
+            self.save(permission_mode="default")
+            self._emit_options()
         self._refresh_state()
         self._schedule_effort()
 
@@ -1289,8 +1335,12 @@ class SessionManager:
             logger.exception("Falha ao consultar os modelos do agente")
             return
         models = normalize_models(info)
-        if models is not None:
+        if models is not None and self._models is None:
             self._models = models
+            self._publish({
+                "session_id": None, "seq": 0, "type": "models.updated",
+                "data": {"models": self.list_models()},
+            })
 
     def create_session(self, project: Project) -> SessionRecord:
         if not project.available:
@@ -1556,6 +1606,8 @@ class SessionManager:
         session = self.get(session_id)
         if effort is not None and effort not in EFFORTS:
             raise InvalidDecisionError("Nível de raciocínio inválido.")
+        if model is not None and not MODEL_PATTERN.match(model):
+            raise InvalidDecisionError("Modelo inválido.")
         if permission_mode is not None and permission_mode not in PERMISSION_MODES:
             raise InvalidDecisionError("Modo de permissão inválido.")
         if (
@@ -1626,6 +1678,7 @@ class SessionManager:
             if (
                 session.state == "idle"
                 and not session.busy
+                and not session.subagents_running
                 and session.idle_since is not None
                 and now - session.idle_since >= self._idle_timeout
             ):
@@ -1674,7 +1727,16 @@ class SessionManager:
             self._publish(
                 {"session_id": session_id, "seq": seq, "type": "session.updated", "data": data}
             )
-            return False
+            if forgotten is None or not reload:
+                return False
+            # Forgotten from memory, but a column may still show it: it drops what
+            # it shows and fetches the snapshot again (which reloads from disk).
+            seq += 1
+            self._forgotten[session_id] = (seq, *forgotten[1:])
+            self._publish(
+                {"session_id": session_id, "seq": seq, "type": "conversation.reset", "data": {}}
+            )
+            return True
         session.record = record
         session.emit_updated()
         # An open() in progress reloads by itself.

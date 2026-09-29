@@ -299,6 +299,9 @@ def test_websocket_fans_out_events_with_growing_seq(api, home, factory):
         api.post(f"/api/sessions/{sid}/messages", json={"text": "oi"})
         from_one = receive_until_idle(one, sid)
         from_two = receive_until_idle(two, sid)
+    # Global events (models.updated) have no session and seq 0.
+    from_one = [e for e in from_one if e["session_id"] == sid]
+    from_two = [e for e in from_two if e["session_id"] == sid]
 
     assert from_one == from_two
     assert [e["seq"] for e in from_one] == list(range(1, len(from_one) + 1))

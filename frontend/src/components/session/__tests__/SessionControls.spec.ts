@@ -196,3 +196,48 @@ describe('seletores da sessão', () => {
     })
   }
 })
+
+describe('modos automático, só o pré-aprovado e desconhecido', () => {
+  it('modo auto vindo do init não quebra e mostra o rótulo', async () => {
+    setup({ permission_mode: 'auto' })
+    const w = await mountControls()
+    expect(button(w, 'Modo').text()).toBe('Automático')
+  })
+
+  it('modo desconhecido mostra o valor cru', async () => {
+    setup({ permission_mode: 'novoModo' })
+    const w = await mountControls()
+    expect(button(w, 'Modo').text()).toBe('novoModo')
+  })
+
+  it.each([['Automático', 'auto'], ['Só o pré-aprovado', 'dontAsk']])('%s troca sem confirmação', async (label, value) => {
+    setup()
+    const w = await mountControls()
+    await button(w, 'Modo').trigger('click')
+    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === label)!.trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="bypass-overlay"]').exists()).toBe(false)
+    expect(patches).toEqual([{ permission_mode: value }])
+  })
+})
+
+describe('resposta do PATCH', () => {
+  it('não sobrescreve session.options que chegou depois do disparo', async () => {
+    setup()
+    let release: (r: Response) => void = () => {}
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/models': () => jsonResponse(MODELS),
+      'PATCH /api/sessions/s1': () => new Promise<Response>((r) => { release = r }),
+    }))
+    const w = await mountControls()
+    await button(w, 'Modelo').trigger('click')
+    await w.findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
+    await flushPromises()
+    useConversationStore(pinia).receive(makeEvent('session.options', {
+      model: 'haiku', model_resolved: null, effort: 'medium', permission_mode: 'plan', effort_pending: false,
+    }, 5))
+    release(jsonResponse({ ...makeSession(), model: 'haiku', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false, model_resolved: null }))
+    await flushPromises()
+    expect(button(w, 'Modo').text()).toBe('Planejamento')
+  })
+})

@@ -63,6 +63,8 @@ def build_sdk_options(
         # Text blocks of subagents also reach the stream (as items under the Agent call).
         "forward_subagent_text": True,
         "can_use_tool": options.can_use_tool,
+        # Messages with several images exceed the SDK's 1 MB default for one JSON line.
+        "max_buffer_size": 64 * 1024 * 1024,
     }
     if stderr is not None:
         kwargs["stderr"] = stderr
