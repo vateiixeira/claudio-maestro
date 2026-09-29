@@ -25,7 +25,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
-| 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
+| 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Em andamento | 0 de 8 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. Os marcos 8 e 9 só começam quando o usuário pedir.
 
@@ -267,23 +267,20 @@ Caso de uso que motivou: um plano de implementação com 15 tarefas roda por mui
 
 Pedido pelo usuário em 2026-09-28. Só começa depois do MVP completo e funcionando.
 
-Fonte dos dados: o Claude registra o progresso pela ferramenta de lista de tarefas. Cada chamada traz a lista inteira com o estado de cada item (pendente, em andamento, concluído) e passa pelo app como qualquer outra ferramenta. Os planos do fluxo de brainstorming também ficam em arquivos `docs/superpowers/plans/*.md`, com caixas de marcação.
+- Spec: `docs/superpowers/specs/2026-09-29-progresso-de-planos-design.md`
 
-- [ ] Guardar na sessão a lista de tarefas mais recente, a partir das chamadas da ferramenta de lista de tarefas
-- [ ] Barra fixa no topo da página da conversa: tarefa atual, posição ("7 de 15") e barra de progresso
-- [ ] Barra expansível para a lista completa, com o estado de cada tarefa
-- [ ] Indicação de plano em execução e etapa atual na linha de conversa (Inbox, Conversas, Recentes do menu)
-- [ ] Página do projeto e bloco "Agora" do Dashboard mostram a etapa das conversas que executam um plano
-- [ ] Ligar a sessão ao arquivo do plano em `docs/superpowers/plans/` quando ela o leu ou editou, com link para abrir
-- [ ] Lista de tarefas recuperada ao retomar uma sessão do histórico
+Fonte dos dados: o arquivo do plano em `docs/superpowers/plans/`. Uma regra no `~/.claude/CLAUDE.md` do usuário manda quem orquestra marcar todas as caixas de uma tarefa quando ela é concluída.
 
-A definir quando o marco for desenhado:
+- [ ] Regra de marcar a tarefa concluída no plano, no `~/.claude/CLAUDE.md` do usuário
+- [ ] Leitura do plano: tarefas por `### Tarefa N`, concluída com todas as caixas marcadas, tarefa atual, cache por data de modificação
+- [ ] Vínculo automático da conversa ao último plano lido ou editado, ao vivo, pelo observador do CLI e na retomada; guardado no SQLite
+- [ ] Progresso no resumo da sessão, atualizado ao editar o plano, ao fim do turno e numa varredura de 30 s
+- [ ] Rotas para listar planos do projeto, vincular e desligar
+- [ ] Faixa fixa na página da conversa com tarefa atual, barra e lista expansível
+- [ ] Plano em Detalhes: trocar, desligar e religar o automático
+- [ ] Selo "4/12" na linha de conversa e tarefa atual no bloco "Agora" do Dashboard
 
-| Pergunta | Por que importa |
-|---|---|
-| De onde vem o progresso? | Verificado em 2026-09-29: nas 400 conversas mais recentes do usuário (Opus) não há nenhuma chamada de `TodoWrite` nem de `TaskCreate`/`TaskUpdate`, e a sessão com Opus 5.5 não tem essa ferramenta. Só o haiku a mostrou (fato do marco 5). A fonte precisa ser outra: caixas de marcação do plano em `docs/superpowers/plans/`, commits, `ROADMAP.md` ou os subagentes disparados. Decidir no desenho do marco |
-| Subagentes que executam tarefas do plano entram no progresso? | No fluxo com subagentes, quem executa é outro agente, mas quem atualiza a lista é a sessão principal |
-| O que mostrar quando a lista é abandonada no meio? | Uma lista velha fixa na tela engana mais do que ajuda |
+Decidido no desenho (2026-09-29): a fonte é o arquivo do plano com a regra de marcação; vínculo automático com ajuste manual; tarefa inteira, sem "em andamento"; conversa parada mostra o progresso apagado, e finalizada ou plano 100% só em Detalhes.
 
 ## Fora do MVP
 
@@ -340,4 +337,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | "Agora" do Dashboard limitado a 6 cartões com link para a Inbox; Recentes só com conversas abertas, guardadas no navegador |
 | 2026-09-29 | Nova navegação no estilo do Paperclip vira o marco 7 e substitui as colunas lado a lado. Agrupador passa a marco 8 e progresso de planos a marco 9 |
 | 2026-09-29 | Pendências do marco 7 fechadas, revisadas e marco 7 concluído de novo |
+| 2026-09-29 | Progresso de planos lido do arquivo do plano, com regra de marcação no CLAUDE.md global; ferramenta de tarefas descartada por não existir nas sessões com Opus |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
