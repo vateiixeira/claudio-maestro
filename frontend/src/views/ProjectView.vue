@@ -3,7 +3,10 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import SessionStateIcon from '../components/SessionStateIcon.vue'
 import SessionGroup from '../components/session/SessionGroup.vue'
-import { errorMessage } from '../api/http'
+import BranchLabel from '../components/git/BranchLabel.vue'
+import { branchText, changedCount, useGitStore } from '../stores/git'
+import type { GitRepo } from '../types/api'
+import { errorMessage, openInEditor } from '../api/http'
 import { displayStateLabels } from '../sessionState'
 import type { DisplayState } from '../types/api'
 import { useProjectsStore } from '../stores/projects'
@@ -13,6 +16,25 @@ const props = defineProps<{ id: number }>()
 
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
+const git = useGitStore()
+const repos = computed(() => git.reposFor(props.id))
+
+function changesSummary(repo: GitRepo): string {
+  const n = changedCount(repo)
+  if (n === 0) return 'Sem alterações'
+  return n === 1 ? '1 arquivo alterado, sem commit' : `${n} arquivos alterados, sem commit`
+}
+
+const editorError = ref<string | null>(null)
+async function openEditor(): Promise<void> {
+  if (!project.value) return
+  editorError.value = null
+  try {
+    await openInEditor(project.value.path)
+  } catch (e) {
+    editorError.value = errorMessage(e)
+  }
+}
 const router = useRouter()
 const route = useRoute()
 
@@ -59,6 +81,9 @@ async function load(): Promise<void> {
     }
   }
   if (!project.value) return
+  editorError.value = null
+  // Branches are secondary: a failure leaves the section out.
+  git.load(props.id).catch(() => {})
   try {
     await sessions.loadForProject(props.id)
   } catch (e) {
@@ -188,6 +213,14 @@ async function remove(): Promise<void> {
       <div class="flex flex-wrap items-center gap-2">
         <button
           type="button"
+          data-test="open-editor"
+          class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card"
+          @click="openEditor"
+        >
+          Abrir no editor
+        </button>
+        <button
+          type="button"
           data-test="rename"
           class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card"
           @click="startRename"
@@ -244,6 +277,27 @@ async function remove(): Promise<void> {
     <p v-if="actionError" role="alert" class="rounded-lg border border-secondary/40 bg-card px-4 py-3 text-sm text-secondary-soft">
       {{ actionError }}
     </p>
+
+    <p v-if="editorError" role="alert" class="rounded-lg border border-secondary/40 bg-card px-4 py-3 text-sm text-secondary-soft">
+      {{ editorError }}
+    </p>
+
+    <section v-if="git.isLoaded(id)" data-test="repos" aria-labelledby="repos-title" class="flex flex-col gap-2">
+      <h2 id="repos-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Repositórios nesta pasta</h2>
+      <p v-if="repos.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
+      <ul v-else class="m-0 flex list-none flex-col rounded-lg border border-line p-0">
+        <li
+          v-for="repo in repos"
+          :key="repo.path"
+          data-test="repo"
+          class="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2 last:border-b-0"
+        >
+          <span class="min-w-0 font-mono text-[13px] font-semibold">{{ repo.rel_path === '.' ? project.name : repo.rel_path }}</span>
+          <BranchLabel :text="branchText(repo)" :muted="!!repo.error" />
+          <span class="ml-auto text-xs" :class="changedCount(repo) > 0 ? 'text-secondary-soft' : 'text-fg-muted'">{{ changesSummary(repo) }}</span>
+        </li>
+      </ul>
+    </section>
 
     <section
       v-if="confirmingRemove"

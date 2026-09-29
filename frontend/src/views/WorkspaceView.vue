@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ColumnResizer from '../components/session/ColumnResizer.vue'
 import SessionColumn from '../components/session/SessionColumn.vue'
+import ChangesPanel from '../components/git/ChangesPanel.vue'
+import { useChangesPanelStore } from '../stores/changesPanel'
 import { useConversationStore } from '../stores/conversation'
 import { useLayoutStore } from '../stores/layout'
 import HomeView from './HomeView.vue'
@@ -11,6 +13,7 @@ const route = useRoute()
 const router = useRouter()
 const layout = useLayoutStore()
 const conversations = useConversationStore()
+const changesPanel = useChangesPanelStore()
 
 const routeSessionId = computed(() => (route.name === 'session' ? String(route.params.id) : null))
 
@@ -31,6 +34,7 @@ watch(
 function close(id: string) {
   layout.close(id)
   conversations.forget(id)
+  if (changesPanel.sessionId === id) changesPanel.close()
   if (routeSessionId.value === id) void router.push({ name: 'home' })
 }
 
@@ -108,6 +112,7 @@ function bindColumn(id: string, el: unknown) {
           @missing="close(id)"
         />
       </div>
+      <ChangesPanel v-if="changesPanel.sessionId === id" :key="id" :session-id="id" />
       <ColumnResizer
         :width="layout.widthOf(id)"
         label="Ajustar largura da coluna"

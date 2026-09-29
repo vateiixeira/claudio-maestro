@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
+import DiffLines from './DiffLines.vue'
+import { SESSION_ID_KEY, useChangesPanelStore } from '../../stores/changesPanel'
 import { diffCounts, toolDiff } from '../../conversation/diff'
 import { resultText, str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
@@ -13,6 +15,12 @@ const label = computed(() => (props.item.name === 'Write' ? 'Escrita' : 'Ediçã
 const showAll = ref(false)
 const shown = computed(() => (showAll.value ? lines.value : lines.value.slice(0, LIMIT)))
 const isError = computed(() => props.item.result?.is_error === true)
+const sessionId = inject(SESSION_ID_KEY, null)
+// Only columns provide the session id; outside them there is no panel to open.
+const panel = sessionId ? useChangesPanelStore() : null
+function viewChanges() {
+  if (sessionId) panel?.open(sessionId.value, props.item)
+}
 const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
 </script>
 
@@ -26,26 +34,16 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
       <span v-else-if="running" class="text-xs text-primary-soft">aplicando…</span>
       <span class="font-mono text-xs text-diff-add-fg">+{{ counts.added }}</span>
       <span class="font-mono text-xs text-diff-del-fg">−{{ counts.removed }}</span>
+      <button
+        v-if="sessionId"
+        type="button"
+        data-test="view-changes"
+        class="shrink-0 cursor-pointer rounded-md border border-line-strong bg-transparent px-2 py-0.5 text-xs text-primary-soft hover:bg-elevated"
+        @click="viewChanges"
+      >Ver alterações</button>
     </div>
     <p v-if="isError" data-test="tool-error" class="m-0 border-b border-line bg-diff-del-bg px-3 py-2 font-mono text-xs text-diff-del-fg whitespace-pre-wrap">{{ resultText(item.result?.content) }}</p>
-    <div class="overflow-x-auto font-mono text-xs leading-[1.7]">
-      <div
-        v-for="(line, index) in shown"
-        :key="index"
-        data-test="diff-line"
-        :data-kind="line.kind"
-        class="flex min-w-fit"
-        :class="{
-          'text-fg-muted': line.kind === 'context',
-          'bg-diff-add-bg text-diff-add-fg': line.kind === 'add',
-          'bg-diff-del-bg text-diff-del-fg': line.kind === 'del',
-        }"
-      >
-        <span class="w-10 shrink-0 pr-2 text-right select-none">{{ line.kind === 'del' ? line.oldNo : line.newNo }}</span>
-        <span class="w-4 shrink-0 select-none">{{ line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : '' }}</span>
-        <span class="whitespace-pre pr-3">{{ line.text }}</span>
-      </div>
-    </div>
+    <DiffLines :lines="shown" />
     <button
       v-if="lines.length > LIMIT && !showAll"
       type="button"

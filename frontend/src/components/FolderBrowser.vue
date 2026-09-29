@@ -2,13 +2,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { errorMessage, listDirs } from '../api/http'
 import { tildePath } from '../format'
+import BranchLabel from './git/BranchLabel.vue'
 import type { DirEntry, DirListing } from '../types/api'
 
 defineProps<{ selected: string | null }>()
 
 const emit = defineEmits<{
   /** A folder was picked. `display` is the path with `~` for the home folder. */
-  select: [folder: { name: string; path: string; display: string }]
+  select: [folder: { name: string; path: string; display: string; git: boolean; branch: string | null }]
 }>()
 
 const listing = ref<DirListing | null>(null)
@@ -43,7 +44,13 @@ async function load(path?: string): Promise<void> {
 }
 
 function select(entry: DirEntry): void {
-  emit('select', { name: entry.name, path: entry.path, display: tildePath(entry.path, home.value) })
+  emit('select', {
+    name: entry.name,
+    path: entry.path,
+    display: tildePath(entry.path, home.value),
+    git: entry.git,
+    branch: entry.branch ?? null,
+  })
 }
 
 async function enter(entry: DirEntry): Promise<void> {
@@ -128,8 +135,15 @@ onMounted(() => load())
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
         </svg>
         <span data-test="dir-name" class="min-w-0 flex-1 truncate">{{ entry.name }}</span>
+        <BranchLabel
+          v-if="entry.git && entry.branch"
+          data-test="dir-branch"
+          :text="entry.branch"
+          muted
+          class="max-w-[45%] font-normal"
+        />
         <span
-          v-if="entry.git"
+          v-else-if="entry.git"
           class="font-mono text-xs font-normal"
           :class="selected === entry.path ? 'text-primary-soft' : 'text-fg-muted'"
         >git</span>

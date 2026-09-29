@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
+import { SESSION_ID_KEY } from '../../stores/changesPanel'
 import { RouterLink } from 'vue-router'
 import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
 import { useEventSocket } from '../../api/socket'
 import SessionStateIcon from '../SessionStateIcon.vue'
+import BranchLabel from '../git/BranchLabel.vue'
+import { repoLabel, useGitStore } from '../../stores/git'
 import ConversationBlock from '../conversation/ConversationBlock.vue'
 import MessageComposer from '../conversation/MessageComposer.vue'
 import PermissionCard from '../conversation/PermissionCard.vue'
@@ -80,6 +83,12 @@ async function saveRename() {
 const loadError = ref<string | null>(null)
 const conv = computed(() => conversations.get(props.id))
 const project = computed(() => (conv.value?.projectId != null ? projects.byId(conv.value.projectId) : undefined))
+const git = useGitStore()
+const repos = computed(() => (project.value ? git.reposFor(project.value.id) : []))
+watch(() => project.value?.id, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
+
+// "Ver alterações" in an edit card opens the changes panel for this session.
+provide(SESSION_ID_KEY, computed(() => props.id))
 
 async function reload() {
   try {
@@ -279,6 +288,16 @@ function resolvePrompt(promptId: string) {
             :disabled="toggling"
             @click="toggleFinished"
           >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
+        </div>
+        <div v-if="repos.length > 0" role="group" aria-label="Branches" class="flex flex-wrap gap-1.5">
+          <span
+            v-for="repo in repos"
+            :key="repo.path"
+            data-test="branch-chip"
+            class="flex min-w-0 max-w-full items-center rounded-full border border-line-strong bg-card px-2.5 py-[3px]"
+          >
+            <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
+          </span>
         </div>
         <p v-if="headerError" role="alert" class="m-0 text-sm text-secondary-soft">{{ headerError }}</p>
         <p

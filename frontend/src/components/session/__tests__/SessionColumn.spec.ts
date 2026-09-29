@@ -5,6 +5,7 @@ import { createMemoryHistory } from 'vue-router'
 import { createAppRouter } from '../../../router'
 import { jsonResponse, makeEvent, makeProject, makeSnapshot, routeFetch } from '../../../test/factories'
 import { useProjectsStore } from '../../../stores/projects'
+import { useGitStore } from '../../../stores/git'
 import type { WsEvent } from '../../../types/events'
 
 const fake = vi.hoisted(() => ({
@@ -31,6 +32,7 @@ beforeEach(() => {
   const projects = useProjectsStore(pinia)
   projects.projects = [makeProject({ id: 1, name: 'loja-online' })]
   projects.loaded = true
+  useGitStore(pinia).set(1, []) // branches already known: the column makes no git request
 })
 afterEach(() => vi.unstubAllGlobals())
 

@@ -82,3 +82,25 @@ export function diffCounts(lines: DiffLine[]): { added: number; removed: number 
   }
   return { added, removed }
 }
+
+/** Parses a unified diff (as `git diff` prints it) into lines, skipping file headers. */
+export function diffFromUnified(text: string): DiffLine[] {
+  const hunks: PatchHunk[] = []
+  let current: PatchHunk | null = null
+  for (const raw of text.split('\n')) {
+    const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(raw)
+    if (header) {
+      current = {
+        oldStart: Number(header[1]),
+        oldLines: Number(header[2] ?? 1),
+        newStart: Number(header[3]),
+        newLines: Number(header[4] ?? 1),
+        lines: [],
+      }
+      hunks.push(current)
+    } else if (current && raw !== '' && ' +-\\'.includes(raw[0]!)) {
+      current.lines.push(raw)
+    }
+  }
+  return diffFromPatch(hunks)
+}

@@ -5,6 +5,7 @@ import { EventSocket, type SocketLike } from '../../api/socket'
 import { bindRealtime } from '../realtime'
 import { useSessionsStore } from '../sessions'
 import { useProjectsStore } from '../projects'
+import { useGitStore } from '../git'
 import { jsonResponse, makeProject, makeSession } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
@@ -88,5 +89,17 @@ describe('bindRealtime', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/projects/2/sessions', expect.anything())
     expect(sessions.find('z')?.title).toBe('Sincronizada')
+  })
+
+  it('leva project.git ao store git', () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s } })
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    sockets[0]!.onmessage?.({
+      data: JSON.stringify({ session_id: null, seq: 0, type: 'project.git', data: { project_id: 1, repos: [{ rel_path: '.', branch: 'dev' }] } }),
+    })
+    expect(useGitStore().reposFor(1)[0]?.branch).toBe('dev')
   })
 })

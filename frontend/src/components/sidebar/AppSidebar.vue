@@ -5,6 +5,8 @@ import BrandMark from '../BrandMark.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import StateCounters from '../StateCounters.vue'
 import SessionSearch from './SessionSearch.vue'
+import BranchLabel from '../git/BranchLabel.vue'
+import { repoLabel, useGitStore } from '../../stores/git'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useLayoutStore } from '../../stores/layout'
@@ -14,6 +16,7 @@ import type { Session } from '../../types/api'
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const layout = useLayoutStore()
+const git = useGitStore()
 const route = useRoute()
 
 // The project being looked at, directly or through one of its sessions.
@@ -100,6 +103,16 @@ function sessionTone(session: Session): string {
             <span class="flex min-w-0 flex-1 flex-col">
               <span data-test="project-name" class="truncate font-semibold">{{ project.name }}</span>
               <span v-if="!project.available" class="text-xs text-fg-muted">pasta indisponível</span>
+              <template v-else-if="git.isLoaded(project.id)">
+                <BranchLabel
+                  v-for="repo in git.reposFor(project.id)"
+                  :key="repo.path"
+                  data-test="branch"
+                  :text="repoLabel(repo)"
+                  :muted="!!repo.error"
+                />
+                <span v-if="git.reposFor(project.id).length === 0" class="text-xs text-fg-muted">sem repositório git</span>
+              </template>
             </span>
             <StateCounters
               :running="count(openSessions(project.id), 'running')"

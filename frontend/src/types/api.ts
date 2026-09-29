@@ -28,6 +28,8 @@ export interface DirEntry {
   name: string
   path: string
   git: boolean
+  /** Branch name, short hash with a detached HEAD, or null. */
+  branch?: string | null
 }
 
 export interface DirListing {
@@ -74,4 +76,38 @@ export interface SendResult {
 export interface SessionUpdate {
   finished?: boolean
   title?: string
+}
+
+export interface GitRepo {
+  path: string
+  /** Relative to the project folder; "." when the folder itself is the repository. */
+  rel_path: string
+  branch: string | null
+  detached: boolean
+  head: string | null
+  changed: { staged: number; unstaged: number; untracked: number }
+  error: string | null
+}
+
+export interface ChangedFile {
+  path: string
+  rel_path: string
+  added: number | null
+  removed: number | null
+  uncommitted: boolean
+}
+
+/** Files changed in a session, per repository. The group without a repository has nulls. */
+export interface ChangesGroup {
+  path: string | null
+  rel_path: string | null
+  branch: string | null
+  detached: boolean
+  head: string | null
+  files: ChangedFile[]
+}
+
+export interface FileDiff {
+  diff: string
+  truncated: boolean
 }

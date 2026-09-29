@@ -76,3 +76,16 @@ export function makeSnapshot(overrides: Partial<import('../types/conversation').
 export function makeEvent(type: string, data: unknown, seq: number, session_id = 's1') {
   return { session_id, seq, type, data }
 }
+
+export function makeGitRepo(overrides: Partial<import('../types/api').GitRepo> = {}): import('../types/api').GitRepo {
+  return {
+    path: '/home/vi/dev/loja-online',
+    rel_path: '.',
+    branch: 'main',
+    detached: false,
+    head: 'abc1234',
+    changed: { staged: 0, unstaged: 0, untracked: 0 },
+    error: null,
+    ...overrides,
+  }
+}

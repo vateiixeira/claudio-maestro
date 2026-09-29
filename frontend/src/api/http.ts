@@ -1,6 +1,9 @@
 import type {
   DirListing,
+  ChangesGroup,
   DisplayState,
+  FileDiff,
+  GitRepo,
   Project,
   ProjectCreate,
   ProjectUpdate,
@@ -55,8 +58,9 @@ async function readDetail(response: Response): Promise<string | null> {
   }
 }
 
-async function request<T>(method: Method, url: string, body?: unknown): Promise<T> {
+async function request<T>(method: Method, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const init: RequestInit = { method }
+  if (signal) init.signal = signal
   if (body !== undefined) {
     init.headers = { 'Content-Type': 'application/json' }
     init.body = JSON.stringify(body)
@@ -174,4 +178,23 @@ export function getAppState(): Promise<Record<string, unknown>> {
 
 export function putAppState(key: string, value: unknown): Promise<unknown> {
   return request('PUT', `/api/state/${encodeURIComponent(key)}`, value)
+}
+
+// Git
+
+export function getProjectGit(projectId: number): Promise<{ repos: GitRepo[] }> {
+  return request('GET', `/api/projects/${projectId}/git`)
+}
+
+/** Current diff of a file against the last commit. `file` is relative to the repository. */
+export function getFileDiff(projectId: number, repo: string, file: string, signal?: AbortSignal): Promise<FileDiff> {
+  return request('GET', `/api/projects/${projectId}/diff?${new URLSearchParams({ repo, file })}`, undefined, signal)
+}
+
+export function getSessionChanges(sessionId: string, signal?: AbortSignal): Promise<{ repos: ChangesGroup[] }> {
+  return request('GET', `/api/sessions/${encodeURIComponent(sessionId)}/changes`, undefined, signal)
+}
+
+export function openInEditor(path: string): Promise<void> {
+  return request('POST', '/api/open-in-editor', { path })
 }

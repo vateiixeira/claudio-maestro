@@ -2,7 +2,8 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import FolderBrowser from '../components/FolderBrowser.vue'
-import { errorMessage } from '../api/http'
+import BranchLabel from '../components/git/BranchLabel.vue'
+import { errorMessage, listDirs } from '../api/http'
 import { useProjectsStore } from '../stores/projects'
 
 const COLORS = [
@@ -16,7 +17,10 @@ const COLORS = [
 const projects = useProjectsStore()
 const router = useRouter()
 
-const folder = ref<{ name: string; path: string; display: string } | null>(null)
+type Folder = { name: string; path: string; display: string; git: boolean; branch: string | null }
+const folder = ref<Folder | null>(null)
+// Repositories in the selected folder: itself and its first-level subfolders.
+const found = ref<Array<{ name: string; path: string; branch: string | null }>>([])
 const name = ref('')
 // Start with a color no project uses yet, so new projects stand apart in the menu.
 const used = new Set(projects.projects.map((p) => p.color.toUpperCase()))
@@ -26,10 +30,22 @@ const error = ref<string | null>(null)
 
 const canSubmit = computed(() => folder.value !== null && name.value.trim().length > 0 && !submitting.value)
 
-function onSelect(selected: { name: string; path: string; display: string }): void {
+async function onSelect(selected: Folder): Promise<void> {
   folder.value = selected
   name.value = selected.name
   error.value = null
+  const own = selected.git ? [{ name: selected.name, path: selected.path, branch: selected.branch }] : []
+  found.value = own
+  try {
+    const listing = await listDirs(selected.path)
+    if (folder.value?.path !== selected.path) return
+    found.value = [
+      ...own,
+      ...listing.entries.filter((e) => e.git).map((e) => ({ name: e.name, path: e.path, branch: e.branch ?? null })),
+    ]
+  } catch {
+    // Without the listing only the folder itself is shown.
+  }
 }
 
 async function submit(): Promise<void> {
@@ -84,6 +100,25 @@ function cancel(): void {
             <div data-test="selected-path" class="font-mono text-xs break-all text-fg-muted">
               {{ folder?.display ?? 'Nenhuma pasta selecionada' }}
             </div>
+          </div>
+
+          <div v-if="folder" data-test="found-repos" class="flex flex-col gap-2">
+            <div class="flex items-center gap-2 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">
+              <span class="grow">Repositórios encontrados</span>
+              <span class="normal-case tracking-normal">{{ found.length === 1 ? '1 repositório' : `${found.length} repositórios` }}</span>
+            </div>
+            <p v-if="found.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
+            <ul v-else class="m-0 flex list-none flex-col rounded-lg border border-line p-0">
+              <li
+                v-for="repo in found"
+                :key="repo.path"
+                data-test="found-repo"
+                class="flex min-h-9 items-center gap-3 border-b border-line px-3 last:border-b-0"
+              >
+                <span class="min-w-0 grow truncate font-mono text-xs">{{ repo.name }}</span>
+                <BranchLabel :text="repo.branch ?? 'branch indisponível'" muted />
+              </li>
+            </ul>
           </div>
 
           <fieldset class="m-0 flex flex-col gap-2 border-0 p-0">
