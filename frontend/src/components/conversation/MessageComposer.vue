@@ -23,9 +23,8 @@ const canSend = computed(() => !sending.value && !props.blockedReason && (text.v
 
 /** Attaches image files after checking format, size and count. Used by paste and drop. */
 async function addFiles(files: File[]) {
-  const { added, error: problem } = await attachImages(images.value, files)
+  const { error: problem } = await attachImages(() => images.value, files)
   error.value = problem
-  images.value.push(...added)
 }
 defineExpose({ addFiles })
 
@@ -104,7 +103,8 @@ function onKeydown(event: KeyboardEvent) {
 
 async function send() {
   const message = text.value
-  const attached = images.value
+  // A copy: an image that finishes reading while the request is out is not part of this message.
+  const attached = [...images.value]
   if (!canSend.value) return
   if (dictation.recording.value) dictation.stop()
   sending.value = true

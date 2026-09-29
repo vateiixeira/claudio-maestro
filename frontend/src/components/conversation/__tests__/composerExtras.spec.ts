@@ -253,3 +253,42 @@ describe('altura do campo', () => {
     section.remove()
   })
 })
+
+describe('imagens no campo: leituras em andamento', () => {
+  const startPaste = (ta: ReturnType<typeof setup>['ta'], files: File[]) =>
+    ta.trigger('paste', { clipboardData: { files, items: files.map((f) => ({ kind: 'file', type: f.type, getAsFile: () => f })) } })
+  const names = (w: ReturnType<typeof setup>['w']) => w.findAll('[data-test="attachment-draft"]').map((c) => c.text())
+
+  it('remover uma imagem durante a leitura de outra mantém a que acabou de ler', async () => {
+    const { w, ta } = setup()
+    await paste(ta, [png('a.png')])
+    await startPaste(ta, [png('b.png')]) // still reading
+    await w.find('button[aria-label="Remover imagem a.png"]').trigger('click')
+    await settleReads()
+    expect(names(w)).toEqual([expect.stringContaining('b.png')])
+  })
+
+  it('anexo que termina de ler durante o envio continua anexado e não é enviado', async () => {
+    trackFileReads()
+    let release: (r: Response) => void = () => {}
+    const bodiesSent: unknown[] = []
+    const fetchMock = routeFetch({
+      'POST /api/sessions/s1/messages': (init) => {
+        bodiesSent.push(JSON.parse(init!.body as string))
+        return new Promise<Response>((resolve) => (release = resolve)) as never
+      },
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const w = mount(MessageComposer, { props: { sessionId: 's1', state: 'idle' }, attachTo: document.body })
+    const ta = w.find('textarea')
+    await paste(ta, [png('a.png', 3)])
+    await ta.trigger('keydown', { key: 'Enter' })
+    await startPaste(ta, [png('b.png', 3)])
+    await settleReads() // b finishes reading while the request is out
+    expect(names(w)).toHaveLength(2)
+    release(jsonResponse({}, 202))
+    await flushPromises()
+    expect(bodiesSent).toEqual([{ text: '', images: [{ media_type: 'image/png', data: 'QUFB' }] }])
+    expect(names(w)).toEqual([expect.stringContaining('b.png')])
+  })
+})

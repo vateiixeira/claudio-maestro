@@ -170,6 +170,18 @@ describe('tela do projeto', () => {
     expect(useProjectsStore(pinia).byId(1)?.name).toBe('loja-nova')
   })
 
+  it('Esc no renomear fecha o formulário e consome o Esc', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
+    const wrapper = await mountView()
+    await wrapper.find('[data-test="rename"]').trigger('click')
+    const event = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true })
+    wrapper.find('#rename-project').element.dispatchEvent(event)
+    await flushPromises()
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.find('[data-test="rename-form"]').exists()).toBe(false)
+  })
+
   it('avisa quando o projeto não existe', async () => {
     const projects = useProjectsStore(pinia)
     projects.loaded = true

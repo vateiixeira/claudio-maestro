@@ -96,11 +96,52 @@ describe('modal de nova conversa: imagens', () => {
     expect(chips(wrapper).map((c) => c.text())).toEqual([expect.stringContaining('colada.png'), expect.stringContaining('solta.webp')])
   })
 
-  it('arrastar sobre o modal não deixa o navegador abrir o arquivo', async () => {
+  function dragEvent(type: 'dragover' | 'drop', types: string[]) {
+    const event = new Event(type, { cancelable: true, bubbles: true })
+    Object.defineProperty(event, 'dataTransfer', { value: { types, files: [] } })
+    return event
+  }
+
+  it('arrastar arquivo sobre o modal não deixa o navegador abri-lo', async () => {
     const { wrapper } = await openModal()
-    const event = new Event('dragover', { cancelable: true, bubbles: true })
-    wrapper.element.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(true)
+    const over = dragEvent('dragover', ['Files'])
+    wrapper.element.dispatchEvent(over)
+    expect(over.defaultPrevented).toBe(true)
+    const drop = dragEvent('drop', ['Files'])
+    wrapper.element.dispatchEvent(drop)
+    expect(drop.defaultPrevented).toBe(true)
+  })
+
+  it('arrastar texto sobre o modal não é interceptado, para soltar em Prompt e Título', async () => {
+    const { wrapper } = await openModal()
+    const over = dragEvent('dragover', ['text/plain'])
+    wrapper.find('[data-test="nc-prompt"]').element.dispatchEvent(over)
+    expect(over.defaultPrevented).toBe(false)
+    const drop = dragEvent('drop', ['text/plain'])
+    wrapper.find('[data-test="nc-prompt"]').element.dispatchEvent(drop)
+    expect(drop.defaultPrevented).toBe(false)
+    expect(chips(wrapper)).toHaveLength(0)
+  })
+
+  it('avisa que as imagens não ficam guardadas no rascunho, só quando há imagens anexadas', async () => {
+    const { wrapper } = await openModal()
+    expect(wrapper.find('[data-test="nc-images-note"]').exists()).toBe(false)
+    await pickFiles(wrapper, [png('a.png')])
+    expect(wrapper.find('[data-test="nc-images-note"]').text()).toContain('não ficam guardadas no rascunho')
+    await chips(wrapper)[0]!.find('button[aria-label="Remover imagem a.png"]').trigger('click')
+    expect(wrapper.find('[data-test="nc-images-note"]').exists()).toBe(false)
+  })
+
+  it('dois anexos ao mesmo tempo nunca passam de 10 imagens', async () => {
+    const { wrapper } = await openModal()
+    const input = wrapper.find('[data-test="nc-file-input"]')
+    for (const batch of [Array.from({ length: 6 }, (_, i) => png(`a${i}.png`)), Array.from({ length: 6 }, (_, i) => png(`b${i}.png`))]) {
+      Object.defineProperty(input.element, 'files', { value: batch, configurable: true })
+      await input.trigger('change')
+    }
+    await settleReads()
+    expect(chips(wrapper)).toHaveLength(10)
+    expect(wrapper.find('[data-test="nc-error"]').text()).toContain('10 imagens')
   })
 
   it('valida formato, tamanho e quantidade como o compositor', async () => {
@@ -207,5 +248,110 @@ describe('modal de nova conversa: título e opções quando o PATCH falha', () =
     expect(fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1)
     expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
     expect(takePendingDraft('nova')).toMatchObject({ text: 'Corrija o login', error: 'Sem conexão.' })
+  })
+})
+
+describe('modal de nova conversa: sessão criada e PATCH falhou', () => {
+  const patchFails = { 'PATCH /api/sessions/nova': () => jsonResponse({ detail: 'Modelo indisponível.' }, 400) }
+
+  async function failedPatch() {
+    const opened = await openModal(patchFails)
+    await opened.wrapper.find('[data-test="nc-title"]').setValue('Login')
+    await opened.wrapper.find('[data-test="nc-prompt"]').setValue('Corrija o login')
+    await pickFiles(opened.wrapper, [png('a.png', 3)])
+    await opened.wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    expect(opened.wrapper.find('[data-test="nc-error"]').text()).toContain('A conversa foi criada')
+    return opened
+  }
+
+  function expectLeftToCreated({ router, fetch }: Awaited<ReturnType<typeof openModal>>) {
+    expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
+    expect(useNewConversationStore(pinia).isOpen).toBe(false)
+    expect(localStorage.getItem('vibing:new-conversation')).toBeNull()
+    expect(fetch.mock.calls.filter(([url]) => url === '/api/projects/2/sessions')).toHaveLength(1)
+    expect(fetch.mock.calls.some(([url]) => url === '/api/sessions/nova/messages')).toBe(false)
+    const pending = takePendingDraft('nova')!
+    expect(pending.text).toBe('Corrija o login')
+    expect(pending.error).toContain('A conversa foi criada')
+    expect(pending.error).toContain('Modelo indisponível.')
+    expect(pending.images?.map((i) => i.name)).toEqual(['a.png'])
+  }
+
+  it('fechar no × leva à conversa criada com o rascunho no compositor', async () => {
+    const opened = await failedPatch()
+    await opened.wrapper.find('[data-test="nc-close"]').trigger('click')
+    await flushPromises()
+    expectLeftToCreated(opened)
+  })
+
+  it('Esc leva à conversa criada', async () => {
+    const opened = await failedPatch()
+    await opened.wrapper.find('[data-test="nc-prompt"]').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expectLeftToCreated(opened)
+  })
+
+  it('clicar no fundo leva à conversa criada', async () => {
+    const opened = await failedPatch()
+    await opened.wrapper.trigger('click')
+    await flushPromises()
+    expectLeftToCreated(opened)
+  })
+
+  it('descartar leva à conversa criada, sem deixar conversa vazia escondida', async () => {
+    const opened = await failedPatch()
+    await opened.wrapper.find('[data-test="nc-discard"]').trigger('click')
+    await flushPromises()
+    expectLeftToCreated(opened)
+  })
+
+  it('fechar sem sessão criada continua só fechando', async () => {
+    const { wrapper, router } = await openModal()
+    await wrapper.find('[data-test="nc-close"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/inbox')
+    expect(useNewConversationStore(pinia).isOpen).toBe(false)
+  })
+})
+
+describe('modal de nova conversa: não fecha durante o envio', () => {
+  async function submitting() {
+    let release: (r: Response) => void = () => {}
+    const opened = await openModal({ 'POST /api/projects/2/sessions': () => new Promise<Response>((resolve) => (release = resolve)) as never })
+    await opened.wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+    await opened.wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    return { ...opened, release: () => release(jsonResponse(makeSession({ session_id: 'nova', project_id: 2 }), 201)) }
+  }
+
+  it('Esc, × e clique no fundo não fecham, e descartar fica desabilitado', async () => {
+    const { wrapper, release, router } = await submitting()
+    const store = useNewConversationStore(pinia)
+    await wrapper.find('[data-test="nc-prompt"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.find('[data-test="nc-close"]').trigger('click')
+    await wrapper.trigger('click')
+    expect(store.isOpen).toBe(true)
+    expect(wrapper.find('[data-test="nc-discard"]').attributes('disabled')).toBeDefined()
+    await wrapper.find('[data-test="nc-discard"]').trigger('click')
+    expect(store.isOpen).toBe(true)
+
+    release()
+    await flushPromises()
+    expect(store.isOpen).toBe(false)
+    expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
+  })
+})
+
+describe('modal de nova conversa: leituras em andamento', () => {
+  it('remover uma imagem durante a leitura de outra mantém a que acabou de ler', async () => {
+    const { wrapper } = await openModal()
+    await pickFiles(wrapper, [png('a.png')])
+    const input = wrapper.find('[data-test="nc-file-input"]')
+    Object.defineProperty(input.element, 'files', { value: [png('b.png')], configurable: true })
+    await input.trigger('change') // still reading
+    await chips(wrapper)[0]!.find('button[aria-label="Remover imagem a.png"]').trigger('click')
+    await settleReads()
+    expect(chips(wrapper).map((c) => c.text())).toEqual([expect.stringContaining('b.png')])
   })
 })

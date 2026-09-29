@@ -43,10 +43,10 @@ afterEach(() => {
 
 const text = (id: string, t: string) => ({ type: 'text', id, text: t, streaming: false, parent_tool_use_id: null })
 
-async function mountView(props: Record<string, unknown> = {}) {
+async function mountView(props: Record<string, unknown> = {}, attach = false) {
   const router = createAppRouter(createMemoryHistory())
   await router.push('/sessions/s1')
-  const w = mount(ConversationThread, { props: { id: 's1', visible: true, ...props }, global: { plugins: [pinia, router] } })
+  const w = mount(ConversationThread, { props: { id: 's1', visible: true, ...props }, global: { plugins: [pinia, router] }, ...(attach ? { attachTo: document.body } : {}) })
   await flushPromises()
   return w
 }
@@ -147,19 +147,42 @@ describe('corpo da conversa', () => {
     }))
     const w = await mountView()
     const retry = () => w.find('[data-test="retry-load"]')
-    expect(retry().attributes('disabled')).toBeUndefined()
+    expect(retry().attributes('aria-disabled')).toBe('false')
     await retry().trigger('click')
     await flushPromises()
     expect(calls).toBe(2)
     expect(retry().exists()).toBe(true)
-    expect(retry().attributes('disabled')).toBeDefined()
+    expect(retry().attributes('aria-disabled')).toBe('true')
     // A second click while reloading does not start another request.
     await retry().trigger('click')
     expect(calls).toBe(2)
     pending[0]!(jsonResponse({ detail: 'Ainda fora.' }, 500))
     await flushPromises()
     expect(w.find('[role="alert"]').text()).toContain('Ainda fora.')
+    expect(retry().attributes('aria-disabled')).toBe('false')
+  })
+
+  it('"Tentar de novo" não perde o foco do teclado enquanto recarrega', async () => {
+    const pending: Array<(r: Response) => void> = []
+    let calls = 0
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => {
+        calls++
+        if (calls === 1) return jsonResponse({ detail: 'Servidor caiu.' }, 500)
+        return new Promise<Response>((resolve) => pending.push(resolve)) as never
+      },
+    }))
+    const w = await mountView({}, true)
+    const retry = () => w.find('[data-test="retry-load"]')
+    ;(retry().element as HTMLElement).focus()
+    expect(document.activeElement).toBe(retry().element)
+    await retry().trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(retry().element)
     expect(retry().attributes('disabled')).toBeUndefined()
+    pending[0]!(jsonResponse({ detail: 'Ainda fora.' }, 500))
+    await flushPromises()
+    expect(document.activeElement).toBe(retry().element)
   })
 
   it('sair da conversa antes do retrato chegar não a devolve ao store nem marca como vista', async () => {

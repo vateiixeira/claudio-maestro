@@ -40,7 +40,7 @@ const unavailableReason = computed(() =>
 // "Ver alterações" in an edit card opens the changes panel for this session.
 provide(SESSION_ID_KEY, computed(() => props.id))
 
-// Loads in flight; "Tentar de novo" stays disabled while any is out.
+// Loads in flight; "Tentar de novo" is aria-disabled (it keeps keyboard focus) while any is out.
 const reloads = ref(0)
 const reloading = computed(() => reloads.value > 0)
 let unmounted = false
@@ -440,10 +440,10 @@ function resolvePrompt(promptId: string) {
         <button
           type="button"
           data-test="retry-load"
-          :disabled="reloading"
+          :aria-disabled="reloading"
           :aria-busy="reloading"
-          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-elevated"
-          @click="reload"
+          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary aria-disabled:cursor-default aria-disabled:opacity-60 aria-disabled:hover:bg-elevated"
+          @click="!reloading && reload()"
         >
           Tentar de novo
         </button>

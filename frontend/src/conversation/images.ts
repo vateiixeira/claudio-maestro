@@ -58,34 +58,55 @@ export async function readImage(file: File): Promise<DraftImage> {
 }
 
 /**
- * Checks format, size and count of `files` on top of the images already attached and reads the
- * accepted ones. `error` gathers every reason a file was left out, or is null. Shared by the
- * composer and the new conversation modal.
+ * Checks format, size and count of `files` on top of the images already in `current`, reads the
+ * accepted ones and pushes them into `current`. `added` is what was pushed; `error` gathers every
+ * reason a file was left out, or is null. `current` may be a getter: the array is looked up again
+ * after the reads, because the caller may have replaced it meanwhile (removing an image, finishing
+ * a send). The limits are checked again on that array, right before the push, because another call
+ * may have added images too: it never goes past them. Shared by the composer and the modal.
  */
-export async function attachImages(current: DraftImage[], files: File[]): Promise<{ added: DraftImage[]; error: string | null }> {
-  const problems: string[] = []
+export async function attachImages(
+  source: DraftImage[] | (() => DraftImage[]),
+  files: File[],
+): Promise<{ added: DraftImage[]; error: string | null }> {
+  const now = () => (typeof source === 'function' ? source() : source)
+  let current = now()
+  const problems = new Set<string>()
   const accepted: File[] = []
   let total = current.reduce((sum, i) => sum + i.size, 0)
   for (const file of files) {
     const problem = imageProblem(file)
-    if (problem) problems.push(problem)
+    if (problem) problems.add(problem)
     else if (current.length + accepted.length >= MAX_IMAGES) {
-      problems.push(`Até ${MAX_IMAGES} imagens por mensagem.`)
+      problems.add(`Até ${MAX_IMAGES} imagens por mensagem.`)
       break
     } else if (total + file.size > MAX_TOTAL_BYTES) {
-      problems.push('As imagens de uma mensagem somam no máximo 30 MB.')
+      problems.add('As imagens de uma mensagem somam no máximo 30 MB.')
       break
     } else {
       accepted.push(file)
       total += file.size
     }
   }
+  const results = await Promise.allSettled(accepted.map(readImage))
+  // No await from here to the end: the check and the push cannot be interleaved with another call.
+  current = now()
+  total = current.reduce((sum, i) => sum + i.size, 0)
   const added: DraftImage[] = []
-  for (const result of await Promise.allSettled(accepted.map(readImage))) {
-    if (result.status === 'fulfilled') added.push(result.value)
-    else problems.push('Não foi possível ler uma das imagens.')
+  for (const result of results) {
+    if (result.status !== 'fulfilled') {
+      problems.add('Não foi possível ler uma das imagens.')
+    } else if (current.length >= MAX_IMAGES) {
+      problems.add(`Até ${MAX_IMAGES} imagens por mensagem.`)
+    } else if (total + result.value.size > MAX_TOTAL_BYTES) {
+      problems.add('As imagens de uma mensagem somam no máximo 30 MB.')
+    } else {
+      current.push(result.value)
+      added.push(result.value)
+      total += result.value.size
+    }
   }
-  return { added, error: problems.length ? problems.join(' ') : null }
+  return { added, error: problems.size ? [...problems].join(' ') : null }
 }
 
 /** Image files of a paste or drop. */

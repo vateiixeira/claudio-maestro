@@ -37,4 +37,31 @@ describe('attachImages', () => {
     expect(result.added).toHaveLength(6)
     expect(result.error).toContain('30 MB')
   })
+
+  it('acrescenta as imagens aceitas à lista recebida', async () => {
+    const current: Awaited<ReturnType<typeof attachImages>>['added'] = []
+    const result = await attachImages(current, [png('a.png'), png('b.png')])
+    expect(current).toEqual(result.added)
+    expect(current).toHaveLength(2)
+  })
+
+  it('duas chamadas ao mesmo tempo nunca passam de 10 imagens', async () => {
+    const current: Awaited<ReturnType<typeof attachImages>>['added'] = []
+    const [a, b] = await Promise.all([
+      attachImages(current, Array.from({ length: 6 }, (_, i) => png(`a${i}.png`))),
+      attachImages(current, Array.from({ length: 6 }, (_, i) => png(`b${i}.png`))),
+    ])
+    expect(current).toHaveLength(10)
+    expect(a.added.length + b.added.length).toBe(10)
+    expect([a.error, b.error].filter(Boolean).join(' ')).toContain('10 imagens')
+  })
+
+  it('duas chamadas ao mesmo tempo nunca passam de 30 MB', async () => {
+    const current: Awaited<ReturnType<typeof attachImages>>['added'] = []
+    const batch = (tag: string) => Array.from({ length: 4 }, (_, i) => sized(`${tag}${i}.png`, 4 * 1024 * 1024))
+    const [a, b] = await Promise.all([attachImages(current, batch('a')), attachImages(current, batch('b'))])
+    expect(current.reduce((sum, i) => sum + i.size, 0)).toBeLessThanOrEqual(30 * 1024 * 1024)
+    expect(current).toHaveLength(7)
+    expect([a.error, b.error].filter(Boolean).join(' ')).toContain('30 MB')
+  })
 })

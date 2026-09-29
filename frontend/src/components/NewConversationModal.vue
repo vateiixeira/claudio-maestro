@@ -29,6 +29,8 @@ const submitting = ref(false)
 // Once the session exists it is kept across attempts, so a retry does not create a second one.
 const createdId = ref<string | null>(null)
 const optionsApplied = ref(false)
+// Why the title and options were not applied, for the message shown if the user leaves before a retry.
+const optionsError = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const fullscreen = ref(false)
 const promptEl = ref<HTMLTextAreaElement | null>(null)
@@ -72,9 +74,8 @@ const modeOptions: MenuOption[] = [
 const canSubmit = computed(() => !submitting.value && draft.value.projectId != null && (draft.value.prompt.trim() !== '' || images.value.length > 0))
 
 async function addFiles(files: File[]) {
-  const { added, error: problem } = await attachImages(images.value, files)
+  const { error: problem } = await attachImages(() => images.value, files)
   error.value = problem
-  images.value.push(...added)
 }
 function removeImage(id: number) {
   images.value = images.value.filter((i) => i.id !== id)
@@ -85,8 +86,16 @@ function onPick(event: Event) {
   input.value = '' // picking the same file again must fire `change` again
   if (files.length) void addFiles(files)
 }
-// The overlay takes the drop, so a file dropped anywhere on it is not opened by the browser.
+// The overlay takes the drop of files, so one dropped anywhere on it is not opened by the browser.
+// Text is left alone: dragging it into the prompt or the title keeps working.
+function hasFiles(event: DragEvent) {
+  return Boolean(event.dataTransfer?.types?.includes('Files'))
+}
+function onDragOver(event: DragEvent) {
+  if (hasFiles(event)) event.preventDefault()
+}
 function onDrop(event: DragEvent) {
+  if (!hasFiles(event)) return
   event.preventDefault()
   const files = filesFrom(event.dataTransfer)
   if (files.length) void addFiles(files)
@@ -141,12 +150,13 @@ async function submit() {
       if (Object.keys(changes).length) await updateSession(sessionId, changes)
       optionsApplied.value = true
     } catch (e) {
-      error.value = `A conversa foi criada, mas não foi possível aplicar o título e as opções. ${errorMessage(e)} Clique em Iniciar conversa para tentar de novo.`
+      optionsError.value = errorMessage(e)
+      error.value = `A conversa foi criada, mas não foi possível aplicar o título e as opções. ${optionsError.value} Clique em Iniciar conversa para tentar de novo.`
       submitting.value = false
       return
     }
   }
-  const attached = images.value
+  const attached = [...images.value]
   // Registered before the request: the user item may arrive over the socket first.
   const forget = attached.length ? rememberSentImages(sessionId, attached.map((i) => ({ url: i.url, mediaType: i.mediaType, size: i.size }))) : () => {}
   try {
@@ -167,12 +177,34 @@ function finish() {
   submitting.value = false
   store.close()
 }
-function discard() {
+// The session was created but the title and options were not applied: it exists, empty, and has no
+// delete route. Leaving the modal opens it with the prompt and the images waiting in its composer,
+// so nothing stays orphaned or hidden.
+async function leaveToCreated(sessionId: string) {
+  const reason = optionsError.value ? ` ${optionsError.value}` : ''
+  const message = `A conversa foi criada, mas não foi possível aplicar o título e as opções.${reason} Envie a mensagem para começar e ajuste as opções aqui.`
+  setPendingDraft(sessionId, { text: draft.value.prompt, error: message, images: images.value })
   finish()
   opener?.focus()
+  await router.push({ name: 'session', params: { id: sessionId } })
 }
+// Neither Esc, × nor the backdrop closes the modal while a request is out.
 function close() {
+  if (submitting.value) return
+  if (createdId.value !== null) {
+    void leaveToCreated(createdId.value)
+    return
+  }
   store.close()
+  opener?.focus()
+}
+function discard() {
+  if (submitting.value) return
+  if (createdId.value !== null) {
+    void leaveToCreated(createdId.value)
+    return
+  }
+  finish()
   opener?.focus()
 }
 
@@ -195,7 +227,7 @@ function onKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @keydown.esc.prevent="close" @keydown="onKeydown" @click.self="close" @dragover.prevent @drop="onDrop">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @keydown.esc.prevent="close" @keydown="onKeydown" @click.self="close" @dragover="onDragOver" @drop="onDrop">
     <div
       ref="dialogEl"
       data-test="new-conversation-modal"
@@ -208,7 +240,7 @@ function onKeydown(event: KeyboardEvent) {
       <header class="flex items-center gap-2 border-b border-line px-5 py-3">
         <h2 id="nc-heading" class="m-0 grow text-base font-semibold">Nova conversa</h2>
         <button type="button" :aria-label="fullscreen ? 'Sair da tela cheia' : 'Tela cheia'" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card" @click="fullscreen = !fullscreen">⤢</button>
-        <button type="button" data-test="nc-close" aria-label="Fechar" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card" @click="close">×</button>
+        <button type="button" data-test="nc-close" aria-label="Fechar" :disabled="submitting" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card disabled:opacity-40" @click="close">×</button>
       </header>
 
       <div v-if="available.length === 0" data-test="nc-no-projects" class="flex flex-col gap-3 px-5 py-6">
@@ -246,6 +278,7 @@ function onKeydown(event: KeyboardEvent) {
               </button>
             </div>
           </div>
+          <p v-if="images.length" data-test="nc-images-note" class="m-0 text-xs text-fg-muted">As imagens não ficam guardadas no rascunho: se você fechar o modal, elas se perdem.</p>
           <div class="flex flex-wrap items-center gap-2">
             <input ref="fileInput" type="file" data-test="nc-file-input" :accept="IMAGE_TYPES.join(',')" multiple tabindex="-1" class="hidden" @change="onPick" />
             <button type="button" data-test="nc-attach" aria-label="Anexar imagem" title="Anexar imagem" class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-transparent px-2.5 text-sm text-fg-muted hover:text-fg" @click="fileInput?.click()">
@@ -259,7 +292,7 @@ function onKeydown(event: KeyboardEvent) {
           <p v-if="error" data-test="nc-error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
         </div>
         <footer class="flex items-center gap-3 border-t border-line px-5 py-3">
-          <button type="button" data-test="nc-discard" class="h-10 rounded-md px-3 text-sm text-fg-muted hover:text-fg" @click="discard">Descartar rascunho</button>
+          <button type="button" data-test="nc-discard" :disabled="submitting" class="h-10 rounded-md px-3 text-sm text-fg-muted hover:text-fg disabled:opacity-40" @click="discard">Descartar rascunho</button>
           <span class="grow" />
           <button type="button" data-test="nc-submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-fg hover:bg-primary-soft disabled:opacity-40" :disabled="!canSubmit" @click="submit">{{ submitting ? 'Iniciando…' : 'Iniciar conversa' }}</button>
         </footer>

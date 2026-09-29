@@ -173,7 +173,7 @@ async function remove(): Promise<void> {
           data-test="rename-form"
           class="flex flex-wrap items-center gap-2"
           @submit.prevent="saveRename"
-          @keydown.esc="renaming = false"
+          @keydown.esc.prevent="renaming = false"
         >
           <label for="rename-project" class="sr-only">Nome do projeto</label>
           <input
