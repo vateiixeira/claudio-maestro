@@ -277,7 +277,7 @@ A definir quando o marco for desenhado:
 
 | Pergunta | Por que importa |
 |---|---|
-| Qual versão da ferramenta de lista de tarefas o Claude usa hoje? | Com haiku, a família `TaskCreate`/`TaskUpdate` (fato do marco 5); com sonnet ela não apareceu. Falta confirmar com Opus, o modelo dos planos longos |
+| De onde vem o progresso? | Verificado em 2026-09-29: nas 400 conversas mais recentes do usuário (Opus) não há nenhuma chamada de `TodoWrite` nem de `TaskCreate`/`TaskUpdate`, e a sessão com Opus 5.5 não tem essa ferramenta. Só o haiku a mostrou (fato do marco 5). A fonte precisa ser outra: caixas de marcação do plano em `docs/superpowers/plans/`, commits, `ROADMAP.md` ou os subagentes disparados. Decidir no desenho do marco |
 | Subagentes que executam tarefas do plano entram no progresso? | No fluxo com subagentes, quem executa é outro agente, mas quem atualiza a lista é a sessão principal |
 | O que mostrar quando a lista é abandonada no meio? | Uma lista velha fixa na tela engana mais do que ajuda |
 
