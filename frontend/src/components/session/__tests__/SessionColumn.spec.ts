@@ -116,6 +116,26 @@ describe('coluna da sessão', () => {
     expect(w.emitted('missing')).toBeUndefined()
   })
 
+  it('depois de uma falha de carga oferece "Tentar de novo", que busca o retrato outra vez', async () => {
+    let calls = 0
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => {
+        calls++
+        return calls === 1 ? jsonResponse({ detail: 'Servidor caiu.' }, 500) : jsonResponse(makeSnapshot({ seq: 1, items: [text('a', 'Voltou') as never] }))
+      },
+    }))
+    const w = await mountView()
+    const retry = w.find('[data-test="retry-load"]')
+    expect(retry.element.tagName).toBe('BUTTON')
+    expect(retry.text()).toBe('Tentar de novo')
+    expect(w.find('button[aria-label="Fechar coluna"]').exists()).toBe(true)
+    await retry.trigger('click')
+    await flushPromises()
+    expect(calls).toBe(2)
+    expect(w.find('[data-test="retry-load"]').exists()).toBe(false)
+    expect(w.text()).toContain('Voltou')
+  })
+
   it('avisa quando a sessão não existe mais (404)', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse({ detail: 'Sessão não encontrada.' }, 404) }))
     const w = await mountView()

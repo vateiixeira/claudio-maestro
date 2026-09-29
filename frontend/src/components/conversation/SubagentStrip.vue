@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { errorMessage, stopSubagents } from '../../api/http'
 import { summarizeSubagents, type SubagentEntry } from '../../conversation/subagents'
 import type { SubagentStatus } from '../../types/conversation'
 
 // Strip above the message field while a subagent runs. Above this many, only a summary.
 const LIST_LIMIT = 3
 
-const props = defineProps<{ entries: SubagentEntry[] }>()
+const props = defineProps<{ sessionId: string; entries: SubagentEntry[] }>()
 const emit = defineEmits<{ select: [id: string] }>()
 
 const STATUS_LABEL: Record<SubagentStatus, string> = {
@@ -20,7 +21,24 @@ const collapsible = computed(() => props.entries.length > LIST_LIMIT)
 const expanded = ref(false)
 const showList = computed(() => !collapsible.value || expanded.value)
 const summary = computed(() => summarizeSubagents(props.entries))
-const running = computed(() => props.entries.some((e) => e.status === 'running'))
+const runningCount = computed(() => props.entries.filter((e) => e.status === 'running').length)
+const running = computed(() => runningCount.value > 0)
+
+// Background subagents outlive the turn, so the composer's "Interromper" is not enough.
+const stopping = ref(false)
+const stopError = ref<string | null>(null)
+async function stopAll() {
+  if (stopping.value) return
+  stopping.value = true
+  stopError.value = null
+  try {
+    await stopSubagents(props.sessionId)
+  } catch (e) {
+    stopError.value = errorMessage(e)
+  } finally {
+    stopping.value = false
+  }
+}
 </script>
 
 <template>
@@ -68,5 +86,21 @@ const running = computed(() => props.entries.some((e) => e.status === 'running')
         </button>
       </li>
     </ul>
+    <div
+      v-if="running"
+      class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-3 py-1.5"
+    >
+      <button
+        type="button"
+        data-test="subagent-stop"
+        class="flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-elevated px-2.5 text-xs font-medium text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
+        :disabled="stopping"
+        @click="stopAll"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
+        {{ runningCount === 1 ? 'Parar subagente' : 'Parar subagentes' }}
+      </button>
+      <p v-if="stopError" data-test="subagent-stop-error" role="alert" class="m-0 min-w-0 text-xs text-diff-del-fg">{{ stopError }}</p>
+    </div>
   </div>
 </template>

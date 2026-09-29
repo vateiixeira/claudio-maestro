@@ -67,6 +67,24 @@ describe('faixa de subagentes na coluna da sessão', () => {
     expect(strip.element.compareDocumentPosition(composer.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('com a sessão ociosa e um subagente em segundo plano, "Parar subagente" chama a rota da sessão', async () => {
+    const fetchMock = routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, state: 'idle', items: [user('u1'), agent('bg', 'running'), user('u2')] as never })),
+      'POST /api/sessions/s1/subagents/stop': () => jsonResponse({}, 202),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1')
+    const w = mount(SessionColumn, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] }, attachTo: document.body })
+    await flushPromises()
+    expect(w.find('[data-test="interrupt"]').exists()).toBe(false)
+    const stop = w.find('[data-test="subagent-stop"]')
+    expect(stop.text()).toBe('Parar subagente')
+    await stop.trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s1/subagents/stop', expect.objectContaining({ method: 'POST' }))
+  })
+
   it('não aparece quando todos terminaram', async () => {
     const w = await mountWith({ state: 'idle', items: [user('u1'), agent('a', 'completed'), agent('b', 'failed')] })
     expect(w.find('[data-test="subagent-strip"]').exists()).toBe(false)

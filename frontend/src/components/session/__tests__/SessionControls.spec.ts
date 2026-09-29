@@ -252,6 +252,10 @@ describe('uso do contexto', () => {
     const el = contextText(w)
     expect(el.text()).toBe('Contexto 42%')
     expect(el.attributes('title')).toBe('84 mil de 200 mil tokens')
+    // Screen readers get the tokens too, not only the tooltip; the visible text is not read twice.
+    expect(el.attributes('aria-hidden')).toBe('true')
+    expect(w.find('[data-test="context-usage-sr"]').text()).toBe('Contexto 42%, 84 mil de 200 mil tokens')
+    expect(w.find('[data-test="context-usage-sr"]').classes()).toContain('sr-only')
     expect(el.classes()).not.toContain('text-secondary')
   })
 

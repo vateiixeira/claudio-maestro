@@ -310,4 +310,62 @@ describe('tela de novo projeto', () => {
       expect(wrapper.findAll('[data-test="found-repo"]').map((r) => r.text())).toEqual(['novomain'])
     })
   })
+
+  describe('cancelamento da prévia', () => {
+    // Fake fetch that never answers on its own and rejects like the browser when aborted.
+    function hangingFetch() {
+      const signals = new Map<string, AbortSignal | undefined>()
+      const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+        if (url.startsWith('/api/fs/repos')) {
+          signals.set(url, init?.signal ?? undefined)
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+          })
+        }
+        if (url === '/api/fs/dirs' || url.endsWith('%2Fhome%2Fvi')) return Promise.resolve(jsonResponse(home))
+        return Promise.resolve(jsonResponse(dev))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      return signals
+    }
+    const devUrl = '/api/fs/repos?path=%2Fhome%2Fvi%2Fdev%2Fblog'
+    const notasUrl = '/api/fs/repos?path=%2Fhome%2Fvi%2Fnotas'
+
+    it('um novo clique aborta o pedido anterior, sem mostrar erro', async () => {
+      const signals = hangingFetch()
+      const wrapper = await mountView()
+      await entry(wrapper, 'dev').trigger('dblclick')
+      await flushPromises()
+      await entry(wrapper, 'blog').trigger('click')
+      await flushPromises()
+      expect(signals.get(devUrl)?.aborted).toBe(false)
+      await wrapper.find('[data-test="crumb"]').trigger('click')
+      await flushPromises()
+      await entry(wrapper, 'notas').trigger('click')
+      await flushPromises()
+      expect(signals.get(devUrl)?.aborted).toBe(true)
+      expect(signals.get(notasUrl)?.aborted).toBe(false)
+      expect(wrapper.find('[data-test="repos-error"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="found-repos"] [role="status"]').text()).toContain('Procurando repositórios')
+    })
+
+    it('sair da tela aborta o pedido em andamento', async () => {
+      const signals = hangingFetch()
+      const wrapper = await mountView()
+      await entry(wrapper, 'notas').trigger('click')
+      await flushPromises()
+      expect(signals.get(notasUrl)?.aborted).toBe(false)
+      wrapper.unmount()
+      expect(signals.get(notasUrl)?.aborted).toBe(true)
+    })
+
+    it('a resposta de um pedido já concluído ainda mostra os repositórios', async () => {
+      vi.stubGlobal('fetch', routeFetch(dirs))
+      const wrapper = await mountView()
+      await entry(wrapper, 'notas').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="found-repos"]').text()).toContain('sem repositório git')
+      expect(wrapper.find('[data-test="repos-error"]').exists()).toBe(false)
+    })
+  })
 })

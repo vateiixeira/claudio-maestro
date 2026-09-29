@@ -568,7 +568,7 @@ function resolvePrompt(promptId: string) {
           {{ conv.error || 'A sessão parou com erro.' }} Você pode enviar de novo.
         </p>
         <p v-if="loadError" role="alert" class="m-0 text-sm text-secondary-soft">{{ loadError }}</p>
-        <SubagentStrip :entries="subagentEntries" @select="goToSubagent" />
+        <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
         <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason">
           <template #controls><SessionControls :session-id="conv.sessionId" /></template>
         </MessageComposer>
@@ -576,15 +576,24 @@ function resolvePrompt(promptId: string) {
     </template>
     <div v-else class="flex flex-col items-start gap-3 px-6 py-8">
       <p v-if="loadError" role="alert" class="m-0 text-fg-muted">{{ loadError }}</p>
-      <button
-        v-if="loadError"
-        type="button"
-        aria-label="Fechar coluna"
-        class="min-h-9 rounded-md border border-line-strong px-3 text-sm text-fg hover:bg-card"
-        @click="emit('close')"
-      >
-        Fechar coluna
-      </button>
+      <div v-if="loadError" class="flex flex-wrap gap-2">
+        <button
+          type="button"
+          data-test="retry-load"
+          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          @click="reload"
+        >
+          Tentar de novo
+        </button>
+        <button
+          type="button"
+          aria-label="Fechar coluna"
+          class="min-h-9 rounded-md border border-line-strong px-3 text-sm text-fg hover:bg-card"
+          @click="emit('close')"
+        >
+          Fechar coluna
+        </button>
+      </div>
       <p v-else class="text-fg-muted">Carregando…</p>
     </div>
   </section>

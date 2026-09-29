@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import FolderBrowser from '../components/FolderBrowser.vue'
 import BranchLabel from '../components/git/BranchLabel.vue'
@@ -41,22 +41,34 @@ const canSubmit = computed(() => folder.value !== null && name.value.trim().leng
 
 // Each listing takes a number; only the newest one may show its answer.
 let reposGen = 0
+// A new listing (or leaving the screen) cancels the previous one, so big folders
+// do not pile up git processes in the backend.
+let reposAbort: AbortController | null = null
+onBeforeUnmount(() => {
+  reposGen++
+  reposAbort?.abort()
+  reposAbort = null
+})
 
 async function loadRepos(path: string): Promise<void> {
   const mine = ++reposGen
+  reposAbort?.abort()
+  const controller = new AbortController()
+  reposAbort = controller
   found.value = []
   limitReached.value = false
   reposError.value = null
   reposLoading.value = true
   try {
-    const result = await listRepos(path)
+    const result = await listRepos(path, controller.signal)
     if (mine !== reposGen) return
     found.value = result.repos
     limitReached.value = result.limit_reached === true
   } catch (e) {
-    if (mine === reposGen) reposError.value = errorMessage(e)
+    if (mine === reposGen && !controller.signal.aborted) reposError.value = errorMessage(e)
   } finally {
     if (mine === reposGen) reposLoading.value = false
+    if (reposAbort === controller) reposAbort = null
   }
 }
 

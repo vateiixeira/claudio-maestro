@@ -124,8 +124,8 @@ export function pickFolder(): Promise<{ path: string | null }> {
 }
 
 /** Repositories under a folder, found the way a project finds them. */
-export function listRepos(path: string): Promise<FoundRepos> {
-  return request('GET', `/api/fs/repos?${new URLSearchParams({ path })}`)
+export function listRepos(path: string, signal?: AbortSignal): Promise<FoundRepos> {
+  return request('GET', `/api/fs/repos?${new URLSearchParams({ path })}`, undefined, signal)
 }
 
 // Sessions
@@ -173,6 +173,11 @@ export function listModels(): Promise<ModelInfo[]> {
 
 export function interruptSession(sessionId: string): Promise<void> {
   return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/interrupt`)
+}
+
+/** Stops every running subagent of the session without interrupting its main turn. */
+export function stopSubagents(sessionId: string): Promise<void> {
+  return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/subagents/stop`)
 }
 
 export function answerPrompt(
