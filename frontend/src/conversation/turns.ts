@@ -134,7 +134,7 @@ export function groupNodeKind(items: ToolItem[], sessionActive: boolean): NodeKi
   return items.some((item) => toolRunning(item, sessionActive)) ? 'running' : 'group'
 }
 
-type ActionCategory = 'read' | 'search' | 'bash' | 'tool'
+export type ActionCategory = 'read' | 'search' | 'bash' | 'tool'
 function category(item: ToolItem): ActionCategory {
   if (item.name === 'Read') return 'read'
   if (SEARCH_TOOLS.has(item.name)) return 'search'
@@ -158,6 +158,7 @@ export function groupChips(items: ToolItem[]): string[] {
 }
 
 export interface ActionRow {
+  kind: ActionCategory
   label: string
   target: string
   meta: string
@@ -183,5 +184,5 @@ export function actionRow(item: ToolItem, sessionActive: boolean): ActionRow {
   else if (item.name === 'Grep' || item.name === 'Glob') {
     meta = plural(countLines(resultText(item.result.content)), 'resultado', 'resultados')
   }
-  return { label: CATEGORY_WORDS[cat][0], target, meta }
+  return { kind: cat, label: CATEGORY_WORDS[cat][0], target, meta }
 }

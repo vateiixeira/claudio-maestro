@@ -64,8 +64,6 @@ describe('blocos da conversa', () => {
 
     const ok = mountItem(tool('Bash', { command: 'ls' }, { content: 'a.txt\nb.txt', is_error: false, details: null }))
     expect(ok.text()).toContain('b.txt')
-    await ok.find('[data-test="toggle-output"]').trigger('click')
-    expect(ok.text()).not.toContain('b.txt')
 
     const bad = mountItem(tool('Bash', { command: 'false' }, { content: 'falhou', is_error: true, details: null }))
     expect(bad.find('[data-test="tool-error"]').text()).toContain('falhou')
@@ -88,6 +86,7 @@ describe('TruncatedText', () => {
   it('trunca em 200 linhas e mostra tudo ao pedir', async () => {
     const text = Array.from({ length: 250 }, (_, i) => `linha ${i + 1}`).join('\n')
     const w = mount(TruncatedText, { props: { text } })
+    await w.find('[data-test="show-lines"]').trigger('click')
     expect(w.text()).toContain('linha 200')
     expect(w.text()).not.toContain('linha 201')
     await w.find('[data-test="show-all"]').trigger('click')

@@ -164,3 +164,90 @@ describe('grupo de ações', () => {
   })
 })
 
+
+describe('barra fixa do turno', () => {
+  // jsdom has no layout: each turn anchor gets a fake offsetTop.
+  function place(w: Awaited<ReturnType<typeof mountWith>>, tops: number[]) {
+    const el = w.find('[data-test="conversation-scroller"]').element
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, value: 10000 })
+    Object.defineProperty(el, 'clientHeight', { configurable: true, value: 400 })
+    w.findAll('[data-turn-anchor]').forEach((a, i) => Object.defineProperty(a.element, 'offsetTop', { configurable: true, value: tops[i] }))
+  }
+
+  it('não aparece com um turno só', async () => {
+    const w = await mountWith({ state: 'idle', items: [user('u1'), text('a')] })
+    expect(w.find('[data-test="turn-bar"]').exists()).toBe(false)
+  })
+
+  it('no fim da rolagem o turno atual é o último', async () => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 1 })
+    const w = await mountWith({ state: 'idle', items: [user('u1', 'um'), user('u2', 'dois'), user('u3', 'três')] })
+    place(w, [0, 5000, 9000])
+    const el = w.find('[data-test="conversation-scroller"]').element
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(el, 'clientHeight', { configurable: true, value: 400 })
+    el.scrollTop = 600
+    await w.find('[data-test="conversation-scroller"]').trigger('scroll')
+    expect(w.find('[data-test="turn-bar"]').text()).toContain('Turno 3 de 3')
+    expect(w.find('[aria-label="Próximo turno"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('calcula no máximo uma vez por frame', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    const w = await mountWith({ state: 'idle', items: [user('u1'), user('u2')] })
+    frames.length = 0
+    place(w, [0, 500])
+    const scroller = w.find('[data-test="conversation-scroller"]')
+    scroller.element.scrollTop = 0
+    await scroller.trigger('scroll')
+    frames.shift()!(0)
+    await flushPromises()
+    scroller.element.scrollTop = 600
+    await scroller.trigger('scroll')
+    await scroller.trigger('scroll')
+    expect(frames).toHaveLength(1)
+    expect(w.find('[data-test="turn-bar"]').text()).toContain('Turno 1 de 2')
+    frames[0]!(0)
+    await flushPromises()
+    expect(w.find('[data-test="turn-bar"]').text()).toContain('Turno 2 de 2')
+  })
+
+  it('mostra número, texto e navega entre turnos', async () => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 1 })
+    const w = await mountWith({ state: 'idle', items: [text('x'), user('u2', 'segundo pedido'), text('b'), user('u3', 'terceiro'), text('c')] })
+    const bar = w.find('[data-test="turn-bar"]')
+    expect(bar.exists()).toBe(true)
+    place(w, [0, 500, 1000])
+    const scroller = w.find('[data-test="conversation-scroller"]')
+    scroller.element.scrollTop = 0
+    await scroller.trigger('scroll')
+    expect(bar.text()).toContain('Turno 1 de 3')
+    expect(bar.text()).toContain('Início da sessão')
+    const prev = w.find('[aria-label="Turno anterior"]')
+    const next = w.find('[aria-label="Próximo turno"]')
+    expect(prev.attributes('disabled')).toBeDefined()
+    expect(next.attributes('disabled')).toBeUndefined()
+
+    scroller.element.scrollTop = 520
+    await scroller.trigger('scroll')
+    expect(bar.text()).toContain('Turno 2 de 3')
+    expect(bar.text()).toContain('segundo pedido')
+
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    await next.trigger('click')
+    const anchors = w.findAll('[data-turn-anchor]')
+    expect(scroll).toHaveBeenCalledTimes(1)
+    expect(scroll.mock.contexts[0]).toBe(anchors[2]!.element)
+    expect(document.activeElement === anchors[2]!.element || anchors[2]!.attributes('tabindex') === '-1').toBe(true)
+
+    scroller.element.scrollTop = 1200
+    await scroller.trigger('scroll')
+    expect(bar.text()).toContain('Turno 3 de 3')
+    expect(next.attributes('disabled')).toBeDefined()
+    await prev.trigger('click')
+    expect(scroll.mock.contexts[1]).toBe(anchors[1]!.element)
+  })
+})

@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { resultText, str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 import TruncatedText from './TruncatedText.vue'
 
 const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
-const open = ref(true)
 
 const output = computed(() => resultText(props.item.result?.content))
 const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
@@ -26,21 +25,11 @@ const isError = computed(() => props.item.result?.is_error === true)
       <span v-else-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
       <span v-else-if="isError" class="text-xs text-diff-del-fg">falhou</span>
       <span v-else-if="!item.result" class="text-xs text-fg-muted">sem resultado</span>
-      <button
-        v-if="!running && output"
-        type="button"
-        data-test="toggle-output"
-        class="cursor-pointer border-none bg-transparent p-0 text-xs text-fg-muted hover:text-fg"
-        :aria-expanded="open"
-        @click="open = !open"
-      >
-        {{ open ? 'Recolher saída' : 'Ver saída' }}
-      </button>
     </div>
     <div class="px-3 py-2">
       <pre class="m-0 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-fg">$ {{ str(item.input.command) }}</pre>
-      <div v-if="open && output" class="mt-1" :class="isError ? 'rounded-md bg-diff-del-bg px-2 py-1 text-diff-del-fg' : 'text-fg-muted'" :data-test="isError ? 'tool-error' : 'tool-output'">
-        <TruncatedText :text="output" />
+      <div v-if="!running && output" class="mt-1" :class="isError ? '' : 'text-fg-muted'" :data-test="isError ? 'tool-error' : 'tool-output'">
+        <TruncatedText :text="output" :variant="isError ? 'error' : 'default'" />
       </div>
     </div>
   </div>

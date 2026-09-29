@@ -114,10 +114,10 @@ describe('grupos de ações', () => {
 
   it('linha: rótulo, alvo e meta', () => {
     expect(actionRow(tool('a', 'Read', { file_path: '/p/a.py' }, { result: { content: 'x\ny\n', is_error: false, details: null } }), false))
-      .toEqual({ label: 'Leitura', target: '/p/a.py', meta: '2 linhas' })
-    expect(actionRow(tool('g', 'Grep', { pattern: 'foo', path: 'src' }), false)).toEqual({ label: 'Busca', target: 'foo em src', meta: '1 resultado' })
-    expect(actionRow(tool('b', 'Bash', { command: 'ls' }, { result: null }), true)).toEqual({ label: 'Comando', target: 'ls', meta: 'rodando…' })
-    expect(actionRow(tool('m', 'mcp__s__t', {}, { result: null }), false)).toEqual({ label: 'Ferramenta', target: 's · t', meta: 'sem resultado' })
+      .toEqual({ kind: 'read', label: 'Leitura', target: '/p/a.py', meta: '2 linhas' })
+    expect(actionRow(tool('g', 'Grep', { pattern: 'foo', path: 'src' }), false)).toEqual({ kind: 'search', label: 'Busca', target: 'foo em src', meta: '1 resultado' })
+    expect(actionRow(tool('b', 'Bash', { command: 'ls' }, { result: null }), true)).toEqual({ kind: 'bash', label: 'Comando', target: 'ls', meta: 'rodando…' })
+    expect(actionRow(tool('m', 'mcp__s__t', {}, { result: null }), false)).toEqual({ kind: 'tool', label: 'Ferramenta', target: 's · t', meta: 'sem resultado' })
     expect(actionRow(tool('x', 'ToolSearch', {}, { result: null, result_missing: true }), false).meta).toBe('Resultado não disponível no histórico')
   })
 })

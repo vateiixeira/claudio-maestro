@@ -32,7 +32,7 @@ function toggleRow(id: string) {
     <button
       type="button"
       data-test="action-group-toggle"
-      class="flex min-h-10 w-full cursor-pointer items-center gap-2.5 border-none bg-transparent px-3 text-left text-fg"
+      class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 border-none bg-transparent px-3 text-left text-fg"
       :aria-expanded="open"
       @click="emit('toggle')"
     >
@@ -58,9 +58,9 @@ function toggleRow(id: string) {
           @click="toggleRow(row.item.id)"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-muted" aria-hidden="true">
-            <template v-if="row.label === 'Leitura'"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></template>
-            <template v-else-if="row.label === 'Busca'"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></template>
-            <template v-else-if="row.label === 'Comando'"><path d="m4 17 6-6-6-6" /><line x1="12" y1="19" x2="20" y2="19" /></template>
+            <template v-if="row.kind === 'read'"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></template>
+            <template v-else-if="row.kind === 'search'"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></template>
+            <template v-else-if="row.kind === 'bash'"><path d="m4 17 6-6-6-6" /><line x1="12" y1="19" x2="20" y2="19" /></template>
             <path v-else d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />
           </svg>
           <span class="cap w-20 shrink-0 text-fg-muted">{{ row.label }}</span>

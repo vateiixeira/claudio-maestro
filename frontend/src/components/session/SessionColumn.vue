@@ -232,6 +232,51 @@ function onScroll() {
   const el = scroller.value
   if (!el) return
   atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+  scheduleTurnUpdate()
+}
+
+// Sticky turn bar: the current turn is the last one whose start is above the bar.
+const TURN_BAR_HEIGHT = 44
+const currentTurn = ref(0)
+const turnAnchors = () => Array.from(scroller.value?.querySelectorAll<HTMLElement>('[data-turn-anchor]') ?? [])
+let turnFrame: number | null = null
+let turnPending = false
+function scheduleTurnUpdate() {
+  if (turnPending) return
+  turnPending = true
+  turnFrame = requestAnimationFrame(() => {
+    turnPending = false
+    turnFrame = null
+    updateCurrentTurn()
+  })
+  if (!turnPending) turnFrame = null
+}
+onBeforeUnmount(() => { if (turnFrame !== null) cancelAnimationFrame(turnFrame) })
+function updateCurrentTurn() {
+  const el = scroller.value
+  if (!el) return
+  // At the end (same rule as the auto-scroll), the last turn is the current one.
+  if (atBottom.value) {
+    currentTurn.value = Math.max(turns.value.length - 1, 0)
+    return
+  }
+  const top = el.scrollTop + TURN_BAR_HEIGHT + 1
+  let index = 0
+  turnAnchors().forEach((anchor, i) => { if (anchor.offsetTop <= top) index = i })
+  currentTurn.value = index
+}
+watch(() => turns.value.length, async () => {
+  await nextTick()
+  updateCurrentTurn()
+})
+const currentTurnText = computed(() => turns.value[currentTurn.value]?.turn.user?.text || 'Início da sessão')
+function goToTurn(index: number) {
+  const anchor = turnAnchors()[index]
+  if (!anchor) return
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  anchor.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+  anchor.focus({ preventScroll: true })
+  currentTurn.value = index
 }
 watch(
   () => [conv.value?.seq, conv.value?.items.length, conv.value?.prompts.length],
@@ -368,7 +413,33 @@ function resolvePrompt(promptId: string) {
 
       <!-- Screen readers hear finished replies only, never each streamed character. -->
       <div data-test="conversation-live" aria-live="polite" class="sr-only">{{ announcement }}</div>
-      <div ref="scroller" data-test="conversation-scroller" class="min-h-0 grow overflow-y-auto" @scroll="onScroll">
+      <div ref="scroller" data-test="conversation-scroller" class="relative min-h-0 grow overflow-y-auto" @scroll="onScroll">
+        <div
+          v-if="turns.length >= 2"
+          data-test="turn-bar"
+          class="sticky top-0 z-10 flex h-11 items-center gap-2.5 border-b border-line bg-panel px-4"
+        >
+          <span class="cap shrink-0 text-fg-muted">Turno {{ currentTurn + 1 }} de {{ turns.length }}</span>
+          <span class="min-w-0 grow truncate text-[13px] text-fg">{{ currentTurnText }}</span>
+          <button
+            type="button"
+            aria-label="Turno anterior"
+            class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-transparent text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
+            :disabled="currentTurn === 0"
+            @click="goToTurn(currentTurn - 1)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
+          </button>
+          <button
+            type="button"
+            aria-label="Próximo turno"
+            class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-transparent text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
+            :disabled="currentTurn >= turns.length - 1"
+            @click="goToTurn(currentTurn + 1)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          </button>
+        </div>
         <div class="flex flex-col gap-[18px] px-4 pt-5 pb-6">
           <p
             v-if="conv.historyTruncated"
@@ -379,11 +450,16 @@ function resolvePrompt(promptId: string) {
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
           <template v-for="({ turn, done, summary }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
-            <div v-if="index > 0" data-test="turn-separator" class="mt-1.5 flex items-center gap-2.5">
+            <div v-if="index > 0" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-11 focus-visible:outline-2 focus-visible:outline-primary items-center gap-2.5">
               <span class="cap text-fg-muted">Turno {{ turn.number }}</span>
               <span aria-hidden="true" class="h-px grow bg-line" />
             </div>
-            <div data-test="turn" class="flex flex-col gap-3.5">
+            <div
+              data-test="turn"
+              :data-turn-anchor="index === 0 ? '' : undefined"
+              :tabindex="index === 0 ? -1 : undefined"
+              class="flex scroll-mt-11 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
+            >
               <UserMessage v-if="turn.user" :item="turn.user" />
               <div v-if="turn.entries.length" class="relative flex flex-col gap-3.5">
                 <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
