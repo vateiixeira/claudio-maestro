@@ -5,6 +5,7 @@ import type {
   ProjectUpdate,
   Session,
 } from '../types/api'
+import type { PromptDecision, SessionSnapshot } from '../types/conversation'
 
 /** HTTP error carrying the status and the backend `detail` (already in Portuguese). */
 export class ApiError extends Error {
@@ -113,4 +114,24 @@ export function listSessions(projectId: number): Promise<Session[]> {
 
 export function createSession(projectId: number): Promise<Session> {
   return request('POST', `/api/projects/${projectId}/sessions`)
+}
+
+export function getSession(sessionId: string): Promise<SessionSnapshot> {
+  return request('GET', `/api/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export function sendMessage(sessionId: string, text: string): Promise<void> {
+  return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/messages`, { text })
+}
+
+export function interruptSession(sessionId: string): Promise<void> {
+  return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/interrupt`)
+}
+
+export function answerPrompt(sessionId: string, promptId: string, decision: PromptDecision): Promise<void> {
+  return request(
+    'POST',
+    `/api/sessions/${encodeURIComponent(sessionId)}/prompts/${encodeURIComponent(promptId)}`,
+    { decision },
+  )
 }

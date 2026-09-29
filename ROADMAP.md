@@ -17,7 +17,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 |---|---|---|---|
 | Preparação | Requisitos, design e viabilidade | Concluído | 6 de 6 |
 | 0. Fundação | Backend e frontend no ar em modo de desenvolvimento | Concluído | 6 de 6 |
-| 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Em andamento | 11 de 13 |
+| 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Em andamento | 13 de 13 |
 | 2. Multissessão | Colunas, estados e menu lateral | Não iniciado | 0 de 10 |
 | 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 7 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
@@ -68,8 +68,8 @@ Frontend
 
 - [x] Estrutura com Vite, Tailwind e as cores e fontes da identidade visual (2026-09-28)
 - [x] Menu lateral com projetos e tela de novo projeto (2026-09-28)
-- [ ] Coluna de sessão: conversa com streaming, blocos de texto, raciocínio, leitura, edição e comando
-- [ ] Cartão de permissão e campo de mensagem com Enter e Ctrl+Enter
+- [x] Coluna de sessão: conversa com streaming, blocos de texto, raciocínio, leitura, edição e comando (2026-09-29)
+- [x] Cartão de permissão e campo de mensagem com Enter e Ctrl+Enter (2026-09-29)
 
 ## Marco 2. Multissessão
 

@@ -49,3 +49,23 @@ export function jsonResponse(body: unknown, status = 200): Response {
     headers: { 'Content-Type': 'application/json' },
   })
 }
+
+export function makeSnapshot(overrides: Partial<import('../types/conversation').SessionSnapshot> = {}) {
+  return {
+    session_id: 's1',
+    project_id: 1,
+    title: 'Nova sessão',
+    cwd: '/home/vi/dev/loja-online',
+    state: 'idle' as const,
+    error: null,
+    seq: 0,
+    items: [],
+    prompts: [],
+    init: null,
+    ...overrides,
+  }
+}
+
+export function makeEvent(type: string, data: unknown, seq: number, session_id = 's1') {
+  return { session_id, seq, type, data }
+}

@@ -38,3 +38,36 @@ body {
   font-family: var(--font-sans);
   color-scheme: dark;
 }
+
+/* Markdown from the model (see conversation/markdown.ts). */
+.markdown {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.markdown > div > :first-child { margin-top: 0; }
+.markdown > div > :last-child { margin-bottom: 0; }
+.markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0 0 0.75em; }
+.markdown ul, .markdown ol { padding-left: 1.4em; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 { margin: 1em 0 0.5em; font-size: 1em; font-weight: 600; }
+.markdown h1 { font-size: 1.2em; }
+.markdown h2 { font-size: 1.1em; }
+.markdown a { color: var(--color-primary-soft); }
+.markdown code { font-family: var(--font-mono); font-size: 13px; color: var(--color-primary-soft); }
+.markdown pre {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  overflow-x: auto;
+}
+.markdown pre code { color: var(--color-fg); font-size: 12px; }
+.markdown blockquote { border-left: 2px solid var(--color-line-strong); padding-left: 12px; color: var(--color-fg-muted); }
+.markdown table { border-collapse: collapse; }
+.markdown th, .markdown td { border: 1px solid var(--color-line); padding: 4px 8px; }
+.markdown hr { border: none; border-top: 1px solid var(--color-line); }
+
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta { color: var(--color-secondary-soft); }
+.hljs-string, .hljs-attr, .hljs-addition, .hljs-regexp { color: var(--color-primary-soft); }
+.hljs-comment, .hljs-quote { color: var(--color-fg-muted); font-style: italic; }
+.hljs-number, .hljs-literal, .hljs-title, .hljs-type { color: var(--color-diff-del-fg); }
+.hljs-deletion { color: var(--color-diff-del-fg); }
