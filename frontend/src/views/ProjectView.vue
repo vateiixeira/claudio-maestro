@@ -77,6 +77,8 @@ async function sync(): Promise<void> {
   actionError.value = null
   try {
     await sessions.sync(props.id)
+    // Hidden counts live in the project list.
+    await projects.load()
   } catch (e) {
     actionError.value = errorMessage(e)
   } finally {

@@ -157,3 +157,26 @@ def test_projects_count_hidden_sessions(api, fake, home):
     listed = api.get("/api/projects").json()
 
     assert listed[0]["hidden_sessions"] == 1
+
+
+def test_periodic_sync_indexes_new_session_and_emits_event(fake, home, data_dir):
+    folder = home / "app"
+    folder.mkdir()
+    db.init_db(data_dir / "vibing.db")
+    with closing(db.connect(data_dir / "vibing.db")) as conn:
+        project_id = conn.execute(
+            "INSERT INTO projects (name, path, color, position, created_at)"
+            " VALUES ('app', ?, '#ff8800', 0, 0)",
+            (str(folder),),
+        ).lastrowid
+    settings = Settings(home_dir=home, data_dir=data_dir, history_sync_interval_seconds=0.05)
+    app = create_app(settings=settings, list_sessions=fake.list_sessions,
+                     get_session_messages=fake.get_session_messages)
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as c:
+        with c.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN}) as ws:
+            fake.add(str(folder), info("s1", str(folder), summary="nova"))
+            event = ws.receive_json()
+            while event["type"] != "project.synced":
+                event = ws.receive_json()
+            assert event["data"] == {"project_id": project_id}
+            assert [s["session_id"] for s in c.get("/api/sessions").json()] == ["s1"]

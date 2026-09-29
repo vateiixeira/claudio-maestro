@@ -73,4 +73,15 @@ describe('store de sessões', () => {
     expect(store.forProject(1).map((s) => s.session_id)).toEqual(['x'])
     expect(store.forProject(99)).toEqual([])
   })
+
+  it('session.updated com outro projeto tira a sessão do projeto antigo', () => {
+    const store = useSessionsStore()
+    store.setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    store.setForProject(2, [])
+
+    store.applyEvent({ session_id: 'a', seq: 2, type: 'session.updated', data: makeSession({ session_id: 'a', project_id: 2 }) })
+
+    expect(store.forProject(1)).toEqual([])
+    expect(store.forProject(2).map((s) => s.session_id)).toEqual(['a'])
+  })
 })

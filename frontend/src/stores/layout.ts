@@ -6,6 +6,7 @@ export const MIN_WIDTH = 360
 export const MAX_WIDTH = 2400
 export const DEFAULT_WIDTH = 520
 export const SAVE_DELAY = 500
+export const DEFAULT_FINISHED_AFTER_DAYS = 3
 
 /** What is stored under `layout` in the backend app state. */
 export interface SavedLayout {
@@ -41,6 +42,8 @@ export const useLayoutStore = defineStore('layout', () => {
   const columns = ref<string[]>([])
   const widths = ref<Record<string, number>>({})
   const restored = ref(false)
+  // `preferences.finished_after_days`: days without activity before a session is finished.
+  const finishedAfterDays = ref(DEFAULT_FINISHED_AFTER_DAYS)
   // Saving starts only after the saved layout was read, so a failed read never
   // overwrites it. Columns closed while reading stay closed.
   let canSave = false
@@ -76,6 +79,8 @@ export const useLayoutStore = defineStore('layout', () => {
     try {
       const state = await api.getAppState()
       const saved = parseLayout(state?.layout)
+      const days = (state?.preferences as Record<string, unknown> | undefined)?.finished_after_days
+      if (typeof days === 'number' && Number.isFinite(days) && days > 0) finishedAfterDays.value = days
       canSave = true
       if (saved) {
         saved.columns = saved.columns.filter((c) => !closedMeanwhile.has(c))
@@ -123,5 +128,5 @@ export const useLayoutStore = defineStore('layout', () => {
 
   watch([columns, widths], scheduleSave, { deep: true })
 
-  return { columns, widths, restored, widthOf, isOpen, open, close, setWidth, restore }
+  return { columns, widths, restored, finishedAfterDays, widthOf, isOpen, open, close, setWidth, restore }
 })

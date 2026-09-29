@@ -26,6 +26,12 @@ def no_real_sdk_history(monkeypatch: pytest.MonkeyPatch) -> None:
         "vibing.history.sdk_read_tool_results", lambda session_id, directory: {}
     )
     monkeypatch.setattr(
+        "vibing.history.sdk_session_file_mtime", lambda session_id, directory: None
+    )
+    monkeypatch.setattr(
+        "vibing.history.sdk_session_file_exists", lambda session_id, directory: None
+    )
+    monkeypatch.setattr(
         "vibing.sessions.sdk_rename_session", lambda session_id, title, directory: None
     )
     monkeypatch.setattr("vibing.sessions.sdk_history_exists", lambda session_id, cwd: False)

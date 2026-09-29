@@ -1,3 +1,4 @@
+import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { applyConversationEvent, emptyConversation, useConversationStore } from '../conversation'
@@ -76,6 +77,63 @@ describe('store da conversa', () => {
     const conv = store.get('s1')!
     expect(conv.items.map((i) => (i as { text: string }).text)).toEqual(['retrato', 'novo'])
     expect(conv.seq).toBe(4)
+  })
+
+  it('conversation.reset recarrega o retrato e mostra os itens novos', async () => {
+    let calls = 0
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => {
+        calls += 1
+        return calls === 1
+          ? jsonResponse(makeSnapshot({ seq: 2, items: [text('a', 'antigo') as never] }))
+          : jsonResponse(makeSnapshot({ seq: 5, items: [text('a', 'antigo') as never, text('b', 'de fora') as never] }))
+      },
+    }))
+    const store = useConversationStore()
+    await store.load('s1')
+
+    store.receive(makeEvent('conversation.reset', {}, 5))
+    store.receive(makeEvent('item.upsert', text('c', 'nova'), 6))
+    await flushPromises()
+
+    expect(calls).toBe(2)
+    expect(store.get('s1')!.items.map((i) => (i as { text: string }).text)).toEqual(['antigo', 'de fora', 'nova'])
+  })
+
+  it('não faz cargas concorrentes: um pedido durante a carga recarrega ao final', async () => {
+    const releases: ((r: Response) => void)[] = []
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => new Promise<Response>((resolve) => { releases.push(resolve) }),
+    }))
+    const store = useConversationStore()
+    const first = store.load('s1')
+    const second = store.load('s1')
+    const third = store.load('s1')
+    await flushPromises()
+    expect(releases).toHaveLength(1)
+    releases[0]!(jsonResponse(makeSnapshot({ seq: 1, items: [text('a', 'velho') as never] })))
+    await flushPromises()
+    expect(releases).toHaveLength(2)
+    releases[1]!(jsonResponse(makeSnapshot({ seq: 2, items: [text('b', 'novo') as never] })))
+    const results = await Promise.all([first, second, third])
+    expect(releases).toHaveLength(2)
+    for (const conv of results) expect(conv.items.map((i) => (i as { text: string }).text)).toEqual(['novo'])
+    expect(store.get('s1')!.seq).toBe(2)
+  })
+
+  it('conversation.reset durante uma carga mais velha carrega de novo', async () => {
+    const releases: ((r: Response) => void)[] = []
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => new Promise<Response>((resolve) => { releases.push(resolve) }),
+    }))
+    const store = useConversationStore()
+    const loading = store.load('s1')
+    store.receive(makeEvent('conversation.reset', {}, 3))
+    releases[0]!(jsonResponse(makeSnapshot({ seq: 2, items: [text('a', 'velho') as never] })))
+    await flushPromises()
+    releases[1]!(jsonResponse(makeSnapshot({ seq: 3, items: [text('b', 'novo') as never] })))
+    await loading
+    expect(store.get('s1')!.items.map((i) => (i as { text: string }).text)).toEqual(['novo'])
   })
 })
 

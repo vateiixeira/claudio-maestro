@@ -134,11 +134,47 @@ export const useConversationStore = defineStore('conversation', () => {
     return bySession.value[sessionId]
   }
 
-  async function load(sessionId: string): Promise<Conversation> {
+  // One snapshot load per session; a request during it asks for one more at the end.
+  const loading = new Map<string, Promise<Conversation>>()
+  const reloadRequested = new Set<string>()
+
+  function load(sessionId: string): Promise<Conversation> {
+    const current = loading.get(sessionId)
+    if (current) {
+      reloadRequested.add(sessionId)
+      return current
+    }
+    const promise = loadUntilCurrent(sessionId).finally(() => {
+      loading.delete(sessionId)
+      reloadRequested.delete(sessionId)
+    })
+    loading.set(sessionId, promise)
+    return promise
+  }
+
+  async function loadUntilCurrent(sessionId: string): Promise<Conversation> {
+    for (;;) {
+      reloadRequested.delete(sessionId)
+      const conv = await loadOnce(sessionId)
+      if (conv && !reloadRequested.has(sessionId)) return conv
+    }
+  }
+
+  /** Fetches and applies one snapshot; null when a newer one is needed. */
+  async function loadOnce(sessionId: string): Promise<Conversation | null> {
     const buffer: WsEvent[] = []
     buffers.set(sessionId, buffer)
     try {
       const snapshot = await api.getSession(sessionId)
+      // Another load was asked for, or the backend reloaded the conversation after
+      // this snapshot: fetch it again.
+      if (
+        reloadRequested.has(sessionId) ||
+        buffer.some((e) => e.type === 'conversation.reset' && e.seq > snapshot.seq)
+      ) {
+        reloadRequested.add(sessionId)
+        return null
+      }
       const conv = conversationFromSnapshot(snapshot)
       const previous = bySession.value[sessionId]
       if (previous) conv.lastResult = previous.lastResult
@@ -160,7 +196,13 @@ export const useConversationStore = defineStore('conversation', () => {
       return
     }
     const conv = bySession.value[event.session_id]
-    if (conv) applyConversationEvent(conv, event)
+    if (!conv) return
+    if (event.type === 'conversation.reset') {
+      // The backend replaced the conversation (file changed outside the app).
+      if (event.seq > conv.seq) load(event.session_id).catch(() => {})
+      return
+    }
+    applyConversationEvent(conv, event)
   }
 
   function resolvePrompt(sessionId: string, promptId: string): void {

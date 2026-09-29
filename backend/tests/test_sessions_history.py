@@ -49,7 +49,9 @@ class Env:
             get_session_messages=self.fake.get_session_messages,
             read_tool_results=self.fake.read_tool_results,
             history_limit=history_limit,
+            file_mtime=lambda sid, cwd: self.mtimes.get(sid),
         )
+        self.mtimes: dict[str, float] = {}
 
     def add_old_session(self, session_id: str = "old-1", cwd: str | None = None) -> str:
         cwd = cwd or str(self.folder)
@@ -261,3 +263,160 @@ async def test_file_info_is_cached_per_cwd(make_env):
     await env.manager.open(b)
 
     assert env.fake.list_calls == [str(env.folder)]
+
+
+@pytest.mark.anyio
+async def test_reopening_reloads_conversation_modified_outside(make_env):
+    env = make_env()
+    sid = env.add_old_session()
+    env.mtimes[sid] = 100.0
+    first = await env.manager.open(sid)
+    assert [i["type"] for i in first["items"]] == ["user", "text"]
+
+    env.fake.messages[sid] += [
+        user_entry("mais", sid, uuid="u2"),
+        assistant_entry({"type": "text", "text": "de novo"}, "m2", sid),
+    ]
+    again = await env.manager.open(sid)
+    assert len(again["items"]) == 2  # file unchanged: cache kept
+
+    env.mtimes[sid] = 200.0
+    reloaded = await env.manager.open(sid)
+    assert [i["type"] for i in reloaded["items"]] == ["user", "text", "user", "text"]
+    assert reloaded["seq"] >= again["seq"]
+
+
+@pytest.mark.anyio
+async def test_send_reloads_modified_history_before_connecting(make_env):
+    env = make_env(script=lambda content: text_turn("old-1", "ok"))
+    sid = env.add_old_session()
+    env.mtimes[sid] = 100.0
+    await env.manager.open(sid)
+    env.fake.messages[sid] += [user_entry("fora", sid, uuid="u2")]
+    env.mtimes[sid] = 200.0
+
+    await env.manager.send(sid, "nova")
+
+    texts = [i.get("text") for i in env.manager.get(sid).builder.snapshot() if i["type"] == "user"]
+    assert texts[:3] == ["oi", "fora", "nova"]
+
+
+@pytest.mark.anyio
+async def test_idle_sweep_forgets_closed_sessions_and_keeps_seq(make_env):
+    env = make_env()
+    sid = env.add_old_session()
+    snapshot = await env.manager.open(sid)
+    session = env.manager.get(sid)
+    session._emit("session.updated", {})
+    seq = session.seq
+
+    await env.manager.close_idle()
+
+    assert sid not in env.manager.active_ids()
+    assert env.manager.get(sid).seq == seq + 1  # conversation.reset
+    assert snapshot is not None
+
+
+@pytest.mark.anyio
+async def test_reload_emits_reset_before_new_items_on_open(make_env):
+    env = make_env()
+    sid = env.add_old_session()
+    env.mtimes[sid] = 100.0
+    await env.manager.open(sid)
+    env.events.clear()
+    env.mtimes[sid] = 200.0
+
+    snapshot = await env.manager.open(sid)
+
+    resets = [e for e in env.events if e["type"] == "conversation.reset"]
+    assert len(resets) == 1 and resets[0]["session_id"] == sid
+    assert snapshot["seq"] >= resets[0]["seq"]
+
+
+@pytest.mark.anyio
+async def test_reload_on_send_emits_reset_before_user_message(make_env):
+    env = make_env(script=lambda content: text_turn("old-1", "ok"))
+    sid = env.add_old_session()
+    env.mtimes[sid] = 100.0
+    await env.manager.open(sid)
+    env.events.clear()
+    env.mtimes[sid] = 200.0
+
+    await env.manager.send(sid, "nova")
+
+    types = [e["type"] for e in env.events]
+    assert "conversation.reset" in types
+    first_upsert = next(
+        i for i, e in enumerate(env.events)
+        if e["type"] == "item.upsert" and e["data"].get("text") == "nova"
+    )
+    assert types.index("conversation.reset") < first_upsert
+    seqs = [e["seq"] for e in env.events]
+    assert seqs == sorted(seqs)
+
+
+@pytest.mark.anyio
+async def test_no_reload_while_another_operation_runs(make_env):
+    env = make_env()
+    sid = env.add_old_session()
+    env.mtimes[sid] = 100.0
+    await env.manager.open(sid)
+    session = env.manager.get(sid)
+    env.mtimes[sid] = 200.0
+
+    async with session._lock:
+        await env.manager.open(sid)
+    session.users += 1
+    await env.manager.open(sid)
+    session.users -= 1
+
+    assert not [e for e in env.events if e["type"] == "conversation.reset"]
+
+
+@pytest.mark.anyio
+async def test_forgotten_connected_session_reopens_with_disk_items(make_env):
+    env = make_env(script=lambda content: text_turn("old-1", "resposta"))
+    sid = env.add_old_session()
+    env.mtimes[sid] = 100.0
+    await env.manager.send(sid, "oi de novo")
+    session = env.manager.get(sid)
+    await wait_until(lambda: session.state == "idle")
+    await session.close()
+    env.manager.forget_closed()
+    assert sid not in env.manager.active_ids()
+    env.fake.messages[sid] += [
+        user_entry("oi de novo", sid, uuid="u2"),
+        assistant_entry({"type": "text", "text": "resposta"}, "m2", sid),
+    ]
+    env.events.clear()
+
+    snapshot = await env.manager.open(sid)
+
+    assert [i["type"] for i in snapshot["items"]] == ["user", "text", "user", "text"]
+    assert env.events[0]["type"] == "conversation.reset"
+    assert env.events[0]["seq"] > 0
+
+
+@pytest.mark.anyio
+async def test_forgotten_session_send_emits_reset_before_message(make_env):
+    env = make_env(script=lambda content: text_turn("old-1", "ok"))
+    sid = env.add_old_session()
+    env.mtimes[sid] = 100.0
+    await env.manager.open(sid)
+    seq = env.manager.get(sid).seq
+    env.manager.forget_closed()
+    env.fake.messages[sid] += [user_entry("fora", sid, uuid="u2")]
+    env.mtimes[sid] = 200.0
+    env.events.clear()
+
+    await env.manager.send(sid, "nova")
+
+    types = [e["type"] for e in env.events]
+    assert types[0] == "conversation.reset" and env.events[0]["seq"] > seq
+    first_upsert = next(
+        i for i, e in enumerate(env.events)
+        if e["type"] == "item.upsert" and e["data"].get("text") == "nova"
+    )
+    assert 0 < first_upsert
+    texts = [i.get("text") for i in env.manager.get(sid).builder.snapshot() if i["type"] == "user"]
+    assert texts[:3] == ["oi", "fora", "nova"]

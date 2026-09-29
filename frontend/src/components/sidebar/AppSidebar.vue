@@ -7,11 +7,13 @@ import StateCounters from '../StateCounters.vue'
 import SessionSearch from './SessionSearch.vue'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import { useLayoutStore } from '../../stores/layout'
 import { displayStateLabels } from '../../sessionState'
 import type { Session } from '../../types/api'
 
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
+const layout = useLayoutStore()
 const route = useRoute()
 
 // The project being looked at, directly or through one of its sessions.
@@ -133,7 +135,7 @@ function sessionTone(session: Session): string {
             data-test="hidden-sessions"
             :to="{ name: 'project', params: { id: project.id }, hash: '#finalizadas' }"
             class="flex min-h-8 items-center px-1 pl-6 text-xs text-fg-muted no-underline hover:text-fg"
-          >{{ project.hidden_sessions }} {{ project.hidden_sessions === 1 ? 'oculta, parada' : 'ocultas, paradas' }} há mais de 3 dias</RouterLink>
+          >{{ project.hidden_sessions }} {{ project.hidden_sessions === 1 ? 'oculta, parada' : 'ocultas, paradas' }} há mais de {{ layout.finishedAfterDays }} {{ layout.finishedAfterDays === 1 ? 'dia' : 'dias' }}</RouterLink>
         </div>
       </div>
     </div>

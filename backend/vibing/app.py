@@ -18,6 +18,15 @@ from vibing.security import HostOriginMiddleware
 from vibing.sessions import HistoryExists, RenameSession, SessionManager
 
 
+def publish_synced(hub: EventHub, project_ids: set[int]) -> None:
+    """Tell the frontend to reload these projects' sessions."""
+    for project_id in sorted(project_ids):
+        hub.publish(
+            {"session_id": None, "seq": 0, "type": "project.synced",
+             "data": {"project_id": project_id}}
+        )
+
+
 def create_app(
     settings: Settings | None = None,
     agent_factory: AgentFactory | None = None,
@@ -55,6 +64,8 @@ def create_app(
             app.state.settings.db_path,
             list_sessions or history.sdk_list_sessions,
             on_change=app.state.sessions.refresh_records,
+            on_projects_changed=lambda ids: publish_synced(app.state.hub, ids),
+            is_in_use=app.state.sessions.in_use,
         )
         # One-off tasks (e.g. syncing a new project), cancelled on shutdown.
         app.state.background = set()

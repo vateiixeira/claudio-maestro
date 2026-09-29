@@ -1,5 +1,6 @@
 """History index: sync from the SDK's `list_sessions`, repositories inside the project."""
 
+import os
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -43,9 +44,10 @@ def env(tmp_path: Path):
 # Titles --------------------------------------------------------------------
 
 
-def test_title_prefers_custom_then_summary_then_first_prompt():
+def test_title_prefers_custom_then_first_prompt_then_summary():
     assert session_title(info("a", "/x", custom_title="Meu", summary="Resumo")) == "Meu"
-    assert session_title(info("a", "/x", summary="Resumo", first_prompt="p")) == "Resumo"
+    assert session_title(info("a", "/x", summary="Resumo", first_prompt="p")) == "p"
+    assert session_title(info("a", "/x", summary="Resumo")) == "Resumo"
     long = "palavra " * 30
     title = session_title(info("a", "/x", first_prompt=long))
     assert len(title) <= 80 and title.startswith("palavra palavra")
@@ -70,7 +72,7 @@ async def test_sync_inserts_sessions_seen_and_in_seconds(env):
     row = rows(db_path)["s1"]
     assert row["project_id"] == project_id
     assert row["cwd"] == str(folder)
-    assert row["title"] == "Resumo"
+    assert row["title"] == "Faça X"
     assert row["summary"] == "Resumo"
     assert row["first_prompt"] == "Faça X"
     assert row["created_at"] == 1_700_000_000
@@ -123,17 +125,37 @@ async def test_sync_preserves_app_title_finished_and_seen(env):
 
 
 @pytest.mark.anyio
-async def test_sync_updates_title_not_renamed_by_app(env):
+async def test_sync_keeps_title_unless_new_custom_title(env):
     db_path, fake, index, changed, home = env
     folder = home / "app"
     add_project(db_path, folder)
-    fake.add(str(folder), info("s1", str(folder), first_prompt="primeiro"))
+    fake.add(str(folder), info("s1", str(folder), first_prompt="primeiro", summary="p1"))
     await index.sync_all()
-    fake.by_directory[str(folder)] = [info("s1", str(folder), summary="Resumo gerado")]
+    assert rows(db_path)["s1"]["title"] == "primeiro"
+    # In SDK 0.2.161 `summary` may be the last prompt: it changes every turn.
+    fake.by_directory[str(folder)] = [info("s1", str(folder), first_prompt="primeiro", summary="p2")]
+    await index.sync_all()
+    assert rows(db_path)["s1"]["title"] == "primeiro"
+
+    fake.by_directory[str(folder)] = [
+        info("s1", str(folder), first_prompt="primeiro", summary="p3", custom_title="Do CLI")
+    ]
+    await index.sync_all()
+    assert rows(db_path)["s1"]["title"] == "Do CLI"
+
+
+@pytest.mark.anyio
+async def test_sync_truncates_summary_and_first_prompt(env):
+    db_path, fake, index, changed, home = env
+    folder = home / "app"
+    add_project(db_path, folder)
+    fake.add(str(folder), info("s1", str(folder), first_prompt="a" * 2000, summary="b" * 2000))
 
     await index.sync_all()
 
-    assert rows(db_path)["s1"]["title"] == "Resumo gerado"
+    row = rows(db_path)["s1"]
+    assert len(row["summary"]) == 500 and len(row["first_prompt"]) == 500
+    assert len(row["title"]) <= 80
 
 
 @pytest.mark.anyio
@@ -283,6 +305,8 @@ def test_tests_never_reach_the_real_sdk():
     assert history.sdk_list_sessions("/x") == []
     assert history.sdk_get_session_messages("s", "/x") == []
     assert history.sdk_read_tool_results("s", "/x") == {}
+    assert history.sdk_session_file_mtime("s", "/x") is None
+    assert history.sdk_session_file_exists("s", "/x") is None
     assert sessions.sdk_history_exists("s", "/x") is False
     with pytest.raises(RuntimeError):
         sessions.default_agent_factory(None)
@@ -308,3 +332,235 @@ def test_read_tool_results_file_omits_images_and_caps_while_reading(tmp_path: Pa
     assert "AAAA" not in json.dumps(content)
     assert content[0].get("omitted") is True
     assert len(content[1]["text"]) <= CONTENT_LIMIT + 100
+
+
+# Review fixes ----------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_session_outside_registered_projects_is_dropped(env):
+    """`my_app` is not inside `my-app`, even if the SDK folder names coincide."""
+    db_path, fake, index, changed, home = env
+    folder = home / "my-app"
+    add_project(db_path, folder)
+    other = home / "my_app"
+    other.mkdir(parents=True)
+    fake.add(str(folder), info("inside", str(folder)), info("outside", str(other)))
+
+    await index.sync_all()
+
+    assert set(rows(db_path)) == {"inside"}
+
+
+@pytest.mark.anyio
+async def test_sync_reports_changed_projects(tmp_path: Path):
+    db_path = tmp_path / "data" / "vibing.db"
+    db.init_db(db_path)
+    fake = FakeHistory()
+    synced: list[set[int]] = []
+    index = HistoryIndex(db_path, fake.list_sessions, on_projects_changed=synced.append)
+    folder = tmp_path / "home" / "app"
+    project_id = add_project(db_path, folder)
+    add_project(db_path, tmp_path / "home" / "quiet", "quiet")
+
+    await index.sync_all()
+    assert synced == []
+    fake.add(str(folder), info("s1", str(folder)))
+    await index.sync_all()
+    assert synced == [{project_id}]
+    await index.sync_all()
+    assert synced == [{project_id}]
+
+
+@pytest.mark.anyio
+async def test_project_removed_during_sync_is_skipped(env):
+    db_path, fake, index, changed, home = env
+    a, b = home / "a", home / "b"
+    a_id = add_project(db_path, a, "a")
+    b_id = add_project(db_path, b, "b")
+    fake.add(str(a), info("sa", str(a)))
+    fake.add(str(b), info("sb", str(b)))
+    original = fake.list_sessions
+
+    def list_and_remove(directory: str):
+        result = original(directory)
+        if directory == str(b):
+            with closing(db.connect(db_path)) as conn:
+                conn.execute("DELETE FROM projects WHERE id = ?", (a_id,))
+        return result
+
+    index._list_sessions = list_and_remove
+    await index.sync_all()
+
+    stored = rows(db_path)
+    assert set(stored) == {"sb"}
+    assert stored["sb"]["project_id"] == b_id
+
+
+@pytest.mark.anyio
+async def test_session_deleted_on_disk_leaves_the_index(tmp_path: Path):
+    db_path = tmp_path / "data" / "vibing.db"
+    db.init_db(db_path)
+    fake = FakeHistory()
+    synced: list[set[int]] = []
+    in_use = {"busy"}
+    index = HistoryIndex(
+        db_path, fake.list_sessions,
+        on_projects_changed=synced.append, is_in_use=lambda sid: sid in in_use,
+        file_exists=lambda sid, cwd: False,
+    )
+    folder = tmp_path / "home" / "app"
+    project_id = add_project(db_path, folder)
+    fake.add(str(folder), info("gone", str(folder)), info("busy", str(folder)),
+             info("kept", str(folder)))
+    await index.sync_all()
+    with closing(db.connect(db_path)) as conn:
+        # Created in the app, never written to disk: stays.
+        conn.execute(
+            "INSERT INTO sessions (session_id, project_id, cwd, title, created_at,"
+            " last_activity_at, last_seen_at, finished) VALUES ('new', ?, ?, 'Nova', 1, 1, 1, 0)",
+            (project_id, str(folder)),
+        )
+    synced.clear()
+    fake.by_directory[str(folder)] = [info("kept", str(folder))]
+
+    await index.sync_all()
+
+    assert set(rows(db_path)) == {"kept", "busy", "new"}
+    assert synced == [{project_id}]
+
+
+@pytest.mark.anyio
+async def test_listing_failure_does_not_delete_sessions(env):
+    db_path, fake, index, changed, home = env
+    folder = home / "app"
+    add_project(db_path, folder)
+    fake.add(str(folder), info("s1", str(folder)))
+    await index.sync_all()
+    fake.failing.add(str(folder))
+
+    await index.sync_all()
+
+    assert set(rows(db_path)) == {"s1"}
+
+
+def deleting_env(tmp_path: Path, exists):
+    db_path = tmp_path / "data" / "vibing.db"
+    db.init_db(db_path)
+    fake = FakeHistory()
+    index = HistoryIndex(db_path, fake.list_sessions, file_exists=exists)
+    folder = tmp_path / "home" / "app"
+    add_project(db_path, folder)
+    fake.add(str(folder), info("s1", str(folder)))
+    return db_path, fake, index, folder
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("exists", [True, None])
+async def test_session_missing_from_listing_but_file_present_or_unknown_stays(tmp_path, exists):
+    db_path, fake, index, folder = deleting_env(tmp_path, lambda sid, cwd: exists)
+    await index.sync_all()
+    fake.by_directory[str(folder)] = []
+
+    await index.sync_all()
+
+    assert set(rows(db_path)) == {"s1"}
+
+
+@pytest.mark.anyio
+async def test_session_with_file_really_gone_is_removed(tmp_path):
+    checked: list[tuple[str, str]] = []
+
+    def exists(sid, cwd):
+        checked.append((sid, cwd))
+        return False
+
+    db_path, fake, index, folder = deleting_env(tmp_path, exists)
+    await index.sync_all()
+    fake.by_directory[str(folder)] = []
+
+    await index.sync_all()
+
+    assert rows(db_path) == {}
+    assert checked == [("s1", str(folder))]
+
+
+@pytest.mark.anyio
+async def test_repository_limit_reached_does_not_delete(tmp_path, monkeypatch):
+    db_path, fake, index, folder = deleting_env(tmp_path, lambda sid, cwd: False)
+    await index.sync_all()
+    fake.by_directory[str(folder)] = []
+    monkeypatch.setattr("vibing.history.REPO_MAX_COUNT", 1)
+    make_repo(folder / "r1")
+    make_repo(folder / "r2")
+
+    await index.sync_all()
+
+    assert set(rows(db_path)) == {"s1"}
+
+
+@pytest.mark.anyio
+async def test_repository_scan_error_does_not_delete(tmp_path, monkeypatch):
+    db_path, fake, index, folder = deleting_env(tmp_path, lambda sid, cwd: False)
+    await index.sync_all()
+    fake.by_directory[str(folder)] = []
+
+    def boom(*args, **kwargs):
+        raise OSError("falhou")
+
+    monkeypatch.setattr("vibing.history.scan_repositories", boom)
+    await index.sync_all()
+
+    assert set(rows(db_path)) == {"s1"}
+
+
+def test_scan_repositories_reports_unreadable_folder(tmp_path, monkeypatch):
+    from vibing import history
+
+    real = os.scandir
+
+    def scandir(path):
+        if Path(path).name == "locked":
+            raise PermissionError("negado")
+        return real(path)
+
+    (tmp_path / "locked").mkdir()
+    monkeypatch.setattr(history.os, "scandir", scandir)
+    found, complete = history.scan_repositories(tmp_path)
+    assert found == [] and complete is False
+    found, complete = history.scan_repositories(tmp_path / "nada")
+    assert complete is False
+
+
+@pytest.mark.anyio
+async def test_file_checks_run_before_the_transaction(tmp_path, monkeypatch):
+    from vibing import history
+
+    inside = {"value": False}
+    real = history.db.transaction
+    from contextlib import contextmanager
+
+    @contextmanager
+    def tracking(conn):
+        inside["value"] = True
+        try:
+            with real(conn) as c:
+                yield c
+        finally:
+            inside["value"] = False
+
+    seen: list[bool] = []
+
+    def exists(sid, cwd):
+        seen.append(inside["value"])
+        return False
+
+    db_path, fake, index, folder = deleting_env(tmp_path, exists)
+    await index.sync_all()
+    fake.by_directory[str(folder)] = []
+    monkeypatch.setattr(history.db, "transaction", tracking)
+
+    await index.sync_all()
+
+    assert seen == [False]
+    assert rows(db_path) == {}

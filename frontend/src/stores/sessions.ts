@@ -88,6 +88,12 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   /** Puts a whole session in place (new ones go to the top of their project). */
   function upsert(session: Session): void {
+    // A session that moved to another project leaves the old one.
+    for (const [id, other] of Object.entries(byProject.value)) {
+      if (Number(id) === session.project_id) continue
+      const at = other.findIndex((s) => s.session_id === session.session_id)
+      if (at >= 0) other.splice(at, 1)
+    }
     const list = forProject(session.project_id)
     const index = list.findIndex((s) => s.session_id === session.session_id)
     if (index >= 0) list.splice(index, 1, session)

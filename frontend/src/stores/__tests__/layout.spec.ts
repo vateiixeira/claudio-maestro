@@ -128,4 +128,14 @@ describe('store de layout', () => {
     await done
     expect(layout.columns).toEqual(['outro'])
   })
+
+  it('lê finished_after_days das preferências, padrão 3', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/state': () => jsonResponse({ preferences: { finished_after_days: 7 } }),
+    }))
+    const layout = useLayoutStore()
+    expect(layout.finishedAfterDays).toBe(3)
+    await layout.restore()
+    expect(layout.finishedAfterDays).toBe(7)
+  })
 })

@@ -35,7 +35,7 @@ from vibing.projects import Project
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TITLE = "Nova sessão"
+DEFAULT_TITLE = history_module.DEFAULT_APP_TITLE
 TITLE_MAX_LENGTH = 80
 DENY_MESSAGE = "O usuário recusou."
 CANCELLED_MESSAGE = "O pedido foi cancelado."
@@ -56,6 +56,8 @@ RenameSession = Callable[[str, str, str], None]
 GetSessionMessages = history_module.GetSessionMessages
 ListSessions = history_module.ListSessions
 ReadToolResults = history_module.ReadToolResults
+# file_mtime(session_id, directory): modification time of the session file, or None.
+FileMtime = Callable[[str, str], float | None]
 # `list_sessions(cwd)` answers are reused this long when opening sessions.
 FILE_INFO_TTL = 5.0  # seconds
 
@@ -287,6 +289,7 @@ class ActiveSession:
         rename_session: RenameSession | None = None,
         history_limit: int = DEFAULT_HISTORY_LIMIT,
         read_tool_results: ReadToolResults | None = None,
+        file_mtime: FileMtime | None = None,
     ) -> None:
         self.record = record
         self.builder = ConversationBuilder()
@@ -306,6 +309,9 @@ class ActiveSession:
         self._sent_messages = 0
         # True once a client connected: the conversation then exists on disk.
         self._has_connected = False
+        # A client connected in an earlier instance of this session (forgotten from
+        # memory): the next connect resumes, but the history still loads from disk.
+        self._connected_before = False
         # Bumped whenever the client is discarded (close or failure), so an
         # in-flight connect or send notices it lost its client.
         self._generation = 0
@@ -324,6 +330,11 @@ class ActiveSession:
         self._history_loaded = False
         self._history_lock = asyncio.Lock()
         self.history_truncated = False
+        self._file_mtime = file_mtime
+        # Modification time of the session file at the last load (None: unknown).
+        self._loaded_mtime: float | None = None
+        # Operations of the manager in progress (open, send): not forgotten meanwhile.
+        self.users = 0
         # Wall time of the app's own last activity in this session (seconds).
         self._app_activity_at = 0.0
 
@@ -402,6 +413,53 @@ class ActiveSession:
 
     # History ---------------------------------------------------------------
 
+    @property
+    def forgettable(self) -> bool:
+        """Closed, without client, prompts, turns or operations in progress."""
+        return (
+            self.state == "closed"
+            and self.users == 0
+            and self.pending_turns == 0
+            and not self.busy
+            and not self._history_lock.locked()
+            and (self._disposal is None or self._disposal.done())
+        )
+
+    async def _current_mtime(self) -> float | None:
+        if self._file_mtime is None:
+            return None
+        try:
+            return await asyncio.to_thread(self._file_mtime, self.session_id, self.record.cwd)
+        except Exception:
+            logger.exception("Falha ao consultar o arquivo da sessão %s", self.session_id)
+            return None
+
+    async def reload_if_modified(self) -> None:
+        """Without a client, reload the conversation if its file changed since the last load."""
+        if (
+            self.active or self.prompts or self.pending_turns
+            or self._get_session_messages is None
+            # Another operation (a send holding the lock, a second open) is running:
+            # replacing the builder now could drop a message just sent.
+            or self.busy or self.users > 1
+        ):
+            return
+        current = await self._current_mtime()
+        if current is None or (self._loaded_mtime is not None and current <= self._loaded_mtime):
+            return
+        if self._loaded_mtime is None and not self._history_loaded:
+            return  # never loaded: ensure_history reads it
+        async with self._history_lock:
+            if self.active:
+                return
+            self.builder = ConversationBuilder()
+            self.history_truncated = False
+            self._history_loaded = False
+            self._has_connected = False
+            # The frontend drops what it shows and fetches the snapshot again.
+            self._emit("conversation.reset", {})
+        await self.ensure_history()
+
     async def ensure_history(self) -> None:
         """Load the saved conversation once, before anything else is shown or sent.
 
@@ -420,6 +478,7 @@ class ActiveSession:
             ):
                 self._history_loaded = True
                 return
+            self._loaded_mtime = await self._current_mtime()
             try:
                 entries = await asyncio.to_thread(
                     self._get_session_messages, self.session_id, self.record.cwd
@@ -555,7 +614,9 @@ class ActiveSession:
         try:
             if not Path(self.record.cwd).is_dir():
                 raise AgentError(f"A pasta do projeto não existe mais: {self.record.cwd}")
-            resume = self._has_connected or await self._check_history()
+            resume = (
+                self._has_connected or self._connected_before or await self._check_history()
+            )
             client = self._new_client(resume)
             try:
                 await client.connect()
@@ -807,8 +868,13 @@ class SessionManager:
         get_session_messages: GetSessionMessages | None = None,
         history_limit: int = DEFAULT_HISTORY_LIMIT,
         read_tool_results: ReadToolResults | None = None,
+        file_mtime: FileMtime | None = None,
     ) -> None:
         self._db_path = db_path
+        self._file_mtime = file_mtime or history_module.sdk_session_file_mtime
+        # State of sessions forgotten from memory (seq, connected before, app
+        # activity), so events keep increasing and they resume as before.
+        self._forgotten: dict[str, tuple[int, bool, float, float | None]] = {}
         self._read_tool_results = read_tool_results or history_module.sdk_read_tool_results
         # cwd -> (monotonic time, {session_id: last_modified in seconds})
         self._file_info: dict[str, tuple[float, dict[str, int]]] = {}
@@ -876,7 +942,15 @@ class SessionManager:
             rename_session=self._rename_session,
             history_limit=self._history_limit,
             read_tool_results=self._read_tool_results,
+            file_mtime=self._file_mtime,
         )
+        forgotten = self._forgotten.pop(session_id, None)
+        if forgotten is not None:
+            (session.seq, session._connected_before,
+             session._app_activity_at, session._loaded_mtime) = forgotten
+            # Recreated empty: the conversation comes from disk, and the frontend
+            # drops what it shows before any other event of this session.
+            session._emit("conversation.reset", {})
         self._sessions[session_id] = session
         return session
 
@@ -888,20 +962,30 @@ class SessionManager:
     async def open(self, session_id: str) -> dict[str, Any]:
         """Snapshot of a session, loading its saved conversation if needed."""
         session = self.get(session_id)
-        await session.ensure_history()
-        await self.refresh_file_info(session)
-        return session.snapshot()
+        session.users += 1
+        try:
+            await session.reload_if_modified()
+            await session.ensure_history()
+            await self.refresh_file_info(session)
+            return session.snapshot()
+        finally:
+            session.users -= 1
 
     async def send(self, session_id: str, text: str) -> dict[str, Any]:
         """Send a message. `external_activity` tells whether the resumed history was
         modified in the last minute by another process."""
         session = self.get(session_id)
-        external = False
-        if not session.active:
-            await self.refresh_file_info(session)
-            external = session.external_activity
-        await session.send(text)
-        return {"state": session.state, "external_activity": external}
+        session.users += 1
+        try:
+            external = False
+            if not session.active:
+                await session.reload_if_modified()
+                await self.refresh_file_info(session)
+                external = session.external_activity
+            await session.send(text)
+            return {"state": session.state, "external_activity": external}
+        finally:
+            session.users -= 1
 
     async def refresh_file_info(self, session: ActiveSession) -> None:
         """Read the history file's `last_modified` for a session not active in the app."""
@@ -1110,6 +1194,22 @@ class SessionManager:
             ):
                 logger.info("Sessão %s ociosa; fechando o cliente", session.session_id)
                 await session.close()
+        self.forget_closed()
+
+    def forget_closed(self) -> None:
+        """Drop from memory sessions that are closed and not in use."""
+        for session_id, session in list(self._sessions.items()):
+            if session.forgettable:
+                self._forgotten[session_id] = (
+                    session.seq, session._has_connected or session._connected_before,
+                    session._app_activity_at, session._loaded_mtime,
+                )
+                del self._sessions[session_id]
+
+    def in_use(self, session_id: str) -> bool:
+        """The app is using the session (client, prompts, turns or an operation)."""
+        session = self._sessions.get(session_id)
+        return session is not None and not session.forgettable
 
     async def run_idle_sweep(self, interval: float) -> None:
         while True:

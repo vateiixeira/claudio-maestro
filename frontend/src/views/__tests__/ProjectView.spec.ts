@@ -167,6 +167,21 @@ describe('tela do projeto', () => {
     expect(wrapper.text()).toContain('Veio do CLI')
   })
 
+  it('Atualizar recarrega também a lista de projetos', async () => {
+    seed()
+    const list = vi.fn(() => jsonResponse([makeProject({ id: 1, name: 'loja-online', hidden_sessions: 2 })]))
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'POST /api/projects/1/sync': () => jsonResponse([]),
+      'GET /api/projects': list,
+    }))
+    const wrapper = await mountView()
+    await wrapper.find('[data-test="sync"]').trigger('click')
+    await flushPromises()
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(useProjectsStore(pinia).byId(1)?.hidden_sessions).toBe(2)
+  })
+
   it('rola até Finalizadas quando chega com #finalizadas, depois de carregar', async () => {
     seed()
     const scroll = vi.fn()
