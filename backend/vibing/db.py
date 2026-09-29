@@ -93,6 +93,11 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         "ALTER TABLE sessions ADD COLUMN app_modified_at INTEGER",
         mark_custom_titles,
     ],
+    [
+        # Marco 7: when the session was finished by the user (None when open or
+        # finished by inactivity). Feeds "Finalizadas hoje" in the dashboard.
+        "ALTER TABLE sessions ADD COLUMN finished_at INTEGER",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

@@ -85,6 +85,12 @@ class SessionOut(BaseModel):
     context: ContextOut | None = None
     # Oldest pending tool permission (answered by POST /sessions/{id}/prompts/{prompt_id}).
     pending_permission: PendingPermissionOut | None = None
+    # When the user finished the session; None when open or finished by inactivity.
+    finished_at: int | None = None
+    # Last tool of the main conversation ("Edit sessions.py"); None after a restart.
+    last_action: str | None = None
+    # Kind of the oldest pending prompt.
+    pending_kind: Literal["tool", "question", "plan"] | None = None
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]

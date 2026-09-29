@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from claude_agent_sdk import (
+    AssistantMessage,
     PermissionResultAllow,
     PermissionResultDeny,
     PermissionUpdate,
@@ -32,6 +33,7 @@ from claude_agent_sdk import (
     StreamEvent,
     SystemMessage,
     ToolPermissionContext,
+    ToolUseBlock,
 )
 
 from vibing import db
@@ -45,6 +47,28 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TITLE = history_module.DEFAULT_APP_TITLE
 TITLE_MAX_LENGTH = 80
+LAST_ACTION_MAX = 80
+_FILE_TOOLS = frozenset({"Read", "Edit", "MultiEdit", "Write", "NotebookEdit"})
+# Tools shown as "Name: argument", with the input key holding the argument.
+_ARGUMENT_KEYS = {"Bash": "command", "Grep": "pattern", "Glob": "pattern",
+                  "Agent": "description", "Task": "description"}
+
+
+def last_action_text(name: str, tool_input: dict[str, Any]) -> str:
+    """One short line for the dashboard: `Edit sessions.py`, `Bash: pnpm test`."""
+    text = name
+    if name in _FILE_TOOLS:
+        path = tool_input.get("file_path") or tool_input.get("notebook_path")
+        if isinstance(path, str) and path.strip():
+            text = f"{name} {Path(path).name}"
+    elif name in _ARGUMENT_KEYS:
+        value = tool_input.get(_ARGUMENT_KEYS[name])
+        if isinstance(value, str) and value.strip():
+            text = f"{name}: {value}"
+    text = " ".join(text.split())
+    if len(text) > LAST_ACTION_MAX:
+        text = text[: LAST_ACTION_MAX - 1] + "…"
+    return text
 DENY_MESSAGE = "O usuário recusou."
 CANCELLED_MESSAGE = "O pedido foi cancelado."
 
@@ -221,6 +245,8 @@ class SessionRecord:
     model: str | None = None
     effort: str | None = None
     permission_mode: str | None = None
+    # When the user finished the session (seconds); None when open or finished by inactivity.
+    finished_at: int | None = None
 
 
 @dataclass
@@ -239,7 +265,7 @@ _INSERT_COLUMNS = (
 _COLUMNS = (
     _INSERT_COLUMNS
     + ", summary, first_prompt, title_custom, rename_pending, file_modified_at, app_modified_at"
-    + ", model, effort, permission_mode"
+    + ", model, effort, permission_mode, finished_at"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = ("title_custom", "rename_pending", "file_modified_at", "app_modified_at")
@@ -336,6 +362,8 @@ def describe(
     model_resolved: str | None = None,
     context: dict[str, Any] | None = None,
     pending_permission: dict[str, Any] | None = None,
+    last_action: str | None = None,
+    pending_kind: str | None = None,
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`."""
     now = time.time() if now is None else now
@@ -361,6 +389,8 @@ def describe(
         "model_resolved": model_resolved,
         "context": context,
         "pending_permission": pending_permission,
+        "last_action": last_action,
+        "pending_kind": pending_kind,
     }
 
 
@@ -599,6 +629,8 @@ class ActiveSession:
         self.context: dict[str, Any] | None = None
         # Model id the CLI resolved (from the last init); not saved.
         self.model_resolved: str | None = None
+        # Last tool used by the main conversation, for the dashboard; memory only.
+        self.last_action: str | None = None
         self._effort_task: asyncio.Task[None] | None = None
         self._context_task: asyncio.Task[None] | None = None
         self._context_again = False
@@ -682,6 +714,16 @@ class ActiveSession:
             if prompt.kind == "tool":
                 return prompt.pending_dict()
         return None
+
+    @property
+    def pending_kind(self) -> str | None:
+        """Kind of the oldest pending prompt: tool, question or plan."""
+        for prompt in self.prompts.values():
+            return prompt.kind
+        return None
+
+    def _pending_view(self) -> tuple[dict[str, Any] | None, str | None]:
+        return (self.pending_permission, self.pending_kind)
 
     @property
     def subagents_running(self) -> bool:
@@ -910,6 +952,8 @@ class ActiveSession:
             model_resolved=self.model_resolved,
             context=self.context,
             pending_permission=self.pending_permission,
+            last_action=self.last_action,
+            pending_kind=self.pending_kind,
         )
 
     def emit_updated(self) -> None:
@@ -1195,6 +1239,8 @@ class ActiveSession:
                     # exists right after an autonomous result, so this init is that turn's.
                     self._clear_followup()
                 self._emit_events(self.builder.handle(message))
+                if isinstance(message, AssistantMessage) and message.parent_tool_use_id is None:
+                    self._note_tool_use(message)
                 if (
                     isinstance(message, RateLimitEvent)
                     and message.rate_limit_info.status == "rejected"
@@ -1462,6 +1508,16 @@ class ActiveSession:
         self._refresh_state()
         return connected
 
+    def _note_tool_use(self, message: AssistantMessage) -> None:
+        """Keep the last tool of the main conversation and publish it when it changes."""
+        uses = [block for block in message.content if isinstance(block, ToolUseBlock)]
+        if not uses:
+            return
+        action = last_action_text(uses[-1].name, uses[-1].input or {})
+        if action != self.last_action:
+            self.last_action = action
+            self.emit_updated()
+
     def _touch(self) -> None:
         self._app_activity_at = time.time()
         self.save(last_activity_at=_now())
@@ -1619,7 +1675,7 @@ class ActiveSession:
             tool_use_id=context.tool_use_id,
             suggestions=list(context.suggestions),
         )
-        before = self.pending_permission
+        before = self._pending_view()
         self.prompts[prompt.prompt_id] = prompt
         self._emit("prompt.request", prompt.to_dict())
         self._refresh_state()
@@ -1628,16 +1684,16 @@ class ActiveSession:
             return await prompt.future
         except asyncio.CancelledError:
             # The SDK cancels this task when the turn is interrupted.
-            before = self.pending_permission
+            before = self._pending_view()
             if self.prompts.pop(prompt.prompt_id, None) is not None:
                 self._emit_resolved(prompt.prompt_id, "cancelled")
                 self._refresh_state()
                 self._emit_pending_change(before)
             raise
 
-    def _emit_pending_change(self, before: dict[str, Any] | None) -> None:
-        """Update the summary when the pending permission it shows changed."""
-        if self.pending_permission != before:
+    def _emit_pending_change(self, before: tuple[dict[str, Any] | None, str | None]) -> None:
+        """Update the summary when the pending permission or prompt kind it shows changed."""
+        if self._pending_view() != before:
             self.emit_updated()
 
     def resolve_prompt(
@@ -1676,7 +1732,7 @@ class ActiveSession:
             result = PermissionResultAllow(updated_permissions=list(prompt.suggestions))
         else:
             result = PermissionResultDeny(message=DENY_MESSAGE)
-        before = self.pending_permission
+        before = self._pending_view()
         del self.prompts[prompt_id]
         prompt.future.set_result(result)
         self._emit_resolved(prompt_id, decision)
@@ -1689,7 +1745,7 @@ class ActiveSession:
         self._schedule_effort()
 
     def _cancel_prompts(self) -> None:
-        before = self.pending_permission
+        before = self._pending_view()
         for prompt_id in list(self.prompts):
             prompt = self.prompts.pop(prompt_id)
             if not prompt.future.done():
@@ -2096,10 +2152,16 @@ class SessionManager:
 
     @staticmethod
     def _extras(active: ActiveSession | None = None) -> dict[str, Any]:
-        """Context (in memory only) and pending permission of a session, for `describe`."""
+        """In-memory fields of a session (context, pending prompt, last action), for `describe`."""
         if active is None:
-            return {"context": None, "pending_permission": None}
-        return {"context": active.context, "pending_permission": active.pending_permission}
+            return {"context": None, "pending_permission": None,
+                    "last_action": None, "pending_kind": None}
+        return {
+            "context": active.context,
+            "pending_permission": active.pending_permission,
+            "last_action": active.last_action,
+            "pending_kind": active.pending_kind,
+        }
 
     def _describe_active(self, session: ActiveSession) -> dict[str, Any]:
         return describe(
@@ -2222,6 +2284,8 @@ class SessionManager:
             if title and title != session.record.title:
                 changes["title"] = title
                 changes["title_custom"] = True
+        if "finished" in changes:
+            changes["finished_at"] = _now() if changes["finished"] else None
         if not changes:
             if options_changed:
                 session.emit_updated()

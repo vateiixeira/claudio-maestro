@@ -264,3 +264,16 @@ def test_lifespan_sweep_closes_idle_session(factory, home, data_dir):
         while len(factory.clients) < 2 and time.monotonic() < deadline:
             time.sleep(0.005)
         assert factory.clients[1].options.resume is True
+
+
+def test_session_out_has_navigation_fields(api, home):
+    project = make_project(api, home)
+    sid = new_session(api, project)["session_id"]
+
+    finished = api.patch(f"/api/sessions/{sid}", json={"finished": True}).json()
+    listed = api.get("/api/sessions").json()[0]
+
+    assert isinstance(finished["finished_at"], int)
+    assert listed["finished_at"] == finished["finished_at"]
+    assert listed["last_action"] is None
+    assert listed["pending_kind"] is None
