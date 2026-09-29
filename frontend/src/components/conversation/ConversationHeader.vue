@@ -79,7 +79,9 @@ const menuOpen = ref(false)
 const menuWrap = ref<HTMLElement | null>(null)
 const menuButton = ref<HTMLButtonElement | null>(null)
 function onDocumentKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape') return
+  // An Esc already handled by a layer above (a dialog, say) is not ours; ours is consumed so the drawer stays.
+  if (event.key !== 'Escape' || event.defaultPrevented) return
+  event.preventDefault()
   menuOpen.value = false
   menuButton.value?.focus()
 }

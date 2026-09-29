@@ -73,7 +73,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     <div
       v-if="variant !== 'compact'"
       data-test="row-actions"
-      class="absolute inset-y-0 right-2 z-10 flex items-center gap-1 rounded-md bg-card pl-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+      class="absolute inset-y-0 right-2 z-10 flex items-center gap-1 rounded-md bg-card pl-2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
     >
       <button
         v-if="variant === 'inbox' && session.unread"

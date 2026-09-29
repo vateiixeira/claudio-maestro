@@ -37,6 +37,18 @@ describe('copiar resposta', () => {
     expect(w.find('[data-test="copy-status"]').text()).toBe('Não foi possível copiar')
   })
 
+  it('o botão escondido não recebe toque e aparece no hover, no foco e em telas sem hover', () => {
+    const classes = mount(TextBlock, { props: { item: item() } }).find('[data-test="copy"]').classes()
+    expect(classes).toContain('opacity-0')
+    expect(classes).toContain('pointer-events-none')
+    expect(classes).toContain('group-hover/text:pointer-events-auto')
+    expect(classes).toContain('focus-visible:pointer-events-auto')
+    expect(classes).toContain('group-focus-within/text:opacity-100')
+    expect(classes).toContain('group-focus-within/text:pointer-events-auto')
+    expect(classes).toContain('[@media(hover:none)]:opacity-100')
+    expect(classes).toContain('[@media(hover:none)]:pointer-events-auto')
+  })
+
   it('não aparece durante o streaming', () => {
     const w = mount(TextBlock, { props: { item: item({ streaming: true }) } })
     expect(w.find('[data-test="copy"]').exists()).toBe(false)

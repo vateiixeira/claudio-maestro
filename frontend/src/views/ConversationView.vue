@@ -44,21 +44,25 @@ function toggleDetails() {
   }
 }
 // The drawer takes focus when it opens; Esc closes it and hands focus back to the toggle.
+// It listens on `window`, after every handler on the document or below it: an Esc that a menu,
+// dialog, rename or search already handled arrives with `defaultPrevented` set, and only the
+// topmost layer closes. Layers that consume Esc must call `preventDefault()`.
 const toggleButton = ref<HTMLButtonElement | null>(null)
 const drawer = ref<HTMLElement | null>(null)
 function onDrawerKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape') return
+  if (event.key !== 'Escape' || event.defaultPrevented) return
+  event.preventDefault()
   drawerOpen.value = false
   toggleButton.value?.focus()
 }
 watch(drawerOpen, async (open) => {
-  document.removeEventListener('keydown', onDrawerKeydown)
+  window.removeEventListener('keydown', onDrawerKeydown)
   if (!open) return
-  document.addEventListener('keydown', onDrawerKeydown)
+  window.addEventListener('keydown', onDrawerKeydown)
   await nextTick()
   drawer.value?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')?.focus()
 })
-onBeforeUnmount(() => document.removeEventListener('keydown', onDrawerKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onDrawerKeydown))
 
 // "Ver alterações" in an edit card opens the panel (the drawer on narrow screens).
 watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (open) => {

@@ -374,6 +374,52 @@ describe('página da conversa', () => {
       expect(document.activeElement).toBe(toggle.element)
     })
 
+    it('Esc com o menu "⋯" aberto fecha só o menu, e o Esc seguinte fecha a gaveta', async () => {
+      const wrapper = await mountNarrow()
+      await wrapper.find('[data-test="toggle-details"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-test="header-menu"]').trigger('click')
+      expect(wrapper.find('[data-test="menu-copy-id"]').exists()).toBe(true)
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await flushPromises()
+      expect(wrapper.find('[data-test="menu-copy-id"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(true)
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await flushPromises()
+      expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(false)
+    })
+
+    it('Esc ao renomear cancela só a renomeação, e a gaveta continua', async () => {
+      const wrapper = await mountNarrow()
+      await wrapper.find('[data-test="toggle-details"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-test="conversation-title"]').trigger('click')
+      const input = wrapper.find('[data-test="title-input"]')
+      expect(input.exists()).toBe(true)
+
+      input.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await flushPromises()
+
+      expect(wrapper.find('[data-test="title-input"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(true)
+    })
+
+    it('Esc tratado por outra camada (modal, busca, menus de opção) não fecha a gaveta', async () => {
+      const wrapper = await mountNarrow()
+      await wrapper.find('[data-test="toggle-details"]').trigger('click')
+      await flushPromises()
+      const layer = document.createElement('div')
+      layer.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.preventDefault() })
+      document.body.appendChild(layer)
+
+      layer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await flushPromises()
+      expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(true)
+      layer.remove()
+    })
+
     it('Esc sem a gaveta aberta não faz nada', async () => {
       const wrapper = await mountNarrow()
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))

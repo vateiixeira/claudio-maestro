@@ -40,7 +40,7 @@ onBeforeUnmount(() => clearTimeout(timer))
         type="button"
         data-test="copy"
         aria-label="Copiar resposta"
-        class="rounded-md border border-line-strong px-2 py-0.5 text-fg-muted opacity-0 transition-opacity hover:text-fg focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary group-hover/text:opacity-100"
+        class="rounded-md border border-line-strong px-2 py-0.5 text-fg-muted opacity-0 pointer-events-none transition-opacity hover:text-fg focus-visible:opacity-100 focus-visible:pointer-events-auto focus-visible:outline-2 focus-visible:outline-primary group-hover/text:opacity-100 group-hover/text:pointer-events-auto group-focus-within/text:opacity-100 group-focus-within/text:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
         @click="copy"
       >
         Copiar

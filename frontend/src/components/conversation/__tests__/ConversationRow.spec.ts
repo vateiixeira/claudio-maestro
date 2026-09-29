@@ -106,6 +106,18 @@ describe('linha de conversa', () => {
       }
     })
 
+    it('as ações escondidas não recebem toque, e aparecem no hover, no foco e em telas sem hover', () => {
+      const classes = mountRow(makeSession()).find('[data-test="row-actions"]').classes()
+      expect(classes).toContain('opacity-0')
+      expect(classes).toContain('pointer-events-none')
+      expect(classes).toContain('group-hover:pointer-events-auto')
+      expect(classes).toContain('focus-within:pointer-events-auto')
+      expect(classes).toContain('group-focus-within:opacity-100')
+      expect(classes).toContain('group-focus-within:pointer-events-auto')
+      expect(classes).toContain('[@media(hover:none)]:opacity-100')
+      expect(classes).toContain('[@media(hover:none)]:pointer-events-auto')
+    })
+
     it('projeto, branch e horário têm largura fixa, também numa linha sem branch', () => {
       const withRepo = mountRow(makeSession({ project_id: 1 }))
       useGitStore(pinia).set(2, [])
