@@ -118,7 +118,7 @@ Uma linha por conversa, da esquerda para a direita:
 
 | Elemento | Regra |
 |---|---|
-| Bolinha azul | Quando `unread` é verdadeiro |
+| Bolinha azul | Quando `unread` é verdadeiro. Cor do token novo `--color-info` (`#60a5fa`) |
 | Ícone de estado | Em execução: verde animado. Aguardando você: ⚠ laranja. Finalizada: ✓ apagado |
 | Título | Ocupa o espaço livre, cortado com "…" só no fim |
 | Motivo da espera | Só quando aguarda o usuário, em texto pequeno. Ver tabela abaixo |
@@ -127,13 +127,14 @@ Uma linha por conversa, da esquerda para a direita:
 | Tempo | Relativo à última atividade |
 | Ações ao passar o mouse | Finalizar ou Reabrir. Na Inbox, também "Marcar como lida" |
 
-Motivo da espera, derivado de `pending_permission` e `awaiting_decision`:
+Motivo da espera, derivado de `state`, `pending_kind` e `pending_permission` (seção 11):
 
 | Situação | Texto |
 |---|---|
-| Permissão pendente de ferramenta comum | "Pede permissão: {nome da ferramenta}" |
-| `AskUserQuestion` pendente | "Fez uma pergunta" |
-| `ExitPlanMode` pendente | "Plano para aprovar" |
+| `state` igual a `error` | "Parou com erro" |
+| `pending_kind` igual a `tool` | "Pede permissão: {nome da ferramenta}" |
+| `pending_kind` igual a `question` | "Fez uma pergunta" |
+| `pending_kind` igual a `plan` | "Plano para aprovar" |
 | Nenhuma pendência | "Sua vez" |
 
 Clicar na linha abre `/sessions/:id` e marca a conversa como vista pela rota `POST /api/sessions/{id}/seen`, que já existe. Finalizadas aparecem com o texto apagado.
@@ -158,6 +159,8 @@ Conversas finalizadas e já lidas nunca aparecem na Inbox.
 ### Grupos e estado vazio
 
 Linhas agrupadas em **Hoje**, **Ontem** e **Antes**, pela última atividade, com divisor fino e rótulo centralizado. Aba vazia: "Nada pedindo você agora." na aba Pede você; nas demais, "Nenhuma conversa aqui."
+
+Sem nenhum projeto cadastrado, a Inbox mostra os primeiros passos que hoje ficam na home (criar projeto, abrir conversa, conversar), com o botão "Criar o primeiro projeto".
 
 ## 7. Conversas
 
@@ -215,7 +218,7 @@ Aberto pelo menu, pelo botão da tela Conversas, pelo atalho `C` e pelo botão "
 | Projeto | Linha "em [▪ projeto ▾]". Padrão: o projeto da página atual (conversa ou projeto); fora delas, o último usado no modal |
 | Título | Opcional. Vazio, o título é gerado como hoje |
 | Prompt | Campo grande. Aceita colar e anexar imagem, como o compositor |
-| Controles | Chips de Modelo, Raciocínio e Modo de permissão, com os padrões de Preferências |
+| Controles | Chips de Modelo, Raciocínio e Modo de permissão, começando no padrão da conta ("Padrão"). Só o que o usuário mudar é enviado. "Sem perguntas" não aparece no modal, porque exige confirmação; pode ser ligado depois, na conversa |
 | Rodapé | "Descartar rascunho" e "Iniciar conversa" |
 | Teclado | No prompt, as mesmas teclas do compositor: Enter inicia a conversa, Ctrl+Enter quebra linha. Esc fecha o modal mantendo o rascunho |
 
@@ -253,6 +256,11 @@ Só acréscimos. Nenhuma rota existente muda de formato.
 - Argumento principal por ferramenta: nome do arquivo (sem a pasta) para Read, Edit, Write e NotebookEdit; comando para Bash; padrão para Grep e Glob; descrição para Agent e Task; nas demais, só o nome da ferramenta.
 - Atualizado a cada uso de ferramenta e enviado pelo evento `session.updated` que já existe.
 - Fica só em memória. Depois de reiniciar o backend, vem `null` até a próxima ação.
+
+### `pending_kind` no resumo da sessão
+
+- Tipo do pedido pendente mais antigo: `tool`, `question`, `plan` ou `null`.
+- Existe porque `pending_permission` só cobre permissões de ferramenta; perguntas e planos ficavam sem motivo.
 
 ### `finished_at`
 

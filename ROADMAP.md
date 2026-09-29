@@ -23,10 +23,11 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
-| 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
-| 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
+| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | A fazer | 0 de 12 |
+| 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
+| 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
-Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. Os marcos 7 e 8 só começam quando o usuário pedir.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. Os marcos 8 e 9 só começam quando o usuário pedir.
 
 ## Preparação
 
@@ -189,7 +190,29 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [x] Espera pelo turno seguinte ao autônomo encerrada pelo `init` e prévia de repositórios cancelada quando a aba desiste (achados da segunda revisão do marco 6) (2026-09-29)
 - [x] Testes intermitentes estabilizados: `composerExtras.spec.ts` (frontend) e `test_controls.py::test_autonomous_turn_then_user_turn` (backend) (2026-09-29)
 
-## Marco 7. Agrupador de sessões
+## Marco 7. Nova navegação
+
+Objetivo: trocar as colunas de sessões lado a lado por telas no estilo do Paperclip. Cada conversa do Claude Code corresponde a uma "task" de lá.
+
+Pedido pelo usuário em 2026-09-29, depois de analisar o Paperclip (orquestrador de agentes) rodando localmente. Só a disposição e os componentes de layout vêm de lá; nada de agentes, rotinas ou orçamento.
+
+- Spec: `docs/superpowers/specs/2026-09-29-nova-navegacao-design.md`
+- Plano: `docs/superpowers/plans/2026-09-29-nova-navegacao.md`
+
+- [ ] Resumo da sessão com última ação, tipo do pedido pendente e data de finalização
+- [ ] Rotas de marcar várias conversas como lidas e de atividade por dia
+- [ ] Linha de conversa e regras de Inbox e grupos por data
+- [ ] Corpo da conversa extraído para um componente próprio
+- [ ] Painel Detalhes com propriedades, alterações e diff
+- [ ] Página única da conversa, com contexto no compositor só a partir de 80%
+- [ ] Menu lateral com entradas fixas, projetos e recentes, e contador no título da aba
+- [ ] Telas de Inbox e Conversas
+- [ ] Modal de nova conversa com rascunho e atalho `C`
+- [ ] Dashboard com conversas ativas, números e gráfico de 14 dias
+- [ ] Página do projeto com a linha de conversa
+- [ ] App abre na Inbox e o código de colunas sai
+
+## Marco 8. Agrupador de sessões
 
 Objetivo: juntar sessões relacionadas dentro de um projeto, para enxergar o trabalho como um conjunto.
 
@@ -214,11 +237,11 @@ A definir quando o marco for desenhado:
 | Pergunta | Por que importa |
 |---|---|
 | Uma sessão pode estar em mais de um agrupador? | Muda o modelo de dados. O mais simples é um só |
-| Como os agrupadores aparecem em "Todas as sessões"? | Essa tela organiza por estado; agrupador seria um segundo eixo |
+| Como os agrupadores aparecem na tela Conversas? | Essa tela organiza por data; agrupador seria um segundo eixo |
 | Agrupador com todas as sessões finalizadas some do menu? | Segue ou não a regra de ocultação das sessões |
 | O agrupador tem cor ou só nome? | O projeto já tem cor; duas cores podem confundir |
 
-## Marco 8. Progresso de planos
+## Marco 9. Progresso de planos
 
 Objetivo: saber, sem perguntar ao Claude, em que etapa está cada sessão que executa um plano.
 
@@ -254,7 +277,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 - Busca no texto das mensagens
 - Commit, push e troca de branch pela interface
 - Indicador de consumo dos limites da assinatura
-- Agrupar projetos no menu (diferente do agrupador de sessões, que é o marco 7)
+- Agrupar projetos no menu (diferente do agrupador de sessões, que é o marco 8)
 - Execução em Docker
 - Manter o app sempre ativo, iniciando junto com a máquina
 
@@ -296,4 +319,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | Sessões do app herdam o modo padrão do CLI do usuário |
 | 2026-09-29 | "Permitir" e "Negar" nos cartões de "Todas as sessões" entram no marco 6 |
 | 2026-09-29 | MVP (marcos 0 a 6) concluído, revisado e testado contra o SDK real |
+| 2026-09-29 | Nova navegação no estilo do Paperclip vira o marco 7 e substitui as colunas lado a lado. Agrupador passa a marco 8 e progresso de planos a marco 9 |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
