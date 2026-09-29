@@ -108,6 +108,10 @@ class SessionOut(BaseModel):
     # Progress of the plan the conversation executes, from the memory cache; None
     # without a plan, with an unreadable one or before its first reading.
     plan: PlanOut | None = None
+    # True only for a session without a client (`closed`) whose CLI is in the middle of
+    # a turn (last main-chain entry left it open and something was written in the last
+    # 20 minutes). Always False for sessions the app is connected to.
+    cli_running: bool = False
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]

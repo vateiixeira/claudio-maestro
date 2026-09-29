@@ -1,6 +1,11 @@
 import os
+import stat
+import threading
 from pathlib import Path
 
+import pytest
+
+from vibing import plans as plans_module
 from vibing.plans import MAX_PLAN_BYTES, PlanCache, is_plan_path, parse_plan
 
 FENCE = "`" * 3  # built at runtime so this plan file has no nested code fence
@@ -109,8 +114,10 @@ def test_cache_rereads_only_when_file_changes(tmp_path: Path, monkeypatch):
     path = _plan_file(tmp_path)
     cache = PlanCache()
     calls = []
-    real = Path.read_text
-    monkeypatch.setattr(Path, "read_text", lambda self, *a, **k: calls.append(self) or real(self, *a, **k))
+    real = plans_module.parse_plan
+    monkeypatch.setattr(
+        plans_module, "parse_plan", lambda *a, **k: calls.append(a[0]) or real(*a, **k)
+    )
     assert cache.read(path).done == 0
     assert cache.read(path).done == 0
     assert len(calls) == 1
@@ -130,3 +137,98 @@ def test_cache_missing_big_and_invalid(tmp_path: Path):
     bad = tmp_path / "bad.md"
     bad.write_bytes(b"\xff\xfe\x00 not utf8 ### Tarefa 1")
     assert cache.read(bad) is None
+
+
+# Headers ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "heading",
+    ["### Tarefa 1: A", "### Tarefa 1. A", "### Tarefa 1 - A", "### Tarefa 1 – A",
+     "### Tarefa 1 — A", "### Tarefa 1 A", "### Task 1: A", "### Tarefa 1:A"],
+)
+def test_task_heading_accepts_any_separator_or_none(heading):
+    plan = parse_plan(f"# P\n{heading}\n- [ ] a\n", "p")
+    assert plan is not None
+    assert [(t.number, t.title) for t in plan.tasks] == [(1, "A")]
+
+
+@pytest.mark.parametrize("heading", ["### Tarefa 3", "### Tarefa 3:", "### Task 3 —", "### Tarefa 3.  "])
+def test_task_heading_without_title_is_named_after_its_number(heading):
+    plan = parse_plan(f"# P\n{heading}\n- [ ] a\n", "p")
+    assert plan is not None
+    assert [(t.number, t.title) for t in plan.tasks] == [(3, "Tarefa 3")]
+
+
+def test_heading_that_only_starts_with_tarefa_is_not_a_task():
+    assert parse_plan("# P\n### Tarefas pendentes\n- [ ] a\n", "p") is None
+    assert parse_plan("# P\n### Tarefa 1a: x\n- [ ] a\n", "p") is None
+
+
+def test_level_one_heading_after_the_first_task_is_not_the_title():
+    text = "### Tarefa 1: A\n- [ ] a\n# Apêndice\n- [x] solta\n### Tarefa 2: B\n- [x] b\n"
+    plan = parse_plan(text, "arquivo")
+    assert plan is not None
+    assert plan.title == "arquivo"
+    # `# Apêndice` closed task 1 like any heading: its box was not counted for it.
+    assert [(t.number, t.done) for t in plan.tasks] == [(1, False), (2, True)]
+
+
+def test_title_before_the_first_task_still_counts():
+    plan = parse_plan("# Meu plano\n\ntexto\n### Tarefa 1: A\n- [ ] a\n# Apêndice\n", "arquivo")
+    assert plan.title == "Meu plano"
+
+
+def test_appendix_does_not_take_boxes_of_the_previous_task():
+    text = "# P\n### Tarefa 1: A\n- [x] a\n# Apêndice\n- [ ] aberta\n"
+    plan = parse_plan(text, "p")
+    assert plan.tasks[0].done is True
+
+
+# Cache reads ------------------------------------------------------------------
+
+
+def test_cache_refuses_a_fifo_without_hanging(tmp_path: Path):
+    fifo = tmp_path / "plan.md"
+    os.mkfifo(fifo)
+    assert stat.S_ISFIFO(fifo.stat().st_mode)
+    result: list[object] = []
+    thread = threading.Thread(target=lambda: result.append(PlanCache().read(fifo)), daemon=True)
+    thread.start()
+    thread.join(2)
+    if thread.is_alive():
+        # Unblock the reader so the daemon thread does not linger.
+        fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+        os.close(fd)
+        pytest.fail("a leitura de um FIFO travou")
+    assert result == [None]
+
+
+def test_cache_reads_at_most_the_limit_plus_one_byte(tmp_path: Path, monkeypatch):
+    path = _plan_file(tmp_path)
+    requested: list[int] = []
+    real_read = os.read
+
+    def spy(fd: int, n: int) -> bytes:
+        requested.append(n)
+        return real_read(fd, n)
+
+    monkeypatch.setattr(plans_module.os, "read", spy)
+    assert PlanCache().read(path) is not None
+    assert requested and max(requested) <= MAX_PLAN_BYTES + 1
+
+
+def test_cache_file_that_grew_past_the_limit_after_stat_is_no_plan(tmp_path: Path, monkeypatch):
+    path = tmp_path / "big.md"
+    path.write_text("### Tarefa 1: A\n- [ ] a\n" + "x" * (MAX_PLAN_BYTES + 10), encoding="utf-8")
+    cache = PlanCache()
+    real_stat = Path.stat
+
+    class Small:
+        st_mode = stat.S_IFREG
+        st_mtime_ns = 1
+        st_size = 10
+
+    # The size seen by `stat` is small (the file grew meanwhile): reading stops at the limit.
+    monkeypatch.setattr(Path, "stat", lambda self, *a, **k: Small() if self == path else real_stat(self, *a, **k))
+    assert cache.read(path) is None

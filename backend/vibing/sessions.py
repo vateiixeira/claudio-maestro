@@ -167,6 +167,9 @@ AUTONOMOUS_FOLLOWUP_GRACE = 3.0  # seconds
 CONTEXT_CACHE_SIZE = 512
 PERMISSION_SUMMARY_MAX = 200  # characters
 PLAN_EDITS_MAX = 64  # edit calls on plans waiting for their result, per session
+# A CLI turn signal older than this (since the last write of the session file or of a
+# subagent file) is dropped: the CLI probably died in the middle of the turn.
+CLI_TURN_STALE_SECONDS = 20 * 60
 # read_context(session_id, directory): {used_tokens, model} of the last assistant message.
 ReadContext = Callable[[str, str], dict[str, Any] | None]
 
@@ -377,8 +380,12 @@ def describe(
     last_action: str | None = None,
     pending_kind: str | None = None,
     plan: dict[str, Any] | None = None,
+    cli_running: bool = False,
 ) -> dict[str, Any]:
-    """Session as sent to the frontend by listings, PATCH and `session.updated`."""
+    """Session as sent to the frontend by listings, PATCH and `session.updated`.
+
+    `cli_running` (the CLI is in the middle of a turn) only counts for a session
+    without a client (`closed`): with one, the app itself knows what is going on."""
     now = time.time() if now is None else now
     fields = asdict(record)
     for key in _INTERNAL_FIELDS:
@@ -405,6 +412,7 @@ def describe(
         "last_action": last_action,
         "pending_kind": pending_kind,
         "plan": plan,
+        "cli_running": cli_running and state == "closed",
     }
 
 
@@ -606,6 +614,16 @@ async def _deny_all(
 ) -> PermissionResultDeny:
     """Permission callback of the throwaway client that only lists the models."""
     return PermissionResultDeny(message="Cliente só de consulta.")
+
+
+@dataclass
+class _CliTurn:
+    """A session file left mid-turn: `activity_at` (epoch seconds) is the latest write of
+    the session file or of one of its subagent files. `announced` is whether clients
+    were told it is running, so only the expiry of a signal they saw is announced."""
+
+    activity_at: float
+    announced: bool
 
 
 # Active session ------------------------------------------------------------
@@ -1552,8 +1570,8 @@ class ActiveSession:
     def _on_linked_plan(self, file_path: str) -> bool:
         """`file_path` is the plan this session is linked to."""
         linked = self.record.plan_path
-        if not linked:
-            return False
+        if not linked or not Path(file_path).is_absolute():
+            return False  # a relative path would resolve against the server's directory
         try:
             return str(Path(file_path).expanduser().resolve()) == linked
         except (OSError, RuntimeError, ValueError):
@@ -1935,6 +1953,8 @@ class SessionManager:
         self.plan_cache = PlanCache()
         self._plan_progress: dict[str, dict[str, Any] | None] = {}
         self._plan_locks: dict[str, asyncio.Lock] = {}
+        # Sessions whose CLI is in the middle of a turn, from the CLI watcher (memory only).
+        self._cli_turns: dict[str, _CliTurn] = {}
         # Models of `get_server_info()`, kept in `app_state` so a restart starts
         # with the last list. `_models_fetched_at` is when it was last confirmed.
         self._models: list[dict[str, Any]] | None = None
@@ -2273,17 +2293,19 @@ class SessionManager:
         self, record: SessionRecord, active: ActiveSession | None = None
     ) -> dict[str, Any]:
         """In-memory fields of a session (context, pending prompt, last action, plan
-        progress), for `describe`."""
+        progress, CLI turn signal), for `describe`."""
         plan = self.plan_summary(record)
+        cli_running = self._cli_running(record.session_id)
         if active is None:
-            return {"context": None, "pending_permission": None,
-                    "last_action": None, "pending_kind": None, "plan": plan}
+            return {"context": None, "pending_permission": None, "last_action": None,
+                    "pending_kind": None, "plan": plan, "cli_running": cli_running}
         return {
             "context": active.context,
             "pending_permission": active.pending_permission,
             "last_action": active.last_action,
             "pending_kind": active.pending_kind,
             "plan": plan,
+            "cli_running": cli_running,
         }
 
     def _describe_active(self, session: ActiveSession) -> dict[str, Any]:
@@ -2393,15 +2415,25 @@ class SessionManager:
             if path in self._plan_progress and self._plan_progress[path] == summary:
                 return False
             self._plan_progress[path] = summary
-        self._emit_plan_change(path)
+        await self._emit_plan_change(path)
         return True
 
-    def _emit_plan_change(self, path: str) -> None:
-        """`session.updated` for every session in memory linked to this plan. Sessions
-        only in the database need no event: their listing reads the memory cache."""
+    async def _emit_plan_change(self, path: str) -> None:
+        """`session.updated` for every unfinished session linked to this plan: the ones in
+        memory and, from the database, the ones that are not."""
         for session in list(self._sessions.values()):
             if session.record.plan_path == path:
                 session.emit_updated()
+        rows = await asyncio.to_thread(self._unfinished_rows_for_plan, path)
+        for row in rows:
+            if row["session_id"] not in self._sessions:
+                self._publish_closed_update(_record(row))
+
+    def _unfinished_rows_for_plan(self, path: str) -> list[sqlite3.Row]:
+        with closing(db.connect(self._db_path)) as conn:
+            return conn.execute(
+                f"SELECT {_COLUMNS} FROM sessions WHERE plan_path = ? AND finished = 0", (path,)
+            ).fetchall()
 
     def link_plan(
         self, session_id: str, path: str, *, source: Literal["auto", "manual"]
@@ -2409,6 +2441,8 @@ class SessionManager:
         """Link a session to a plan file. The path must be a plan of a registered
         project. The automatic source never replaces a `manual` or `off` link.
         Returns whether the link changed."""
+        if not Path(path).is_absolute():
+            return False  # a relative path would resolve against the server's directory
         session = self.get(session_id)
         record = session.record
         if source == "auto" and record.plan_link in ("manual", "off"):
@@ -2650,14 +2684,7 @@ class SessionManager:
         session = self._sessions.get(session_id)
         if session is None:
             forgotten = self._forgotten.get(session_id)
-            seq = forgotten[0] if forgotten is not None else 0
-            data = describe(
-                record, "closed", None, seq, finished_after=self.finished_after(),
-                **self._extras(record),
-            )
-            self._publish(
-                {"session_id": session_id, "seq": seq, "type": "session.updated", "data": data}
-            )
+            seq = self._publish_closed_update(record)
             if forgotten is None or not reload:
                 return False
             # Forgotten from memory, but a column may still show it: it drops what
@@ -2677,20 +2704,95 @@ class SessionManager:
         await session.reload_if_modified()
         return True
 
+    def _publish_closed_update(self, record: SessionRecord) -> int:
+        """`session.updated` of a session that is not in memory (no client). Returns
+        the seq it went out with."""
+        forgotten = self._forgotten.get(record.session_id)
+        seq = forgotten[0] if forgotten is not None else 0
+        data = describe(
+            record, "closed", None, seq, finished_after=self.finished_after(),
+            **self._extras(record),
+        )
+        self._publish(
+            {"session_id": record.session_id, "seq": seq, "type": "session.updated", "data": data}
+        )
+        return seq
+
+    # CLI turns ---------------------------------------------------------------
+
+    def note_cli_turn(self, session_id: str, *, open: bool, activity_at: float) -> None:
+        """The CLI watcher read the end of a session file: the turn is `open` or not, and
+        `activity_at` (epoch seconds) is the latest write of the file or of a subagent
+        file. The caller announces the session afterwards."""
+        if not open:
+            self._cli_turns.pop(session_id, None)
+            return
+        turn = _CliTurn(activity_at, False)
+        self._cli_turns[session_id] = turn
+        turn.announced = self._turn_running(turn)
+
+    def forget_cli_turn(self, session_id: str) -> None:
+        """The app took over the session (or its file is gone): no CLI signal."""
+        self._cli_turns.pop(session_id, None)
+
+    def _turn_running(self, turn: _CliTurn) -> bool:
+        return self._clock() - turn.activity_at <= CLI_TURN_STALE_SECONDS
+
+    def _cli_running(self, session_id: str) -> bool:
+        """The session's CLI is mid-turn and wrote within `CLI_TURN_STALE_SECONDS`.
+        `describe` only reports it for sessions without a client."""
+        turn = self._cli_turns.get(session_id)
+        return turn is not None and self._turn_running(turn)
+
+    async def _announce_session(self, session_id: str) -> None:
+        """`session.updated` for a session without a client, in memory or not."""
+        session = self._sessions.get(session_id)
+        if session is not None:
+            session.emit_updated()
+            return
+        row = await asyncio.to_thread(self._read_row, session_id)
+        if row is not None:
+            self._publish_closed_update(_record(row))
+
+    def _read_row(self, session_id: str) -> sqlite3.Row | None:
+        with closing(db.connect(self._db_path)) as conn:
+            return conn.execute(
+                f"SELECT {_COLUMNS} FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+
+    async def sweep_cli_turns(self) -> None:
+        """Announce the signals that expired since the last round, so a CLI that died in
+        the middle of a turn stops showing as running. One failure does not stop the rest."""
+        for session_id, turn in list(self._cli_turns.items()):
+            if self._turn_running(turn):
+                continue
+            if self._cli_turns.get(session_id) is turn:
+                del self._cli_turns[session_id]
+            if not turn.announced:
+                continue  # clients were never told it was running
+            try:
+                await self._announce_session(session_id)
+            except Exception:
+                logger.exception("Falha ao anunciar o fim do turno do CLI da sessão %s", session_id)
+
     def in_use(self, session_id: str) -> bool:
         """The app is using the session (client, prompts, turns or an operation)."""
         session = self._sessions.get(session_id)
         return session is not None and not session.forgettable
 
-    def _sweepable_plan_paths(self) -> list[str]:
-        """Plans linked to sessions not finished (by the user or by inactivity), each once."""
-        finished_after = self.finished_after()
-        cutoff = time.time() - finished_after
+    def _plan_link_rows(self) -> list[sqlite3.Row]:
+        """Sessions linked to a plan and not finished by the user. Database only: it runs
+        in a thread, so it must not touch anything the event loop owns."""
         with closing(db.connect(self._db_path)) as conn:
-            rows = conn.execute(
+            return conn.execute(
                 "SELECT session_id, plan_path, last_activity_at FROM sessions"
                 " WHERE plan_path IS NOT NULL AND finished = 0"
             ).fetchall()
+
+    def _sweepable_plan_paths(self, rows: list[sqlite3.Row]) -> list[str]:
+        """Plans of sessions not finished (by the user or by inactivity), each once.
+        Runs in the event loop: it reads the sessions in memory."""
+        cutoff = time.time() - self.finished_after()
         paths: dict[str, None] = {}
         for row in rows:
             active = self._sessions.get(row["session_id"])
@@ -2702,7 +2804,8 @@ class SessionManager:
     async def sweep_plans(self) -> None:
         """One round: reread each plan of an unfinished session once. A plan that
         fails is logged and does not stop the others."""
-        for path in await asyncio.to_thread(self._sweepable_plan_paths):
+        rows = await asyncio.to_thread(self._plan_link_rows)
+        for path in self._sweepable_plan_paths(rows):
             try:
                 await self._refresh_plan_path(path)
             except Exception:
@@ -2712,12 +2815,17 @@ class SessionManager:
         self, interval: float, sleep: Callable[[float], Any] = asyncio.sleep
     ) -> None:
         """At startup and every `interval` seconds, refresh the progress of plans linked
-        to unfinished sessions (file reads happen outside the event loop)."""
+        to unfinished sessions (file reads happen outside the event loop) and announce
+        the CLI turn signals that expired."""
         while True:
             try:
                 await self.sweep_plans()
             except Exception:
                 logger.exception("Falha na varredura de planos")
+            try:
+                await self.sweep_cli_turns()
+            except Exception:
+                logger.exception("Falha na varredura dos turnos do CLI")
             await sleep(interval)
 
     async def run_idle_sweep(self, interval: float) -> None:

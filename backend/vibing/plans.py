@@ -1,12 +1,15 @@
 """Progress of implementation plans (`docs/superpowers/plans/*.md`).
 
-A task starts at a `### Tarefa N: title` (or `### Task N: title`) heading and
+A task starts at a `### Tarefa N: title` (or `### Task N: title`) heading, with any
+separator (`:`, `.`, `-`, `–`, `—`) or none, and an empty title meaning "Tarefa N". It
 runs until the next heading of level 1 to 3. It is done when it has at least
 one checkbox and all are checked. Fenced code blocks are ignored.
 """
 
 import json
+import os
 import re
+import stat as stat_module
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -18,7 +21,9 @@ PLAN_DIR = ("docs", "superpowers", "plans")
 # Tools whose `file_path` input links a conversation to the plan it touches.
 PLAN_TOOLS = frozenset({"Read", "Edit", "MultiEdit", "Write"})
 
-_TASK = re.compile(r"^###\s+(?:Tarefa|Task)\s+(\d+)\s*[:.\-—]\s*(.+?)\s*$", re.IGNORECASE)
+_TASK = re.compile(
+    r"^###\s+(?:Tarefa|Task)\s+(\d+)(?!\w)\s*[:.\-–—]?\s*(.*?)\s*$", re.IGNORECASE
+)
 _HEADING = re.compile(r"^(#{1,3})\s+\S")
 _TITLE = re.compile(r"^#\s+(.+?)\s*$")
 _BOX = re.compile(r"^\s*[-*]\s+\[([ xX])\]")
@@ -75,12 +80,13 @@ def parse_plan(text: str, fallback_title: str) -> PlanProgress | None:
             continue
         if in_fence:
             continue
-        if title is None and (match := _TITLE.match(line)):
+        if title is None and not tasks and number is None and (match := _TITLE.match(line)):
             title = match.group(1)
             continue
         if match := _TASK.match(line):
             close()
-            number, task_title = int(match.group(1)), match.group(2)
+            number = int(match.group(1))
+            task_title = match.group(2) or f"Tarefa {number}"
             boxes = checked = 0
             continue
         if _HEADING.match(line):
@@ -194,6 +200,34 @@ def read_new_lines(
     return lines, start + end + 1
 
 
+def _read_limited(path: Path) -> str | None:
+    """Text of a regular file of at most `MAX_PLAN_BYTES`; None for anything else
+    (FIFO, device, too big, unreadable, not UTF-8). The open never blocks on a FIFO
+    and at most `MAX_PLAN_BYTES + 1` bytes are read, whatever the file grew to."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        if not stat_module.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        chunks: list[bytes] = []
+        remaining = MAX_PLAN_BYTES + 1
+        while remaining > 0:
+            chunk = os.read(fd, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if remaining <= 0:
+            return None  # more than the limit
+        return b"".join(chunks).decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    finally:
+        os.close(fd)
+
+
 class PlanCache:
     """Parsed plans by path, re-read only when size or mtime changes. Thread-safe."""
 
@@ -214,11 +248,10 @@ class PlanCache:
         if entry is not None and entry[0] == key:
             return entry[1]
         progress: PlanProgress | None = None
-        if stat.st_size <= MAX_PLAN_BYTES:
-            try:
-                progress = parse_plan(path.read_text(encoding="utf-8"), path.stem)
-            except (OSError, UnicodeDecodeError):
-                progress = None
+        if stat_module.S_ISREG(stat.st_mode) and stat.st_size <= MAX_PLAN_BYTES:
+            text = _read_limited(path)
+            if text is not None:
+                progress = parse_plan(text, path.stem)
         with self._lock:
             self._entries[path] = (key, progress)
         return progress

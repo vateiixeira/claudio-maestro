@@ -526,7 +526,7 @@ async def test_sweep_survives_a_failing_database_read(sweep_env, monkeypatch):
     session = env.new_session()
     env.manager.link_plan(session.session_id, str(plan), source="manual")
     calls = {"n": 0}
-    real = env.manager._sweepable_plan_paths
+    real = env.manager._plan_link_rows
 
     def flaky() -> Any:
         calls["n"] += 1
@@ -534,7 +534,7 @@ async def test_sweep_survives_a_failing_database_read(sweep_env, monkeypatch):
             raise RuntimeError("banco indisponível")
         return real()
 
-    monkeypatch.setattr(env.manager, "_sweepable_plan_paths", flaky)
+    monkeypatch.setattr(env.manager, "_plan_link_rows", flaky)
 
     await run_sweep(env.manager, None, None)
 

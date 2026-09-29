@@ -413,6 +413,38 @@ async def test_link_plan_validates_and_reports_change(make_env, env_cleanup, tmp
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("source", ["auto", "manual"])
+async def test_link_plan_refuses_a_relative_path(make_env, env_cleanup, monkeypatch, source):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    plan = write_plan(Path(env.project.path))
+    session = env.new_session()
+    # The process runs inside a registered project: a relative path would resolve there.
+    monkeypatch.chdir(env.project.path)
+    relative = str(plan.relative_to(Path(env.project.path)))
+    assert (Path(env.project.path) / relative).is_file()
+
+    assert env.manager.link_plan(session.session_id, relative, source=source) is False
+    assert env.manager.link_plan(session.session_id, "./" + relative, source=source) is False
+    assert session.record.plan_path is None
+    assert env.manager.link_plan(session.session_id, str(plan), source=source) is True
+
+
+@pytest.mark.anyio
+async def test_a_relative_path_is_never_the_linked_plan(make_env, env_cleanup, monkeypatch):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    plan = write_plan(Path(env.project.path))
+    session = env.new_session()
+    env.manager.link_plan(session.session_id, str(plan), source="manual")
+    monkeypatch.chdir(env.project.path)
+    relative = str(plan.relative_to(Path(env.project.path)))
+
+    assert session._on_linked_plan(str(plan)) is True
+    assert session._on_linked_plan(relative) is False
+
+
+@pytest.mark.anyio
 async def test_auto_plan_keeps_the_path_and_unlink_clears_it(make_env, env_cleanup):
     env = make_env()
     env_cleanup.append(env.manager)

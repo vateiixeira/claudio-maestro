@@ -239,10 +239,12 @@ async def test_session_active_in_app_is_ignored(env):
 
 
 @pytest.mark.anyio
-async def test_subagent_and_memory_files_are_ignored(env):
+async def test_memory_and_stray_files_are_ignored(env):
+    # Subagent files (`subagents/agent-*.jsonl`) are handled: see test_cli_turn.py.
     env.start()
     env.watch.push(
-        (Change.added, env.history_dir / "s1" / "subagents" / "agent-1.jsonl"),
+        (Change.added, env.history_dir / "s1" / "subagents" / "notes.jsonl"),
+        (Change.added, env.history_dir / "s1" / "other" / "agent-1.jsonl"),
         (Change.added, env.history_dir / "memory" / "MEMORY.md"),
         (Change.added, env.history_dir / "notes.txt"),
         (Change.added, env.root / "loose.jsonl"),
