@@ -28,6 +28,10 @@ Você só orquestra; não implemente você mesmo.
 
 Marco 6: tarefas 1 (robustez do backend), 2 (robustez do frontend) e 4 (acessibilidade e fontes locais) concluídas, revisadas e commitadas. Falta a tarefa 3, a revisão profunda do marco e o teste real.
 
+## Trabalho paralelo em andamento
+
+Outra sessão está redesenhando a tela da conversa: o commit `739b1dd` guardou o desenho aprovado do novo chat (`docs/design/project/Chat.dc.html` e `Chat-elementos.dc.html`), e havia alterações não commitadas em `frontend/src/components/conversation/` (`RailNode.vue`, `turns.ts`, blocos de ferramenta, `UserMessage.vue`) e em `style.css`. Antes de mexer no frontend, confira `git status` e pergunte ao usuário se esse trabalho já terminou; não sobrescreva nem commite arquivos dessa outra sessão, e evite tarefas que toquem `components/conversation/` enquanto ela estiver ativa. Em commits, adicione só os caminhos das suas tarefas, nunca `git add -A`.
+
 ## O que falta no marco 6
 
 Tarefa 3 (backend e frontend):
