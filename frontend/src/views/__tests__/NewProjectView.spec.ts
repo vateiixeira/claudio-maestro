@@ -273,6 +273,23 @@ describe('tela de novo projeto', () => {
       expect(wrapper.find('[data-test="create"]').attributes('disabled')).toBeUndefined()
     })
 
+    it('anuncia ao leitor de tela a busca e o erro da prévia', async () => {
+      let release: (r: Response) => void = () => {}
+      vi.stubGlobal('fetch', routeFetch({
+        ...dirs,
+        'GET /api/fs/repos?path=%2Fhome%2Fvi%2Fnotas': () => new Promise<Response>((r) => { release = r }),
+      }))
+      const wrapper = await mountView()
+      await entry(wrapper, 'notas').trigger('click')
+      await flushPromises()
+      const loading = wrapper.find('[data-test="found-repos"] [role="status"]')
+      expect(loading.text()).toContain('Procurando repositórios')
+      release(jsonResponse({ detail: 'Falhou.' }, 500))
+      await flushPromises()
+      const error = wrapper.find('[data-test="repos-error"]')
+      expect(error.attributes('role')).toBe('status')
+    })
+
     it('ignora a resposta de uma pasta antiga que chega depois', async () => {
       const pending = new Map<string, (r: Response) => void>()
       vi.stubGlobal('fetch', vi.fn((url: string) => {

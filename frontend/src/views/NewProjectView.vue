@@ -183,8 +183,8 @@ function cancel(): void {
               <span class="grow">Repositórios encontrados</span>
               <span v-if="!reposLoading && !reposError" class="normal-case tracking-normal">{{ found.length === 1 ? '1 repositório' : `${found.length} repositórios` }}</span>
             </div>
-            <p v-if="reposLoading" class="m-0 text-sm text-fg-muted">Procurando repositórios…</p>
-            <p v-else-if="reposError" data-test="repos-error" class="m-0 text-sm text-secondary-soft">Não foi possível procurar os repositórios. {{ reposError }}</p>
+            <p v-if="reposLoading" role="status" class="m-0 text-sm text-fg-muted">Procurando repositórios…</p>
+            <p v-else-if="reposError" data-test="repos-error" role="status" class="m-0 text-sm text-secondary-soft">Não foi possível procurar os repositórios. {{ reposError }}</p>
             <p v-else-if="found.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
             <ul v-else class="m-0 flex list-none flex-col rounded-lg border border-line p-0">
               <li
