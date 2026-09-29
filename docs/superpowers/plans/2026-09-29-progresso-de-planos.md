@@ -806,27 +806,27 @@ Expected: PASS.
 - Consumes: `Session.plan`, `planBadge`, `planPosition`, `planVisible`, `planStopped`.
 - Produces: `PlanBadge.vue` props `{ session: Session }`.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 1. `PlanBadge`: plano em andamento → texto "4/12", mini barra proporcional, `title` e `aria-label` com "Tarefa 4 de 12: título"; parada → classe de apagado; `planVisible` falso → nada.
 2. `ConversationRow`: com plano visível, o selo aparece depois do título em todas as variantes (`inbox`, `list`, `compact`), sem empurrar a coluna de horário (o título continua truncando).
 3. `NowCard`: com plano visível, uma linha "Tarefa 4 de 12: título" abaixo do título; sem plano, nada.
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/plan src/components/conversation/__tests__/ConversationRow.spec.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 `PlanBadge.vue`: `<span class="inline-flex shrink-0 items-center gap-1 ...">` com o texto `planBadge` e uma barra de 24 px (fundo neutro, preenchimento primário proporcional a `done/total`; cinza quando parada). Em `ConversationRow.vue`, coloque o selo logo depois do título, dentro do mesmo bloco que trunca, com `shrink-0`. Em `NowCard.vue`, uma linha de texto secundário com `planPosition`.
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `pnpm --dir frontend test` e `pnpm --dir frontend build`
 Expected: PASS.
 
-- [ ] **Step 5: Commit (sessão principal)**
+- [x] **Step 5: Commit (sessão principal)**
 
 `[Feat] Mostrar posição no plano na linha de conversa e no Dashboard`
 
