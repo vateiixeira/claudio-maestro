@@ -13,7 +13,9 @@ import PermissionCard from '../conversation/PermissionCard.vue'
 import PlanCard from '../conversation/PlanCard.vue'
 import QuestionCard from '../conversation/QuestionCard.vue'
 import RailNode from '../conversation/RailNode.vue'
+import SubagentStrip from '../conversation/SubagentStrip.vue'
 import UserMessage from '../conversation/UserMessage.vue'
+import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, type SubagentFocus } from '../../conversation/subagents'
 import { buildTurns, groupNodeKind, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
 import ActionGroup from '../conversation/ActionGroup.vue'
 import SessionControls from './SessionControls.vue'
@@ -207,6 +209,39 @@ const announcement = computed(() => {
   return ''
 })
 const taskList = computed(() => conversations.taskList(props.id))
+
+// Strip above the message field: the current subagents while any of them runs.
+const subagentEntries = computed(() => stripSubagents(deriveSubagents(conv.value?.items ?? [], sessionActive.value)))
+// The card the user picked in the strip: opened, marked for a moment and scrolled to.
+const HIGHLIGHT_MS = 2000
+const subagentFocus = ref<SubagentFocus | null>(null)
+provide(SUBAGENT_FOCUS_KEY, subagentFocus)
+let focusTimer: ReturnType<typeof setTimeout> | null = null
+onBeforeUnmount(() => { if (focusTimer) clearTimeout(focusTimer) })
+async function goToSubagent(id: string) {
+  const items = conv.value?.items ?? []
+  // The subagent cards it sits inside must open too.
+  const byToolUse = new Map(items.flatMap((i) => (i.type === 'tool' ? [[i.tool_use_id, i] as const] : [])))
+  const path: string[] = [id]
+  for (let cur = items.find((i) => i.id === id); cur && 'parent_tool_use_id' in cur && cur.parent_tool_use_id; ) {
+    const parent = byToolUse.get(cur.parent_tool_use_id)
+    if (!parent || path.includes(parent.id)) break
+    path.push(parent.id)
+    cur = parent
+  }
+  if (focusTimer) clearTimeout(focusTimer)
+  subagentFocus.value = null
+  await nextTick()
+  subagentFocus.value = { id, path }
+  await nextTick()
+  const card = Array.from(scroller.value?.querySelectorAll<HTMLElement>('[data-subagent-id]') ?? []).find((el) => el.dataset.subagentId === id)
+  if (card) {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    card.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+    card.focus({ preventScroll: true })
+  }
+  focusTimer = setTimeout(() => { subagentFocus.value = null }, HIGHLIGHT_MS)
+}
 // Open/closed chosen by the user per action group (by id); unset follows the turn.
 const groupChoice = reactive(new Map<string, boolean>())
 
@@ -533,6 +568,7 @@ function resolvePrompt(promptId: string) {
           {{ conv.error || 'A sessão parou com erro.' }} Você pode enviar de novo.
         </p>
         <p v-if="loadError" role="alert" class="m-0 text-sm text-secondary-soft">{{ loadError }}</p>
+        <SubagentStrip :entries="subagentEntries" @select="goToSubagent" />
         <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason">
           <template #controls><SessionControls :session-id="conv.sessionId" /></template>
         </MessageComposer>

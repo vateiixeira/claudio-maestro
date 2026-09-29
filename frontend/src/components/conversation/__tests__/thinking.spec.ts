@@ -47,6 +47,80 @@ describe('raciocínio durante o streaming', () => {
   })
 })
 
+describe('raciocínio durante o streaming: janela de 4 linhas', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `linha ${i + 1}`).join('\n')
+  const long = (streaming: boolean, n = 10) => ({ ...item(streaming), text: lines(n) })
+  const shown = (w: ReturnType<typeof mount>) => w.find('[data-test="thinking-text"]').text()
+
+  it('mostra só as 4 últimas linhas e acompanha o texto que chega', async () => {
+    const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    expect(shown(w)).toBe('linha 7\nlinha 8\nlinha 9\nlinha 10')
+    await w.setProps({ item: long(true, 12) })
+    expect(shown(w)).toBe('linha 9\nlinha 10\nlinha 11\nlinha 12')
+  })
+
+  it('texto curto aparece inteiro e sem o controle', () => {
+    const w = mount(ThinkingBlock, { props: { item: long(true, 3) } })
+    expect(shown(w)).toBe('linha 1\nlinha 2\nlinha 3')
+    expect(w.find('[data-test="thinking-expand"]').exists()).toBe(false)
+  })
+
+  it('"Ver tudo" expande e "Recolher" volta à janela', async () => {
+    const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    const control = () => w.find('[data-test="thinking-expand"]')
+    expect(control().text()).toBe('Ver tudo')
+    expect(control().attributes('aria-expanded')).toBe('false')
+    await control().trigger('click')
+    expect(shown(w)).toContain('linha 1')
+    expect(shown(w)).toContain('linha 10')
+    expect(control().text()).toBe('Recolher')
+    expect(control().attributes('aria-expanded')).toBe('true')
+    await control().trigger('click')
+    expect(shown(w)).toBe('linha 7\nlinha 8\nlinha 9\nlinha 10')
+  })
+
+  it('o controle é um botão de verdade, alcançável pelo teclado', () => {
+    const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    const el = w.find('[data-test="thinking-expand"]')
+    expect(el.element.tagName).toBe('BUTTON')
+    expect(el.attributes('type')).toBe('button')
+    expect(el.attributes('tabindex')).toBeUndefined()
+  })
+
+  it('quem expandiu durante o streaming continua vendo tudo ao terminar', async () => {
+    const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.find('[data-test="thinking-expand"]').trigger('click')
+    await w.setProps({ item: long(false) })
+    expect(shown(w)).toContain('linha 1')
+    expect(w.find('[data-test="thinking-expand"]').exists()).toBe(false)
+  })
+
+  it('quem não expandiu vê o bloco recolhido ao terminar', async () => {
+    const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.setProps({ item: long(false) })
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
+    await w.find('button').trigger('click')
+    expect(shown(w)).toContain('linha 1')
+  })
+
+  it('recolher a janela durante o streaming não deixa aberto ao terminar', async () => {
+    const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.find('[data-test="thinking-expand"]').trigger('click')
+    await w.find('[data-test="thinking-expand"]').trigger('click')
+    await w.setProps({ item: long(false) })
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
+  })
+
+  it('fechado pelo cabeçalho, o controle some', async () => {
+    const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.find('button').trigger('click')
+    expect(w.find('[data-test="thinking-expand"]').exists()).toBe(false)
+  })
+})
+
 describe('imagens na mensagem do usuário', () => {
   afterEach(resetLocalImages)
   const user = { type: 'user' as const, id: 'u1', text: 'veja', images: [{ type: 'image' as const, media_type: 'image/png', size: 122880 }] }

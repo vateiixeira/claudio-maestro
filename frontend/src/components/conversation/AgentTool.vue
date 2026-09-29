@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
+import { agentStatus, SUBAGENT_FOCUS_KEY } from '../../conversation/subagents'
 import { str } from '../../conversation/tool'
 import type { SubagentStatus, ToolItem } from '../../types/conversation'
 
@@ -13,18 +14,20 @@ const STATUS_LABEL: Record<SubagentStatus, string> = {
 }
 
 const sub = computed(() => props.item.subagent ?? null)
-const status = computed<SubagentStatus>(() => {
-  if (sub.value) return sub.value.status
-  if (props.item.result?.is_error) return 'failed'
-  if (props.item.result || props.item.result_missing || !props.sessionActive) return 'completed'
-  return 'running'
-})
+const status = computed<SubagentStatus>(() => agentStatus(props.item, props.sessionActive ?? false))
 const kind = computed(() => sub.value?.subagent_type || str(props.item.input.subagent_type))
 const description = computed(() => sub.value?.description || str(props.item.input.description))
 
 // Open while running, collapsed when it ends, unless the user chose.
 const manual = ref<boolean | null>(null)
 const open = computed(() => manual.value ?? status.value === 'running')
+
+// The subagent strip asks to reach a card: open it, and the ones around it, and mark it.
+const focus = inject(SUBAGENT_FOCUS_KEY, ref(null))
+const highlighted = computed(() => focus.value?.id === props.item.id)
+watch(focus, (target) => {
+  if (target?.path.includes(props.item.id)) manual.value = true
+})
 
 function duration(ms: number): string {
   const total = Math.round(ms / 1000)
@@ -44,7 +47,14 @@ const metrics = computed(() => {
 </script>
 
 <template>
-  <div data-test="subagent-card" class="overflow-hidden rounded-lg border bg-panel" :class="status === 'failed' ? 'border-diff-del-fg/40' : 'border-line'">
+  <div
+    data-test="subagent-card"
+    :data-subagent-id="item.id"
+    :data-highlighted="highlighted ? 'true' : undefined"
+    tabindex="-1"
+    class="scroll-mt-14 overflow-hidden rounded-lg border bg-panel outline-none"
+    :class="[status === 'failed' ? 'border-diff-del-fg/40' : 'border-line', highlighted ? 'ring-2 ring-primary' : '']"
+  >
     <div class="flex flex-col gap-1.5 px-3 py-2.5">
       <div class="flex items-center gap-2">
         <span data-test="subagent-state" :data-status="status" :aria-label="STATUS_LABEL[status]" :title="STATUS_LABEL[status]" role="img" class="flex shrink-0">
