@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 26 de 34 |
+| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 27 de 37 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -170,7 +170,10 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [x] Revisão de acessibilidade: teclado, contraste e foco (2026-09-29)
 - [x] Fontes servidas pelo próprio app; hoje vêm do Google Fonts e dependem de internet (2026-09-29)
 - [x] Chat em turnos: sua mensagem abre o turno, trilho com um nó por tipo de elemento e resumo no fim do turno (desenho: https://claude.ai/artifact/B6MJz27qejqyqorFhskF11) (2026-09-29)
-- [ ] Ações seguidas do chat viram um grupo, aberto enquanto o turno roda e recolhido depois
+- [ ] Texto das respostas acompanha a largura da coluna (hoje limitado a 580 px)
+- [ ] Botão para copiar a resposta inteira em markdown
+- [ ] Lista de modelos guardada no SQLite, usada ao reiniciar o backend e atualizada até 3 vezes por dia
+- [x] Ações seguidas do chat viram um grupo, aberto enquanto o turno roda e recolhido depois (2026-09-29)
 - [ ] Saídas longas no chat limitadas a 8 linhas e barra fixa do turno com navegação entre turnos
 
 ## Marco 7. Agrupador de sessões

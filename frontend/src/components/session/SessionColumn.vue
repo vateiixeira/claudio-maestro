@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, provide, reactive, ref, watch } from 'vue'
 import { SESSION_ID_KEY } from '../../stores/changesPanel'
 import { RouterLink } from 'vue-router'
 import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
@@ -14,7 +14,8 @@ import PlanCard from '../conversation/PlanCard.vue'
 import QuestionCard from '../conversation/QuestionCard.vue'
 import RailNode from '../conversation/RailNode.vue'
 import UserMessage from '../conversation/UserMessage.vue'
-import { buildTurns, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
+import { buildTurns, groupNodeKind, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
+import ActionGroup from '../conversation/ActionGroup.vue'
 import SessionControls from './SessionControls.vue'
 import { deriveDisplay, displayStateLabels } from '../../sessionState'
 import { useConversationStore } from '../../stores/conversation'
@@ -206,6 +207,8 @@ const announcement = computed(() => {
   return ''
 })
 const taskList = computed(() => conversations.taskList(props.id))
+// Open/closed chosen by the user per action group (by id); unset follows the turn.
+const groupChoice = reactive(new Map<string, boolean>())
 
 // Duration, cost and error of the last turn, shown in its end line.
 const resultParts = computed(() => {
@@ -384,19 +387,30 @@ function resolvePrompt(promptId: string) {
               <UserMessage v-if="turn.user" :item="turn.user" />
               <div v-if="turn.entries.length" class="relative flex flex-col gap-3.5">
                 <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
-                <div v-for="entry in turn.entries" :key="entry.item.id" class="relative flex items-start gap-3">
-                  <RailNode :kind="nodeKind(entry.item, sessionActive)" />
-                  <div
-                    class="flex min-w-0 grow flex-col"
-                    :class="{ 'border-l border-line pl-4': 'parent_tool_use_id' in entry.item && entry.item.parent_tool_use_id }"
-                  >
-                    <ConversationBlock
-                      :item="entry.item"
+                <div v-for="entry in turn.entries" :key="entry.kind === 'group' ? `group-${entry.id}` : entry.item.id" class="relative flex items-start gap-3">
+                  <template v-if="entry.kind === 'group'">
+                    <RailNode :kind="groupNodeKind(entry.items, sessionActive)" />
+                    <ActionGroup
+                      class="min-w-0 grow"
+                      :items="entry.items"
+                      :open="groupChoice.get(entry.id) ?? !done"
                       :session-active="sessionActive"
                       :children-of="tree.childrenOf"
                       :task-list="taskList"
+                      @toggle="groupChoice.set(entry.id, !(groupChoice.get(entry.id) ?? !done))"
                     />
-                  </div>
+                  </template>
+                  <template v-else>
+                    <RailNode :kind="nodeKind(entry.item, sessionActive)" />
+                    <div class="flex min-w-0 grow flex-col">
+                      <ConversationBlock
+                        :item="entry.item"
+                        :session-active="sessionActive"
+                        :children-of="tree.childrenOf"
+                        :task-list="taskList"
+                      />
+                    </div>
+                  </template>
                 </div>
               </div>
               <div

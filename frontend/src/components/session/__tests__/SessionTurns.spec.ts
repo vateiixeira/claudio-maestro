@@ -85,4 +85,82 @@ describe('chat em turnos', () => {
     expect(nodes.map((n) => n.attributes('data-kind'))).toEqual(['error', 'running'])
     expect(nodes[0]!.attributes('aria-hidden')).toBe('true')
   })
+
+  it('nós de aviso e de subagente; filhos do subagente contam no resumo', async () => {
+    const w = await mountWith({
+      state: 'idle',
+      items: [
+        user('u1'),
+        { type: 'notice', id: 'n1', level: 'warning', text: 'cuidado' },
+        tool('ag', 'Agent', { input: { description: 'x', prompt: 'y' } }),
+        tool('k1', 'Read', { parent_tool_use_id: 'tu-ag' }),
+        tool('k2', 'Edit', { parent_tool_use_id: 'tu-ag' }),
+      ],
+    })
+    const kinds = w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))
+    expect(kinds).toEqual(['warning', 'agent'])
+    expect(w.find('[data-test="turn-end"]').text()).toContain('3 ações · 1 arquivo alterado')
+  })
+
+  it('turno sem mensagem mostra os itens sem cartão do usuário', async () => {
+    const w = await mountWith({ state: 'idle', items: [text('a')] })
+    expect(w.findAll('[data-test="turn"]')).toHaveLength(1)
+    expect(w.find('[data-test="user-message-card"]').exists()).toBe(false)
+    expect(w.text()).toContain('texto a')
+  })
 })
+
+describe('grupo de ações', () => {
+  const group = (w: Awaited<ReturnType<typeof mountWith>>) => w.find('[data-test="action-group"]')
+  const header = (w: Awaited<ReturnType<typeof mountWith>>) => w.find('[data-test="action-group-toggle"]')
+
+  it('cabeçalho com contagem e chips; aberto enquanto o turno roda', async () => {
+    const w = await mountWith({
+      state: 'running',
+      items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read'), tool('b1', 'Bash', { input: { command: 'ls' }, result: null })],
+    })
+    expect(w.findAll('[data-test="action-group"]')).toHaveLength(1)
+    expect(header(w).text()).toContain('3 ações')
+    expect(w.findAll('[data-test="group-chip"]').map((c) => c.text())).toEqual(['2 leituras', '1 comando'])
+    expect(header(w).attributes('aria-expanded')).toBe('true')
+    expect(header(w).text()).toContain('Recolher')
+    expect(w.findAll('[data-test="action-row"]')).toHaveLength(3)
+    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['running'])
+  })
+
+  it('recolhido depois que o turno termina', async () => {
+    const w = await mountWith({ state: 'idle', items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read')] })
+    expect(header(w).attributes('aria-expanded')).toBe('false')
+    expect(header(w).text()).toContain('Ver')
+    expect(w.findAll('[data-test="action-row"]')).toHaveLength(0)
+    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['group'])
+  })
+
+  it('a escolha manual prevalece quando o turno termina', async () => {
+    const w = await mountWith({ state: 'running', items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read')] })
+    await header(w).trigger('click')
+    expect(header(w).attributes('aria-expanded')).toBe('false')
+    fake.session.get('s1')!(makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 10, total_cost_usd: null }, 2))
+    await flushPromises()
+    expect(header(w).attributes('aria-expanded')).toBe('false')
+    await header(w).trigger('click')
+    expect(header(w).attributes('aria-expanded')).toBe('true')
+  })
+
+  it('a linha expande o cartão completo da ferramenta', async () => {
+    const w = await mountWith({
+      state: 'running',
+      items: [user('u1'), tool('r1', 'Read', { result: { content: 'a\nb\n', is_error: false, details: null } }), tool('b1', 'Bash', { input: { command: 'ls -la' } })],
+    })
+    const rows = w.findAll('[data-test="action-row"]')
+    expect(rows[0]!.text()).toContain('Leitura')
+    expect(rows[0]!.text()).toContain('/p/r1.py')
+    expect(rows[0]!.text()).toContain('2 linhas')
+    expect(rows[1]!.attributes('aria-expanded')).toBe('false')
+    expect(group(w).find('[data-test="tool-output"]').exists()).toBe(false)
+    await rows[1]!.trigger('click')
+    expect(rows[1]!.attributes('aria-expanded')).toBe('true')
+    expect(group(w).text()).toContain('$ ls -la')
+  })
+})
+

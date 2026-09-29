@@ -4,7 +4,7 @@ import type { NodeKind } from '../../conversation/turns'
 // Decorative marker of one item in the turn's rail; the card itself names the type.
 defineProps<{ kind: NodeKind }>()
 
-const SQUARE = new Set<NodeKind>(['read', 'search', 'bash', 'edit', 'task', 'tool'])
+const SQUARE = new Set<NodeKind>(['read', 'search', 'bash', 'edit', 'task', 'tool', 'group'])
 </script>
 
 <template>
@@ -23,12 +23,12 @@ const SQUARE = new Set<NodeKind>(['read', 'search', 'bash', 'edit', 'task', 'too
         'rounded-md border-secondary bg-secondary-fg text-secondary': kind === 'warning',
       }"
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ 'text-fg-muted': kind === 'task' || kind === 'tool', 'animate-spin': kind === 'running' }">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ 'text-fg-muted': kind === 'task' || kind === 'tool' || kind === 'group', 'animate-spin': kind === 'running' }">
         <template v-if="kind === 'read'"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></template>
         <template v-else-if="kind === 'search'"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></template>
         <template v-else-if="kind === 'bash'"><path d="m4 17 6-6-6-6" /><line x1="12" y1="19" x2="20" y2="19" /></template>
         <template v-else-if="kind === 'edit'"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></template>
-        <template v-else-if="kind === 'task'"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></template>
+        <template v-else-if="kind === 'task' || kind === 'group'"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></template>
         <template v-else-if="kind === 'agent'"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></template>
         <path v-else-if="kind === 'running'" d="M12 3a9 9 0 1 1-9 9" stroke-width="2.6" />
         <template v-else-if="kind === 'error'"><line x1="6" y1="6" x2="18" y2="18" stroke-width="2.4" /><line x1="18" y1="6" x2="6" y2="18" stroke-width="2.4" /></template>
