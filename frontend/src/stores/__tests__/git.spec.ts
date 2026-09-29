@@ -41,6 +41,12 @@ describe('store git', () => {
     expect(git.limitReached(2)).toBe(true)
   })
 
+  it('evento com limit_reached true acende o aviso sem carregamento prévio', () => {
+    const git = useGitStore()
+    git.applyEvent({ session_id: null, seq: 0, type: 'project.git', data: { project_id: 5, repos: [], limit_reached: true } } as never)
+    expect(git.limitReached(5)).toBe(true)
+  })
+
   it('erro ao carregar não lança em ensure', async () => {
     vi.stubGlobal('fetch', routeFetch({}))
     const git = useGitStore()

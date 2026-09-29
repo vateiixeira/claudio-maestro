@@ -16,7 +16,7 @@ class GitMonitor:
     def __init__(self, db_path: Path, hub: EventHub) -> None:
         self._db_path = db_path
         self._hub = hub
-        self._last: dict[int, list[dict[str, Any]]] = {}
+        self._last: dict[int, tuple[list[dict[str, Any]], bool]] = {}
         self._locks: dict[int, asyncio.Lock] = {}
 
     def _project_path(self, project_id: int) -> Path | None:
@@ -35,13 +35,14 @@ class GitMonitor:
             if path is None:
                 self._last.pop(project_id, None)
                 return
-            repos = [repo.to_dict() for repo in await gitinfo.project_repos(path)]
-            if self._last.get(project_id) == repos:
+            found, limit_reached = await gitinfo.project_repos_scan(path)
+            repos = [repo.to_dict() for repo in found]
+            if self._last.get(project_id) == (repos, limit_reached):
                 return
-            self._last[project_id] = repos
+            self._last[project_id] = (repos, limit_reached)
             self._hub.publish(
                 {"session_id": None, "seq": 0, "type": "project.git",
-                 "data": {"project_id": project_id, "repos": repos}}
+                 "data": {"project_id": project_id, "repos": repos, "limit_reached": limit_reached}}
             )
 
     async def refresh_all(self) -> None:

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from git_helpers import git, make_repo
 from test_sessions_api import APP_ORIGIN, BACKEND_URL, WS_URL, receive, wait_state
 from vibing.agent.fake import FakeAgentFactory, text_turn
+from vibing import gitinfo
 from vibing.app import create_app
 from vibing.config import Settings
 
@@ -280,6 +281,23 @@ def test_project_git_event_after_turn(api, home, factory):
         (event,) = git_events(ws, 1)
         assert event["data"]["project_id"] == project["id"]
         assert event["data"]["repos"][0]["branch"] == "main"
+        assert event["data"]["limit_reached"] is False
+
+
+def test_project_git_event_limit_reached(factory, spawn, home, data_dir, monkeypatch):
+    monkeypatch.setattr(gitinfo, "REPO_MAX_COUNT", 2)
+    app = build(factory, spawn, home, data_dir)
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
+        root = home / "proj"
+        for index in range(3):
+            make_repo(root / f"r{index}")
+        project = add_project(api, root)
+        events: list[dict] = []
+        app.state.hub.publish = events.append  # type: ignore[method-assign]
+        api.portal.call(app.state.git_monitor.refresh_project, project["id"])
+        (event,) = [e for e in events if e["type"] == "project.git"]
+        assert event["data"]["limit_reached"] is True
+        assert len(event["data"]["repos"]) == 2
 
 
 def test_project_git_not_repeated(factory, spawn, home, data_dir):
