@@ -3,7 +3,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
 import { errorMessage, sendMessage, updateSession } from '../api/http'
-import { type DraftImage, MAX_IMAGES, MAX_TOTAL_BYTES, base64Of, filesFrom, imageProblem, readImage } from '../conversation/images'
+import { type DraftImage, IMAGE_TYPES, attachImages, base64Of, filesFrom, formatSize } from '../conversation/images'
+import { rememberSentImages } from '../conversation/localImages'
 import { setPendingDraft } from '../conversation/pendingDrafts'
 import { clearDraft, loadDraft, loadLastProject, saveDraft, saveLastProject, type ConversationDraft } from '../newConversationDraft'
 import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, SELECTABLE_MODES } from '../sessionOptions'
@@ -25,6 +26,10 @@ const draft = ref<ConversationDraft>(loadDraft())
 const images = ref<DraftImage[]>([])
 const error = ref<string | null>(null)
 const submitting = ref(false)
+// Once the session exists it is kept across attempts, so a retry does not create a second one.
+const createdId = ref<string | null>(null)
+const optionsApplied = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
 const fullscreen = ref(false)
 const promptEl = ref<HTMLTextAreaElement | null>(null)
 const dialogEl = ref<HTMLElement | null>(null)
@@ -67,14 +72,24 @@ const modeOptions: MenuOption[] = [
 const canSubmit = computed(() => !submitting.value && draft.value.projectId != null && (draft.value.prompt.trim() !== '' || images.value.length > 0))
 
 async function addFiles(files: File[]) {
-  let total = images.value.reduce((sum, i) => sum + i.size, 0)
-  for (const file of files) {
-    const problem = imageProblem(file)
-    if (problem) { error.value = problem; continue }
-    if (images.value.length >= MAX_IMAGES || total + file.size > MAX_TOTAL_BYTES) { error.value = 'Imagens demais para uma mensagem.'; break }
-    total += file.size
-    images.value.push(await readImage(file))
-  }
+  const { added, error: problem } = await attachImages(images.value, files)
+  error.value = problem
+  images.value.push(...added)
+}
+function removeImage(id: number) {
+  images.value = images.value.filter((i) => i.id !== id)
+}
+function onPick(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = '' // picking the same file again must fire `change` again
+  if (files.length) void addFiles(files)
+}
+// The overlay takes the drop, so a file dropped anywhere on it is not opened by the browser.
+function onDrop(event: DragEvent) {
+  event.preventDefault()
+  const files = filesFrom(event.dataTransfer)
+  if (files.length) void addFiles(files)
 }
 function onPaste(event: ClipboardEvent) {
   const files = filesFrom(event.clipboardData)
@@ -103,26 +118,43 @@ async function submit() {
   submitting.value = true
   error.value = null
   const { projectId, title, prompt, model, effort, permissionMode } = draft.value
-  let sessionId: string
-  try {
-    sessionId = (await sessions.create(projectId!)).session_id
-  } catch (e) {
-    error.value = errorMessage(e)
-    submitting.value = false
-    return
+  if (createdId.value === null) {
+    try {
+      createdId.value = (await sessions.create(projectId!)).session_id
+    } catch (e) {
+      error.value = errorMessage(e)
+      submitting.value = false
+      return
+    }
+    saveLastProject(projectId!)
   }
-  saveLastProject(projectId!)
-  try {
+  const sessionId = createdId.value
+  // Title and options come before the first message, which must run with them. If they fail the
+  // modal stays open with everything the user typed; the next attempt reuses the created session.
+  if (!optionsApplied.value) {
     const changes: SessionUpdate = {}
     if (title.trim()) changes.title = title.trim()
     if (model) changes.model = model
     if (effort) changes.effort = effort
     if (permissionMode) changes.permission_mode = permissionMode
-    if (Object.keys(changes).length) await updateSession(sessionId, changes)
-    await sendMessage(sessionId, prompt, images.value.map((i) => ({ media_type: i.mediaType, data: base64Of(i) })))
+    try {
+      if (Object.keys(changes).length) await updateSession(sessionId, changes)
+      optionsApplied.value = true
+    } catch (e) {
+      error.value = `A conversa foi criada, mas não foi possível aplicar o título e as opções. ${errorMessage(e)} Clique em Iniciar conversa para tentar de novo.`
+      submitting.value = false
+      return
+    }
+  }
+  const attached = images.value
+  // Registered before the request: the user item may arrive over the socket first.
+  const forget = attached.length ? rememberSentImages(sessionId, attached.map((i) => ({ url: i.url, mediaType: i.mediaType, size: i.size }))) : () => {}
+  try {
+    await sendMessage(sessionId, prompt, attached.map((i) => ({ media_type: i.mediaType, data: base64Of(i) })))
   } catch (e) {
-    // The session exists: open it with the prompt waiting in its composer.
-    setPendingDraft(sessionId, { text: prompt, error: errorMessage(e) })
+    // The session exists: open it with the prompt and the images waiting in its composer.
+    forget()
+    setPendingDraft(sessionId, { text: prompt, error: errorMessage(e), images: attached })
   }
   finish()
   await router.push({ name: 'session', params: { id: sessionId } })
@@ -147,7 +179,7 @@ function close() {
 // Tab stays inside the dialog: from the last control it wraps to the first, and back.
 function onKeydown(event: KeyboardEvent) {
   if (event.key !== 'Tab' || !dialogEl.value) return
-  const list = Array.from(dialogEl.value.querySelectorAll<HTMLElement>('button:not([disabled]):not([tabindex="-1"]), input, select, textarea, a[href]'))
+  const list = Array.from(dialogEl.value.querySelectorAll<HTMLElement>('button:not([disabled]):not([tabindex="-1"]), input:not([type=file]), select, textarea, a[href]'))
   const first = list[0]
   const last = list[list.length - 1]
   if (!first || !last) return
@@ -163,7 +195,7 @@ function onKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @keydown.esc.prevent="close" @keydown="onKeydown" @click.self="close">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @keydown.esc.prevent="close" @keydown="onKeydown" @click.self="close" @dragover.prevent @drop="onDrop">
     <div
       ref="dialogEl"
       data-test="new-conversation-modal"
@@ -187,7 +219,7 @@ function onKeydown(event: KeyboardEvent) {
         <div class="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-5 py-4">
           <label class="flex items-center gap-2 text-sm text-fg-muted">
             em
-            <select v-model.number="draft.projectId" data-test="nc-project" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg">
+            <select v-model.number="draft.projectId" data-test="nc-project" :disabled="createdId !== null" :title="createdId !== null ? 'A conversa já foi criada neste projeto.' : undefined" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg">
               <option v-for="p in available" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select>
           </label>
@@ -202,8 +234,24 @@ function onKeydown(event: KeyboardEvent) {
             @keydown="onPromptKey"
             @paste="onPaste"
           />
-          <p v-if="images.length" class="m-0 text-xs text-fg-muted">{{ images.length }} {{ images.length === 1 ? 'imagem anexada' : 'imagens anexadas' }}</p>
+          <div v-if="images.length" class="flex flex-wrap gap-2">
+            <div v-for="image in images" :key="image.id" data-test="attachment-draft" class="flex items-center gap-2.5 rounded-lg border border-line-strong bg-card p-1.5">
+              <img :src="image.url" alt="" class="size-11 rounded-md bg-line object-cover" />
+              <div class="flex min-w-0 flex-col">
+                <span class="max-w-40 truncate text-[13px] font-medium">{{ image.name }}</span>
+                <span class="text-xs text-fg-muted">{{ formatSize(image.size) }}</span>
+              </div>
+              <button type="button" :aria-label="`Remover imagem ${image.name}`" class="flex size-11 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-fg-muted hover:bg-elevated hover:text-fg" @click="removeImage(image.id)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+              </button>
+            </div>
+          </div>
           <div class="flex flex-wrap items-center gap-2">
+            <input ref="fileInput" type="file" data-test="nc-file-input" :accept="IMAGE_TYPES.join(',')" multiple tabindex="-1" class="hidden" @change="onPick" />
+            <button type="button" data-test="nc-attach" aria-label="Anexar imagem" title="Anexar imagem" class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-transparent px-2.5 text-sm text-fg-muted hover:text-fg" @click="fileInput?.click()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l9-9a3.3 3.3 0 0 1 4.7 4.7l-9 9a1.7 1.7 0 0 1-2.4-2.4l8.3-8.3" /></svg>
+              Imagem
+            </button>
             <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)" />
             <OptionMenu name="Raciocínio" :text="`Raciocínio ${draft.effort ? EFFORT_LABELS[draft.effort] : 'padrão'}`" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
             <OptionMenu name="Modo" :text="draft.permissionMode ? MODE_LABELS[draft.permissionMode] : 'Modo padrão'" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" @select="(v) => (draft.permissionMode = v === 'default-account' ? null : (v as PermissionMode))" />

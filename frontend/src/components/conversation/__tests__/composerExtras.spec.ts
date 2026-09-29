@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import MessageComposer from '../MessageComposer.vue'
 import { jsonResponse, routeFetch } from '../../../test/factories'
+import { setPendingDraft } from '../../../conversation/pendingDrafts'
 import { localImagesFor, claimLocalImages, forgetSessionImages, resetLocalImages } from '../../../conversation/localImages'
 
 enableAutoUnmount(afterEach)
@@ -109,6 +110,13 @@ describe('imagens no campo', () => {
     const { w, ta } = setup()
     await ta.trigger('paste', { clipboardData: { files: [], items: [] } })
     expect(w.find('[data-test="attachment-draft"]').exists()).toBe(false)
+  })
+
+  it('mostra as imagens de um primeiro prompt que não saiu', async () => {
+    setPendingDraft('s1', { text: 'oi', error: 'Sem conexão.', images: [{ id: 1, name: 'a.png', size: 3, mediaType: 'image/png', url: 'data:image/png;base64,QUFB' }] })
+    const { w } = setup()
+    expect(w.find('[data-test="attachment-draft"]').text()).toContain('a.png')
+    expect(w.find('[role="alert"]').text()).toContain('Sem conexão.')
   })
 
   it('arrastar imagem para o campo anexa', async () => {

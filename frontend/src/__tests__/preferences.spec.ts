@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatEditorCommand, parseEditorCommand } from '../preferences'
+import { editorCommandProblem, formatEditorCommand, parseEditorCommand } from '../preferences'
 
 describe('comando do editor', () => {
   it('separa por espaços', () => {
@@ -19,6 +19,17 @@ describe('comando do editor', () => {
 
   it('aspas sem fechar dão erro legível', () => {
     expect(() => parseEditorCommand('code "abc')).toThrow('Aspas sem fechar.')
+  })
+
+  it('argumento vazio é um problema com mensagem própria', () => {
+    expect(editorCommandProblem(parseEditorCommand('code ""'))).toContain('argumento vazio')
+    expect(editorCommandProblem(parseEditorCommand("''"))).toContain('argumento vazio')
+    expect(editorCommandProblem(parseEditorCommand('code "" --wait'))).toContain('argumento vazio')
+  })
+
+  it('comando válido ou vazio não tem problema', () => {
+    expect(editorCommandProblem([])).toBeNull()
+    expect(editorCommandProblem(['code', '--reuse-window'])).toBeNull()
   })
 
   it('formata de volta, com aspas só quando precisa', () => {

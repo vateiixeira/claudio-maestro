@@ -123,7 +123,7 @@ describe('modal de nova conversa', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
-    expect(takePendingDraft('nova')).toEqual({ text: 'oi', error: 'Sem conexão.' })
+    expect(takePendingDraft('nova')).toEqual({ text: 'oi', error: 'Sem conexão.', images: [] })
   })
 
   it('guarda o rascunho ao fechar e restaura ao abrir', async () => {

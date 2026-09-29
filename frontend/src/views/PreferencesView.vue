@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { errorMessage, getAppState, putAppState } from '../api/http'
-import { formatEditorCommand, parseEditorCommand } from '../preferences'
+import { editorCommandProblem, formatEditorCommand, parseEditorCommand } from '../preferences'
 import { loadEverything } from '../stores/realtime'
 import { DEFAULT_FINISHED_AFTER_DAYS, useLayoutStore } from '../stores/layout'
 
@@ -62,6 +62,11 @@ async function save(): Promise<void> {
     command = parseEditorCommand(editorText.value)
   } catch (e) {
     error.value = errorMessage(e)
+    return
+  }
+  const problem = editorCommandProblem(command)
+  if (problem) {
+    error.value = problem
     return
   }
   saving.value = true

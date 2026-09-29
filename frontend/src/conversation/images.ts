@@ -57,6 +57,37 @@ export async function readImage(file: File): Promise<DraftImage> {
   }
 }
 
+/**
+ * Checks format, size and count of `files` on top of the images already attached and reads the
+ * accepted ones. `error` gathers every reason a file was left out, or is null. Shared by the
+ * composer and the new conversation modal.
+ */
+export async function attachImages(current: DraftImage[], files: File[]): Promise<{ added: DraftImage[]; error: string | null }> {
+  const problems: string[] = []
+  const accepted: File[] = []
+  let total = current.reduce((sum, i) => sum + i.size, 0)
+  for (const file of files) {
+    const problem = imageProblem(file)
+    if (problem) problems.push(problem)
+    else if (current.length + accepted.length >= MAX_IMAGES) {
+      problems.push(`Até ${MAX_IMAGES} imagens por mensagem.`)
+      break
+    } else if (total + file.size > MAX_TOTAL_BYTES) {
+      problems.push('As imagens de uma mensagem somam no máximo 30 MB.')
+      break
+    } else {
+      accepted.push(file)
+      total += file.size
+    }
+  }
+  const added: DraftImage[] = []
+  for (const result of await Promise.allSettled(accepted.map(readImage))) {
+    if (result.status === 'fulfilled') added.push(result.value)
+    else problems.push('Não foi possível ler uma das imagens.')
+  }
+  return { added, error: problems.length ? problems.join(' ') : null }
+}
+
 /** Image files of a paste or drop. */
 export function filesFrom(transfer: { files?: ArrayLike<File> | null } | null | undefined): File[] {
   return Array.from(transfer?.files ?? [])

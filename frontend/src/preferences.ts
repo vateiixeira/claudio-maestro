@@ -27,6 +27,13 @@ export function parseEditorCommand(text: string): string[] {
   return parts
 }
 
+/** Why a parsed command cannot be saved, or null. The backend refuses empty arguments (`code ""`). */
+export function editorCommandProblem(command: string[]): string | null {
+  return command.some((part) => part === '')
+    ? 'O comando do editor tem um argumento vazio (aspas sem nada dentro). Remova as aspas vazias.'
+    : null
+}
+
 /** The inverse of `parseEditorCommand`: quotes only the parts that need it. */
 export function formatEditorCommand(command: string[]): string {
   return command

@@ -122,6 +122,16 @@ describe('tela de preferências', () => {
     expect(w.find('[role="alert"]').text()).toContain('Aspas sem fechar.')
   })
 
+  it.each(['code ""', "''", 'code "" --wait'])('argumento vazio (%s) mostra mensagem própria e não envia', async (value) => {
+    stub({})
+    const w = await mountView()
+    await editor(w).setValue(value)
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(saved).toEqual([])
+    expect(w.find('[role="alert"]').text()).toContain('argumento vazio')
+  })
+
   it('falha ao ler as preferências mostra o erro e permite tentar de novo', async () => {
     let ok = false
     vi.stubGlobal('fetch', routeFetch({

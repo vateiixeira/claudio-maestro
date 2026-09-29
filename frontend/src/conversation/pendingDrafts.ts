@@ -1,6 +1,10 @@
+import type { DraftImage } from './images'
+
 export interface PendingDraft {
   text: string
   error: string | null
+  /** Images that were attached to the first prompt. */
+  images?: DraftImage[]
 }
 
 // Text to put in a composer that opens next: a first prompt that could not be sent.

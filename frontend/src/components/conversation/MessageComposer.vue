@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { errorMessage, interruptSession, sendMessage } from '../../api/http'
 import { useDictation } from '../../conversation/dictation'
-import { type DraftImage, MAX_IMAGES, MAX_TOTAL_BYTES, base64Of, filesFrom, formatSize, imageProblem, readImage } from '../../conversation/images'
+import { type DraftImage, attachImages, base64Of, filesFrom, formatSize } from '../../conversation/images'
 import { takePendingDraft } from '../../conversation/pendingDrafts'
 import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
@@ -18,34 +18,14 @@ const interrupting = ref(false)
 const error = ref<string | null>(pendingDraft?.error ?? null)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 
-const images = ref<DraftImage[]>([])
+const images = ref<DraftImage[]>(pendingDraft?.images ?? [])
 const canSend = computed(() => !sending.value && !props.blockedReason && (text.value.trim() !== '' || images.value.length > 0))
 
 /** Attaches image files after checking format, size and count. Used by paste and drop. */
 async function addFiles(files: File[]) {
-  const problems: string[] = []
-  const accepted: File[] = []
-  let total = images.value.reduce((sum, i) => sum + i.size, 0)
-  for (const file of files) {
-    const problem = imageProblem(file)
-    if (problem) problems.push(problem)
-    else if (images.value.length + accepted.length >= MAX_IMAGES) {
-      problems.push(`Até ${MAX_IMAGES} imagens por mensagem.`)
-      break
-    } else if (total + file.size > MAX_TOTAL_BYTES) {
-      problems.push('As imagens de uma mensagem somam no máximo 30 MB.')
-      break
-    } else {
-      accepted.push(file)
-      total += file.size
-    }
-  }
-  error.value = problems.length ? problems.join(' ') : null
-  const read = await Promise.allSettled(accepted.map(readImage))
-  for (const result of read) {
-    if (result.status === 'fulfilled') images.value.push(result.value)
-    else error.value = 'Não foi possível ler uma das imagens.'
-  }
+  const { added, error: problem } = await attachImages(images.value, files)
+  error.value = problem
+  images.value.push(...added)
 }
 defineExpose({ addFiles })
 
