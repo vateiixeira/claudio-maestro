@@ -193,3 +193,29 @@ Escreva testes para estas, porque são as que mais devem aparecer no uso real:
 Ao fim de cada marco, rode os testes do backend e do frontend e a compilação do frontend, atualize o `ROADMAP.md` e me diga o que passou e o que falhou, com a saída dos comandos. Ao fim do marco 1 e do marco 5, faça também um teste real contra o SDK seguindo os cuidados acima.
 
 No relatório final, separe o que você verificou rodando do que só escreveu sem conseguir testar, e liste o que ficou pendente.
+
+## Fatos verificados para o marco 5 (2026-09-29, SDK 0.2.161, modelo haiku)
+
+Subagentes
+- Todo `Agent` roda em segundo plano: o resultado da ferramenta volta na hora ("Async agent launched successfully") e o `ResultMessage` do turno pode chegar antes de o subagente terminar.
+- As mensagens do subagente chegam em tempo real como `AssistantMessage`/`UserMessage` com `parent_tool_use_id` igual ao id do `tool_use` do Agent. Não há `StreamEvent` (deltas) do subagente. Com `forward_subagent_text=True` chegam também os `TextBlock`s dele.
+- Mensagens de sistema: `SystemMessage` `background_tasks_changed` (campo `tasks`); `TaskStartedMessage` (`task_id`, `tool_use_id`, `description`, `task_type`, e em `data` `subagent_type`, `is_backgrounded`, `prompt`); `TaskProgressMessage` a cada ferramenta (`description`, `usage{total_tokens, tool_uses, duration_ms}`, `last_tool_name`); `TaskUpdatedMessage` (`patch`, `status`); `TaskNotificationMessage` (`status`, `summary`, `output_file`, `tool_use_id`, `usage`).
+- Quando um subagente em segundo plano termina depois do fim do turno, o CLI emite um novo `init` e **abre um turno sozinho**, sem prompt do usuário, terminando com outro `ResultMessage`. A contagem de turnos pendentes não pode assumir um `ResultMessage` por envio nesse caso.
+- `list_subagents` e `get_subagent_messages` só enxergam o subagente depois do fim do turno.
+
+AskUserQuestion
+- Só existe com `can_use_tool`. `input`: `{"questions":[{"question","header","options":[{"label","description"}],"multiSelect"}]}`.
+- Resposta: `PermissionResultAllow(updated_input={**input, "answers": {"<texto da pergunta>": "<label escolhido>"}})`. A resposta chega ao modelo. Múltipla escolha não testada.
+
+Plano
+- `ExitPlanMode` passa por `can_use_tool` com `input={"plan": "<markdown>", "planFilePath": "~/.claude/plans/<slug>.md"}`. O arquivo do plano é gravado antes, fora da pasta do projeto, sem pedir permissão.
+- Negar com mensagem: o modelo reescreve o plano e chama `ExitPlanMode` de novo. Permitir: o modelo executa no mesmo turno e o modo passa sozinho de `plan` para `default` (aparece no próximo `init`).
+
+Troca ao vivo
+- `set_model` e `set_permission_mode` entre turnos aparecem no `init` seguinte. O turno seguinte começa com um `UserMessage` de conteúdo string `<local-command-stdout>Set model to ...</local-command-stdout>`, que não é fala do usuário.
+
+Lista de tarefas
+- Não existe `TodoWrite`. Com haiku: `TaskCreate {"subject","description"}` ("Task #1 created successfully"), `TaskUpdate {"taskId","status"}`, `TaskList`, `TaskGet`, `TaskStop`, como ferramentas diferidas (o modelo chama `ToolSearch` antes). Com sonnet 5.5 essas ferramentas não estavam disponíveis. O app não pode supor que existam.
+
+Outros
+- Mesmo com `setting_sources=[]`, a sessão carregou os conectores MCP do claude.ai da conta.
