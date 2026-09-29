@@ -5,7 +5,8 @@ import {
   type RouterHistory,
 } from 'vue-router'
 import ConversationView from '../views/ConversationView.vue'
-import AllSessionsView from '../views/AllSessionsView.vue'
+import ConversationsView from '../views/ConversationsView.vue'
+import InboxView from '../views/InboxView.vue'
 import NewProjectView from '../views/NewProjectView.vue'
 import PreferencesView from '../views/PreferencesView.vue'
 import ProjectView from '../views/ProjectView.vue'
@@ -23,10 +24,10 @@ export const routes: RouteRecordRaw[] = [
     props: (route) => ({ id: Number(route.params.id) }),
   },
   { path: '/preferencias', name: 'preferences', component: PreferencesView },
-  // Provisional: Tasks 8 and 10 replace these views.
-  { path: '/inbox', name: 'inbox', component: () => import('../views/HomeView.vue') },
+  { path: '/inbox', name: 'inbox', component: InboxView },
+  // Provisional: Task 10 replaces this view.
   { path: '/dashboard', name: 'dashboard', component: () => import('../views/HomeView.vue') },
-  { path: '/sessions', name: 'sessions', component: AllSessionsView },
+  { path: '/sessions', name: 'sessions', component: ConversationsView },
   {
     path: '/sessions/:id',
     name: 'session',
