@@ -219,3 +219,11 @@ Lista de tarefas
 
 Outros
 - Mesmo com `setting_sources=[]`, a sessão carregou os conectores MCP do claude.ai da conta.
+
+## Fatos verificados no teste real do marco 5 (2026-09-29)
+
+- Com `setting_sources` padrão e `defaultMode: "auto"` no `~/.claude/settings.json`, uma sessão aberta pelo SDK reporta `permissionMode: "default"` no `init`. O modo `auto` do CLI não é herdado pelo SDK.
+- `background_tasks_changed.tasks` é uma lista de `{task_id, task_type, description}`. Fica vazia quando a última tarefa termina, no mesmo instante de `task_updated` e `task_notification`.
+- A `description` do `task_progress` vem em inglês e resume a ação atual ("Reading dados.txt").
+- Itens do subagente e atualizações do cartão chegam com a sessão em `idle`, entre o fim do turno e o turno autônomo. O `init` do turno autônomo chega antes de o estado passar a `running`.
+- `get_server_info()["models"]` trouxe 12 modelos com `displayName` em inglês; o haiku vem com `supportedEffortLevels=None`, mas aceita `effort`.
