@@ -1,36 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, provide, reactive, ref, watch } from 'vue'
-import { SESSION_ID_KEY } from '../../stores/changesPanel'
+import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
-import { useEventSocket } from '../../api/socket'
+import { errorMessage } from '../../api/http'
 import SessionStateIcon from '../SessionStateIcon.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import { repoLabel, useGitStore } from '../../stores/git'
-import ConversationBlock from '../conversation/ConversationBlock.vue'
-import MessageComposer from '../conversation/MessageComposer.vue'
-import PermissionCard from '../conversation/PermissionCard.vue'
-import PlanCard from '../conversation/PlanCard.vue'
-import QuestionCard from '../conversation/QuestionCard.vue'
-import RailNode from '../conversation/RailNode.vue'
-import SubagentStrip from '../conversation/SubagentStrip.vue'
-import UserMessage from '../conversation/UserMessage.vue'
-import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, type SubagentFocus } from '../../conversation/subagents'
-import { buildTurns, groupNodeKind, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
-import ActionGroup from '../conversation/ActionGroup.vue'
-import SessionControls from './SessionControls.vue'
+import ConversationThread from '../conversation/ConversationThread.vue'
 import { deriveDisplay, displayStateLabels } from '../../sessionState'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import type { ConversationItem } from '../../types/conversation'
 
 const props = withDefaults(defineProps<{ id: string; visible?: boolean }>(), { visible: true })
 const emit = defineEmits<{ close: []; missing: [] }>()
 
 const conversations = useConversationStore()
 const projects = useProjectsStore()
-const socket = useEventSocket()
 const sessions = useSessionsStore()
 const listed = computed(() => sessions.find(props.id))
 const isFinished = computed(() => listed.value?.display_state === 'finished')
@@ -89,259 +74,15 @@ async function saveRename() {
   }
 }
 
-const loadError = ref<string | null>(null)
 const conv = computed(() => conversations.get(props.id))
 const project = computed(() => (conv.value?.projectId != null ? projects.byId(conv.value.projectId) : undefined))
-// The project's folder was deleted or moved: nothing that runs in it can work.
-const unavailableReason = computed(() =>
-  project.value && !project.value.available
-    ? 'A pasta do projeto não existe mais. Restaure a pasta para voltar a enviar mensagens.'
-    : null,
-)
 const git = useGitStore()
 const repos = computed(() => (project.value ? git.reposFor(project.value.id) : []))
 watch(() => project.value?.id, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
-
-// "Ver alterações" in an edit card opens the changes panel for this session.
-provide(SESSION_ID_KEY, computed(() => props.id))
-
-async function reload() {
-  try {
-    await conversations.load(props.id)
-    loadError.value = null
-    markSeenSoon()
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) {
-      emit('missing')
-      return
-    }
-    loadError.value = errorMessage(e)
-  }
-}
-
-// Tells the backend the user has looked at this session: after loading, when the
-// column gets focus and when new items arrive, but only while the column is visible.
-const SEEN_DELAY = 300
-let seenTimer: ReturnType<typeof setTimeout> | null = null
-const canSee = () => props.visible && document.visibilityState !== 'hidden'
-function cancelSeen() {
-  if (seenTimer) clearTimeout(seenTimer)
-  seenTimer = null
-}
-function markSeenSoon() {
-  if (!canSee()) return
-  cancelSeen()
-  const id = props.id
-  seenTimer = setTimeout(() => {
-    seenTimer = null
-    if (!canSee() || id !== props.id) return
-    markSessionSeen(id).catch(() => {
-      // Not worth bothering the user; the next focus or item tries again.
-    })
-  }, SEEN_DELAY)
-}
-watch(() => conv.value?.items.length, (length, before) => {
-  if (length !== undefined && before !== undefined && length > before) markSeenSoon()
-})
-// A turn can end by updating existing items only; its result still counts as news.
-watch(() => conv.value?.lastResult, (result, before) => {
-  if (result && result !== before) markSeenSoon()
-})
-watch(() => props.visible, (visible) => (visible ? markSeenSoon() : cancelSeen()))
-onBeforeUnmount(cancelSeen)
-
-let offs: Array<() => void> = []
-watch(
-  () => props.id,
-  (id) => {
-    offs.forEach((off) => off())
-    offs = [
-      socket.onSession(id, (event) => conversations.receive(event)),
-      // Every opening, the first included: events between the snapshot and it were lost.
-      socket.onOpen(() => void reload()),
-    ]
-    loadError.value = null
-    void reload()
-  },
-  { immediate: true },
-)
-onBeforeUnmount(() => offs.forEach((off) => off()))
-
-// Items with a parent tool are shown inside that tool's block (subagent card or indent).
-const tree = computed(() => {
-  const items = conv.value?.items ?? []
-  const toolIds = new Set(items.flatMap((i) => (i.type === 'tool' ? [i.tool_use_id] : [])))
-  const children = new Map<string, ConversationItem[]>()
-  const top: ConversationItem[] = []
-  for (const item of items) {
-    const parent = 'parent_tool_use_id' in item ? item.parent_tool_use_id : null
-    if (parent && toolIds.has(parent)) {
-      const list = children.get(parent) ?? []
-      list.push(item)
-      children.set(parent, list)
-    } else top.push(item)
-  }
-  return { top, childrenOf: (toolUseId: string) => children.get(toolUseId) ?? [] }
-})
-const rows = computed(() => tree.value.top)
-const sessionActive = computed(() => conv.value?.state === 'running' || conv.value?.state === 'awaiting_decision')
-const turns = computed(() => {
-  const list = buildTurns(rows.value)
-  // A pending decision or a connecting session is still inside the turn.
-  const running = sessionActive.value || conv.value?.state === 'connecting'
-  return list.map((turn, index) => {
-    const last = index === list.length - 1
-    const done = !last || !running
-    let summary = done ? summaryText(turnSummary(turn, tree.value.childrenOf)) : ''
-    if (done && last && resultParts.value.length) summary = [summary, ...resultParts.value].join(' · ')
-    return { turn, done, summary }
-  })
-})
-// Last finished reply of the assistant, for the polite live region.
-const announcement = computed(() => {
-  const items = conv.value?.items ?? []
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i]!
-    if (item.type !== 'text') continue
-    if (item.streaming || ('parent_tool_use_id' in item && item.parent_tool_use_id)) return ''
-    return `Resposta concluída: ${item.text.slice(0, 300)}`
-  }
-  return ''
-})
-const taskList = computed(() => conversations.taskList(props.id))
-
-// Strip above the message field: the current subagents while any of them runs.
-const subagentEntries = computed(() => stripSubagents(deriveSubagents(conv.value?.items ?? [], sessionActive.value)))
-// The card the user picked in the strip: opened, marked for a moment and scrolled to.
-const HIGHLIGHT_MS = 2000
-const subagentFocus = ref<SubagentFocus | null>(null)
-provide(SUBAGENT_FOCUS_KEY, subagentFocus)
-let focusTimer: ReturnType<typeof setTimeout> | null = null
-onBeforeUnmount(() => { if (focusTimer) clearTimeout(focusTimer) })
-async function goToSubagent(id: string) {
-  const items = conv.value?.items ?? []
-  // The subagent cards it sits inside must open too.
-  const byToolUse = new Map(items.flatMap((i) => (i.type === 'tool' ? [[i.tool_use_id, i] as const] : [])))
-  const path: string[] = [id]
-  for (let cur = items.find((i) => i.id === id); cur && 'parent_tool_use_id' in cur && cur.parent_tool_use_id; ) {
-    const parent = byToolUse.get(cur.parent_tool_use_id)
-    if (!parent || path.includes(parent.id)) break
-    path.push(parent.id)
-    cur = parent
-  }
-  if (focusTimer) clearTimeout(focusTimer)
-  subagentFocus.value = null
-  await nextTick()
-  subagentFocus.value = { id, path }
-  await nextTick()
-  const card = Array.from(scroller.value?.querySelectorAll<HTMLElement>('[data-subagent-id]') ?? []).find((el) => el.dataset.subagentId === id)
-  if (card) {
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    card.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
-    card.focus({ preventScroll: true })
-  }
-  focusTimer = setTimeout(() => { subagentFocus.value = null }, HIGHLIGHT_MS)
-}
-// Open/closed chosen by the user per action group (by id); unset follows the turn.
-const groupChoice = reactive(new Map<string, boolean>())
-
-// Duration, cost and error of the last turn, shown in its end line.
-const resultParts = computed(() => {
-  const result = conv.value?.lastResult
-  if (!result) return []
-  const parts: string[] = []
-  if (result.duration_ms != null) {
-    parts.push(`${(result.duration_ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`)
-  }
-  if (result.total_cost_usd != null) {
-    parts.push(`US$ ${result.total_cost_usd.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`)
-  }
-  if (result.is_error) parts.push('terminou com erro')
-  return parts
-})
-
-// Follows the end of the conversation only while the user is already there.
-const scroller = ref<HTMLElement | null>(null)
-const atBottom = ref(true)
-function onScroll() {
-  const el = scroller.value
-  if (!el) return
-  atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 48
-  scheduleTurnUpdate()
-}
-
-// Sticky turn bar: the current turn is the last one whose start is above the bar.
-const TURN_BAR_HEIGHT = 44
-const currentTurn = ref(0)
-const turnAnchors = () => Array.from(scroller.value?.querySelectorAll<HTMLElement>('[data-turn-anchor]') ?? [])
-let turnFrame: number | null = null
-let turnPending = false
-function scheduleTurnUpdate() {
-  if (turnPending) return
-  turnPending = true
-  turnFrame = requestAnimationFrame(() => {
-    turnPending = false
-    turnFrame = null
-    updateCurrentTurn()
-  })
-  if (!turnPending) turnFrame = null
-}
-onBeforeUnmount(() => { if (turnFrame !== null) cancelAnimationFrame(turnFrame) })
-function updateCurrentTurn() {
-  const el = scroller.value
-  if (!el) return
-  // At the end (same rule as the auto-scroll), the last turn is the current one.
-  if (atBottom.value) {
-    currentTurn.value = Math.max(turns.value.length - 1, 0)
-    return
-  }
-  const top = el.scrollTop + TURN_BAR_HEIGHT + 1
-  let index = 0
-  turnAnchors().forEach((anchor, i) => { if (anchor.offsetTop <= top) index = i })
-  currentTurn.value = index
-}
-watch(() => turns.value.length, async () => {
-  await nextTick()
-  updateCurrentTurn()
-})
-const currentTurnText = computed(() => turns.value[currentTurn.value]?.turn.user?.text || 'Início da sessão')
-function goToTurn(index: number) {
-  const anchor = turnAnchors()[index]
-  if (!anchor) return
-  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  anchor.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
-  anchor.focus({ preventScroll: true })
-  currentTurn.value = index
-}
-watch(
-  () => [conv.value?.seq, conv.value?.items.length, conv.value?.prompts.length],
-  async () => {
-    if (!atBottom.value) return
-    await nextTick()
-    const el = scroller.value
-    if (el) el.scrollTop = el.scrollHeight
-  },
-)
-
-// Images dropped anywhere on the column go to the message field.
-const composer = ref<InstanceType<typeof MessageComposer> | null>(null)
-function onDrop(event: DragEvent) {
-  const files = Array.from(event.dataTransfer?.files ?? [])
-  if (!files.length || !composer.value) return
-  event.preventDefault()
-  void composer.value.addFiles(files)
-}
-function onDragOver(event: DragEvent) {
-  if (event.dataTransfer?.types?.includes('Files')) event.preventDefault()
-}
-
-function resolvePrompt(promptId: string) {
-  conversations.resolvePrompt(props.id, promptId)
-}
 </script>
 
 <template>
-  <section :aria-label="conv ? `Sessão: ${conv.title}` : 'Sessão'" class="flex h-full min-w-0 flex-col" @focusin="markSeenSoon" @dragover="onDragOver" @drop="onDrop">
+  <section :aria-label="conv ? `Sessão: ${conv.title}` : 'Sessão'" class="flex h-full min-w-0 flex-col">
     <template v-if="conv">
       <header class="flex flex-col gap-2 border-b border-line px-4 pt-4 pb-3">
         <div class="flex items-center gap-2">
@@ -445,146 +186,9 @@ function resolvePrompt(promptId: string) {
           Esta sessão foi modificada fora do app no último minuto. Usar a mesma sessão no CLI e aqui ao mesmo tempo pode embaralhar o histórico.
         </p>
       </header>
-
-      <!-- Screen readers hear finished replies only, never each streamed character. -->
-      <div data-test="conversation-live" aria-live="polite" class="sr-only">{{ announcement }}</div>
-      <div ref="scroller" data-test="conversation-scroller" class="relative min-h-0 grow overflow-y-auto" @scroll="onScroll">
-        <div
-          v-if="turns.length >= 2"
-          data-test="turn-bar"
-          class="sticky top-0 z-10 flex h-11 items-center gap-2.5 border-b border-line bg-panel px-4"
-        >
-          <span class="cap shrink-0 text-fg-muted">Turno {{ currentTurn + 1 }} de {{ turns.length }}</span>
-          <span class="min-w-0 grow truncate text-[13px] text-fg">{{ currentTurnText }}</span>
-          <button
-            type="button"
-            aria-label="Turno anterior"
-            class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-transparent text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
-            :disabled="currentTurn === 0"
-            @click="goToTurn(currentTurn - 1)"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
-          </button>
-          <button
-            type="button"
-            aria-label="Próximo turno"
-            class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-transparent text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
-            :disabled="currentTurn >= turns.length - 1"
-            @click="goToTurn(currentTurn + 1)"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-          </button>
-        </div>
-        <div class="flex flex-col gap-[18px] px-4 pt-5 pb-6">
-          <p
-            v-if="conv.historyTruncated"
-            data-test="history-truncated"
-            class="m-0 rounded-md border border-line bg-card px-3 py-1.5 text-center text-xs text-fg-muted"
-          >Mostrando as mensagens mais recentes.</p>
-          <p v-if="rows.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
-            Nenhuma mensagem ainda. Escreva abaixo para começar.
-          </p>
-          <template v-for="({ turn, done, summary }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
-            <div v-if="index > 0" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-11 focus-visible:outline-2 focus-visible:outline-primary items-center gap-2.5">
-              <span class="cap text-fg-muted">Turno {{ turn.number }}</span>
-              <span aria-hidden="true" class="h-px grow bg-line" />
-            </div>
-            <div
-              data-test="turn"
-              :data-turn-anchor="index === 0 ? '' : undefined"
-              :tabindex="index === 0 ? -1 : undefined"
-              class="flex scroll-mt-11 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
-            >
-              <UserMessage v-if="turn.user" :item="turn.user" />
-              <div v-if="turn.entries.length" class="relative flex flex-col gap-3.5">
-                <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
-                <div v-for="entry in turn.entries" :key="entry.kind === 'group' ? `group-${entry.id}` : entry.item.id" class="relative flex items-start gap-3">
-                  <template v-if="entry.kind === 'group'">
-                    <RailNode :kind="groupNodeKind(entry.items, sessionActive)" />
-                    <ActionGroup
-                      class="min-w-0 grow"
-                      :items="entry.items"
-                      :open="groupChoice.get(entry.id) ?? !done"
-                      :session-active="sessionActive"
-                      :children-of="tree.childrenOf"
-                      :task-list="taskList"
-                      @toggle="groupChoice.set(entry.id, !(groupChoice.get(entry.id) ?? !done))"
-                    />
-                  </template>
-                  <template v-else>
-                    <RailNode :kind="nodeKind(entry.item, sessionActive)" />
-                    <div class="flex min-w-0 grow flex-col">
-                      <ConversationBlock
-                        :item="entry.item"
-                        :session-active="sessionActive"
-                        :children-of="tree.childrenOf"
-                        :task-list="taskList"
-                      />
-                    </div>
-                  </template>
-                </div>
-              </div>
-              <div
-                v-if="done"
-                data-test="turn-end"
-                class="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-line bg-panel px-3 py-2.5"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-primary" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-                <span class="cap text-primary-soft">Turno concluído</span>
-                <span class="font-mono text-[11px] text-fg-muted">{{ summary }}</span>
-              </div>
-            </div>
-          </template>
-          <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
-            <QuestionCard
-              v-if="prompt.kind === 'question'"
-              :session-id="conv.sessionId"
-              :prompt="prompt"
-              @resolved="resolvePrompt(prompt.prompt_id)"
-            />
-            <PlanCard
-              v-else-if="prompt.kind === 'plan'"
-              :session-id="conv.sessionId"
-              :prompt="prompt"
-              @resolved="resolvePrompt(prompt.prompt_id)"
-            />
-            <PermissionCard
-              v-else
-              :session-id="conv.sessionId"
-              :prompt="prompt"
-              @resolved="resolvePrompt(prompt.prompt_id)"
-            />
-          </template>
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-2.5 border-t border-line px-4 pt-3 pb-3.5">
-        <p
-          v-if="conv.state === 'error'"
-          data-test="session-error"
-          role="alert"
-          class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg"
-        >
-          {{ conv.error || 'A sessão parou com erro.' }} Você pode enviar de novo.
-        </p>
-        <p v-if="loadError" role="alert" class="m-0 text-sm text-secondary-soft">{{ loadError }}</p>
-        <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
-        <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason">
-          <template #controls><SessionControls :session-id="conv.sessionId" /></template>
-        </MessageComposer>
-      </div>
     </template>
-    <div v-else class="flex flex-col items-start gap-3 px-6 py-8">
-      <p v-if="loadError" role="alert" class="m-0 text-fg-muted">{{ loadError }}</p>
-      <div v-if="loadError" class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          data-test="retry-load"
-          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          @click="reload"
-        >
-          Tentar de novo
-        </button>
+    <ConversationThread :id="id" :visible="visible" @missing="emit('missing')">
+      <template #load-error-actions>
         <button
           type="button"
           aria-label="Fechar coluna"
@@ -593,8 +197,7 @@ function resolvePrompt(promptId: string) {
         >
           Fechar coluna
         </button>
-      </div>
-      <p v-else class="text-fg-muted">Carregando…</p>
-    </div>
+      </template>
+    </ConversationThread>
   </section>
 </template>

@@ -166,7 +166,7 @@ describe('coluna da sessão', () => {
     const afterLoad = seen()
     expect(afterLoad).toBe(1)
 
-    await w.find('section').trigger('focusin')
+    await w.find('[data-test="conversation-scroller"]').trigger('focusin')
     await vi.advanceTimersByTimeAsync(1000)
     expect(seen()).toBe(afterLoad + 1)
 
@@ -176,7 +176,7 @@ describe('coluna da sessão', () => {
 
     await w.setProps({ visible: false })
     fake.session.get('s1')!(makeEvent('item.upsert', text('m', 'outro'), 3))
-    await w.find('section').trigger('focusin')
+    await w.find('[data-test="conversation-scroller"]').trigger('focusin')
     await vi.advanceTimersByTimeAsync(1000)
     expect(seen()).toBe(afterLoad + 2)
     vi.useRealTimers()
@@ -351,7 +351,7 @@ describe('controles e imagens na coluna', () => {
     expect(w.find('button[aria-label="Modelo: Padrão"]').exists()).toBe(true)
     expect(w.find('button[aria-label="Modo: pede permissão"]').exists()).toBe(true)
     const file = new File([new Uint8Array([65, 65, 65])], 'col.png', { type: 'image/png' })
-    await w.find('section').trigger('drop', { dataTransfer: { files: [file], types: ['Files'] } })
+    await w.find('[data-test="conversation-scroller"]').trigger('drop', { dataTransfer: { files: [file], types: ['Files'] } })
     await flushPromises()
     await new Promise((r) => setTimeout(r, 0))
     await flushPromises()
