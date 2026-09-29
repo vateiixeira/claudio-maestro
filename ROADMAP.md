@@ -23,7 +23,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
-| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | A fazer | 0 de 12 |
+| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 14 de 14 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -199,18 +199,30 @@ Pedido pelo usuário em 2026-09-29, depois de analisar o Paperclip (orquestrador
 - Spec: `docs/superpowers/specs/2026-09-29-nova-navegacao-design.md`
 - Plano: `docs/superpowers/plans/2026-09-29-nova-navegacao.md`
 
-- [ ] Resumo da sessão com última ação, tipo do pedido pendente e data de finalização
-- [ ] Rotas de marcar várias conversas como lidas e de atividade por dia
-- [ ] Linha de conversa e regras de Inbox e grupos por data
-- [ ] Corpo da conversa extraído para um componente próprio
-- [ ] Painel Detalhes com propriedades, alterações e diff
-- [ ] Página única da conversa, com contexto no compositor só a partir de 80%
-- [ ] Menu lateral com entradas fixas, projetos e recentes, e contador no título da aba
-- [ ] Telas de Inbox e Conversas
-- [ ] Modal de nova conversa com rascunho e atalho `C`
-- [ ] Dashboard com conversas ativas, números e gráfico de 14 dias
-- [ ] Página do projeto com a linha de conversa
-- [ ] App abre na Inbox e o código de colunas sai
+- [x] Resumo da sessão com última ação, tipo do pedido pendente e data de finalização (2026-09-29)
+- [x] Rotas de marcar várias conversas como lidas e de atividade por dia (2026-09-29)
+- [x] Linha de conversa e regras de Inbox e grupos por data (2026-09-29)
+- [x] Corpo da conversa extraído para um componente próprio (2026-09-29)
+- [x] Painel Detalhes com propriedades, alterações e diff (2026-09-29)
+- [x] Página única da conversa, com contexto no compositor só a partir de 80% (2026-09-29)
+- [x] Menu lateral com entradas fixas, projetos e recentes, e contador no título da aba (2026-09-29)
+- [x] Telas de Inbox e Conversas (2026-09-29)
+- [x] Modal de nova conversa com rascunho e atalho `C` (2026-09-29)
+- [x] Dashboard com conversas ativas, números e gráfico de 14 dias (2026-09-29)
+- [x] Página do projeto com a linha de conversa (2026-09-29)
+- [x] App abre na Inbox e o código de colunas sai (2026-09-29)
+- [x] Indicador de conexão no rodapé do menu, como pede a spec (achado da revisão da tarefa 7) (2026-09-29)
+- [x] Correções da revisão do marco: conversa esquecida ao sair, cabeçalho e corpo reiniciados ao trocar de conversa, `finished_at` zerado ao reabrir por envio, estados de carregamento e erro, página sem rolagem extra, linhas alinhadas e foco visível (2026-09-29)
+
+Pendências registradas na revisão do marco, para um próximo marco:
+
+- Ações invisíveis da linha de conversa recebem toque em telas sensíveis ao toque (falta `pointer-events-none` enquanto escondidas)
+- Esc da gaveta de Detalhes em tela estreita também dispara junto com outros Esc (modal, renomear, menu ⋯, busca)
+- Sair de uma conversa antes do snapshot chegar pode devolvê-la ao store sem inscrição
+- Modal de nova conversa: botão de anexar imagem, soltar arquivo e miniaturas; título e opções perdidos se o PATCH falhar depois de criar
+- `POST /api/sessions/seen` grava uma sessão por vez no loop de eventos; usar uma transação
+- Atalho `C` abre o modal por cima de outros diálogos
+- Rota `PUT /api/state/layout` ficou sem cliente
 
 ## Marco 8. Agrupador de sessões
 
@@ -291,6 +303,8 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
 | Ações rápidas na visão geral | Decidido em 2026-09-29: "Permitir" e "Negar" nos cartões entram no marco 6 |
 | Tecnologia do ditado por voz | Decidido em 2026-09-29: reconhecimento do navegador (Chrome/Edge). O áudio vai ao serviço de reconhecimento do navegador |
+| Bloco "Agora" do Dashboard | Com muitas conversas em "Sua vez", os cartões empurram números e gráfico para baixo. A spec pede um cartão por conversa ativa. Decidir se limita (ex.: 6 e link para a Inbox) ou separa "Em execução" de "Sua vez" |
+| Recentes do menu | Vêm de `last_seen_at`, então "Marcar como lida" também coloca a conversa em Recentes. Decidir se Recentes deve contar só conversas abertas |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
 
 ## Decisões
