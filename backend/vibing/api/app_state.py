@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 
 from vibing.api.deps import DbDep
+from vibing.api.editor import valid_editor_command
 
 router = APIRouter(prefix="/api/state")
 
@@ -33,6 +34,14 @@ async def put_state(key: str, request: Request, conn: DbDep) -> Any:
         value = json.loads(body)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="JSON inválido.") from exc
+    if (
+        key == "preferences" and isinstance(value, dict) and "editor_command" in value
+        and not valid_editor_command(value["editor_command"])
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="O comando do editor precisa ser uma lista de textos não vazios.",
+        )
     conn.execute(
         "INSERT INTO app_state (key, value) VALUES (?, ?)"
         " ON CONFLICT(key) DO UPDATE SET value = excluded.value",

@@ -1,10 +1,12 @@
 """Folder browser limited to the user's home folder."""
 
+import asyncio
 import os
 import stat
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from vibing import gitinfo
 from vibing.security import PathNotAllowedError, resolve_within
 
 
@@ -13,6 +15,8 @@ class DirEntry:
     name: str
     path: str
     git: bool
+    # Filled by `with_branches` for folders with git.
+    branch: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,3 +89,14 @@ def list_dirs(path: str | None, home: Path) -> DirListing:
     entries.sort(key=lambda e: (e.name.casefold(), e.name))
     parent = None if folder == home else str(folder.parent)
     return DirListing(path=str(folder), parent=parent, entries=entries)
+
+
+async def with_branches(listing: DirListing) -> DirListing:
+    """Fill `branch` of every git entry, in parallel (each with the git time limit)."""
+    git_entries = [entry for entry in listing.entries if entry.git]
+    labels = await asyncio.gather(
+        *(gitinfo.branch_label(Path(entry.path)) for entry in git_entries)
+    )
+    branches = {entry.path: label for entry, label in zip(git_entries, labels, strict=True)}
+    entries = [replace(entry, branch=branches.get(entry.path)) for entry in listing.entries]
+    return replace(listing, entries=entries)

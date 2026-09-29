@@ -1,5 +1,7 @@
 """Folder browser route."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
@@ -13,6 +15,7 @@ class DirEntryOut(BaseModel):
     name: str
     path: str
     git: bool
+    branch: str | None = None
 
 
 class DirListingOut(BaseModel):
@@ -29,8 +32,9 @@ _STATUS = {
 
 
 @router.get("/dirs", response_model=DirListingOut)
-def list_dirs(settings: SettingsDep, path: str | None = None) -> fs.DirListing:
+async def list_dirs(settings: SettingsDep, path: str | None = None) -> fs.DirListing:
     try:
-        return fs.list_dirs(path, settings.home_dir)
+        listing = await asyncio.to_thread(fs.list_dirs, path, settings.home_dir)
     except fs.BrowseError as exc:
         raise HTTPException(status_code=_STATUS[type(exc)], detail=str(exc)) from exc
+    return await fs.with_branches(listing)

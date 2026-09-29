@@ -12,8 +12,10 @@ from vibing import history
 from vibing.agent.base import AgentFactory
 from vibing.agent.sdk_client import clean_inherited_env
 from vibing.api import router
+from vibing.api.editor import SpawnEditor, spawn_detached
 from vibing.config import Settings, load_settings
 from vibing.events import EventHub
+from vibing.gitmonitor import GitMonitor
 from vibing.security import HostOriginMiddleware
 from vibing.sessions import HistoryExists, RenameSession, SessionManager
 
@@ -35,6 +37,7 @@ def create_app(
     list_sessions: history.ListSessions | None = None,
     get_session_messages: history.GetSessionMessages | None = None,
     read_tool_results: history.ReadToolResults | None = None,
+    spawn_editor: SpawnEditor | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -48,6 +51,16 @@ def create_app(
         app.state.settings = settings or load_settings()
         db.init_db(app.state.settings.db_path)
         app.state.hub = EventHub()
+        app.state.spawn_editor = spawn_editor or spawn_detached
+        app.state.git_monitor = GitMonitor(app.state.settings.db_path, app.state.hub)
+        # One-off tasks (e.g. syncing a new project), cancelled on shutdown.
+        app.state.background = set()
+
+        def refresh_git(project_id: int) -> None:
+            task = asyncio.create_task(app.state.git_monitor.refresh_project(project_id))
+            app.state.background.add(task)
+            task.add_done_callback(app.state.background.discard)
+
         app.state.sessions = SessionManager(
             app.state.settings.db_path,
             app.state.hub.publish,
@@ -59,6 +72,7 @@ def create_app(
             list_sessions=list_sessions,
             get_session_messages=get_session_messages,
             read_tool_results=read_tool_results,
+            on_turn_end=refresh_git,
         )
         app.state.history = history.HistoryIndex(
             app.state.settings.db_path,
@@ -67,14 +81,17 @@ def create_app(
             on_projects_changed=lambda ids: publish_synced(app.state.hub, ids),
             is_in_use=app.state.sessions.in_use,
         )
-        # One-off tasks (e.g. syncing a new project), cancelled on shutdown.
-        app.state.background = set()
         tasks = [
             asyncio.create_task(
                 app.state.sessions.run_idle_sweep(app.state.settings.idle_sweep_interval_seconds)
             ),
             asyncio.create_task(
                 app.state.history.run_periodic(app.state.settings.history_sync_interval_seconds)
+            ),
+            asyncio.create_task(
+                app.state.git_monitor.run_periodic(
+                    app.state.settings.git_refresh_interval_seconds
+                )
             ),
         ]
         try:

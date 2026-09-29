@@ -22,6 +22,8 @@ class Settings:
     finished_after_days: float = 3
     # The history index is synced at startup and then every this many seconds.
     history_sync_interval_seconds: float = 60
+    # Git branches are refreshed this often while a WebSocket is connected.
+    git_refresh_interval_seconds: float = 30
 
     @property
     def db_path(self) -> Path:

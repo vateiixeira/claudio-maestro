@@ -290,8 +290,10 @@ class ActiveSession:
         history_limit: int = DEFAULT_HISTORY_LIMIT,
         read_tool_results: ReadToolResults | None = None,
         file_mtime: FileMtime | None = None,
+        on_turn_end: Callable[[int], None] | None = None,
     ) -> None:
         self.record = record
+        self._on_turn_end = on_turn_end
         self.builder = ConversationBuilder()
         self.pending_turns = 0
         self.prompts: dict[str, PendingPrompt] = {}
@@ -689,6 +691,8 @@ class ActiveSession:
                     self.emit_updated()
                     # The conversation is on disk after the first turn.
                     await self._apply_pending_rename()
+                    if self._on_turn_end is not None:
+                        self._on_turn_end(self.record.project_id)
                 self._refresh_state()
         except asyncio.CancelledError:
             raise
@@ -869,7 +873,10 @@ class SessionManager:
         history_limit: int = DEFAULT_HISTORY_LIMIT,
         read_tool_results: ReadToolResults | None = None,
         file_mtime: FileMtime | None = None,
+        on_turn_end: Callable[[int], None] | None = None,
     ) -> None:
+        # Called with the project id after each turn (e.g. to refresh git).
+        self._on_turn_end = on_turn_end
         self._db_path = db_path
         self._file_mtime = file_mtime or history_module.sdk_session_file_mtime
         # State of sessions forgotten from memory (seq, connected before, app
@@ -943,6 +950,7 @@ class SessionManager:
             history_limit=self._history_limit,
             read_tool_results=self._read_tool_results,
             file_mtime=self._file_mtime,
+            on_turn_end=self._on_turn_end,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:

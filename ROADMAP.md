@@ -20,7 +20,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Concluído | 13 de 13 |
 | 2. Multissessão | Colunas, estados e menu lateral | Concluído | 12 de 12 |
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
-| 4. Git | Branches em todas as telas e painel de alterações | Em andamento | 0 de 8 |
+| 4. Git | Branches em todas as telas e painel de alterações | Em andamento | 3 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Não iniciado | 0 de 13 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 22 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
@@ -105,10 +105,10 @@ Objetivo: continuar no app o trabalho que começou no CLI ou na extensão.
 
 Objetivo: saber em que branch cada repositório está e ver o que o Claude alterou.
 
-- [ ] Descoberta de repositórios na pasta do projeto, até 3 níveis
-- [ ] Leitura de branch, inclusive com HEAD solto
+- [x] Descoberta de repositórios na pasta do projeto, até 3 níveis (2026-09-29)
+- [x] Leitura de branch, inclusive com HEAD solto (2026-09-29)
 - [ ] Branches no menu lateral, no cabeçalho da sessão, na tela do projeto e no novo projeto
-- [ ] Atualização automática: ao fim de cada turno e a cada 30 segundos
+- [x] Atualização automática: ao fim de cada turno e a cada 30 segundos (2026-09-29)
 - [ ] Painel de alterações fechado por padrão, aberto ao clicar em uma edição
 - [ ] Diff da edição clicada e lista de arquivos modificados por repositório
 - [ ] Diff atual de um arquivo contra o último commit

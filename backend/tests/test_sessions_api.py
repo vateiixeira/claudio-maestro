@@ -324,7 +324,8 @@ def test_websocket_disconnect_does_not_affect_others(api, home, factory):
             assert time.monotonic() < deadline, "a conexão que saiu continua registrada"
             time.sleep(0.005)
         api.post(f"/api/sessions/{sid}/messages", json={"text": "dois"})
-        second = receive_until_idle(staying, sid)
+        # Project-wide events (e.g. project.git after a turn) have no session.
+        second = [e for e in receive_until_idle(staying, sid) if e["session_id"] == sid]
 
     assert second[0]["seq"] == first[-1]["seq"] + 1
     assert second[0]["data"]["text"] == "dois"
