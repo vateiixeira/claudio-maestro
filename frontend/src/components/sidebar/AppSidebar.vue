@@ -7,6 +7,7 @@ import DisplayStateIcon from '../DisplayStateIcon.vue'
 import SessionSearch from './SessionSearch.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import { useEventSocket } from '../../api/socket'
+import { recentIds } from '../../recentConversations'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
@@ -23,10 +24,11 @@ const waitingCount = computed(() => sessions.all.filter((s) => s.display_state =
 function waitingIn(projectId: number): number {
   return sessions.forProject(projectId).filter((s) => s.display_state === 'waiting').length
 }
+// Conversations the user opened (not just marked as read), most recently opened first.
 const recent = computed(() =>
-  sessions.all
-    .filter((s) => s.last_seen_at != null)
-    .sort((a, b) => (b.last_seen_at ?? 0) - (a.last_seen_at ?? 0))
+  recentIds.value
+    .map((id) => sessions.find(id))
+    .filter((s): s is NonNullable<typeof s> => s != null)
     .slice(0, 5),
 )
 // The project being looked at, directly or through one of its conversations.

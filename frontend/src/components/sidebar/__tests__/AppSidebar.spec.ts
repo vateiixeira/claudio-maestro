@@ -16,6 +16,7 @@ import { useGitStore } from '../../../stores/git'
 import { useNewConversationStore } from '../../../stores/newConversation'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
+import { noteOpened, recentIds } from '../../../recentConversations'
 import { makeGitRepo, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
@@ -23,6 +24,8 @@ let pinia: Pinia
 beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
+  localStorage.clear()
+  recentIds.value = []
   socketStatus.current = ref<ConnectionStatus>('connected')
 })
 
@@ -64,23 +67,58 @@ describe('menu lateral', () => {
     expect(mountSidebar().find('[data-test="session"]').exists()).toBe(false)
   })
 
-  it('mostra as 5 conversas abertas mais recentemente', () => {
+  it('mostra em Recentes as 5 últimas conversas abertas, na ordem em que foram abertas', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     useSessionsStore(pinia).setForProject(1, Array.from({ length: 7 }, (_, i) =>
-      makeSession({ session_id: `s${i}`, title: `T${i}`, last_seen_at: 1_790_000_000 + i }),
-    ).concat([makeSession({ session_id: 'nunca', last_seen_at: null })]))
+      makeSession({ session_id: `s${i}`, title: `T${i}` }),
+    ))
+    for (let i = 0; i < 7; i++) noteOpened(`s${i}`)
 
     const recent = mountSidebar().findAll('[data-test="recent"]')
     expect(recent.map((r) => r.text())).toEqual(['T6', 'T5', 'T4', 'T3', 'T2'])
     expect(recent[0]!.attributes('href')).toBe('/sessions/s6')
   })
 
+  it('ignora ids abertas que não existem mais e não completa com outras', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', title: 'A' }), makeSession({ session_id: 'b', title: 'B' })])
+    noteOpened('a')
+    noteOpened('sumiu')
+    noteOpened('b')
+
+    expect(mountSidebar().findAll('[data-test="recent"]').map((r) => r.text())).toEqual(['B', 'A'])
+  })
+
+  it('conversa marcada como lida, mas nunca aberta, não aparece em Recentes', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'lida', title: 'Lida', last_seen_at: 1_790_000_100 }),
+      makeSession({ session_id: 'aberta', title: 'Aberta' }),
+    ])
+    noteOpened('aberta')
+
+    expect(mountSidebar().findAll('[data-test="recent"]').map((r) => r.text())).toEqual(['Aberta'])
+  })
+
+  it('atualiza na hora quando uma conversa é aberta', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', title: 'A' })])
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="recent"]').exists()).toBe(false)
+
+    noteOpened('a')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('[data-test="recent"]').map((r) => r.text())).toEqual(['A'])
+  })
+
   it('marca com aria-current só o link da conversa aberta em Recentes', async () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     useSessionsStore(pinia).setForProject(1, [
-      makeSession({ session_id: 's1', title: 'A', last_seen_at: 1_790_000_002 }),
-      makeSession({ session_id: 's2', title: 'B', last_seen_at: 1_790_000_001 }),
+      makeSession({ session_id: 's1', title: 'A' }),
+      makeSession({ session_id: 's2', title: 'B' }),
     ])
+    noteOpened('s2')
+    noteOpened('s1')
     const router = createAppRouter(createMemoryHistory())
     await router.push('/sessions/s2')
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia, router] } })

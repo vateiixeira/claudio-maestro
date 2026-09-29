@@ -68,6 +68,21 @@ describe('página da conversa', () => {
     expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(true)
   })
 
+  it('abrir a página grava a conversa entre as abertas recentemente', async () => {
+    await mountAt('/sessions/s1')
+    expect(JSON.parse(localStorage.getItem('vibing:recent-conversations')!)).toEqual(['s1'])
+  })
+
+  it('trocar de conversa grava a nova id', async () => {
+    const { wrapper } = await mountAt('/sessions/s1', {
+      'GET /api/sessions/s2': () => jsonResponse(makeSnapshot({ session_id: 's2', title: 'Outra' })),
+      'POST /api/sessions/s2/seen': () => jsonResponse(makeSession({ session_id: 's2' })),
+    })
+    await wrapper.setProps({ id: 's2' })
+    await flushPromises()
+    expect(JSON.parse(localStorage.getItem('vibing:recent-conversations')!)).toEqual(['s2', 's1'])
+  })
+
   it('esconde o painel e lembra a escolha', async () => {
     const { wrapper } = await mountAt('/sessions/s1')
     await wrapper.find('[data-test="toggle-details"]').trigger('click')

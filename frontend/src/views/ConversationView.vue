@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import ConversationHeader from '../components/conversation/ConversationHeader.vue'
 import ConversationThread from '../components/conversation/ConversationThread.vue'
 import DetailsPanel from '../components/details/DetailsPanel.vue'
+import { noteOpened } from '../recentConversations'
 import { readDetailsOpen, writeDetailsOpen } from '../detailsPanelPref'
 import { useMediaQuery } from '../useMediaQuery'
 import { useChangesPanelStore } from '../stores/changesPanel'
@@ -23,6 +24,9 @@ const project = computed(() => {
   const id = sessions.find(props.id)?.project_id ?? conversations.get(props.id)?.projectId
   return id != null ? projects.byId(id) : undefined
 })
+
+// The sidebar's "Recentes" lists conversations that were opened, not just marked as read.
+watch(() => props.id, (id) => { noteOpened(id) }, { immediate: true })
 
 const missing = ref(false)
 watch(() => props.id, () => { missing.value = false })
