@@ -2,7 +2,7 @@
 
 Acompanha a construção completa do app. É a fonte única do que está feito e do que falta.
 
-Última atualização: 2026-09-28
+Última atualização: 2026-09-29
 
 ## Como usar
 
@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 28 de 40 |
+| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 28 de 41 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -176,6 +176,7 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [ ] Faixa de subagentes junto ao campo de mensagem: aparece enquanto houver subagente rodando (inclusive em segundo plano) e some quando todos terminam. Lista cada um com tipo, descrição, estado (rodando, concluído, com erro, parado) e última ação; o clique leva ao cartão na conversa. Com mais de 3, mostra um resumo ("3 rodando, 1 concluído") que abre a lista ao clicar
 - [ ] Porcentagem de contexto usada na coluna da sessão, junto aos controles: atualizada ao fim de cada turno com `get_context_usage()` do SDK; sessões sem cliente conectado usam o `usage` da última resposta do histórico
 - [ ] Lista de modelos guardada no SQLite, usada ao reiniciar o backend e atualizada até 3 vezes por dia
+- [ ] "Permitir" e "Negar" direto nos cartões "Aguardando você" da tela "Todas as sessões", como no desenho aprovado
 - [x] Ações seguidas do chat viram um grupo, aberto enquanto o turno roda e recolhido depois (2026-09-29)
 - [x] Saídas longas no chat limitadas a 8 linhas e barra fixa do turno com navegação entre turnos (2026-09-29)
 
@@ -256,7 +257,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Mesma sessão aberta no app e no CLI ao mesmo tempo | Risco de embaralhar o histórico. O app só avisa |
 | O que o SDK entrega sobre subagentes | Verificado em 2026-09-29; ver "Fatos verificados para o marco 5" no prompt de construção |
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
-| Ações rápidas na visão geral | O design aprovado mostra "Permitir" e "Negar" direto no cartão "Aguardando você" e a atividade atual de cada sessão. Não está em nenhum marco. Decidir se entra |
+| Ações rápidas na visão geral | Decidido em 2026-09-29: "Permitir" e "Negar" nos cartões entram no marco 6 |
 | Tecnologia do ditado por voz | Decidido em 2026-09-29: reconhecimento do navegador (Chrome/Edge). O áudio vai ao serviço de reconhecimento do navegador |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
 
@@ -284,4 +285,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | Sessões do CLI atualizadas em tempo real entram no marco 5 |
 | 2026-09-29 | Modos `auto` ("Automático") e `dontAsk` ("Só o pré-aprovado") aceitos sem confirmação; só `bypassPermissions` pede confirmação |
 | 2026-09-29 | Sessões do app herdam o modo padrão do CLI do usuário |
+| 2026-09-29 | "Permitir" e "Negar" nos cartões de "Todas as sessões" entram no marco 6 |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
