@@ -7,7 +7,8 @@ import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
 import type { SessionState } from '../../types/api'
 
-const props = defineProps<{ sessionId: string; state: SessionState }>()
+// `blockedReason`: why sending is not possible now (e.g. the project folder is gone).
+const props = defineProps<{ sessionId: string; state: SessionState; blockedReason?: string | null }>()
 
 const text = ref('')
 const sending = ref(false)
@@ -16,7 +17,7 @@ const error = ref<string | null>(null)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 
 const images = ref<DraftImage[]>([])
-const canSend = computed(() => !sending.value && (text.value.trim() !== '' || images.value.length > 0))
+const canSend = computed(() => !sending.value && !props.blockedReason && (text.value.trim() !== '' || images.value.length > 0))
 
 /** Attaches image files after checking format, size and count. Used by paste and drop. */
 async function addFiles(files: File[]) {
@@ -162,6 +163,7 @@ async function interrupt() {
 
 <template>
   <div class="flex flex-col gap-2.5" @dragover.prevent @drop="onDrop">
+    <p v-if="blockedReason" :id="`blocked-${sessionId}`" class="m-0 text-sm text-fg-muted">{{ blockedReason }}</p>
     <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <p v-else-if="dictation.error.value" role="alert" class="m-0 text-sm text-diff-del-fg">{{ dictation.error.value }}</p>
     <div v-if="images.length" class="flex flex-wrap gap-2">
@@ -228,6 +230,8 @@ async function interrupt() {
         data-test="send"
         class="h-11 cursor-pointer rounded-lg border-none bg-primary px-4 text-sm font-semibold text-primary-fg disabled:cursor-default disabled:opacity-50"
         :disabled="!canSend"
+        :title="blockedReason || undefined"
+        :aria-describedby="blockedReason ? `blocked-${sessionId}` : undefined"
         @click="send"
       >
         Enviar

@@ -23,6 +23,7 @@ vi.mock('../../api/socket', () => ({
       }
     },
     onReconnect: (h: () => void) => { fake.reconnect.add(h); return () => fake.reconnect.delete(h) },
+    onOpen: (h: () => void) => { fake.reconnect.add(h); return () => fake.reconnect.delete(h) },
   }),
 }))
 

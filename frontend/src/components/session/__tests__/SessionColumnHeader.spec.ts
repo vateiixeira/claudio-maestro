@@ -8,7 +8,7 @@ import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 
 vi.mock('../../../api/socket', () => ({
-  useEventSocket: () => ({ onSession: () => () => {}, onReconnect: () => () => {} }),
+  useEventSocket: () => ({ onSession: () => () => {}, onReconnect: () => () => {}, onOpen: () => () => {} }),
 }))
 
 import SessionColumn from '../SessionColumn.vue'

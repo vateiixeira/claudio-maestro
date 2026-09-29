@@ -1,5 +1,6 @@
 import type { EventSocket } from '../api/socket'
 import { useGitStore } from './git'
+import { useLayoutStore } from './layout'
 import { useModelsStore } from './models'
 import { useProjectsStore } from './projects'
 import { useSessionsStore } from './sessions'
@@ -38,6 +39,9 @@ export function bindRealtime(socket: EventSocket): () => void {
       useModelsStore().apply((event.data as { models?: unknown } | null)?.models)
     }),
     socket.onReconnect(() => {
+      // Without the saved layout the tab never saves; read it again now.
+      const layout = useLayoutStore()
+      if (!layout.loadedFromServer) void layout.restore()
       loadEverything().catch(() => {
         // The projects store keeps the error; the sidebar shows it.
       })

@@ -29,17 +29,22 @@ const crumbs = computed(() => {
   ]
 })
 
+// Each load takes a number; only the newest one may show its answer.
+let generation = 0
+
 async function load(path?: string): Promise<void> {
+  const mine = ++generation
   loading.value = true
   error.value = null
   try {
     const result = await listDirs(path)
+    if (mine !== generation) return
     if (path === undefined) home.value = result.path
     listing.value = result
   } catch (e) {
-    error.value = errorMessage(e)
+    if (mine === generation) error.value = errorMessage(e)
   } finally {
-    loading.value = false
+    if (mine === generation) loading.value = false
   }
 }
 

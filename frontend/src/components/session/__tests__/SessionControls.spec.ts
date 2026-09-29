@@ -141,7 +141,7 @@ describe('seletores da sessão', () => {
     expect(w.text()).not.toContain('vale a partir do próximo turno')
     useConversationStore(pinia).receive(makeEvent('session.options', {
       model: 'default', model_resolved: null, effort: 'high', permission_mode: 'plan', effort_pending: true,
-    }, 5))
+    }, 2))
     await flushPromises()
     expect(button(w, 'Modelo').text()).toBe('Padrão')
     expect(button(w, 'Raciocínio').text()).toBe('Raciocínio alto')
@@ -235,7 +235,7 @@ describe('resposta do PATCH', () => {
     await flushPromises()
     useConversationStore(pinia).receive(makeEvent('session.options', {
       model: 'haiku', model_resolved: null, effort: 'medium', permission_mode: 'plan', effort_pending: false,
-    }, 5))
+    }, 2))
     release(jsonResponse({ ...makeSession(), model: 'haiku', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false, model_resolved: null }))
     await flushPromises()
     expect(button(w, 'Modo').text()).toBe('Planejamento')

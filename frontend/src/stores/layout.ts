@@ -42,6 +42,8 @@ export const useLayoutStore = defineStore('layout', () => {
   const columns = ref<string[]>([])
   const widths = ref<Record<string, number>>({})
   const restored = ref(false)
+  // True once the saved layout was actually read; a failed read is tried again on reconnect.
+  const loadedFromServer = ref(false)
   // `preferences.finished_after_days`: days without activity before a session is finished.
   const finishedAfterDays = ref(DEFAULT_FINISHED_AFTER_DAYS)
   // Saving starts only after the saved layout was read, so a failed read never
@@ -82,6 +84,7 @@ export const useLayoutStore = defineStore('layout', () => {
       const days = (state?.preferences as Record<string, unknown> | undefined)?.finished_after_days
       if (typeof days === 'number' && Number.isFinite(days) && days > 0) finishedAfterDays.value = days
       canSave = true
+      loadedFromServer.value = true
       if (saved) {
         saved.columns = saved.columns.filter((c) => !closedMeanwhile.has(c))
         const openedMeanwhile = columns.value.filter((c) => !saved.columns.includes(c))
@@ -128,5 +131,5 @@ export const useLayoutStore = defineStore('layout', () => {
 
   watch([columns, widths], scheduleSave, { deep: true })
 
-  return { columns, widths, restored, finishedAfterDays, widthOf, isOpen, open, close, setWidth, restore }
+  return { columns, widths, restored, loadedFromServer, finishedAfterDays, widthOf, isOpen, open, close, setWidth, restore }
 })

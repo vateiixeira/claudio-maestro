@@ -9,7 +9,7 @@ import { useSessionsStore } from '../../../stores/sessions'
 import { useGitStore } from '../../../stores/git'
 
 vi.mock('../../../api/socket', () => ({
-  useEventSocket: () => ({ onSession: () => () => {}, onReconnect: () => () => {} }),
+  useEventSocket: () => ({ onSession: () => () => {}, onReconnect: () => () => {}, onOpen: () => () => {} }),
 }))
 
 import AppSidebar from '../../sidebar/AppSidebar.vue'

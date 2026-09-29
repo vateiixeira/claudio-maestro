@@ -64,6 +64,7 @@ export class EventSocket {
   private readonly bySession = new Map<string, Set<EventHandler>>()
   private readonly anyHandlers = new Set<EventHandler>()
   private readonly reconnectHandlers = new Set<() => void>()
+  private readonly openHandlers = new Set<() => void>()
 
   constructor(options: EventSocketOptions) {
     this.url = options.url
@@ -110,6 +111,15 @@ export class EventSocket {
     return () => this.reconnectHandlers.delete(handler)
   }
 
+  /**
+   * Called on every opening, the first one included. Events sent between a snapshot
+   * and the opening are lost, so what was loaded before it should be reloaded.
+   */
+  onOpen(handler: () => void): Unsubscribe {
+    this.openHandlers.add(handler)
+    return () => this.openHandlers.delete(handler)
+  }
+
   private open(): void {
     this.status.value = this.wasDropped ? 'reconnecting' : 'connecting'
     const socket = this.createSocket(this.url)
@@ -119,6 +129,7 @@ export class EventSocket {
       if (socket !== this.socket) return
       this.delay = this.initialDelay
       this.status.value = 'connected'
+      this.openHandlers.forEach((handler) => handler())
       if (this.wasDropped) this.reconnectHandlers.forEach((handler) => handler())
     }
 

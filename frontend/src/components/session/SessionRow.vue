@@ -82,6 +82,7 @@ async function toggle(): Promise<void> {
         <span v-if="showProject && project" class="flex items-center gap-1.5 text-xs text-fg-muted">
           <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
           <span class="truncate">{{ project.name }}</span>
+          <span v-if="!project.available" data-test="project-unavailable" class="shrink-0">pasta indisponível</span>
         </span>
         <span data-test="open-session" class="truncate" :class="session.unread ? 'font-semibold' : 'font-medium'">
           {{ session.title }}

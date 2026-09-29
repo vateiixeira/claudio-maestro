@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 0 de 30 |
+| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 8 de 30 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -139,12 +139,12 @@ Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 Objetivo: o app aguenta o uso diário sem surpresas.
 
 - [ ] Sessão nova do app começa no `defaultMode` do `~/.claude/settings.json` do usuário (o SDK não herda o `auto`)
-- [ ] Mensagem enviada durante um turno ou com permissão pendente não se perde
-- [ ] Recarregar a página no meio de uma resposta preserva texto e permissão pendente
-- [ ] Salto de `seq` nos eventos de uma conversa recarrega o retrato (evento perdido entre retrato e abertura do WebSocket)
-- [ ] Navegador de pastas ignora respostas fora de ordem
-- [ ] Layout restaurado de novo na reconexão quando a primeira leitura falhou
-- [ ] Sessão criada em uma aba aparece nas outras e não some por listagem em andamento
+- [x] Mensagem enviada durante um turno ou com permissão pendente não se perde (2026-09-29)
+- [x] Recarregar a página no meio de uma resposta preserva texto e permissão pendente (2026-09-29)
+- [x] Salto de `seq` nos eventos de uma conversa recarrega o retrato (evento perdido entre retrato e abertura do WebSocket) (2026-09-29)
+- [x] Navegador de pastas ignora respostas fora de ordem (2026-09-29)
+- [x] Layout restaurado de novo na reconexão quando a primeira leitura falhou (2026-09-29)
+- [x] Sessão criada em uma aba aparece nas outras e não some por listagem em andamento (2026-09-29)
 - [ ] Remover projeto espera conexões em andamento das sessões dele
 - [ ] Fechamentos de cliente disparados por cancelamento durante a conexão passam pelo mesmo controle de descarte
 - [ ] Aviso de atividade externa sem falso positivo depois de reinício do backend ou de falha do processo
@@ -161,10 +161,10 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [ ] Espera por vaga de processo git não conta no tempo limite de 5 s; diff de arquivo que some durante a leitura dá erro legível
 - [ ] Observador do CLI: coluna recarrega em até 1 s (hoje 2 s) e leitura só da sessão alterada, sem listar a pasta inteira
 - [ ] Interromper também para subagentes em segundo plano
-- [ ] Duas abas abertas ficam consistentes; resposta duplicada é recusada sem erro
+- [x] Duas abas abertas ficam consistentes; resposta duplicada é recusada sem erro (2026-09-29)
 - [ ] Processo do Claude morto, CLI ausente e login expirado mostram erro legível
 - [ ] Limite da assinatura atingido mostra o horário de liberação
-- [ ] Projeto com pasta apagada aparece como indisponível
+- [x] Projeto com pasta apagada aparece como indisponível (2026-09-29)
 - [ ] Caminhos com espaços, acentos e links simbólicos para fora da pasta pessoal
 - [ ] Revisão de acessibilidade: teclado, contraste e foco
 - [ ] Fontes servidas pelo próprio app; hoje vêm do Google Fonts e dependem de internet

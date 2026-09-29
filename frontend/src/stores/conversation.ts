@@ -225,6 +225,11 @@ export const useConversationStore = defineStore('conversation', () => {
       if (event.seq > conv.seq) load(event.session_id).catch(() => {})
       return
     }
+    if (event.seq > conv.seq + 1) {
+      // An event was lost (e.g. between the snapshot and the socket opening).
+      load(event.session_id).catch(() => {})
+      return
+    }
     if (applyConversationEvent(conv, event) && event.type === 'item.upsert') {
       const item = event.data as ConversationItem
       if (item.type === 'user') claimLocalImages(event.session_id, item)

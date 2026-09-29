@@ -18,6 +18,7 @@ vi.mock('../../../api/socket', () => ({
       return () => set.delete(h)
     },
     onReconnect: () => () => {},
+    onOpen: () => () => {},
   }),
 }))
 
@@ -156,7 +157,7 @@ describe('painel de alterações', () => {
     await column(w, 's1').find('[data-test="view-changes"]').trigger('click')
     await flushPromises()
     const before = calls.filter((c) => c === 'changes s1').length
-    fake.session.get('s1')?.forEach((h) => h(makeEvent('turn.result', { duration_ms: 10, total_cost_usd: 0, is_error: false }, 5)))
+    fake.session.get('s1')?.forEach((h) => h(makeEvent('turn.result', { duration_ms: 10, total_cost_usd: 0, is_error: false }, 1)))
     await flushPromises()
     expect(calls.filter((c) => c === 'changes s1').length).toBe(before + 1)
   })
@@ -234,7 +235,7 @@ describe('painel de alterações: ordem e cancelamento', () => {
   it('lista fora de ordem: vale a mais nova', async () => {
     const w = await openPanel()
     const first = take('/changes')
-    fake.session.get('s1')?.forEach((h) => h(makeEvent('turn.result', { is_error: false }, 5)))
+    fake.session.get('s1')?.forEach((h) => h(makeEvent('turn.result', { is_error: false }, 1)))
     await flushPromises()
     const second = take('/changes')
     expect(first.signal?.aborted).toBe(true)
@@ -258,7 +259,7 @@ describe('painel de alterações: ordem e cancelamento', () => {
     await panel(w).findAll('[data-test="changed-file"]')[1]!.trigger('click')
     take('c%26d.py').resolve(diffOf('v1'))
     await flushPromises()
-    fake.session.get('s1')?.forEach((h) => h(makeEvent('turn.result', { is_error: false }, 5)))
+    fake.session.get('s1')?.forEach((h) => h(makeEvent('turn.result', { is_error: false }, 1)))
     await flushPromises()
     take('/changes').resolve(jsonResponse(JSON.parse(JSON.stringify(twoFiles))))
     await flushPromises()

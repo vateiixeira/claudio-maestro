@@ -43,8 +43,20 @@ export const useSessionsStore = defineStore('sessions', () => {
     return incoming
   }
 
+  /**
+   * The listing, plus sessions of the project it could not know yet: created or
+   * announced by an event after the request (`sentAt`) left.
+   */
+  function merged(projectId: number, sessions: Session[], sentAt: number): Session[] {
+    const listed = new Set(sessions.map((s) => s.session_id))
+    const newer = forProject(projectId).filter(
+      (s) => !listed.has(s.session_id) && (lastEventAt.get(s.session_id) ?? 0) > sentAt,
+    )
+    return [...newer, ...sessions.map((s) => fresher(s, sentAt))]
+  }
+
   function setForProject(projectId: number, sessions: Session[], sentAt = Infinity): void {
-    byProject.value[projectId] = sessions.map((s) => fresher(s, sentAt))
+    byProject.value[projectId] = merged(projectId, sessions, sentAt)
   }
 
   function forgetProject(projectId: number): void {
@@ -80,7 +92,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     projectIds.forEach((id, index) => {
       const result = results[index]!
       const current = listTicket.get(id) === tickets[index]
-      next[id] = result.status === 'fulfilled' && current ? result.value.map((s) => fresher(s, tickets[index]!)) : forProject(id)
+      next[id] = result.status === 'fulfilled' && current ? merged(id, result.value, tickets[index]!) : forProject(id)
     })
     byProject.value = next
     loaded.value = true
@@ -102,6 +114,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function create(projectId: number): Promise<Session> {
     const session = await api.createSession(projectId)
+    noteEvent(session.session_id)
     upsert(session)
     return session
   }
@@ -126,6 +139,20 @@ export const useSessionsStore = defineStore('sessions', () => {
     lastEventAt.set(sessionId, ++clock)
   }
 
+  // Sessions looked up after an event about a session this tab did not know. Kept
+  // after success so a session the listing hides (finished long ago) is looked up once.
+  const fetching = new Set<string>()
+
+  /** A session created elsewhere (e.g. another tab): finds its project and reloads it. */
+  function fetchUnknown(sessionId: string): void {
+    if (fetching.has(sessionId)) return
+    fetching.add(sessionId)
+    noteEvent(sessionId)
+    api.getSession(sessionId)
+      .then((snapshot) => (find(sessionId) ? undefined : loadForProject(snapshot.project_id)))
+      .catch(() => fetching.delete(sessionId))
+  }
+
   /** Applies `session.updated`, `session.state` and `session.title`; anything else is ignored. */
   function applyEvent(event: WsEvent): void {
     if (event.type === 'session.updated') {
@@ -134,7 +161,10 @@ export const useSessionsStore = defineStore('sessions', () => {
       return
     }
     const session = find(event.session_id)
-    if (!session) return
+    if (!session) {
+      if (event.type === 'session.state' || event.type === 'session.title') fetchUnknown(event.session_id)
+      return
+    }
     if (event.type === 'session.state') {
       const data = event.data as SessionStateData
       noteEvent(event.session_id)

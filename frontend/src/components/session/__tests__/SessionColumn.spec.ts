@@ -16,6 +16,7 @@ vi.mock('../../../api/socket', () => ({
   useEventSocket: () => ({
     onSession: (id: string, h: (e: unknown) => void) => { fake.session.set(id, h); return () => fake.session.delete(id) },
     onReconnect: (h: () => void) => { fake.reconnect.add(h); return () => fake.reconnect.delete(h) },
+    onOpen: (h: () => void) => { fake.reconnect.add(h); return () => fake.reconnect.delete(h) },
   }),
 }))
 
@@ -387,4 +388,42 @@ describe('controles e imagens na coluna', () => {
       expect(w.find('[data-test="permission-card"]').text()).toContain('rm x')
     })
   })
+
+describe('robustez da coluna', () => {
+  it('envia mensagem durante um turno e com permissão pendente, e ela aparece na conversa', async () => {
+    const bodies: string[] = []
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, state: 'running' })),
+      'POST /api/sessions/s1/messages': (init) => { bodies.push(init!.body as string); return jsonResponse({}, 202) },
+    }))
+    const w = await mountView()
+    const emit = (e: WsEvent) => fake.session.get('s1')!(e)
+    await w.find('textarea').setValue('primeira')
+    expect(w.find('[data-test="send"]').attributes('disabled')).toBeUndefined()
+    await w.find('[data-test="send"]').trigger('click')
+    await flushPromises()
+    emit(makeEvent('prompt.request', { prompt_id: 'p1', tool_name: 'Bash', input: { command: 'ls' }, can_always: false }, 2))
+    emit(makeEvent('session.state', { state: 'awaiting_decision', error: null }, 3))
+    await flushPromises()
+    await w.find('textarea').setValue('segunda')
+    await w.find('[data-test="send"]').trigger('click')
+    await flushPromises()
+    expect(bodies.map((b) => JSON.parse(b).text)).toEqual(['primeira', 'segunda'])
+    emit(makeEvent('item.upsert', { type: 'user', id: 'u1', text: 'segunda', images: [], parent_tool_use_id: null }, 4))
+    await flushPromises()
+    expect(w.text()).toContain('segunda')
+  })
+
+  it('projeto com pasta apagada: aviso e envio desabilitado com explicação', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online', available: false })]
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })) }))
+    const w = await mountView()
+    const notice = w.find('[data-test="project-unavailable"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('pasta do projeto')
+    await w.find('textarea').setValue('oi')
+    expect(w.find('[data-test="send"]').attributes('disabled')).toBeDefined()
+  })
+})
+
 })

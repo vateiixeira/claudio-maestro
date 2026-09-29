@@ -86,6 +86,12 @@ async function saveRename() {
 const loadError = ref<string | null>(null)
 const conv = computed(() => conversations.get(props.id))
 const project = computed(() => (conv.value?.projectId != null ? projects.byId(conv.value.projectId) : undefined))
+// The project's folder was deleted or moved: nothing that runs in it can work.
+const unavailableReason = computed(() =>
+  project.value && !project.value.available
+    ? 'A pasta do projeto não existe mais. Restaure a pasta para voltar a enviar mensagens.'
+    : null,
+)
 const git = useGitStore()
 const repos = computed(() => (project.value ? git.reposFor(project.value.id) : []))
 watch(() => project.value?.id, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
@@ -145,7 +151,8 @@ watch(
     offs.forEach((off) => off())
     offs = [
       socket.onSession(id, (event) => conversations.receive(event)),
-      socket.onReconnect(() => void reload()),
+      // Every opening, the first included: events between the snapshot and it were lost.
+      socket.onOpen(() => void reload()),
     ]
     loadError.value = null
     void reload()
@@ -383,7 +390,14 @@ function resolvePrompt(promptId: string) {
           {{ conv.error || 'A sessão parou com erro.' }} Você pode enviar de novo.
         </p>
         <p v-if="loadError" role="alert" class="m-0 text-sm text-secondary-soft">{{ loadError }}</p>
-        <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state">
+        <p
+          v-if="unavailableReason"
+          data-test="project-unavailable"
+          class="m-0 rounded-md border border-secondary/40 bg-card px-3 py-2 text-sm text-secondary-soft"
+        >
+          Pasta indisponível: a pasta do projeto foi apagada ou movida.
+        </p>
+        <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason">
           <template #controls><SessionControls :session-id="conv.sessionId" /></template>
         </MessageComposer>
       </div>
