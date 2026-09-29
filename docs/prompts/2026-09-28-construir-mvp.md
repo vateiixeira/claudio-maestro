@@ -234,5 +234,6 @@ Outros
 - O modo `auto` depende do modelo. Com haiku, `permission_mode="auto"` nas opções é ignorado em silêncio (o `init` reporta `default`), e `set_permission_mode("auto")` falha com "Cannot set permission mode to auto: auto mode unavailable for this model". Com sonnet, o `init` reporta `auto`.
 - `get_context_usage()` devolve, entre outras, as chaves `totalTokens`, `maxTokens`, `rawMaxTokens`, `percentage`, `model`, `categories`, `autoCompactThreshold` e `isAutoCompactEnabled`. Depois de um "ok" com haiku e `setting_sources=[]`: 15710 de 200000 tokens (8%).
 - Subagente em segundo plano (`Agent` com `run_in_background=true`) chega como `TaskStartedMessage` com `task_type="local_agent"`. `stop_task(task_id)` depois do fim do turno encerra o subagente na hora: chega `TaskUpdatedMessage` com `patch.status="killed"`, sem `TaskNotificationMessage`.
+- Mensagem enviada durante um turno autônomo (aberto pelo CLI quando um subagente em segundo plano termina) não é absorvida por ele: o turno autônomo termina com o próprio `ResultMessage`, e cerca de 0,6 s depois o CLI abre um turno separado para a mensagem, começando com um `init`. Medido com haiku e `setting_sources=[]`.
 - Login expirado e limite da assinatura não foram provocados de verdade; a conversão das mensagens é coberta só pelos testes automatizados.
 
