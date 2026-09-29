@@ -178,6 +178,17 @@ const tree = computed(() => {
   return { top, childrenOf: (toolUseId: string) => children.get(toolUseId) ?? [] }
 })
 const rows = computed(() => tree.value.top)
+// Last finished reply of the assistant, for the polite live region.
+const announcement = computed(() => {
+  const items = conv.value?.items ?? []
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!
+    if (item.type !== 'text') continue
+    if (item.streaming || ('parent_tool_use_id' in item && item.parent_tool_use_id)) return ''
+    return `Resposta concluída: ${item.text.slice(0, 300)}`
+  }
+  return ''
+})
 const taskList = computed(() => conversations.taskList(props.id))
 
 const footer = computed(() => {
@@ -245,6 +256,8 @@ function resolvePrompt(promptId: string) {
           <span v-else class="grow" />
           <span
             data-test="session-state"
+            role="status"
+            aria-live="polite"
             class="flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-xs font-semibold"
             :class="{
               'border-primary/40 bg-primary/10 text-primary-soft': conv.state === 'running' || conv.state === 'connecting',
@@ -333,7 +346,9 @@ function resolvePrompt(promptId: string) {
         </p>
       </header>
 
-      <div ref="scroller" class="min-h-0 grow overflow-y-auto" @scroll="onScroll">
+      <!-- Screen readers hear finished replies only, never each streamed character. -->
+      <div data-test="conversation-live" aria-live="polite" class="sr-only">{{ announcement }}</div>
+      <div ref="scroller" data-test="conversation-scroller" class="min-h-0 grow overflow-y-auto" @scroll="onScroll">
         <div class="flex flex-col gap-3 p-4">
           <p
             v-if="conv.historyTruncated"
@@ -390,13 +405,6 @@ function resolvePrompt(promptId: string) {
           {{ conv.error || 'A sessão parou com erro.' }} Você pode enviar de novo.
         </p>
         <p v-if="loadError" role="alert" class="m-0 text-sm text-secondary-soft">{{ loadError }}</p>
-        <p
-          v-if="unavailableReason"
-          data-test="project-unavailable"
-          class="m-0 rounded-md border border-secondary/40 bg-card px-3 py-2 text-sm text-secondary-soft"
-        >
-          Pasta indisponível: a pasta do projeto foi apagada ou movida.
-        </p>
         <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason">
           <template #controls><SessionControls :session-id="conv.sessionId" /></template>
         </MessageComposer>

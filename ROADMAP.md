@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 8 de 31 |
+| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 10 de 31 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -167,8 +167,8 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [ ] Limite da assinatura atingido mostra o horário de liberação
 - [x] Projeto com pasta apagada aparece como indisponível (2026-09-29)
 - [ ] Caminhos com espaços, acentos e links simbólicos para fora da pasta pessoal
-- [ ] Revisão de acessibilidade: teclado, contraste e foco
-- [ ] Fontes servidas pelo próprio app; hoje vêm do Google Fonts e dependem de internet
+- [x] Revisão de acessibilidade: teclado, contraste e foco (2026-09-29)
+- [x] Fontes servidas pelo próprio app; hoje vêm do Google Fonts e dependem de internet (2026-09-29)
 
 ## Marco 7. Agrupador de sessões
 

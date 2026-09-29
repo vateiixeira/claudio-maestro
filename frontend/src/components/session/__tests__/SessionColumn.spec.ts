@@ -388,6 +388,7 @@ describe('controles e imagens na coluna', () => {
       expect(w.find('[data-test="permission-card"]').text()).toContain('rm x')
     })
   })
+})
 
 describe('robustez da coluna', () => {
   it('envia mensagem durante um turno e com permissão pendente, e ela aparece na conversa', async () => {
@@ -418,12 +419,40 @@ describe('robustez da coluna', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online', available: false })]
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })) }))
     const w = await mountView()
-    const notice = w.find('[data-test="project-unavailable"]')
-    expect(notice.exists()).toBe(true)
-    expect(notice.text()).toContain('pasta do projeto')
+    // A single notice, the one tied to the send button.
+    expect(w.text().match(/pasta do projeto/g)).toHaveLength(1)
+    expect(w.find('[data-test="send"]').attributes('aria-describedby')).toBe('blocked-s1')
     await w.find('textarea').setValue('oi')
     expect(w.find('[data-test="send"]').attributes('disabled')).toBeDefined()
   })
 })
 
+describe('acessibilidade da coluna', () => {
+  it('o estado da sessão fica numa região que anuncia mudanças', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, state: 'idle' })) }))
+    const w = await mountView()
+    const state = w.find('[data-test="session-state"]')
+    expect(state.attributes('role')).toBe('status')
+    expect(state.attributes('aria-live')).toBe('polite')
+  })
+
+  it('anuncia só mensagens concluídas, não o texto em streaming', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, state: 'running' })) }))
+    const w = await mountView()
+    const live = () => w.find('[data-test="conversation-live"]')
+    expect(live().attributes('aria-live')).toBe('polite')
+    const emit = (e: WsEvent) => fake.session.get('s1')!(e)
+    emit(makeEvent('item.upsert', { type: 'text', id: 't1', text: 'Parcial', streaming: true, parent_tool_use_id: null }, 2))
+    await flushPromises()
+    expect(live().text()).toBe('')
+    emit(makeEvent('item.upsert', { type: 'text', id: 't1', text: 'Resposta pronta', streaming: false, parent_tool_use_id: null }, 3))
+    await flushPromises()
+    expect(live().text()).toContain('Resposta pronta')
+  })
+
+  it('a área da conversa não é uma região viva (evita anunciar cada caractere)', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })) }))
+    const w = await mountView()
+    expect(w.find('[data-test="conversation-scroller"]').attributes('aria-live')).toBeUndefined()
+  })
 })

@@ -75,7 +75,14 @@ export const useLayoutStore = defineStore('layout', () => {
     widths.value[id] = clampWidth(width)
   }
 
-  async function restore(): Promise<void> {
+  // Startup and a reconnect can ask at the same time: share the read in flight.
+  let restoreInFlight: Promise<void> | null = null
+  function restore(): Promise<void> {
+    if (!restoreInFlight) restoreInFlight = doRestore().finally(() => { restoreInFlight = null })
+    return restoreInFlight
+  }
+
+  async function doRestore(): Promise<void> {
     restoring = true
     closedMeanwhile.clear()
     try {

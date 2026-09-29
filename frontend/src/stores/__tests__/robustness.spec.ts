@@ -138,6 +138,32 @@ describe('sessão criada em outra aba', () => {
     expect(sessions.find('n1')?.title).toBe('Nova')
   })
 
+  it('sessão desconhecida que respondeu 404 não é buscada de novo', async () => {
+    let calls = 0
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/x9': () => { calls += 1; return jsonResponse({ detail: 'não existe' }, 404) },
+    }))
+    const sessions = useSessionsStore()
+    sessions.applyEvent(makeEvent('session.state', { state: 'running', error: null }, 1, 'x9'))
+    await flushPromises()
+    sessions.applyEvent(makeEvent('session.state', { state: 'idle', error: null }, 2, 'x9'))
+    await flushPromises()
+    expect(calls).toBe(1)
+  })
+
+  it('sessão desconhecida com falha de rede é buscada de novo', async () => {
+    let calls = 0
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/x9': () => { calls += 1; return jsonResponse({ detail: 'erro' }, 500) },
+    }))
+    const sessions = useSessionsStore()
+    sessions.applyEvent(makeEvent('session.state', { state: 'running', error: null }, 1, 'x9'))
+    await flushPromises()
+    sessions.applyEvent(makeEvent('session.state', { state: 'idle', error: null }, 2, 'x9'))
+    await flushPromises()
+    expect(calls).toBe(2)
+  })
+
   it('listagem enviada antes da criação não remove a sessão criada', async () => {
     let release!: (r: Response) => void
     vi.stubGlobal('fetch', routeFetch({

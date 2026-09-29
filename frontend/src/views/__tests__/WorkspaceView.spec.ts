@@ -217,3 +217,19 @@ describe('área de colunas', () => {
     })
   })
 })
+
+describe('acessibilidade da área de colunas', () => {
+  it('tem um título de página para leitores de tela', async () => {
+    const w = await mountAt('/sessions/s1')
+    expect(w.find('h1').text()).toBe('Sessões abertas')
+  })
+
+  it('com movimento reduzido, rola até a coluna sem animação', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('reduce'), media: q }))
+    await mountAt('/sessions/s1')
+    expect(scroll).toHaveBeenCalled()
+    expect(scroll.mock.calls[0]![0]).toMatchObject({ behavior: 'auto' })
+  })
+})

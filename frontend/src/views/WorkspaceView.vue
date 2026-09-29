@@ -26,7 +26,7 @@ watch(
     if (!id) return
     layout.open(id)
     await nextTick()
-    columnEls.get(id)?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+    columnEls.get(id)?.scrollIntoView?.({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'nearest', inline: 'nearest' })
   },
   { immediate: true },
 )
@@ -86,6 +86,9 @@ function bindColumn(id: string, el: unknown) {
     shown.delete(id)
   }
 }
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
 </script>
 
 <template>
@@ -97,6 +100,7 @@ function bindColumn(id: string, el: unknown) {
     role="region"
     class="flex h-full min-w-0 overflow-x-auto overflow-y-hidden"
   >
+    <h1 class="sr-only">Sessões abertas</h1>
     <template v-for="id in layout.columns" :key="id">
       <div
         :ref="(el) => bindColumn(id, el)"

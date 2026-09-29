@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import './fonts.css';
 @import 'tailwindcss';
 
 @theme {
@@ -71,3 +71,23 @@ body {
 .hljs-comment, .hljs-quote { color: var(--color-fg-muted); font-style: italic; }
 .hljs-number, .hljs-literal, .hljs-title, .hljs-type { color: var(--color-diff-del-fg); }
 .hljs-deletion { color: var(--color-diff-del-fg); }
+
+/* Visible focus ring on every control reached by keyboard. In the base layer so
+   components that draw their own focus style (outline-none + border) win. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

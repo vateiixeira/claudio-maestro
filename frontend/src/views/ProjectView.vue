@@ -66,6 +66,20 @@ const renameError = ref<string | null>(null)
 const renameInput = ref<HTMLInputElement | null>(null)
 
 const confirmingRemove = ref(false)
+const removeButton = ref<HTMLButtonElement | null>(null)
+const cancelRemoveButton = ref<HTMLButtonElement | null>(null)
+// Opening the confirmation puts focus on the safe choice; closing it gives focus back.
+async function askRemove() {
+  confirmingRemove.value = true
+  renaming.value = false
+  await nextTick()
+  cancelRemoveButton.value?.focus()
+}
+async function cancelRemove() {
+  confirmingRemove.value = false
+  await nextTick()
+  removeButton.value?.focus()
+}
 const removing = ref(false)
 
 async function load(): Promise<void> {
@@ -229,9 +243,10 @@ async function remove(): Promise<void> {
         </button>
         <button
           type="button"
+          ref="removeButton"
           data-test="remove"
           class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card"
-          @click="confirmingRemove = true; renaming = false"
+          @click="askRemove"
         >
           Remover
         </button>
@@ -305,6 +320,7 @@ async function remove(): Promise<void> {
       role="alertdialog"
       aria-labelledby="confirm-remove-title"
       aria-describedby="confirm-remove-text"
+      @keydown.esc.prevent="cancelRemove"
       class="flex flex-col gap-3 rounded-lg border border-secondary/60 bg-card px-5 py-4"
     >
       <h2 id="confirm-remove-title" class="m-0 text-base font-semibold">Remover o projeto {{ project.name }}?</h2>
@@ -325,9 +341,10 @@ async function remove(): Promise<void> {
         </button>
         <button
           type="button"
+          ref="cancelRemoveButton"
           data-test="confirm-remove-cancel"
           class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-panel"
-          @click="confirmingRemove = false"
+          @click="cancelRemove"
         >
           Cancelar
         </button>

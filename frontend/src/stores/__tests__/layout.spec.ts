@@ -93,6 +93,22 @@ describe('store de layout', () => {
     expect(putCalls(fetchMock)).toHaveLength(1)
   })
 
+  it('duas restaurações ao mesmo tempo fazem uma leitura só', async () => {
+    let gets = 0
+    let resolveGet!: (r: Response) => void
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/state': () => { gets += 1; return new Promise<Response>((r) => { resolveGet = r }) },
+      'PUT /api/state/layout': () => jsonResponse({}),
+    }))
+    const layout = useLayoutStore()
+    const first = layout.restore()
+    const second = layout.restore()
+    resolveGet(jsonResponse({ layout: { columns: ['a'], widths: {} } }))
+    await Promise.all([first, second])
+    expect(gets).toBe(1)
+    expect(layout.columns).toEqual(['a'])
+  })
+
   it('ignora layout salvo inválido ou falha ao ler', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/state': () => jsonResponse({ layout: 'lixo' }) }))
     const layout = useLayoutStore()

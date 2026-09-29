@@ -144,13 +144,18 @@ export const useSessionsStore = defineStore('sessions', () => {
   const fetching = new Set<string>()
 
   /** A session created elsewhere (e.g. another tab): finds its project and reloads it. */
+  const gone = new Set<string>()
   function fetchUnknown(sessionId: string): void {
-    if (fetching.has(sessionId)) return
+    if (fetching.has(sessionId) || gone.has(sessionId)) return
     fetching.add(sessionId)
     noteEvent(sessionId)
     api.getSession(sessionId)
       .then((snapshot) => (find(sessionId) ? undefined : loadForProject(snapshot.project_id)))
-      .catch(() => fetching.delete(sessionId))
+      .catch((e) => {
+        fetching.delete(sessionId)
+        // 404 is final: the session does not exist, asking again will not change that.
+        if (e instanceof api.ApiError && e.status === 404) gone.add(sessionId)
+      })
   }
 
   /** Applies `session.updated`, `session.state` and `session.title`; anything else is ignored. */
