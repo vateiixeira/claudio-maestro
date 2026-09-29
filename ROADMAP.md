@@ -271,4 +271,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-28 | Ações de subagentes visíveis na sessão entram no MVP, no marco 5 |
 | 2026-09-28 | Progresso de planos vira o marco 8, depois do MVP |
 | 2026-09-29 | Sessões do CLI atualizadas em tempo real entram no marco 5 |
+| 2026-09-29 | Modos `auto` ("Automático") e `dontAsk` ("Só o pré-aprovado") aceitos sem confirmação; só `bypassPermissions` pede confirmação |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
