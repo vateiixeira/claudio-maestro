@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSessionsStore } from '../sessions'
-import { makeSession } from '../../test/factories'
+import { makeEvent, makeSession } from '../../test/factories'
 
 beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => vi.unstubAllGlobals())
@@ -83,5 +83,20 @@ describe('store de sessões', () => {
 
     expect(store.forProject(1)).toEqual([])
     expect(store.forProject(2).map((s) => s.session_id)).toEqual(['a'])
+  })
+
+  it('limpa o pedido pendente quando a sessão sai de awaiting_decision', () => {
+    const store = useSessionsStore()
+    store.setForProject(1, [makeSession({
+      session_id: 's1', state: 'awaiting_decision', display_state: 'waiting', awaiting_decision: true,
+      pending_kind: 'tool',
+      pending_permission: { prompt_id: 'p', tool_name: 'Bash', summary: 'ls', can_allow_always: false },
+    })])
+
+    store.applyEvent(makeEvent('session.state', { state: 'running' }, 5))
+
+    const session = store.find('s1')!
+    expect(session.pending_kind).toBeNull()
+    expect(session.pending_permission).toBeNull()
   })
 })

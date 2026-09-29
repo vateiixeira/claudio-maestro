@@ -1,4 +1,5 @@
 import type {
+  ActivityDay,
   DirListing,
   ChangesGroup,
   DisplayState,
@@ -199,6 +200,16 @@ export function updateSession(sessionId: string, changes: SessionUpdate): Promis
 
 export function markSessionSeen(sessionId: string): Promise<void> {
   return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/seen`)
+}
+
+/** Marks many sessions as seen at once; unknown ids are ignored. */
+export function markSessionsSeen(sessionIds: string[]): Promise<{ updated: number }> {
+  return request('POST', '/api/sessions/seen', { session_ids: sessionIds })
+}
+
+/** Conversations with messages per day and project in the last `days` days. */
+export function getActivity(days = 14): Promise<ActivityDay[]> {
+  return request('GET', `/api/activity?days=${days}`)
 }
 
 // App state (layout, preferences)

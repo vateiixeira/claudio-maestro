@@ -90,6 +90,19 @@ export interface Session {
   context?: ContextUsage | null
   /** Oldest tool permission request waiting (questions and plans are null). */
   pending_permission?: PendingPermission | null
+  /** When the user finished the session (seconds); null when open or finished by inactivity. */
+  finished_at?: number | null
+  /** Last tool of the main conversation ("Edit sessions.py"); null after a backend restart. */
+  last_action?: string | null
+  /** Kind of the oldest pending prompt. */
+  pending_kind?: 'tool' | 'question' | 'plan' | null
+}
+
+/** Conversations with messages on a day, per project (`GET /api/activity`). */
+export interface ActivityDay {
+  date: string
+  project_id: number
+  sessions: number
 }
 
 export interface ContextUsage {

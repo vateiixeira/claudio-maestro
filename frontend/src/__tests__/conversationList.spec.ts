@@ -1,0 +1,73 @@
+import { describe, expect, it } from 'vitest'
+import { dateLabel, groupByDate, inInbox, isInboxTab, waitingReason } from '../conversationList'
+import { makeSession } from '../test/factories'
+
+const at = (y: number, m: number, d: number, hh = 12, mm = 0) => new Date(y, m - 1, d, hh, mm).getTime() / 1000
+
+describe('motivo da espera', () => {
+  it('só existe para quem aguarda o usuário', () => {
+    expect(waitingReason(makeSession({ display_state: 'running' }))).toBeNull()
+    expect(waitingReason(makeSession({ display_state: 'finished' }))).toBeNull()
+  })
+
+  it('mostra erro, permissão, pergunta, plano ou sua vez', () => {
+    expect(waitingReason(makeSession({ display_state: 'waiting', state: 'error' }))).toBe('Parou com erro')
+    expect(waitingReason(makeSession({
+      display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'tool',
+      pending_permission: { prompt_id: 'p', tool_name: 'Bash', summary: 'ls', can_allow_always: false },
+    }))).toBe('Pede permissão: Bash')
+    expect(waitingReason(makeSession({ display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question' }))).toBe('Fez uma pergunta')
+    expect(waitingReason(makeSession({ display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'plan' }))).toBe('Plano para aprovar')
+    expect(waitingReason(makeSession({ display_state: 'waiting', state: 'idle' }))).toBe('Sua vez')
+  })
+})
+
+describe('abas da Inbox', () => {
+  const waiting = makeSession({ session_id: 'w', display_state: 'waiting' })
+  const running = makeSession({ session_id: 'r', display_state: 'running' })
+  const unreadOpen = makeSession({ session_id: 'u', display_state: 'running', unread: true })
+  const finishedUnread = makeSession({ session_id: 'fu', display_state: 'finished', unread: true })
+  const finishedRead = makeSession({ session_id: 'f', display_state: 'finished' })
+  const all = [waiting, running, unreadOpen, finishedUnread, finishedRead]
+  const ids = (tab: Parameters<typeof inInbox>[1]) => all.filter((s) => inInbox(s, tab)).map((s) => s.session_id)
+
+  it('separa por aba e nunca mostra finalizadas', () => {
+    expect(ids('pede-voce')).toEqual(['w'])
+    expect(ids('nao-lidas')).toEqual(['u'])
+    expect(ids('em-execucao')).toEqual(['r', 'u'])
+    expect(ids('todas')).toEqual(['w', 'r', 'u'])
+  })
+
+  it('reconhece as abas válidas', () => {
+    expect(isInboxTab('nao-lidas')).toBe(true)
+    expect(isInboxTab('outra')).toBe(false)
+    expect(isInboxTab(undefined)).toBe(false)
+  })
+})
+
+describe('grupos por data', () => {
+  const now = new Date(2026, 8, 29, 0, 20)
+
+  it('usa o dia local, inclusive perto da meia-noite', () => {
+    expect(dateLabel(at(2026, 9, 29, 0, 10), now, false)).toBe('Hoje')
+    expect(dateLabel(at(2026, 9, 28, 23, 50), now, false)).toBe('Ontem')
+    expect(dateLabel(at(2026, 9, 27), now, false)).toBe('Antes')
+  })
+
+  it('tem "Esta semana" só quando pedido', () => {
+    expect(dateLabel(at(2026, 9, 24), now, true)).toBe('Esta semana')
+    expect(dateLabel(at(2026, 9, 22), now, true)).toBe('Antes')
+    expect(dateLabel(at(2026, 9, 24), now, false)).toBe('Antes')
+  })
+
+  it('agrupa mantendo a ordem e omitindo grupos vazios', () => {
+    const list = [
+      makeSession({ session_id: 'a', last_activity_at: at(2026, 9, 29, 0, 5) }),
+      makeSession({ session_id: 'b', last_activity_at: at(2026, 9, 20) }),
+    ]
+    expect(groupByDate(list, now, true).map((g) => [g.label, g.sessions.map((s) => s.session_id)])).toEqual([
+      ['Hoje', ['a']],
+      ['Antes', ['b']],
+    ])
+  })
+})

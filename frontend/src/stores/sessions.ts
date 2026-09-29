@@ -176,6 +176,12 @@ export const useSessionsStore = defineStore('sessions', () => {
       session.state = data.state
       session.error = data.error ?? null
       Object.assign(session, deriveDisplay(data.state, session.finished, session.display_state))
+      // The summary with the new pending prompt comes in a `session.updated`; until
+      // then an old reason ("Pede permissão") must not stay on screen.
+      if (data.state !== 'awaiting_decision') {
+        session.pending_kind = null
+        session.pending_permission = null
+      }
       session.seq = event.seq
     } else if (event.type === 'session.title') {
       noteEvent(event.session_id)
