@@ -4,6 +4,7 @@ import {
   type RouteRecordRaw,
   type RouterHistory,
 } from 'vue-router'
+import AllSessionsView from '../views/AllSessionsView.vue'
 import NewProjectView from '../views/NewProjectView.vue'
 import ProjectView from '../views/ProjectView.vue'
 import WorkspaceView from '../views/WorkspaceView.vue'
@@ -19,6 +20,7 @@ export const routes: RouteRecordRaw[] = [
     component: ProjectView,
     props: (route) => ({ id: Number(route.params.id) }),
   },
+  { path: '/sessions', name: 'sessions', component: AllSessionsView },
   {
     path: '/sessions/:id',
     name: 'session',

@@ -18,7 +18,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | Preparação | Requisitos, design e viabilidade | Concluído | 6 de 6 |
 | 0. Fundação | Backend e frontend no ar em modo de desenvolvimento | Concluído | 6 de 6 |
 | 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Concluído | 13 de 13 |
-| 2. Multissessão | Colunas, estados e menu lateral | Em andamento | 5 de 12 |
+| 2. Multissessão | Colunas, estados e menu lateral | Em andamento | 12 de 12 |
 | 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 7 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Não iniciado | 0 de 13 |
@@ -77,16 +77,16 @@ Objetivo: acompanhar várias sessões de projetos diferentes ao mesmo tempo.
 
 - [x] Várias sessões ativas no backend, cada uma com seu processo (2026-09-29)
 - [x] Remover projeto fecha as sessões ativas dele e resolve pedidos pendentes (2026-09-29)
-- [ ] Lista de sessões do menu não é sobrescrita por respostas antigas nem por eventos fora de ordem
+- [x] Lista de sessões do menu não é sobrescrita por respostas antigas nem por eventos fora de ordem (2026-09-29)
 - [x] Desligamento de sessão ociosa após 30 minutos, com religamento automático (2026-09-29)
 - [x] Colunas lado a lado, largura ajustável, rolagem horizontal (2026-09-29)
 - [x] Layout salvo e restaurado ao reabrir o app (2026-09-29)
-- [ ] Três estados exibidos: em execução, aguardando você, finalizada
-- [ ] Marcar sessão como finalizada e reabrir
-- [ ] Renomear sessão pela interface, gravando com `rename_session` do SDK para o nome valer também no CLI
-- [ ] Menu lateral com sessões abertas por projeto e contadores
-- [ ] Tela do projeto com sessões nos três blocos
-- [ ] Tela "Todas as sessões" com filtro por projeto
+- [x] Três estados exibidos: em execução, aguardando você, finalizada (2026-09-29)
+- [x] Marcar sessão como finalizada e reabrir (2026-09-29)
+- [x] Renomear sessão pela interface, gravando com `rename_session` do SDK para o nome valer também no CLI (2026-09-29)
+- [x] Menu lateral com sessões abertas por projeto e contadores (2026-09-29)
+- [x] Tela do projeto com sessões nos três blocos (2026-09-29)
+- [x] Tela "Todas as sessões" com filtro por projeto (2026-09-29)
 
 ## Marco 3. Histórico
 

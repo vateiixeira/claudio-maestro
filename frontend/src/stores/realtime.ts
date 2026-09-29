@@ -19,6 +19,7 @@ export function bindRealtime(socket: EventSocket): () => void {
   const offs = [
     socket.on('session.state', (event) => sessions.applyEvent(event)),
     socket.on('session.title', (event) => sessions.applyEvent(event)),
+    socket.on('session.updated', (event) => sessions.applyEvent(event)),
     socket.onReconnect(() => {
       loadEverything().catch(() => {
         // The projects store keeps the error; the sidebar shows it.

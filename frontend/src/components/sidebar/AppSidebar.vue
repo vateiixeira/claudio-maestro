@@ -2,10 +2,11 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BrandMark from '../BrandMark.vue'
-import SessionStateIcon from '../SessionStateIcon.vue'
+import DisplayStateIcon from '../DisplayStateIcon.vue'
+import StateCounters from '../StateCounters.vue'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import { sessionStateLabels } from '../../sessionState'
+import { displayStateLabels } from '../../sessionState'
 import type { Session } from '../../types/api'
 
 const projects = useProjectsStore()
@@ -21,8 +22,17 @@ const activeProjectId = computed<number | null>(() => {
 
 const activeSessionId = computed(() => (route.name === 'session' ? String(route.params.id) : null))
 
+// The menu lists only what is alive: finished sessions stay on the project page.
+function openSessions(projectId: number): Session[] {
+  return sessions.forProject(projectId).filter((s) => s.display_state !== 'finished')
+}
+
+function count(list: Session[], display: 'running' | 'waiting'): number {
+  return list.filter((s) => s.display_state === display).length
+}
+
 function sessionTone(session: Session): string {
-  return session.state === 'awaiting_decision' || session.state === 'error' ? 'text-secondary-soft' : 'text-fg'
+  return session.awaiting_decision ? 'text-secondary-soft' : 'text-fg'
 }
 </script>
 
@@ -34,6 +44,22 @@ function sessionTone(session: Session): string {
     <RouterLink to="/" class="flex min-h-11 items-center gap-2.5 rounded-lg px-2 text-fg no-underline">
       <BrandMark />
       <span class="text-xl font-bold tracking-tight">Vini7 Vibing</span>
+    </RouterLink>
+
+    <RouterLink
+      to="/sessions"
+      data-test="all-sessions"
+      class="flex min-h-11 items-center gap-2.5 rounded-lg border px-3 text-fg no-underline hover:bg-card"
+      :class="route.name === 'sessions' ? 'border-line-strong bg-elevated' : 'border-line'"
+      :aria-current="route.name === 'sessions' ? 'page' : undefined"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="5" height="16" rx="1" />
+        <rect x="10" y="4" width="5" height="10" rx="1" />
+        <rect x="17" y="4" width="4" height="13" rx="1" />
+      </svg>
+      <span class="grow font-medium">Todas as sessões</span>
+      <StateCounters :running="count(sessions.all, 'running')" :waiting="count(sessions.all, 'waiting')" />
     </RouterLink>
 
     <div class="flex min-h-0 flex-1 flex-col gap-1">
@@ -70,25 +96,33 @@ function sessionTone(session: Session): string {
               <span data-test="project-name" class="truncate font-semibold">{{ project.name }}</span>
               <span v-if="!project.available" class="text-xs text-fg-muted">pasta indisponível</span>
             </span>
+            <StateCounters
+              :running="count(openSessions(project.id), 'running')"
+              :waiting="count(openSessions(project.id), 'waiting')"
+            />
           </RouterLink>
 
           <div
-            v-if="sessions.forProject(project.id).length > 0"
+            v-if="openSessions(project.id).length > 0"
             class="flex flex-col border-t border-line pt-1"
           >
             <RouterLink
-              v-for="session in sessions.forProject(project.id)"
+              v-for="session in openSessions(project.id)"
               :key="session.session_id"
               data-test="session"
               :to="{ name: 'session', params: { id: session.session_id } }"
               class="flex min-h-11 items-center gap-2 rounded-md px-1 no-underline hover:bg-card"
-              :class="[sessionTone(session), { 'bg-card': activeSessionId === session.session_id }]"
-              :title="`${session.title} · ${sessionStateLabels[session.state]}`"
+              :data-unread="String(session.unread)"
+              :class="[sessionTone(session), { 'bg-card': activeSessionId === session.session_id, 'font-semibold': session.unread }]"
+              :title="`${session.title} · ${displayStateLabels[session.display_state]}`"
               :aria-current="activeSessionId === session.session_id ? 'page' : undefined"
             >
-              <SessionStateIcon :state="session.state" />
+              <DisplayStateIcon :display="session.display_state" />
               <span class="min-w-0 flex-1 truncate text-[13px]">{{ session.title }}</span>
-              <span class="sr-only">{{ sessionStateLabels[session.state] }}</span>
+              <span v-if="session.unread" class="size-1.5 shrink-0 rounded-full bg-primary-soft" aria-hidden="true" />
+              <span class="sr-only">
+                {{ displayStateLabels[session.display_state] }}{{ session.unread ? ', com novidade' : '' }}
+              </span>
             </RouterLink>
           </div>
         </div>

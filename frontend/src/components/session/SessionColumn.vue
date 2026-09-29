@@ -10,6 +10,7 @@ import PermissionCard from '../conversation/PermissionCard.vue'
 import { sessionStateLabels } from '../../sessionState'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
+import { useSessionsStore } from '../../stores/sessions'
 import type { ConversationItem } from '../../types/conversation'
 
 const props = withDefaults(defineProps<{ id: string; visible?: boolean }>(), { visible: true })
@@ -18,6 +19,54 @@ const emit = defineEmits<{ close: []; missing: [] }>()
 const conversations = useConversationStore()
 const projects = useProjectsStore()
 const socket = useEventSocket()
+const sessions = useSessionsStore()
+const listed = computed(() => sessions.find(props.id))
+const isFinished = computed(() => listed.value?.display_state === 'finished')
+
+const headerError = ref<string | null>(null)
+const toggling = ref(false)
+async function toggleFinished() {
+  toggling.value = true
+  headerError.value = null
+  try {
+    await sessions.setFinished(props.id, !isFinished.value)
+  } catch (e) {
+    headerError.value = errorMessage(e)
+  } finally {
+    toggling.value = false
+  }
+}
+
+// Inline rename: Enter saves, Esc cancels.
+const editing = ref(false)
+const titleDraft = ref('')
+const titleInput = ref<HTMLInputElement | null>(null)
+async function startRename() {
+  titleDraft.value = conv.value?.title ?? ''
+  headerError.value = null
+  editing.value = true
+  await nextTick()
+  titleInput.value?.select()
+}
+function cancelRename() {
+  editing.value = false
+  headerError.value = null
+}
+async function saveRename() {
+  const title = titleDraft.value.trim()
+  if (!title) {
+    headerError.value = 'O título não pode ficar vazio.'
+    return
+  }
+  try {
+    await sessions.rename(props.id, title)
+    if (conv.value) conv.value.title = title
+    editing.value = false
+    headerError.value = null
+  } catch (e) {
+    headerError.value = errorMessage(e)
+  }
+}
 
 const loadError = ref<string | null>(null)
 const conv = computed(() => conversations.get(props.id))
@@ -178,7 +227,47 @@ function resolvePrompt(promptId: string) {
             </svg>
           </button>
         </div>
-        <h2 class="m-0 text-lg font-semibold">{{ conv.title }}</h2>
+        <div class="flex items-start gap-2">
+          <input
+            v-if="editing"
+            ref="titleInput"
+            v-model="titleDraft"
+            data-test="title-input"
+            aria-label="Título da sessão"
+            maxlength="200"
+            class="h-9 min-w-0 grow rounded-md border border-line-strong bg-bg px-2.5 text-base font-semibold text-fg outline-none focus:border-primary"
+            @keydown.enter.prevent="saveRename"
+            @keydown.esc.prevent="cancelRename"
+          />
+          <h2 v-else class="m-0 min-w-0 grow text-lg font-semibold">
+            <button
+              type="button"
+              data-test="session-title"
+              title="Clique para renomear"
+              class="max-w-full truncate rounded-md text-left hover:text-primary-soft focus-visible:outline-2 focus-visible:outline-primary"
+              @click="startRename"
+            >{{ conv.title }}</button>
+          </h2>
+          <button
+            v-if="!editing"
+            type="button"
+            data-test="rename-session"
+            class="h-9 shrink-0 rounded-md px-2.5 text-sm text-fg-muted hover:bg-card hover:text-fg"
+            @click="startRename"
+          >
+            Renomear
+          </button>
+          <button
+            v-if="listed"
+            type="button"
+            data-test="toggle-finished"
+            class="h-9 shrink-0 rounded-md border border-line-strong px-2.5 text-sm font-medium hover:bg-card disabled:opacity-40"
+            :class="isFinished ? 'text-primary-soft' : 'text-fg'"
+            :disabled="toggling"
+            @click="toggleFinished"
+          >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
+        </div>
+        <p v-if="headerError" role="alert" class="m-0 text-sm text-secondary-soft">{{ headerError }}</p>
       </header>
 
       <div ref="scroller" class="min-h-0 grow overflow-y-auto" @scroll="onScroll">

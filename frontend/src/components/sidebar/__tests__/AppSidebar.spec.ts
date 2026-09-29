@@ -66,24 +66,19 @@ describe('menu lateral', () => {
     projects.projects = [makeProject({ id: 1 })]
     projects.loaded = true
     useSessionsStore(pinia).setForProject(1, [
-      makeSession({ session_id: 'r', title: 'Rodando', state: 'running' }),
-      makeSession({ session_id: 'c', title: 'Conectando', state: 'connecting' }),
-      makeSession({ session_id: 'w', title: 'Esperando', state: 'awaiting_decision' }),
-      makeSession({ session_id: 'e', title: 'Quebrou', state: 'error' }),
-      makeSession({ session_id: 'i', title: 'Parada', state: 'idle' }),
-      makeSession({ session_id: 'x', title: 'Fechada', state: 'closed' }),
+      makeSession({ session_id: 'r', title: 'Rodando', state: 'running', display_state: 'running' }),
+      makeSession({ session_id: 'w', title: 'Esperando', state: 'awaiting_decision', display_state: 'waiting', awaiting_decision: true }),
+      makeSession({ session_id: 'i', title: 'Parada', state: 'idle', display_state: 'waiting' }),
     ])
 
     const wrapper = mountSidebar()
     const sessions = wrapper.findAll('[data-test="session"]')
 
-    expect(sessions.map((s) => s.attributes('href'))).toEqual([
-      '/sessions/r', '/sessions/c', '/sessions/w', '/sessions/e', '/sessions/i', '/sessions/x',
-    ])
+    expect(sessions.map((s) => s.attributes('href'))).toEqual(['/sessions/r', '/sessions/w', '/sessions/i'])
     const shapes = sessions.map((s) => s.find('[data-shape]').attributes('data-shape') ?? null)
-    expect(shapes).toEqual(['circle', 'circle', 'triangle', 'triangle', 'none', 'none'])
-    expect(sessions[0]!.text()).toContain('Rodando')
-    expect(sessions[2]!.text()).toContain('Aguardando você')
+    expect(shapes).toEqual(['circle', 'triangle', 'triangle'])
+    expect(sessions[0]!.text()).toContain('Em execução')
+    expect(sessions[1]!.text()).toContain('Aguardando você')
   })
 
   it('convida a criar projeto quando não há nenhum', () => {

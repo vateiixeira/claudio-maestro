@@ -2,9 +2,10 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import SessionStateIcon from '../components/SessionStateIcon.vue'
+import SessionGroup from '../components/session/SessionGroup.vue'
 import { errorMessage } from '../api/http'
-import { formatActivity } from '../format'
-import { sessionStateLabels } from '../sessionState'
+import { displayStateLabels } from '../sessionState'
+import type { DisplayState } from '../types/api'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 
@@ -16,6 +17,14 @@ const router = useRouter()
 
 const project = computed(() => projects.byId(props.id))
 const projectSessions = computed(() => sessions.forProject(props.id))
+
+const groups = computed(() =>
+  (['running', 'waiting', 'finished'] as DisplayState[]).map((display) => ({
+    display,
+    title: display === 'finished' ? 'Finalizadas' : displayStateLabels[display],
+    sessions: projectSessions.value.filter((s) => s.display_state === display),
+  })),
+)
 
 const sessionsError = ref<string | null>(null)
 const actionError = ref<string | null>(null)
@@ -235,42 +244,21 @@ async function remove(): Promise<void> {
       </div>
     </section>
 
-    <section aria-labelledby="sessions-title" class="flex flex-col gap-2.5">
-      <div class="flex items-center gap-2">
-        <h2 id="sessions-title" class="m-0 font-mono text-xs font-normal tracking-[0.08em] text-fg-muted uppercase">
-          Sessões
-        </h2>
-        <span class="font-mono text-xs text-fg-muted">{{ projectSessions.length }}</span>
-      </div>
-
-      <p v-if="sessionsError" role="alert" class="text-sm text-secondary-soft">{{ sessionsError }}</p>
-      <p v-else-if="projectSessions.length === 0" class="text-sm text-fg-muted">
-        Nenhuma sessão ainda. Use "Nova sessão" para começar uma conversa nesta pasta.
-      </p>
-
-      <div v-else class="flex flex-col overflow-hidden rounded-lg border border-line">
-        <RouterLink
-          v-for="session in projectSessions"
-          :key="session.session_id"
-          data-test="session-row"
-          :to="{ name: 'session', params: { id: session.session_id } }"
-          class="flex min-h-[52px] items-center gap-3 border-b border-line px-4 py-1 text-fg no-underline last:border-b-0 hover:bg-card"
-        >
-          <SessionStateIcon :state="session.state" />
-          <span class="min-w-0 flex-1 truncate">{{ session.title }}</span>
-          <span
-            class="font-mono text-xs"
-            :class="session.state === 'awaiting_decision' || session.state === 'error'
-              ? 'text-secondary-soft'
-              : session.state === 'running' || session.state === 'connecting'
-                ? 'text-primary-soft'
-                : 'text-fg-muted'"
-          >
-            {{ sessionStateLabels[session.state] }}
-          </span>
-          <span class="w-24 text-right text-xs text-fg-muted">{{ formatActivity(session.last_activity_at) }}</span>
-        </RouterLink>
-      </div>
-    </section>
+    <p v-if="sessionsError" role="alert" class="text-sm text-secondary-soft">{{ sessionsError }}</p>
+    <p v-else-if="projectSessions.length === 0" class="text-sm text-fg-muted">
+      Nenhuma sessão ainda. Use "Nova sessão" para começar uma conversa nesta pasta.
+    </p>
+    <template v-else>
+      <template v-for="group in groups" :key="group.display">
+        <SessionGroup
+          v-if="group.sessions.length > 0"
+          :data-test="`block-${group.display}`"
+          :display="group.display"
+          :title="group.title"
+          :sessions="group.sessions"
+          @error="actionError = $event"
+        />
+      </template>
+    </template>
   </div>
 </template>
