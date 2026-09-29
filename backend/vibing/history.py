@@ -94,6 +94,11 @@ def _session_file(session_id: str, directory: str) -> Path | None:
     return _resolve_session_file_path(session_id, directory)
 
 
+def sdk_session_file(session_id: str, directory: str) -> Path | None:
+    """Path of the session's `.jsonl`, resolved as the SDK reads it (None if unknown)."""
+    return _session_file(session_id, directory)
+
+
 def sdk_session_file_mtime(session_id: str, directory: str) -> float | None:
     """Modification time of the session's `.jsonl`, resolved as the SDK reads it."""
     path = _session_file(session_id, directory)

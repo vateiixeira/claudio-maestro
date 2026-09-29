@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from vibing import db
 from vibing import history
+from vibing.activity import ActivityReader, SessionFile
 from vibing.agent.base import AgentFactory
 from vibing.agent.sdk_client import clean_inherited_env
 from vibing.api import router
@@ -42,6 +43,7 @@ def create_app(
     spawn_editor: SpawnEditor | None = None,
     pick_folder: PickFolder | None = None,
     refresh_models: bool | None = None,
+    session_file: SessionFile | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -84,6 +86,7 @@ def create_app(
             read_tool_results=read_tool_results,
             on_turn_end=refresh_git,
         )
+        app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
         app.state.history = history.HistoryIndex(
             app.state.settings.db_path,
             list_sessions or history.sdk_list_sessions,

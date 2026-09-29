@@ -4,7 +4,7 @@ import sqlite3
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from vibing import projects, sessions
 from vibing.api.deps import DbDep
@@ -111,6 +111,15 @@ class SessionPatch(BaseModel):
     confirm_bypass: bool = False
 
 
+class SeenManyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_ids: Annotated[
+        list[Annotated[str, StringConstraints(min_length=1, max_length=100)]],
+        Field(max_length=500),
+    ]
+
+
 _STATUS = {
     sessions.SessionNotFoundError: status.HTTP_404_NOT_FOUND,
     sessions.ProjectUnavailableError: status.HTTP_409_CONFLICT,
@@ -198,6 +207,11 @@ async def update_session(
         )
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
+
+
+@router.post("/sessions/seen")
+async def mark_many_seen(body: SeenManyIn, manager: ManagerDep) -> dict[str, int]:
+    return {"updated": await manager.mark_seen_many(body.session_ids)}
 
 
 @router.post("/sessions/{session_id}/seen", response_model=SessionOut)

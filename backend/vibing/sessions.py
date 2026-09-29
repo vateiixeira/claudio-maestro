@@ -2315,6 +2315,17 @@ class SessionManager:
         session.emit_updated()
         return session.summary()
 
+    async def mark_seen_many(self, session_ids: list[str]) -> int:
+        """Mark each known session as seen (one `session.updated` each); unknown ids are skipped."""
+        updated = 0
+        for session_id in dict.fromkeys(session_ids):
+            try:
+                await self.mark_seen(session_id)
+            except SessionNotFoundError:
+                continue
+            updated += 1
+        return updated
+
     # Closing -----------------------------------------------------------------
 
     async def close_project(self, project_id: int) -> None:
