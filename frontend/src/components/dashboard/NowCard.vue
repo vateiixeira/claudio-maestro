@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import { planPosition, planVisible } from '../plan/planText'
 import { usePendingDecision } from '../../conversation/pendingDecision'
 import { waitingReason } from '../../conversationList'
 import { formatActivity } from '../../format'
@@ -23,6 +24,7 @@ const reason = computed(() => waitingReason(props.session) ?? displayStateLabels
       {{ formatActivity(session.last_activity_at) }}
     </div>
     <RouterLink :to="{ name: 'session', params: { id: session.session_id } }" class="truncate font-semibold text-fg no-underline hover:text-primary-soft">{{ session.title }}</RouterLink>
+    <p v-if="session.plan && planVisible(session)" data-test="now-plan" class="m-0 truncate text-xs text-fg-muted">{{ planPosition(session.plan) }}</p>
     <div class="flex items-center gap-1.5 text-xs">
       <DisplayStateIcon :display="session.display_state" :size="11" />
       <span :class="session.display_state === 'waiting' ? 'text-secondary-soft' : 'text-primary-soft'">{{ reason }}</span>

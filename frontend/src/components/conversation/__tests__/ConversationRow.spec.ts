@@ -92,6 +92,37 @@ describe('linha de conversa', () => {
     expect(wrapper.emitted('error')).toEqual([['Falhou.']])
   })
 
+  describe('selo do plano', () => {
+    const plan = { path: 'docs/plan.md', title: 'Plano', total: 12, done: 3, current: { number: 4, title: 'Criar o selo' } }
+
+    it.each(['inbox', 'list', 'compact'] as const)('aparece depois do título na variante %s', (variant) => {
+      const wrapper = mountRow(makeSession({ display_state: 'running', plan }), variant)
+      const badge = wrapper.find('[data-test="plan-badge"]')
+
+      expect(badge.exists()).toBe(true)
+      expect(badge.text()).toContain('4/12')
+      const html = wrapper.html()
+      expect(html.indexOf('data-test="row-link"')).toBeLessThan(html.indexOf('data-test="plan-badge"'))
+    })
+
+    it('não empurra a coluna de horário: o título trunca e o selo não encolhe', () => {
+      const wrapper = mountRow(makeSession({ title: 'Um título muito longo '.repeat(10), display_state: 'running', plan }))
+
+      expect(wrapper.find('[data-test="row-link"]').classes()).toEqual(expect.arrayContaining(['min-w-0', 'truncate']))
+      expect(wrapper.find('[data-test="row-title"]').classes()).toEqual(expect.arrayContaining(['min-w-0', 'grow']))
+      expect(wrapper.find('[data-test="plan-badge"]').classes()).toContain('shrink-0')
+      expect(wrapper.find('.text-right').classes()).toContain('w-20')
+    })
+
+    it('não aparece sem plano, com plano concluído nem em conversa finalizada', () => {
+      const done = { ...plan, done: 12, current: null }
+
+      expect(mountRow(makeSession({ plan: null })).find('[data-test="plan-badge"]').exists()).toBe(false)
+      expect(mountRow(makeSession({ plan: done })).find('[data-test="plan-badge"]').exists()).toBe(false)
+      expect(mountRow(makeSession({ display_state: 'finished', finished: true, plan })).find('[data-test="plan-badge"]').exists()).toBe(false)
+    })
+  })
+
   describe('alinhamento e foco', () => {
     it('as ações flutuam sobre o fim da linha em qualquer variante, sem tirar largura das colunas', () => {
       const rows = [

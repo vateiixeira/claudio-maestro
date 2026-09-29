@@ -96,7 +96,15 @@ export interface Session {
   last_action?: string | null
   /** Kind of the oldest pending prompt. */
   pending_kind?: 'tool' | 'question' | 'plan' | null
+  /** Progress of the plan file linked to the session; null when there is none. */
+  plan?: PlanSummary | null
 }
+
+export interface PlanCurrent { number: number; title: string }
+export interface PlanSummary { path: string; title: string; total: number; done: number; current: PlanCurrent | null }
+export interface PlanTask { number: number; title: string; done: boolean }
+export interface PlanState { link: 'auto' | 'manual' | 'off'; path: string | null; plan: PlanSummary | null; tasks: PlanTask[] }
+export interface ProjectPlan { path: string; title: string; total: number; done: number }
 
 /** Conversations with messages on a day, per project (`GET /api/activity`). */
 export interface ActivityDay {

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import BranchLabel from '../git/BranchLabel.vue'
+import PlanBadge from '../plan/PlanBadge.vue'
 import { errorMessage, markSessionSeen } from '../../api/http'
 import { waitingReason } from '../../conversationList'
 import { formatActivity } from '../../format'
@@ -51,12 +52,16 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       <span v-if="session.unread" data-test="unread-dot" class="size-2 rounded-full bg-info" />
     </span>
     <DisplayStateIcon :display="session.display_state" />
-    <RouterLink
-      data-test="row-link"
-      :to="{ name: 'session', params: { id: session.session_id } }"
-      class="min-w-0 grow truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
-      :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal']"
-    >{{ session.title }}</RouterLink>
+    <!-- Not positioned, so the link's stretched ::after still covers the whole row. -->
+    <div data-test="row-title" class="flex min-w-0 grow items-center gap-2">
+      <RouterLink
+        data-test="row-link"
+        :to="{ name: 'session', params: { id: session.session_id } }"
+        class="min-w-0 truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
+        :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal']"
+      >{{ session.title }}</RouterLink>
+      <PlanBadge :session="session" />
+    </div>
     <span class="sr-only">{{ displayStateLabels[session.display_state] }}{{ session.unread ? ', com novidade' : '' }}</span>
     <span v-if="reason" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs text-secondary-soft">{{ reason }}</span>
     <!-- Fixed widths, kept even when empty, so the columns line up from row to row. The actions float over the right end instead of taking room from them. -->
