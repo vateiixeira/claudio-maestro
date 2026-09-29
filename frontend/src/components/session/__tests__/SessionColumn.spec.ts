@@ -2,23 +2,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
-import { createAppRouter } from '../../router'
-import { jsonResponse, makeEvent, makeProject, makeSnapshot, routeFetch } from '../../test/factories'
-import { useProjectsStore } from '../../stores/projects'
-import type { WsEvent } from '../../types/events'
+import { createAppRouter } from '../../../router'
+import { jsonResponse, makeEvent, makeProject, makeSnapshot, routeFetch } from '../../../test/factories'
+import { useProjectsStore } from '../../../stores/projects'
+import type { WsEvent } from '../../../types/events'
 
 const fake = vi.hoisted(() => ({
   session: new Map<string, (e: unknown) => void>(),
   reconnect: new Set<() => void>(),
 }))
-vi.mock('../../api/socket', () => ({
+vi.mock('../../../api/socket', () => ({
   useEventSocket: () => ({
     onSession: (id: string, h: (e: unknown) => void) => { fake.session.set(id, h); return () => fake.session.delete(id) },
     onReconnect: (h: () => void) => { fake.reconnect.add(h); return () => fake.reconnect.delete(h) },
   }),
 }))
 
-import SessionView from '../SessionView.vue'
+import SessionColumn from '../SessionColumn.vue'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -36,15 +36,15 @@ afterEach(() => vi.unstubAllGlobals())
 
 const text = (id: string, t: string) => ({ type: 'text', id, text: t, streaming: false, parent_tool_use_id: null })
 
-async function mountView() {
+async function mountView(props: Record<string, unknown> = {}) {
   const router = createAppRouter(createMemoryHistory())
   await router.push('/sessions/s1')
-  const w = mount(SessionView, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+  const w = mount(SessionColumn, { props: { id: 's1', visible: true, ...props }, global: { plugins: [pinia, router] } })
   await flushPromises()
   return w
 }
 
-describe('tela da sessão', () => {
+describe('coluna da sessão', () => {
   it('carrega o retrato e mostra cabeçalho, itens e campo', async () => {
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ title: 'Cupom expirado', state: 'idle', seq: 2, items: [text('a', 'Olá do retrato') as never] })),
@@ -98,9 +98,54 @@ describe('tela da sessão', () => {
   })
 
   it('mostra o erro ao carregar', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse({ detail: 'Servidor caiu.' }, 500) }))
+    const w = await mountView()
+    expect(w.find('[role="alert"]').text()).toContain('Servidor caiu.')
+    expect(w.emitted('missing')).toBeUndefined()
+  })
+
+  it('avisa quando a sessão não existe mais (404)', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse({ detail: 'Sessão não encontrada.' }, 404) }))
     const w = await mountView()
-    expect(w.find('[role="alert"]').text()).toContain('Sessão não encontrada.')
+    expect(w.emitted('missing')).toHaveLength(1)
+  })
+
+  it('o botão de fechar emite close sem chamar o backend', async () => {
+    const fetchMock = routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot()) })
+    vi.stubGlobal('fetch', fetchMock)
+    const w = await mountView()
+    await w.find('button[aria-label="Fechar coluna"]').trigger('click')
+    expect(w.emitted('close')).toHaveLength(1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('marca como vista ao receber foco e ao chegar item novo, só se visível', async () => {
+    vi.useFakeTimers()
+    const fetchMock = routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })),
+      'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const w = await mountView()
+    const seen = () => fetchMock.mock.calls.filter(([url]) => url === '/api/sessions/s1/seen').length
+    await vi.advanceTimersByTimeAsync(1000)
+    const afterLoad = seen()
+    expect(afterLoad).toBe(1)
+
+    await w.find('section').trigger('focusin')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(seen()).toBe(afterLoad + 1)
+
+    fake.session.get('s1')!(makeEvent('item.upsert', text('n', 'novo'), 2))
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(seen()).toBe(afterLoad + 2)
+
+    await w.setProps({ visible: false })
+    fake.session.get('s1')!(makeEvent('item.upsert', text('m', 'outro'), 3))
+    await w.find('section').trigger('focusin')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(seen()).toBe(afterLoad + 2)
+    vi.useRealTimers()
   })
 
   it('cancela as assinaturas do socket ao trocar de sessão e no unmount', async () => {
@@ -130,5 +175,38 @@ describe('tela da sessão', () => {
     await w.setProps({ id: 's2' })
     await flushPromises()
     expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('não marca como vista se a coluna deixa de estar visível antes do atraso', async () => {
+    vi.useFakeTimers()
+    const fetchMock = routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot()),
+      'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const seen = () => fetchMock.mock.calls.filter(([url]) => url === '/api/sessions/s1/seen').length
+    const w = await mountView({ visible: false })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(seen()).toBe(0)
+    await w.setProps({ visible: true })
+    await w.setProps({ visible: false })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(seen()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it('recheca a aba oculta quando o atraso termina', async () => {
+    vi.useFakeTimers()
+    const fetchMock = routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot()),
+      'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await mountView()
+    const spy = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    await vi.advanceTimersByTimeAsync(1000)
+    spy.mockRestore()
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/sessions/s1/seen')).toHaveLength(0)
+    vi.useRealTimers()
   })
 })

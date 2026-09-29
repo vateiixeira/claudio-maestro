@@ -5,10 +5,13 @@ import AppSidebar from './components/sidebar/AppSidebar.vue'
 import ConnectionIndicator from './components/ConnectionIndicator.vue'
 import { useEventSocket } from './api/socket'
 import { loadEverything } from './stores/realtime'
+import { useLayoutStore } from './stores/layout'
 
 const socket = useEventSocket()
+const layout = useLayoutStore()
 
 onMounted(() => {
+  void layout.restore()
   loadEverything().catch(() => {
     // The projects store keeps the error and the sidebar shows it.
   })

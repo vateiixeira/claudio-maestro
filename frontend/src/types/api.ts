@@ -51,4 +51,18 @@ export interface Session {
   last_activity_at: number
   state: SessionState
   error: string | null
+  last_seen_at: number | null
+  finished: boolean
+  seq: number
+  display_state: DisplayState
+  unread: boolean
+  awaiting_decision: boolean
+}
+
+/** What the user sees: running, waiting for them, or marked as finished. */
+export type DisplayState = 'running' | 'waiting' | 'finished'
+
+export interface SessionUpdate {
+  finished?: boolean
+  title?: string
 }

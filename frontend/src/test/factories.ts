@@ -24,6 +24,12 @@ export function makeSession(overrides: Partial<Session> = {}): Session {
     last_activity_at: 1_790_000_000,
     state: 'closed',
     error: null,
+    last_seen_at: null,
+    finished: false,
+    seq: 0,
+    display_state: 'waiting',
+    unread: false,
+    awaiting_decision: false,
     ...overrides,
   }
 }

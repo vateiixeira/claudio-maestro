@@ -1,9 +1,11 @@
 import type {
   DirListing,
+  DisplayState,
   Project,
   ProjectCreate,
   ProjectUpdate,
   Session,
+  SessionUpdate,
 } from '../types/api'
 import type { PromptDecision, SessionSnapshot } from '../types/conversation'
 
@@ -26,7 +28,7 @@ export function errorMessage(error: unknown): string {
   return 'Algo deu errado. Tente de novo.'
 }
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE'
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 // FastAPI validation errors (422) come as a list of {loc, msg}; turn them into one line.
 function detailText(detail: unknown): string | null {
@@ -112,6 +114,15 @@ export function listSessions(projectId: number): Promise<Session[]> {
   return request('GET', `/api/projects/${projectId}/sessions`)
 }
 
+/** All sessions, optionally filtered by project and by what the user sees. */
+export function listAllSessions(filter: { projectId?: number; state?: DisplayState } = {}): Promise<Session[]> {
+  const params = new URLSearchParams()
+  if (filter.projectId != null) params.set('project_id', String(filter.projectId))
+  if (filter.state) params.set('state', filter.state)
+  const query = params.toString()
+  return request('GET', `/api/sessions${query ? '?' + query : ''}`)
+}
+
 export function createSession(projectId: number): Promise<Session> {
   return request('POST', `/api/projects/${projectId}/sessions`)
 }
@@ -134,4 +145,22 @@ export function answerPrompt(sessionId: string, promptId: string, decision: Prom
     `/api/sessions/${encodeURIComponent(sessionId)}/prompts/${encodeURIComponent(promptId)}`,
     { decision },
   )
+}
+
+export function updateSession(sessionId: string, changes: SessionUpdate): Promise<Session> {
+  return request('PATCH', `/api/sessions/${encodeURIComponent(sessionId)}`, changes)
+}
+
+export function markSessionSeen(sessionId: string): Promise<void> {
+  return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/seen`)
+}
+
+// App state (layout, preferences)
+
+export function getAppState(): Promise<Record<string, unknown>> {
+  return request('GET', '/api/state')
+}
+
+export function putAppState(key: string, value: unknown): Promise<unknown> {
+  return request('PUT', `/api/state/${encodeURIComponent(key)}`, value)
 }

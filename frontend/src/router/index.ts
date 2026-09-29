@@ -4,13 +4,14 @@ import {
   type RouteRecordRaw,
   type RouterHistory,
 } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
 import NewProjectView from '../views/NewProjectView.vue'
 import ProjectView from '../views/ProjectView.vue'
-import SessionView from '../views/SessionView.vue'
+import WorkspaceView from '../views/WorkspaceView.vue'
 
 export const routes: RouteRecordRaw[] = [
-  { path: '/', name: 'home', component: HomeView },
+  // `/` shows the open session columns (or the start screen); `/sessions/:id`
+  // shows the same workspace and opens that session as a column.
+  { path: '/', name: 'home', component: WorkspaceView },
   { path: '/projects/new', name: 'project-new', component: NewProjectView },
   {
     path: '/projects/:id(\\d+)',
@@ -21,8 +22,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/sessions/:id',
     name: 'session',
-    component: SessionView,
-    props: (route) => ({ id: String(route.params.id) }),
+    component: WorkspaceView,
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

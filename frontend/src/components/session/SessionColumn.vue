@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { errorMessage } from '../api/http'
-import { useEventSocket } from '../api/socket'
-import SessionStateIcon from '../components/SessionStateIcon.vue'
-import ConversationBlock from '../components/conversation/ConversationBlock.vue'
-import MessageComposer from '../components/conversation/MessageComposer.vue'
-import PermissionCard from '../components/conversation/PermissionCard.vue'
-import { sessionStateLabels } from '../sessionState'
-import { useConversationStore } from '../stores/conversation'
-import { useProjectsStore } from '../stores/projects'
-import type { ConversationItem } from '../types/conversation'
+import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
+import { useEventSocket } from '../../api/socket'
+import SessionStateIcon from '../SessionStateIcon.vue'
+import ConversationBlock from '../conversation/ConversationBlock.vue'
+import MessageComposer from '../conversation/MessageComposer.vue'
+import PermissionCard from '../conversation/PermissionCard.vue'
+import { sessionStateLabels } from '../../sessionState'
+import { useConversationStore } from '../../stores/conversation'
+import { useProjectsStore } from '../../stores/projects'
+import type { ConversationItem } from '../../types/conversation'
 
-const props = defineProps<{ id: string }>()
+const props = withDefaults(defineProps<{ id: string; visible?: boolean }>(), { visible: true })
+const emit = defineEmits<{ close: []; missing: [] }>()
 
 const conversations = useConversationStore()
 const projects = useProjectsStore()
@@ -26,10 +27,42 @@ async function reload() {
   try {
     await conversations.load(props.id)
     loadError.value = null
+    markSeenSoon()
   } catch (e) {
+    if (e instanceof ApiError && e.status === 404) {
+      emit('missing')
+      return
+    }
     loadError.value = errorMessage(e)
   }
 }
+
+// Tells the backend the user has looked at this session: after loading, when the
+// column gets focus and when new items arrive, but only while the column is visible.
+const SEEN_DELAY = 300
+let seenTimer: ReturnType<typeof setTimeout> | null = null
+const canSee = () => props.visible && document.visibilityState !== 'hidden'
+function cancelSeen() {
+  if (seenTimer) clearTimeout(seenTimer)
+  seenTimer = null
+}
+function markSeenSoon() {
+  if (!canSee()) return
+  cancelSeen()
+  const id = props.id
+  seenTimer = setTimeout(() => {
+    seenTimer = null
+    if (!canSee() || id !== props.id) return
+    markSessionSeen(id).catch(() => {
+      // Not worth bothering the user; the next focus or item tries again.
+    })
+  }, SEEN_DELAY)
+}
+watch(() => conv.value?.items.length, (length, before) => {
+  if (length !== undefined && before !== undefined && length > before) markSeenSoon()
+})
+watch(() => props.visible, (visible) => (visible ? markSeenSoon() : cancelSeen()))
+onBeforeUnmount(cancelSeen)
 
 let offs: Array<() => void> = []
 watch(
@@ -48,7 +81,7 @@ watch(
 onBeforeUnmount(() => offs.forEach((off) => off()))
 
 // Items with a parent tool are shown indented under that tool.
-const layout = computed(() => {
+const rows = computed(() => {
   const items = conv.value?.items ?? []
   const toolIds = new Set(items.flatMap((i) => (i.type === 'tool' ? [i.tool_use_id] : [])))
   const children = new Map<string, ConversationItem[]>()
@@ -108,7 +141,7 @@ function resolvePrompt(promptId: string) {
 </script>
 
 <template>
-  <section :aria-label="conv ? `Sessão: ${conv.title}` : 'Sessão'" class="flex h-full min-w-0 flex-col">
+  <section :aria-label="conv ? `Sessão: ${conv.title}` : 'Sessão'" class="flex h-full min-w-0 flex-col" @focusin="markSeenSoon">
     <template v-if="conv">
       <header class="flex flex-col gap-2 border-b border-line px-4 pt-4 pb-3">
         <div class="flex items-center gap-2">
@@ -133,17 +166,28 @@ function resolvePrompt(promptId: string) {
             <SessionStateIcon :state="conv.state" />
             {{ sessionStateLabels[conv.state] }}
           </span>
+          <button
+            type="button"
+            aria-label="Fechar coluna"
+            title="Fechar coluna (a sessão continua)"
+            class="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+            @click="emit('close')"
+          >
+            <svg viewBox="0 0 16 16" class="size-4" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
         </div>
         <h2 class="m-0 text-lg font-semibold">{{ conv.title }}</h2>
       </header>
 
       <div ref="scroller" class="min-h-0 grow overflow-y-auto" @scroll="onScroll">
         <div class="flex flex-col gap-3 p-4">
-          <p v-if="layout.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
+          <p v-if="rows.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
           <div
-            v-for="row in layout"
+            v-for="row in rows"
             :key="row.item.id"
             class="flex min-w-0 flex-col"
             :class="{ 'border-l border-line pl-4': row.depth > 0 }"
@@ -175,11 +219,17 @@ function resolvePrompt(promptId: string) {
         <MessageComposer :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" />
       </div>
     </template>
-    <div v-else class="px-10 py-8">
-      <p v-if="loadError" role="alert" class="text-fg-muted">
-        {{ loadError }}
-        <RouterLink to="/" class="text-primary-soft hover:underline">Voltar ao início</RouterLink>
-      </p>
+    <div v-else class="flex flex-col items-start gap-3 px-6 py-8">
+      <p v-if="loadError" role="alert" class="m-0 text-fg-muted">{{ loadError }}</p>
+      <button
+        v-if="loadError"
+        type="button"
+        aria-label="Fechar coluna"
+        class="min-h-9 rounded-md border border-line-strong px-3 text-sm text-fg hover:bg-card"
+        @click="emit('close')"
+      >
+        Fechar coluna
+      </button>
       <p v-else class="text-fg-muted">Carregando…</p>
     </div>
   </section>
