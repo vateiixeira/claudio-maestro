@@ -19,10 +19,10 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 0. Fundação | Backend e frontend no ar em modo de desenvolvimento | Concluído | 6 de 6 |
 | 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Concluído | 13 de 13 |
 | 2. Multissessão | Colunas, estados e menu lateral | Em andamento | 12 de 12 |
-| 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 7 |
+| 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Não iniciado | 0 de 13 |
-| 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 11 |
+| 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 14 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -99,6 +99,7 @@ Objetivo: continuar no app o trabalho que começou no CLI ou na extensão.
 - [ ] Busca no menu lateral por título, resumo e primeiro prompt
 - [ ] Sessões sem atividade há mais de 3 dias ocultas do menu, com contagem
 - [ ] Aviso ao retomar sessão modificada no último minuto por outro processo
+- [ ] Nome dado a uma sessão antes da primeira mensagem aplicado ao CLI depois da primeira conexão
 
 ## Marco 4. Git
 
@@ -139,6 +140,9 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [ ] Recarregar a página no meio de uma resposta preserva texto e permissão pendente
 - [ ] Salto de `seq` nos eventos de uma conversa recarrega o retrato (evento perdido entre retrato e abertura do WebSocket)
 - [ ] Navegador de pastas ignora respostas fora de ordem
+- [ ] Layout restaurado de novo na reconexão quando a primeira leitura falhou
+- [ ] Sessão criada em uma aba aparece nas outras e não some por listagem em andamento
+- [ ] Remover projeto espera conexões em andamento das sessões dele
 - [ ] Duas abas abertas ficam consistentes; resposta duplicada é recusada sem erro
 - [ ] Processo do Claude morto, CLI ausente e login expirado mostram erro legível
 - [ ] Limite da assinatura atingido mostra o horário de liberação
@@ -224,6 +228,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Mesma sessão aberta no app e no CLI ao mesmo tempo | Risco de embaralhar o histórico. O app só avisa |
 | O que o SDK entrega sobre subagentes | Verificar antes do marco 5. Candidatos: mensagens com `parent_tool_use_id`, a opção `forward_subagent_text`, as mensagens `TaskStartedMessage`, `TaskProgressMessage` e `TaskNotificationMessage`, e as funções `list_subagents` e `get_subagent_messages`. A conversão de mensagens já guarda `parent_tool_use_id` em cada item |
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
+| Ações rápidas na visão geral | O design aprovado mostra "Permitir" e "Negar" direto no cartão "Aguardando você" e a atividade atual de cada sessão. Não está em nenhum marco. Decidir se entra |
 | Tecnologia do ditado por voz | Decidir antes do marco 5. Opção A: reconhecimento de fala do navegador, sem dependência e leve, mas só no Chrome e no Edge, precisa de internet e envia o áudio ao Google. Opção B: Whisper rodando no backend, privado e offline, mas baixa um modelo de centenas de MB e usa CPU a cada ditado. Recomendação inicial: A |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
 
