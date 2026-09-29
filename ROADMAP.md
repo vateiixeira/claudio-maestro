@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 10 de 34 |
+| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 25 de 34 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -138,33 +138,33 @@ Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 
 Objetivo: o app aguenta o uso diário sem surpresas.
 
-- [ ] Sessão nova do app começa no `defaultMode` do `~/.claude/settings.json` do usuário (o SDK não herda o `auto`)
+- [x] Sessão nova do app começa no `defaultMode` do `~/.claude/settings.json` do usuário (o SDK não herda o `auto`) (2026-09-29)
 - [x] Mensagem enviada durante um turno ou com permissão pendente não se perde (2026-09-29)
 - [x] Recarregar a página no meio de uma resposta preserva texto e permissão pendente (2026-09-29)
 - [x] Salto de `seq` nos eventos de uma conversa recarrega o retrato (evento perdido entre retrato e abertura do WebSocket) (2026-09-29)
 - [x] Navegador de pastas ignora respostas fora de ordem (2026-09-29)
 - [x] Layout restaurado de novo na reconexão quando a primeira leitura falhou (2026-09-29)
 - [x] Sessão criada em uma aba aparece nas outras e não some por listagem em andamento (2026-09-29)
-- [ ] Remover projeto espera conexões em andamento das sessões dele
-- [ ] Fechamentos de cliente disparados por cancelamento durante a conexão passam pelo mesmo controle de descarte
-- [ ] Aviso de atividade externa sem falso positivo depois de reinício do backend ou de falha do processo
-- [ ] Limite total de tamanho do retrato, incluindo entradas de ferramentas e leitura de arquivos de sessão enormes
-- [ ] Checagem de modificação de sessão por `stat` do arquivo em vez de listar a pasta; custo da sincronização com milhares de sessões
-- [ ] Aviso para transcrição corrompida e resumo de compactação exibido como aviso, não como mensagem do usuário
-- [ ] Nova tentativa de carregar a conversa depois de uma falha
+- [x] Remover projeto espera conexões em andamento das sessões dele (2026-09-29)
+- [x] Fechamentos de cliente disparados por cancelamento durante a conexão passam pelo mesmo controle de descarte (2026-09-29)
+- [x] Aviso de atividade externa sem falso positivo depois de reinício do backend ou de falha do processo (2026-09-29)
+- [x] Limite total de tamanho do retrato, incluindo entradas de ferramentas e leitura de arquivos de sessão enormes (2026-09-29)
+- [x] Checagem de modificação de sessão por `stat` do arquivo em vez de listar a pasta; custo da sincronização com milhares de sessões (2026-09-29)
+- [x] Aviso para transcrição corrompida e resumo de compactação exibido como aviso, não como mensagem do usuário (2026-09-29)
+- [x] Nova tentativa de carregar a conversa depois de uma falha (2026-09-29)
 - [ ] Aviso na interface quando um projeto passa de 50 repositórios
-- [ ] Preservar nomes dados no app antes da migração do marco 3
+- [x] Preservar nomes dados no app antes da migração do marco 3 (2026-09-29)
 - [ ] Prévia de repositórios na tela de novo projeto segue a mesma descoberta do projeto (3 níveis, pastas ignoradas)
 - [ ] Botão "Escolher pasta…" no novo projeto abre o seletor de pastas nativo do sistema (zenity no GNOME), com o navegador de pastas atual como alternativa
 - [ ] Tela de preferências: comando do editor, dias para ocultar sessões
-- [ ] Arquivos modificados na sessão incluem edições fora das últimas 500 mensagens do histórico
+- [x] Arquivos modificados na sessão incluem edições fora das últimas 500 mensagens do histórico (2026-09-29)
 - [ ] "HEAD solto" indicado também no navegador de pastas
-- [ ] Espera por vaga de processo git não conta no tempo limite de 5 s; diff de arquivo que some durante a leitura dá erro legível
-- [ ] Observador do CLI: coluna recarrega em até 1 s (hoje 2 s) e leitura só da sessão alterada, sem listar a pasta inteira
-- [ ] Interromper também para subagentes em segundo plano
+- [x] Espera por vaga de processo git não conta no tempo limite de 5 s; diff de arquivo que some durante a leitura dá erro legível (2026-09-29)
+- [x] Observador do CLI: coluna recarrega em até 1 s (hoje 2 s) e leitura só da sessão alterada, sem listar a pasta inteira (2026-09-29)
+- [x] Interromper também para subagentes em segundo plano (2026-09-29)
 - [x] Duas abas abertas ficam consistentes; resposta duplicada é recusada sem erro (2026-09-29)
-- [ ] Processo do Claude morto, CLI ausente e login expirado mostram erro legível
-- [ ] Limite da assinatura atingido mostra o horário de liberação
+- [x] Processo do Claude morto, CLI ausente e login expirado mostram erro legível (2026-09-29)
+- [x] Limite da assinatura atingido mostra o horário de liberação (2026-09-29)
 - [x] Projeto com pasta apagada aparece como indisponível (2026-09-29)
 - [ ] Caminhos com espaços, acentos e links simbólicos para fora da pasta pessoal
 - [x] Revisão de acessibilidade: teclado, contraste e foco (2026-09-29)

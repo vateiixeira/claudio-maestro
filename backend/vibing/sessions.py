@@ -26,6 +26,7 @@ from claude_agent_sdk import (
     PermissionResultAllow,
     PermissionResultDeny,
     PermissionUpdate,
+    RateLimitEvent,
     ResultMessage,
     StreamEvent,
     SystemMessage,
@@ -35,7 +36,8 @@ from claude_agent_sdk import (
 from vibing import db
 from vibing import history as history_module
 from vibing.agent.base import AgentClient, AgentError, AgentFactory, AgentOptions
-from vibing.conversation import ConversationBuilder, Event
+from vibing.config import read_user_claude_settings
+from vibing.conversation import ConversationBuilder, Event, cap_items, rate_limit_text
 from vibing.projects import Project
 
 logger = logging.getLogger(__name__)
@@ -105,14 +107,19 @@ ListSessions = history_module.ListSessions
 ReadToolResults = history_module.ReadToolResults
 # file_mtime(session_id, directory): modification time of the session file, or None.
 FileMtime = Callable[[str, str], float | None]
-# `list_sessions(cwd)` answers are reused this long when opening sessions.
-FILE_INFO_TTL = 5.0  # seconds
 
 DEFAULT_IDLE_TIMEOUT = 30 * 60  # seconds
 DEFAULT_HISTORY_LIMIT = 500  # messages loaded when opening an old session
 # A history file modified this recently by someone else counts as external activity.
 EXTERNAL_ACTIVITY_WINDOW = 60  # seconds
 HISTORY_LOAD_FAILED = "Não foi possível carregar a conversa salva desta sessão."
+HISTORY_LINES_SKIPPED = "Parte do histórico não pôde ser lida."
+# Size of the items of a snapshot (JSON); older items beyond it are left out.
+SNAPSHOT_MAX_BYTES = 2 * 1024 * 1024
+# A file written this long after the app's own last write still counts as the app's.
+APP_WRITE_TOLERANCE = 2  # seconds
+# How long removing a project waits for a send or connect still running.
+PROJECT_CLOSE_WAIT = 30.0  # seconds
 DEFAULT_FINISHED_AFTER_DAYS = 3.0
 DAY_SECONDS = 86_400
 
@@ -189,6 +196,9 @@ class SessionRecord:
     rename_pending: bool = False
     # Last modification of the history file (SDK `last_modified`), in seconds.
     file_modified_at: int | None = None
+    # Modification time of the history file as the app itself last left it
+    # (end of a turn, close, failure), in seconds. Survives restarts.
+    app_modified_at: int | None = None
     # Options used when connecting; None lets the CLI decide.
     model: str | None = None
     effort: str | None = None
@@ -210,11 +220,11 @@ _INSERT_COLUMNS = (
 )
 _COLUMNS = (
     _INSERT_COLUMNS
-    + ", summary, first_prompt, title_custom, rename_pending, file_modified_at"
+    + ", summary, first_prompt, title_custom, rename_pending, file_modified_at, app_modified_at"
     + ", model, effort, permission_mode"
 )
 # Record fields kept out of what the frontend receives.
-_INTERNAL_FIELDS = ("title_custom", "rename_pending", "file_modified_at")
+_INTERNAL_FIELDS = ("title_custom", "rename_pending", "file_modified_at", "app_modified_at")
 _BOOL_FIELDS = ("finished", "title_custom", "rename_pending")
 
 
@@ -409,6 +419,24 @@ def normalize_models(info: dict[str, Any] | None) -> list[dict[str, Any]] | None
     return result or None
 
 
+def user_default_permission_mode() -> str | None:
+    """`permissions.defaultMode` of the user's CLI settings, used by new sessions.
+
+    The SDK does not inherit it (verified with `auto`). Unknown values are
+    ignored, and so is `bypassPermissions`: the app only enables it after an
+    explicit confirmation.
+    """
+    permissions = read_user_claude_settings().get("permissions")
+    mode = permissions.get("defaultMode") if isinstance(permissions, dict) else None
+    if mode == "bypassPermissions":
+        logger.warning(
+            "defaultMode bypassPermissions do settings.json ignorado: sessões novas"
+            " começam no modo padrão"
+        )
+        return None
+    return mode if isinstance(mode, str) and mode in PERMISSION_MODES else None
+
+
 def sdk_history_exists(session_id: str, cwd: str) -> bool:
     """Production check: the SDK has a conversation on disk for this session.
 
@@ -458,8 +486,12 @@ class ActiveSession:
         file_mtime: FileMtime | None = None,
         on_turn_end: Callable[[int], None] | None = None,
         on_connected: Callable[[AgentClient], Any] | None = None,
+        read_transcript: history_module.ReadTranscript | None = None,
     ) -> None:
         self.record = record
+        self._read_transcript = read_transcript
+        # The last load failed: the next open tries again.
+        self._history_failed = False
         self._on_turn_end = on_turn_end
         # Awaited after each successful connect (the manager caches the models).
         self._on_connected = on_connected
@@ -569,12 +601,13 @@ class ActiveSession:
 
     def snapshot(self) -> dict[str, Any]:
         init = self.builder.init
+        items, cut = cap_items(self.builder.snapshot(), SNAPSHOT_MAX_BYTES)
         return {
             **self.summary(),
-            "items": self.builder.snapshot(),
+            "items": items,
             "prompts": [prompt.to_dict() for prompt in self.prompts.values()],
             "init": asdict(init) if init is not None else None,
-            "history_truncated": self.history_truncated,
+            "history_truncated": self.history_truncated or cut,
             "external_activity": self.external_activity,
         }
 
@@ -585,14 +618,29 @@ class ActiveSession:
 
     @property
     def external_activity(self) -> bool:
-        """The history file changed in the last minute while the app was not using it."""
+        """The history file changed in the last minute while the app was not using it.
+
+        What the app itself wrote does not count: `app_modified_at` (the file's
+        mtime saved at the end of each turn, close or failure) survives restarts.
+        """
         modified = self.record.file_modified_at
         if self.active or modified is None:
             return False
+        own = max(self._app_activity_at, self.record.app_modified_at or 0)
         return (
             time.time() - modified <= EXTERNAL_ACTIVITY_WINDOW
-            and modified > self._app_activity_at + 2
+            and modified > own + APP_WRITE_TOLERANCE
         )
+
+    async def _record_app_mtime(self) -> None:
+        """Save the file's mtime as the app leaves it (not external activity)."""
+        current = await self._current_mtime()
+        if current is None:
+            return
+        try:
+            self.save(app_modified_at=int(current))
+        except Exception:
+            logger.exception("Falha ao gravar a data do arquivo da sessão %s", self.session_id)
 
     # History ---------------------------------------------------------------
 
@@ -621,7 +669,7 @@ class ActiveSession:
         """Without a client, reload the conversation if its file changed since the last load."""
         if (
             self.active or self.prompts or self.pending_turns
-            or self._get_session_messages is None
+            or (self._get_session_messages is None and self._read_transcript is None)
             # Another operation (a send holding the lock, a second open) is running:
             # replacing the builder now could drop a message just sent.
             or self.busy or self.users > 1
@@ -647,46 +695,80 @@ class ActiveSession:
         """Load the saved conversation once, before anything else is shown or sent.
 
         Only the last `history_limit` messages are kept (`history_truncated`).
-        No client is created.
+        No client is created. A failed load leaves a warning and is tried again
+        on the next call.
         """
         if self._history_loaded:
             return
         async with self._history_lock:
             if self._history_loaded:
                 return
+            if self._history_failed and self._only_failure_notice():
+                # Drop the warning of the failed attempt and try again.
+                self.builder = ConversationBuilder()
             if (
-                self._get_session_messages is None
+                (self._get_session_messages is None and self._read_transcript is None)
                 or self._has_connected
                 or self.builder.items
             ):
                 self._history_loaded = True
                 return
+            retry = self._history_failed
             self._loaded_mtime = await self._current_mtime()
             try:
-                entries = await asyncio.to_thread(
-                    self._get_session_messages, self.session_id, self.record.cwd
-                )
+                loaded = await self._load_entries()
             except Exception:
                 logger.exception("Falha ao carregar o histórico da sessão %s", self.session_id)
                 self.builder.add_notice("warning", HISTORY_LOAD_FAILED)
-                self._history_loaded = True
+                self._history_failed = True
                 return
-            entries = list(entries or [])
+            entries, tool_results, skipped, compact = loaded
+            self._history_failed = False
             if len(entries) > self._history_limit:
                 self.history_truncated = True
                 entries = entries[-self._history_limit:]
-            tool_results: dict[str, dict[str, Any]] = {}
-            if self._read_tool_results is not None and entries:
-                try:
-                    tool_results = await asyncio.to_thread(
-                        self._read_tool_results, self.session_id, self.record.cwd
-                    )
-                except Exception:
-                    logger.exception(
-                        "Falha ao ler os resultados de ferramentas da sessão %s", self.session_id
-                    )
-            self.builder.load_history(entries, tool_results)
+            self.builder.load_history(entries, tool_results, compact)
+            if skipped:
+                self.builder.add_notice("warning", HISTORY_LINES_SKIPPED)
             self._history_loaded = True
+            if retry:
+                # Other tabs still show the warning: they fetch the snapshot again.
+                self._emit("conversation.reset", {})
+
+    def _only_failure_notice(self) -> bool:
+        items = self.builder.items
+        return all(getattr(item, "text", None) == HISTORY_LOAD_FAILED for item in items)
+
+    async def _load_entries(
+        self,
+    ) -> tuple[list[Any], dict[str, dict[str, Any]], int, set[str]]:
+        """(entries, tool results, skipped lines, compact summary uuids)."""
+        if self._read_transcript is not None:
+            transcript = await asyncio.to_thread(
+                self._read_transcript, self.session_id, self.record.cwd
+            )
+            if transcript is None:
+                return [], {}, 0, set()
+            return (
+                list(transcript.messages), transcript.tool_results,
+                transcript.skipped_lines, set(transcript.compact_uuids),
+            )
+        assert self._get_session_messages is not None
+        entries = list(
+            await asyncio.to_thread(self._get_session_messages, self.session_id, self.record.cwd)
+            or []
+        )
+        tool_results: dict[str, dict[str, Any]] = {}
+        if self._read_tool_results is not None and entries:
+            try:
+                tool_results = await asyncio.to_thread(
+                    self._read_tool_results, self.session_id, self.record.cwd
+                )
+            except Exception:
+                logger.exception(
+                    "Falha ao ler os resultados de ferramentas da sessão %s", self.session_id
+                )
+        return entries, tool_results, 0, set()
 
     async def _apply_pending_rename(self) -> None:
         """Write a title chosen before the conversation existed on disk."""
@@ -832,14 +914,17 @@ class ActiveSession:
                 if resume or not (error.session_in_use or await self._check_history()):
                     raise
                 logger.info("Sessão %s já existe; reconectando com resume", self.session_id)
-                await self._close_quietly(client)
+                failed, client = client, None
+                await self._dispose(failed, None)
                 client = self._new_client(resume=True)
                 await client.connect()
         except asyncio.CancelledError:
             self._connecting = False
             if client is not None:
+                # Tracked in `_disposal`: a later send or forget waits for it
+                # even if this task is cancelled again.
                 with suppress(asyncio.CancelledError):
-                    await asyncio.shield(self._close_quietly(client))
+                    await self._dispose(client, None)
             self._refresh_state()
             raise
         except Exception as error:  # AgentError or anything unexpected
@@ -847,7 +932,7 @@ class ActiveSession:
             if generation != self._generation:
                 # Closed while connecting: nothing to report.
                 if client is not None:
-                    await self._close_quietly(client)
+                    await self._dispose(client, None)
                 self._refresh_state()
                 return False
             if isinstance(error, AgentError):
@@ -860,7 +945,7 @@ class ActiveSession:
         self._connecting = False
         if generation != self._generation:
             # close() ran while connecting: discard the new client.
-            await self._close_quietly(client)
+            await self._dispose(client, None)
             self._refresh_state()
             return False
         self.client = client
@@ -926,6 +1011,16 @@ class ActiveSession:
                     # The CLI opened a turn by itself (a background subagent finished).
                     self._autonomous_turn = True
                 self._emit_events(self.builder.handle(message))
+                if (
+                    isinstance(message, RateLimitEvent)
+                    and message.rate_limit_info.status == "rejected"
+                ):
+                    # The builder already showed the notice with the release time.
+                    if self.client is client:
+                        await self._fail(
+                            rate_limit_text(message.rate_limit_info.resets_at), notice=False
+                        )
+                    return
                 if isinstance(message, SystemMessage) and message.subtype == "init":
                     self._apply_init()
                 if isinstance(message, ResultMessage):
@@ -941,6 +1036,9 @@ class ActiveSession:
                     # Last: the reconnect it may start cancels this reader.
                     self._schedule_effort()
                 self._refresh_state()
+                if isinstance(message, ResultMessage):
+                    # After every event of the turn: this only writes the database.
+                    await self._record_app_mtime()
         except asyncio.CancelledError:
             raise
         except AgentError as error:
@@ -1092,10 +1190,12 @@ class ActiveSession:
     # Interruption and failure ---------------------------------------------
 
     async def interrupt(self) -> None:
+        """Interrupt the turn; without a turn, stop the background subagents."""
         client = self.client
-        if client is None or (
-            self.pending_turns == 0 and not self.prompts and not self._autonomous_turn
-        ):
+        if client is None:
+            return
+        if self.pending_turns == 0 and not self.prompts and not self._autonomous_turn:
+            await self._stop_subagents(client)
             return
         try:
             await client.interrupt()
@@ -1107,7 +1207,20 @@ class ActiveSession:
         self._cancel_prompts()
         self._refresh_state()
 
-    async def _fail(self, message: str, client: AgentClient | None = None) -> None:
+    async def _stop_subagents(self, client: AgentClient) -> None:
+        # A task that cannot be stopped (e.g. it just ended) must not end the
+        # session: logged, and the others are still stopped.
+        for task_id in self.builder.running_task_ids():
+            try:
+                await client.stop_task(task_id)
+            except Exception:
+                logger.exception(
+                    "Falha ao parar o subagente %s da sessão %s", task_id, self.session_id
+                )
+
+    async def _fail(
+        self, message: str, client: AgentClient | None = None, *, notice: bool = True
+    ) -> None:
         client = client or self.client
         reader = self._reader
         self._generation += 1
@@ -1119,10 +1232,13 @@ class ActiveSession:
         self.builder.clear_local_echo()
         self._emit_events(self.builder.close_open_items())
         self._emit_events(self.builder.stop_running_subagents())
-        self._emit_events(self.builder.add_notice("error", message))
+        if notice:
+            self._emit_events(self.builder.add_notice("error", message))
         self._cancel_prompts()
         self._refresh_state()
         await self._dispose(client, reader)
+        if client is not None:
+            await self._record_app_mtime()
 
     async def close(self, *, final: bool = False) -> None:
         """Close the client, if any. The session goes back to `closed`.
@@ -1156,6 +1272,14 @@ class ActiveSession:
         self._cancel_prompts()
         self._refresh_state()
         await self._dispose(client, reader)
+        if client is not None:
+            await self._record_app_mtime()
+
+    async def wait_settled(self) -> None:
+        """Wait for a send or connect still holding the lock and for any disposal."""
+        async with self._lock:
+            pass
+        await self._wait_disposal()
 
     async def _close_quietly(self, client: AgentClient) -> None:
         try:
@@ -1297,7 +1421,18 @@ class SessionManager:
         read_tool_results: ReadToolResults | None = None,
         file_mtime: FileMtime | None = None,
         on_turn_end: Callable[[int], None] | None = None,
+        default_permission_mode: Callable[[], str | None] | None = None,
+        read_transcript: history_module.ReadTranscript | None = None,
+        read_edits: history_module.ReadEdits | None = None,
     ) -> None:
+        # Mode of new sessions (the user's CLI `defaultMode`).
+        self._default_permission_mode = default_permission_mode or user_default_permission_mode
+        # One pass over the transcript file. Only by default: tests that inject
+        # get_session_messages or read_tool_results keep using them.
+        if read_transcript is None and get_session_messages is None and read_tool_results is None:
+            read_transcript = history_module.sdk_read_transcript
+        self._read_transcript = read_transcript
+        self._read_edits = read_edits or history_module.sdk_read_edits
         # Called with the project id after each turn (e.g. to refresh git).
         self._on_turn_end = on_turn_end
         self._db_path = db_path
@@ -1306,8 +1441,6 @@ class SessionManager:
         # activity), so events keep increasing and they resume as before.
         self._forgotten: dict[str, tuple[int, bool, float, float | None]] = {}
         self._read_tool_results = read_tool_results or history_module.sdk_read_tool_results
-        # cwd -> (monotonic time, {session_id: last_modified in seconds})
-        self._file_info: dict[str, tuple[float, dict[str, int]]] = {}
         self._list_sessions = list_sessions or history_module.sdk_list_sessions
         self._get_session_messages = (
             get_session_messages or history_module.sdk_get_session_messages
@@ -1355,10 +1488,12 @@ class SessionManager:
             last_activity_at=now,
             last_seen_at=now,
             finished=False,
+            permission_mode=self._default_permission_mode(),
         )
         with closing(db.connect(self._db_path)) as conn:
             conn.execute(
-                f"INSERT INTO sessions ({_INSERT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO sessions ({_INSERT_COLUMNS}, permission_mode)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.session_id,
                     record.project_id,
@@ -1368,6 +1503,7 @@ class SessionManager:
                     record.last_activity_at,
                     record.last_seen_at,
                     int(record.finished),
+                    record.permission_mode,
                 ),
             )
         return record
@@ -1396,6 +1532,7 @@ class SessionManager:
             file_mtime=self._file_mtime,
             on_turn_end=self._on_turn_end,
             on_connected=self._on_connected,
+            read_transcript=self._read_transcript,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:
@@ -1443,24 +1580,24 @@ class SessionManager:
             session.users -= 1
 
     async def refresh_file_info(self, session: ActiveSession) -> None:
-        """Read the history file's `last_modified` for a session not active in the app."""
+        """Read the history file's mtime (one `stat`) for a session not active in the app."""
         if session.active:
             return
-        cwd = session.record.cwd
-        cached = self._file_info.get(cwd)
-        if cached is not None and time.monotonic() - cached[0] < FILE_INFO_TTL:
-            modified_by_id = cached[1]
-        else:
-            try:
-                infos = await asyncio.to_thread(self._list_sessions, cwd)
-            except Exception:
-                logger.exception("Falha ao consultar o histórico de %s", cwd)
-                return
-            modified_by_id = {info.session_id: int(info.last_modified) // 1000 for info in infos}
-            self._file_info[cwd] = (time.monotonic(), modified_by_id)
-        modified = modified_by_id.get(session.session_id)
-        if modified is not None and modified != session.record.file_modified_at:
+        current = await session._current_mtime()
+        if current is None:
+            return
+        modified = int(current)
+        if modified != session.record.file_modified_at:
             session.save(file_modified_at=modified)
+
+    async def transcript_edits(self, session_id: str) -> list[dict[str, Any]]:
+        """Every edit tool call in the session's whole transcript (name, path, counts)."""
+        session = self.get(session_id)
+        try:
+            return await asyncio.to_thread(self._read_edits, session_id, session.record.cwd)
+        except Exception:
+            logger.exception("Falha ao ler as edições da sessão %s", session_id)
+            return []
 
     def refresh_records(self, session_ids: set[str]) -> None:
         """Reload records changed by the history sync for sessions kept in memory."""
@@ -1666,10 +1803,27 @@ class SessionManager:
 
     async def close_project(self, project_id: int) -> None:
         """Close and forget every active session of a project being removed."""
-        for session_id, session in list(self._sessions.items()):
-            if session.record.project_id == project_id:
-                await session.close(final=True)
-                self._sessions.pop(session_id, None)
+        targets = [
+            (session_id, session) for session_id, session in list(self._sessions.items())
+            if session.record.project_id == project_id
+        ]
+        for _session_id, session in targets:
+            await session.close(final=True)
+        # A send still connecting would otherwise leave its process behind.
+        # One deadline for the whole project, the sessions waited in parallel.
+        waits = [asyncio.create_task(session.wait_settled()) for _, session in targets]
+        if waits:
+            _done, pending = await asyncio.wait(waits, timeout=PROJECT_CLOSE_WAIT)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.wait(pending)
+                logger.warning(
+                    "%d sessão(ões) ainda conectando ao remover o projeto %s",
+                    len(pending), project_id,
+                )
+        for session_id, _session in targets:
+            self._sessions.pop(session_id, None)
 
     async def close_idle(self) -> None:
         """Close clients idle longer than the timeout. They resume on the next message."""

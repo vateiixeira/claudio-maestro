@@ -1,14 +1,48 @@
 """SQLite connection and schema migrations versioned by `PRAGMA user_version`."""
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-# Each migration is a list of statements. Migration N (1-based) brings the
-# schema to `user_version = N`. Never edit a migration that has shipped;
-# append a new one instead (e.g. `ALTER TABLE sessions ADD COLUMN group_id ...`).
-MIGRATIONS: list[list[str]] = [
+# Titles the app or the sync set by themselves (history.DEFAULT_APP_TITLE, history.UNTITLED).
+_AUTOMATIC_TITLES = ("Nova sessão", "Sessão sem título")
+_TITLE_MAX_LENGTH = 80
+
+
+def _automatic_title(text: str | None) -> str | None:
+    """How the app and the sync turn a prompt or summary into a title."""
+    if not text or not text.strip():
+        return None
+    return " ".join(text.split())[:_TITLE_MAX_LENGTH].rstrip()
+
+
+def mark_custom_titles(conn: sqlite3.Connection) -> None:
+    """Migration 3: keep names given in the app before `title_custom` existed.
+
+    Heuristic: a title is automatic when it is one of the default titles or
+    equals the first prompt or the summary cut like the app and the sync do.
+    Rows the sync already filled (first prompt or summary known) whose title
+    matches neither were renamed by someone: they get `title_custom = 1`, so
+    the sync never replaces them. Rows without first prompt and summary cannot
+    be told apart and stay automatic. A title set by `/rename` in the CLI also
+    ends up marked; the only effect is that later CLI renames stop replacing it.
+    """
+    rows = conn.execute(
+        "SELECT session_id, title, first_prompt, summary FROM sessions WHERE title_custom = 0"
+    ).fetchall()
+    for session_id, title, first_prompt, summary in rows:
+        if title in _AUTOMATIC_TITLES or (first_prompt is None and summary is None):
+            continue
+        if title in (_automatic_title(first_prompt), _automatic_title(summary)):
+            continue
+        conn.execute("UPDATE sessions SET title_custom = 1 WHERE session_id = ?", (session_id,))
+
+
+# Each migration is a list of SQL statements or functions of the connection.
+# Migration N (1-based) brings the schema to `user_version = N`. Never edit a
+# migration that has shipped; append a new one instead.
+MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
     [
         """
         CREATE TABLE projects (
@@ -52,6 +86,12 @@ MIGRATIONS: list[list[str]] = [
         "ALTER TABLE sessions ADD COLUMN title_custom INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE sessions ADD COLUMN rename_pending INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE sessions ADD COLUMN file_modified_at INTEGER",
+    ],
+    [
+        # Marco 6: the history file mtime as the app itself last left it, so a
+        # restart does not mistake the app's own writes for external activity.
+        "ALTER TABLE sessions ADD COLUMN app_modified_at INTEGER",
+        mark_custom_titles,
     ],
 ]
 
@@ -102,7 +142,10 @@ def migrate(conn: sqlite3.Connection) -> None:
             if current >= SCHEMA_VERSION:
                 break
             for statement in MIGRATIONS[current]:
-                conn.execute(statement)
+                if callable(statement):
+                    statement(conn)
+                else:
+                    conn.execute(statement)
             current += 1
             conn.execute(f"PRAGMA user_version = {current}")
 

@@ -26,12 +26,7 @@ Você só orquestra; não implemente você mesmo.
 
 ## Onde parou
 
-Tarefa 1 do marco 6 (robustez do backend, 15 itens) foi implementada. A sessão anterior deixou a correção final e o commit feitos, ou deixou um diff não commitado em `backend/`. Confira com `git status`:
-
-- Se houver diff em `backend/`, ele é a tarefa 1 com a correção de testes intermitentes pedida pelo revisor. Mande um `reviewer` revisar (em especial: rodar `uv run pytest -q` 10 vezes seguidas sem falha), e commite ao aprovar, marcando os itens de backend do marco 6 no `ROADMAP.md`.
-- Se não houver, a tarefa 1 já está commitada; confira se os itens dela estão marcados.
-
-Já concluídas no marco 6: tarefa 2 (robustez do frontend) e tarefa 4 (acessibilidade e fontes locais).
+Marco 6: tarefas 1 (robustez do backend), 2 (robustez do frontend) e 4 (acessibilidade e fontes locais) concluídas, revisadas e commitadas. Falta a tarefa 3, a revisão profunda do marco e o teste real.
 
 ## O que falta no marco 6
 

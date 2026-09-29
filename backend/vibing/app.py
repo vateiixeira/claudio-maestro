@@ -99,7 +99,14 @@ def create_app(
             app.state.settings.claude_projects_dir or claude_projects_dir()
         )
         app.state.cli_watch_task = asyncio.create_task(
-            CliWatcher(claude_projects, app.state.history, app.state.sessions).run()
+            CliWatcher(
+                claude_projects, app.state.history, app.state.sessions,
+                # Tests that inject a fake listing keep using it.
+                session_info=(
+                    None if list_sessions is not None
+                    else lambda sid, cwd: history.sdk_get_session_info(sid, cwd)
+                ),
+            ).run()
         )
         tasks.append(app.state.cli_watch_task)
         try:

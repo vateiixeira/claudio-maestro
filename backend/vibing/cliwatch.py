@@ -22,12 +22,14 @@ from vibing.sessions import SessionManager
 
 logger = logging.getLogger(__name__)
 
+# session_info(session_id, directory) -> SDKSessionInfo-like or None.
+SessionInfo = Callable[[str, str], Any]
 # watch(root) -> async iterator of {(change, path)} batches (watchfiles.awatch).
 Watch = Callable[[Path], AsyncIterator[set[tuple[Any, str]]]]
 
 DEFAULT_FIRST_DELAY = 0.3
 DEFAULT_INTERVAL = 1.0
-DEFAULT_RELOAD_INTERVAL = 2.0
+DEFAULT_RELOAD_INTERVAL = 1.0
 DEFAULT_LIST_TTL = 0.5
 DEFAULT_CONCURRENCY = 2
 _SANITIZE_RE = re.compile(r"[^a-zA-Z0-9]")
@@ -81,6 +83,7 @@ class CliWatcher:
         concurrency: int = DEFAULT_CONCURRENCY,
         watch: Watch | None = None,
         list_sessions: ListSessions | None = None,
+        session_info: SessionInfo | None = None,
         clock: Callable[[], float] = time.monotonic,
         on_processed: Callable[[str], None] | None = None,
     ) -> None:
@@ -93,6 +96,8 @@ class CliWatcher:
         self._list_ttl = list_ttl
         self._watch = watch or default_watch
         self._list_sessions = list_sessions or history.list_sessions
+        # Reads only the changed session. Without it, the folder is listed (TTL cache).
+        self._session_info = session_info
         self._clock = clock
         self._limit = asyncio.Semaphore(concurrency)
         self._on_processed = on_processed
@@ -204,6 +209,12 @@ class CliWatcher:
         return True
 
     async def _listed_info(self, session_id: str, cwd: str) -> Any | None:
+        if self._session_info is not None:
+            try:
+                return await asyncio.to_thread(self._session_info, session_id, cwd)
+            except Exception:
+                logger.exception("Falha ao ler a sessão %s do histórico", session_id)
+                return None
         cached = self._listings.get(cwd)
         if cached is None or self._clock() - cached[0] >= self._list_ttl:
             try:

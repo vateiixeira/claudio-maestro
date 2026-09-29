@@ -159,6 +159,7 @@ class FakeAgentClient:
 
         self.sent: list[str | list[dict[str, Any]]] = []
         self.interrupts = 0
+        self.stopped_tasks: list[str] = []
         self.model_calls: list[str | None] = []
         self.permission_mode_calls: list[str] = []
         self.permission_results: list[PermissionRecord] = []
@@ -239,6 +240,9 @@ class FakeAgentClient:
                 terminal_reason=reason,
             )
         )
+
+    async def stop_task(self, task_id: str) -> None:
+        self.stopped_tasks.append(task_id)
 
     async def set_model(self, model: str | None) -> None:
         self.model_calls.append(model)

@@ -6,7 +6,9 @@ time limit. A failure becomes an `error` on that repository only.
 """
 
 import asyncio
+import contextvars
 import os
+import time
 import weakref
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
@@ -44,6 +46,27 @@ def _slots() -> asyncio.Semaphore:
 
 class GitError(Exception):
     """A git command failed; the message is shown to the user."""
+
+
+class FileGoneError(GitError):
+    """The file disappeared while its diff was being read."""
+
+
+FILE_GONE_MESSAGE = "O arquivo não existe mais."
+
+
+class _Budget:
+    """Time left to a high-level operation. Only time spent running git counts:
+    waiting for a process slot does not."""
+
+    def __init__(self, seconds: float) -> None:
+        self.total = seconds
+        self.left = seconds
+
+
+_budget: contextvars.ContextVar[_Budget | None] = contextvars.ContextVar(
+    "git_budget", default=None
+)
 
 
 @dataclass
@@ -152,11 +175,13 @@ async def run_git(
 
 
 async def _within(timeout: float, operation):
-    """Runs a whole high-level operation under one time limit."""
+    """Runs a whole high-level operation under one time limit, counting only the
+    time its git processes run (not the wait for a free process slot)."""
+    token = _budget.set(_Budget(timeout))
     try:
-        return await asyncio.wait_for(operation, timeout)
-    except TimeoutError as exc:
-        raise GitError(f"O git passou do tempo limite de {timeout:g} s.") from exc
+        return await operation
+    finally:
+        _budget.reset(token)
 
 
 async def _exec(
@@ -167,7 +192,20 @@ async def _exec(
     limit: int | None = None,
 ) -> tuple[int, str, str]:
     async with _slots():
-        return await _exec_now(repo, args, timeout, extra_config, limit)
+        budget = _budget.get()
+        if budget is None:
+            return await _exec_now(repo, args, timeout, extra_config, limit)
+        if budget.left <= 0:
+            raise GitError(f"O git passou do tempo limite de {budget.total:g} s.")
+        started = time.monotonic()
+        try:
+            return await _exec_now(repo, args, min(timeout, budget.left), extra_config, limit)
+        except GitError as exc:
+            if budget.left - (time.monotonic() - started) <= 0:
+                raise GitError(f"O git passou do tempo limite de {budget.total:g} s.") from exc
+            raise
+        finally:
+            budget.left -= time.monotonic() - started
 
 
 async def _read_limited(stream: asyncio.StreamReader, limit: int | None) -> bytes:
@@ -356,12 +394,19 @@ async def _file_diff(repo: Path, file: str, timeout: float) -> FileDiff:
         if code != 0:
             raise GitError(_failure(err))
     elif (repo / file).is_file():
-        if (repo / file).stat().st_size > MAX_DIFF_FILE:
+        try:
+            size = (repo / file).stat().st_size
+        except FileNotFoundError as exc:
+            raise FileGoneError(FILE_GONE_MESSAGE) from exc
+        if size > MAX_DIFF_FILE:
             return FileDiff("", True, BIG_FILE_NOTICE)
         code, out, err = await run_git(
             repo, "diff", *common, "--no-index", "--", "/dev/null", file,
             timeout=timeout, limit=DIFF_READ_LIMIT,
         )
+        # Gone meanwhile: git answers 1 ("Could not access"), like a real diff.
+        if not (repo / file).exists():
+            raise FileGoneError(FILE_GONE_MESSAGE)
         if code not in (0, 1):
             raise GitError(_failure(err))
     else:

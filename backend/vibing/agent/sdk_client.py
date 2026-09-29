@@ -42,6 +42,9 @@ INHERITED_ENV_VARS: tuple[str, ...] = (
 )
 
 CLI_NOT_FOUND_MESSAGE = "O comando `claude` não foi encontrado nesta máquina."
+LOGIN_MESSAGE = "O login do Claude expirou ou é inválido. Rode `claude` no terminal e faça /login."
+# What the CLI writes when the subscription login is missing or expired.
+LOGIN_MARKERS = ("/login", "OAuth token has expired", "Invalid API key")
 # What the CLI prints when started with `session_id` of a session already on disk.
 SESSION_IN_USE_MARKER = "already in use"
 STDERR_LINES_KEPT = 50
@@ -122,7 +125,13 @@ class SdkAgentClient:
             texts = [*self.stderr_lines, str(error), getattr(error, "stderr", None) or ""]
             if any(SESSION_IN_USE_MARKER in text for text in texts):
                 agent_error.session_in_use = True
+            elif self._login_failed(texts):
+                agent_error = AgentError(LOGIN_MESSAGE)
             raise agent_error from error
+
+    @staticmethod
+    def _login_failed(texts: list[str]) -> bool:
+        return any(marker in text for text in texts for marker in LOGIN_MARKERS)
 
     async def send(self, content: str | list[dict[str, Any]]) -> None:
         try:
@@ -140,11 +149,20 @@ class SdkAgentClient:
             async for message in self._client.receive_messages():
                 yield message
         except Exception as error:
+            texts = [*self.stderr_lines, getattr(error, "stderr", None) or ""]
+            if not isinstance(error, AgentError) and self._login_failed(texts):
+                raise AgentError(LOGIN_MESSAGE) from error
             raise to_agent_error(error) from error
 
     async def interrupt(self) -> None:
         try:
             await self._client.interrupt()
+        except Exception as error:
+            raise to_agent_error(error) from error
+
+    async def stop_task(self, task_id: str) -> None:
+        try:
+            await self._client.stop_task(task_id)
         except Exception as error:
             raise to_agent_error(error) from error
 

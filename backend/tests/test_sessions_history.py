@@ -164,7 +164,7 @@ async def test_send_without_opening_loads_history_first(make_env):
 async def test_external_activity_when_file_modified_recently(make_env):
     env = make_env()
     sid = env.add_old_session()
-    env.fake.add(str(env.folder), info(sid, str(env.folder), modified_ms=now_ms() - 10_000))
+    env.mtimes[sid] = now_ms() / 1000 - 10
 
     snapshot = await env.manager.open(sid)
 
@@ -175,7 +175,7 @@ async def test_external_activity_when_file_modified_recently(make_env):
 async def test_no_external_activity_for_old_file(make_env):
     env = make_env()
     sid = env.add_old_session()
-    env.fake.add(str(env.folder), info(sid, str(env.folder), modified_ms=now_ms() - 120_000))
+    env.mtimes[sid] = now_ms() / 1000 - 120
 
     snapshot = await env.manager.open(sid)
 
@@ -188,7 +188,7 @@ async def test_send_reports_external_activity_on_resume(make_env):
     env = make_env(script=lambda content: text_turn(sessions[0], "r"))
     sid = env.add_old_session()
     sessions.append(sid)
-    env.fake.add(str(env.folder), info(sid, str(env.folder), modified_ms=now_ms()))
+    env.mtimes[sid] = now_ms() / 1000
 
     result = await env.manager.send(sid, "oi de novo")
     session = env.manager.get(sid)
@@ -253,7 +253,7 @@ async def test_open_fills_results_from_raw_transcript(make_env):
 
 
 @pytest.mark.anyio
-async def test_file_info_is_cached_per_cwd(make_env):
+async def test_file_info_does_not_list_the_folder(make_env):
     env = make_env()
     a = env.add_old_session("old-a")
     b = env.add_old_session("old-b")
@@ -262,7 +262,8 @@ async def test_file_info_is_cached_per_cwd(make_env):
     await env.manager.open(a)
     await env.manager.open(b)
 
-    assert env.fake.list_calls == [str(env.folder)]
+    # Marco 6: one stat of the session file instead of listing the folder.
+    assert env.fake.list_calls == []
 
 
 @pytest.mark.anyio

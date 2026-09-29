@@ -13,7 +13,7 @@ import logging
 import os
 import sqlite3
 import time
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
@@ -35,6 +35,31 @@ OnChange = Callable[[set[str]], None]
 OnProjectsChanged = Callable[[set[int]], None]
 # True when the app is using the session (it must not leave the index).
 IsInUse = Callable[[str], bool]
+# folder_signature(directory): changes when the directory's history folder changes; None: unknown.
+FolderSignature = Callable[[str], Any]
+
+
+@dataclass
+class Transcript:
+    """A session's `.jsonl` read in one pass."""
+
+    # SessionMessage-like entries of the main chain, as `get_session_messages` returns.
+    messages: list[Any]
+    # Tool results of every branch, by tool_use_id (see `read_tool_results_file`).
+    tool_results: dict[str, dict[str, Any]]
+    # Lines that could not be parsed (a partial last line being written does not count).
+    skipped_lines: int = 0
+    # uuids of `isCompactSummary` entries (the summary written when compacting).
+    compact_uuids: set[str] = field(default_factory=set)
+
+
+# read_transcript(session_id, directory) -> Transcript, or None when there is no file.
+ReadTranscript = Callable[[str, str], Transcript | None]
+# read_edits(session_id, directory) -> [{tool_use_id, name, file_path, added, removed}].
+ReadEdits = Callable[[str, str], list[dict[str, Any]]]
+
+EDIT_TOOLS = frozenset({"Edit", "MultiEdit", "Write", "NotebookEdit"})
+_TRANSCRIPT_TYPES = frozenset({"user", "assistant", "progress", "system", "attachment"})
 
 TITLE_MAX_LENGTH = 80
 TEXT_MAX_LENGTH = 500
@@ -117,25 +142,218 @@ def read_tool_results_file(path: Path) -> dict[str, dict[str, Any]]:
                 entry = json.loads(line)
             except ValueError:
                 continue
-            if not isinstance(entry, dict) or entry.get("type") != "user":
-                continue
-            message = entry.get("message")
-            content = message.get("content") if isinstance(message, dict) else None
-            if not isinstance(content, list):
-                continue
-            details = entry.get("toolUseResult")
-            blocks = [
-                b for b in content
-                if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id")
-            ]
-            for block in blocks:
-                results[block["tool_use_id"]] = {
-                    "content": cap_content(omit_images(block.get("content"))),
-                    "is_error": block.get("is_error"),
-                    # One entry per result in practice; with several, details are ambiguous.
-                    "details": details if isinstance(details, dict) and len(blocks) == 1 else None,
-                }
+            _collect_tool_results(entry, results)
     return results
+
+
+def _tool_result_blocks(entry: Any) -> tuple[list[dict[str, Any]], Any]:
+    """(tool_result blocks, toolUseResult) of a user entry."""
+    if not isinstance(entry, dict) or entry.get("type") != "user":
+        return [], None
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return [], None
+    blocks = [
+        b for b in content
+        if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id")
+    ]
+    return blocks, entry.get("toolUseResult")
+
+
+def _collect_tool_results(entry: Any, results: dict[str, dict[str, Any]]) -> None:
+    blocks, details = _tool_result_blocks(entry)
+    for block in blocks:
+        results[block["tool_use_id"]] = {
+            "content": cap_content(omit_images(block.get("content"))),
+            "is_error": block.get("is_error"),
+            # One entry per result in practice; with several, details are ambiguous.
+            "details": details if isinstance(details, dict) and len(blocks) == 1 else None,
+        }
+
+
+def _lines(path: Path):
+    """(line, complete) for each non-blank line; `complete` is False for a last
+    line without newline (possibly still being written)."""
+    with path.open(encoding="utf-8", errors="replace") as file:
+        for line in file:
+            complete = line.endswith("\n")
+            line = line.strip()
+            if line:
+                yield line, complete
+
+
+def read_transcript_file(path: Path) -> Transcript:
+    """Messages, tool results, corrupt lines and compact summaries in one pass.
+
+    The main chain is built with the SDK's own helpers, so the messages match
+    `get_session_messages`.
+    """
+    from claude_agent_sdk._internal.sessions import (
+        _build_conversation_chain,
+        _is_visible_message,
+        _to_session_message,
+    )
+
+    entries: list[dict[str, Any]] = []
+    results: dict[str, dict[str, Any]] = {}
+    skipped = 0
+    for line, complete in _lines(path):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            if complete:
+                skipped += 1
+            continue
+        if not isinstance(entry, dict):
+            continue
+        if '"tool_result"' in line:
+            _collect_tool_results(entry, results)
+        if entry.get("type") in _TRANSCRIPT_TYPES and isinstance(entry.get("uuid"), str):
+            entries.append(entry)
+    chain = [e for e in _build_conversation_chain(entries) if _is_visible_message(e)]
+    return Transcript(
+        messages=[_to_session_message(e) for e in chain],
+        tool_results=results,
+        skipped_lines=skipped,
+        compact_uuids={e["uuid"] for e in chain if e.get("isCompactSummary")},
+    )
+
+
+def read_transcript_at(path: Path | None) -> Transcript | None:
+    if path is None:
+        return None
+    try:
+        return read_transcript_file(path)
+    except FileNotFoundError:
+        return None
+
+
+def sdk_read_transcript(session_id: str, directory: str) -> Transcript | None:
+    """The session's transcript read in one pass; falls back to the public SDK
+    functions (two reads) if its private helpers go away or fail."""
+    try:
+        from claude_agent_sdk._internal.sessions import (  # noqa: F401
+            _build_conversation_chain,
+            _is_visible_message,
+            _to_session_message,
+        )
+
+        path = _session_file(session_id, directory)
+    except Exception:
+        logger.exception("Leitura direta do histórico indisponível; usando o SDK público")
+        path = None
+    if path is None:
+        return _public_transcript(session_id, directory)
+    return read_transcript_at(path)
+
+
+def _public_transcript(session_id: str, directory: str) -> Transcript:
+    return Transcript(
+        messages=sdk_get_session_messages(session_id, directory),
+        tool_results=sdk_read_tool_results(session_id, directory),
+    )
+
+
+def _patch_counts(details: Any) -> tuple[int, int] | None:
+    patch = details.get("structuredPatch") if isinstance(details, dict) else None
+    if not isinstance(patch, list):
+        return None
+    added = removed = 0
+    for hunk in patch:
+        lines = hunk.get("lines") if isinstance(hunk, dict) else None
+        for text in lines or []:
+            if isinstance(text, str) and text.startswith("+"):
+                added += 1
+            elif isinstance(text, str) and text.startswith("-"):
+                removed += 1
+    return added, removed
+
+
+def read_edits_file(path: Path) -> list[dict[str, Any]]:
+    """Edit tool calls of the whole transcript: name, path and +/- line counts
+    (None without a patch). Only lines that can hold them are parsed."""
+    edits: dict[str, dict[str, Any]] = {}
+    counts: dict[str, tuple[int, int]] = {}
+    for line, _complete in _lines(path):
+        has_use = '"tool_use"' in line
+        has_patch = '"structuredPatch"' in line
+        if not has_use and not has_patch:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        if has_patch:
+            blocks, details = _tool_result_blocks(entry)
+            found = _patch_counts(details)
+            if found is not None and len(blocks) == 1:
+                counts[blocks[0]["tool_use_id"]] = found
+        message = entry.get("message") if entry.get("type") == "assistant" else None
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if (
+                not isinstance(block, dict) or block.get("type") != "tool_use"
+                or block.get("name") not in EDIT_TOOLS or not block.get("id")
+            ):
+                continue
+            data = block.get("input") if isinstance(block.get("input"), dict) else {}
+            file_path = data.get("file_path") or data.get("notebook_path")
+            if isinstance(file_path, str) and file_path:
+                edits[block["id"]] = {"tool_use_id": block["id"], "name": block["name"],
+                                      "file_path": file_path}
+    return [
+        {**edit, "added": counts[tid][0] if tid in counts else None,
+         "removed": counts[tid][1] if tid in counts else None}
+        for tid, edit in edits.items()
+    ]
+
+
+def sdk_read_edits(session_id: str, directory: str) -> list[dict[str, Any]]:
+    path = _session_file(session_id, directory)
+    if path is None:
+        return []
+    try:
+        return read_edits_file(path)
+    except FileNotFoundError:
+        return []
+
+
+def sdk_get_session_info(session_id: str, directory: str) -> Any | None:
+    import claude_agent_sdk
+
+    return claude_agent_sdk.get_session_info(session_id, directory=directory)
+
+
+def _history_folder(directory: str) -> Path | None:
+    """The CLI history folder of a directory, resolved like the SDK does."""
+    try:
+        from claude_agent_sdk._internal.sessions import _canonicalize_path, _find_project_dir
+    except ImportError:
+        return None
+    return _find_project_dir(_canonicalize_path(directory))
+
+
+def sdk_folder_signature(directory: str) -> Any:
+    """Changes whenever a session file of the directory is added, removed or
+    written: (folder mtime, file count, newest file mtime). One `scandir` with
+    `stat`s, no file read. None when the folder is unknown."""
+    folder = _history_folder(directory)
+    if folder is None:
+        return None
+    try:
+        count = 0
+        newest = 0
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if entry.name.endswith(".jsonl"):
+                    count += 1
+                    newest = max(newest, entry.stat().st_mtime_ns)
+        return (folder.stat().st_mtime_ns, count, newest)
+    except OSError:
+        return None
 
 
 def truncate_title(text: str) -> str:
@@ -238,8 +456,12 @@ class HistoryIndex:
         on_projects_changed: OnProjectsChanged | None = None,
         is_in_use: IsInUse | None = None,
         file_exists: Callable[[str, str], bool | None] | None = None,
+        folder_signature: FolderSignature | None = None,
     ) -> None:
         self._db_path = db_path
+        # A directory whose history folder did not change is not listed again.
+        self._folder_signature = folder_signature or (lambda d: sdk_folder_signature(d))
+        self._listings: dict[str, tuple[Any, list[Any]]] = {}
         self._list_sessions = list_sessions
         self._on_change = on_change
         self._on_projects_changed = on_projects_changed
@@ -332,13 +554,30 @@ class HistoryIndex:
         result: list[tuple[Any, str]] = []
         for directory in [str(folder), *(str(repo) for repo in repos)]:
             try:
-                infos = await asyncio.to_thread(self._list_sessions, directory)
+                infos = await asyncio.to_thread(self._list_cached, directory)
             except Exception:
                 logger.exception("Falha ao listar o histórico de %s", directory)
                 ok = False
                 continue
             result.extend((info, directory) for info in infos)
         return result, ok
+
+    def _list_cached(self, directory: str) -> list[Any]:
+        """`list_sessions(directory)`, reused while the folder signature is the same."""
+        try:
+            signature = self._folder_signature(directory)
+        except Exception:
+            logger.exception("Falha ao conferir a pasta do histórico de %s", directory)
+            signature = None
+        cached = self._listings.get(directory)
+        if signature is not None and cached is not None and cached[0] == signature:
+            return cached[1]
+        infos = list(self._list_sessions(directory))
+        if signature is None:
+            self._listings.pop(directory, None)
+        else:
+            self._listings[directory] = (signature, infos)
+        return infos
 
     def _missing_candidates(
         self, listed: dict[str, tuple[Any, str]], complete: set[int]

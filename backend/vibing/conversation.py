@@ -10,6 +10,7 @@ message_id, and each AssistantMessage arrives before its `content_block_stop`,
 so the block index comes from the `content_block_start` that is open.
 """
 
+import json
 import re
 import time
 import uuid
@@ -237,6 +238,7 @@ class ConversationBuilder:
         self,
         entries: list[Any],
         tool_results: dict[str, dict[str, Any]] | None = None,
+        compact_uuids: set[str] | None = None,
     ) -> None:
         """Rebuild items from a saved conversation (`get_session_messages`).
 
@@ -247,13 +249,17 @@ class ConversationBuilder:
         parallel tool calls are often missing from `entries`. `tool_results`
         (read from the raw transcript, by `tool_use_id`) completes them and adds
         `details` (`toolUseResult`). A tool still without a result gets
-        `result_missing`. Base64 images are never kept.
+        `result_missing`. Base64 images are never kept. Entries in
+        `compact_uuids` (`isCompactSummary`) become a "Conversa compactada" notice.
         """
         tool_results = tool_results or {}
+        compact_uuids = compact_uuids or set()
         for entry in entries:
             message = entry.message if isinstance(entry.message, dict) else {}
             content = message.get("content")
-            if entry.type == "user":
+            if entry.type == "user" and getattr(entry, "uuid", None) in compact_uuids:
+                self.add_notice("info", COMPACTED_TEXT)
+            elif entry.type == "user":
                 self._load_user(content)
             elif entry.type == "assistant" and isinstance(content, list):
                 blocks = [b for b in (_block_from_dict(raw) for raw in content) if b is not None]
@@ -345,6 +351,9 @@ class ConversationBuilder:
     # Items -----------------------------------------------------------------
 
     def _put(self, item: Item) -> Event:
+        if isinstance(item, ToolItem):
+            # A Write of a big file would otherwise weigh on every snapshot.
+            item.input = _cut_strings(item.input, TOOL_INPUT_STRING_LIMIT)
         position = self._positions.get(item.id)
         if position is None:
             self._positions[item.id] = len(self.items)
@@ -645,6 +654,13 @@ class ConversationBuilder:
                 events.append(self._put(tool))
         return events
 
+    def running_task_ids(self) -> list[str]:
+        """Task ids of subagents still running (those the CLI already announced)."""
+        return [
+            sub["task_id"] for sub in self._subagents.values()
+            if sub["status"] == "running" and sub["task_id"]
+        ]
+
     def stop_running_subagents(self) -> list[Event]:
         """The client went away: subagents still running died with it."""
         return self._end_subagents(lambda _id, _tool: "stopped")
@@ -704,18 +720,45 @@ class ConversationBuilder:
         )
         events = [Event("rate_limit", asdict(self.rate_limit))]
         if info.status == "rejected":
-            text = "Limite de uso da assinatura atingido."
-            if info.resets_at:
-                when = datetime.fromtimestamp(info.resets_at, UTC).astimezone()
-                text += f" Libera às {when:%H:%M} de {when:%d/%m}."
-            events.append(self._notice("error", text))
+            events.append(self._notice("error", rate_limit_text(info.resets_at)))
         return events
+
+
+def rate_limit_text(resets_at: int | None, now: datetime | None = None) -> str:
+    """"Limite da assinatura atingido. Libera às 14:30." in local time; the date
+    is added when the release is not today."""
+    text = "Limite da assinatura atingido."
+    if not resets_at:
+        return text
+    when = datetime.fromtimestamp(resets_at, UTC).astimezone()
+    today = (now or datetime.now(UTC)).astimezone().date()
+    if when.date() == today:
+        return f"{text} Libera às {when:%H:%M}."
+    return f"{text} Libera às {when:%H:%M} de {when:%d/%m}."
+
+
+def cap_items(items: list[dict[str, Any]], max_bytes: int) -> tuple[list[dict[str, Any]], bool]:
+    """The newest items whose JSON fits in `max_bytes`; True when some were left out."""
+    total = 2  # the brackets
+    kept = 0
+    for item in reversed(items):
+        size = len(json.dumps(item)) + 2  # ", " between items
+        if total + size > max_bytes:
+            break
+        total += size
+        kept += 1
+    if kept == len(items):
+        return items, False
+    return items[len(items) - kept:], True
 
 
 _SYSTEM_REMINDER = re.compile(r"<system-reminder>.*?(</system-reminder>|$)", re.DOTALL)
 _COMMAND_NAME = re.compile(r"<command-name>(.*?)</command-name>", re.DOTALL)
 _STDOUT = re.compile(r"</?local-command-std(out|err)>")
 INTERRUPTED_TEXT = "Interrompido."
+COMPACTED_TEXT = "Conversa compactada"
+# How the CLI opens the summary it writes when a conversation is compacted.
+COMPACT_SUMMARY_PREFIX = "This session is being continued from a previous conversation"
 
 
 def _classify_user_text(text: str) -> tuple[str, str | None]:
@@ -734,10 +777,13 @@ def _classify_user_text(text: str) -> tuple[str, str | None]:
         return "", "Subagente em segundo plano terminou"
     if text.startswith("[Request interrupted by user"):
         return "", INTERRUPTED_TEXT
+    if text.startswith(COMPACT_SUMMARY_PREFIX):
+        return "", COMPACTED_TEXT
     return text, None
 
 
 DETAILS_STRING_LIMIT = 20_000
+TOOL_INPUT_STRING_LIMIT = 20_000
 CONTENT_LIMIT = 200_000
 _EDIT_TOOLS = {"Edit", "MultiEdit", "Write"}
 _EDIT_DETAIL_KEYS = ("filePath", "structuredPatch", "type", "userModified")
@@ -745,7 +791,8 @@ _READ_DROPPED_KEYS = {"content", "base64"}
 
 
 def _cut(text: str, limit: int) -> str:
-    if len(text) <= limit:
+    # Already cut (its marker starts right at the limit): cutting again is a no-op.
+    if len(text) <= limit or text.startswith("…[cortado ", limit):
         return text
     return f"{text[:limit]}…[cortado {len(text) - limit} caracteres]"
 

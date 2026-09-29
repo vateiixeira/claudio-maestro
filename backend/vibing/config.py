@@ -1,8 +1,10 @@
 """Settings and data paths, read from the environment."""
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 FRONTEND_PORT = 6600
 BACKEND_PORT = 6660
@@ -51,8 +53,22 @@ def load_settings() -> Settings:
     )
 
 
+def claude_config_dir() -> Path:
+    """The CLI configuration folder (`CLAUDE_CONFIG_DIR` or `~/.claude`)."""
+    config = os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(config) if config else Path.home() / ".claude"
+
+
 def claude_projects_dir() -> Path:
     """Where the CLI saves conversations (respects `CLAUDE_CONFIG_DIR`, like the SDK)."""
-    config = os.environ.get("CLAUDE_CONFIG_DIR")
-    base = Path(config) if config else Path.home() / ".claude"
-    return base / "projects"
+    return claude_config_dir() / "projects"
+
+
+def read_user_claude_settings() -> dict[str, Any]:
+    """The user's CLI `settings.json`; empty when missing, unreadable or invalid."""
+    path = claude_config_dir() / "settings.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}

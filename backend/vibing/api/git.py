@@ -58,12 +58,17 @@ async def file_diff(project_id: int, repo: str, file: str, conn: DbDep) -> dict[
     relative = file_path.relative_to(repo_path).as_posix()
     try:
         result = await gitinfo.file_diff(repo_path, relative)
+    except gitinfo.FileGoneError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except gitinfo.GitError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return {"diff": result.diff, "truncated": result.truncated, "notice": result.notice}
 
 
 def _patch_counts(item: dict[str, Any]) -> tuple[int, int] | None:
+    counts = item.get("counts")
+    if counts is not None:
+        return counts
     result = item.get("result")
     details = result.get("details") if isinstance(result, dict) else None
     patch = details.get("structuredPatch") if isinstance(details, dict) else None
@@ -132,7 +137,19 @@ async def session_changes(session_id: str, conn: DbDep, request: Request) -> dic
     project = _project(conn, session.record.project_id)
     snapshot = await manager.open(session_id)
     root = Path(project.path).resolve()
-    files = _edited_files(snapshot.get("items", []), Path(session.record.cwd))
+    items = list(snapshot.get("items", []))
+    # Edits older than the loaded history come from the whole transcript.
+    seen = {item.get("tool_use_id") for item in items if item.get("type") == "tool"}
+    for edit in await manager.transcript_edits(session_id):
+        if edit["tool_use_id"] in seen:
+            continue
+        added, removed = edit.get("added"), edit.get("removed")
+        items.append({
+            "type": "tool", "name": edit["name"], "tool_use_id": edit["tool_use_id"],
+            "input": {"file_path": edit["file_path"]},
+            "counts": (added, removed) if added is not None and removed is not None else None,
+        })
+    files = _edited_files(items, Path(session.record.cwd))
 
     repos = await gitinfo.project_repos(root) if project.available else []
     groups: dict[str | None, list[tuple[Path, list[int] | None]]] = {}

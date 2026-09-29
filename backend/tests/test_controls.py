@@ -267,7 +267,8 @@ async def test_turn_opened_by_cli_runs_and_ends(make_env, env_cleanup):
     turn = text_turn(session.session_id, "subagente terminou")
     client.push([init_message(session.session_id), turn[2], pause, *turn[3:]])
     await pause.reached.wait()
-    assert session.state == "running"
+    # The reader may not have handled the messages before the pause yet.
+    await wait_until(lambda: session.state == "running")
     assert session.pending_turns == 0
 
     pause.release.set()
@@ -304,6 +305,7 @@ async def test_autonomous_turn_then_user_turn(make_env, env_cleanup):
     turn = text_turn(session.session_id, "autônomo")
     client.push([init_message(session.session_id), turn[2], pause, *turn[3:]])
     await pause.reached.wait()
+    await wait_until(lambda: session.state == "running")
 
     await session.send("pergunta")
     pause.release.set()
@@ -529,7 +531,8 @@ async def test_send_during_autonomous_turn_ends_idle(make_env, env_cleanup):
                  *response_messages(session.session_id, [TextBlock(text="b")])[1:],
                  result_message(session.session_id)])
     await pause.reached.wait()
-    assert session.state == "running"
+    # The reader may not have handled the messages before the pause yet.
+    await wait_until(lambda: session.state == "running")
 
     await session.send("pergunta")
     pause.release.set()
