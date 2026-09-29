@@ -246,17 +246,23 @@ describe('resposta do PATCH', () => {
 describe('uso do contexto', () => {
   const contextText = (w: ReturnType<typeof mount>) => w.find('[data-test="context-usage"]')
 
-  it('mostra a porcentagem com os tokens no título', async () => {
+  it('esconde o contexto abaixo de 80%', async () => {
     setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 42 } })
     const w = await mountControls()
+    expect(contextText(w).exists()).toBe(false)
+    expect(w.find('[data-test="context-usage-sr"]').exists()).toBe(false)
+  })
+
+  it('mostra a porcentagem com os tokens no título a partir de 80%', async () => {
+    setup({ context: { used_tokens: 170_000, max_tokens: 200_000, percent: 85 } })
+    const w = await mountControls()
     const el = contextText(w)
-    expect(el.text()).toBe('Contexto 42%')
-    expect(el.attributes('title')).toBe('84 mil de 200 mil tokens')
+    expect(el.text()).toBe('Contexto 85%')
+    expect(el.attributes('title')).toBe('170 mil de 200 mil tokens')
     // Screen readers get the tokens too, not only the tooltip; the visible text is not read twice.
     expect(el.attributes('aria-hidden')).toBe('true')
-    expect(w.find('[data-test="context-usage-sr"]').text()).toBe('Contexto 42%, 84 mil de 200 mil tokens')
+    expect(w.find('[data-test="context-usage-sr"]').text()).toBe('Contexto 85%, 170 mil de 200 mil tokens')
     expect(w.find('[data-test="context-usage-sr"]').classes()).toContain('sr-only')
-    expect(el.classes()).not.toContain('text-secondary')
   })
 
   it('usa cor de alerta a partir de 80%', async () => {
@@ -264,11 +270,11 @@ describe('uso do contexto', () => {
     expect(contextText(await mountControls()).classes()).toContain('text-secondary')
   })
 
-  it('arredonda a porcentagem e formata milhões e tokens soltos', async () => {
-    setup({ context: { used_tokens: 950, max_tokens: 1_000_000, percent: 0.4 } })
+  it('arredonda a porcentagem e formata milhões', async () => {
+    setup({ context: { used_tokens: 850_000, max_tokens: 1_000_000, percent: 85.4 } })
     const el = contextText(await mountControls())
-    expect(el.text()).toBe('Contexto 0%')
-    expect(el.attributes('title')).toBe('950 de 1 milhão de tokens')
+    expect(el.text()).toBe('Contexto 85%')
+    expect(el.attributes('title')).toBe('850 mil de 1 milhão de tokens')
   })
 
   it('não mostra nada sem contexto', async () => {
@@ -277,24 +283,24 @@ describe('uso do contexto', () => {
   })
 
   it('o resumo da sessão mais novo vence o retrato', async () => {
-    setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 42 } })
+    setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 85 } })
     useSessionsStore(pinia).setForProject(1, [
-      makeSession({ session_id: 's1', context: { used_tokens: 120_000, max_tokens: 200_000, percent: 60 } }),
+      makeSession({ session_id: 's1', context: { used_tokens: 120_000, max_tokens: 200_000, percent: 90 } }),
     ])
-    expect(contextText(await mountControls()).text()).toBe('Contexto 60%')
+    expect(contextText(await mountControls()).text()).toBe('Contexto 90%')
   })
 
   it('lista com contexto nulo cai no valor do retrato', async () => {
-    setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 42 } })
+    setup({ context: { used_tokens: 170_000, max_tokens: 200_000, percent: 85 } })
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', context: null })])
-    expect(contextText(await mountControls()).text()).toBe('Contexto 42%')
+    expect(contextText(await mountControls()).text()).toBe('Contexto 85%')
   })
 
   it('lista com contexto e retrato sem contexto mostra o da lista', async () => {
     setup({ context: null })
     useSessionsStore(pinia).setForProject(1, [
-      makeSession({ session_id: 's1', context: { used_tokens: 120_000, max_tokens: 200_000, percent: 60 } }),
+      makeSession({ session_id: 's1', context: { used_tokens: 120_000, max_tokens: 200_000, percent: 90 } }),
     ])
-    expect(contextText(await mountControls()).text()).toBe('Contexto 60%')
+    expect(contextText(await mountControls()).text()).toBe('Contexto 90%')
   })
 })

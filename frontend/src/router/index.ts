@@ -4,6 +4,7 @@ import {
   type RouteRecordRaw,
   type RouterHistory,
 } from 'vue-router'
+import ConversationView from '../views/ConversationView.vue'
 import AllSessionsView from '../views/AllSessionsView.vue'
 import NewProjectView from '../views/NewProjectView.vue'
 import PreferencesView from '../views/PreferencesView.vue'
@@ -12,7 +13,7 @@ import WorkspaceView from '../views/WorkspaceView.vue'
 
 export const routes: RouteRecordRaw[] = [
   // `/` shows the open session columns (or the start screen); `/sessions/:id`
-  // shows the same workspace and opens that session as a column.
+  // is the single-conversation page.
   { path: '/', name: 'home', component: WorkspaceView },
   { path: '/projects/new', name: 'project-new', component: NewProjectView },
   {
@@ -26,7 +27,8 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/sessions/:id',
     name: 'session',
-    component: WorkspaceView,
+    component: ConversationView,
+    props: true,
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

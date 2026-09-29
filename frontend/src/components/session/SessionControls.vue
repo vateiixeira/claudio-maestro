@@ -171,14 +171,14 @@ function onDialogKey(event: KeyboardEvent) {
       @select="selectMode"
     />
     <span
-      v-if="context"
+      v-if="context && contextWarn"
       data-test="context-usage"
       :title="contextTitle"
       aria-hidden="true"
       class="font-mono text-xs"
       :class="contextWarn ? 'text-secondary' : 'text-fg-muted'"
     >Contexto {{ contextPercent }}%</span>
-    <span v-if="context" data-test="context-usage-sr" class="sr-only">Contexto {{ contextPercent }}%, {{ contextTitle }}</span>
+    <span v-if="context && contextWarn" data-test="context-usage-sr" class="sr-only">Contexto {{ contextPercent }}%, {{ contextTitle }}</span>
     <span v-if="options.effort_pending" data-test="effort-pending" class="text-xs text-fg-muted">vale a partir do próximo turno</span>
     <p v-if="error" role="alert" class="m-0 w-full text-sm text-diff-del-fg">{{ error }}</p>
 
