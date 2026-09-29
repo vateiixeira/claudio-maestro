@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from vibing.history import scan_repositories
+from vibing.history import REPO_MAX_COUNT, scan_repositories
 
 GIT_BINARY = "git"
 GIT_TIMEOUT = 5.0
@@ -314,19 +314,36 @@ async def repo_status(
     return status
 
 
-def discover(root: Path) -> list[Path]:
-    """The project folder itself (if it has `.git`) and repositories below it."""
-    found = scan_repositories(root)[0]
+def discover_scan(root: Path) -> tuple[list[Path], bool]:
+    """Like `discover`, plus whether the scan stopped at the repository limit.
+
+    Only the limit counts: an unreadable folder does not. One more repository
+    than the limit is looked for, so exactly the limit is not "reached".
+    """
+    found = scan_repositories(root, max_count=REPO_MAX_COUNT + 1)[0]
+    limit_reached = len(found) > REPO_MAX_COUNT
+    found = found[:REPO_MAX_COUNT]
     if (root / ".git").exists():
         found.insert(0, root)
-    return found
+    return found, limit_reached
+
+
+def discover(root: Path) -> list[Path]:
+    """The project folder itself (if it has `.git`) and repositories below it."""
+    return discover_scan(root)[0]
+
+
+async def project_repos_scan(
+    root: Path, *, timeout: float = GIT_TIMEOUT
+) -> tuple[list[RepoStatus], bool]:
+    """Status of every repository of a folder, and whether the limit was reached."""
+    paths, limit_reached = await asyncio.to_thread(discover_scan, root)
+    repos = await asyncio.gather(*(repo_status(path, root, timeout=timeout) for path in paths))
+    return list(repos), limit_reached
 
 
 async def project_repos(root: Path, *, timeout: float = GIT_TIMEOUT) -> list[RepoStatus]:
-    repos = await asyncio.to_thread(discover, root)
-    return list(
-        await asyncio.gather(*(repo_status(repo, root, timeout=timeout) for repo in repos))
-    )
+    return (await project_repos_scan(root, timeout=timeout))[0]
 
 
 async def branch_label(repo: Path, *, timeout: float = GIT_TIMEOUT) -> str | None:

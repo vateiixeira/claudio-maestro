@@ -1,0 +1,172 @@
+"""GET /api/fs/repos, `detached` in /api/fs/dirs and `limit_reached` in the project git route."""
+
+import os
+from pathlib import Path
+
+from git_helpers import git, make_repo
+from vibing import history
+
+
+def repos(client, path) -> dict:
+    response = client.get("/api/fs/repos", params={"path": str(path)})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def fake_repo(path: Path) -> None:
+    (path / ".git").mkdir(parents=True)
+
+
+# /api/fs/dirs: detached ----------------------------------------------------
+
+
+def test_dirs_detached_flag(client, home: Path):
+    make_repo(home / "a", branch="dev")
+    make_repo(home / "b")
+    git(home / "b", "checkout", "-q", "--detach")
+    (home / "c").mkdir()
+    entries = {e["name"]: e for e in client.get("/api/fs/dirs").json()["entries"]}
+    assert entries["a"]["detached"] is False and entries["a"]["branch"] == "dev"
+    assert entries["b"]["detached"] is True
+    assert entries["b"]["branch"] == git(home / "b", "rev-parse", "--short=7", "HEAD").strip()
+    assert entries["c"]["detached"] is False and entries["c"]["branch"] is None
+
+
+# /api/fs/repos -------------------------------------------------------------
+
+
+def test_repos_of_a_folder(client, home: Path):
+    root = home / "proj"
+    make_repo(root / "api", branch="dev")
+    make_repo(root / "web")
+    git(root / "web", "checkout", "-q", "--detach")
+    (root / "docs").mkdir()
+    body = repos(client, root)
+    assert body["limit_reached"] is False
+    assert [r["rel_path"] for r in body["repos"]] == ["api", "web"]
+    api, web = body["repos"]
+    assert api == {
+        "name": "api", "rel_path": "api", "path": str(root / "api"),
+        "branch": "dev", "detached": False,
+    }
+    assert web["detached"] is True and web["branch"]
+
+
+def test_repos_includes_the_folder_itself(client, home: Path):
+    root = make_repo(home / "proj")
+    make_repo(root / "sub")
+    body = repos(client, root)
+    assert [(r["name"], r["rel_path"]) for r in body["repos"]] == [("proj", "."), ("sub", "sub")]
+    assert body["repos"][0]["path"] == str(root)
+
+
+def test_repos_empty(client, home: Path):
+    (home / "plain").mkdir()
+    assert repos(client, home / "plain") == {"repos": [], "limit_reached": False}
+
+
+def test_repos_three_levels_and_ignored_folders(client, home: Path):
+    root = home / "proj"
+    make_repo(root / "a" / "b" / "c")  # 3 levels: found
+    make_repo(root / "a" / "b" / "c" / "d")  # 4 levels: not found
+    make_repo(root / "node_modules" / "pkg")  # ignored
+    make_repo(root / ".hidden" / "r")  # hidden
+    body = repos(client, root)
+    assert [r["rel_path"] for r in body["repos"]] == ["a/b/c"]
+
+
+def test_repos_match_project_discovery(client, home: Path):
+    """Same function as the project's repositories."""
+    root = make_repo(home / "proj")
+    make_repo(root / "x" / "y")
+    make_repo(root / "vendor" / "z")
+    expected = [str(p) for p in history.find_repositories(root)]
+    assert [r["path"] for r in repos(client, root)["repos"][1:]] == expected
+
+
+def test_repos_limit_reached(client, home: Path):
+    root = home / "proj"
+    for index in range(history.REPO_MAX_COUNT + 1):
+        fake_repo(root / f"r{index:02d}")
+    body = repos(client, root)
+    assert body["limit_reached"] is True
+    assert len(body["repos"]) == history.REPO_MAX_COUNT
+
+
+def test_repos_exactly_at_limit_is_not_reached(client, home: Path):
+    root = home / "proj"
+    for index in range(history.REPO_MAX_COUNT):
+        fake_repo(root / f"r{index:02d}")
+    body = repos(client, root)
+    assert body["limit_reached"] is False
+    assert len(body["repos"]) == history.REPO_MAX_COUNT
+
+
+def test_repos_broken_repository_has_no_branch(client, home: Path):
+    fake_repo(home / "proj" / "quebrado")
+    body = repos(client, home / "proj")
+    assert body["repos"][0]["branch"] is None and body["repos"][0]["detached"] is False
+
+
+def test_repos_spaces_and_accents(client, home: Path):
+    root = home / "Área de trabalho" / "meu projeto"
+    make_repo(root / "repositório ção", branch="ramo")
+    body = repos(client, root)
+    assert body["repos"] == [{
+        "name": "repositório ção", "rel_path": "repositório ção",
+        "path": str(root / "repositório ção"), "branch": "ramo", "detached": False,
+    }]
+
+
+def test_repos_outside_home_rejected(client, tmp_path: Path):
+    assert client.get("/api/fs/repos", params={"path": str(tmp_path)}).status_code == 403
+    assert client.get("/api/fs/repos", params={"path": "/"}).status_code == 403
+
+
+def test_repos_dotdot_and_relative_rejected(client, home: Path):
+    (home / "dev").mkdir()
+    assert client.get("/api/fs/repos", params={"path": f"{home}/.."}).status_code == 403
+    assert client.get("/api/fs/repos", params={"path": "dev"}).status_code == 403
+
+
+def test_repos_missing_and_file(client, home: Path):
+    (home / "file.txt").write_text("x")
+    assert client.get("/api/fs/repos", params={"path": str(home / "nope")}).status_code == 404
+    assert client.get("/api/fs/repos", params={"path": str(home / "file.txt")}).status_code == 400
+
+
+def test_repos_requires_path(client):
+    assert client.get("/api/fs/repos").status_code == 422
+
+
+def test_repos_symlink_to_outside_rejected(client, home: Path, tmp_path: Path):
+    outside = tmp_path / "fora"
+    make_repo(outside / "segredo")
+    os.symlink(outside, home / "atalho")
+    assert client.get("/api/fs/repos", params={"path": str(home / "atalho")}).status_code == 403
+
+
+def test_repos_symlink_inside_home_resolved(client, home: Path):
+    make_repo(home / "real" / "r")
+    os.symlink(home / "real", home / "alias")
+    body = repos(client, home / "alias")
+    assert [r["path"] for r in body["repos"]] == [str(home / "real" / "r")]
+
+
+def test_repos_does_not_follow_links_inside_the_folder(client, home: Path, tmp_path: Path):
+    outside = tmp_path / "fora"
+    make_repo(outside / "segredo")
+    root = home / "proj"
+    root.mkdir()
+    os.symlink(outside, root / "atalho")
+    assert repos(client, root)["repos"] == []
+
+
+def test_repos_needs_the_api_header(home: Path):
+    from fastapi.testclient import TestClient
+
+    from vibing.app import create_app
+
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660") as anon:
+        response = anon.get("/api/fs/repos", params={"path": str(home)})
+        assert response.status_code == 403

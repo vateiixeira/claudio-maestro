@@ -17,6 +17,17 @@ class DirEntry:
     git: bool
     # Filled by `with_branches` for folders with git.
     branch: str | None = None
+    # HEAD detached: `branch` then holds the short hash.
+    detached: bool = False
+
+
+@dataclass(frozen=True)
+class RepoPreview:
+    name: str
+    rel_path: str
+    path: str
+    branch: str | None
+    detached: bool
 
 
 @dataclass(frozen=True)
@@ -63,8 +74,8 @@ def _entry(item: os.DirEntry[str], home: Path) -> DirEntry | None:
     return DirEntry(name=item.name, path=str(target), git=_has_git(target))
 
 
-def list_dirs(path: str | None, home: Path) -> DirListing:
-    """List direct subfolders of `path` (default: home). Never lists files."""
+def resolve_folder(path: str | None, home: Path) -> Path:
+    """The folder a browsing request points at: inside home and readable."""
     home = home.resolve()
     try:
         folder = resolve_within(path, [home]) if path else home
@@ -79,6 +90,13 @@ def list_dirs(path: str | None, home: Path) -> DirListing:
         raise BrowseNotFoundError("Pasta não encontrada.") from exc
     if not is_dir:
         raise BrowseNotADirectoryError("O caminho não é uma pasta.")
+    return folder
+
+
+def list_dirs(path: str | None, home: Path) -> DirListing:
+    """List direct subfolders of `path` (default: home). Never lists files."""
+    home = home.resolve()
+    folder = resolve_folder(path, home)
 
     try:
         with os.scandir(folder) as items:
@@ -92,11 +110,41 @@ def list_dirs(path: str | None, home: Path) -> DirListing:
 
 
 async def with_branches(listing: DirListing) -> DirListing:
-    """Fill `branch` of every git entry, in parallel (each with the git time limit)."""
+    """Fill `branch` and `detached` of every git entry, in parallel (each with the git time limit)."""
     git_entries = [entry for entry in listing.entries if entry.git]
-    labels = await asyncio.gather(
-        *(gitinfo.branch_label(Path(entry.path)) for entry in git_entries)
+    statuses = await asyncio.gather(
+        *(gitinfo.repo_status(Path(entry.path)) for entry in git_entries)
     )
-    branches = {entry.path: label for entry, label in zip(git_entries, labels, strict=True)}
-    entries = [replace(entry, branch=branches.get(entry.path)) for entry in listing.entries]
+    found = {
+        entry.path: (None, False) if status.error
+        else (status.head if status.detached else status.branch, status.detached)
+        for entry, status in zip(git_entries, statuses, strict=True)
+    }
+    entries = [
+        replace(entry, branch=found[entry.path][0], detached=found[entry.path][1])
+        if entry.path in found else entry
+        for entry in listing.entries
+    ]
     return replace(listing, entries=entries)
+
+
+async def preview_repos(path: str, home: Path) -> tuple[list[RepoPreview], bool]:
+    """Repositories a project on `path` would have, and whether the limit was reached.
+
+    Uses the project's own discovery (`gitinfo.project_repos_scan`).
+    """
+    if not path:
+        raise BrowseNotADirectoryError("Informe uma pasta.")
+    folder = await asyncio.to_thread(resolve_folder, path, home)
+    repos, limit_reached = await gitinfo.project_repos_scan(folder)
+    previews = [
+        RepoPreview(
+            name=folder.name if repo.rel_path == "." else Path(repo.path).name,
+            rel_path=repo.rel_path,
+            path=repo.path,
+            branch=None if repo.error else (repo.head if repo.detached else repo.branch),
+            detached=repo.detached and not repo.error,
+        )
+        for repo in repos
+    ]
+    return previews, limit_reached

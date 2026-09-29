@@ -12,6 +12,14 @@ router = APIRouter(prefix="/api/state")
 
 ALLOWED_KEYS = ("layout", "preferences")
 MAX_BYTES = 64 * 1024
+MAX_FINISHED_AFTER_DAYS = 365
+
+
+def valid_finished_after_days(days: object) -> bool:
+    return (
+        isinstance(days, int) and not isinstance(days, bool)
+        and 1 <= days <= MAX_FINISHED_AFTER_DAYS
+    )
 
 
 @router.get("")
@@ -34,14 +42,19 @@ async def put_state(key: str, request: Request, conn: DbDep) -> Any:
         value = json.loads(body)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="JSON inválido.") from exc
-    if (
-        key == "preferences" and isinstance(value, dict) and "editor_command" in value
-        and not valid_editor_command(value["editor_command"])
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="O comando do editor precisa ser uma lista de textos não vazios.",
-        )
+    if key == "preferences" and isinstance(value, dict):
+        if "editor_command" in value and not valid_editor_command(value["editor_command"]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="O comando do editor precisa ser uma lista de textos não vazios.",
+            )
+        if "finished_after_days" in value and not valid_finished_after_days(
+            value["finished_after_days"]
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Os dias para ocultar sessões precisam ser um número inteiro de 1 a 365.",
+            )
     conn.execute(
         "INSERT INTO app_state (key, value) VALUES (?, ?)"
         " ON CONFLICT(key) DO UPDATE SET value = excluded.value",

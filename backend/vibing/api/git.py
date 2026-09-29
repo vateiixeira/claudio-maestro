@@ -32,9 +32,9 @@ def _forbidden(detail: str) -> HTTPException:
 async def project_git(project_id: int, conn: DbDep) -> dict[str, Any]:
     project = _project(conn, project_id)
     if not project.available:
-        return {"repos": []}
-    repos = await gitinfo.project_repos(Path(project.path))
-    return {"repos": [repo.to_dict() for repo in repos]}
+        return {"repos": [], "limit_reached": False}
+    repos, limit_reached = await gitinfo.project_repos_scan(Path(project.path))
+    return {"repos": [repo.to_dict() for repo in repos], "limit_reached": limit_reached}
 
 
 @router.get("/projects/{project_id}/diff")

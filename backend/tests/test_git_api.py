@@ -85,7 +85,9 @@ def test_project_git(api, home):
 
 def test_project_git_without_repo(api, home):
     project = add_project(api, home / "plain")
-    assert api.get(f"/api/projects/{project['id']}/git").json() == {"repos": []}
+    assert api.get(f"/api/projects/{project['id']}/git").json() == {
+        "repos": [], "limit_reached": False,
+    }
 
 
 def test_project_git_unknown(api):

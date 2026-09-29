@@ -17,6 +17,7 @@ from vibing.cliwatch import CliWatcher
 from vibing.config import Settings, claude_projects_dir, load_settings
 from vibing.events import EventHub
 from vibing.gitmonitor import GitMonitor
+from vibing.picker import PickFolder, pick_folder as system_pick_folder
 from vibing.security import BodySizeLimitMiddleware, HostOriginMiddleware
 from vibing.sessions import HistoryExists, RenameSession, SessionManager
 
@@ -39,6 +40,7 @@ def create_app(
     get_session_messages: history.GetSessionMessages | None = None,
     read_tool_results: history.ReadToolResults | None = None,
     spawn_editor: SpawnEditor | None = None,
+    pick_folder: PickFolder | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -53,6 +55,9 @@ def create_app(
         db.init_db(app.state.settings.db_path)
         app.state.hub = EventHub()
         app.state.spawn_editor = spawn_editor or spawn_detached
+        app.state.pick_folder = pick_folder or system_pick_folder
+        # Only one system folder picker open at a time.
+        app.state.pick_lock = asyncio.Lock()
         app.state.git_monitor = GitMonitor(app.state.settings.db_path, app.state.hub)
         # One-off tasks (e.g. syncing a new project), cancelled on shutdown.
         app.state.background = set()

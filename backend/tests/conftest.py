@@ -49,6 +49,16 @@ def no_real_sdk_history(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_folder_picker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The native folder picker (zenity) is never opened in tests."""
+
+    async def no_real_zenity(*argv, **kwargs):
+        raise FileNotFoundError("zenity")
+
+    monkeypatch.setattr("vibing.picker.default_spawn", no_real_zenity)
+
+
+@pytest.fixture(autouse=True)
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point home and data dirs to temporary folders in every test."""
     home = tmp_path / "home"
