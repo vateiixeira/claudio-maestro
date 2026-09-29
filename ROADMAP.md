@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 35 de 43 |
+| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 37 de 43 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -174,9 +174,9 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [x] Botão para copiar a resposta inteira em markdown (2026-09-29)
 - [x] Raciocínio durante o streaming mostra só as 4 últimas linhas, acompanhando o texto, com opção de expandir (2026-09-29)
 - [x] Faixa de subagentes junto ao campo de mensagem: aparece enquanto houver subagente rodando (inclusive em segundo plano) e some quando todos terminam. Lista cada um com tipo, descrição, estado (rodando, concluído, com erro, parado) e última ação; o clique leva ao cartão na conversa. Com mais de 3, mostra um resumo ("3 rodando, 1 concluído") que abre a lista ao clicar (2026-09-29)
-- [ ] Porcentagem de contexto usada na coluna da sessão, junto aos controles: atualizada ao fim de cada turno com `get_context_usage()` do SDK; sessões sem cliente conectado usam o `usage` da última resposta do histórico
+- [x] Porcentagem de contexto usada na coluna da sessão, junto aos controles: atualizada ao fim de cada turno com `get_context_usage()` do SDK; sessões sem cliente conectado usam o `usage` da última resposta do histórico (2026-09-29)
 - [x] Lista de modelos guardada no SQLite, usada ao reiniciar o backend e atualizada até 3 vezes por dia (2026-09-29)
-- [ ] "Permitir" e "Negar" direto nos cartões "Aguardando você" da tela "Todas as sessões", como no desenho aprovado
+- [x] "Permitir" e "Negar" direto nos cartões "Aguardando você" da tela "Todas as sessões", como no desenho aprovado (2026-09-29)
 - [x] Ações seguidas do chat viram um grupo, aberto enquanto o turno roda e recolhido depois (2026-09-29)
 - [x] Saídas longas no chat limitadas a 8 linhas e barra fixa do turno com navegação entre turnos (2026-09-29)
 - [x] Aviso de mais de 50 repositórios também atualizado pelo evento `project.git`, sem recarregar (2026-09-29)
