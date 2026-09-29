@@ -22,11 +22,11 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 49 de 49 |
+| 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
-Os marcos 0 a 6 formam o MVP. Os marcos 7 e 8 só começam com o MVP completo e funcionando.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. Os marcos 7 e 8 só começam quando o usuário pedir.
 
 ## Preparação
 
@@ -186,6 +186,7 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [x] Leitura do contexto não segura o fim do turno nem deixa pedido pendurado no SDK; porcentagem e tokens na mesma base (2026-09-29)
 - [x] Seletor de pastas fechado quando a aba desiste do pedido; mensagem de login expirado só com as frases específicas do CLI (2026-09-29)
 - [x] Prévia de repositórios aborta pedidos anteriores; tokens do contexto acessíveis; nova tentativa na coluna com falha de carga (2026-09-29)
+- [x] Espera pelo turno seguinte ao autônomo encerrada pelo `init` e prévia de repositórios cancelada quando a aba desiste (achados da segunda revisão do marco 6) (2026-09-29)
 - [x] Testes intermitentes estabilizados: `composerExtras.spec.ts` (frontend) e `test_controls.py::test_autonomous_turn_then_user_turn` (backend) (2026-09-29)
 
 ## Marco 7. Agrupador de sessões
@@ -294,4 +295,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | Modos `auto` ("Automático") e `dontAsk` ("Só o pré-aprovado") aceitos sem confirmação; só `bypassPermissions` pede confirmação |
 | 2026-09-29 | Sessões do app herdam o modo padrão do CLI do usuário |
 | 2026-09-29 | "Permitir" e "Negar" nos cartões de "Todas as sessões" entram no marco 6 |
+| 2026-09-29 | MVP (marcos 0 a 6) concluído, revisado e testado contra o SDK real |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
