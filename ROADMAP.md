@@ -311,6 +311,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
 | Tecnologia do ditado por voz | Decidido em 2026-09-29: reconhecimento do navegador (Chrome/Edge). O áudio vai ao serviço de reconhecimento do navegador |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
+| Conversa do CLI ativa aparece como "Aguardando você" | Uma conversa conduzida pelo CLI não tem cliente no app, então o estado exibido é "Aguardando você" mesmo com o CLI trabalhando. O marco 9 criou o sinal `cli_running` e o usa só no progresso do plano. Decidir se ele também muda o estado exibido e as contagens da Inbox e do Dashboard |
 | Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
 
 ## Decisões
