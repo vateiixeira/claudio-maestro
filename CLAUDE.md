@@ -70,9 +70,9 @@ uv run python scripts/sdk_smoke.py                                              
 
 ## Subagentes
 
-- Ao usar subagentes para implementar (por exemplo, depois de brainstorming ou plano), o padrão é o modelo Opus 5.5 com raciocínio baixo (low).
+- Ao usar subagentes para implementar (por exemplo, depois de brainstorming ou plano), o padrão é o que está no agente `implementer` (hoje Sonnet com raciocínio alto).
 - Antes de disparar, pergunte ao usuário se pode. Ele responde se usa esse padrão, o modelo atual da sessão ou outro.
-- O agente `implementer` (`.claude/agents/implementer.md`) já vem com Opus e raciocínio baixo. Para usar o modelo da sessão ou outro, passe `model` ao chamá-lo.
+- O agente `implementer` (`.claude/agents/implementer.md`) define modelo e raciocínio. Para usar o modelo da sessão ou outro, passe `model` ao chamá-lo.
 - Subagentes não fazem commit nem `git add`. Quem commita é a sessão principal, depois de conferir o trabalho e ver os testes passarem.
 
 ### Revisão de código em duas camadas
