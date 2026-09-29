@@ -164,6 +164,8 @@ def test_snapshot_of_new_session(api, home):
         "items": [],
         "prompts": [],
         "init": None,
+        "history_truncated": False,
+        "external_activity": False,
     }
 
 

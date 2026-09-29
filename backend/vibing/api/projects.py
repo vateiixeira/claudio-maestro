@@ -1,12 +1,17 @@
 """Project routes."""
 
-from typing import Annotated
+import asyncio
+import logging
+from dataclasses import asdict
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from vibing import projects
 from vibing.api.deps import DbDep, SettingsDep
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects")
 
@@ -38,6 +43,7 @@ class ProjectOut(BaseModel):
     position: int
     created_at: int
     available: bool
+    hidden_sessions: int = 0
 
 
 _STATUS = {
@@ -52,19 +58,61 @@ def _http_error(exc: projects.ProjectError) -> HTTPException:
     return HTTPException(status_code=_STATUS[type(exc)], detail=str(exc))
 
 
+def _out(project: projects.Project, hidden: dict[int, int]) -> dict[str, Any]:
+    return {**asdict(project), "hidden_sessions": hidden.get(project.id, 0)}
+
+
 @router.get("", response_model=list[ProjectOut])
-def list_projects(conn: DbDep) -> list[projects.Project]:
-    return projects.list_projects(conn)
+async def list_projects(conn: DbDep, request: Request) -> list[dict[str, Any]]:
+    hidden = request.app.state.sessions.hidden_counts()
+    return [_out(project, hidden) for project in projects.list_projects(conn)]
 
 
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
-def create_project(body: ProjectCreate, conn: DbDep, settings: SettingsDep) -> projects.Project:
+async def create_project(
+    body: ProjectCreate, conn: DbDep, settings: SettingsDep, request: Request
+) -> dict[str, Any]:
     try:
-        return projects.create_project(
+        project = projects.create_project(
             conn, name=body.name, path=body.path, color=body.color, home=settings.home_dir
         )
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
+    _sync_in_background(request, project.id)
+    return _out(project, request.app.state.sessions.hidden_counts())
+
+
+def _sync_in_background(request: Request, project_id: int) -> None:
+    """Sync a new project's history without holding the response.
+
+    Emits `project.synced` `{project_id}` when done, so the frontend reloads it.
+    """
+    state = request.app.state
+
+    async def run() -> None:
+        try:
+            await state.history.sync_project(project_id)
+        except Exception:
+            logger.exception("Falha ao sincronizar o histórico do projeto %s", project_id)
+        state.hub.publish(
+            {"session_id": None, "seq": 0, "type": "project.synced",
+             "data": {"project_id": project_id}}
+        )
+
+    task = asyncio.create_task(run())
+    state.background.add(task)
+    task.add_done_callback(state.background.discard)
+
+
+@router.post("/{project_id}/sync")
+async def sync_project(project_id: int, conn: DbDep, request: Request) -> list[dict[str, Any]]:
+    """Read the project's history again. Returns its sessions, as the session listing."""
+    try:
+        projects.get_project(conn, project_id)
+    except projects.ProjectError as exc:
+        raise _http_error(exc) from exc
+    await request.app.state.history.sync_project(project_id)
+    return request.app.state.sessions.list_sessions(project_id=project_id)
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)

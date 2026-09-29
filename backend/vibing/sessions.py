@@ -11,6 +11,7 @@ import json
 import logging
 import sqlite3
 import time
+import unicodedata
 import uuid
 from collections.abc import Callable
 from contextlib import closing, suppress
@@ -27,6 +28,7 @@ from claude_agent_sdk import (
 )
 
 from vibing import db
+from vibing import history as history_module
 from vibing.agent.base import AgentClient, AgentError, AgentFactory, AgentOptions
 from vibing.conversation import ConversationBuilder, Event
 from vibing.projects import Project
@@ -50,7 +52,18 @@ HistoryExists = Callable[[str, str], bool]
 # rename_session(session_id, title, directory): writes the title to the SDK history.
 RenameSession = Callable[[str, str, str], None]
 
+# get_session_messages(session_id, directory) and list_sessions(directory), from the SDK.
+GetSessionMessages = history_module.GetSessionMessages
+ListSessions = history_module.ListSessions
+ReadToolResults = history_module.ReadToolResults
+# `list_sessions(cwd)` answers are reused this long when opening sessions.
+FILE_INFO_TTL = 5.0  # seconds
+
 DEFAULT_IDLE_TIMEOUT = 30 * 60  # seconds
+DEFAULT_HISTORY_LIMIT = 500  # messages loaded when opening an old session
+# A history file modified this recently by someone else counts as external activity.
+EXTERNAL_ACTIVITY_WINDOW = 60  # seconds
+HISTORY_LOAD_FAILED = "Não foi possível carregar a conversa salva desta sessão."
 DEFAULT_FINISHED_AFTER_DAYS = 3.0
 DAY_SECONDS = 86_400
 
@@ -103,6 +116,14 @@ class SessionRecord:
     last_activity_at: int
     last_seen_at: int | None = None
     finished: bool = False
+    summary: str | None = None
+    first_prompt: str | None = None
+    # Title set by the user in the app: the history sync never replaces it.
+    title_custom: bool = False
+    # Title set before the conversation existed on disk: written to the SDK later.
+    rename_pending: bool = False
+    # Last modification of the history file (SDK `last_modified`), in seconds.
+    file_modified_at: int | None = None
 
 
 @dataclass
@@ -115,15 +136,28 @@ class SessionSummary:
         return {**asdict(self.record), "state": self.state, "error": self.error}
 
 
-_COLUMNS = (
+_INSERT_COLUMNS = (
     "session_id, project_id, cwd, title, created_at, last_activity_at, last_seen_at, finished"
 )
+_COLUMNS = (
+    _INSERT_COLUMNS
+    + ", summary, first_prompt, title_custom, rename_pending, file_modified_at"
+)
+# Record fields kept out of what the frontend receives.
+_INTERNAL_FIELDS = ("title_custom", "rename_pending", "file_modified_at")
+_BOOL_FIELDS = ("finished", "title_custom", "rename_pending")
 
 
 def _record(row: sqlite3.Row) -> SessionRecord:
     fields = {key: row[key] for key in row.keys()}
-    fields["finished"] = bool(fields["finished"])
+    for key in _BOOL_FIELDS:
+        fields[key] = bool(fields[key])
     return SessionRecord(**fields)
+
+
+def _strip_accents(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
 
 
 def display_state(
@@ -160,8 +194,11 @@ def describe(
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`."""
     now = time.time() if now is None else now
+    fields = asdict(record)
+    for key in _INTERNAL_FIELDS:
+        del fields[key]
     return {
-        **asdict(record),
+        **fields,
         "state": state,
         "error": error,
         "seq": seq,
@@ -246,6 +283,10 @@ class ActiveSession:
         agent_factory: AgentFactory,
         history_exists: HistoryExists,
         describe: Callable[["ActiveSession"], dict[str, Any]] | None = None,
+        get_session_messages: GetSessionMessages | None = None,
+        rename_session: RenameSession | None = None,
+        history_limit: int = DEFAULT_HISTORY_LIMIT,
+        read_tool_results: ReadToolResults | None = None,
     ) -> None:
         self.record = record
         self.builder = ConversationBuilder()
@@ -275,6 +316,16 @@ class ActiveSession:
         self.idle_since: float | None = None
         # Disposal of a discarded client still in progress.
         self._disposal: asyncio.Task[None] | None = None
+
+        self._get_session_messages = get_session_messages
+        self._read_tool_results = read_tool_results
+        self._rename_session = rename_session
+        self._history_limit = history_limit
+        self._history_loaded = False
+        self._history_lock = asyncio.Lock()
+        self.history_truncated = False
+        # Wall time of the app's own last activity in this session (seconds).
+        self._app_activity_at = 0.0
 
     @property
     def session_id(self) -> str:
@@ -329,7 +380,84 @@ class ActiveSession:
             "items": self.builder.snapshot(),
             "prompts": [prompt.to_dict() for prompt in self.prompts.values()],
             "init": asdict(init) if init is not None else None,
+            "history_truncated": self.history_truncated,
+            "external_activity": self.external_activity,
         }
+
+    @property
+    def active(self) -> bool:
+        """A client is connected or connecting in this app."""
+        return self.client is not None or self._connecting
+
+    @property
+    def external_activity(self) -> bool:
+        """The history file changed in the last minute while the app was not using it."""
+        modified = self.record.file_modified_at
+        if self.active or modified is None:
+            return False
+        return (
+            time.time() - modified <= EXTERNAL_ACTIVITY_WINDOW
+            and modified > self._app_activity_at + 2
+        )
+
+    # History ---------------------------------------------------------------
+
+    async def ensure_history(self) -> None:
+        """Load the saved conversation once, before anything else is shown or sent.
+
+        Only the last `history_limit` messages are kept (`history_truncated`).
+        No client is created.
+        """
+        if self._history_loaded:
+            return
+        async with self._history_lock:
+            if self._history_loaded:
+                return
+            if (
+                self._get_session_messages is None
+                or self._has_connected
+                or self.builder.items
+            ):
+                self._history_loaded = True
+                return
+            try:
+                entries = await asyncio.to_thread(
+                    self._get_session_messages, self.session_id, self.record.cwd
+                )
+            except Exception:
+                logger.exception("Falha ao carregar o histórico da sessão %s", self.session_id)
+                self.builder.add_notice("warning", HISTORY_LOAD_FAILED)
+                self._history_loaded = True
+                return
+            entries = list(entries or [])
+            if len(entries) > self._history_limit:
+                self.history_truncated = True
+                entries = entries[-self._history_limit:]
+            tool_results: dict[str, dict[str, Any]] = {}
+            if self._read_tool_results is not None and entries:
+                try:
+                    tool_results = await asyncio.to_thread(
+                        self._read_tool_results, self.session_id, self.record.cwd
+                    )
+                except Exception:
+                    logger.exception(
+                        "Falha ao ler os resultados de ferramentas da sessão %s", self.session_id
+                    )
+            self.builder.load_history(entries, tool_results)
+            self._history_loaded = True
+
+    async def _apply_pending_rename(self) -> None:
+        """Write a title chosen before the conversation existed on disk."""
+        if not self.record.rename_pending or self._rename_session is None:
+            return
+        try:
+            await asyncio.to_thread(
+                self._rename_session, self.session_id, self.record.title, self.record.cwd
+            )
+        except Exception:
+            logger.exception("Falha ao aplicar o nome pendente da sessão %s", self.session_id)
+            return
+        self.save(rename_pending=False)
 
     def summary(self) -> dict[str, Any]:
         if self._describe is not None:
@@ -369,6 +497,8 @@ class ActiveSession:
             raise EmptyMessageError("A mensagem está vazia.")
         if self._final:
             raise SessionClosedError("O servidor está encerrando. A mensagem não foi enviada.")
+        # The saved conversation comes first, so the new message goes after it.
+        await self.ensure_history()
         # The user's message is recorded first so it is never lost.
         self._emit_events(self.builder.add_user_message(text))
         self._touch()
@@ -496,6 +626,8 @@ class ActiveSession:
                     self.pending_turns = max(0, self.pending_turns - 1)
                     self._touch()
                     self.emit_updated()
+                    # The conversation is on disk after the first turn.
+                    await self._apply_pending_rename()
                 self._refresh_state()
         except asyncio.CancelledError:
             raise
@@ -513,6 +645,7 @@ class ActiveSession:
             await self._fail("O agente encerrou a conexão.")
 
     def _touch(self) -> None:
+        self._app_activity_at = time.time()
         self.save(last_activity_at=_now())
 
     # Interruption and failure ---------------------------------------------
@@ -670,8 +803,20 @@ class SessionManager:
         rename_session: RenameSession | None = None,
         idle_timeout: float = DEFAULT_IDLE_TIMEOUT,
         finished_after_days: float = DEFAULT_FINISHED_AFTER_DAYS,
+        list_sessions: ListSessions | None = None,
+        get_session_messages: GetSessionMessages | None = None,
+        history_limit: int = DEFAULT_HISTORY_LIMIT,
+        read_tool_results: ReadToolResults | None = None,
     ) -> None:
         self._db_path = db_path
+        self._read_tool_results = read_tool_results or history_module.sdk_read_tool_results
+        # cwd -> (monotonic time, {session_id: last_modified in seconds})
+        self._file_info: dict[str, tuple[float, dict[str, int]]] = {}
+        self._list_sessions = list_sessions or history_module.sdk_list_sessions
+        self._get_session_messages = (
+            get_session_messages or history_module.sdk_get_session_messages
+        )
+        self._history_limit = history_limit
         self._publish = publish
         self._agent_factory = agent_factory or default_agent_factory
         self._history_exists = history_exists or sdk_history_exists
@@ -696,7 +841,7 @@ class SessionManager:
         )
         with closing(db.connect(self._db_path)) as conn:
             conn.execute(
-                f"INSERT INTO sessions ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO sessions ({_INSERT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.session_id,
                     record.project_id,
@@ -727,12 +872,99 @@ class SessionManager:
             agent_factory=self._agent_factory,
             history_exists=self._history_exists,
             describe=self._describe_active,
+            get_session_messages=self._get_session_messages,
+            rename_session=self._rename_session,
+            history_limit=self._history_limit,
+            read_tool_results=self._read_tool_results,
         )
         self._sessions[session_id] = session
         return session
 
     def active_ids(self) -> set[str]:
         return set(self._sessions)
+
+    # History -----------------------------------------------------------------
+
+    async def open(self, session_id: str) -> dict[str, Any]:
+        """Snapshot of a session, loading its saved conversation if needed."""
+        session = self.get(session_id)
+        await session.ensure_history()
+        await self.refresh_file_info(session)
+        return session.snapshot()
+
+    async def send(self, session_id: str, text: str) -> dict[str, Any]:
+        """Send a message. `external_activity` tells whether the resumed history was
+        modified in the last minute by another process."""
+        session = self.get(session_id)
+        external = False
+        if not session.active:
+            await self.refresh_file_info(session)
+            external = session.external_activity
+        await session.send(text)
+        return {"state": session.state, "external_activity": external}
+
+    async def refresh_file_info(self, session: ActiveSession) -> None:
+        """Read the history file's `last_modified` for a session not active in the app."""
+        if session.active:
+            return
+        cwd = session.record.cwd
+        cached = self._file_info.get(cwd)
+        if cached is not None and time.monotonic() - cached[0] < FILE_INFO_TTL:
+            modified_by_id = cached[1]
+        else:
+            try:
+                infos = await asyncio.to_thread(self._list_sessions, cwd)
+            except Exception:
+                logger.exception("Falha ao consultar o histórico de %s", cwd)
+                return
+            modified_by_id = {info.session_id: int(info.last_modified) // 1000 for info in infos}
+            self._file_info[cwd] = (time.monotonic(), modified_by_id)
+        modified = modified_by_id.get(session.session_id)
+        if modified is not None and modified != session.record.file_modified_at:
+            session.save(file_modified_at=modified)
+
+    def refresh_records(self, session_ids: set[str]) -> None:
+        """Reload records changed by the history sync for sessions kept in memory."""
+        cached = [self._sessions[sid] for sid in session_ids if sid in self._sessions]
+        if not cached:
+            return
+        with closing(db.connect(self._db_path)) as conn:
+            for session in cached:
+                row = conn.execute(
+                    f"SELECT {_COLUMNS} FROM sessions WHERE session_id = ?",
+                    (session.session_id,),
+                ).fetchone()
+                if row is None:
+                    continue
+                fresh = _record(row)
+                if fresh != session.record:
+                    session.record = fresh
+                    session.emit_updated()
+
+    def search(self, query: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Sessions whose title, summary or first prompt contain `query`, ignoring
+        case and accents. Includes finished and hidden ones; newest first."""
+        needle = _strip_accents(" ".join(query.split()))
+        if not needle:
+            return []
+        result = []
+        for item in self.list_sessions():
+            haystack = " ".join(
+                item.get(key) or "" for key in ("title", "summary", "first_prompt")
+            )
+            if needle in _strip_accents(haystack):
+                result.append(item)
+                if len(result) >= limit:
+                    break
+        return result
+
+    def hidden_counts(self) -> dict[int, int]:
+        """Per project, sessions finished by inactivity (not marked finished)."""
+        counts: dict[int, int] = {}
+        for item in self.list_sessions():
+            if item["display_state"] == "finished" and not item["finished"]:
+                counts[item["project_id"]] = counts.get(item["project_id"], 0) + 1
+        return counts
 
     # Descriptions ------------------------------------------------------------
 
@@ -829,16 +1061,25 @@ class SessionManager:
             title = title.strip()
             if title and title != session.record.title:
                 changes["title"] = title
+                changes["title_custom"] = True
         if not changes:
             return session.summary()
         session.save(**changes)
-        if "title" in changes and await session.has_history():
-            try:
-                await asyncio.to_thread(
-                    self._rename_session, session_id, changes["title"], session.record.cwd
-                )
-            except Exception:
-                logger.exception("Falha ao renomear a sessão %s no SDK", session_id)
+        if "title" in changes:
+            if await session.has_history():
+                try:
+                    await asyncio.to_thread(
+                        self._rename_session, session_id, changes["title"], session.record.cwd
+                    )
+                except Exception:
+                    logger.exception("Falha ao renomear a sessão %s no SDK", session_id)
+                    session.save(rename_pending=True)
+                else:
+                    if session.record.rename_pending:
+                        session.save(rename_pending=False)
+            else:
+                # No conversation on disk yet: applied after the first turn.
+                session.save(rename_pending=True)
         session.emit_updated()
         return session.summary()
 

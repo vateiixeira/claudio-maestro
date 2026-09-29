@@ -43,6 +43,16 @@ MIGRATIONS: list[list[str]] = [
         )
         """,
     ],
+    [
+        # Marco 3: history index. `title_custom` marks a title set by the user in
+        # the app (sync never replaces it); `rename_pending` a title still to be
+        # written to the SDK history; `file_modified_at` the history file mtime.
+        "ALTER TABLE sessions ADD COLUMN summary TEXT",
+        "ALTER TABLE sessions ADD COLUMN first_prompt TEXT",
+        "ALTER TABLE sessions ADD COLUMN title_custom INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE sessions ADD COLUMN rename_pending INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE sessions ADD COLUMN file_modified_at INTEGER",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

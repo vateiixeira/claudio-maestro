@@ -20,6 +20,8 @@ class Settings:
     idle_sweep_interval_seconds: float = 60
     # Default for "finished by inactivity"; `preferences.finished_after_days` overrides it.
     finished_after_days: float = 3
+    # The history index is synced at startup and then every this many seconds.
+    history_sync_interval_seconds: float = 60
 
     @property
     def db_path(self) -> Path:

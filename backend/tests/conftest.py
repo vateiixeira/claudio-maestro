@@ -16,6 +16,27 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture(autouse=True)
+def no_real_sdk_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default history functions must never reach the real SDK in tests."""
+    monkeypatch.setattr("vibing.history.sdk_list_sessions", lambda directory: [])
+    monkeypatch.setattr(
+        "vibing.history.sdk_get_session_messages", lambda session_id, directory: []
+    )
+    monkeypatch.setattr(
+        "vibing.history.sdk_read_tool_results", lambda session_id, directory: {}
+    )
+    monkeypatch.setattr(
+        "vibing.sessions.sdk_rename_session", lambda session_id, title, directory: None
+    )
+    monkeypatch.setattr("vibing.sessions.sdk_history_exists", lambda session_id, cwd: False)
+
+    def no_real_agent(options):
+        raise RuntimeError("Os testes não podem criar o cliente real do SDK.")
+
+    monkeypatch.setattr("vibing.sessions.default_agent_factory", no_real_agent)
+
+
+@pytest.fixture(autouse=True)
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point home and data dirs to temporary folders in every test."""
     home = tmp_path / "home"

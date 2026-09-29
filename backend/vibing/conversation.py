@@ -10,6 +10,7 @@ message_id, and each AssistantMessage arrives before its `content_block_stop`,
 so the block index comes from the `content_block_start` that is open.
 """
 
+import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -71,6 +72,8 @@ class ToolItem:
     result: dict[str, Any] | None
     streaming: bool
     parent_tool_use_id: str | None = None
+    # Loaded from history without a result anywhere in the transcript.
+    result_missing: bool = False
     type: Literal["tool"] = field(default="tool", init=False)
 
 
@@ -182,6 +185,93 @@ class ConversationBuilder:
     def add_notice(self, level: NoticeLevel, text: str) -> list[Event]:
         """Notice raised by the app itself (e.g. the agent process failed)."""
         return [self._notice(level, text)]
+
+    def load_history(
+        self,
+        entries: list[Any],
+        tool_results: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        """Rebuild items from a saved conversation (`get_session_messages`).
+
+        `user` entries carry text, images or tool result blocks; each `assistant`
+        entry carries one block in the API format, as in the live stream.
+
+        `get_session_messages` follows a single `parentUuid` chain, so results of
+        parallel tool calls are often missing from `entries`. `tool_results`
+        (read from the raw transcript, by `tool_use_id`) completes them and adds
+        `details` (`toolUseResult`). A tool still without a result gets
+        `result_missing`. Base64 images are never kept.
+        """
+        tool_results = tool_results or {}
+        for entry in entries:
+            message = entry.message if isinstance(entry.message, dict) else {}
+            content = message.get("content")
+            if entry.type == "user":
+                self._load_user(content)
+            elif entry.type == "assistant" and isinstance(content, list):
+                blocks = [b for b in (_block_from_dict(raw) for raw in content) if b is not None]
+                if blocks:
+                    self._on_assistant(
+                        AssistantMessage(
+                            content=blocks,
+                            model=str(message.get("model") or ""),
+                            message_id=message.get("id") or entry.uuid,
+                        )
+                    )
+        self.close_open_items()
+        for item in self.items:
+            if not isinstance(item, ToolItem):
+                continue
+            raw = tool_results.get(item.tool_use_id)
+            if raw is not None:
+                if item.result is None:
+                    item.result = {
+                        "content": cap_content(omit_images(raw.get("content"))),
+                        "is_error": raw.get("is_error"),
+                        "details": slim_details(item.name, raw.get("details")),
+                    }
+                elif item.result.get("details") is None:
+                    item.result["details"] = slim_details(item.name, raw.get("details"))
+            item.result_missing = item.result is None
+
+    def _load_user(self, content: Any) -> None:
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+        if not isinstance(content, list):
+            return
+        texts: list[str] = []
+        images: list[dict[str, Any]] = []
+        notices: list[str] = []
+        for raw in content:
+            if not isinstance(raw, dict):
+                continue
+            kind = raw.get("type")
+            if kind == "text":
+                text, notice = _classify_user_text(raw.get("text") or "")
+                if notice:
+                    notices.append(notice)
+                if text:
+                    texts.append(text)
+            elif kind in ("image", "document"):
+                images.append(_media_marker(raw))
+        text = "\n".join(texts)
+        if text.strip() or images:
+            self._put(UserItem(id=f"user-{uuid.uuid4().hex}", text=text, images=images))
+        for notice in notices:
+            self.add_notice("info", notice)
+        for raw in content:
+            if not isinstance(raw, dict) or raw.get("type") != "tool_result":
+                continue
+            if self._tool_item(str(raw.get("tool_use_id"))) is None:
+                continue
+            self._attach_tool_result(
+                ToolResultBlock(
+                    tool_use_id=raw["tool_use_id"],
+                    content=omit_images(raw.get("content")),
+                    is_error=raw.get("is_error"),
+                ),
+                None,
+            )
 
     def handle(self, message: Any) -> list[Event]:
         if isinstance(message, StreamEvent):
@@ -385,7 +475,11 @@ class ConversationBuilder:
                     f"Chegou o resultado de uma ferramenta desconhecida ({block.tool_use_id}).",
                 )
             ]
-        tool.result = {"content": block.content, "is_error": block.is_error, "details": details}
+        tool.result = {
+            "content": cap_content(block.content),
+            "is_error": block.is_error,
+            "details": slim_details(tool.name, details),
+        }
         tool.streaming = False
         return [self._put(tool)]
 
@@ -447,6 +541,126 @@ class ConversationBuilder:
                 text += f" Libera às {when:%H:%M} de {when:%d/%m}."
             events.append(self._notice("error", text))
         return events
+
+
+_SYSTEM_REMINDER = re.compile(r"<system-reminder>.*?(</system-reminder>|$)", re.DOTALL)
+_COMMAND_NAME = re.compile(r"<command-name>(.*?)</command-name>", re.DOTALL)
+_STDOUT = re.compile(r"</?local-command-std(out|err)>")
+INTERRUPTED_TEXT = "Interrompido."
+
+
+def _classify_user_text(text: str) -> tuple[str, str | None]:
+    """Split what the CLI writes as a user message: (text kept, notice text)."""
+    text = _SYSTEM_REMINDER.sub("", text).strip()
+    if not text or text.startswith("Caveat:"):
+        return "", None
+    match = _COMMAND_NAME.search(text)
+    if match:
+        name = match.group(1).strip()
+        return "", f"Comando {name}" if name else "Comando"
+    if "<local-command-stdout>" in text or "<local-command-stderr>" in text:
+        output = _STDOUT.sub("", text).strip()
+        return "", output or None
+    if "<task-notification>" in text:
+        return "", "Subagente em segundo plano terminou"
+    if text.startswith("[Request interrupted by user"):
+        return "", INTERRUPTED_TEXT
+    return text, None
+
+
+DETAILS_STRING_LIMIT = 20_000
+CONTENT_LIMIT = 200_000
+_EDIT_TOOLS = {"Edit", "MultiEdit", "Write"}
+_EDIT_DETAIL_KEYS = ("filePath", "structuredPatch", "type", "userModified")
+_READ_DROPPED_KEYS = {"content", "base64"}
+
+
+def _cut(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}…[cortado {len(text) - limit} caracteres]"
+
+
+def _cut_strings(value: Any, limit: int) -> Any:
+    if isinstance(value, str):
+        return _cut(value, limit)
+    if isinstance(value, list):
+        return [_cut_strings(v, limit) for v in value]
+    if isinstance(value, dict):
+        return {k: _cut_strings(v, limit) for k, v in value.items()}
+    return value
+
+
+def slim_details(tool_name: str, details: Any) -> Any:
+    """`toolUseResult` without whole-file copies, so snapshots stay small.
+
+    Edit/MultiEdit/Write keep the patch (the frontend's diff only uses
+    `structuredPatch`); Read keeps path and line counts (the text is in the
+    result content); any other tool gets long strings cut.
+    """
+    if not isinstance(details, dict):
+        return _cut_strings(details, DETAILS_STRING_LIMIT)
+    if tool_name in _EDIT_TOOLS:
+        return {key: details[key] for key in _EDIT_DETAIL_KEYS if key in details}
+    if tool_name == "Read":
+        slim = {k: v for k, v in details.items() if k not in _READ_DROPPED_KEYS}
+        file = details.get("file")
+        if isinstance(file, dict):
+            slim["file"] = {k: v for k, v in file.items() if k not in _READ_DROPPED_KEYS}
+        return _cut_strings(slim, DETAILS_STRING_LIMIT)
+    return _cut_strings(details, DETAILS_STRING_LIMIT)
+
+
+def cap_content(content: Any) -> Any:
+    """Tool result content with each text cut at 200 000 characters."""
+    return _cut_strings(content, CONTENT_LIMIT)
+
+
+def _base64_size(data: Any) -> int | None:
+    if not isinstance(data, str):
+        return None
+    return len(data) * 3 // 4 - data[-2:].count("=")
+
+
+def _media_marker(raw: dict[str, Any]) -> dict[str, Any]:
+    """Light stand-in for an image or document: type, media type and size, no data."""
+    source = raw.get("source") if isinstance(raw.get("source"), dict) else {}
+    return {
+        "type": raw.get("type"),
+        "media_type": source.get("media_type"),
+        "size": _base64_size(source.get("data")),
+    }
+
+
+def omit_images(content: Any) -> Any:
+    """Tool result content with image blocks replaced by a marker without the base64."""
+    if not isinstance(content, list):
+        return content
+    result = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "image":
+            source = block.get("source") if isinstance(block.get("source"), dict) else {}
+            block = {"type": "image", "omitted": True, "media_type": source.get("media_type")}
+        result.append(block)
+    return result
+
+
+def _block_from_dict(raw: Any) -> Any:
+    """API-format content block to the SDK block type, or None when not shown."""
+    if not isinstance(raw, dict):
+        return None
+    kind = raw.get("type")
+    if kind == "text":
+        return TextBlock(text=raw.get("text", ""))
+    if kind == "thinking":
+        # Saved thinking is often empty (only the signature is kept): not shown.
+        thinking = raw.get("thinking") or ""
+        if not thinking.strip():
+            return None
+        return ThinkingBlock(thinking=thinking, signature=raw.get("signature", ""))
+    if kind in _TOOL_BLOCKS and raw.get("id"):
+        return ToolUseBlock(id=raw["id"], name=raw.get("name", ""), input=raw.get("input") or {})
+    return None
 
 
 def _result_error_text(message: ResultMessage) -> str:

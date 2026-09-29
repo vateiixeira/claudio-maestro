@@ -3,7 +3,7 @@
 import sqlite3
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from vibing import projects, sessions
@@ -49,6 +49,8 @@ class SessionOut(BaseModel):
     display_state: Literal["running", "waiting", "finished"]
     unread: bool
     awaiting_decision: bool
+    summary: str | None = None
+    first_prompt: str | None = None
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -119,6 +121,15 @@ async def list_all_sessions(
     return manager.list_sessions(project_id=project_id, display_state=state)
 
 
+@router.get("/sessions/search", response_model=list[SessionOut])
+async def search_sessions(
+    manager: ManagerDep,
+    q: Annotated[str, Query(max_length=200)] = "",
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[dict[str, Any]]:
+    return manager.search(q, limit)
+
+
 @router.patch("/sessions/{session_id}", response_model=SessionOut)
 async def update_session(
     session_id: str, body: SessionPatch, manager: ManagerDep
@@ -139,17 +150,18 @@ async def mark_seen(session_id: str, manager: ManagerDep) -> dict[str, Any]:
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, manager: ManagerDep) -> dict[str, Any]:
-    return _get_session(manager, session_id).snapshot()
+    """Snapshot. An old session gets its saved conversation loaded, without a client."""
+    _get_session(manager, session_id)
+    return await manager.open(session_id)
 
 
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
 async def send_message(session_id: str, body: MessageIn, manager: ManagerDep) -> dict[str, Any]:
-    session = _get_session(manager, session_id)
+    _get_session(manager, session_id)
     try:
-        await session.send(body.text)
+        return await manager.send(session_id, body.text)
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
-    return {"state": session.state}
 
 
 @router.post("/sessions/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)

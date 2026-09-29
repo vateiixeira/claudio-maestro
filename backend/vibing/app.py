@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from vibing import db
+from vibing import history
 from vibing.agent.base import AgentFactory
 from vibing.agent.sdk_client import clean_inherited_env
 from vibing.api import router
@@ -22,10 +23,14 @@ def create_app(
     agent_factory: AgentFactory | None = None,
     history_exists: HistoryExists | None = None,
     rename_session: RenameSession | None = None,
+    list_sessions: history.ListSessions | None = None,
+    get_session_messages: history.GetSessionMessages | None = None,
+    read_tool_results: history.ReadToolResults | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
-    `agent_factory`, `history_exists` and `rename_session` default to the real SDK; tests pass fakes.
+    `agent_factory`, `history_exists`, `rename_session`, `list_sessions` and
+    `get_session_messages` default to the real SDK; tests pass fakes.
     """
 
     @asynccontextmanager
@@ -42,16 +47,38 @@ def create_app(
             rename_session=rename_session,
             idle_timeout=app.state.settings.idle_timeout_seconds,
             finished_after_days=app.state.settings.finished_after_days,
+            list_sessions=list_sessions,
+            get_session_messages=get_session_messages,
+            read_tool_results=read_tool_results,
         )
-        sweep = asyncio.create_task(
-            app.state.sessions.run_idle_sweep(app.state.settings.idle_sweep_interval_seconds)
+        app.state.history = history.HistoryIndex(
+            app.state.settings.db_path,
+            list_sessions or history.sdk_list_sessions,
+            on_change=app.state.sessions.refresh_records,
         )
+        # One-off tasks (e.g. syncing a new project), cancelled on shutdown.
+        app.state.background = set()
+        tasks = [
+            asyncio.create_task(
+                app.state.sessions.run_idle_sweep(app.state.settings.idle_sweep_interval_seconds)
+            ),
+            asyncio.create_task(
+                app.state.history.run_periodic(app.state.settings.history_sync_interval_seconds)
+            ),
+        ]
         try:
             yield
         finally:
-            sweep.cancel()
-            with suppress(asyncio.CancelledError):
-                await sweep
+            for task in tasks:
+                task.cancel()
+            for task in tasks:
+                with suppress(asyncio.CancelledError):
+                    await task
+            for task in list(app.state.background):
+                task.cancel()
+            for task in list(app.state.background):
+                with suppress(asyncio.CancelledError):
+                    await task
             await app.state.sessions.shutdown()
 
     app = FastAPI(title="Vini7 Vibing", lifespan=lifespan)

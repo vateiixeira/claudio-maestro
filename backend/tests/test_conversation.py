@@ -21,6 +21,7 @@ from claude_agent_sdk import (
 )
 from vibing.agent.fake import text_turn, tool_turn
 from vibing.conversation import (
+    slim_details,
     ConversationBuilder,
     Event,
     NoticeItem,
@@ -287,7 +288,7 @@ def test_tool_turn_creates_tool_item_with_input_and_result():
         tool_use_id="toolu_1",
         name="Write",
         input={"file_path": "/p/a.txt", "content": "x"},
-        result={"content": "File created", "is_error": False, "details": WRITE_RESULT},
+        result={"content": "File created", "is_error": False, "details": slim_details("Write", WRITE_RESULT)},
         streaming=False,
     )
     assert events[3].data["result"]["details"]["filePath"] == "/p/a.txt"
@@ -578,7 +579,7 @@ def test_fake_tool_turn_converts_to_tool_and_text():
     tool, text = builder.items
     assert tool.type == "tool" and tool.name == "Edit"
     assert tool.input == {"file_path": "/p/b.py"}
-    assert tool.result["details"] == WRITE_RESULT
+    assert tool.result["details"] == slim_details("Write", WRITE_RESULT)
     assert text.text == "Editado."
     assert tool.id.split(":")[0] != text.id.split(":")[0]
 
