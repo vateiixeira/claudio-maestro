@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import BrandMark from '../BrandMark.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import StateCounters from '../StateCounters.vue'
+import SessionSearch from './SessionSearch.vue'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { displayStateLabels } from '../../sessionState'
@@ -45,6 +46,8 @@ function sessionTone(session: Session): string {
       <BrandMark />
       <span class="text-xl font-bold tracking-tight">Vini7 Vibing</span>
     </RouterLink>
+
+    <SessionSearch />
 
     <RouterLink
       to="/sessions"
@@ -125,6 +128,12 @@ function sessionTone(session: Session): string {
               </span>
             </RouterLink>
           </div>
+          <RouterLink
+            v-if="project.hidden_sessions > 0"
+            data-test="hidden-sessions"
+            :to="{ name: 'project', params: { id: project.id }, hash: '#finalizadas' }"
+            class="flex min-h-8 items-center px-1 pl-6 text-xs text-fg-muted no-underline hover:text-fg"
+          >{{ project.hidden_sessions }} {{ project.hidden_sessions === 1 ? 'oculta, parada' : 'ocultas, paradas' }} há mais de 3 dias</RouterLink>
         </div>
       </div>
     </div>

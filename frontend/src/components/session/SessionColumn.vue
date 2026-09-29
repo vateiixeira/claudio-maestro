@@ -281,10 +281,23 @@ function resolvePrompt(promptId: string) {
           >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
         </div>
         <p v-if="headerError" role="alert" class="m-0 text-sm text-secondary-soft">{{ headerError }}</p>
+        <p
+          v-if="conv.externalActivity"
+          data-test="external-activity"
+          role="status"
+          class="m-0 rounded-md border border-secondary/40 bg-secondary/10 px-3 py-2 text-xs text-secondary-soft"
+        >
+          Esta sessão foi modificada fora do app no último minuto. Usar a mesma sessão no CLI e aqui ao mesmo tempo pode embaralhar o histórico.
+        </p>
       </header>
 
       <div ref="scroller" class="min-h-0 grow overflow-y-auto" @scroll="onScroll">
         <div class="flex flex-col gap-3 p-4">
+          <p
+            v-if="conv.historyTruncated"
+            data-test="history-truncated"
+            class="m-0 rounded-md border border-line bg-card px-3 py-1.5 text-center text-xs text-fg-muted"
+          >Mostrando as mensagens mais recentes.</p>
           <p v-if="rows.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>

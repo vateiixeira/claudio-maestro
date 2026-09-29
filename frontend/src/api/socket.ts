@@ -38,7 +38,8 @@ function addTo<K, V>(map: Map<K, Set<V>>, key: K, value: V): Unsubscribe {
 function isEvent(value: unknown): value is WsEvent {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
-  return typeof v.type === 'string' && typeof v.session_id === 'string'
+  // Project events (`project.synced`) carry `session_id: null`.
+  return typeof v.type === 'string' && (typeof v.session_id === 'string' || v.session_id === null)
 }
 
 /**

@@ -8,6 +8,8 @@ export interface Project {
   position: number
   created_at: number
   available: boolean
+  /** Sessions stopped for more than 3 days, left out of the menu. */
+  hidden_sessions: number
 }
 
 export interface ProjectCreate {
@@ -57,10 +59,17 @@ export interface Session {
   display_state: DisplayState
   unread: boolean
   awaiting_decision: boolean
+  summary?: string | null
+  first_prompt?: string | null
 }
 
 /** What the user sees: running, waiting for them, or marked as finished. */
 export type DisplayState = 'running' | 'waiting' | 'finished'
+
+export interface SendResult {
+  state: SessionState
+  external_activity: boolean
+}
 
 export interface SessionUpdate {
   finished?: boolean

@@ -286,3 +286,25 @@ def test_tests_never_reach_the_real_sdk():
     assert sessions.sdk_history_exists("s", "/x") is False
     with pytest.raises(RuntimeError):
         sessions.default_agent_factory(None)
+
+
+def test_read_tool_results_file_omits_images_and_caps_while_reading(tmp_path: Path):
+    import json
+
+    from vibing.conversation import CONTENT_LIMIT
+    from vibing.history import read_tool_results_file
+
+    big = "x" * (CONTENT_LIMIT + 10)
+    line = {"type": "user", "uuid": "b", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "t1", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}},
+            {"type": "text", "text": big},
+        ]}]}}
+    path = tmp_path / "s.jsonl"
+    path.write_text(json.dumps(line) + "\n")
+
+    content = read_tool_results_file(path)["t1"]["content"]
+
+    assert "AAAA" not in json.dumps(content)
+    assert content[0].get("omitted") is True
+    assert len(content[1]["text"]) <= CONTENT_LIMIT + 100

@@ -152,4 +152,33 @@ describe('tela do projeto', () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('Projeto não encontrado')
   })
+
+  it('Atualizar sincroniza o projeto com o histórico', async () => {
+    seed()
+    const sync = vi.fn(() => jsonResponse([makeSession({ session_id: 'nova', title: 'Veio do CLI' })]))
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'POST /api/projects/1/sync': sync,
+    }))
+    const wrapper = await mountView()
+    await wrapper.find('[data-test="sync"]').trigger('click')
+    await flushPromises()
+    expect(sync).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Veio do CLI')
+  })
+
+  it('rola até Finalizadas quando chega com #finalizadas, depois de carregar', async () => {
+    seed()
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([makeSession({ display_state: 'finished', finished: true })]),
+    }))
+    await router.push('/projects/1#finalizadas')
+    const wrapper = mount(ProjectView, { props: { id: 1 }, attachTo: document.body, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(scroll).toHaveBeenCalledTimes(1)
+    expect((scroll.mock.contexts[0] as HTMLElement).id).toBe('finalizadas')
+    wrapper.unmount()
+  })
 })

@@ -8,7 +8,7 @@ const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
 const open = ref(true)
 
 const output = computed(() => resultText(props.item.result?.content))
-const running = computed(() => props.item.streaming || (!props.item.result && props.sessionActive))
+const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
 const isError = computed(() => props.item.result?.is_error === true)
 </script>
 
@@ -22,7 +22,8 @@ const isError = computed(() => props.item.result?.is_error === true)
       <span class="text-xs font-semibold text-fg-muted">Comando</span>
       <span v-if="str(item.input.description)" class="min-w-0 truncate text-xs text-fg-muted">· {{ str(item.input.description) }}</span>
       <span class="grow" />
-      <span v-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
+      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-muted">Resultado não disponível no histórico</span>
+      <span v-else-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
       <span v-else-if="isError" class="text-xs text-diff-del-fg">falhou</span>
       <span v-else-if="!item.result" class="text-xs text-fg-muted">sem resultado</span>
       <button

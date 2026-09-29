@@ -23,6 +23,8 @@ export interface Conversation {
   prompts: PermissionPrompt[]
   init: SessionInit | null
   lastResult: TurnResult | null
+  historyTruncated: boolean
+  externalActivity: boolean
 }
 
 export function emptyConversation(sessionId: string): Conversation {
@@ -38,6 +40,8 @@ export function emptyConversation(sessionId: string): Conversation {
     prompts: [],
     init: null,
     lastResult: null,
+    historyTruncated: false,
+    externalActivity: false,
   }
 }
 
@@ -54,6 +58,8 @@ export function conversationFromSnapshot(snapshot: SessionSnapshot): Conversatio
     prompts: [...snapshot.prompts],
     init: snapshot.init ?? null,
     lastResult: null,
+    historyTruncated: snapshot.history_truncated === true,
+    externalActivity: snapshot.external_activity === true,
   }
 }
 
@@ -116,9 +122,13 @@ export function removePrompt(conv: Conversation, promptId: string): void {
  * Open conversations by session id. `load` fetches the snapshot; events that arrive
  * while it loads are held and applied afterwards, dropping those the snapshot already has.
  */
+/** How long the external activity warning stays up. */
+export const EXTERNAL_ACTIVITY_MS = 60_000
+
 export const useConversationStore = defineStore('conversation', () => {
   const bySession = ref<Record<string, Conversation>>({})
   const buffers = new Map<string, WsEvent[]>()
+  const externalTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   function get(sessionId: string): Conversation | undefined {
     return bySession.value[sessionId]
@@ -134,6 +144,9 @@ export const useConversationStore = defineStore('conversation', () => {
       if (previous) conv.lastResult = previous.lastResult
       for (const event of buffer) applyConversationEvent(conv, event)
       bySession.value[sessionId] = conv
+      // The newest snapshot decides: false clears the warning, true restarts its minute.
+      if (conv.externalActivity) noteExternalActivity(sessionId)
+      else clearExternalTimer(sessionId)
       return bySession.value[sessionId]!
     } finally {
       if (buffers.get(sessionId) === buffer) buffers.delete(sessionId)
@@ -155,10 +168,30 @@ export const useConversationStore = defineStore('conversation', () => {
     if (conv) removePrompt(conv, promptId)
   }
 
+  function clearExternalTimer(sessionId: string): void {
+    const timer = externalTimers.get(sessionId)
+    if (timer) clearTimeout(timer)
+    externalTimers.delete(sessionId)
+  }
+
+  /** The backend saw another process write to the session in the last minute; shown for 60 s. */
+  function noteExternalActivity(sessionId: string): void {
+    const conv = bySession.value[sessionId]
+    if (!conv) return
+    conv.externalActivity = true
+    clearExternalTimer(sessionId)
+    externalTimers.set(sessionId, setTimeout(() => {
+      externalTimers.delete(sessionId)
+      const current = bySession.value[sessionId]
+      if (current) current.externalActivity = false
+    }, EXTERNAL_ACTIVITY_MS))
+  }
+
   function forget(sessionId: string): void {
+    clearExternalTimer(sessionId)
     delete bySession.value[sessionId]
     buffers.delete(sessionId)
   }
 
-  return { bySession, get, load, receive, resolvePrompt, forget }
+  return { bySession, get, load, receive, resolvePrompt, noteExternalActivity, forget }
 })

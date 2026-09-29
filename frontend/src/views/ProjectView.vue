@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import SessionStateIcon from '../components/SessionStateIcon.vue'
 import SessionGroup from '../components/session/SessionGroup.vue'
 import { errorMessage } from '../api/http'
@@ -14,6 +14,14 @@ const props = defineProps<{ id: number }>()
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const router = useRouter()
+const route = useRoute()
+
+// Coming from the menu's hidden sessions line: scroll to Finalizadas once listed.
+async function scrollToHash(): Promise<void> {
+  if (route.hash !== '#finalizadas') return
+  await nextTick()
+  document.getElementById('finalizadas')?.scrollIntoView({ block: 'start' })
+}
 
 const project = computed(() => projects.byId(props.id))
 const projectSessions = computed(() => sessions.forProject(props.id))
@@ -56,9 +64,25 @@ async function load(): Promise<void> {
   } catch (e) {
     sessionsError.value = errorMessage(e)
   }
+  await scrollToHash()
 }
 
 watch(() => props.id, load, { immediate: true })
+watch(() => route.hash, () => void scrollToHash())
+
+const syncing = ref(false)
+async function sync(): Promise<void> {
+  if (syncing.value) return
+  syncing.value = true
+  actionError.value = null
+  try {
+    await sessions.sync(props.id)
+  } catch (e) {
+    actionError.value = errorMessage(e)
+  } finally {
+    syncing.value = false
+  }
+}
 
 async function newSession(): Promise<void> {
   if (!project.value?.available || creating.value) return
@@ -175,6 +199,16 @@ async function remove(): Promise<void> {
           @click="confirmingRemove = true; renaming = false"
         >
           Remover
+        </button>
+        <button
+          type="button"
+          data-test="sync"
+          title="Reler o histórico do CLI deste projeto"
+          class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card disabled:opacity-40"
+          :disabled="syncing"
+          @click="sync"
+        >
+          {{ syncing ? 'Atualizando…' : 'Atualizar' }}
         </button>
         <button
           type="button"

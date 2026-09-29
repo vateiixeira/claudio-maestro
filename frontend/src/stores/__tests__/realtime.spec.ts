@@ -69,4 +69,24 @@ describe('bindRealtime', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/projects/1/sessions', expect.anything())
     expect(sessions.find('a')?.state).toBe('idle')
   })
+
+  it('project.synced recarrega as sessões do projeto', async () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    const sessions = useSessionsStore()
+    sessions.setForProject(2, [])
+    const fetchMock = vi.fn(async (url: string) =>
+      url === '/api/projects'
+        ? jsonResponse([makeProject({ id: 2, hidden_sessions: 4 })])
+        : jsonResponse([makeSession({ session_id: 'z', project_id: 2, title: 'Sincronizada' })]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    sockets[0]!.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type: 'project.synced', data: { project_id: 2 } }) })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/projects/2/sessions', expect.anything())
+    expect(sessions.find('z')?.title).toBe('Sincronizada')
+  })
 })

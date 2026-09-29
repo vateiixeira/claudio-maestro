@@ -19,7 +19,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 0. Fundação | Backend e frontend no ar em modo de desenvolvimento | Concluído | 6 de 6 |
 | 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Concluído | 13 de 13 |
 | 2. Multissessão | Colunas, estados e menu lateral | Concluído | 12 de 12 |
-| 3. Histórico | Retomada, busca e ocultação | Em andamento | 5 de 8 |
+| 3. Histórico | Retomada, busca e ocultação | Em andamento | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Não iniciado | 0 de 13 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 15 |
@@ -96,9 +96,9 @@ Objetivo: continuar no app o trabalho que começou no CLI ou na extensão.
 - [x] Sessões de repositórios dentro da pasta do projeto entram no projeto (2026-09-29)
 - [x] Abrir sessão antiga carrega a conversa sem criar processo (2026-09-29)
 - [x] Retomar sessão antiga ao enviar mensagem (2026-09-29)
-- [ ] Busca no menu lateral por título, resumo e primeiro prompt
-- [ ] Sessões sem atividade há mais de 3 dias ocultas do menu, com contagem
-- [ ] Aviso ao retomar sessão modificada no último minuto por outro processo
+- [x] Busca no menu lateral por título, resumo e primeiro prompt (2026-09-29)
+- [x] Sessões sem atividade há mais de 3 dias ocultas do menu, com contagem (2026-09-29)
+- [x] Aviso ao retomar sessão modificada no último minuto por outro processo (2026-09-29)
 - [x] Nome dado a uma sessão antes da primeira mensagem aplicado ao CLI depois da primeira conexão (2026-09-29)
 
 ## Marco 4. Git

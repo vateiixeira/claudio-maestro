@@ -9,7 +9,7 @@ const emit = defineEmits<{ error: [message: string] }>()
 </script>
 
 <template>
-  <section :aria-label="title" class="flex flex-col gap-2">
+  <section :id="display === 'finished' ? 'finalizadas' : undefined" :aria-label="title" class="flex flex-col gap-2">
     <div class="flex items-center gap-2">
       <DisplayStateIcon :display="display" :size="10" />
       <h2

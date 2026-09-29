@@ -4,7 +4,11 @@ export function resultText(content: unknown): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
     return content
-      .map((block) => (block && typeof block === 'object' && 'text' in block ? String(block.text) : JSON.stringify(block, null, 2)))
+      .map((block) => {
+        if (block && typeof block === 'object' && 'text' in block) return String(block.text)
+        if (block && typeof block === 'object' && block.type === 'image' && block.omitted) return '[Imagem omitida]'
+        return JSON.stringify(block, null, 2)
+      })
       .join('\n')
   }
   return JSON.stringify(content, null, 2)

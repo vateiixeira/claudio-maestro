@@ -247,4 +247,63 @@ describe('coluna da sessão', () => {
     expect(seen()).toBe(before + 1)
     vi.useRealTimers()
   })
+
+  it('avisa atividade externa vinda do retrato', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ external_activity: true } as never)),
+    }))
+    const w = await mountView()
+    expect(w.find('[data-test="external-activity"]').text()).toContain('Esta sessão foi modificada fora do app no último minuto.')
+  })
+
+  it('avisa atividade externa vinda do envio', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot()),
+      'POST /api/sessions/s1/messages': () => jsonResponse({ state: 'connecting', external_activity: true }),
+    }))
+    const w = await mountView()
+    expect(w.find('[data-test="external-activity"]').exists()).toBe(false)
+    await w.find('textarea').setValue('oi')
+    await w.find('textarea').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(w.find('[data-test="external-activity"]').text()).toContain('pode embaralhar o histórico')
+  })
+
+  it('mostra a faixa de histórico cortado', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ history_truncated: true, items: [text('a', 'x') as never] } as never)),
+    }))
+    const w = await mountView()
+    expect(w.find('[data-test="history-truncated"]').text()).toBe('Mostrando as mensagens mais recentes.')
+  })
+
+  it('retrato posterior com external_activity false limpa o aviso', async () => {
+    let external = true
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ external_activity: external } as never)),
+    }))
+    const w = await mountView()
+    expect(w.find('[data-test="external-activity"]').exists()).toBe(true)
+    external = false
+    fake.reconnect.forEach((h) => h())
+    await flushPromises()
+    expect(w.find('[data-test="external-activity"]').exists()).toBe(false)
+  })
+
+  it('o aviso externo some depois de 60 s', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', routeFetch({
+        'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ external_activity: true } as never)),
+      }))
+      const w = await mountView()
+      expect(w.find('[data-test="external-activity"]').attributes('role')).toBe('status')
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(w.find('[data-test="external-activity"]').exists()).toBe(true)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(w.find('[data-test="external-activity"]').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

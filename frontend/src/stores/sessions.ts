@@ -64,6 +64,14 @@ export const useSessionsStore = defineStore('sessions', () => {
     return forProject(projectId)
   }
 
+  /** Rereads the project's CLI history on the backend and takes the sessions it returns. */
+  async function sync(projectId: number): Promise<Session[]> {
+    const ticket = takeTicket(projectId)
+    const list = await api.syncProject(projectId)
+    if (listTicket.get(projectId) === ticket) setForProject(projectId, list, ticket)
+    return forProject(projectId)
+  }
+
   /** Reloads the given projects and drops any other. A failing project keeps what it had. */
   async function loadAll(projectIds: number[]): Promise<void> {
     const tickets = projectIds.map(takeTicket)
@@ -137,6 +145,6 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   return {
     byProject, loaded, all, forProject, find, setForProject, forgetProject,
-    loadForProject, loadAll, create, setFinished, rename, applyEvent,
+    loadForProject, loadAll, sync, create, setFinished, rename, applyEvent,
   }
 })

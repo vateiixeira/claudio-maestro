@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { errorMessage, interruptSession, sendMessage } from '../../api/http'
+import { useConversationStore } from '../../stores/conversation'
 import type { SessionState } from '../../types/api'
 
 const props = defineProps<{ sessionId: string; state: SessionState }>()
@@ -49,7 +50,8 @@ async function send() {
   sending.value = true
   error.value = null
   try {
-    await sendMessage(props.sessionId, message)
+    const result = await sendMessage(props.sessionId, message)
+    if (result?.external_activity) useConversationStore().noteExternalActivity(props.sessionId)
     // Only clear if the user did not keep typing meanwhile.
     if (text.value === message) text.value = ''
     nextTick(resize)

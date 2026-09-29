@@ -2,11 +2,18 @@ import type { DisplayState, SessionState } from './api'
 
 // Conversation items as the backend sends them (snapshot `items` and `item.upsert`).
 
+/** Image or document the user attached, without its data. */
+export interface Attachment {
+  type: 'image' | 'document'
+  media_type: string | null
+  size: number | null
+}
+
 export interface UserItem {
   type: 'user'
   id: string
   text: string
-  images?: unknown[]
+  images?: Attachment[]
 }
 
 export interface TextItem {
@@ -32,6 +39,8 @@ export interface ToolItem {
   result: ToolResult | null
   streaming: boolean
   parent_tool_use_id: string | null
+  /** Old session whose transcript has no result for this call. */
+  result_missing?: boolean
 }
 
 export interface NoticeItem {
@@ -86,6 +95,8 @@ export interface SessionSnapshot {
   display_state?: DisplayState
   unread?: boolean
   awaiting_decision?: boolean
+  history_truncated?: boolean
+  external_activity?: boolean
 }
 
 export type PromptDecision = 'allow_once' | 'allow_always' | 'deny'

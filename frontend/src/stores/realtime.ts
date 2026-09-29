@@ -20,6 +20,13 @@ export function bindRealtime(socket: EventSocket): () => void {
     socket.on('session.state', (event) => sessions.applyEvent(event)),
     socket.on('session.title', (event) => sessions.applyEvent(event)),
     socket.on('session.updated', (event) => sessions.applyEvent(event)),
+    // The index was reread from the CLI history: sessions and hidden counts changed.
+    socket.on('project.synced', (event) => {
+      const projectId = (event.data as { project_id?: number } | null)?.project_id
+      if (typeof projectId !== 'number') return
+      sessions.loadForProject(projectId).catch(() => {})
+      useProjectsStore().load().catch(() => {})
+    }),
     socket.onReconnect(() => {
       loadEverything().catch(() => {
         // The projects store keeps the error; the sidebar shows it.

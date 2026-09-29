@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from vibing import db
+from vibing.conversation import cap_content, omit_images
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def read_tool_results_file(path: Path) -> dict[str, dict[str, Any]]:
             ]
             for block in blocks:
                 results[block["tool_use_id"]] = {
-                    "content": block.get("content"),
+                    "content": cap_content(omit_images(block.get("content"))),
                     "is_error": block.get("is_error"),
                     # One entry per result in practice; with several, details are ambiguous.
                     "details": details if isinstance(details, dict) and len(blocks) == 1 else None,

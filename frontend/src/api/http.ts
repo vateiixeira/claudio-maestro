@@ -4,6 +4,7 @@ import type {
   Project,
   ProjectCreate,
   ProjectUpdate,
+  SendResult,
   Session,
   SessionUpdate,
 } from '../types/api'
@@ -123,6 +124,16 @@ export function listAllSessions(filter: { projectId?: number; state?: DisplaySta
   return request('GET', `/api/sessions${query ? '?' + query : ''}`)
 }
 
+/** Sessions of every project whose title, summary or first prompt match, newest first. */
+export function searchSessions(q: string, limit = 50): Promise<Session[]> {
+  return request('GET', `/api/sessions/search?${new URLSearchParams({ q, limit: String(limit) })}`)
+}
+
+/** Rereads the CLI history of the project and returns its sessions. */
+export function syncProject(projectId: number): Promise<Session[]> {
+  return request('POST', `/api/projects/${projectId}/sync`)
+}
+
 export function createSession(projectId: number): Promise<Session> {
   return request('POST', `/api/projects/${projectId}/sessions`)
 }
@@ -131,7 +142,7 @@ export function getSession(sessionId: string): Promise<SessionSnapshot> {
   return request('GET', `/api/sessions/${encodeURIComponent(sessionId)}`)
 }
 
-export function sendMessage(sessionId: string, text: string): Promise<void> {
+export function sendMessage(sessionId: string, text: string): Promise<SendResult> {
   return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/messages`, { text })
 }
 

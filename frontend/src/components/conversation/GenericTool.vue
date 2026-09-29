@@ -10,7 +10,7 @@ const open = ref(false)
 const input = computed(() => prettyJson(props.item.input))
 const output = computed(() => resultText(props.item.result?.content))
 const isError = computed(() => props.item.result?.is_error === true)
-const running = computed(() => props.item.streaming || (!props.item.result && props.sessionActive))
+const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
 </script>
 
 <template>
@@ -24,7 +24,8 @@ const running = computed(() => props.item.streaming || (!props.item.result && pr
       <span aria-hidden="true" class="text-xs text-fg-muted">{{ open ? '▾' : '▸' }}</span>
       <span class="text-xs font-semibold text-fg-muted">Ferramenta</span>
       <span class="min-w-0 grow truncate font-mono text-xs">{{ item.name }}</span>
-      <span v-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
+      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-muted">Resultado não disponível no histórico</span>
+      <span v-else-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
       <span v-else-if="isError" class="text-xs text-diff-del-fg">erro</span>
       <span v-else-if="!item.result" class="text-xs text-fg-muted">sem resultado</span>
     </button>
