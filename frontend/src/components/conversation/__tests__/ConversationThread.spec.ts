@@ -3,6 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import { createAppRouter } from '../../../router'
+import { resetFileReads, settleReads, trackFileReads } from '../../../test/fileReader'
 import { jsonResponse, makeEvent, makeProject, makeSnapshot, routeFetch } from '../../../test/factories'
 import { useProjectsStore } from '../../../stores/projects'
 import { useConversationStore } from '../../../stores/conversation'
@@ -35,7 +36,10 @@ beforeEach(() => {
   projects.projects = [makeProject({ id: 1, name: 'loja-online' })]
   projects.loaded = true
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  resetFileReads()
+})
 
 const text = (id: string, t: string) => ({ type: 'text', id, text: t, streaming: false, parent_tool_use_id: null })
 
@@ -365,6 +369,7 @@ describe('ao sair da conversa', () => {
 
 describe('controles e imagens na conversa', () => {
   it('mostra os seletores e aceita imagem arrastada para a conversa', async () => {
+    trackFileReads()
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/sessions/s1': () => jsonResponse({ ...makeSnapshot({ seq: 1 }), model: null, effort: null, permission_mode: 'default' }),
       'GET /api/models': () => jsonResponse([{ value: 'default', displayName: 'Padrão', description: '', supportsEffort: false }]),
@@ -374,9 +379,7 @@ describe('controles e imagens na conversa', () => {
     expect(w.find('button[aria-label="Modo: pede permissão"]').exists()).toBe(true)
     const file = new File([new Uint8Array([65, 65, 65])], 'col.png', { type: 'image/png' })
     await w.find('[data-test="conversation-scroller"]').trigger('drop', { dataTransfer: { files: [file], types: ['Files'] } })
-    await flushPromises()
-    await new Promise((r) => setTimeout(r, 0))
-    await flushPromises()
+    await settleReads()
     expect(w.find('[data-test="attachment-draft"]').text()).toContain('col.png')
   })
 

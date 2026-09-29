@@ -212,7 +212,7 @@ export function getActivity(days = 14): Promise<ActivityDay[]> {
   return request('GET', `/api/activity?days=${days}`)
 }
 
-// App state (layout, preferences)
+// App state (preferences)
 
 export function getAppState(): Promise<Record<string, unknown>> {
   return request('GET', '/api/state')

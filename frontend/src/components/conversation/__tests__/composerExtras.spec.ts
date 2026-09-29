@@ -3,28 +3,18 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import MessageComposer from '../MessageComposer.vue'
 import { jsonResponse, routeFetch } from '../../../test/factories'
 import { setPendingDraft } from '../../../conversation/pendingDrafts'
+import { resetFileReads, settleReads, trackFileReads } from '../../../test/fileReader'
 import { localImagesFor, claimLocalImages, forgetSessionImages, resetLocalImages } from '../../../conversation/localImages'
 
 enableAutoUnmount(afterEach)
 afterEach(() => {
   vi.unstubAllGlobals()
   resetLocalImages()
-  pendingReads.length = 0
+  resetFileReads()
 })
 
-// jsdom's FileReader finishes after three chained macrotasks, so a fixed `setTimeout(0)` is not
-// enough under load. Tracking each reader until `loadend` makes the wait deterministic.
-const pendingReads: Promise<void>[] = []
-const RealFileReader = FileReader
-class TrackedFileReader extends RealFileReader {
-  constructor() {
-    super()
-    pendingReads.push(new Promise<void>((resolve) => this.addEventListener('loadend', () => resolve())))
-  }
-}
-
 function setup() {
-  vi.stubGlobal('FileReader', TrackedFileReader)
+  trackFileReads()
   const fetchMock = routeFetch({ 'POST /api/sessions/s1/messages': () => jsonResponse({}, 202) })
   vi.stubGlobal('fetch', fetchMock)
   const w = mount(MessageComposer, { props: { sessionId: 's1', state: 'idle' }, attachTo: document.body })
@@ -35,12 +25,6 @@ const bodies = (m: ReturnType<typeof routeFetch>) =>
 
 function png(name = 'tela.png', bytes = 3, type = 'image/png') {
   return new File([new Uint8Array(bytes).fill(65)], name, { type })
-}
-/** Waits for every FileReader started so far, then for the component to apply the results. */
-async function settleReads() {
-  await flushPromises()
-  await Promise.all(pendingReads)
-  await flushPromises()
 }
 async function paste(ta: ReturnType<typeof setup>['ta'], files: File[]) {
   await ta.trigger('paste', { clipboardData: { files, items: files.map((f) => ({ kind: 'file', type: f.type, getAsFile: () => f })) } })
