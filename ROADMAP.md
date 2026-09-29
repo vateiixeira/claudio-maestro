@@ -19,7 +19,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 0. Fundação | Backend e frontend no ar em modo de desenvolvimento | Concluído | 6 de 6 |
 | 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Concluído | 13 de 13 |
 | 2. Multissessão | Colunas, estados e menu lateral | Concluído | 12 de 12 |
-| 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 8 |
+| 3. Histórico | Retomada, busca e ocultação | Em andamento | 0 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Não iniciado | 0 de 13 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 15 |
