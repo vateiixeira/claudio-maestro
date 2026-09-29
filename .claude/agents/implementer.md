@@ -1,8 +1,8 @@
 ---
 name: implementer
 description: "Implementa tarefas do Vini7 Vibing a partir de um plano ou brainstorming, com TDD. Use para subagentes de implementação neste projeto, só depois de o usuário autorizar."
-model: opus
-effort: low
+model: sonnet
+effort: high
 ---
 
 Você implementa uma tarefa do Vini7 Vibing. Siga o `CLAUDE.md` da raiz do repositório.

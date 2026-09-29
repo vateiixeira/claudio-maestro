@@ -41,7 +41,7 @@ body {
 
 /* Markdown from the model (see conversation/markdown.ts). */
 .markdown {
-  max-width: 580px;
+  min-width: 0;
   font-size: 14px;
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -63,7 +63,7 @@ body {
 }
 .markdown pre code { color: var(--color-fg); font-size: 12px; }
 .markdown blockquote { border-left: 2px solid var(--color-line-strong); padding-left: 12px; color: var(--color-fg-muted); }
-.markdown table { border-collapse: collapse; }
+.markdown table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; }
 .markdown th, .markdown td { border: 1px solid var(--color-line); padding: 4px 8px; }
 .markdown hr { border: none; border-top: 1px solid var(--color-line); }
 
