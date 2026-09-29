@@ -538,7 +538,7 @@ Expected: PASS.
   - `async SessionManager.run_plan_sweep(interval: float, sleep=asyncio.sleep) -> None`: laço que, a cada `interval`, chama `refresh_plan` para cada sessão não finalizada com `plan_path` (lida do banco em `to_thread`), agrupando por caminho para ler cada plano uma vez; falhas registradas sem matar o laço.
   - `Settings.plan_sweep_interval_seconds: float = 30`.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 1. `scan_plan_refs`: linhas JSONL reais de exemplo (`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/p/docs/superpowers/plans/a.md"}}]}}`), outra com `Edit` num segundo plano, uma linha quebrada e uma de outra ferramenta → devolve o segundo plano.
 2. `read_new_lines`: arquivo com 3 linhas → offset `None` lê tudo que cabe na cauda; acrescentar 2 linhas (uma sem `\n` final) → só a linha completa nova volta e o offset para antes da parcial; arquivo truncado (offset > tamanho) → relê a cauda; arquivo com mais de `tail` bytes → primeira linha parcial descartada.
@@ -547,12 +547,12 @@ Expected: PASS.
 5. Varredura: duas sessões não finalizadas no mesmo plano e uma finalizada em outro → o arquivo do mesmo plano é lido uma vez por rodada, o da finalizada não; alterar o plano entre rodadas gera `session.updated`; plano apagado vira `plan: None` sem exceção; exceção no meio não mata o laço (injete `sleep` que conta rodadas e para depois de N).
 6. Lifespan inicia a varredura só quando não há `agent_factory` injetado ou quando `create_app(plan_sweep=True)` (siga o padrão de `refresh_models`).
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `uv run pytest -q backend/tests/test_plan_sync.py`
 Expected: FAIL.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```python
 # em backend/vibing/plans.py
@@ -608,12 +608,12 @@ Retomada: onde `SessionManager.open`/a `ActiveSession` carrega as mensagens do h
 
 Varredura: implemente `run_plan_sweep` no `SessionManager` e registre no lifespan de `app.py` junto das outras tarefas (`tasks.append(asyncio.create_task(manager.run_plan_sweep(settings.plan_sweep_interval_seconds)))`), com o mesmo esquema de liga/desliga de `refresh_models`.
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `uv run pytest -q` (2 vezes)
 Expected: PASS.
 
-- [ ] **Step 5: Commit (sessão principal)**
+- [x] **Step 5: Commit (sessão principal)**
 
 `[Feat] Vincular planos pelo CLI e atualizar progresso a cada 30 s`
 
