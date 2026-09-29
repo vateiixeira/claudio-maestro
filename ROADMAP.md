@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Em andamento | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 27 |
+| 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 29 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -158,6 +158,8 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [ ] Arquivos modificados na sessão incluem edições fora das últimas 500 mensagens do histórico
 - [ ] "HEAD solto" indicado também no navegador de pastas
 - [ ] Espera por vaga de processo git não conta no tempo limite de 5 s; diff de arquivo que some durante a leitura dá erro legível
+- [ ] Observador do CLI: coluna recarrega em até 1 s (hoje 2 s) e leitura só da sessão alterada, sem listar a pasta inteira
+- [ ] Interromper também para subagentes em segundo plano
 - [ ] Duas abas abertas ficam consistentes; resposta duplicada é recusada sem erro
 - [ ] Processo do Claude morto, CLI ausente e login expirado mostram erro legível
 - [ ] Limite da assinatura atingido mostra o horário de liberação
@@ -241,10 +243,10 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 |---|---|
 | Docker | Adiado. Exigiria rodar o Claude dentro do container, com as pastas montadas no mesmo caminho do host. Não testado |
 | Mesma sessão aberta no app e no CLI ao mesmo tempo | Risco de embaralhar o histórico. O app só avisa |
-| O que o SDK entrega sobre subagentes | Verificar antes do marco 5. Candidatos: mensagens com `parent_tool_use_id`, a opção `forward_subagent_text`, as mensagens `TaskStartedMessage`, `TaskProgressMessage` e `TaskNotificationMessage`, e as funções `list_subagents` e `get_subagent_messages`. A conversão de mensagens já guarda `parent_tool_use_id` em cada item |
+| O que o SDK entrega sobre subagentes | Verificado em 2026-09-29; ver "Fatos verificados para o marco 5" no prompt de construção |
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
 | Ações rápidas na visão geral | O design aprovado mostra "Permitir" e "Negar" direto no cartão "Aguardando você" e a atividade atual de cada sessão. Não está em nenhum marco. Decidir se entra |
-| Tecnologia do ditado por voz | Decidir antes do marco 5. Opção A: reconhecimento de fala do navegador, sem dependência e leve, mas só no Chrome e no Edge, precisa de internet e envia o áudio ao Google. Opção B: Whisper rodando no backend, privado e offline, mas baixa um modelo de centenas de MB e usa CPU a cada ditado. Recomendação inicial: A |
+| Tecnologia do ditado por voz | Decidido em 2026-09-29: reconhecimento do navegador (Chrome/Edge). O áudio vai ao serviço de reconhecimento do navegador |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
 
 ## Decisões
