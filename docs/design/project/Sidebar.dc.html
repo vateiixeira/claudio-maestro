@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Menu lateral</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<nav aria-label="Projetos e sessões" style="width: 288px; height: 900px; box-sizing: border-box; background: #111111; border-right: 1px solid #262626; display: flex; flex-direction: column; padding: 20px 12px 12px; gap: 14px; font-family: 'Geist', sans-serif; font-size: 14px; line-height: 1.45; color: #FAFAFA; overflow: hidden">
+
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12c3-6 5-6 6 0s3 6 6 0 3-6 6 0"></path></svg>
+<div style="font-size: 20px; font-weight: 700; letter-spacing: -0.01em">Vini7 Vibing</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 8px; height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 8px; background: #0A0A0A; border: 1px solid #333333">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg>
+<label for="busca-sessoes" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Procurar sessões</label>
+<input id="busca-sessoes" type="search" placeholder="Procurar sessões" style="flex-grow: 1; min-width: 0; height: 40px; border: none; background: transparent; color: #FAFAFA; font-family: inherit; font-size: 14px; outline: none">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A1A1A1; padding: 1px 6px; border-radius: 4px; border: 1px solid #333333">Ctrl K</span>
+</div>
+
+<a href="Visao-geral.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 8px; color: #FAFAFA; text-decoration: none; background: {{todasBg}}; border: 1px solid {{todasBorda}}">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"></rect><rect x="10" y="4" width="5" height="10" rx="1"></rect><rect x="17" y="4" width="4" height="13" rx="1"></rect></svg>
+<span style="flex-grow: 1; font-weight: 500">Todas as sessões</span>
+<span style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: #86EFAC"><span style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80"></span>2</span>
+<span style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: #FB923C"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"></path><line x1="12" y1="10" x2="12" y2="14"></line><line x1="12" y1="17" x2="12" y2="17.01"></line></svg>1</span>
+</a>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1; min-height: 0">
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A1A1A1; padding: 0 12px 2px">Projetos</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 8px; background: {{projBg}}; border: 1px solid {{projBorda}}">
+<a href="Projeto.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 28px; color: #FAFAFA; text-decoration: none">
+<span style="width: 10px; height: 10px; border-radius: 3px; background: #B28CFF; flex-shrink: 0"></span>
+<span style="flex-grow: 1; font-weight: 600">loja-online</span>
+</a>
+<div style="display: flex; flex-direction: column; gap: 5px; padding-left: 20px; font-family: 'JetBrains Mono', monospace; font-size: 12px">
+<div style="display: flex; align-items: center; gap: 6px"><span style="color: #A1A1A1">api</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#E5E5E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span style="color: #E5E5E5">feat/cupom-desconto</span></div>
+<div style="display: flex; align-items: center; gap: 6px"><span style="color: #A1A1A1">painel</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#E5E5E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span style="color: #E5E5E5">main</span></div>
+<div style="display: flex; align-items: center; gap: 6px"><span style="color: #A1A1A1">pagamentos</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#E5E5E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span style="color: #E5E5E5">fix/webhook-pix</span></div>
+</div>
+<div style="display: flex; flex-direction: column; border-top: 1px solid #2E2E2E; padding-top: 4px">
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px; border-radius: 6px; color: #FAFAFA; text-decoration: none">
+<span style="width: 12px; display: flex; justify-content: center; flex-shrink: 0"><span style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80"></span></span>
+<span style="flex-grow: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Cupom expirado no checkout</span>
+</a>
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px; border-radius: 6px; color: #FDBA74; text-decoration: none">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FB923C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 3 2 20h20L12 3z"></path><line x1="12" y1="10" x2="12" y2="14"></line><line x1="12" y1="17" x2="12" y2="17.01"></line></svg>
+<span style="flex-grow: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Webhook do Pix sem txid</span>
+</a>
+<a href="Visao-geral.dc.html" style="display: flex; align-items: center; min-height: 32px; padding: 0 4px 0 24px; font-size: 12px; color: #A1A1A1; text-decoration: none">3 ocultas, paradas há mais de 3 dias</a>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent">
+<div style="display: flex; align-items: center; gap: 10px; min-height: 28px">
+<span style="width: 10px; height: 10px; border-radius: 3px; background: #4FD1C5; flex-shrink: 0"></span>
+<span style="flex-grow: 1; font-weight: 500">blog-pessoal</span>
+</div>
+<div style="display: flex; align-items: center; gap: 6px; padding-left: 20px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #E5E5E5"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span>main</span></div>
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px; border-radius: 6px; color: #FAFAFA; text-decoration: none">
+<span style="width: 12px; display: flex; justify-content: center; flex-shrink: 0"><span style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80"></span></span>
+<span style="flex-grow: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Rascunho do post sobre cache HTTP</span>
+</a>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent">
+<div style="display: flex; align-items: center; gap: 10px; min-height: 28px">
+<span style="width: 10px; height: 10px; border-radius: 3px; background: #FF8FB1; flex-shrink: 0"></span>
+<span style="flex-grow: 1; font-weight: 500">bot-telegram</span>
+</div>
+<div style="display: flex; align-items: center; gap: 6px; padding-left: 20px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #E5E5E5"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span>develop</span></div>
+<a href="Visao-geral.dc.html" style="display: flex; align-items: center; min-height: 32px; padding: 0 4px 0 24px; font-size: 12px; color: #A1A1A1; text-decoration: none">1 oculta, parada há mais de 3 dias</a>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent">
+<div style="display: flex; align-items: center; gap: 10px; min-height: 28px">
+<span style="width: 10px; height: 10px; border-radius: 3px; background: #FFD166; flex-shrink: 0"></span>
+<span style="flex-grow: 1; font-weight: 500">anotacoes</span>
+</div>
+<div style="padding-left: 20px; font-size: 12px; color: #A1A1A1">sem repositório git</div>
+</div>
+</div>
+
+<a href="Novo-projeto.dc.html" style="display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border-radius: 8px; border: 1px dashed #525252; color: #FAFAFA; text-decoration: none; font-weight: 500">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+Novo projeto
+</a>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"ativo":{"editor":"enum","options":["nenhum","todas","projeto"],"default":"nenhum"},"$preview":{"width":288,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+const ativo = this.props.ativo ?? 'nenhum';
+const todas = ativo === 'todas';
+const projeto = ativo === 'projeto';
+return {
+todasBg: todas ? '#1A1A1A' : 'transparent',
+todasBorda: todas ? '#525252' : '#262626',
+projBg: projeto ? '#1A1A1A' : 'transparent',
+projBorda: projeto ? '#525252' : 'transparent'
+};
+}
+}
+</script>
+</body>
+</html>

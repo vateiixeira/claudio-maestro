@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Sessões em colunas</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Geist',sans-serif;background:#0A0A0A;color:#FAFAFA}
+button{font-family:inherit;cursor:pointer}
+a{color:#86EFAC}a:hover{color:#BBF7D0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; background: #0A0A0A; color: #FAFAFA; font-size: 14px; line-height: 1.45; overflow: hidden">
+
+<div style="width: 288px; height: 900px; flex-shrink: 0"><dc-import name="Sidebar" ativo="nenhum" hint-size="288px,900px"></dc-import></div>
+
+<section aria-label="Sessão: cupom de desconto" style="flex: 1 1 0; min-width: 0; box-sizing: border-box; border-right: 1px solid #262626; display: flex; flex-direction: column">
+<header style="padding: 16px 16px 12px; border-bottom: 1px solid #262626; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="width: 10px; height: 10px; border-radius: 3px; background: #B28CFF; flex-shrink: 0"></span>
+<span style="font-size: 12px; color: #A1A1A1; flex-grow: 1">loja-online</span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #86EFAC; padding: 3px 10px; border-radius: 999px; border: 1px solid #1F5F3A; background: #0C2416"><span style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80"></span>Em execução</span>
+</div>
+<h2 style="margin: 0; font-family: 'Geist', sans-serif; font-size: 18px; font-weight: 600">Cupom expirado no checkout</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px">
+<span style="display: flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 6px; background: #171717; border: 1px solid #2E2E2E"><span style="color: #A1A1A1">api</span><span style="color: #E5E5E5">feat/cupom-desconto</span></span>
+<span style="display: flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 6px; background: #171717; border: 1px solid #2E2E2E"><span style="color: #A1A1A1">painel</span><span style="color: #E5E5E5">main</span></span>
+<span style="display: flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 6px; background: #171717; border: 1px solid #2E2E2E"><span style="color: #A1A1A1">pagamentos</span><span style="color: #E5E5E5">fix/webhook-pix</span></span>
+</div>
+</header>
+
+<div style="flex-grow: 1; min-height: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden">
+<div style="align-self: flex-end; max-width: 340px; padding: 10px 14px; border-radius: 12px 12px 2px 12px; background: #1F1F1F; border: 1px solid #333333">Adicione validação de cupom expirado no endpoint de checkout.</div>
+
+<div style="color: #FAFAFA">A validação fica em <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #86EFAC">api/checkout/cupons.py</span>. Vou checar a validade antes de aplicar o desconto.</div>
+
+<div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: #111111; border: 1px solid #262626">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg>
+<span style="font-size: 12px; font-weight: 600; color: #A1A1A1">Leitura</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">api/checkout/cupons.py</span>
+<span style="font-size: 12px; color: #A1A1A1">84 linhas</span>
+</div>
+
+<div style="border-radius: 8px; background: #111111; border: 1px solid #262626; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 8px; padding: 0 0 0 12px; border-bottom: 1px solid #262626">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+<span style="font-size: 12px; font-weight: 600; color: #A1A1A1">Edição</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">api/checkout/cupons.py</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #86EFAC">+1</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FCA5A5">−1</span>
+<a href="Painel-alteracoes.dc.html" style="display: flex; align-items: center; height: 44px; box-sizing: border-box; padding: 0 12px; border-left: 1px solid #262626; color: #86EFAC; text-decoration: none; font-size: 13px; font-weight: 500">Ver alterações</a>
+</div>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7">
+<div style="display: flex; color: #A1A1A1"><span style="width: 36px; text-align: right; padding-right: 8px; flex-shrink: 0">41</span><span style="width: 16px; flex-shrink: 0"></span><span style="white-space: pre">def aplicar(pedido, cupom):</span></div>
+<div style="display: flex; background: #2D1215; color: #FCA5A5"><span style="width: 36px; text-align: right; padding-right: 8px; flex-shrink: 0">42</span><span style="width: 16px; flex-shrink: 0">−</span><span style="white-space: pre">    if cupom.ativo:</span></div>
+<div style="display: flex; background: #0F2A1A; color: #86EFAC"><span style="width: 36px; text-align: right; padding-right: 8px; flex-shrink: 0">42</span><span style="width: 16px; flex-shrink: 0">+</span><span style="white-space: pre">    if cupom.ativo and cupom.validade &gt;= hoje():</span></div>
+<div style="display: flex; color: #A1A1A1"><span style="width: 36px; text-align: right; padding-right: 8px; flex-shrink: 0">43</span><span style="width: 16px; flex-shrink: 0"></span><span style="white-space: pre">        aplicar_desconto(pedido, cupom)</span></div>
+</div>
+</div>
+
+<div style="border-radius: 8px; background: #111111; border: 1px solid #1F5F3A; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #262626">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#86EFAC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6"></path><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+<span style="font-size: 12px; font-weight: 600; color: #A1A1A1">Comando</span>
+<span style="flex-grow: 1"></span>
+<span style="font-size: 12px; color: #86EFAC">rodando há 8 s</span>
+</div>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7; padding: 8px 12px">
+<div style="color: #FAFAFA">$ pytest api/tests/test_cupons.py</div>
+<div style="color: #A1A1A1">collected 14 items</div>
+<div style="color: #86EFAC">test_cupons.py ........</div>
+</div>
+</div>
+</div>
+
+<div style="padding: 12px 16px 14px; border-top: 1px solid #262626; display: flex; flex-direction: column; gap: 10px">
+<div style="align-self: flex-start; display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; background: #171717; border: 1px solid #333333">
+<div style="width: 44px; height: 44px; border-radius: 6px; background: #262626; display: flex; align-items: center; justify-content: center">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="9" cy="10" r="2"></circle><path d="m21 16-5-5-9 9"></path></svg>
+</div>
+<div style="display: flex; flex-direction: column">
+<span style="font-size: 13px; font-weight: 500">Imagem colada</span>
+<span style="font-size: 12px; color: #A1A1A1">a miniatura aparece aqui</span>
+</div>
+<button type="button" aria-label="Remover imagem" style="width: 44px; height: 44px; border-radius: 6px; border: none; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>
+</button>
+</div>
+<div style="display: flex; gap: 8px; align-items: flex-end">
+<label for="msg-a" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Mensagem para a sessão</label>
+<textarea id="msg-a" rows="1" placeholder="Mensagem (Ctrl+V cola imagens)" style="height: 44px; flex-grow: 1; min-width: 0; box-sizing: border-box; padding: 11px 14px; border-radius: 8px; border: 1px solid #333333; background: #111111; color: #FAFAFA; font-family: inherit; font-size: 14px; line-height: 1.5; resize: none"></textarea>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #525252; background: #1A1A1A; color: #FAFAFA; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
+Interromper
+</button>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" aria-label="Modelo: Sonnet 5" style="height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid #333333; background: transparent; color: #E5E5E5; font-size: 13px; display: flex; align-items: center; gap: 6px">Sonnet 5<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+<button type="button" aria-label="Raciocínio: médio" style="height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid #333333; background: transparent; color: #E5E5E5; font-size: 13px; display: flex; align-items: center; gap: 6px">Raciocínio médio<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+<button type="button" aria-label="Modo: aceita edições" style="height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid #333333; background: transparent; color: #E5E5E5; font-size: 13px; display: flex; align-items: center; gap: 6px">Aceita edições<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+<span style="margin-left: auto; align-self: center; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A1A1A1">Enter envia · Ctrl+Enter quebra linha</span>
+</div>
+</div>
+</section>
+
+<section aria-label="Sessão: webhook do Pix" style="flex: 1 1 0; min-width: 0; box-sizing: border-box; border-right: 1px solid #262626; display: flex; flex-direction: column">
+<header style="padding: 16px 16px 12px; border-bottom: 1px solid #262626; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="width: 10px; height: 10px; border-radius: 3px; background: #B28CFF; flex-shrink: 0"></span>
+<span style="font-size: 12px; color: #A1A1A1; flex-grow: 1">loja-online</span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #FB923C; padding: 3px 10px; border-radius: 999px; border: 1px solid #7C3F12; background: #24140A"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"></path><line x1="12" y1="10" x2="12" y2="14"></line><line x1="12" y1="17" x2="12" y2="17.01"></line></svg>Aguardando você</span>
+</div>
+<h2 style="margin: 0; font-family: 'Geist', sans-serif; font-size: 18px; font-weight: 600">Webhook do Pix sem txid</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px">
+<span style="display: flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 6px; background: #171717; border: 1px solid #2E2E2E"><span style="color: #A1A1A1">api</span><span style="color: #E5E5E5">feat/cupom-desconto</span></span>
+<span style="display: flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 6px; background: #171717; border: 1px solid #2E2E2E"><span style="color: #A1A1A1">painel</span><span style="color: #E5E5E5">main</span></span>
+<span style="display: flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 6px; background: #171717; border: 1px solid #2E2E2E"><span style="color: #A1A1A1">pagamentos</span><span style="color: #E5E5E5">fix/webhook-pix</span></span>
+</div>
+</header>
+
+<div style="flex-grow: 1; min-height: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden">
+<div style="align-self: flex-end; max-width: 340px; padding: 10px 14px; border-radius: 12px 12px 2px 12px; background: #1F1F1F; border: 1px solid #333333">O webhook do Pix responde 500 quando o payload chega sem txid.</div>
+
+<div style="color: #FAFAFA">O erro vem de um acesso direto à chave em <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #86EFAC">pagamentos/webhooks/pix.py</span>. Quero rodar os testes do módulo antes de alterar.</div>
+
+<div style="border-radius: 10px; background: #1C1208; border: 1px solid #9A5420; padding: 14px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 8px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FB923C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"></path><line x1="12" y1="10" x2="12" y2="14"></line><line x1="12" y1="17" x2="12" y2="17.01"></line></svg>
+<span style="font-weight: 600; color: #FDBA74">Permissão para rodar comando</span>
+</div>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.6; padding: 10px 12px; border-radius: 6px; background: #0A0A0A; border: 1px solid #262626; color: #FAFAFA; word-break: break-all">docker compose exec pagamentos pytest tests/webhooks -k pix</div>
+<div style="font-size: 12px; color: #D4B59A">Pasta: loja-online/pagamentos</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; gap: 8px">
+<button type="button" style="flex-grow: 1; height: 44px; border-radius: 8px; border: none; background: #FB923C; color: #2A1200; font-size: 14px; font-weight: 600">Permitir uma vez</button>
+<button type="button" style="flex-grow: 1; height: 44px; border-radius: 8px; border: 1px solid #9A5420; background: transparent; color: #FDBA74; font-size: 14px; font-weight: 500">Negar</button>
+</div>
+<button type="button" style="height: 44px; border-radius: 8px; border: 1px solid #525252; background: transparent; color: #FAFAFA; font-size: 14px; font-weight: 500">Permitir sempre neste projeto</button>
+</div>
+</div>
+</div>
+
+<div style="padding: 12px 16px 14px; border-top: 1px solid #262626; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; gap: 8px; align-items: flex-end">
+<label for="msg-b" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Mensagem para a sessão</label>
+<textarea id="msg-b" rows="3" placeholder="Ou responda com outra instrução" style="height: 86px; flex-grow: 1; min-width: 0; box-sizing: border-box; padding: 11px 14px; border-radius: 8px; border: 1px solid #333333; background: #111111; color: #FAFAFA; font-family: inherit; font-size: 14px; line-height: 1.5; resize: none">Antes de rodar, confirme duas coisas:
+1. o container pagamentos está de pé
+2. os testes usam o banco de teste</textarea>
+<button type="button" aria-label="Enviar mensagem" style="width: 44px; height: 44px; border-radius: 8px; border: none; background: #4ADE80; color: #052E14; display: flex; align-items: center; justify-content: center">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"></line><path d="m5 12 7-7 7 7"></path></svg>
+</button>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" aria-label="Modelo: Opus 5.5" style="height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid #333333; background: transparent; color: #E5E5E5; font-size: 13px; display: flex; align-items: center; gap: 6px">Opus 5.5<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+<button type="button" aria-label="Raciocínio: alto" style="height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid #333333; background: transparent; color: #E5E5E5; font-size: 13px; display: flex; align-items: center; gap: 6px">Raciocínio alto<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+<button type="button" aria-label="Modo: pede permissão" style="height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid #333333; background: transparent; color: #E5E5E5; font-size: 13px; display: flex; align-items: center; gap: 6px">Pede permissão<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+<span style="margin-left: auto; align-self: center; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A1A1A1">Enter envia · Ctrl+Enter quebra linha</span>
+</div>
+</div>
+</section>
+
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

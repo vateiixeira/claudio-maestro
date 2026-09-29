@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Novo projeto</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Geist',sans-serif;background:#0A0A0A;color:#FAFAFA}
+button{font-family:inherit;cursor:pointer}
+a{color:#86EFAC}a:hover{color:#BBF7D0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; background: #050505; color: #FAFAFA; font-size: 14px; line-height: 1.45; overflow: hidden">
+
+<div role="dialog" aria-labelledby="titulo-novo-projeto" style="width: 880px; box-sizing: border-box; border-radius: 12px; background: #111111; border: 1px solid #333333; display: flex; flex-direction: column">
+
+<header style="padding: 24px 28px 20px; border-bottom: 1px solid #262626; display: flex; flex-direction: column; gap: 4px">
+<h1 id="titulo-novo-projeto" style="margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em">Novo projeto</h1>
+<div style="color: #A1A1A1">Um projeto aponta para uma pasta. As sessões rodam nela e enxergam tudo o que estiver dentro.</div>
+</header>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; padding: 24px 28px">
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A1A1A1">Escolha a pasta</div>
+<div style="display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 13px">
+<button type="button" style="height: 44px; padding: 0 10px; border-radius: 6px; border: none; background: transparent; color: #A1A1A1; font-family: 'JetBrains Mono', monospace; font-size: 13px">~</button>
+<span style="color: #525252">/</span>
+<button type="button" style="height: 44px; padding: 0 10px; border-radius: 6px; border: none; background: transparent; color: #FAFAFA; font-family: 'JetBrains Mono', monospace; font-size: 13px">dev</button>
+</div>
+<div style="border-radius: 8px; border: 1px solid #262626; overflow: hidden; display: flex; flex-direction: column; background: #0A0A0A">
+<button type="button" style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border: none; border-bottom: 1px solid #262626; background: transparent; color: #E5E5E5; font-size: 14px; text-align: left">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+<span style="flex-grow: 1">anotacoes</span>
+</button>
+<button type="button" style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border: none; border-bottom: 1px solid #262626; background: transparent; color: #E5E5E5; font-size: 14px; text-align: left">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+<span style="flex-grow: 1">blog-pessoal</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A1A1A1">git</span>
+</button>
+<button type="button" style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border: none; border-bottom: 1px solid #262626; background: transparent; color: #E5E5E5; font-size: 14px; text-align: left">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+<span style="flex-grow: 1">bot-telegram</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A1A1A1">git</span>
+</button>
+<button type="button" aria-pressed="true" style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border: none; border-bottom: 1px solid #262626; background: #0C2416; color: #FAFAFA; font-size: 14px; font-weight: 600; text-align: left">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+<span style="flex-grow: 1">loja-online</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 400; color: #86EFAC">3 repositórios</span>
+</button>
+<button type="button" style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border: none; background: transparent; color: #E5E5E5; font-size: 14px; text-align: left">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+<span style="flex-grow: 1">site-portfolio</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A1A1A1">git</span>
+</button>
+</div>
+<div style="font-size: 12px; color: #A1A1A1">Clique duas vezes em uma pasta para entrar nela.</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 20px">
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="nome-projeto" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A1A1A1">Nome</label>
+<input id="nome-projeto" type="text" value="loja-online" style="height: 44px; box-sizing: border-box; padding: 0 14px; border-radius: 8px; border: 1px solid #333333; background: #0A0A0A; color: #FAFAFA; font-family: inherit; font-size: 14px">
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A1A1A1">~/dev/loja-online</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A1A1A1">Cor no menu</div>
+<div style="display: flex; gap: 8px">
+<button type="button" aria-label="Violeta" aria-pressed="true" style="width: 44px; height: 44px; border-radius: 8px; border: 2px solid #FAFAFA; background: #0A0A0A; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 5px; background: #B28CFF"></span></button>
+<button type="button" aria-label="Turquesa" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid #333333; background: #0A0A0A; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 5px; background: #4FD1C5"></span></button>
+<button type="button" aria-label="Rosa" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid #333333; background: #0A0A0A; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 5px; background: #FF8FB1"></span></button>
+<button type="button" aria-label="Amarelo" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid #333333; background: #0A0A0A; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 5px; background: #FFD166"></span></button>
+<button type="button" aria-label="Azul" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid #333333; background: #0A0A0A; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 5px; background: #7CB7FF"></span></button>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A1A1A1">Repositórios encontrados</div>
+<div style="border-radius: 8px; border: 1px solid #262626; background: #0A0A0A; display: flex; flex-direction: column; font-family: 'JetBrains Mono', monospace; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #262626"><span style="color: #A1A1A1; width: 100px; flex-shrink: 0">api/</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E5E5E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span style="color: #FAFAFA">feat/cupom-desconto</span></div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #262626"><span style="color: #A1A1A1; width: 100px; flex-shrink: 0">painel/</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E5E5E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span style="color: #FAFAFA">main</span></div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px"><span style="color: #A1A1A1; width: 100px; flex-shrink: 0">pagamentos/</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E5E5E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span style="color: #FAFAFA">fix/webhook-pix</span></div>
+</div>
+</div>
+
+</div>
+</div>
+
+<footer style="padding: 16px 28px 20px; border-top: 1px solid #262626; display: flex; justify-content: flex-end; gap: 10px">
+<a href="Main.dc.html" style="display: flex; align-items: center; height: 44px; box-sizing: border-box; padding: 0 16px; border-radius: 8px; border: 1px solid #525252; color: #FAFAFA; text-decoration: none; font-weight: 500">Cancelar</a>
+<a href="Projeto.dc.html" style="display: flex; align-items: center; height: 44px; box-sizing: border-box; padding: 0 18px; border-radius: 8px; background: #4ADE80; color: #052E14; text-decoration: none; font-weight: 600">Criar projeto</a>
+</footer>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
