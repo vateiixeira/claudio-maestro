@@ -19,7 +19,7 @@ const isError = computed(() => props.item.result?.is_error === true)
   >
     <div class="flex items-center gap-2 border-b border-line px-3 py-2">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" :class="running ? 'text-primary-soft' : 'text-fg-muted'" aria-hidden="true"><path d="m4 17 6-6-6-6" /><line x1="12" y1="19" x2="20" y2="19" /></svg>
-      <span class="text-xs font-semibold text-fg-muted">Comando</span>
+      <span class="cap text-fg">Comando</span>
       <span v-if="str(item.input.description)" class="min-w-0 truncate text-xs text-fg-muted">· {{ str(item.input.description) }}</span>
       <span class="grow" />
       <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-muted">Resultado não disponível no histórico</span>

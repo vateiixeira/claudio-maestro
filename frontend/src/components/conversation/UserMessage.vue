@@ -27,8 +27,17 @@ function label(attachment: Attachment): string {
 </script>
 
 <template>
-  <div class="flex max-w-[85%] flex-col items-end gap-1 self-end">
-    <div v-if="previews?.length" class="flex flex-wrap justify-end gap-1.5">
+  <div data-test="user-message-card" class="flex w-full flex-col gap-2 rounded-lg border border-line-strong bg-elevated px-3.5 py-3">
+    <div class="flex items-center gap-2">
+      <span aria-hidden="true" class="flex size-[18px] items-center justify-center rounded-full bg-fg text-[10px] font-bold text-bg">V</span>
+      <span class="cap text-fg">Você</span>
+    </div>
+    <div
+      v-if="item.text"
+      data-test="user-message"
+      class="text-sm leading-[1.55] whitespace-pre-wrap break-words text-fg"
+    >{{ item.text }}</div>
+    <div v-if="previews?.length" class="flex flex-wrap gap-1.5">
       <img
         v-for="(url, index) in previews"
         :key="index"
@@ -38,12 +47,7 @@ function label(attachment: Attachment): string {
         class="max-h-32 max-w-48 rounded-md border border-line-strong object-cover"
       />
     </div>
-    <div
-      v-if="item.text"
-      data-test="user-message"
-      class="whitespace-pre-wrap break-words rounded-[12px_12px_2px_12px] border border-line-strong bg-elevated px-3.5 py-2.5"
-    >{{ item.text }}</div>
-    <div v-if="item.images?.length && !previews?.length" class="flex flex-wrap justify-end gap-1">
+    <div v-if="item.images?.length && !previews?.length" class="flex flex-wrap gap-1">
       <span
         v-for="(attachment, index) in item.images"
         :key="index"

@@ -41,6 +41,8 @@ body {
 
 /* Markdown from the model (see conversation/markdown.ts). */
 .markdown {
+  max-width: 580px;
+  font-size: 14px;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -48,9 +50,8 @@ body {
 .markdown > div > :last-child { margin-bottom: 0; }
 .markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0 0 0.75em; }
 .markdown ul, .markdown ol { padding-left: 1.4em; }
-.markdown h1, .markdown h2, .markdown h3, .markdown h4 { margin: 1em 0 0.5em; font-size: 1em; font-weight: 600; }
-.markdown h1 { font-size: 1.2em; }
-.markdown h2 { font-size: 1.1em; }
+.markdown h1, .markdown h2, .markdown h3 { margin: 1.1em 0 0.5em; font-size: 15px; font-weight: 600; }
+.markdown h4 { margin: 1em 0 0.5em; font-size: 1em; font-weight: 600; }
 .markdown a { color: var(--color-primary-soft); }
 .markdown code { font-family: var(--font-mono); font-size: 13px; color: var(--color-primary-soft); }
 .markdown pre {
@@ -90,4 +91,13 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Small uppercase label (cards, turn markers). */
+.cap {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }

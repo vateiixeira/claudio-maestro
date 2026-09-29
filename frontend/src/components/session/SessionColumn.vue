@@ -12,6 +12,9 @@ import MessageComposer from '../conversation/MessageComposer.vue'
 import PermissionCard from '../conversation/PermissionCard.vue'
 import PlanCard from '../conversation/PlanCard.vue'
 import QuestionCard from '../conversation/QuestionCard.vue'
+import RailNode from '../conversation/RailNode.vue'
+import UserMessage from '../conversation/UserMessage.vue'
+import { buildTurns, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
 import SessionControls from './SessionControls.vue'
 import { deriveDisplay, displayStateLabels } from '../../sessionState'
 import { useConversationStore } from '../../stores/conversation'
@@ -178,6 +181,19 @@ const tree = computed(() => {
   return { top, childrenOf: (toolUseId: string) => children.get(toolUseId) ?? [] }
 })
 const rows = computed(() => tree.value.top)
+const sessionActive = computed(() => conv.value?.state === 'running' || conv.value?.state === 'awaiting_decision')
+const turns = computed(() => {
+  const list = buildTurns(rows.value)
+  // A pending decision or a connecting session is still inside the turn.
+  const running = sessionActive.value || conv.value?.state === 'connecting'
+  return list.map((turn, index) => {
+    const last = index === list.length - 1
+    const done = !last || !running
+    let summary = done ? summaryText(turnSummary(turn, tree.value.childrenOf)) : ''
+    if (done && last && resultParts.value.length) summary = [summary, ...resultParts.value].join(' · ')
+    return { turn, done, summary }
+  })
+})
 // Last finished reply of the assistant, for the polite live region.
 const announcement = computed(() => {
   const items = conv.value?.items ?? []
@@ -191,9 +207,10 @@ const announcement = computed(() => {
 })
 const taskList = computed(() => conversations.taskList(props.id))
 
-const footer = computed(() => {
+// Duration, cost and error of the last turn, shown in its end line.
+const resultParts = computed(() => {
   const result = conv.value?.lastResult
-  if (!result) return null
+  if (!result) return []
   const parts: string[] = []
   if (result.duration_ms != null) {
     parts.push(`${(result.duration_ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`)
@@ -202,7 +219,7 @@ const footer = computed(() => {
     parts.push(`US$ ${result.total_cost_usd.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`)
   }
   if (result.is_error) parts.push('terminou com erro')
-  return parts.length ? `Último turno: ${parts.join(' · ')}` : null
+  return parts
 })
 
 // Follows the end of the conversation only while the user is already there.
@@ -349,7 +366,7 @@ function resolvePrompt(promptId: string) {
       <!-- Screen readers hear finished replies only, never each streamed character. -->
       <div data-test="conversation-live" aria-live="polite" class="sr-only">{{ announcement }}</div>
       <div ref="scroller" data-test="conversation-scroller" class="min-h-0 grow overflow-y-auto" @scroll="onScroll">
-        <div class="flex flex-col gap-3 p-4">
+        <div class="flex flex-col gap-[18px] px-4 pt-5 pb-6">
           <p
             v-if="conv.historyTruncated"
             data-test="history-truncated"
@@ -358,19 +375,41 @@ function resolvePrompt(promptId: string) {
           <p v-if="rows.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
-          <div
-            v-for="item in rows"
-            :key="item.id"
-            class="flex min-w-0 flex-col"
-            :class="{ 'border-l border-line pl-4': 'parent_tool_use_id' in item && item.parent_tool_use_id }"
-          >
-            <ConversationBlock
-              :item="item"
-              :session-active="conv.state === 'running' || conv.state === 'awaiting_decision'"
-              :children-of="tree.childrenOf"
-              :task-list="taskList"
-            />
-          </div>
+          <template v-for="({ turn, done, summary }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
+            <div v-if="index > 0" data-test="turn-separator" class="mt-1.5 flex items-center gap-2.5">
+              <span class="cap text-fg-muted">Turno {{ turn.number }}</span>
+              <span aria-hidden="true" class="h-px grow bg-line" />
+            </div>
+            <div data-test="turn" class="flex flex-col gap-3.5">
+              <UserMessage v-if="turn.user" :item="turn.user" />
+              <div v-if="turn.entries.length" class="relative flex flex-col gap-3.5">
+                <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
+                <div v-for="entry in turn.entries" :key="entry.item.id" class="relative flex items-start gap-3">
+                  <RailNode :kind="nodeKind(entry.item, sessionActive)" />
+                  <div
+                    class="flex min-w-0 grow flex-col"
+                    :class="{ 'border-l border-line pl-4': 'parent_tool_use_id' in entry.item && entry.item.parent_tool_use_id }"
+                  >
+                    <ConversationBlock
+                      :item="entry.item"
+                      :session-active="sessionActive"
+                      :children-of="tree.childrenOf"
+                      :task-list="taskList"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div
+                v-if="done"
+                data-test="turn-end"
+                class="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-line bg-panel px-3 py-2.5"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-primary" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                <span class="cap text-primary-soft">Turno concluído</span>
+                <span class="font-mono text-[11px] text-fg-muted">{{ summary }}</span>
+              </div>
+            </div>
+          </template>
           <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
             <QuestionCard
               v-if="prompt.kind === 'question'"
@@ -391,7 +430,6 @@ function resolvePrompt(promptId: string) {
               @resolved="resolvePrompt(prompt.prompt_id)"
             />
           </template>
-          <p v-if="footer" data-test="turn-footer" class="m-0 font-mono text-xs text-fg-muted">{{ footer }}</p>
         </div>
       </div>
 

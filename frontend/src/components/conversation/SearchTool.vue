@@ -32,7 +32,7 @@ const count = computed(() => {
         :aria-label="open ? 'Recolher resultado' : 'Expandir resultado'"
         @click="open = !open"
       >{{ open ? '▾' : '▸' }}</button>
-      <span class="text-xs font-semibold text-fg-muted">{{ item.name }}</span>
+      <span class="cap text-fg">{{ item.name }}</span>
       <a
         v-if="link"
         :href="link"

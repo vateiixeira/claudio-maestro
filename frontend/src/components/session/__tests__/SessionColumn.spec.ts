@@ -80,10 +80,12 @@ describe('coluna da sessão', () => {
     expect(w.text()).toContain('Novo texto')
     expect(w.find('[data-test="interrupt"]').exists()).toBe(true)
     expect(w.find('[data-test="permission-card"]').exists()).toBe(true)
-    expect(w.find('[data-test="turn-footer"]').text()).toContain('1,5 s')
     emit(makeEvent('prompt.resolved', { prompt_id: 'p1', decision: 'allow_once' }, 6))
     await flushPromises()
     expect(w.find('[data-test="permission-card"]').exists()).toBe(false)
+    emit(makeEvent('session.state', { state: 'idle', error: null }, 7))
+    await flushPromises()
+    expect(w.find('[data-test="turn-end"]').text()).toContain('1,5 s')
   })
 
   it('mostra o erro da sessão acima do campo', async () => {

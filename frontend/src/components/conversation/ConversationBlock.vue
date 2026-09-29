@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { TaskEntry } from '../../conversation/tasks'
 import { TASK_TOOLS } from '../../conversation/tasks'
+import { AGENT_TOOLS, EDIT_TOOLS, SEARCH_TOOLS } from '../../conversation/turns'
 import type { ConversationItem } from '../../types/conversation'
 import AgentTool from './AgentTool.vue'
 import BashTool from './BashTool.vue'
@@ -29,9 +30,6 @@ const props = withDefaults(
   { sessionActive: false, childrenOf: () => [], tasks: null, taskList: null },
 )
 
-const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit'])
-const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'WebSearch', 'WebFetch'])
-const AGENT_TOOLS = new Set(['Agent', 'Task'])
 
 const shownTasks = computed(() =>
   props.tasks ?? (props.taskList && props.taskList.lastItemId === props.item.id ? props.taskList.tasks : null),

@@ -22,7 +22,7 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
       @click="open = !open"
     >
       <span aria-hidden="true" class="text-xs text-fg-muted">{{ open ? '▾' : '▸' }}</span>
-      <span class="text-xs font-semibold text-fg-muted">Ferramenta</span>
+      <span class="cap text-fg">Ferramenta</span>
       <span class="min-w-0 grow truncate font-mono text-xs">{{ toolLabel(item.name) }}</span>
       <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-muted">Resultado não disponível no histórico</span>
       <span v-else-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
