@@ -13,6 +13,7 @@ import logging
 import os
 import sqlite3
 import time
+from dataclasses import replace
 from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
@@ -246,6 +247,37 @@ class HistoryIndex:
         # Only a session whose file is confirmed gone leaves the index.
         self._file_exists = file_exists or sdk_session_file_exists
         self._lock = asyncio.Lock()
+
+    @property
+    def db_path(self) -> Path:
+        return self._db_path
+
+    @property
+    def list_sessions(self) -> ListSessions:
+        return self._list_sessions
+
+    def update_session(self, session_id: str, mtime: int, info: Any | None) -> bool:
+        """Refresh one indexed session from its file's mtime and, when given, its
+        listing entry (title, summary). Blocking: run it in a thread. True if the
+        row changed."""
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            row = conn.execute(
+                "SELECT project_id, cwd, last_activity_at, file_modified_at FROM sessions"
+                " WHERE session_id = ?", (session_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            if info is not None:
+                info = replace(info, last_modified=mtime * 1000)
+                return self._upsert(conn, info, row["project_id"], row["cwd"]) is not False
+            if row["file_modified_at"] == mtime and row["last_activity_at"] >= mtime:
+                return False
+            conn.execute(
+                "UPDATE sessions SET file_modified_at = ?,"
+                " last_activity_at = MAX(last_activity_at, ?) WHERE session_id = ?",
+                (mtime, mtime, session_id),
+            )
+            return True
 
     async def sync_all(self) -> set[str]:
         return await self._sync(None)

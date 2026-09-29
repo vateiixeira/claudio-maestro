@@ -50,6 +50,8 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home.mkdir()
     monkeypatch.setenv("VIBING_HOME", str(home))
     monkeypatch.setenv("VIBING_DATA_DIR", str(data))
+    # The CLI history watcher never looks at the real ~/.claude.
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
 
 
 @pytest.fixture

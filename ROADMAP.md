@@ -21,7 +21,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 2. Multissessão | Colunas, estados e menu lateral | Concluído | 12 de 12 |
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
-| 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Em andamento | 0 de 15 |
+| 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Em andamento | 1 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 27 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
@@ -130,7 +130,7 @@ Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 - [ ] Subagentes visíveis na sessão: um cartão por subagente com tipo, descrição e estado (rodando, concluído, com erro), e as ações dele (ferramentas, edições, comandos) aparecendo em tempo real dentro do cartão. Vale também para subagentes em segundo plano
 - [ ] Cartão genérico para ferramentas e MCPs sem bloco próprio
 - [ ] Saídas longas truncadas em 200 linhas
-- [ ] Sessões do CLI em tempo real: observar `~/.claude/projects` e atualizar índice, menu e colunas abertas em até 1 s após cada mudança, sem esperar a sincronização de 60 s
+- [x] Sessões do CLI em tempo real: observar `~/.claude/projects` e atualizar índice, menu e colunas abertas em até 1 s após cada mudança, sem esperar a sincronização de 60 s (2026-09-29)
 - [ ] Raciocínio visível enquanto o Claude pensa: bloco aberto durante o streaming, recolhido ao terminar, com indicação de tempo. Só em sessões conduzidas pelo app; o CLI não grava o texto do raciocínio no arquivo da sessão
 - [ ] Ditado por voz: botão de microfone no campo de mensagem que transcreve a fala em texto, para revisar antes de enviar (tecnologia a definir, ver "Pontos em aberto")
 

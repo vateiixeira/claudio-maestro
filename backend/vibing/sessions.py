@@ -1643,6 +1643,47 @@ class SessionManager:
                 )
                 del self._sessions[session_id]
 
+    def app_writing(self, session_id: str) -> bool:
+        """The app has a client, a turn or an operation on this session's file."""
+        session = self._sessions.get(session_id)
+        return session is not None and (
+            session.active or session.pending_turns > 0 or bool(session.prompts) or session.busy
+        )
+
+    async def apply_external_change(self, session_id: str, *, reload: bool = True) -> bool:
+        """The CLI changed a session's file (its row is already updated): refresh
+        the record, announce it and, with `reload`, reload an open column.
+
+        Emits nothing while the app is writing the session. Returns whether a
+        reload was attempted.
+        """
+        if self.app_writing(session_id):
+            return False
+        with closing(db.connect(self._db_path)) as conn:
+            row = conn.execute(
+                f"SELECT {_COLUMNS} FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        if row is None:
+            return False
+        record = _record(row)
+        session = self._sessions.get(session_id)
+        if session is None:
+            forgotten = self._forgotten.get(session_id)
+            seq = forgotten[0] if forgotten is not None else 0
+            data = describe(record, "closed", None, seq, finished_after=self.finished_after())
+            self._publish(
+                {"session_id": session_id, "seq": seq, "type": "session.updated", "data": data}
+            )
+            return False
+        session.record = record
+        session.emit_updated()
+        # An open() in progress reloads by itself.
+        if not reload or session.users > 0:
+            return False
+        # Emits `conversation.reset` and reloads when the file changed since the last load.
+        await session.reload_if_modified()
+        return True
+
     def in_use(self, session_id: str) -> bool:
         """The app is using the session (client, prompts, turns or an operation)."""
         session = self._sessions.get(session_id)

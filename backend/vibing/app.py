@@ -1,9 +1,9 @@
 """Application assembly: settings, database, middleware and routes."""
 
 import asyncio
-from collections.abc import AsyncIterator
-from contextlib import suppress
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager, suppress
+from typing import Any
 
 from fastapi import FastAPI
 
@@ -13,17 +13,18 @@ from vibing.agent.base import AgentFactory
 from vibing.agent.sdk_client import clean_inherited_env
 from vibing.api import router
 from vibing.api.editor import SpawnEditor, spawn_detached
-from vibing.config import Settings, load_settings
+from vibing.cliwatch import CliWatcher
+from vibing.config import Settings, claude_projects_dir, load_settings
 from vibing.events import EventHub
 from vibing.gitmonitor import GitMonitor
 from vibing.security import BodySizeLimitMiddleware, HostOriginMiddleware
 from vibing.sessions import HistoryExists, RenameSession, SessionManager
 
 
-def publish_synced(hub: EventHub, project_ids: set[int]) -> None:
+def publish_synced(publish: Callable[[dict[str, Any]], None], project_ids: set[int]) -> None:
     """Tell the frontend to reload these projects' sessions."""
     for project_id in sorted(project_ids):
-        hub.publish(
+        publish(
             {"session_id": None, "seq": 0, "type": "project.synced",
              "data": {"project_id": project_id}}
         )
@@ -78,7 +79,7 @@ def create_app(
             app.state.settings.db_path,
             list_sessions or history.sdk_list_sessions,
             on_change=app.state.sessions.refresh_records,
-            on_projects_changed=lambda ids: publish_synced(app.state.hub, ids),
+            on_projects_changed=lambda ids: publish_synced(app.state.hub.publish, ids),
             is_in_use=app.state.sessions.in_use,
         )
         tasks = [
@@ -94,6 +95,13 @@ def create_app(
                 )
             ),
         ]
+        claude_projects = (
+            app.state.settings.claude_projects_dir or claude_projects_dir()
+        )
+        app.state.cli_watch_task = asyncio.create_task(
+            CliWatcher(claude_projects, app.state.history, app.state.sessions).run()
+        )
+        tasks.append(app.state.cli_watch_task)
         try:
             yield
         finally:

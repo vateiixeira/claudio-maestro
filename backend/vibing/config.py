@@ -24,6 +24,9 @@ class Settings:
     history_sync_interval_seconds: float = 60
     # Git branches are refreshed this often while a WebSocket is connected.
     git_refresh_interval_seconds: float = 30
+    # Folder where the CLI saves conversations, watched for real-time updates.
+    # None: `$CLAUDE_CONFIG_DIR/projects` or `~/.claude/projects`, resolved at startup.
+    claude_projects_dir: Path | None = None
 
     @property
     def db_path(self) -> Path:
@@ -43,4 +46,13 @@ def load_settings() -> Settings:
     data_env = os.environ.get("VIBING_DATA_DIR")
     data_dir = Path(data_env).resolve() if data_env else home / ".local" / "share" / "vini7-vibing"
 
-    return Settings(home_dir=home, data_dir=data_dir)
+    return Settings(
+        home_dir=home, data_dir=data_dir, claude_projects_dir=claude_projects_dir()
+    )
+
+
+def claude_projects_dir() -> Path:
+    """Where the CLI saves conversations (respects `CLAUDE_CONFIG_DIR`, like the SDK)."""
+    config = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(config) if config else Path.home() / ".claude"
+    return base / "projects"
