@@ -14,6 +14,7 @@ ALLOWED_HOSTS = frozenset(
     f"{name}:{port}" for name in LOCAL_HOSTNAMES for port in (FRONTEND_PORT, BACKEND_PORT)
 )
 ALLOWED_ORIGINS = frozenset(f"http://{name}:{FRONTEND_PORT}" for name in LOCAL_HOSTNAMES)
+CUSTOM_HEADER = "x-vibing"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 # WebSocket close code "policy violation". Closing before accept makes the
@@ -29,6 +30,7 @@ class HostOriginMiddleware:
     - Origin, when present, must be the app's own. It is required on
       state-changing methods and on WebSockets. Otherwise: 403, or WebSocket
       closed before accept.
+    - Every HTTP request to /api/ must carry `X-Vibing: 1`. Otherwise: 403.
     """
 
     def __init__(
@@ -61,6 +63,16 @@ class HostOriginMiddleware:
                 return
         elif origin not in self.allowed_origins:
             await self._reject(scope, send, 403, "Origem não permitida.")
+            return
+
+        # Browsers only send a custom header cross-site after a CORS preflight,
+        # which the app refuses, so this blocks <img>/<form> reads from other sites.
+        if (
+            scope["type"] == "http"
+            and scope["path"].startswith("/api/")
+            and headers.get(CUSTOM_HEADER) != "1"
+        ):
+            await self._reject(scope, send, 403, "Cabeçalho do app ausente.")
             return
 
         await self.app(scope, receive, send)

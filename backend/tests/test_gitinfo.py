@@ -1,5 +1,6 @@
 """Git status reading with real temporary repositories."""
 
+import asyncio
 import os
 import stat
 from pathlib import Path
@@ -102,7 +103,7 @@ async def test_uses_list_args_and_no_locks(tmp_path: Path, monkeypatch):
     assert "-C " + str(repo) + " config -z --name-only --get-regexp" in lookup
     assert line.startswith("0 9 core.fsmonitor -C ")
     assert "-C " + str(repo) + " status" in line
-    assert "status --porcelain=v2 --branch" in line
+    assert "status --ignore-submodules=dirty --porcelain=v2 --branch" in line
 
 
 async def test_branch_label(tmp_path: Path):
@@ -250,3 +251,113 @@ async def test_filter_name_with_newline_refused(tmp_path: Path):
     assert status.error == "Repositório com filtro de nome inválido"
     with pytest.raises(gitinfo.GitError):
         await gitinfo.file_diff(repo, "README.md")
+
+
+# Submodules, environment, limits
+
+
+def _submodule_repo(tmp_path: Path) -> tuple[Path, Path]:
+    marker = tmp_path / "armadilha-sub"
+    script = tmp_path / "sub.sh"
+    script.write_text(f"#!/bin/sh\ntouch {marker}\ncat\n")
+    script.chmod(0o755)
+    sub_src = make_repo(tmp_path / "sub-src")
+    main = make_repo(tmp_path / "home" / "main")
+    git(main, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub_src), "sub")
+    git(main, "commit", "-q", "-m", "sub")
+    sub = main / "sub"
+    (sub / ".gitattributes").write_text("* filter=evil\n")
+    git(sub, "config", "filter.evil.clean", str(script))
+    git(sub, "config", "filter.evil.smudge", str(script))
+    # Same content, newer mtime: git must re-hash the file, running the filter.
+    readme = sub / "README.md"
+    os.utime(readme, (readme.stat().st_atime, readme.stat().st_mtime + 100))
+    (main / "README.md").write_text("mudou\n")
+    marker.unlink(missing_ok=True)
+    return main, marker
+
+
+async def test_submodule_filters_not_executed(tmp_path: Path):
+    main, marker = _submodule_repo(tmp_path)
+    assert await gitinfo.branch_label(main) == "main"
+    status = await gitinfo.repo_status(main)
+    assert status.error is None
+    assert "README.md" in await gitinfo.dirty_files(main)
+    assert "+mudou" in (await gitinfo.file_diff(main, "README.md")).diff
+    await gitinfo.file_diff(main, "sub")
+    assert not marker.exists()
+
+
+async def test_inherited_git_dir_ignored(tmp_path: Path, monkeypatch):
+    other = make_repo(tmp_path / "other", branch="outro")
+    repo = make_repo(tmp_path / "r", branch="certo")
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    assert await gitinfo.branch_label(repo) == "certo"
+
+
+async def test_concurrent_git_processes_limited(monkeypatch):
+    running = 0
+    peak = 0
+
+    class FakeProcess:
+        returncode = 0
+
+        async def communicate(self):
+            nonlocal running
+            await asyncio.sleep(0.01)
+            running -= 1
+            return b"", b""
+
+        def kill(self):
+            pass
+
+        async def wait(self):
+            return 0
+
+    async def fake_exec(*args, **kwargs):
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        return FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    await asyncio.gather(*(gitinfo._exec(Path("/"), ("status",), 5) for _ in range(50)))
+    assert peak == 16
+
+
+def _slow_git(tmp_path: Path, delay: float) -> str:
+    script = tmp_path / "slowgit"
+    script.write_text(f"#!/bin/sh\nsleep {delay}\nexec git \"$@\"\n")
+    script.chmod(0o755)
+    return str(script)
+
+
+async def test_total_timeout_per_operation(tmp_path: Path, monkeypatch):
+    repo = make_repo(tmp_path / "r")
+    (repo / "README.md").write_text("mudou\n")
+    monkeypatch.setattr(gitinfo, "GIT_BINARY", _slow_git(tmp_path, 0.4))
+    # Each process fits in the limit; the whole operation does not.
+    status = await gitinfo.repo_status(repo, timeout=0.6)
+    assert status.error and "tempo limite" in status.error
+    with pytest.raises(gitinfo.GitError):
+        await gitinfo.dirty_files(repo, timeout=0.6)
+    with pytest.raises(gitinfo.GitError):
+        await gitinfo.file_diff(repo, "README.md", timeout=1.0)
+
+
+async def test_huge_untracked_file_refused(tmp_path: Path):
+    repo = make_repo(tmp_path / "r")
+    (repo / "big.txt").write_text("x\n" * (3 * 1024 * 1024))
+    result = await gitinfo.file_diff(repo, "big.txt")
+    assert result.truncated is True
+    assert result.diff == ""
+    assert result.notice and "5 MB" in result.notice
+
+
+async def test_large_diff_output_read_with_limit(tmp_path: Path):
+    repo = make_repo(tmp_path / "r")
+    (repo / "README.md").write_text("linha\n" * 200_000)
+    result = await gitinfo.file_diff(repo, "README.md")
+    assert result.truncated is True
+    assert len(result.diff) <= gitinfo.DIFF_LIMIT

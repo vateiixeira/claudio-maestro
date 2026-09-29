@@ -35,7 +35,7 @@ def api(fake: FakeHistory, home: Path, data_dir: Path):
         get_session_messages=fake.get_session_messages,
         read_tool_results=fake.read_tool_results,
     )
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
         yield c
 
 
@@ -54,7 +54,7 @@ def test_creating_project_syncs_its_history(api, fake, home):
     folder.mkdir()
     fake.add(str(folder), info("s1", str(folder), summary="Do CLI"))
 
-    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN}) as ws:
+    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
         project = make_project(api, home)
         event = ws.receive_json()
         while event["type"] != "project.synced":
@@ -91,7 +91,7 @@ def test_sync_runs_at_startup(fake, home, data_dir):
     settings = Settings(home_dir=home, data_dir=data_dir, history_sync_interval_seconds=3600)
     app = create_app(settings=settings, list_sessions=fake.list_sessions,
                      get_session_messages=fake.get_session_messages)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
         deadline = time.monotonic() + 2
         while not c.get("/api/sessions").json():
             assert time.monotonic() < deadline
@@ -172,8 +172,8 @@ def test_periodic_sync_indexes_new_session_and_emits_event(fake, home, data_dir)
     settings = Settings(home_dir=home, data_dir=data_dir, history_sync_interval_seconds=0.05)
     app = create_app(settings=settings, list_sessions=fake.list_sessions,
                      get_session_messages=fake.get_session_messages)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as c:
-        with c.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN}) as ws:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
+        with c.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
             fake.add(str(folder), info("s1", str(folder), summary="nova"))
             event = ws.receive_json()
             while event["type"] != "project.synced":

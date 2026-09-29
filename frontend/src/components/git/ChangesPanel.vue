@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { errorMessage, getFileDiff, getSessionChanges, openInEditor } from '../../api/http'
-import { diffFromUnified, toolDiff } from '../../conversation/diff'
+import { diffFromUnified, diffWithoutHunks, toolDiff } from '../../conversation/diff'
 import { str } from '../../conversation/tool'
 import DiffLines from '../conversation/DiffLines.vue'
 import BranchLabel from './BranchLabel.vue'
@@ -65,6 +65,8 @@ async function loadChanges() {
 // Selection is kept by group path + file path, so it survives a reload of the list.
 const selected = ref<{ group: ChangesGroup; file: ChangedFile } | null>(null)
 const fileLines = ref<DiffLine[]>([])
+// Shown instead of lines: server notice (file too big) or git's text for a diff without hunks.
+const fileNote = ref<string | null>(null)
 const fileTruncated = ref(false)
 const fileError = ref<string | null>(null)
 const editorError = ref<string | null>(null)
@@ -98,7 +100,10 @@ async function selectFile(group: ChangesGroup, file: ChangedFile) {
   fileCtrl = null
   const keep = isSelected(group, file)
   selected.value = { group, file }
-  if (!keep) fileLines.value = []
+  if (!keep) {
+    fileLines.value = []
+    fileNote.value = null
+  }
   fileTruncated.value = false
   fileError.value = null
   editorError.value = null
@@ -109,6 +114,7 @@ async function selectFile(group: ChangesGroup, file: ChangedFile) {
     const result = await getFileDiff(projectId, group.rel_path, file.rel_path, ctrl.signal)
     if (gen !== fileGen) return
     fileLines.value = diffFromUnified(result.diff)
+    fileNote.value = result.notice ?? diffWithoutHunks(result.diff)
     fileTruncated.value = result.truncated
   } catch (e) {
     if (gen === fileGen) fileError.value = errorMessage(e)
@@ -218,7 +224,7 @@ void loadChanges()
         <p v-if="fileError" role="alert" class="m-0 text-sm text-secondary-soft">{{ fileError }}</p>
         <p v-else-if="selected.group.rel_path == null" class="m-0 text-sm text-fg-muted">Fora de um repositório git, não há diff contra o último commit.</p>
         <div v-else class="overflow-hidden rounded-lg border border-line bg-bg">
-          <p v-if="fileLines.length === 0" class="m-0 px-3 py-2 text-sm text-fg-muted">Sem alterações</p>
+          <p v-if="fileLines.length === 0" class="m-0 px-3 py-2 text-sm text-fg-muted">{{ fileNote ?? 'Sem alterações' }}</p>
           <DiffLines :lines="fileLines" />
           <p v-if="fileTruncated" class="m-0 border-t border-line px-3 py-2 text-xs text-fg-muted">Diff cortado por ser grande demais.</p>
         </div>

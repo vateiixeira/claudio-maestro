@@ -60,7 +60,7 @@ async def file_diff(project_id: int, repo: str, file: str, conn: DbDep) -> dict[
         result = await gitinfo.file_diff(repo_path, relative)
     except gitinfo.GitError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    return {"diff": result.diff, "truncated": result.truncated}
+    return {"diff": result.diff, "truncated": result.truncated, "notice": result.notice}
 
 
 def _patch_counts(item: dict[str, Any]) -> tuple[int, int] | None:

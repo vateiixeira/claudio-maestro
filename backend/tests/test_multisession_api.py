@@ -44,7 +44,7 @@ def api(factory, rename, home, data_dir):
         history_exists=history_exists,
         rename_session=rename,
     )
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
         yield c
 
 
@@ -124,7 +124,7 @@ def test_list_all_sessions_with_filters(api, home):
 def test_patch_finish_emits_session_updated(api, home):
     project = make_project(api, home)
     sid = new_session(api, project)["session_id"]
-    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN}) as ws:
+    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
         response = api.patch(f"/api/sessions/{sid}", json={"finished": True})
         event = receive(ws)
 
@@ -252,7 +252,7 @@ def test_lifespan_sweep_closes_idle_session(factory, home, data_dir):
     )
     factory.script = lambda content: text_turn("x", "ok")
     app = create_app(settings=settings, agent_factory=factory, history_exists=lambda s, c: False)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
         project = make_project(api, home)
         sid = new_session(api, project)["session_id"]
         api.post(f"/api/sessions/{sid}/messages", json={"text": "oi"})

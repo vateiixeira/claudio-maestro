@@ -7,6 +7,7 @@ time limit. A failure becomes an `error` on that repository only.
 
 import asyncio
 import os
+import weakref
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -17,6 +18,28 @@ from vibing.history import scan_repositories
 GIT_BINARY = "git"
 GIT_TIMEOUT = 5.0
 DIFF_LIMIT = 200_000
+# Bytes read: enough for DIFF_LIMIT characters of up to 4 bytes each.
+DIFF_READ_LIMIT = DIFF_LIMIT * 4
+MAX_DIFF_FILE = 5 * 1024 * 1024
+MAX_GIT_PROCESSES = 16
+BIG_FILE_NOTICE = "Arquivo maior que 5 MB; o diff não é mostrado."
+# Submodules run their own git with their own config (filters included), and
+# `submodule.<n>.ignore` overrides the config key, so only the command line works.
+STATUS_SUBMODULES = "--ignore-submodules=dirty"
+DIFF_SUBMODULES = "--ignore-submodules=all"
+
+# One semaphore per event loop (a semaphore is bound to the loop that uses it).
+_process_slots: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _slots() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    slots = _process_slots.get(loop)
+    if slots is None:
+        slots = _process_slots[loop] = asyncio.Semaphore(MAX_GIT_PROCESSES)
+    return slots
 
 
 class GitError(Exception):
@@ -43,6 +66,7 @@ class RepoStatus:
 class FileDiff:
     diff: str
     truncated: bool
+    notice: str | None = None
 
 
 # Repository config must never make us run a program (fsmonitor, pager, hooks,
@@ -100,8 +124,7 @@ async def _disabled_filters(repo: Path, timeout: float) -> list[tuple[str, str]]
 def _env(extra_config: list[tuple[str, str]] | None = None) -> dict[str, str]:
     env = {
         key: value for key, value in os.environ.items()
-        if not key.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))
-        and key not in ("GIT_EXTERNAL_DIFF", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
+        if not key.startswith("GIT_")
     }
     env.update(
         GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", LC_ALL="C", GIT_PAGER="cat",
@@ -117,7 +140,7 @@ def _env(extra_config: list[tuple[str, str]] | None = None) -> dict[str, str]:
 
 
 async def run_git(
-    repo: Path, *args: str, timeout: float = GIT_TIMEOUT
+    repo: Path, *args: str, timeout: float = GIT_TIMEOUT, limit: int | None = None
 ) -> tuple[int, str, str]:
     """Run git in `repo` with every configured program disabled.
 
@@ -125,7 +148,15 @@ async def run_git(
     a filter whose name cannot be neutralised.
     """
     filters = await _disabled_filters(repo, timeout)
-    return await _exec(repo, args, timeout, filters)
+    return await _exec(repo, args, timeout, filters, limit)
+
+
+async def _within(timeout: float, operation):
+    """Runs a whole high-level operation under one time limit."""
+    try:
+        return await asyncio.wait_for(operation, timeout)
+    except TimeoutError as exc:
+        raise GitError(f"O git passou do tempo limite de {timeout:g} s.") from exc
 
 
 async def _exec(
@@ -133,6 +164,29 @@ async def _exec(
     args: tuple[str, ...],
     timeout: float,
     extra_config: list[tuple[str, str]] | None = None,
+    limit: int | None = None,
+) -> tuple[int, str, str]:
+    async with _slots():
+        return await _exec_now(repo, args, timeout, extra_config, limit)
+
+
+async def _read_limited(stream: asyncio.StreamReader, limit: int | None) -> bytes:
+    """Reads up to `limit + 1` bytes and drains the rest without keeping it."""
+    if limit is None:
+        return await stream.read()
+    data = bytearray()
+    while chunk := await stream.read(65536):
+        if len(data) <= limit:
+            data += chunk[: limit + 1 - len(data)]
+    return bytes(data)
+
+
+async def _exec_now(
+    repo: Path,
+    args: tuple[str, ...],
+    timeout: float,
+    extra_config: list[tuple[str, str]] | None,
+    limit: int | None,
 ) -> tuple[int, str, str]:
     try:
         process = await asyncio.create_subprocess_exec(
@@ -145,7 +199,18 @@ async def _exec(
     except OSError as exc:
         raise GitError(f"Não foi possível executar o git: {exc}") from exc
     try:
-        out, err = await asyncio.wait_for(process.communicate(), timeout)
+        if limit is None:
+            out, err = await asyncio.wait_for(process.communicate(), timeout)
+        else:
+            assert process.stdout is not None and process.stderr is not None
+            out, err, _ = await asyncio.wait_for(
+                asyncio.gather(
+                    _read_limited(process.stdout, limit),
+                    _read_limited(process.stderr, 65536),
+                    process.wait(),
+                ),
+                timeout,
+            )
     except (TimeoutError, asyncio.CancelledError) as exc:
         with suppress(ProcessLookupError):
             process.kill()
@@ -198,9 +263,9 @@ async def repo_status(
     rel = repo.relative_to(root).as_posix() if repo != root else "."
     status = RepoStatus(path=str(repo), rel_path=rel)
     try:
-        code, out, err = await run_git(
-            repo, "status", "--porcelain=v2", "--branch", timeout=timeout
-        )
+        code, out, err = await _within(timeout, run_git(
+            repo, "status", STATUS_SUBMODULES, "--porcelain=v2", "--branch", timeout=timeout
+        ))
     except GitError as exc:
         status.error = str(exc)
         return status
@@ -236,10 +301,10 @@ async def branch_label(repo: Path, *, timeout: float = GIT_TIMEOUT) -> str | Non
 
 async def dirty_files(repo: Path, *, timeout: float = GIT_TIMEOUT) -> set[str]:
     """Paths (relative to the repo) with any uncommitted change, untracked included."""
-    code, out, err = await run_git(
-        repo, "-c", "core.quotepath=off", "status", "--porcelain=v2", "-z",
-        "--untracked-files=all", timeout=timeout,
-    )
+    code, out, err = await _within(timeout, run_git(
+        repo, "-c", "core.quotepath=off", "status", STATUS_SUBMODULES, "--porcelain=v2",
+        "-z", "--untracked-files=all", timeout=timeout,
+    ))
     if code != 0:
         raise GitError(_failure(err))
     result: set[str] = set()
@@ -261,12 +326,16 @@ async def dirty_files(repo: Path, *, timeout: float = GIT_TIMEOUT) -> set[str]:
 
 
 async def file_diff(repo: Path, file: str, *, timeout: float = GIT_TIMEOUT) -> FileDiff:
+    return await _within(timeout, _file_diff(repo, file, timeout))
+
+
+async def _file_diff(repo: Path, file: str, timeout: float) -> FileDiff:
     """Current diff of `file` (relative to `repo`) against HEAD.
 
     Untracked files, and files in a repository without commits, are compared
     with an empty file.
     """
-    common = ("--no-color", "--no-ext-diff", "--no-textconv")
+    common = ("--no-color", "--no-ext-diff", "--no-textconv", DIFF_SUBMODULES)
     code, _, _ = await run_git(repo, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
     has_head = code == 0
     tracked = False
@@ -281,12 +350,17 @@ async def file_diff(repo: Path, file: str, *, timeout: float = GIT_TIMEOUT) -> F
             )
             tracked = bool(out.strip())
     if tracked:
-        code, out, err = await run_git(repo, "diff", *common, "HEAD", "--", file, timeout=timeout)
+        code, out, err = await run_git(
+            repo, "diff", *common, "HEAD", "--", file, timeout=timeout, limit=DIFF_READ_LIMIT
+        )
         if code != 0:
             raise GitError(_failure(err))
     elif (repo / file).is_file():
+        if (repo / file).stat().st_size > MAX_DIFF_FILE:
+            return FileDiff("", True, BIG_FILE_NOTICE)
         code, out, err = await run_git(
-            repo, "diff", *common, "--no-index", "--", "/dev/null", file, timeout=timeout
+            repo, "diff", *common, "--no-index", "--", "/dev/null", file,
+            timeout=timeout, limit=DIFF_READ_LIMIT,
         )
         if code not in (0, 1):
             raise GitError(_failure(err))

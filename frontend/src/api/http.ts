@@ -59,10 +59,12 @@ async function readDetail(response: Response): Promise<string | null> {
 }
 
 async function request<T>(method: Method, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const init: RequestInit = { method }
+  // Custom header required by the backend on every /api request (blocks cross-site reads).
+  const headers: Record<string, string> = { 'X-Vibing': '1' }
+  const init: RequestInit = { method, headers }
   if (signal) init.signal = signal
   if (body !== undefined) {
-    init.headers = { 'Content-Type': 'application/json' }
+    headers['Content-Type'] = 'application/json'
     init.body = JSON.stringify(body)
   }
 

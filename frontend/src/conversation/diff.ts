@@ -104,3 +104,11 @@ export function diffFromUnified(text: string): DiffLine[] {
   }
   return diffFromPatch(hunks)
 }
+
+/** Short text for a git diff that has content but no hunks (binary, mode change); null otherwise. */
+export function diffWithoutHunks(text: string): string | null {
+  if (!text.trim() || /^@@ /m.test(text)) return null
+  if (/^Binary files .* differ$/m.test(text) || /^GIT binary patch$/m.test(text)) return 'Arquivo binário alterado'
+  if (/^old mode \d+$/m.test(text) && /^new mode \d+$/m.test(text)) return 'Permissões alteradas'
+  return 'Arquivo alterado'
+}

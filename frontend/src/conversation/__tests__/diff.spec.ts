@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, diffFromPatch, diffFromStrings, toolDiff } from '../diff'
+import { diffCounts, diffFromPatch, diffFromStrings, diffWithoutHunks, toolDiff } from '../diff'
 
 describe('diff', () => {
   it('monta linhas a partir do structuredPatch com números', () => {
@@ -28,5 +28,21 @@ describe('diff', () => {
       structuredPatch: [{ oldStart: 10, oldLines: 1, newStart: 10, newLines: 1, lines: ['-p', '+q'] }],
     })
     expect(lines[0]).toMatchObject({ oldNo: 10, text: 'p' })
+  })
+})
+
+describe('diff sem trechos', () => {
+  it('reconhece arquivo binário e mudança de permissão', () => {
+    const bin = 'diff --git a/x.png b/x.png\nindex 1..2 100644\nBinary files a/x.png and b/x.png differ\n'
+    expect(diffWithoutHunks(bin)).toBe('Arquivo binário alterado')
+    const mode = 'diff --git a/s.sh b/s.sh\nold mode 100644\nnew mode 100755\n'
+    expect(diffWithoutHunks(mode)).toBe('Permissões alteradas')
+  })
+  it('vazio ou com trechos dá null', () => {
+    expect(diffWithoutHunks('')).toBeNull()
+    expect(diffWithoutHunks('@@ -1 +1 @@\n-a\n+b\n')).toBeNull()
+  })
+  it('outro texto sem trechos vira "Arquivo alterado"', () => {
+    expect(diffWithoutHunks('diff --git a/a b/b\nsimilarity index 100%\nrename from a\nrename to b\n')).toBe('Arquivo alterado')
   })
 })

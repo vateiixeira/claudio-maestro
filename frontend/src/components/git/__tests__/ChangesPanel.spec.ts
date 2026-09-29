@@ -26,6 +26,7 @@ import WorkspaceView from '../../../views/WorkspaceView.vue'
 enableAutoUnmount(afterEach)
 let pinia: Pinia
 let calls: string[]
+let diffBody: Record<string, unknown>
 
 const edit = (id: string) => ({
   type: 'tool', id, tool_use_id: id, name: 'Edit', parent_tool_use_id: null, streaming: false,
@@ -46,6 +47,7 @@ beforeEach(() => {
   setActivePinia(pinia)
   fake.session.clear()
   calls = []
+  diffBody = { diff: '@@ -1 +1 @@\n-old\n+new\n', truncated: false, notice: null }
   useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
   useProjectsStore(pinia).loaded = true
   useGitStore(pinia).set(1, [])
@@ -58,7 +60,7 @@ beforeEach(() => {
     'POST /api/sessions/s2/seen': () => jsonResponse(undefined, 204),
     'GET /api/sessions/s1/changes': log('changes s1', () => jsonResponse(changes)),
     'GET /api/sessions/s2/changes': log('changes s2', () => jsonResponse(changes)),
-    'GET /api/projects/1/diff?repo=api&file=a.py': () => jsonResponse({ diff: '@@ -1 +1 @@\n-old\n+new\n', truncated: false }),
+    'GET /api/projects/1/diff?repo=api&file=a.py': () => jsonResponse(diffBody),
     'POST /api/open-in-editor': (init) => {
       calls.push('editor ' + JSON.parse(String(init?.body)).path)
       return jsonResponse({ detail: 'Arquivo fora do projeto.' }, 403)
@@ -80,6 +82,29 @@ const panel = (w: ReturnType<typeof mount>) => w.find('[data-test="changes-panel
 const column = (w: ReturnType<typeof mount>, id: string) => w.find(`[data-session-id="${id}"]`)
 
 describe('painel de alterações', () => {
+  async function openDiff() {
+    const w = await mountBoth()
+    await column(w, 's1').find('[data-test="view-changes"]').trigger('click')
+    await flushPromises()
+    await panel(w).find('[data-test="changed-file"]').trigger('click')
+    await flushPromises()
+    return panel(w).find('[data-test="file-diff"]').text()
+  }
+
+  it('diff binário mostra o texto do git, não "Sem alterações"', async () => {
+    diffBody = { diff: 'diff --git a/a.py b/a.py\nBinary files a/a.py and b/a.py differ\n', truncated: false, notice: null }
+    const text = await openDiff()
+    expect(text).toContain('Arquivo binário alterado')
+    expect(text).not.toContain('Sem alterações')
+  })
+
+  it('arquivo grande mostra o aviso do servidor', async () => {
+    diffBody = { diff: '', truncated: true, notice: 'Arquivo maior que 5 MB; o diff não é mostrado.' }
+    const text = await openDiff()
+    expect(text).toContain('Arquivo maior que 5 MB')
+    expect(text).not.toContain('Sem alterações')
+  })
+
   it('fechado por padrão; abre pelo cartão e lista arquivos por repositório', async () => {
     const w = await mountBoth()
     expect(panel(w).exists()).toBe(false)

@@ -48,7 +48,7 @@ def build(factory, spawn, home, data_dir, **settings):
 def api(factory, spawn, home, data_dir):
     with TestClient(
         build(factory, spawn, home, data_dir), base_url=BACKEND_URL,
-        headers={"origin": APP_ORIGIN},
+        headers={"origin": APP_ORIGIN, "x-vibing": "1"},
     ) as c:
         yield c
 
@@ -231,7 +231,7 @@ def test_open_in_editor_missing_command(factory, home, data_dir):
     from vibing.api.editor import spawn_detached
 
     app = build(factory, spawn_detached, home, data_dir)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
         root = home / "proj"
         add_project(api, root)
         api.put("/api/state/preferences",
@@ -273,7 +273,7 @@ def test_project_git_event_after_turn(api, home, factory):
     project = add_project(api, root)
     sid = api.post(f"/api/projects/{project['id']}/sessions").json()["session_id"]
     factory.script = lambda content: text_turn(sid, "ok")
-    with api.websocket_connect(WS_URL, headers={"origin": APP_ORIGIN}) as ws:
+    with api.websocket_connect(WS_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
         api.post(f"/api/sessions/{sid}/messages", json={"text": "oi"})
         (event,) = git_events(ws, 1)
         assert event["data"]["project_id"] == project["id"]
@@ -282,7 +282,7 @@ def test_project_git_event_after_turn(api, home, factory):
 
 def test_project_git_not_repeated(factory, spawn, home, data_dir):
     app = build(factory, spawn, home, data_dir)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
         root = make_repo(home / "proj")
         project = add_project(api, root)
         monitor = app.state.git_monitor
@@ -303,10 +303,10 @@ def test_project_git_not_repeated(factory, spawn, home, data_dir):
 
 def test_project_git_periodic(factory, spawn, home, data_dir):
     app = build(factory, spawn, home, data_dir, git_refresh_interval_seconds=0.05)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
         root = make_repo(home / "proj")
         project = add_project(api, root)
-        with api.websocket_connect(WS_URL, headers={"origin": APP_ORIGIN}) as ws:
+        with api.websocket_connect(WS_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
             (first,) = git_events(ws, 1)
             assert first["data"]["project_id"] == project["id"]
             (root / "y").write_text("y")

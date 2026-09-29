@@ -16,6 +16,7 @@ from vibing.security import (
 )
 
 APP_ORIGIN = "http://localhost:6600"
+VIBING = {"x-vibing": "1"}
 VALID_HOSTS = [
     "http://localhost:6600",
     "http://localhost:6660",
@@ -56,13 +57,13 @@ def ws_app() -> FastAPI:
 
 @pytest.mark.parametrize("base_url", VALID_HOSTS)
 def test_valid_host_accepted(base_url):
-    with TestClient(create_app(), base_url=base_url) as client:
+    with TestClient(create_app(), base_url=base_url, headers=VIBING) as client:
         assert client.get("/api/health").status_code == 200
 
 
 @pytest.mark.parametrize("base_url", INVALID_HOSTS)
 def test_invalid_host_rejected_http(base_url):
-    with TestClient(create_app(), base_url=base_url) as client:
+    with TestClient(create_app(), base_url=base_url, headers=VIBING) as client:
         response = client.get("/api/health")
         assert response.status_code == 400
 
@@ -153,18 +154,18 @@ def test_post_with_app_origin_accepted(origin):
 
 
 def test_get_without_origin_accepted():
-    with TestClient(create_app(), base_url="http://127.0.0.1:6660") as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=VIBING) as client:
         assert client.get("/api/health").status_code == 200
 
 
 def test_get_with_foreign_origin_rejected():
-    with TestClient(create_app(), base_url="http://127.0.0.1:6660") as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=VIBING) as client:
         response = client.get("/api/health", headers={"origin": "http://evil.com"})
         assert response.status_code == 403
 
 
 def test_no_cors_headers():
-    with TestClient(create_app(), base_url="http://127.0.0.1:6660") as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=VIBING) as client:
         response = client.get("/api/health", headers={"origin": APP_ORIGIN})
         assert "access-control-allow-origin" not in response.headers
 
@@ -276,3 +277,20 @@ def test_resolve_within_multiple_roots(tmp_path: Path):
 def test_is_within(tmp_path: Path):
     assert is_within(tmp_path / "x", tmp_path)
     assert not is_within(tmp_path.parent, tmp_path)
+
+
+# Custom header on /api
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "POST", "OPTIONS"])
+def test_api_without_custom_header_rejected(method):
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660") as client:
+        response = client.request(method, "/api/fs/dirs", headers={"origin": APP_ORIGIN})
+        assert response.status_code == 403
+
+
+def test_api_get_with_custom_header_accepted():
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660") as client:
+        assert client.get("/api/health", headers=VIBING).status_code == 200
+        assert client.get("/api/health").status_code == 403
+        assert client.get("/api/health", headers={"x-vibing": "0"}).status_code == 403

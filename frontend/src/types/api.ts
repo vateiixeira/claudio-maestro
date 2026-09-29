@@ -110,4 +110,5 @@ export interface ChangesGroup {
 export interface FileDiff {
   diff: string
   truncated: boolean
+  notice?: string | null
 }

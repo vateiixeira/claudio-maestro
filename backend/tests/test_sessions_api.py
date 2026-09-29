@@ -32,7 +32,7 @@ def api(factory: FakeAgentFactory):
         return any(c.options.session_id == session_id and c.sent for c in factory.clients)
 
     app = create_app(agent_factory=factory, history_exists=history_exists)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
         yield c
 
 
@@ -345,7 +345,7 @@ def test_websocket_requires_origin(api):
 
 def test_shutdown_closes_clients(home, factory):
     app = create_app(agent_factory=factory, history_exists=lambda sid, cwd: False)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
         session = new_session(api, home)
         sid = session["session_id"]
         factory.script = lambda content: text_turn(sid, "ok")

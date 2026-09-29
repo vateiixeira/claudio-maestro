@@ -225,7 +225,7 @@ def test_projects_persist_across_restarts(home: Path):
 
     from vibing.app import create_app
 
-    headers = {"origin": "http://localhost:6600"}
+    headers = {"origin": "http://localhost:6600", "x-vibing": "1"}
     folder = make_dir(home, "app")
     with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=headers) as c:
         create(c, folder)
@@ -239,7 +239,7 @@ def test_create_without_origin_rejected(home: Path):
     from vibing.app import create_app
 
     folder = make_dir(home, "app")
-    with TestClient(create_app(), base_url="http://127.0.0.1:6660") as c:
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers={"x-vibing": "1"}) as c:
         response = create(c, folder)
         assert response.status_code == 403
         assert c.get("/api/projects").json() == []

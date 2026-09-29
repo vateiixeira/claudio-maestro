@@ -90,6 +90,8 @@ O app executa comandos na máquina, então qualquer site aberto no navegador é 
 - Recuse requisições cujo `Host` não seja `localhost` ou `127.0.0.1` nas portas 6600 e 6660.
 - Recuse WebSockets e requisições que alteram estado cuja origem não seja a do próprio app.
 - Não libere CORS.
+- Toda requisição a `/api/` precisa do cabeçalho `X-Vibing: 1`, que o cliente do frontend envia. Isso impede outros sites de dispararem leituras por `<img>`, formulário ou `fetch`.
+- Todo `git` passa por `run_git` em `backend/vibing/gitinfo.py`, que neutraliza fsmonitor, pager, hooks, diff externo, textconv, filtros e submódulos. Não chame `git` por outro caminho.
 - Todo caminho recebido precisa estar, depois de resolvido, dentro da pasta de um projeto registrado.
 - Execute git e o editor com argumentos em lista, sem shell.
 

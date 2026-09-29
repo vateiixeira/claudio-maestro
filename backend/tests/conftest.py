@@ -66,6 +66,6 @@ def data_dir(tmp_path: Path) -> Path:
 def client():
     """Client that looks like the frontend: valid Host and Origin."""
     with TestClient(
-        create_app(), base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}
+        create_app(), base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}
     ) as c:
         yield c

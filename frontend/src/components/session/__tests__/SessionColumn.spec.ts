@@ -47,6 +47,12 @@ async function mountView(props: Record<string, unknown> = {}) {
 }
 
 describe('coluna da sessão', () => {
+  it('cabeçalho sem git mostra "sem repositório git"', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1 })) }))
+    const w = await mountView()
+    expect(w.text()).toContain('sem repositório git')
+  })
+
   it('carrega o retrato e mostra cabeçalho, itens e campo', async () => {
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ title: 'Cupom expirado', state: 'idle', seq: 2, items: [text('a', 'Olá do retrato') as never] })),

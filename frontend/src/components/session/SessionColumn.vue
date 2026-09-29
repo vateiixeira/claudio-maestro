@@ -299,6 +299,11 @@ function resolvePrompt(promptId: string) {
             <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
           </span>
         </div>
+        <span
+          v-else-if="project && git.isLoaded(project.id)"
+          data-test="no-git"
+          class="text-xs text-fg-muted"
+        >sem repositório git</span>
         <p v-if="headerError" role="alert" class="m-0 text-sm text-secondary-soft">{{ headerError }}</p>
         <p
           v-if="conv.externalActivity"
