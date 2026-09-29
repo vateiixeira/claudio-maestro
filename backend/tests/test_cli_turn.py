@@ -76,6 +76,56 @@ def test_turn_open_skips_lines_that_say_nothing_about_the_turn():
     assert turn_open([]) is None
 
 
+@pytest.mark.parametrize(
+    "stop_reason",
+    ["end_turn", "stop_sequence", "max_tokens", "refusal", "model_context_window_exceeded", "pause_turn"],
+)
+def test_turn_open_any_stop_reason_but_none_and_tool_use_closes(stop_reason):
+    assert turn_open([prompt_line(), assistant_line(stop_reason)]) is False
+
+
+def test_turn_open_only_none_and_tool_use_keep_the_turn_open():
+    assert turn_open([assistant_line("end_turn"), assistant_line("tool_use")]) is True
+    assert turn_open([assistant_line("end_turn"), assistant_line(None)]) is True
+    entry = {"type": "assistant", "message": {"content": []}}  # no stop_reason key at all
+    assert turn_open([assistant_line("end_turn"), json.dumps(entry)]) is True
+
+
+COMMAND_TEXTS = [
+    "<command-name>/exit</command-name>",
+    "<command-message>exit</command-message>",
+    "<local-command-stdout>Goodbye!</local-command-stdout>",
+    "<local-command-caveat>Caveat: ...</local-command-caveat>",
+    "<bash-input>ls</bash-input>",
+    "<bash-stdout>x</bash-stdout>",
+    "<bash-stderr>y</bash-stderr>",
+]
+
+
+@pytest.mark.parametrize("text", COMMAND_TEXTS)
+def test_turn_open_skips_user_command_entries_as_string(text):
+    assert turn_open([assistant_line("end_turn"), prompt_line(text)]) is False
+    assert turn_open([assistant_line("tool_use"), prompt_line(text)]) is True
+
+
+@pytest.mark.parametrize("text", COMMAND_TEXTS)
+def test_turn_open_skips_user_command_entries_as_text_block(text):
+    block = json.dumps({"type": "user", "isSidechain": False, "message": {
+        "role": "user", "content": [{"type": "text", "text": text}]}})
+    assert turn_open([assistant_line("end_turn"), block]) is False
+
+
+def test_turn_open_skips_compact_summaries():
+    summary = prompt_line("resumo da conversa", isCompactSummary=True)
+    assert turn_open([assistant_line("end_turn"), summary]) is False
+    assert turn_open([summary]) is None
+
+
+def test_turn_open_task_notification_opens_a_turn():
+    notification = prompt_line("<task-notification><task-id>x</task-id></task-notification>")
+    assert turn_open([assistant_line("end_turn"), notification]) is True
+
+
 def test_turn_open_interruption_closes_the_turn():
     assert turn_open([prompt_line(), assistant_line("tool_use"), interrupt_line()]) is False
 

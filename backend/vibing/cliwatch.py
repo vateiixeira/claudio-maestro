@@ -52,31 +52,37 @@ def history_folder_name(path: str) -> str:
 
 
 _INTERRUPTED = "[Request interrupted by user"
+# User entries the CLI writes for slash commands and shell escapes: they say nothing
+# about a turn (`/exit` ends with `<local-command-stdout>Goodbye!`), so they are skipped.
+_COMMAND_PREFIXES = (
+    "<command-name>", "<command-message>", "<local-command-",
+    "<bash-input>", "<bash-stdout>", "<bash-stderr>",
+)
 
 
-def _is_interruption(message: Any) -> bool:
+def _first_text(message: Any) -> str:
+    """The text of a user message: the string, or the first text block."""
     content = message.get("content") if isinstance(message, dict) else None
     if isinstance(content, str):
-        return content.startswith(_INTERRUPTED)
+        return content
     if isinstance(content, list):
-        return any(
-            isinstance(block, dict)
-            and block.get("type") == "text"
-            and str(block.get("text", "")).startswith(_INTERRUPTED)
-            for block in content
-        )
-    return False
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                return str(block.get("text", ""))
+    return ""
 
 
 def turn_open(lines: Iterable[str]) -> bool | None:
     """Whether the CLI is in the middle of a turn, from JSONL lines of a session's main
     chain; None when they say nothing about it.
 
-    The last decisive entry wins: an `assistant` whose `message.stop_reason` is not
-    `end_turn` (`tool_use`, or none yet while it is being written) or a `user` entry
-    (a prompt or a tool result) means open; an `assistant` with `end_turn`, or the
-    "[Request interrupted by user]" entry, means closed. Sidechain entries, meta
-    entries and every other type (attachments, system, titles) are skipped.
+    The last decisive entry wins. Open: an `assistant` whose `message.stop_reason` is
+    `tool_use` or absent (still being written), or a `user` entry (a prompt, a tool
+    result, a `<task-notification>` that makes the CLI start a turn by itself).
+    Closed: an `assistant` with any other stop reason (`end_turn`, `stop_sequence`,
+    `max_tokens`, `refusal`, ...) or the "[Request interrupted by user]" entry.
+    Skipped: sidechain entries, meta entries, compact summaries, slash-command and
+    shell-escape entries, and every other type (attachments, system, titles).
     """
     for line in reversed(list(lines)):
         try:
@@ -87,9 +93,16 @@ def turn_open(lines: Iterable[str]) -> bool | None:
             continue
         message = entry.get("message")
         if entry.get("type") == "assistant" and isinstance(message, dict):
-            return message.get("stop_reason") != "end_turn"
-        if entry.get("type") == "user" and entry.get("isMeta") is not True:
-            return not _is_interruption(message)
+            return message.get("stop_reason") in (None, "tool_use")
+        if (
+            entry.get("type") == "user"
+            and entry.get("isMeta") is not True
+            and entry.get("isCompactSummary") is not True
+        ):
+            text = _first_text(message)
+            if text.startswith(_COMMAND_PREFIXES):
+                continue
+            return not text.startswith(_INTERRUPTED)
     return None
 
 
