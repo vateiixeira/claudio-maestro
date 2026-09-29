@@ -1,4 +1,4 @@
-"""Layout and preferences kept in `app_state` as JSON values."""
+"""Preferences kept in `app_state` as JSON values."""
 
 import json
 from typing import Any
@@ -10,7 +10,7 @@ from vibing.api.editor import valid_editor_command
 
 router = APIRouter(prefix="/api/state")
 
-ALLOWED_KEYS = ("layout", "preferences")
+ALLOWED_KEYS = ("preferences",)
 MAX_BYTES = 64 * 1024
 MAX_FINISHED_AFTER_DAYS = 365
 

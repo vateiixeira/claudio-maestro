@@ -190,30 +190,37 @@ def test_seen(api, home):
 
 def test_app_state_roundtrip(api):
     assert api.get("/api/state").json() == {}
-    layout = {"columns": [{"session_id": "a", "width": 480}]}
 
-    assert api.put("/api/state/layout", json=layout).status_code == 200
     assert api.put("/api/state/preferences", json={"finished_after_days": 5}).status_code == 200
 
-    assert api.get("/api/state").json() == {
-        "layout": layout,
-        "preferences": {"finished_after_days": 5},
-    }
+    assert api.get("/api/state").json() == {"preferences": {"finished_after_days": 5}}
 
 
 def test_app_state_rejects_unknown_key(api):
     assert api.put("/api/state/secret", json={}).status_code == 404
 
 
+def test_app_state_layout_key_is_gone(api, data_dir):
+    from contextlib import closing
+
+    from vibing import db
+
+    assert api.put("/api/state/layout", json={"columns": []}).status_code == 404
+    # An old layout row left in the database is ignored.
+    with closing(db.connect(data_dir / "vibing.db")) as conn:
+        conn.execute("INSERT INTO app_state (key, value) VALUES ('layout', '{\"columns\": []}')")
+    assert api.get("/api/state").json() == {}
+
+
 def test_app_state_rejects_large_body(api):
     big = {"x": "a" * (64 * 1024)}
-    assert api.put("/api/state/layout", json=big).status_code == 413
+    assert api.put("/api/state/preferences", json=big).status_code == 413
     assert api.get("/api/state").json() == {}
 
 
 def test_app_state_rejects_invalid_json(api):
     response = api.put(
-        "/api/state/layout", content=b"{nope", headers={"content-type": "application/json"}
+        "/api/state/preferences", content=b"{nope", headers={"content-type": "application/json"}
     )
     assert response.status_code == 400
 

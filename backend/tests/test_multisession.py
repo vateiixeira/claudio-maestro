@@ -414,6 +414,106 @@ async def test_mark_seen_clears_unread(env):
     assert session_row(env.db_path, session.session_id)["last_seen_at"] >= session.record.last_activity_at
 
 
+def _make_sessions(env, tmp_path, count):
+    ids = [env.new_session().session_id for _ in range(count)]
+    return ids
+
+
+def _reset_seen(env, ids, value=0):
+    from contextlib import closing
+
+    from vibing import db
+
+    with closing(db.connect(env.db_path)) as conn:
+        conn.execute(
+            f"UPDATE sessions SET last_seen_at = ? WHERE session_id IN ({','.join('?' * len(ids))})",
+            (value, *ids),
+        )
+    for sid in ids:
+        env.manager.get(sid).record.last_seen_at = value
+
+
+@pytest.mark.anyio
+async def test_mark_seen_many_writes_in_one_transaction_off_the_event_loop(env, tmp_path, monkeypatch):
+    import threading
+
+    from vibing import db
+    from vibing import sessions as sessions_module
+
+    ids = _make_sessions(env, tmp_path, 3)
+    _reset_seen(env, ids)
+    env.recorder.envelopes.clear()
+    calls: list[int] = []
+    real = db.transaction
+
+    def spy(conn):
+        calls.append(threading.get_ident())
+        return real(conn)
+
+    monkeypatch.setattr(sessions_module.db, "transaction", spy)
+
+    updated = await env.manager.mark_seen_many([ids[0], "desconhecida", ids[1], ids[0], ids[2]])
+
+    assert updated == 3
+    assert len(calls) == 1
+    assert calls[0] != threading.get_ident()
+    for sid in ids:
+        assert session_row(env.db_path, sid)["last_seen_at"] > 0
+        assert env.manager.get(sid).record.last_seen_at > 0
+    updates = [e for e in env.recorder.envelopes if e["type"] == "session.updated"]
+    assert sorted(e["session_id"] for e in updates) == sorted(ids)
+
+
+@pytest.mark.anyio
+async def test_mark_seen_many_failure_writes_nothing_and_emits_nothing(env, tmp_path):
+    from contextlib import closing
+
+    from vibing import db
+
+    ids = _make_sessions(env, tmp_path, 3)
+    _reset_seen(env, ids)
+    env.recorder.envelopes.clear()
+    with closing(db.connect(env.db_path)) as conn:
+        conn.execute(
+            "CREATE TRIGGER fail_seen BEFORE UPDATE OF last_seen_at ON sessions"
+            f" WHEN NEW.session_id = '{ids[2]}' BEGIN SELECT RAISE(ABORT, 'boom'); END"
+        )
+
+    with pytest.raises(Exception, match="boom"):
+        await env.manager.mark_seen_many(ids)
+
+    for sid in ids:
+        assert session_row(env.db_path, sid)["last_seen_at"] == 0
+        assert env.manager.get(sid).record.last_seen_at == 0
+    assert [e for e in env.recorder.envelopes if e["type"] == "session.updated"] == []
+
+
+@pytest.mark.anyio
+async def test_mark_seen_many_never_goes_before_last_activity(env, tmp_path):
+    ids = _make_sessions(env, tmp_path, 2)
+    future = int(time.time()) + 1000
+    env.manager.get(ids[0]).record.last_activity_at = future  # only in memory, like mark_seen's test
+    env.manager.get(ids[1]).save(last_activity_at=future)
+
+    await env.manager.mark_seen_many(ids)
+
+    assert env.manager.get(ids[0]).record.last_seen_at >= future
+    assert env.manager.get(ids[1]).record.last_seen_at >= future
+    assert session_row(env.db_path, ids[1])["last_seen_at"] >= future
+
+
+@pytest.mark.anyio
+async def test_mark_seen_many_handles_a_large_list(env, tmp_path):
+    ids = _make_sessions(env, tmp_path, 40)
+    _reset_seen(env, ids)
+    env.recorder.envelopes.clear()
+
+    updated = await env.manager.mark_seen_many(ids + [f"x{i}" for i in range(460)])
+
+    assert updated == 40
+    assert len([e for e in env.recorder.envelopes if e["type"] == "session.updated"]) == 40
+
+
 # 9. Listing all sessions ---------------------------------------------------
 
 

@@ -2316,15 +2316,44 @@ class SessionManager:
         return session.summary()
 
     async def mark_seen_many(self, session_ids: list[str]) -> int:
-        """Mark each known session as seen (one `session.updated` each); unknown ids are skipped."""
-        updated = 0
-        for session_id in dict.fromkeys(session_ids):
-            try:
-                await self.mark_seen(session_id)
-            except SessionNotFoundError:
+        """Mark each known session as seen (one `session.updated` each); unknown ids are skipped.
+
+        One transaction in a worker thread, so a failure writes nothing and the
+        event loop is not held by up to hundreds of updates.
+        """
+        now = _now()
+        unique = list(dict.fromkeys(session_ids))
+        # Memory may be ahead of the database (activity not yet saved): honour it too.
+        marks = [
+            (session_id, max(now, self._sessions[session_id].record.last_activity_at)
+             if session_id in self._sessions else now)
+            for session_id in unique
+        ]
+        found = await asyncio.to_thread(self._write_seen, marks)
+        for session_id, mark in marks:
+            if session_id not in found:
                 continue
-            updated += 1
-        return updated
+            try:
+                session = self.get(session_id)
+            except SessionNotFoundError:
+                continue  # removed while writing
+            session.record.last_seen_at = max(mark, session.record.last_activity_at)
+            session.emit_updated()
+        return len(found)
+
+    def _write_seen(self, marks: list[tuple[str, int]]) -> set[str]:
+        """Set `last_seen_at` of every existing session in one transaction; return the ids found."""
+        found: set[str] = set()
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            for session_id, mark in marks:
+                cursor = conn.execute(
+                    "UPDATE sessions SET last_seen_at = MAX(?, last_activity_at)"
+                    " WHERE session_id = ?",
+                    (mark, session_id),
+                )
+                if cursor.rowcount:
+                    found.add(session_id)
+        return found
 
     # Closing -----------------------------------------------------------------
 
