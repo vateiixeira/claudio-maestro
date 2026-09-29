@@ -23,7 +23,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
-| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 16 de 16 |
+| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Em andamento | 16 de 23 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -216,15 +216,15 @@ Pedido pelo usuário em 2026-09-29, depois de analisar o Paperclip (orquestrador
 - [x] Bloco "Agora" do Dashboard limitado a 6 cartões, com pedidos pendentes primeiro e link para a Inbox (decisão do usuário) (2026-09-29)
 - [x] Recentes do menu só com conversas abertas na página, sem contar "marcar como lida" (decisão do usuário) (2026-09-29)
 
-Pendências registradas na revisão do marco, para um próximo marco:
+Pendências da revisão do marco 7 e sugestões que sobraram das revisões do marco 6:
 
-- Ações invisíveis da linha de conversa recebem toque em telas sensíveis ao toque (falta `pointer-events-none` enquanto escondidas)
-- Esc da gaveta de Detalhes em tela estreita também dispara junto com outros Esc (modal, renomear, menu ⋯, busca)
-- Sair de uma conversa antes do snapshot chegar pode devolvê-la ao store sem inscrição
-- Modal de nova conversa: botão de anexar imagem, soltar arquivo e miniaturas; título e opções perdidos se o PATCH falhar depois de criar
-- `POST /api/sessions/seen` grava uma sessão por vez no loop de eventos; usar uma transação
-- Atalho `C` abre o modal por cima de outros diálogos
-- Rota `PUT /api/state/layout` ficou sem cliente
+- [ ] Ações escondidas da linha de conversa não recebem toque (`pointer-events-none` enquanto invisíveis), e o botão de copiar resposta aparece em tela sem mouse
+- [ ] Esc da gaveta de Detalhes em tela estreita não dispara junto com outros Esc (modal, renomear, menu ⋯, busca)
+- [ ] Sair de uma conversa antes do retrato chegar não a devolve ao store sem inscrição; "Tentar de novo" desabilitado enquanto recarrega
+- [ ] Modal de nova conversa: anexar imagem, soltar arquivo e miniaturas; título e opções preservados se o PATCH falhar depois de criar; atalho `C` não abre por cima de outros diálogos
+- [ ] `POST /api/sessions/seen` grava todas as sessões numa transação, fora do loop de eventos
+- [ ] Rota `PUT /api/state/layout` sem cliente removida (ou volta a ter uso)
+- [ ] Comando do editor nas preferências valida argumento vazio no navegador, com mensagem própria
 
 ## Marco 8. Agrupador de sessões
 
@@ -266,10 +266,10 @@ Pedido pelo usuário em 2026-09-28. Só começa depois do MVP completo e funcion
 Fonte dos dados: o Claude registra o progresso pela ferramenta de lista de tarefas. Cada chamada traz a lista inteira com o estado de cada item (pendente, em andamento, concluído) e passa pelo app como qualquer outra ferramenta. Os planos do fluxo de brainstorming também ficam em arquivos `docs/superpowers/plans/*.md`, com caixas de marcação.
 
 - [ ] Guardar na sessão a lista de tarefas mais recente, a partir das chamadas da ferramenta de lista de tarefas
-- [ ] Barra fixa no topo da coluna da sessão: tarefa atual, posição ("7 de 15") e barra de progresso
+- [ ] Barra fixa no topo da página da conversa: tarefa atual, posição ("7 de 15") e barra de progresso
 - [ ] Barra expansível para a lista completa, com o estado de cada tarefa
-- [ ] Indicação de plano em execução e etapa atual no menu lateral, ao lado da sessão
-- [ ] Tela do projeto destaca as sessões que executam um plano, com a etapa de cada uma
+- [ ] Indicação de plano em execução e etapa atual na linha de conversa (Inbox, Conversas, Recentes do menu)
+- [ ] Página do projeto e bloco "Agora" do Dashboard mostram a etapa das conversas que executam um plano
 - [ ] Ligar a sessão ao arquivo do plano em `docs/superpowers/plans/` quando ela o leu ou editou, com link para abrir
 - [ ] Lista de tarefas recuperada ao retomar uma sessão do histórico
 
@@ -277,7 +277,7 @@ A definir quando o marco for desenhado:
 
 | Pergunta | Por que importa |
 |---|---|
-| Qual versão da ferramenta de lista de tarefas o Claude usa hoje? | Existe a ferramenta única que reenvia a lista inteira e uma família de ferramentas que cria e atualiza tarefas uma a uma. O formato dos dados muda |
+| Qual versão da ferramenta de lista de tarefas o Claude usa hoje? | Com haiku, a família `TaskCreate`/`TaskUpdate` (fato do marco 5); com sonnet ela não apareceu. Falta confirmar com Opus, o modelo dos planos longos |
 | Subagentes que executam tarefas do plano entram no progresso? | No fluxo com subagentes, quem executa é outro agente, mas quem atualiza a lista é a sessão principal |
 | O que mostrar quando a lista é abandonada no meio? | Uma lista velha fixa na tela engana mais do que ajuda |
 
@@ -303,9 +303,9 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Mesma sessão aberta no app e no CLI ao mesmo tempo | Risco de embaralhar o histórico. O app só avisa |
 | O que o SDK entrega sobre subagentes | Verificado em 2026-09-29; ver "Fatos verificados para o marco 5" no prompt de construção |
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
-| Ações rápidas na visão geral | Decidido em 2026-09-29: "Permitir" e "Negar" nos cartões entram no marco 6 |
 | Tecnologia do ditado por voz | Decidido em 2026-09-29: reconhecimento do navegador (Chrome/Edge). O áudio vai ao serviço de reconhecimento do navegador |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
+| Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
 
 ## Decisões
 
@@ -317,7 +317,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-28 | Projeto é uma pasta, que pode conter vários repositórios |
 | 2026-09-28 | SQLite só para metadados; conversas ficam em `~/.claude/projects` |
 | 2026-09-28 | Sem login nem senha; acesso só por localhost |
-| 2026-09-28 | Layout em colunas; painel de alterações abre só ao clicar em uma edição |
+| 2026-09-28 | Layout em colunas; painel de alterações abre só ao clicar em uma edição (substituído pela nova navegação do marco 7) |
 | 2026-09-28 | Visual escuro, verde como primária e laranja como secundária |
 | 2026-09-28 | Monolito com backend e frontend no mesmo repositório |
 | 2026-09-28 | Docker adiado; execução direto na máquina, em modo de desenvolvimento |
