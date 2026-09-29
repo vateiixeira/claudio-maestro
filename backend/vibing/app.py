@@ -44,6 +44,7 @@ def create_app(
     pick_folder: PickFolder | None = None,
     refresh_models: bool | None = None,
     session_file: SessionFile | None = None,
+    plan_sweep: bool | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -52,6 +53,7 @@ def create_app(
     `refresh_models` turns on the periodic refresh of the models list, which starts
     a throwaway agent client: by default it runs only with the real agent, so
     tests with a fake factory keep seeing only the clients of their sessions.
+    `plan_sweep` turns on the periodic reread of plan progress (same default).
     """
 
     @asynccontextmanager
@@ -112,6 +114,14 @@ def create_app(
                 asyncio.create_task(
                     app.state.sessions.run_models_refresh(
                         app.state.settings.models_refresh_interval_seconds
+                    )
+                )
+            )
+        if plan_sweep if plan_sweep is not None else agent_factory is None:
+            tasks.append(
+                asyncio.create_task(
+                    app.state.sessions.run_plan_sweep(
+                        app.state.settings.plan_sweep_interval_seconds
                     )
                 )
             )

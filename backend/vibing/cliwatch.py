@@ -18,6 +18,7 @@ from typing import Any
 
 from vibing import db
 from vibing.history import HistoryIndex, ListSessions
+from vibing.plans import read_new_lines, scan_plan_refs
 from vibing.sessions import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,8 @@ class CliWatcher:
         self._on_processed = on_processed
         self._bursts: dict[str, _Burst] = {}
         self._last_reload: dict[str, float] = {}
+        # session id -> offset in its file up to which plan references were searched
+        self._plan_offsets: dict[str, int] = {}
         # directory -> (clock time, {session_id: info})
         self._listings: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -194,6 +197,7 @@ class CliWatcher:
         if mtime is None:
             # Gone (or unreadable): the sync removes it only if confirmed missing.
             burst.reload_owed = False
+            self._plan_offsets.pop(session_id, None)
             await self._history.sync_project(project_id)
             return True
         info = await self._listed_info(session_id, cwd)
@@ -201,12 +205,31 @@ class CliWatcher:
             burst.reload_owed = False
             return True
         await asyncio.to_thread(self._history.update_session, session_id, int(mtime), info)
+        await self._link_plan(session_id, path)
         now = self._clock()
         reload = now - self._last_reload.get(session_id, -1e9) >= self._reload_interval
         burst.reload_owed = not reload
         if await self._sessions.apply_external_change(session_id, reload=reload):
             self._last_reload[session_id] = now
         return True
+
+    async def _link_plan(self, session_id: str, path: Path) -> None:
+        """Link the session to the last plan named in the lines written since the last
+        pass, and reread its progress. Never fails the pass."""
+        try:
+            lines, offset = await asyncio.to_thread(
+                read_new_lines, path, self._plan_offsets.get(session_id)
+            )
+            self._plan_offsets[session_id] = offset
+            ref = scan_plan_refs(lines)
+            if ref is None:
+                return
+            self._sessions.link_plan(session_id, ref, source="auto")
+            # Also when the plan was already linked: the session may have edited it.
+            # Rereading is a `stat` unless the file changed.
+            await self._sessions.refresh_plan(session_id)
+        except Exception:
+            logger.exception("Falha ao vincular o plano da sessão %s do CLI", session_id)
 
     async def _listed_info(self, session_id: str, cwd: str) -> Any | None:
         if self._session_info is not None:

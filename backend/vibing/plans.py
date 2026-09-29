@@ -5,6 +5,7 @@ runs until the next heading of level 1 to 3. It is done when it has at least
 one checkbox and all are checked. Fenced code blocks are ignored.
 """
 
+import json
 import re
 import threading
 from collections.abc import Iterable
@@ -117,6 +118,80 @@ def is_plan_path(path: str | Path, project_roots: Iterable[Path]) -> Path | None
         except (OSError, RuntimeError):
             continue
     return None
+
+
+def _plan_tool_paths(blocks: Iterable[Any]) -> Iterable[str]:
+    for block in blocks:
+        if (
+            isinstance(block, dict)
+            and block.get("type") == "tool_use"
+            and block.get("name") in PLAN_TOOLS
+            and isinstance(block.get("input"), dict)
+            and isinstance(block["input"].get("file_path"), str)
+            and looks_like_plan_path(block["input"]["file_path"])
+        ):
+            yield block["input"]["file_path"]
+
+
+def last_plan_ref(entries: Iterable[Any]) -> str | None:
+    """The last plan-looking `file_path` a plan tool (`PLAN_TOOLS`) used among saved
+    conversation entries (`SessionMessage`-like, `message.content` in the API format)."""
+    last: str | None = None
+    for entry in entries:
+        message = getattr(entry, "message", None)
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            for path in _plan_tool_paths(content):
+                last = path
+    return last
+
+
+def scan_plan_refs(lines: Iterable[str]) -> str | None:
+    """The last plan-looking `file_path` (see `looks_like_plan_path`) of a plan tool
+    call in JSONL lines of a session file (main chain or `isSidechain`), so a later
+    edit of another file does not hide the plan. Invalid lines are ignored."""
+    last: str | None = None
+    for line in lines:
+        if '"tool_use"' not in line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        message = entry.get("message") if isinstance(entry, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            for path in _plan_tool_paths(content):
+                last = path
+    return last
+
+
+def read_new_lines(
+    path: Path, offset: int | None, *, tail: int = 256 * 1024
+) -> tuple[list[str], int]:
+    """Complete lines of `path` from `offset`, and the offset after the last one.
+
+    With no offset (or one past the end, after a truncation) only the last `tail`
+    bytes are read and a partial first line is dropped. A last line without a
+    newline (still being written) is left for the next call.
+    """
+    with path.open("rb") as handle:
+        size = handle.seek(0, 2)
+        fresh = offset is None or offset > size
+        start = max(0, size - tail) if fresh else offset
+        partial_first = False
+        if fresh and start > 0:
+            handle.seek(start - 1)
+            partial_first = handle.read(1) != b"\n"
+        handle.seek(start)
+        data = handle.read(size - start)
+    end = data.rfind(b"\n")
+    if end < 0:
+        return [], start
+    lines = data[: end + 1].decode("utf-8", errors="replace").splitlines()
+    if partial_first and lines:
+        lines = lines[1:]
+    return lines, start + end + 1
 
 
 class PlanCache:

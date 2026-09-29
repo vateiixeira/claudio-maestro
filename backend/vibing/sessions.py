@@ -43,7 +43,7 @@ from vibing import history as history_module
 from vibing.agent.base import AgentClient, AgentError, AgentFactory, AgentOptions
 from vibing.config import read_user_claude_settings
 from vibing.conversation import ConversationBuilder, Event, cap_items, rate_limit_text
-from vibing.plans import PLAN_TOOLS, PlanCache, is_plan_path, looks_like_plan_path
+from vibing.plans import PLAN_TOOLS, PlanCache, is_plan_path, last_plan_ref, looks_like_plan_path
 from vibing.projects import Project
 from vibing.projects import project_roots as registered_project_roots
 
@@ -906,6 +906,7 @@ class ActiveSession:
                 return
             entries, tool_results, skipped, compact = loaded
             self._history_failed = False
+            self._link_history_plan(entries)
             if len(entries) > self._history_limit:
                 self.history_truncated = True
                 entries = entries[-self._history_limit:]
@@ -1582,6 +1583,21 @@ class ActiveSession:
                 if len(self._plan_edits) >= PLAN_EDITS_MAX:
                     self._plan_edits.clear()
                 self._plan_edits[block.id] = file_path
+
+    def _link_history_plan(self, entries: list[Any]) -> None:
+        """Resuming: link the last plan the saved conversation touched (all of it, even
+        what the history limit will cut), and read its progress when the link changed.
+        A link that was already there keeps its cached progress: the sweep refreshes it."""
+        if self._link_plan is None:
+            return
+        try:
+            ref = last_plan_ref(entries)
+            changed = self._link_plan(self.session_id, ref) if ref else False
+        except Exception:
+            logger.exception("Falha ao vincular o plano da sessão %s", self.session_id)
+            return
+        if changed:
+            self._schedule_plan_refresh()
 
     def _note_plan_result(self, message: UserMessage) -> None:
         """The result of an edit of the linked plan: its progress may have changed."""
@@ -2363,9 +2379,12 @@ class SessionManager:
             record = self.get(session_id).record
         except SessionNotFoundError:
             return False
-        path = record.plan_path
-        if not path:
+        if not record.plan_path:
             return False
+        return await self._refresh_plan_path(record.plan_path)
+
+    async def _refresh_plan_path(self, path: str) -> bool:
+        """Reread a plan file (only when it changed) and announce a new progress."""
         # One refresh per plan at a time: a read that started earlier must not
         # publish its older summary after a later one.
         async with self._plan_locks.setdefault(path, asyncio.Lock()):
@@ -2662,6 +2681,44 @@ class SessionManager:
         """The app is using the session (client, prompts, turns or an operation)."""
         session = self._sessions.get(session_id)
         return session is not None and not session.forgettable
+
+    def _sweepable_plan_paths(self) -> list[str]:
+        """Plans linked to sessions not finished (by the user or by inactivity), each once."""
+        finished_after = self.finished_after()
+        cutoff = time.time() - finished_after
+        with closing(db.connect(self._db_path)) as conn:
+            rows = conn.execute(
+                "SELECT session_id, plan_path, last_activity_at FROM sessions"
+                " WHERE plan_path IS NOT NULL AND finished = 0"
+            ).fetchall()
+        paths: dict[str, None] = {}
+        for row in rows:
+            active = self._sessions.get(row["session_id"])
+            busy = active is not None and active.state != "closed"
+            if busy or row["last_activity_at"] >= cutoff:
+                paths[row["plan_path"]] = None
+        return list(paths)
+
+    async def sweep_plans(self) -> None:
+        """One round: reread each plan of an unfinished session once. A plan that
+        fails is logged and does not stop the others."""
+        for path in await asyncio.to_thread(self._sweepable_plan_paths):
+            try:
+                await self._refresh_plan_path(path)
+            except Exception:
+                logger.exception("Falha ao atualizar o plano %s", path)
+
+    async def run_plan_sweep(
+        self, interval: float, sleep: Callable[[float], Any] = asyncio.sleep
+    ) -> None:
+        """At startup and every `interval` seconds, refresh the progress of plans linked
+        to unfinished sessions (file reads happen outside the event loop)."""
+        while True:
+            try:
+                await self.sweep_plans()
+            except Exception:
+                logger.exception("Falha na varredura de planos")
+            await sleep(interval)
 
     async def run_idle_sweep(self, interval: float) -> None:
         while True:
