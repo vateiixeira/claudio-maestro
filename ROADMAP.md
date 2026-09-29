@@ -21,7 +21,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 2. Multissessão | Colunas, estados e menu lateral | Concluído | 12 de 12 |
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
-| 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Em andamento | 0 de 13 |
+| 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Em andamento | 0 de 14 |
 | 6. Acabamento | Erros, robustez e uso diário | Não iniciado | 0 de 27 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
@@ -130,6 +130,7 @@ Objetivo: tudo o que o CLI permite ajustar em uma sessão, pela interface.
 - [ ] Subagentes visíveis na sessão: um cartão por subagente com tipo, descrição e estado (rodando, concluído, com erro), e as ações dele (ferramentas, edições, comandos) aparecendo em tempo real dentro do cartão. Vale também para subagentes em segundo plano
 - [ ] Cartão genérico para ferramentas e MCPs sem bloco próprio
 - [ ] Saídas longas truncadas em 200 linhas
+- [ ] Sessões do CLI em tempo real: observar `~/.claude/projects` e atualizar índice, menu e colunas abertas em até 1 s após cada mudança, sem esperar a sincronização de 60 s
 - [ ] Ditado por voz: botão de microfone no campo de mensagem que transcreve a fala em texto, para revisar antes de enviar (tecnologia a definir, ver "Pontos em aberto")
 
 ## Marco 6. Acabamento
@@ -266,4 +267,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-28 | Ditado por voz entra no MVP, no marco 5 |
 | 2026-09-28 | Ações de subagentes visíveis na sessão entram no MVP, no marco 5 |
 | 2026-09-28 | Progresso de planos vira o marco 8, depois do MVP |
+| 2026-09-29 | Sessões do CLI atualizadas em tempo real entram no marco 5 |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
