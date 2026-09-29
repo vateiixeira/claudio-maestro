@@ -23,7 +23,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
-| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 14 de 14 |
+| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 16 de 16 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -213,6 +213,8 @@ Pedido pelo usuário em 2026-09-29, depois de analisar o Paperclip (orquestrador
 - [x] App abre na Inbox e o código de colunas sai (2026-09-29)
 - [x] Indicador de conexão no rodapé do menu, como pede a spec (achado da revisão da tarefa 7) (2026-09-29)
 - [x] Correções da revisão do marco: conversa esquecida ao sair, cabeçalho e corpo reiniciados ao trocar de conversa, `finished_at` zerado ao reabrir por envio, estados de carregamento e erro, página sem rolagem extra, linhas alinhadas e foco visível (2026-09-29)
+- [x] Bloco "Agora" do Dashboard limitado a 6 cartões, com pedidos pendentes primeiro e link para a Inbox (decisão do usuário) (2026-09-29)
+- [x] Recentes do menu só com conversas abertas na página, sem contar "marcar como lida" (decisão do usuário) (2026-09-29)
 
 Pendências registradas na revisão do marco, para um próximo marco:
 
@@ -303,8 +305,6 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
 | Ações rápidas na visão geral | Decidido em 2026-09-29: "Permitir" e "Negar" nos cartões entram no marco 6 |
 | Tecnologia do ditado por voz | Decidido em 2026-09-29: reconhecimento do navegador (Chrome/Edge). O áudio vai ao serviço de reconhecimento do navegador |
-| Bloco "Agora" do Dashboard | Com muitas conversas em "Sua vez", os cartões empurram números e gráfico para baixo. A spec pede um cartão por conversa ativa. Decidir se limita (ex.: 6 e link para a Inbox) ou separa "Em execução" de "Sua vez" |
-| Recentes do menu | Vêm de `last_seen_at`, então "Marcar como lida" também coloca a conversa em Recentes. Decidir se Recentes deve contar só conversas abertas |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
 
 ## Decisões
@@ -333,5 +333,6 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | Sessões do app herdam o modo padrão do CLI do usuário |
 | 2026-09-29 | "Permitir" e "Negar" nos cartões de "Todas as sessões" entram no marco 6 |
 | 2026-09-29 | MVP (marcos 0 a 6) concluído, revisado e testado contra o SDK real |
+| 2026-09-29 | "Agora" do Dashboard limitado a 6 cartões com link para a Inbox; Recentes só com conversas abertas, guardadas no navegador |
 | 2026-09-29 | Nova navegação no estilo do Paperclip vira o marco 7 e substitui as colunas lado a lado. Agrupador passa a marco 8 e progresso de planos a marco 9 |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |

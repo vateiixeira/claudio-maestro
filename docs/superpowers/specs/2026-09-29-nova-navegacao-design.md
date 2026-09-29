@@ -97,7 +97,7 @@ De cima para baixo:
 5. **Inbox**, com contador das conversas no estado "aguardando você".
 6. **Conversas**.
 7. Seção **PROJETOS**, com "+" no título para criar projeto. Cada linha tem cor, nome, branch e ⚠ com o número de conversas aguardando. Clicar abre a página do projeto.
-8. Seção **RECENTES**: as 5 conversas abertas mais recentemente (por `last_seen_at`), com ícone de estado. Clicar abre a conversa.
+8. Seção **RECENTES**: as 5 conversas abertas mais recentemente, com ícone de estado. Clicar abre a conversa. A lista vem das aberturas da página da conversa, guardadas no `localStorage` (`vibing:recent-conversations`, até 20 ids); marcar como lida não conta. Decidido pelo usuário em 2026-09-29.
 9. Rodapé: Preferências e o indicador de conexão.
 
 O item da rota atual fica destacado.
@@ -232,7 +232,7 @@ Sem projetos cadastrados, o modal mostra "Cadastre um projeto antes de iniciar u
 
 Blocos, de cima para baixo. Cada um carrega de forma independente; se um falhar, mostra "Não foi possível carregar" e "Tentar de novo", e os demais continuam.
 
-1. **AGORA**: grade de cartões em 2 colunas, um para cada conversa em execução ou aguardando o usuário. Cada cartão mostra projeto, título, estado, motivo da espera, última ação (`last_action`) e tempo. Com permissão pendente, **Permitir** e **Negar** ficam no cartão, reaproveitando as ações rápidas do marco 6. Sem conversas ativas: "Nenhuma conversa ativa agora." Clicar no cartão abre a conversa.
+1. **AGORA**: grade de cartões em 2 colunas, até 6 conversas em execução ou aguardando o usuário: primeiro as com pedido pendente, depois as em execução, depois as demais em espera, cada grupo da mais recente para a mais antiga. Com mais de 6, um link "Ver todas as N na Inbox" leva a `/inbox?aba=todas` (decidido pelo usuário em 2026-09-29). Cada cartão mostra projeto, título, estado, motivo da espera, última ação (`last_action`) e tempo. Com permissão pendente, **Permitir** e **Negar** ficam no cartão, reaproveitando as ações rápidas do marco 6. Sem conversas ativas: "Nenhuma conversa ativa agora." Clicar no cartão abre a conversa.
 2. **Números** em 4 cartões clicáveis:
 
    | Número | Leva a |
