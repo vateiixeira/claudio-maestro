@@ -3,13 +3,16 @@ import { computed, onMounted, ref } from 'vue'
 import { errorMessage, listDirs } from '../api/http'
 import { tildePath } from '../format'
 import BranchLabel from './git/BranchLabel.vue'
+import { dirBranchText } from '../stores/git'
 import type { DirEntry, DirListing } from '../types/api'
 
 defineProps<{ selected: string | null }>()
 
 const emit = defineEmits<{
   /** A folder was picked. `display` is the path with `~` for the home folder. */
-  select: [folder: { name: string; path: string; display: string; git: boolean; branch: string | null }]
+  select: [folder: { name: string; path: string; display: string; git: boolean; branch: string | null; detached: boolean }]
+  /** The home folder, known after the first listing. */
+  home: [path: string]
 }>()
 
 const listing = ref<DirListing | null>(null)
@@ -39,7 +42,10 @@ async function load(path?: string): Promise<void> {
   try {
     const result = await listDirs(path)
     if (mine !== generation) return
-    if (path === undefined) home.value = result.path
+    if (path === undefined) {
+      home.value = result.path
+      emit('home', result.path)
+    }
     listing.value = result
   } catch (e) {
     if (mine === generation) error.value = errorMessage(e)
@@ -55,6 +61,7 @@ function select(entry: DirEntry): void {
     display: tildePath(entry.path, home.value),
     git: entry.git,
     branch: entry.branch ?? null,
+    detached: entry.detached === true,
   })
 }
 
@@ -143,7 +150,7 @@ onMounted(() => load())
         <BranchLabel
           v-if="entry.git && entry.branch"
           data-test="dir-branch"
-          :text="entry.branch"
+          :text="dirBranchText(entry.branch, entry.detached === true)"
           muted
           class="max-w-[45%] font-normal"
         />

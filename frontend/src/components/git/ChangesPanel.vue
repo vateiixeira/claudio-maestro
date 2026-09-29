@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { errorMessage, getFileDiff, getSessionChanges, openInEditor } from '../../api/http'
+import { ApiError, errorMessage, getFileDiff, getSessionChanges, openInEditor } from '../../api/http'
 import { diffFromUnified, diffWithoutHunks, toolDiff } from '../../conversation/diff'
 import { str } from '../../conversation/tool'
 import DiffLines from '../conversation/DiffLines.vue'
@@ -117,7 +117,8 @@ async function selectFile(group: ChangesGroup, file: ChangedFile) {
     fileNote.value = result.notice ?? diffWithoutHunks(result.diff)
     fileTruncated.value = result.truncated
   } catch (e) {
-    if (gen === fileGen) fileError.value = errorMessage(e)
+    // The backend answers 404 "O arquivo não existe mais." when the file was deleted after the list was read.
+    if (gen === fileGen) fileError.value = e instanceof ApiError && e.status === 404 && !e.detail ? 'O arquivo não existe mais.' : errorMessage(e)
   }
 }
 

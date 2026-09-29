@@ -312,6 +312,9 @@ async function remove(): Promise<void> {
           <span class="ml-auto text-xs" :class="changedCount(repo) > 0 ? 'text-secondary-soft' : 'text-fg-muted'">{{ changesSummary(repo) }}</span>
         </li>
       </ul>
+      <p v-if="git.limitReached(id)" data-test="repo-limit" class="m-0 text-xs text-secondary-soft">
+        Mais de 50 repositórios; só os 50 primeiros são acompanhados.
+      </p>
     </section>
 
     <section

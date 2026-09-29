@@ -80,6 +80,19 @@ describe('blocos da conversa', () => {
     const w = mountItem({ type: 'notice', id: 'n', level: 'error', text: 'deu ruim' })
     expect(w.find('[data-level="error"]').text()).toContain('deu ruim')
   })
+
+  it('avisos do histórico e do limite da assinatura aparecem com o texto do backend', () => {
+    const texts: Array<['info' | 'warning' | 'error', string]> = [
+      ['info', 'Conversa compactada'],
+      ['warning', 'Parte do histórico não pôde ser lida.'],
+      ['error', 'Limite da assinatura atingido. Libera às 14:30.'],
+    ]
+    for (const [level, text] of texts) {
+      const w = mountItem({ type: 'notice', id: 'n', level, text })
+      expect(w.find(`[data-level="${level}"]`).text()).toBe(text)
+    }
+    expect(mountItem({ type: 'notice', id: 'n', level: 'error', text: 'x' }).find('[role="alert"]').exists()).toBe(true)
+  })
 })
 
 describe('TruncatedText', () => {

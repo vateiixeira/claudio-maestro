@@ -99,6 +99,24 @@ describe('painel de alterações', () => {
     expect(text).not.toContain('Sem alterações')
   })
 
+  it.each([
+    ['com o detail do backend', { detail: 'O arquivo não existe mais.' }],
+    ['sem detail', undefined],
+  ])('arquivo que sumiu (404 %s) mostra "O arquivo não existe mais."', async (_name, body) => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ items: [edit('e1')] as never })),
+      'GET /api/sessions/s2': () => jsonResponse(makeSnapshot({ session_id: 's2', items: [edit('e2')] as never })),
+      'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
+      'POST /api/sessions/s2/seen': () => jsonResponse(undefined, 204),
+      'GET /api/sessions/s1/changes': () => jsonResponse(changes),
+      'GET /api/sessions/s2/changes': () => jsonResponse(changes),
+      'GET /api/projects/1/diff?repo=api&file=a.py': () => jsonResponse(body, 404),
+    }))
+    const text = await openDiff()
+    expect(text).toContain('O arquivo não existe mais.')
+    expect(text).not.toContain('erro 404')
+  })
+
   it('arquivo grande mostra o aviso do servidor', async () => {
     diffBody = { diff: '', truncated: true, notice: 'Arquivo maior que 5 MB; o diff não é mostrado.' }
     const text = await openDiff()

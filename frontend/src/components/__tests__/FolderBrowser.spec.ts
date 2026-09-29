@@ -32,4 +32,21 @@ describe('navegador de pastas', () => {
     expect(w.findAll('[data-test="dir-name"]').map((d) => d.text())).toEqual(['nova'])
     expect(w.find('[data-test="dir-list"]').attributes('aria-busy')).toBe('false')
   })
+
+  it('indica HEAD solto com o hash curto e emite o estado ao selecionar', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse({
+      path: '/home/vi',
+      parent: null,
+      entries: [
+        { name: 'app', path: '/home/vi/app', git: true, branch: 'main', detached: false },
+        { name: 'velho', path: '/home/vi/velho', git: true, branch: 'abc1234', detached: true },
+      ],
+    }))))
+    const w = mount(FolderBrowser, { props: { selected: null } })
+    await flushPromises()
+    const branches = w.findAll('[data-test="dir-branch"]').map((b) => b.text())
+    expect(branches).toEqual(['main', 'HEAD solto · abc1234'])
+    await w.findAll('[data-test="dir"]')[1]!.trigger('click')
+    expect(w.emitted('select')![0]![0]).toMatchObject({ name: 'velho', git: true, branch: 'abc1234', detached: true })
+  })
 })

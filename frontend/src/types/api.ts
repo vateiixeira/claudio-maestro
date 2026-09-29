@@ -30,6 +30,24 @@ export interface DirEntry {
   git: boolean
   /** Branch name, short hash with a detached HEAD, or null. */
   branch?: string | null
+  /** True when HEAD is detached; `branch` then holds the short hash. */
+  detached?: boolean
+}
+
+/** A repository found under a folder (`GET /api/fs/repos`), same discovery as a project. */
+export interface FoundRepo {
+  name: string
+  /** Relative to the folder; "." when the folder itself is the repository. */
+  rel_path: string
+  path: string
+  branch: string | null
+  detached: boolean
+}
+
+export interface FoundRepos {
+  repos: FoundRepo[]
+  /** More repositories than the limit (50); only the first ones are tracked. */
+  limit_reached: boolean
 }
 
 export interface DirListing {

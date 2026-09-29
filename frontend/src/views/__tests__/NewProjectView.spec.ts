@@ -23,7 +23,16 @@ const dev = {
     { name: 'loja-online', path: '/home/vi/dev/loja-online', git: true },
   ],
 }
+const lojaRepos = {
+  repos: [
+    { name: 'loja-online', rel_path: '.', path: '/home/vi/dev/loja-online', branch: 'main', detached: false },
+    { name: 'api', rel_path: 'servicos/api', path: '/home/vi/dev/loja-online/servicos/api', branch: 'abc1234', detached: true },
+  ],
+  limit_reached: false,
+}
 const dirs = {
+  'GET /api/fs/repos?path=%2Fhome%2Fvi%2Fdev%2Floja-online': () => jsonResponse(lojaRepos),
+  'GET /api/fs/repos?path=%2Fhome%2Fvi%2Fnotas': () => jsonResponse({ repos: [], limit_reached: false }),
   'GET /api/fs/dirs': () => jsonResponse(home),
   'GET /api/fs/dirs?path=%2Fhome%2Fvi': () => jsonResponse(home),
   'GET /api/fs/dirs?path=%2Fhome%2Fvi%2Fdev': () => jsonResponse(dev),
@@ -162,5 +171,126 @@ describe('tela de novo projeto', () => {
     await wrapper.find('[data-test="cancel"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  describe('escolher pasta pelo sistema', () => {
+    const pick = (w: Awaited<ReturnType<typeof mountView>>) => w.find('[data-test="pick-folder"]')
+
+    it('seleciona a pasta devolvida e lista os repositórios dela', async () => {
+      const fetchMock = routeFetch({ ...dirs, 'POST /api/fs/pick': () => jsonResponse({ path: '/home/vi/dev/loja-online' }) })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = await mountView()
+      expect(pick(wrapper).text()).toContain('Escolher pasta…')
+
+      await pick(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-test="selected-path"]').text()).toBe('~/dev/loja-online')
+      expect(wrapper.find<HTMLInputElement>('#project-name').element.value).toBe('loja-online')
+      const repos = wrapper.findAll('[data-test="found-repo"]').map((r) => r.text())
+      expect(repos).toEqual(['loja-onlinemain', 'servicos/apiHEAD solto · abc1234'])
+      expect(wrapper.find('[data-test="repo-limit"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="create"]').attributes('disabled')).toBeUndefined()
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    })
+
+    it('cancelar não muda nada e não mostra erro', async () => {
+      vi.stubGlobal('fetch', routeFetch({ ...dirs, 'POST /api/fs/pick': () => jsonResponse({ path: null }) }))
+      const wrapper = await mountView()
+      await entry(wrapper, 'notas').trigger('click')
+      await flushPromises()
+      await pick(wrapper).trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="selected-path"]').text()).toBe('~/notas')
+      expect(wrapper.find('[data-test="pick-error"]').exists()).toBe(false)
+      expect(pick(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
+    it.each([
+      [503, 'Nenhum seletor de pastas disponível neste computador.'],
+      [504, 'O seletor demorou demais e foi fechado.'],
+      [409, 'Já existe um seletor de pastas aberto.'],
+      [403, 'Escolha uma pasta dentro da sua pasta pessoal.'],
+    ])('erro %i aparece de forma legível e o navegador continua disponível', async (status, detail) => {
+      vi.stubGlobal('fetch', routeFetch({ ...dirs, 'POST /api/fs/pick': () => jsonResponse({ detail }, status) }))
+      const wrapper = await mountView()
+      await pick(wrapper).trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="pick-error"]').text()).toBe(detail)
+      expect(wrapper.find('[data-test="pick-error"]').attributes('role')).toBe('alert')
+      expect(wrapper.findAll('[data-test="dir"]').length).toBeGreaterThan(0)
+      // Escolher uma pasta no navegador limpa o erro.
+      await entry(wrapper, 'notas').trigger('click')
+      expect(wrapper.find('[data-test="pick-error"]').exists()).toBe(false)
+    })
+
+    it('desabilita o botão enquanto o seletor está aberto', async () => {
+      let resolve!: (r: Response) => void
+      vi.stubGlobal('fetch', routeFetch({ ...dirs, 'POST /api/fs/pick': () => new Promise<Response>((r) => { resolve = r }) }))
+      const wrapper = await mountView()
+      await pick(wrapper).trigger('click')
+      expect(pick(wrapper).attributes('disabled')).toBeDefined()
+      expect(pick(wrapper).text()).toContain('Aguardando')
+      resolve(jsonResponse({ path: null }))
+      await flushPromises()
+      expect(pick(wrapper).attributes('disabled')).toBeUndefined()
+    })
+  })
+
+  describe('repositórios encontrados', () => {
+    it('vêm de /api/fs/repos e mostram o aviso quando o limite foi atingido', async () => {
+      vi.stubGlobal('fetch', routeFetch({
+        ...dirs,
+        'GET /api/fs/repos?path=%2Fhome%2Fvi%2Fnotas': () => jsonResponse({
+          repos: [{ name: 'x', rel_path: 'a/x', path: '/home/vi/notas/a/x', branch: null, detached: false }],
+          limit_reached: true,
+        }),
+      }))
+      const wrapper = await mountView()
+      await entry(wrapper, 'notas').trigger('click')
+      await flushPromises()
+      expect(wrapper.findAll('[data-test="found-repo"]').map((r) => r.text())).toEqual(['a/xbranch indisponível'])
+      expect(wrapper.find('[data-test="repo-limit"]').text()).toBe('Mais de 50 repositórios; só os 50 primeiros serão acompanhados.')
+    })
+
+    it('pasta sem repositórios mostra "sem repositório git"', async () => {
+      vi.stubGlobal('fetch', routeFetch(dirs))
+      const wrapper = await mountView()
+      await entry(wrapper, 'notas').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="found-repos"]').text()).toContain('sem repositório git')
+    })
+
+    it('falha ao listar mostra uma nota sem bloquear a criação', async () => {
+      vi.stubGlobal('fetch', routeFetch({
+        ...dirs,
+        'GET /api/fs/repos?path=%2Fhome%2Fvi%2Fnotas': () => jsonResponse({ detail: 'Falhou.' }, 500),
+      }))
+      const wrapper = await mountView()
+      await entry(wrapper, 'notas').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="repos-error"]').text()).toContain('Falhou.')
+      expect(wrapper.find('[data-test="create"]').attributes('disabled')).toBeUndefined()
+    })
+
+    it('ignora a resposta de uma pasta antiga que chega depois', async () => {
+      const pending = new Map<string, (r: Response) => void>()
+      vi.stubGlobal('fetch', vi.fn((url: string) => {
+        if (url.startsWith('/api/fs/repos')) return new Promise<Response>((r) => pending.set(url, r))
+        if (url === '/api/fs/dirs' || url.endsWith('%2Fhome%2Fvi')) return Promise.resolve(jsonResponse(home))
+        return Promise.resolve(jsonResponse(dev))
+      }))
+      const wrapper = await mountView()
+      await entry(wrapper, 'dev').trigger('click')
+      await entry(wrapper, 'notas').trigger('click')
+      const urls = [...pending.keys()]
+      expect(urls).toHaveLength(2)
+      const repo = (name: string) => ({ repos: [{ name, rel_path: name, path: `/x/${name}`, branch: 'main', detached: false }], limit_reached: false })
+      pending.get(urls[1]!)!(jsonResponse(repo('novo')))
+      await flushPromises()
+      pending.get(urls[0]!)!(jsonResponse(repo('velho')))
+      await flushPromises()
+      expect(wrapper.findAll('[data-test="found-repo"]').map((r) => r.text())).toEqual(['novomain'])
+    })
   })
 })

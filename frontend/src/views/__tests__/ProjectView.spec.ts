@@ -4,8 +4,9 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory, type Router } from 'vue-router'
 import ProjectView from '../ProjectView.vue'
 import { createAppRouter } from '../../router'
-import { jsonResponse, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { jsonResponse, makeGitRepo, makeProject, makeSession, routeFetch } from '../../test/factories'
 import { useProjectsStore } from '../../stores/projects'
+import { useGitStore } from '../../stores/git'
 
 enableAutoUnmount(afterEach)
 
@@ -210,5 +211,27 @@ describe('tela do projeto', () => {
     expect(wrapper.find('[data-test="confirm-remove"]').exists()).toBe(false)
     expect(document.activeElement).toBe(wrapper.find('[data-test="remove"]').element)
     wrapper.unmount()
+  })
+
+  it('avisa quando o projeto tem mais de 50 repositórios', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'GET /api/projects/1/git': () => jsonResponse({ repos: [makeGitRepo()], limit_reached: true }),
+    }))
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="repo-limit"]').text()).toContain('Mais de 50 repositórios; só os 50 primeiros são acompanhados.')
+  })
+
+  it('sem o limite não mostra o aviso e mostra HEAD solto', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'GET /api/projects/1/git': () => jsonResponse({ repos: [makeGitRepo({ branch: null, detached: true, head: 'abc1234' })], limit_reached: false }),
+    }))
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="repo-limit"]').exists()).toBe(false)
+    expect(useGitStore(pinia).limitReached(1)).toBe(false)
+    expect(wrapper.find('[data-test="repo"]').text()).toContain('HEAD solto · abc1234')
   })
 })

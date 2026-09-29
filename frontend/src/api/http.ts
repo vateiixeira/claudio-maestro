@@ -3,6 +3,7 @@ import type {
   ChangesGroup,
   DisplayState,
   FileDiff,
+  FoundRepos,
   GitRepo,
   ImageInput,
   ModelInfo,
@@ -117,6 +118,16 @@ export function listDirs(path?: string): Promise<DirListing> {
   return request('GET', `/api/fs/dirs${query}`)
 }
 
+/** Opens the system folder picker; `path` is null when the user cancels. */
+export function pickFolder(): Promise<{ path: string | null }> {
+  return request('POST', '/api/fs/pick')
+}
+
+/** Repositories under a folder, found the way a project finds them. */
+export function listRepos(path: string): Promise<FoundRepos> {
+  return request('GET', `/api/fs/repos?${new URLSearchParams({ path })}`)
+}
+
 // Sessions
 
 export function listSessions(projectId: number): Promise<Session[]> {
@@ -197,7 +208,7 @@ export function putAppState(key: string, value: unknown): Promise<unknown> {
 
 // Git
 
-export function getProjectGit(projectId: number): Promise<{ repos: GitRepo[] }> {
+export function getProjectGit(projectId: number): Promise<{ repos: GitRepo[]; limit_reached?: boolean }> {
   return request('GET', `/api/projects/${projectId}/git`)
 }
 

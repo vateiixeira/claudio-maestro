@@ -6,6 +6,7 @@ import {
 } from 'vue-router'
 import AllSessionsView from '../views/AllSessionsView.vue'
 import NewProjectView from '../views/NewProjectView.vue'
+import PreferencesView from '../views/PreferencesView.vue'
 import ProjectView from '../views/ProjectView.vue'
 import WorkspaceView from '../views/WorkspaceView.vue'
 
@@ -20,6 +21,7 @@ export const routes: RouteRecordRaw[] = [
     component: ProjectView,
     props: (route) => ({ id: Number(route.params.id) }),
   },
+  { path: '/preferencias', name: 'preferences', component: PreferencesView },
   { path: '/sessions', name: 'sessions', component: AllSessionsView },
   {
     path: '/sessions/:id',

@@ -3,7 +3,10 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import FolderBrowser from '../components/FolderBrowser.vue'
 import BranchLabel from '../components/git/BranchLabel.vue'
-import { errorMessage, listDirs } from '../api/http'
+import { errorMessage, listRepos, pickFolder } from '../api/http'
+import { tildePath } from '../format'
+import { dirBranchText } from '../stores/git'
+import type { FoundRepo } from '../types/api'
 import { useProjectsStore } from '../stores/projects'
 
 const COLORS = [
@@ -17,10 +20,16 @@ const COLORS = [
 const projects = useProjectsStore()
 const router = useRouter()
 
-type Folder = { name: string; path: string; display: string; git: boolean; branch: string | null }
+type Folder = { name: string; path: string; display: string; git: boolean; branch: string | null; detached: boolean }
 const folder = ref<Folder | null>(null)
-// Repositories in the selected folder: itself and its first-level subfolders.
-const found = ref<Array<{ name: string; path: string; branch: string | null }>>([])
+// Repositories under the selected folder, found the way a project finds them.
+const found = ref<FoundRepo[]>([])
+const limitReached = ref(false)
+const reposLoading = ref(false)
+const reposError = ref<string | null>(null)
+const home = ref<string | null>(null)
+const picking = ref(false)
+const pickError = ref<string | null>(null)
 const name = ref('')
 // Start with a color no project uses yet, so new projects stand apart in the menu.
 const used = new Set(projects.projects.map((p) => p.color.toUpperCase()))
@@ -30,21 +39,68 @@ const error = ref<string | null>(null)
 
 const canSubmit = computed(() => folder.value !== null && name.value.trim().length > 0 && !submitting.value)
 
-async function onSelect(selected: Folder): Promise<void> {
+// Each listing takes a number; only the newest one may show its answer.
+let reposGen = 0
+
+async function loadRepos(path: string): Promise<void> {
+  const mine = ++reposGen
+  found.value = []
+  limitReached.value = false
+  reposError.value = null
+  reposLoading.value = true
+  try {
+    const result = await listRepos(path)
+    if (mine !== reposGen) return
+    found.value = result.repos
+    limitReached.value = result.limit_reached === true
+  } catch (e) {
+    if (mine === reposGen) reposError.value = errorMessage(e)
+  } finally {
+    if (mine === reposGen) reposLoading.value = false
+  }
+}
+
+function repoName(repo: FoundRepo): string {
+  return repo.rel_path === '.' ? repo.name : repo.rel_path
+}
+
+function repoBranch(repo: FoundRepo): string {
+  return repo.branch ? dirBranchText(repo.branch, repo.detached) : 'branch indisponível'
+}
+
+function choose(selected: Folder): void {
   folder.value = selected
   name.value = selected.name
   error.value = null
-  const own = selected.git ? [{ name: selected.name, path: selected.path, branch: selected.branch }] : []
-  found.value = own
+  pickError.value = null
+  void loadRepos(selected.path)
+}
+
+function onSelect(selected: Folder): void {
+  choose(selected)
+}
+
+// The system picker: the answer is only a path, so the folder is described by /api/fs/repos.
+async function pickFolderNative(): Promise<void> {
+  if (picking.value) return
+  picking.value = true
+  pickError.value = null
   try {
-    const listing = await listDirs(selected.path)
-    if (folder.value?.path !== selected.path) return
-    found.value = [
-      ...own,
-      ...listing.entries.filter((e) => e.git).map((e) => ({ name: e.name, path: e.path, branch: e.branch ?? null })),
-    ]
-  } catch {
-    // Without the listing only the folder itself is shown.
+    const result = await pickFolder()
+    if (result.path) {
+      choose({
+        name: result.path.split('/').filter(Boolean).pop() ?? result.path,
+        path: result.path,
+        display: tildePath(result.path, home.value),
+        git: false,
+        branch: null,
+        detached: false,
+      })
+    }
+  } catch (e) {
+    pickError.value = errorMessage(e)
+  } finally {
+    picking.value = false
   }
 }
 
@@ -83,7 +139,27 @@ function cancel(): void {
       </header>
 
       <div class="grid grid-cols-1 gap-7 px-7 py-6 md:grid-cols-2">
-        <FolderBrowser :selected="folder?.path ?? null" @select="onSelect" />
+        <div class="flex min-w-0 flex-col gap-3">
+          <div class="flex flex-col gap-2">
+            <button
+              type="button"
+              data-test="pick-folder"
+              class="flex h-11 items-center justify-center gap-2 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+              :disabled="picking"
+              @click="pickFolderNative"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              </svg>
+              {{ picking ? 'Aguardando a escolha…' : 'Escolher pasta…' }}
+            </button>
+            <p v-if="pickError" data-test="pick-error" role="alert" class="m-0 rounded-lg border border-secondary/40 bg-card px-3.5 py-2.5 text-sm text-secondary-soft">
+              {{ pickError }}
+            </p>
+            <p v-else class="m-0 text-xs text-fg-muted">Abre o seletor de pastas do sistema. Ou navegue pela lista abaixo.</p>
+          </div>
+          <FolderBrowser :selected="folder?.path ?? null" @select="onSelect" @home="home = $event" />
+        </div>
 
         <div class="flex flex-col gap-5">
           <div class="flex flex-col gap-2">
@@ -105,9 +181,11 @@ function cancel(): void {
           <div v-if="folder" data-test="found-repos" class="flex flex-col gap-2">
             <div class="flex items-center gap-2 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">
               <span class="grow">Repositórios encontrados</span>
-              <span class="normal-case tracking-normal">{{ found.length === 1 ? '1 repositório' : `${found.length} repositórios` }}</span>
+              <span v-if="!reposLoading && !reposError" class="normal-case tracking-normal">{{ found.length === 1 ? '1 repositório' : `${found.length} repositórios` }}</span>
             </div>
-            <p v-if="found.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
+            <p v-if="reposLoading" class="m-0 text-sm text-fg-muted">Procurando repositórios…</p>
+            <p v-else-if="reposError" data-test="repos-error" class="m-0 text-sm text-secondary-soft">Não foi possível procurar os repositórios. {{ reposError }}</p>
+            <p v-else-if="found.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
             <ul v-else class="m-0 flex list-none flex-col rounded-lg border border-line p-0">
               <li
                 v-for="repo in found"
@@ -115,10 +193,13 @@ function cancel(): void {
                 data-test="found-repo"
                 class="flex min-h-9 items-center gap-3 border-b border-line px-3 last:border-b-0"
               >
-                <span class="min-w-0 grow truncate font-mono text-xs">{{ repo.name }}</span>
-                <BranchLabel :text="repo.branch ?? 'branch indisponível'" muted />
+                <span class="min-w-0 grow truncate font-mono text-xs">{{ repoName(repo) }}</span>
+                <BranchLabel :text="repoBranch(repo)" muted />
               </li>
             </ul>
+            <p v-if="limitReached" data-test="repo-limit" class="m-0 text-xs text-secondary-soft">
+              Mais de 50 repositórios; só os 50 primeiros serão acompanhados.
+            </p>
           </div>
 
           <fieldset class="m-0 flex flex-col gap-2 border-0 p-0">

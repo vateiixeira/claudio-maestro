@@ -116,7 +116,7 @@ describe('novo projeto', () => {
       path: '/home/vi', parent: null,
       entries: [
         { name: 'mono', path: '/home/vi/mono', git: true, branch: 'main' },
-        { name: 'solta', path: '/home/vi/solta', git: true, branch: 'abc1234' },
+        { name: 'solta', path: '/home/vi/solta', git: true, branch: 'abc1234', detached: true },
         { name: 'notas', path: '/home/vi/notas', git: false, branch: null },
       ],
     }
@@ -130,6 +130,13 @@ describe('novo projeto', () => {
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/fs/dirs': () => jsonResponse(home),
       'GET /api/fs/dirs?path=%2Fhome%2Fvi%2Fmono': () => jsonResponse(mono),
+      'GET /api/fs/repos?path=%2Fhome%2Fvi%2Fmono': () => jsonResponse({
+        repos: [
+          { name: 'mono', rel_path: '.', path: '/home/vi/mono', branch: 'main', detached: false },
+          { name: 'api', rel_path: 'api', path: '/home/vi/mono/api', branch: 'feat/x', detached: false },
+        ],
+        limit_reached: false,
+      }),
     }))
     const router = createAppRouter(createMemoryHistory())
     await router.push('/projects/new')
@@ -137,6 +144,7 @@ describe('novo projeto', () => {
     await flushPromises()
     const dirs = w.findAll('[data-test="dir"]')
     expect(dirs[0]!.find('[data-test="dir-branch"]').text()).toBe('main')
+    expect(dirs[1]!.find('[data-test="dir-branch"]').text()).toBe('HEAD solto · abc1234')
     expect(dirs[2]!.find('[data-test="dir-branch"]').exists()).toBe(false)
     await dirs[0]!.trigger('click')
     await flushPromises()

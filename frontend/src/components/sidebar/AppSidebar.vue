@@ -112,6 +112,7 @@ function sessionTone(session: Session): string {
                   :muted="!!repo.error"
                 />
                 <span v-if="git.reposFor(project.id).length === 0" class="text-xs text-fg-muted">sem repositório git</span>
+                <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-secondary-soft">Só os 50 primeiros repositórios</span>
               </template>
             </span>
             <StateCounters
@@ -152,6 +153,20 @@ function sessionTone(session: Session): string {
         </div>
       </div>
     </div>
+
+    <RouterLink
+      to="/preferencias"
+      data-test="preferences"
+      class="flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-fg-muted no-underline hover:bg-card hover:text-fg"
+      :class="{ 'bg-elevated text-fg': route.name === 'preferences' }"
+      :aria-current="route.name === 'preferences' ? 'page' : undefined"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="17" x2="20" y2="17" />
+        <circle cx="9" cy="7" r="2.2" fill="var(--color-panel)" /><circle cx="15" cy="17" r="2.2" fill="var(--color-panel)" />
+      </svg>
+      Preferências
+    </RouterLink>
 
     <RouterLink
       to="/projects/new"

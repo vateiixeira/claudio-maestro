@@ -5,8 +5,9 @@ import { createMemoryHistory } from 'vue-router'
 import AppSidebar from '../AppSidebar.vue'
 import { createAppRouter } from '../../../router'
 import { useProjectsStore } from '../../../stores/projects'
+import { useGitStore } from '../../../stores/git'
 import { useSessionsStore } from '../../../stores/sessions'
-import { makeProject, makeSession } from '../../../test/factories'
+import { makeGitRepo, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 
@@ -87,5 +88,24 @@ describe('menu lateral', () => {
     const wrapper = mountSidebar()
     expect(wrapper.findAll('[data-test="project"]')).toHaveLength(0)
     expect(wrapper.text()).toContain('Nenhum projeto ainda')
+  })
+
+  it('avisa com texto curto quando o projeto passa de 50 repositórios', () => {
+    const projects = useProjectsStore(pinia)
+    projects.projects = [makeProject({ id: 1 }), makeProject({ id: 2, name: 'outro', path: '/home/vi/outro' })]
+    projects.loaded = true
+    useGitStore(pinia).set(1, [makeGitRepo()], true)
+    useGitStore(pinia).set(2, [makeGitRepo({ path: '/home/vi/outro' })], false)
+    const wrapper = mountSidebar()
+    const items = wrapper.findAll('[data-test="project"]')
+    expect(items[0]!.find('[data-test="repo-limit"]').text()).toBe('Só os 50 primeiros repositórios')
+    expect(items[1]!.find('[data-test="repo-limit"]').exists()).toBe(false)
+  })
+
+  it('tem entrada para as preferências', () => {
+    const wrapper = mountSidebar()
+    const link = wrapper.find('[data-test="preferences"]')
+    expect(link.attributes('href')).toBe('/preferencias')
+    expect(link.text()).toContain('Preferências')
   })
 })
