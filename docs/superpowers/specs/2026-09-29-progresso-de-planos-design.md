@@ -81,13 +81,14 @@ Se o progresso mudar, sai `session.updated`.
 
 `SessionOut` ganha `plan: {path, title, total, done, current: {number, title} | null} | null`, vindo sempre do cache em memória. Listagens nunca leem arquivo de plano por item; conversas sem progresso em cache ficam `null` até a primeira varredura.
 
-O retrato (`GET /api/sessions/{id}`) traz também `plan_tasks: [{number, title, done}]` para a lista expandida, e `plan_link`.
+A lista de tarefas e o estado do vínculo vêm de uma rota própria (seção seguinte), buscada quando a interface precisa, para não engordar o retrato.
 
 ### Rotas novas
 
 - `GET /api/projects/{id}/plans` → `[{path, title, total, done}]`: arquivos `docs/superpowers/plans/*.md` na pasta do projeto e nos repositórios descobertos dentro dela (mesma descoberta do git: 3 níveis, pastas ignoradas, teto de 50), ordenados por data de modificação, mais recente primeiro. Só os que passam como plano.
-- `PUT /api/sessions/{id}/plan` com `{path}` → vincula à mão (`manual`). 400 se não for plano, 403 se fora de projeto registrado.
-- `DELETE /api/sessions/{id}/plan` → desliga (`off`, `plan_path` nulo).
+- `GET /api/sessions/{id}/plan` → `{link, path, plan, tasks}`: `link` é `auto`, `manual` ou `off`; `path` é o caminho vinculado (mesmo se o arquivo sumiu); `plan` é o mesmo objeto do resumo; `tasks` é `[{number, title, done}]` (vazio sem plano legível). Lê o arquivo (fora do loop de eventos, com o cache).
+- `PUT /api/sessions/{id}/plan` com `{"path": "..."}` → vincula à mão (`manual`); com `{"auto": true}` → volta ao automático (`auto`, mantém o caminho atual se houver). 400 se o corpo não tiver exatamente um dos dois ou se o arquivo não for plano, 403 se fora de projeto registrado. Devolve o mesmo formato do `GET`.
+- `DELETE /api/sessions/{id}/plan` → desliga (`off`, `plan_path` nulo). Devolve o mesmo formato do `GET`.
 - Todas protegidas como as outras rotas (Host, Origin, `X-Vibing`).
 
 ## 6. Interface
