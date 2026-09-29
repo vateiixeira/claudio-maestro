@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import BranchLabel from '../git/BranchLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import DiffLines from '../conversation/DiffLines.vue'
+import PlanProperty from '../plan/PlanProperty.vue'
 import ChangesList from './ChangesList.vue'
 import FileDiffView from './FileDiffView.vue'
 import { useSessionChanges } from '../../conversation/sessionChanges'
@@ -149,6 +150,7 @@ watch(editOpen, (open) => { if (open) selectedFile.value = null })
             <dd data-test="prop-created" class="m-0">{{ session ? formatActivity(session.created_at) : '' }}</dd>
             <dt class="text-fg-muted">Última atividade</dt>
             <dd data-test="prop-activity" class="m-0">{{ session ? formatActivity(session.last_activity_at) : '' }}</dd>
+            <PlanProperty v-if="projectId != null" :session-id="sessionId" :project-id="projectId" />
           </dl>
         </section>
         <section data-test="details-changes" aria-labelledby="changes-title" class="flex flex-col gap-2">

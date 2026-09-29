@@ -243,16 +243,18 @@ export function openInEditor(path: string): Promise<void> {
   return request('POST', '/api/open-in-editor', { path })
 }
 
+// Plans
+
 export function getSessionPlan(id: string): Promise<PlanState> {
-  return request('GET', `/api/sessions/${id}/plan`)
+  return request('GET', `/api/sessions/${encodeURIComponent(id)}/plan`)
 }
 
 export function linkSessionPlan(id: string, body: { path: string } | { auto: true }): Promise<PlanState> {
-  return request('PUT', `/api/sessions/${id}/plan`, body)
+  return request('PUT', `/api/sessions/${encodeURIComponent(id)}/plan`, body)
 }
 
 export function unlinkSessionPlan(id: string): Promise<PlanState> {
-  return request('DELETE', `/api/sessions/${id}/plan`)
+  return request('DELETE', `/api/sessions/${encodeURIComponent(id)}/plan`)
 }
 
 export function listProjectPlans(projectId: number): Promise<ProjectPlan[]> {

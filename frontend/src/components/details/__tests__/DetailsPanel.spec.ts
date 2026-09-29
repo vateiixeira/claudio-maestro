@@ -39,6 +39,7 @@ afterEach(() => vi.unstubAllGlobals())
 async function mountPanel(fetchHandlers = {}) {
   vi.stubGlobal('fetch', routeFetch({
     'GET /api/sessions/s1/changes': () => jsonResponse(changes),
+    'GET /api/sessions/s1/plan': () => jsonResponse({ link: 'auto', path: null, plan: null, tasks: [] }),
     'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ items: [
       { type: 'user', id: 'u1', text: 'um' }, { type: 'user', id: 'u2', text: 'dois' },
     ] })),
@@ -52,6 +53,16 @@ async function mountPanel(fetchHandlers = {}) {
 }
 
 describe('painel Detalhes', () => {
+  it('mostra a propriedade Plano depois das outras propriedades', async () => {
+    const wrapper = await mountPanel()
+
+    const props = wrapper.find('[data-test="details-properties"]')
+    expect(props.find('[data-test="prop-plan"]').text()).toContain('Nenhum')
+    expect(props.find('[data-test="prop-plan"]').text()).toContain('Escolher plano…')
+    const labels = props.findAll('dt').map((dt) => dt.text())
+    expect(labels[labels.length - 1]).toBe('Plano')
+  })
+
   it('mostra as propriedades da conversa', async () => {
     const wrapper = await mountPanel()
 
