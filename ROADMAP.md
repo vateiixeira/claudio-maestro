@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 8 de 30 |
+| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 8 de 31 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -155,6 +155,7 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [ ] Aviso na interface quando um projeto passa de 50 repositórios
 - [ ] Preservar nomes dados no app antes da migração do marco 3
 - [ ] Prévia de repositórios na tela de novo projeto segue a mesma descoberta do projeto (3 níveis, pastas ignoradas)
+- [ ] Botão "Escolher pasta…" no novo projeto abre o seletor de pastas nativo do sistema (zenity no GNOME), com o navegador de pastas atual como alternativa
 - [ ] Tela de preferências: comando do editor, dias para ocultar sessões
 - [ ] Arquivos modificados na sessão incluem edições fora das últimas 500 mensagens do histórico
 - [ ] "HEAD solto" indicado também no navegador de pastas
