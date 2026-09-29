@@ -6,7 +6,8 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from starlette.datastructures import Headers
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.requests import ClientDisconnect
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from vibing.config import BACKEND_PORT, FRONTEND_PORT, LOCAL_HOSTNAMES
 
@@ -94,6 +95,63 @@ class HostOriginMiddleware:
             }
         )
         await send({"type": "http.response.body", "body": body})
+
+
+MAX_BODY_BYTES = 60 * 1024 * 1024  # messages with images
+BODY_TOO_LARGE = "A requisição passa do limite de 60 MB."
+
+
+class BodySizeLimitMiddleware:
+    """Refuse HTTP bodies over `max_bytes` with 413: by `Content-Length` before
+    reading, and by counting what arrives when the header is missing (the app
+    then sees a disconnect and whatever it tries to answer is dropped)."""
+
+    def __init__(self, app: ASGIApp, max_bytes: int | None = None) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        limit = self.max_bytes if self.max_bytes is not None else MAX_BODY_BYTES
+        length = Headers(scope=scope).get("content-length")
+        if length is not None:
+            try:
+                too_big = int(length) > limit
+            except ValueError:
+                too_big = True
+            if too_big:
+                await HostOriginMiddleware._reject(scope, send, 413, BODY_TOO_LARGE)
+                return
+            await self.app(scope, receive, send)
+            return
+
+        received = 0
+        rejected = False
+
+        async def limited_receive() -> Message:
+            nonlocal received, rejected
+            if rejected:
+                return {"type": "http.disconnect"}
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    rejected = True
+                    await HostOriginMiddleware._reject(scope, send, 413, BODY_TOO_LARGE)
+                    return {"type": "http.disconnect"}
+            return message
+
+        async def guarded_send(message: Message) -> None:
+            if not rejected:
+                await send(message)
+
+        try:
+            await self.app(scope, limited_receive, guarded_send)
+        except ClientDisconnect:
+            if not rejected:
+                raise
 
 
 class PathNotAllowedError(ValueError):

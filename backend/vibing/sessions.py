@@ -7,6 +7,8 @@ Every change is published as an envelope `{session_id, seq, type, data}`.
 """
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import sqlite3
@@ -24,6 +26,8 @@ from claude_agent_sdk import (
     PermissionResultDeny,
     PermissionUpdate,
     ResultMessage,
+    StreamEvent,
+    SystemMessage,
     ToolPermissionContext,
 )
 
@@ -41,8 +45,45 @@ DENY_MESSAGE = "O usuário recusou."
 CANCELLED_MESSAGE = "O pedido foi cancelado."
 
 SessionState = Literal["closed", "connecting", "running", "awaiting_decision", "idle", "error"]
-Decision = Literal["allow_once", "allow_always", "deny"]
-DECISIONS: tuple[str, ...] = ("allow_once", "allow_always", "deny")
+Decision = Literal["allow_once", "allow_always", "deny", "answer", "approve", "reject"]
+DECISIONS: tuple[str, ...] = ("allow_once", "allow_always", "deny", "answer", "approve", "reject")
+PromptKind = Literal["tool", "question", "plan"]
+# Decisions accepted by each kind of prompt.
+KIND_DECISIONS: dict[str, tuple[str, ...]] = {
+    "tool": ("allow_once", "allow_always", "deny"),
+    "question": ("answer", "deny"),
+    "plan": ("approve", "reject"),
+}
+QUESTION_TOOL = "AskUserQuestion"
+PLAN_TOOL = "ExitPlanMode"
+# How a multiSelect answer (a list of labels) is sent to the model.
+MULTI_ANSWER_SEPARATOR = ", "
+MAX_ANSWER_LENGTH = 2000
+
+EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+PERMISSION_MODES: tuple[str, ...] = ("default", "acceptEdits", "plan", "bypassPermissions")
+DEFAULT_MODEL_VALUE = "default"
+MODEL_FIELDS = ("value", "displayName", "description", "supportsEffort", "supportedEffortLevels")
+# Shown by GET /api/models until a session connects and the SDK lists the real ones.
+FALLBACK_MODELS: list[dict[str, Any]] = [
+    {
+        "value": value,
+        "displayName": name,
+        "description": description,
+        "supportsEffort": True,
+        "supportedEffortLevels": list(EFFORTS),
+    }
+    for value, name, description in (
+        ("default", "Padrão", "Modelo recomendado da conta"),
+        ("opus", "Opus", "O mais capaz"),
+        ("sonnet", "Sonnet", "Equilíbrio entre velocidade e capacidade"),
+        ("haiku", "Haiku", "O mais rápido"),
+    )
+]
+
+IMAGE_MEDIA_TYPES: tuple[str, ...] = ("image/png", "image/jpeg", "image/gif", "image/webp")
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_IMAGES = 10
 
 DisplayState = Literal["running", "waiting", "finished"]
 DISPLAY_STATES: tuple[str, ...] = ("running", "waiting", "finished")
@@ -105,6 +146,22 @@ class SessionClosedError(SessionError):
     """The app is shutting down; the session accepts nothing else."""
 
 
+class BypassNotConfirmedError(SessionError):
+    pass
+
+
+class InvalidAnswerError(SessionError):
+    pass
+
+
+class RejectMessageRequiredError(SessionError):
+    pass
+
+
+class InvalidImageError(SessionError):
+    pass
+
+
 # Records -------------------------------------------------------------------
 
 
@@ -126,6 +183,10 @@ class SessionRecord:
     rename_pending: bool = False
     # Last modification of the history file (SDK `last_modified`), in seconds.
     file_modified_at: int | None = None
+    # Options used when connecting; None lets the CLI decide.
+    model: str | None = None
+    effort: str | None = None
+    permission_mode: str | None = None
 
 
 @dataclass
@@ -144,6 +205,7 @@ _INSERT_COLUMNS = (
 _COLUMNS = (
     _INSERT_COLUMNS
     + ", summary, first_prompt, title_custom, rename_pending, file_modified_at"
+    + ", model, effort, permission_mode"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = ("title_custom", "rename_pending", "file_modified_at")
@@ -193,6 +255,8 @@ def describe(
     *,
     finished_after: float,
     now: float | None = None,
+    effort_pending: bool = False,
+    model_resolved: str | None = None,
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`."""
     now = time.time() if now is None else now
@@ -214,6 +278,8 @@ def describe(
         ),
         "unread": record.last_activity_at > (record.last_seen_at or 0),
         "awaiting_decision": state == "awaiting_decision",
+        "effort_pending": effort_pending,
+        "model_resolved": model_resolved,
     }
 
 
@@ -229,8 +295,25 @@ class PendingPrompt:
     tool_use_id: str | None
     suggestions: list[PermissionUpdate]
 
+    @property
+    def kind(self) -> PromptKind:
+        if self.tool_name == QUESTION_TOOL:
+            return "question"
+        if self.tool_name == PLAN_TOOL:
+            return "plan"
+        return "tool"
+
     def to_dict(self) -> dict[str, Any]:
+        extra: dict[str, Any] = {}
+        if self.kind == "question":
+            questions = self.input.get("questions")
+            extra["questions"] = questions if isinstance(questions, list) else []
+        elif self.kind == "plan":
+            plan = self.input.get("plan")
+            extra["plan"] = plan if isinstance(plan, str) else ""
         return {
+            "kind": self.kind,
+            **extra,
             "prompt_id": self.prompt_id,
             "tool_name": self.tool_name,
             "input": self.input,
@@ -241,6 +324,81 @@ class PendingPrompt:
             "suggestions": [s.to_dict() for s in self.suggestions],
             "can_always": bool(self.suggestions),
         }
+
+
+def validate_images(images: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Check format, size and count of base64 images. Returns their markers
+    ({type, media_type, size}); raises InvalidImageError with a pt-BR message."""
+    if len(images) > MAX_IMAGES:
+        raise InvalidImageError(f"Envie no máximo {MAX_IMAGES} imagens por mensagem.")
+    markers = []
+    for position, image in enumerate(images, start=1):
+        media_type = image.get("media_type")
+        if media_type not in IMAGE_MEDIA_TYPES:
+            raise InvalidImageError(
+                f"Imagem {position}: formato não aceito. Use PNG, JPEG, GIF ou WebP."
+            )
+        data = image.get("data")
+        try:
+            if not isinstance(data, str) or not data:
+                raise ValueError
+            size = len(base64.b64decode(data, validate=True))
+        except (ValueError, binascii.Error):
+            raise InvalidImageError(f"Imagem {position}: conteúdo inválido.") from None
+        if size > MAX_IMAGE_BYTES:
+            raise InvalidImageError(f"Imagem {position}: maior que 5 MB.")
+        markers.append({"type": "image", "media_type": media_type, "size": size})
+    return markers
+
+
+def build_answers(tool_input: dict[str, Any], answers: Any) -> dict[str, str]:
+    """Answers of an AskUserQuestion in the format the SDK expects.
+
+    Every question must be answered with non-blank text (one of its labels or
+    free text, up to 2000 characters); `multiSelect` takes a list, sent joined
+    by ", ". Raises InvalidAnswerError.
+    """
+    questions = tool_input.get("questions")
+    if not isinstance(answers, dict) or not isinstance(questions, list):
+        raise InvalidAnswerError("Responda a todas as perguntas.")
+    texts = [q.get("question") for q in questions if isinstance(q, dict)]
+    if set(answers) != set(texts):
+        raise InvalidAnswerError("As respostas não correspondem às perguntas.")
+
+    def clean(value: Any, question: str) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise InvalidAnswerError(f"Resposta vazia para: {question}")
+        value = value.strip()
+        if len(value) > MAX_ANSWER_LENGTH:
+            raise InvalidAnswerError(f"Resposta longa demais para: {question}")
+        return value
+
+    result: dict[str, str] = {}
+    for question in questions:
+        text = question["question"]
+        answer = answers[text]
+        if question.get("multiSelect"):
+            if not isinstance(answer, list) or not answer:
+                raise InvalidAnswerError(f"Escolha ao menos uma opção em: {text}")
+            result[text] = MULTI_ANSWER_SEPARATOR.join(clean(a, text) for a in answer)
+        else:
+            if isinstance(answer, list):
+                raise InvalidAnswerError(f"Escolha só uma opção em: {text}")
+            result[text] = clean(answer, text)
+    return result
+
+
+def normalize_models(info: dict[str, Any] | None) -> list[dict[str, Any]] | None:
+    """The models of `get_server_info()`, only with the fields the app uses."""
+    models = info.get("models") if isinstance(info, dict) else None
+    if not isinstance(models, list):
+        return None
+    result = [
+        {key: model.get(key) for key in MODEL_FIELDS}
+        for model in models
+        if isinstance(model, dict) and isinstance(model.get("value"), str)
+    ]
+    return result or None
 
 
 def sdk_history_exists(session_id: str, cwd: str) -> bool:
@@ -291,9 +449,19 @@ class ActiveSession:
         read_tool_results: ReadToolResults | None = None,
         file_mtime: FileMtime | None = None,
         on_turn_end: Callable[[int], None] | None = None,
+        on_connected: Callable[[AgentClient], Any] | None = None,
     ) -> None:
         self.record = record
         self._on_turn_end = on_turn_end
+        # Awaited after each successful connect (the manager caches the models).
+        self._on_connected = on_connected
+        # A new effort waits for a reconnect between turns.
+        self.effort_pending = False
+        # Model id the CLI resolved (from the last init); not saved.
+        self.model_resolved: str | None = None
+        self._effort_task: asyncio.Task[None] | None = None
+        # A turn the CLI opened by itself (no send pending) is running.
+        self._autonomous_turn = False
         self.builder = ConversationBuilder()
         self.pending_turns = 0
         self.prompts: dict[str, PendingPrompt] = {}
@@ -354,7 +522,7 @@ class ActiveSession:
             return "error" if self.error is not None else "closed"
         if self.prompts:
             return "awaiting_decision"
-        if self.pending_turns > 0:
+        if self.pending_turns > 0 or self._autonomous_turn:
             return "running"
         return "idle"
 
@@ -526,6 +694,8 @@ class ActiveSession:
         return describe(
             self.record, self.state, self.error, self.seq,
             finished_after=DEFAULT_FINISHED_AFTER_DAYS * DAY_SECONDS,
+            effort_pending=self.effort_pending,
+            model_resolved=self.model_resolved,
         )
 
     def emit_updated(self) -> None:
@@ -549,19 +719,24 @@ class ActiveSession:
 
     # Sending ---------------------------------------------------------------
 
-    async def send(self, text: str) -> None:
+    async def send(self, text: str, images: list[dict[str, Any]] | None = None) -> None:
         """Record the message, connect if needed and send it.
 
-        Agent failures do not raise: they move the session to `error`.
+        `images` are `{media_type, data}` in base64; they go as content blocks and
+        the item keeps only markers. Agent failures do not raise: they move the
+        session to `error`.
         """
-        if not text or not text.strip():
+        images = list(images or [])
+        markers = validate_images(images)
+        text = text or ""
+        if not text.strip() and not images:
             raise EmptyMessageError("A mensagem está vazia.")
         if self._final:
             raise SessionClosedError("O servidor está encerrando. A mensagem não foi enviada.")
         # The saved conversation comes first, so the new message goes after it.
         await self.ensure_history()
         # The user's message is recorded first so it is never lost.
-        self._emit_events(self.builder.add_user_message(text))
+        self._emit_events(self.builder.add_user_message(text, markers))
         self._touch()
         if self.record.finished:
             self.save(finished=False)
@@ -579,12 +754,29 @@ class ActiveSession:
                 return
             if self.client is None and not await self._connect():
                 return
+            # A new effort still pending is applied before this turn.
+            if not await self._reconnect_for_effort():
+                return
             client = self.client
             assert client is not None
             self.pending_turns += 1
             self._refresh_state()
+            content: str | list[dict[str, Any]] = text
+            if images:
+                content = [{"type": "text", "text": text}] if text.strip() else []
+                content += [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image["media_type"],
+                            "data": image["data"],
+                        },
+                    }
+                    for image in images
+                ]
             try:
-                await client.send(text)
+                await client.send(content)
             except AgentError as error:
                 # If close() discarded this client meanwhile, the error is expected.
                 if self.client is client:
@@ -660,15 +852,24 @@ class ActiveSession:
         self.client = client
         self._has_connected = True
         self._reader = asyncio.create_task(self._read(client))
+        if self._on_connected is not None:
+            try:
+                await self._on_connected(client)
+            except Exception:
+                logger.exception("Falha após conectar a sessão %s", self.session_id)
         return True
 
     def _new_client(self, resume: bool) -> AgentClient:
+        model = self.record.model
         return self._agent_factory(
             AgentOptions(
                 cwd=Path(self.record.cwd),
                 session_id=self.session_id,
                 resume=resume,
                 can_use_tool=self._can_use_tool,
+                model=None if model == DEFAULT_MODEL_VALUE else model,
+                effort=self.record.effort,
+                permission_mode=self.record.permission_mode,
             )
         )
 
@@ -684,8 +885,15 @@ class ActiveSession:
     async def _read(self, client: AgentClient) -> None:
         try:
             async for message in client.messages():
+                if self.pending_turns == 0 and self._starts_turn(message):
+                    # The CLI opened a turn by itself (a background subagent finished).
+                    self._autonomous_turn = True
                 self._emit_events(self.builder.handle(message))
+                if isinstance(message, SystemMessage) and message.subtype == "init":
+                    self._apply_init()
                 if isinstance(message, ResultMessage):
+                    # An autonomous turn may also have answered a message sent meanwhile.
+                    self._autonomous_turn = False
                     self.pending_turns = max(0, self.pending_turns - 1)
                     self._touch()
                     self.emit_updated()
@@ -693,6 +901,8 @@ class ActiveSession:
                     await self._apply_pending_rename()
                     if self._on_turn_end is not None:
                         self._on_turn_end(self.record.project_id)
+                    # Last: the reconnect it may start cancels this reader.
+                    self._schedule_effort()
                 self._refresh_state()
         except asyncio.CancelledError:
             raise
@@ -709,6 +919,133 @@ class ActiveSession:
         if self.client is client:
             await self._fail("O agente encerrou a conexão.")
 
+    @staticmethod
+    def _starts_turn(message: Any) -> bool:
+        # Not the init: it also arrives right after connecting, outside any turn.
+        return (
+            isinstance(message, StreamEvent)
+            and message.parent_tool_use_id is None
+            and message.event.get("type") == "message_start"
+        )
+
+    # Options ---------------------------------------------------------------
+
+    def options(self) -> dict[str, Any]:
+        return {
+            "model": self.record.model,
+            "effort": self.record.effort,
+            "permission_mode": self.record.permission_mode,
+            "effort_pending": self.effort_pending,
+            "model_resolved": self.model_resolved,
+        }
+
+    def _emit_options(self) -> None:
+        self._emit("session.options", self.options())
+
+    def _apply_init(self) -> None:
+        """The CLI reports model and mode on each init (the mode changes by itself
+        from `plan` to `default` when a plan is approved)."""
+        init = self.builder.init
+        if init is None:
+            return
+        changes = {}
+        emit = False
+        if init.model and init.model != self.model_resolved:
+            # The resolved id; `model` keeps the alias the user chose.
+            self.model_resolved = init.model
+            emit = True
+        if init.permission_mode and init.permission_mode != self.record.permission_mode:
+            changes["permission_mode"] = init.permission_mode
+        if changes:
+            self.save(**changes)
+        if changes or emit:
+            self._emit_options()
+
+    async def set_options(
+        self,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        permission_mode: str | None = None,
+    ) -> bool:
+        """Save new options and apply them to the client, if any. Returns True when
+        something changed. Model and mode change live; effort needs a reconnect,
+        done now if no turn is running, otherwise when the turn ends."""
+        changes: dict[str, Any] = {}
+        if model is not None and model != self.record.model:
+            changes["model"] = model
+        if effort is not None and effort != self.record.effort:
+            changes["effort"] = effort
+        if permission_mode is not None and permission_mode != self.record.permission_mode:
+            changes["permission_mode"] = permission_mode
+        if not changes:
+            return False
+        self.save(**changes)
+        client = self.client
+        if client is not None or self._connecting:
+            if "effort" in changes:
+                self.effort_pending = True
+        self._emit_options()
+        if client is not None:
+            try:
+                if "model" in changes:
+                    self.builder.expect_local_echo(f"Set model to {model}")
+                    await client.set_model(None if model == DEFAULT_MODEL_VALUE else model)
+                if "permission_mode" in changes:
+                    # Verified with the real SDK: this one sends no echo.
+                    await client.set_permission_mode(changes["permission_mode"])
+            except AgentError as error:
+                if self.client is client:
+                    await self._fail(error.message_pt)
+                return True
+        self._schedule_effort()
+        return True
+
+    def _schedule_effort(self) -> None:
+        """Reconnect with the new effort once the session is between turns."""
+        if (
+            not self.effort_pending
+            or self.client is None
+            or self.pending_turns
+            or self._autonomous_turn
+            or self.prompts
+            or (self._effort_task is not None and not self._effort_task.done())
+        ):
+            return
+        self._effort_task = asyncio.create_task(self._effort_reconnect())
+
+    async def _effort_reconnect(self) -> None:
+        async with self._lock:
+            await self._reconnect_for_effort()
+
+    async def _reconnect_for_effort(self) -> bool:
+        """With the lock held: replace the client by one resumed with the new
+        effort. Returns False when the session ended up without a client."""
+        if not self.effort_pending:
+            return True
+        if self.client is None:
+            self.effort_pending = False
+            self._emit_options()
+            return True
+        if self.pending_turns or self._autonomous_turn or self.prompts:
+            return True  # a turn is running: tried again when it ends
+        client, reader = self.client, self._reader
+        self._generation += 1
+        generation = self._generation
+        self.client = None
+        self._reader = None
+        self.builder.clear_local_echo()
+        await self._dispose(client, reader)
+        if self._final or generation != self._generation:
+            # close() ran meanwhile: no new client.
+            self.effort_pending = False
+            return False
+        connected = await self._connect()
+        self.effort_pending = False
+        self._emit_options()
+        self._refresh_state()
+        return connected
+
     def _touch(self) -> None:
         self._app_activity_at = time.time()
         self.save(last_activity_at=_now())
@@ -717,7 +1054,9 @@ class ActiveSession:
 
     async def interrupt(self) -> None:
         client = self.client
-        if client is None or (self.pending_turns == 0 and not self.prompts):
+        if client is None or (
+            self.pending_turns == 0 and not self.prompts and not self._autonomous_turn
+        ):
             return
         try:
             await client.interrupt()
@@ -737,6 +1076,8 @@ class ActiveSession:
         self._reader = None
         self.error = message
         self.pending_turns = 0
+        self._autonomous_turn = False
+        self.builder.clear_local_echo()
         self._emit_events(self.builder.close_open_items())
         self._emit_events(self.builder.add_notice("error", message))
         self._cancel_prompts()
@@ -751,11 +1092,25 @@ class ActiveSession:
         """
         if final:
             self._final = True
+        effort_task = self._effort_task
+        if (
+            effort_task is not None and not effort_task.done()
+            and effort_task is not asyncio.current_task()
+        ):
+            effort_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await effort_task
+        if self.effort_pending:
+            # Without a client, the new effort is simply used on the next connect.
+            self.effort_pending = False
+            self._emit_options()
         client, reader = self.client, self._reader
         self._generation += 1
         self.client = None
         self._reader = None
         self.pending_turns = 0
+        self._autonomous_turn = False
+        self.builder.clear_local_echo()
         self._cancel_prompts()
         self._refresh_state()
         await self._dispose(client, reader)
@@ -821,14 +1176,35 @@ class ActiveSession:
                 self._refresh_state()
             raise
 
-    def resolve_prompt(self, prompt_id: str, decision: str) -> None:
+    def resolve_prompt(
+        self,
+        prompt_id: str,
+        decision: str,
+        *,
+        answers: Any = None,
+        message: str | None = None,
+    ) -> None:
+        """Answer a pending prompt. `answers` goes with `answer` (questions) and
+        `message` with `reject` (plans)."""
         if decision not in DECISIONS:
             raise InvalidDecisionError("Decisão inválida.")
         prompt = self.prompts.get(prompt_id)
         if prompt is None or prompt.future.done():
             raise PromptNotFoundError("Este pedido já foi respondido ou não existe mais.")
+        if decision not in KIND_DECISIONS[prompt.kind]:
+            raise InvalidDecisionError("Esta decisão não vale para este pedido.")
         result: PermissionResultAllow | PermissionResultDeny
-        if decision == "allow_once":
+        if decision == "answer":
+            result = PermissionResultAllow(
+                updated_input={**prompt.input, "answers": build_answers(prompt.input, answers)}
+            )
+        elif decision == "approve":
+            result = PermissionResultAllow()
+        elif decision == "reject":
+            if not message or not message.strip():
+                raise RejectMessageRequiredError("Diga o que mudar no plano.")
+            result = PermissionResultDeny(message=message.strip())
+        elif decision == "allow_once":
             result = PermissionResultAllow()
         elif decision == "allow_always":
             if not prompt.suggestions:
@@ -840,6 +1216,7 @@ class ActiveSession:
         prompt.future.set_result(result)
         self._emit_resolved(prompt_id, decision)
         self._refresh_state()
+        self._schedule_effort()
 
     def _cancel_prompts(self) -> None:
         for prompt_id in list(self.prompts):
@@ -897,6 +1274,23 @@ class SessionManager:
         self._idle_timeout = idle_timeout
         self._finished_after_days = finished_after_days
         self._sessions: dict[str, ActiveSession] = {}
+        # Models of `get_server_info()`, cached after the first connected session.
+        self._models: list[dict[str, Any]] | None = None
+
+    def list_models(self) -> list[dict[str, Any]]:
+        return [dict(m) for m in (self._models or FALLBACK_MODELS)]
+
+    async def _on_connected(self, client: AgentClient) -> None:
+        if self._models is not None:
+            return
+        try:
+            info = await client.get_server_info()
+        except Exception:
+            logger.exception("Falha ao consultar os modelos do agente")
+            return
+        models = normalize_models(info)
+        if models is not None:
+            self._models = models
 
     def create_session(self, project: Project) -> SessionRecord:
         if not project.available:
@@ -951,6 +1345,7 @@ class SessionManager:
             read_tool_results=self._read_tool_results,
             file_mtime=self._file_mtime,
             on_turn_end=self._on_turn_end,
+            on_connected=self._on_connected,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:
@@ -979,7 +1374,9 @@ class SessionManager:
         finally:
             session.users -= 1
 
-    async def send(self, session_id: str, text: str) -> dict[str, Any]:
+    async def send(
+        self, session_id: str, text: str, images: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         """Send a message. `external_activity` tells whether the resumed history was
         modified in the last minute by another process."""
         session = self.get(session_id)
@@ -990,7 +1387,7 @@ class SessionManager:
                 await session.reload_if_modified()
                 await self.refresh_file_info(session)
                 external = session.external_activity
-            await session.send(text)
+            await session.send(text, images)
             return {"state": session.state, "external_activity": external}
         finally:
             session.users -= 1
@@ -1080,7 +1477,8 @@ class SessionManager:
     def _describe_active(self, session: ActiveSession) -> dict[str, Any]:
         return describe(
             session.record, session.state, session.error, session.seq,
-            finished_after=self.finished_after(),
+            finished_after=self.finished_after(), effort_pending=session.effort_pending,
+            model_resolved=session.model_resolved,
         )
 
     def describe_record(self, record: SessionRecord) -> dict[str, Any]:
@@ -1127,6 +1525,8 @@ class SessionManager:
                 item = describe(
                     active.record, active.state, active.error, active.seq,
                     finished_after=finished_after, now=now,
+                    effort_pending=active.effort_pending,
+                    model_resolved=active.model_resolved,
                 )
             else:
                 item = describe(_record(row), "closed", None, 0,
@@ -1138,10 +1538,37 @@ class SessionManager:
     # Changes -----------------------------------------------------------------
 
     async def update(
-        self, session_id: str, *, finished: bool | None = None, title: str | None = None
+        self,
+        session_id: str,
+        *,
+        finished: bool | None = None,
+        title: str | None = None,
+        model: str | None = None,
+        effort: str | None = None,
+        permission_mode: str | None = None,
+        confirm_bypass: bool = False,
     ) -> dict[str, Any]:
-        """Finish, reopen or rename. Emits `session.updated` when something changed."""
+        """Finish, reopen, rename or change options (model, effort, permission mode).
+
+        `bypassPermissions` needs `confirm_bypass`. Emits `session.updated` when
+        something changed, and `session.options` when an option changed.
+        """
         session = self.get(session_id)
+        if effort is not None and effort not in EFFORTS:
+            raise InvalidDecisionError("Nível de raciocínio inválido.")
+        if permission_mode is not None and permission_mode not in PERMISSION_MODES:
+            raise InvalidDecisionError("Modo de permissão inválido.")
+        if (
+            permission_mode == "bypassPermissions"
+            and not confirm_bypass
+            and session.record.permission_mode != "bypassPermissions"
+        ):
+            raise BypassNotConfirmedError(
+                "Confirme que quer rodar sem perguntas antes de ativar este modo."
+            )
+        options_changed = await session.set_options(
+            model=model, effort=effort, permission_mode=permission_mode
+        )
         changes: dict[str, Any] = {}
         if finished is not None and finished != session.record.finished:
             changes["finished"] = finished
@@ -1155,6 +1582,8 @@ class SessionManager:
                 changes["title"] = title
                 changes["title_custom"] = True
         if not changes:
+            if options_changed:
+                session.emit_updated()
             return session.summary()
         session.save(**changes)
         if "title" in changes:

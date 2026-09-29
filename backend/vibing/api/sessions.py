@@ -22,16 +22,28 @@ def get_session_manager(request: Request) -> sessions.SessionManager:
 ManagerDep = Annotated[sessions.SessionManager, Depends(get_session_manager)]
 
 
+class ImageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_type: str
+    data: str  # base64
+
+
 class MessageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str
+    text: str = ""
+    images: list[ImageIn] = []
 
 
 class DecisionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    decision: Literal["allow_once", "allow_always", "deny"]
+    decision: Literal["allow_once", "allow_always", "deny", "answer", "approve", "reject"]
+    # answer: {"<question text>": "<label>" or ["<label>", ...] for multiSelect}
+    answers: dict[str, str | list[str]] | None = None
+    # reject (plan): what the model should change
+    message: Annotated[str, StringConstraints(max_length=20_000)] | None = None
 
 
 class SessionOut(BaseModel):
@@ -51,6 +63,11 @@ class SessionOut(BaseModel):
     awaiting_decision: bool
     summary: str | None = None
     first_prompt: str | None = None
+    model: str | None = None
+    effort: str | None = None
+    permission_mode: str | None = None
+    effort_pending: bool = False
+    model_resolved: str | None = None
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -61,6 +78,10 @@ class SessionPatch(BaseModel):
 
     finished: bool | None = None
     title: Title | None = None
+    model: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] | None = None
+    confirm_bypass: bool = False
 
 
 _STATUS = {
@@ -69,7 +90,11 @@ _STATUS = {
     sessions.EmptyMessageError: status.HTTP_400_BAD_REQUEST,
     sessions.PromptNotFoundError: status.HTTP_409_CONFLICT,
     sessions.AlwaysNotAvailableError: status.HTTP_400_BAD_REQUEST,
-    sessions.InvalidDecisionError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    sessions.InvalidDecisionError: status.HTTP_400_BAD_REQUEST,
+    sessions.BypassNotConfirmedError: status.HTTP_400_BAD_REQUEST,
+    sessions.InvalidAnswerError: status.HTTP_400_BAD_REQUEST,
+    sessions.RejectMessageRequiredError: status.HTTP_400_BAD_REQUEST,
+    sessions.InvalidImageError: status.HTTP_400_BAD_REQUEST,
     sessions.SessionClosedError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
@@ -135,7 +160,15 @@ async def update_session(
     session_id: str, body: SessionPatch, manager: ManagerDep
 ) -> dict[str, Any]:
     try:
-        return await manager.update(session_id, finished=body.finished, title=body.title)
+        return await manager.update(
+            session_id,
+            finished=body.finished,
+            title=body.title,
+            model=body.model,
+            effort=body.effort,
+            permission_mode=body.permission_mode,
+            confirm_bypass=body.confirm_bypass,
+        )
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
 
@@ -146,6 +179,12 @@ async def mark_seen(session_id: str, manager: ManagerDep) -> dict[str, Any]:
         return await manager.mark_seen(session_id)
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
+
+
+@router.get("/models")
+async def list_models(manager: ManagerDep) -> list[dict[str, Any]]:
+    """Models of the SDK (cached after the first connected session), or a fixed list."""
+    return manager.list_models()
 
 
 @router.get("/sessions/{session_id}")
@@ -159,7 +198,9 @@ async def get_session(session_id: str, manager: ManagerDep) -> dict[str, Any]:
 async def send_message(session_id: str, body: MessageIn, manager: ManagerDep) -> dict[str, Any]:
     _get_session(manager, session_id)
     try:
-        return await manager.send(session_id, body.text)
+        return await manager.send(
+            session_id, body.text, [image.model_dump() for image in body.images]
+        )
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
 
@@ -177,7 +218,9 @@ async def answer_prompt(
 ) -> dict[str, Any]:
     session = _get_session(manager, session_id)
     try:
-        session.resolve_prompt(prompt_id, body.decision)
+        session.resolve_prompt(
+            prompt_id, body.decision, answers=body.answers, message=body.message
+        )
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
     return {"prompt_id": prompt_id, "decision": body.decision}

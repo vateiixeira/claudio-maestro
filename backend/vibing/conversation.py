@@ -24,6 +24,10 @@ from claude_agent_sdk import (
     ServerToolUseBlock,
     StreamEvent,
     SystemMessage,
+    TaskNotificationMessage,
+    TaskProgressMessage,
+    TaskStartedMessage,
+    TaskUpdatedMessage,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -74,6 +78,9 @@ class ToolItem:
     parent_tool_use_id: str | None = None
     # Loaded from history without a result anywhere in the transcript.
     result_missing: bool = False
+    # Agent/Task only: {task_id, subagent_type, description, status, last_activity,
+    # usage, summary}, updated by the SDK task messages.
+    subagent: dict[str, Any] | None = None
     type: Literal["tool"] = field(default="tool", init=False)
 
 
@@ -144,6 +151,20 @@ RESULT_ERROR_TEXT = {
 
 INTERRUPTED_REASONS = {"aborted_streaming", "aborted_tools"}
 
+ECHO_PREFIXES = ("Set model to ",)
+
+SUBAGENT_TOOLS = {"Agent", "Task"}
+# SDK task status -> status shown ("running" | "completed" | "failed" | "stopped").
+_SUBAGENT_STATUS = {
+    "pending": "running",
+    "running": "running",
+    "paused": "running",
+    "completed": "completed",
+    "failed": "failed",
+    "killed": "stopped",
+    "stopped": "stopped",
+}
+
 _TEXT_BLOCKS = {"text"}
 _THINKING_BLOCKS = {"thinking", "redacted_thinking"}
 _TOOL_BLOCKS = {"tool_use", "server_tool_use", "mcp_tool_use"}
@@ -166,6 +187,11 @@ class ConversationBuilder:
         self._streams: dict[str | None, _Stream] = {}
         self._next_index: dict[str, int] = {}
         self._turn_error_shown = False
+        # Subagent state by tool_use_id of the Agent/Task call, and task_id -> tool_use_id.
+        self._subagents: dict[str, dict[str, Any]] = {}
+        self._task_tools: dict[str, str] = {}
+        # Echoes still expected from live changes by the app, counted by prefix.
+        self._expected_echoes: dict[str, int] = {}
         self.init: SessionInit | None = None
         self.last_result: TurnResult | None = None
         self.rate_limit: RateLimit | None = None
@@ -179,8 +205,23 @@ class ConversationBuilder:
     def snapshot(self) -> list[dict[str, Any]]:
         return [asdict(item) for item in self.items]
 
-    def add_user_message(self, text: str) -> list[Event]:
-        return [self._put(UserItem(id=f"user-{uuid.uuid4().hex}", text=text))]
+    def add_user_message(
+        self, text: str, images: list[dict[str, Any]] | None = None
+    ) -> list[Event]:
+        """`images` are light markers ({type, media_type, size}), never the base64."""
+        item = UserItem(id=f"user-{uuid.uuid4().hex}", text=text, images=list(images or []))
+        return [self._put(item)]
+
+    def expect_local_echo(self, text: str) -> None:
+        """The app changed the model live: the CLI answers at the next turn with a
+        `<local-command-stdout>Set model to ...` line; one such line is dropped
+        per expectation. `text` only selects the prefix."""
+        for prefix in ECHO_PREFIXES:
+            if text.startswith(prefix):
+                self._expected_echoes[prefix] = self._expected_echoes.get(prefix, 0) + 1
+
+    def clear_local_echo(self) -> None:
+        self._expected_echoes.clear()
 
     def add_notice(self, level: NoticeLevel, text: str) -> list[Event]:
         """Notice raised by the app itself (e.g. the agent process failed)."""
@@ -233,6 +274,13 @@ class ConversationBuilder:
                 elif item.result.get("details") is None:
                     item.result["details"] = slim_details(item.name, raw.get("details"))
             item.result_missing = item.result is None
+            if item.subagent is not None and item.subagent["status"] == "running":
+                if item.result is None:
+                    item.subagent["status"] = "stopped"
+                elif item.result.get("is_error"):
+                    item.subagent["status"] = "failed"
+                else:
+                    item.subagent["status"] = "completed"
 
     def _load_user(self, content: Any) -> None:
         if isinstance(content, str):
@@ -299,7 +347,28 @@ class ConversationBuilder:
             self.items[position] = item
         if isinstance(item, ToolItem):
             self._tools[item.tool_use_id] = item.id
+            if item.name in SUBAGENT_TOOLS:
+                item.subagent = self._subagent_for(item)
         return Event("item.upsert", asdict(item))
+
+    def _subagent_for(self, item: ToolItem) -> dict[str, Any]:
+        sub = self._subagents.get(item.tool_use_id)
+        if sub is None:
+            sub = {
+                "task_id": None,
+                "subagent_type": None,
+                "description": None,
+                "status": "running",
+                "last_activity": None,
+                "usage": None,
+                "summary": None,
+            }
+            self._subagents[item.tool_use_id] = sub
+        if sub["subagent_type"] is None and isinstance(item.input.get("subagent_type"), str):
+            sub["subagent_type"] = item.input["subagent_type"]
+        if sub["description"] is None and isinstance(item.input.get("description"), str):
+            sub["description"] = item.input["description"]
+        return sub
 
     def _notice(self, level: NoticeLevel, text: str) -> Event:
         return self._put(NoticeItem(id=f"notice-{uuid.uuid4().hex}", level=level, text=text))
@@ -456,8 +525,16 @@ class ConversationBuilder:
 
     def _on_user(self, message: UserMessage) -> list[Event]:
         # Plain text is the echo of what the user sent; add_user_message has it.
+        # Output of a local command (e.g. after set_model) becomes a notice.
         if isinstance(message.content, str):
-            return []
+            if "<local-command-stdout>" not in message.content:
+                return []
+            output = _STDOUT.sub("", message.content).strip()
+            prefix = next((p for p in ECHO_PREFIXES if output.startswith(p)), None)
+            if prefix is not None and self._expected_echoes.get(prefix, 0) > 0:
+                self._expected_echoes[prefix] -= 1
+                return []
+            return [self._notice("info", output)] if output else []
         events: list[Event] = []
         for block in message.content:
             if isinstance(block, ToolResultBlock):
@@ -485,7 +562,42 @@ class ConversationBuilder:
 
     # System, result, rate limit ------------------------------------------
 
+    def _on_task(self, message: SystemMessage) -> list[Event]:
+        """Task* messages update the subagent card of the Agent/Task call."""
+        task_id = getattr(message, "task_id", None)
+        tool_use_id = getattr(message, "tool_use_id", None) or self._task_tools.get(task_id)
+        if not tool_use_id:
+            return []
+        tool = self._tool_item(tool_use_id)
+        if tool is None or tool.name not in SUBAGENT_TOOLS:
+            return []
+        self._task_tools[task_id] = tool_use_id
+        sub = self._subagent_for(tool)
+        sub["task_id"] = task_id
+        if isinstance(message, TaskStartedMessage):
+            sub["subagent_type"] = message.data.get("subagent_type") or sub["subagent_type"]
+            sub["description"] = message.description or sub["description"]
+            sub["status"] = "running"
+        elif isinstance(message, TaskProgressMessage):
+            sub["description"] = message.description or sub["description"]
+            sub["last_activity"] = message.last_tool_name or sub["last_activity"]
+            sub["usage"] = dict(message.usage) if message.usage else sub["usage"]
+        elif isinstance(message, TaskUpdatedMessage):
+            status = message.status or message.patch.get("status")
+            sub["status"] = _SUBAGENT_STATUS.get(str(status), sub["status"])
+        elif isinstance(message, TaskNotificationMessage):
+            sub["status"] = _SUBAGENT_STATUS.get(message.status, sub["status"])
+            sub["summary"] = message.summary
+            if message.usage:
+                sub["usage"] = dict(message.usage)
+        return [self._put(tool)]
+
     def _on_system(self, message: SystemMessage) -> list[Event]:
+        if isinstance(
+            message,
+            (TaskStartedMessage, TaskProgressMessage, TaskUpdatedMessage, TaskNotificationMessage),
+        ):
+            return self._on_task(message)
         if message.subtype != "init":
             return []
         data = message.data

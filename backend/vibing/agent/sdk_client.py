@@ -60,6 +60,8 @@ def build_sdk_options(
     kwargs: dict[str, Any] = {
         "cwd": options.cwd,
         "include_partial_messages": True,
+        # Text blocks of subagents also reach the stream (as items under the Agent call).
+        "forward_subagent_text": True,
         "can_use_tool": options.can_use_tool,
     }
     if stderr is not None:
@@ -153,6 +155,12 @@ class SdkAgentClient:
     async def set_permission_mode(self, mode: str) -> None:
         try:
             await self._client.set_permission_mode(mode)
+        except Exception as error:
+            raise to_agent_error(error) from error
+
+    async def get_server_info(self) -> dict[str, Any] | None:
+        try:
+            return await self._client.get_server_info()
         except Exception as error:
             raise to_agent_error(error) from error
 

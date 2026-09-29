@@ -31,6 +31,10 @@ from claude_agent_sdk import (
     ServerToolUseBlock,
     StreamEvent,
     SystemMessage,
+    TaskNotificationMessage,
+    TaskProgressMessage,
+    TaskStartedMessage,
+    TaskUpdatedMessage,
     TextBlock,
     ThinkingBlock,
     ToolPermissionContext,
@@ -43,6 +47,23 @@ from vibing.agent.base import AgentError, AgentOptions
 
 DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_FAILURE = "O processo do agente encerrou inesperadamente."
+# Shape of `get_server_info()["models"]` in the real SDK (0.2.161).
+DEFAULT_SERVER_MODELS: list[dict[str, Any]] = [
+    {
+        "value": "default",
+        "displayName": "Default (recommended)",
+        "description": "Opus 5.5",
+        "supportsEffort": True,
+        "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
+    },
+    {
+        "value": "haiku",
+        "displayName": "Haiku",
+        "description": "Haiku 4.5",
+        "supportsEffort": False,
+        "supportedEffortLevels": [],
+    },
+]
 # Texts the real SDK sends when interrupt() cancels a pending permission.
 INTERRUPTED_FOR_TOOL_USE = "[Request interrupted by user for tool use]"
 TOOL_USE_REJECTED = (
@@ -124,10 +145,17 @@ class FakeAgentClient:
         options: AgentOptions,
         script: Script | None = None,
         connect_error: ConnectError | None = None,
+        server_info: dict[str, Any] | None = None,
     ) -> None:
         self.options = options
         self.script: Script = script or (lambda content: [])
         self.connect_error = connect_error
+        self.server_info = (
+            server_info if server_info is not None else {"models": DEFAULT_SERVER_MODELS}
+        )
+        self.server_info_calls = 0
+        # When set, close() stops here until the test releases it.
+        self.close_pause: PauseStep | None = None
 
         self.sent: list[str | list[dict[str, Any]]] = []
         self.interrupts = 0
@@ -160,6 +188,15 @@ class FakeAgentClient:
             raise AgentError(DEFAULT_FAILURE)
         self.sent.append(content)
         await self._turns.put(list(self.script(content)))
+
+    def push(self, steps: Iterable[Step]) -> None:
+        """A turn the CLI opens by itself (e.g. a background subagent finished):
+        played like a sent turn, but without anything in `sent`."""
+        self._turns.put_nowait(list(steps))
+
+    async def get_server_info(self) -> dict[str, Any] | None:
+        self.server_info_calls += 1
+        return self.server_info
 
     async def messages(self) -> AsyncIterator[Message]:
         while True:
@@ -210,6 +247,9 @@ class FakeAgentClient:
         self.permission_mode_calls.append(mode)
 
     async def close(self) -> None:
+        if self.close_pause is not None:
+            self.close_pause.reached.set()
+            await self.close_pause.release.wait()
         self.closed = True
         for task in (self._current, self._worker):
             if task is not None and not task.done():
@@ -265,13 +305,15 @@ class FakeAgentFactory:
         self,
         script: Script | None = None,
         connect_error: ConnectError | None = None,
+        server_info: dict[str, Any] | None = None,
     ) -> None:
         self.script = script
         self.connect_error = connect_error
+        self.server_info = server_info
         self.clients: list[FakeAgentClient] = []
 
     def __call__(self, options: AgentOptions) -> FakeAgentClient:
-        client = FakeAgentClient(options, self.script, self.connect_error)
+        client = FakeAgentClient(options, self.script, self.connect_error, self.server_info)
         self.clients.append(client)
         return client
 
@@ -508,3 +550,103 @@ def tool_turn(
     steps.extend(response_messages(session_id, [TextBlock(text=final_text)], model=model))
     steps.append(result_message(session_id, result=final_text))
     return steps
+
+
+# Local commands and background tasks ---------------------------------------
+
+
+def local_command_message(text: str) -> UserMessage:
+    """What the CLI sends at the start of a turn after set_model/set_permission_mode."""
+    return UserMessage(
+        content=f"<local-command-stdout>{text}</local-command-stdout>", uuid=str(uuid.uuid4())
+    )
+
+
+def background_tasks_changed_message(session_id: str, tasks: list[Any] | None = None) -> SystemMessage:
+    return SystemMessage(
+        subtype="background_tasks_changed",
+        data={"type": "system", "subtype": "background_tasks_changed",
+              "session_id": session_id, "tasks": tasks or []},
+    )
+
+
+def task_started_message(
+    session_id: str,
+    task_id: str,
+    tool_use_id: str,
+    *,
+    description: str = "Explorar o código",
+    subagent_type: str = "Explore",
+    prompt: str = "explore",
+) -> TaskStartedMessage:
+    data = {
+        "type": "system", "subtype": "task_started", "session_id": session_id,
+        "task_id": task_id, "tool_use_id": tool_use_id, "description": description,
+        "task_type": "local_agent", "subagent_type": subagent_type,
+        "is_backgrounded": True, "prompt": prompt,
+    }
+    return TaskStartedMessage(
+        subtype="task_started", data=data, task_id=task_id, description=description,
+        uuid=str(uuid.uuid4()), session_id=session_id, tool_use_id=tool_use_id,
+        task_type="local_agent",
+    )
+
+
+def task_progress_message(
+    session_id: str,
+    task_id: str,
+    tool_use_id: str,
+    *,
+    description: str = "Lendo arquivos",
+    last_tool_name: str | None = "Read",
+    usage: dict[str, int] | None = None,
+) -> TaskProgressMessage:
+    usage = usage or {"total_tokens": 100, "tool_uses": 1, "duration_ms": 500}
+    data = {
+        "type": "system", "subtype": "task_progress", "session_id": session_id,
+        "task_id": task_id, "tool_use_id": tool_use_id, "description": description,
+        "usage": usage, "last_tool_name": last_tool_name,
+    }
+    return TaskProgressMessage(
+        subtype="task_progress", data=data, task_id=task_id, description=description,
+        usage=usage,  # type: ignore[arg-type]
+        uuid=str(uuid.uuid4()), session_id=session_id, tool_use_id=tool_use_id,
+        last_tool_name=last_tool_name,
+    )
+
+
+def task_updated_message(
+    session_id: str, task_id: str, status: str, patch: dict[str, Any] | None = None
+) -> TaskUpdatedMessage:
+    patch = patch if patch is not None else {"status": status}
+    data = {"type": "system", "subtype": "task_updated", "session_id": session_id,
+            "task_id": task_id, "patch": patch}
+    return TaskUpdatedMessage(
+        subtype="task_updated", data=data, task_id=task_id, patch=patch,
+        status=status,  # type: ignore[arg-type]
+        session_id=session_id, uuid=str(uuid.uuid4()),
+    )
+
+
+def task_notification_message(
+    session_id: str,
+    task_id: str,
+    tool_use_id: str,
+    *,
+    status: str = "completed",
+    summary: str = "Terminei.",
+    usage: dict[str, int] | None = None,
+) -> TaskNotificationMessage:
+    usage = usage or {"total_tokens": 300, "tool_uses": 3, "duration_ms": 2000}
+    data = {
+        "type": "system", "subtype": "task_notification", "session_id": session_id,
+        "task_id": task_id, "tool_use_id": tool_use_id, "status": status,
+        "summary": summary, "output_file": "/tmp/out", "usage": usage,
+    }
+    return TaskNotificationMessage(
+        subtype="task_notification", data=data, task_id=task_id,
+        status=status,  # type: ignore[arg-type]
+        output_file="/tmp/out", summary=summary, uuid=str(uuid.uuid4()),
+        session_id=session_id, tool_use_id=tool_use_id,
+        usage=usage,  # type: ignore[arg-type]
+    )

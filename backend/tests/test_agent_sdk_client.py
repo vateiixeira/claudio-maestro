@@ -52,6 +52,7 @@ def test_build_options_new_session_passes_session_id(tmp_path):
     assert sdk.session_id == SESSION_ID
     assert sdk.resume is None
     assert sdk.include_partial_messages is True
+    assert sdk.forward_subagent_text is True
     assert sdk.can_use_tool is allow_all
 
 
@@ -220,6 +221,9 @@ class StubSdkClient:
     async def set_permission_mode(self, mode):
         self.modes.append(mode)
 
+    async def get_server_info(self):
+        return {"models": [{"value": "haiku"}]}
+
     async def disconnect(self):
         self.disconnected = True
 
@@ -373,3 +377,11 @@ async def test_other_connect_failures_are_not_flagged(tmp_path):
         await client.connect()
 
     assert info.value.session_in_use is False
+
+
+@pytest.mark.anyio
+async def test_get_server_info_is_forwarded(tmp_path):
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=StubSdkClient())
+    await client.connect()
+
+    assert await client.get_server_info() == {"models": [{"value": "haiku"}]}

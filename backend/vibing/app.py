@@ -16,7 +16,7 @@ from vibing.api.editor import SpawnEditor, spawn_detached
 from vibing.config import Settings, load_settings
 from vibing.events import EventHub
 from vibing.gitmonitor import GitMonitor
-from vibing.security import HostOriginMiddleware
+from vibing.security import BodySizeLimitMiddleware, HostOriginMiddleware
 from vibing.sessions import HistoryExists, RenameSession, SessionManager
 
 
@@ -110,6 +110,7 @@ def create_app(
             await app.state.sessions.shutdown()
 
     app = FastAPI(title="Vini7 Vibing", lifespan=lifespan)
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(HostOriginMiddleware)
     app.include_router(router)
     return app

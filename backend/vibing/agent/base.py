@@ -61,6 +61,10 @@ class AgentClient(Protocol):
 
     async def set_permission_mode(self, mode: str) -> None: ...
 
+    async def get_server_info(self) -> dict[str, Any] | None:
+        """Initialization info of the CLI; `models` lists the available models."""
+        ...
+
     async def close(self) -> None: ...
 
 
