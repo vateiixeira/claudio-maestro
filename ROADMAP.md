@@ -18,7 +18,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | Preparação | Requisitos, design e viabilidade | Concluído | 6 de 6 |
 | 0. Fundação | Backend e frontend no ar em modo de desenvolvimento | Concluído | 6 de 6 |
 | 1. Conversa funcionando | Um projeto, uma sessão com streaming e permissões | Concluído | 13 de 13 |
-| 2. Multissessão | Colunas, estados e menu lateral | Em andamento | 0 de 12 |
+| 2. Multissessão | Colunas, estados e menu lateral | Em andamento | 3 de 12 |
 | 3. Histórico | Retomada, busca e ocultação | Não iniciado | 0 de 7 |
 | 4. Git | Branches em todas as telas e painel de alterações | Não iniciado | 0 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Não iniciado | 0 de 13 |
@@ -75,10 +75,10 @@ Frontend
 
 Objetivo: acompanhar várias sessões de projetos diferentes ao mesmo tempo.
 
-- [ ] Várias sessões ativas no backend, cada uma com seu processo
-- [ ] Remover projeto fecha as sessões ativas dele e resolve pedidos pendentes
+- [x] Várias sessões ativas no backend, cada uma com seu processo (2026-09-29)
+- [x] Remover projeto fecha as sessões ativas dele e resolve pedidos pendentes (2026-09-29)
 - [ ] Lista de sessões do menu não é sobrescrita por respostas antigas nem por eventos fora de ordem
-- [ ] Desligamento de sessão ociosa após 30 minutos, com religamento automático
+- [x] Desligamento de sessão ociosa após 30 minutos, com religamento automático (2026-09-29)
 - [ ] Colunas lado a lado, largura ajustável, rolagem horizontal
 - [ ] Layout salvo e restaurado ao reabrir o app
 - [ ] Três estados exibidos: em execução, aguardando você, finalizada

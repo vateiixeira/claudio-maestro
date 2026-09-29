@@ -4,7 +4,7 @@ import sqlite3
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from vibing import projects, sessions
 from vibing.api.deps import DbDep
@@ -41,8 +41,24 @@ class SessionOut(BaseModel):
     title: str
     created_at: int
     last_activity_at: int
+    last_seen_at: int | None
+    finished: bool
     state: str
     error: str | None
+    seq: int
+    display_state: Literal["running", "waiting", "finished"]
+    unread: bool
+    awaiting_decision: bool
+
+
+Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+class SessionPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    finished: bool | None = None
+    title: Title | None = None
 
 
 _STATUS = {
@@ -85,13 +101,40 @@ async def create_session(project_id: int, conn: DbDep, manager: ManagerDep) -> d
         record = manager.create_session(project)
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
-    return sessions.SessionSummary(record, "closed", None).to_dict()
+    return manager.describe_record(record)
 
 
 @router.get("/projects/{project_id}/sessions", response_model=list[SessionOut])
 async def list_sessions(project_id: int, conn: DbDep, manager: ManagerDep) -> list[dict[str, Any]]:
     _get_project(conn, project_id)
-    return [summary.to_dict() for summary in manager.list_for_project(project_id)]
+    return manager.list_sessions(project_id=project_id)
+
+
+@router.get("/sessions", response_model=list[SessionOut])
+async def list_all_sessions(
+    manager: ManagerDep,
+    project_id: int | None = None,
+    state: Literal["running", "waiting", "finished"] | None = None,
+) -> list[dict[str, Any]]:
+    return manager.list_sessions(project_id=project_id, display_state=state)
+
+
+@router.patch("/sessions/{session_id}", response_model=SessionOut)
+async def update_session(
+    session_id: str, body: SessionPatch, manager: ManagerDep
+) -> dict[str, Any]:
+    try:
+        return await manager.update(session_id, finished=body.finished, title=body.title)
+    except sessions.SessionError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/sessions/{session_id}/seen", response_model=SessionOut)
+async def mark_seen(session_id: str, manager: ManagerDep) -> dict[str, Any]:
+    try:
+        return await manager.mark_seen(session_id)
+    except sessions.SessionError as exc:
+        raise _http_error(exc) from exc
 
 
 @router.get("/sessions/{session_id}")

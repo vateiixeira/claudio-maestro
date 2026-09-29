@@ -1,6 +1,8 @@
 """Application assembly: settings, database, middleware and routes."""
 
+import asyncio
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -12,17 +14,18 @@ from vibing.api import router
 from vibing.config import Settings, load_settings
 from vibing.events import EventHub
 from vibing.security import HostOriginMiddleware
-from vibing.sessions import HistoryExists, SessionManager
+from vibing.sessions import HistoryExists, RenameSession, SessionManager
 
 
 def create_app(
     settings: Settings | None = None,
     agent_factory: AgentFactory | None = None,
     history_exists: HistoryExists | None = None,
+    rename_session: RenameSession | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
-    `agent_factory` and `history_exists` default to the real SDK; tests pass fakes.
+    `agent_factory`, `history_exists` and `rename_session` default to the real SDK; tests pass fakes.
     """
 
     @asynccontextmanager
@@ -36,10 +39,19 @@ def create_app(
             app.state.hub.publish,
             agent_factory=agent_factory,
             history_exists=history_exists,
+            rename_session=rename_session,
+            idle_timeout=app.state.settings.idle_timeout_seconds,
+            finished_after_days=app.state.settings.finished_after_days,
+        )
+        sweep = asyncio.create_task(
+            app.state.sessions.run_idle_sweep(app.state.settings.idle_sweep_interval_seconds)
         )
         try:
             yield
         finally:
+            sweep.cancel()
+            with suppress(asyncio.CancelledError):
+                await sweep
             await app.state.sessions.shutdown()
 
     app = FastAPI(title="Vini7 Vibing", lifespan=lifespan)

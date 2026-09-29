@@ -160,13 +160,7 @@ def test_snapshot_of_new_session(api, home):
 
     assert response.status_code == 200
     assert response.json() == {
-        "session_id": session["session_id"],
-        "project_id": session["project_id"],
-        "title": "Nova sessão",
-        "cwd": session["cwd"],
-        "state": "closed",
-        "error": None,
-        "seq": 0,
+        **session,
         "items": [],
         "prompts": [],
         "init": None,

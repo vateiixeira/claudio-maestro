@@ -15,6 +15,11 @@ DB_FILENAME = "vibing.db"
 class Settings:
     home_dir: Path
     data_dir: Path
+    # A session idle this long has its client closed; it resumes on the next message.
+    idle_timeout_seconds: float = 30 * 60
+    idle_sweep_interval_seconds: float = 60
+    # Default for "finished by inactivity"; `preferences.finished_after_days` overrides it.
+    finished_after_days: float = 3
 
     @property
     def db_path(self) -> Path:

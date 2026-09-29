@@ -7,6 +7,7 @@ Every change is published as an envelope `{session_id, seq, type, data}`.
 """
 
 import asyncio
+import json
 import logging
 import sqlite3
 import time
@@ -41,8 +42,17 @@ SessionState = Literal["closed", "connecting", "running", "awaiting_decision", "
 Decision = Literal["allow_once", "allow_always", "deny"]
 DECISIONS: tuple[str, ...] = ("allow_once", "allow_always", "deny")
 
+DisplayState = Literal["running", "waiting", "finished"]
+DISPLAY_STATES: tuple[str, ...] = ("running", "waiting", "finished")
+
 Publish = Callable[[dict[str, Any]], None]
 HistoryExists = Callable[[str, str], bool]
+# rename_session(session_id, title, directory): writes the title to the SDK history.
+RenameSession = Callable[[str, str, str], None]
+
+DEFAULT_IDLE_TIMEOUT = 30 * 60  # seconds
+DEFAULT_FINISHED_AFTER_DAYS = 3.0
+DAY_SECONDS = 86_400
 
 
 # Errors --------------------------------------------------------------------
@@ -91,6 +101,8 @@ class SessionRecord:
     title: str
     created_at: int
     last_activity_at: int
+    last_seen_at: int | None = None
+    finished: bool = False
 
 
 @dataclass
@@ -103,11 +115,67 @@ class SessionSummary:
         return {**asdict(self.record), "state": self.state, "error": self.error}
 
 
-_COLUMNS = "session_id, project_id, cwd, title, created_at, last_activity_at"
+_COLUMNS = (
+    "session_id, project_id, cwd, title, created_at, last_activity_at, last_seen_at, finished"
+)
 
 
 def _record(row: sqlite3.Row) -> SessionRecord:
-    return SessionRecord(**{key: row[key] for key in row.keys()})
+    fields = {key: row[key] for key in row.keys()}
+    fields["finished"] = bool(fields["finished"])
+    return SessionRecord(**fields)
+
+
+def display_state(
+    state: SessionState,
+    *,
+    finished: bool,
+    last_activity_at: int,
+    last_seen_at: int | None,
+    now: float,
+    finished_after: float,
+) -> DisplayState:
+    """State shown to the user: running, waiting for them, or finished.
+
+    `finished_after` is in seconds: a session without activity for longer counts
+    as finished. A pending decision always waits for the user.
+    """
+    if state in ("connecting", "running"):
+        return "running"
+    if state == "awaiting_decision":
+        return "waiting"
+    if finished or now - last_activity_at > finished_after:
+        return "finished"
+    return "waiting"
+
+
+def describe(
+    record: SessionRecord,
+    state: SessionState,
+    error: str | None,
+    seq: int,
+    *,
+    finished_after: float,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Session as sent to the frontend by listings, PATCH and `session.updated`."""
+    now = time.time() if now is None else now
+    return {
+        **asdict(record),
+        "state": state,
+        "error": error,
+        "seq": seq,
+        "display_state": display_state(
+            state,
+            finished=record.finished,
+            last_activity_at=record.last_activity_at,
+            last_seen_at=record.last_seen_at,
+            now=now,
+            finished_after=finished_after,
+        ),
+        "unread": record.last_activity_at > (record.last_seen_at or 0),
+        "awaiting_decision": state == "awaiting_decision",
+    }
 
 
 @dataclass
@@ -149,6 +217,12 @@ def sdk_history_exists(session_id: str, cwd: str) -> bool:
     return bool(claude_agent_sdk.get_session_messages(session_id, directory=cwd, limit=1))
 
 
+def sdk_rename_session(session_id: str, title: str, directory: str) -> None:
+    import claude_agent_sdk
+
+    claude_agent_sdk.rename_session(session_id, title, directory=directory)
+
+
 def default_agent_factory(options: AgentOptions) -> AgentClient:
     from vibing.agent.sdk_client import SdkAgentClient
 
@@ -171,6 +245,7 @@ class ActiveSession:
         publish: Publish,
         agent_factory: AgentFactory,
         history_exists: HistoryExists,
+        describe: Callable[["ActiveSession"], dict[str, Any]] | None = None,
     ) -> None:
         self.record = record
         self.builder = ConversationBuilder()
@@ -195,6 +270,9 @@ class ActiveSession:
         self._generation = 0
         self._final = False  # set by shutdown: nothing else is accepted
         self._published_state: tuple[str, str | None] = (self.state, None)
+        self._describe = describe
+        # Monotonic time the session last became idle; None while not idle.
+        self.idle_since: float | None = None
 
     @property
     def session_id(self) -> str:
@@ -214,7 +292,17 @@ class ActiveSession:
             return "running"
         return "idle"
 
+    @property
+    def busy(self) -> bool:
+        """A send or connect holds the lock."""
+        return self._lock.locked()
+
     def _refresh_state(self) -> None:
+        if self.state == "idle":
+            if self.idle_since is None:
+                self.idle_since = time.monotonic()
+        else:
+            self.idle_since = None
         current = (self.state, self.error)
         if current != self._published_state:
             self._published_state = current
@@ -235,17 +323,38 @@ class ActiveSession:
     def snapshot(self) -> dict[str, Any]:
         init = self.builder.init
         return {
-            "session_id": self.session_id,
-            "project_id": self.record.project_id,
-            "title": self.record.title,
-            "cwd": self.record.cwd,
-            "state": self.state,
-            "error": self.error,
-            "seq": self.seq,
+            **self.summary(),
             "items": self.builder.snapshot(),
             "prompts": [prompt.to_dict() for prompt in self.prompts.values()],
             "init": asdict(init) if init is not None else None,
         }
+
+    def summary(self) -> dict[str, Any]:
+        if self._describe is not None:
+            return self._describe(self)
+        return describe(
+            self.record, self.state, self.error, self.seq,
+            finished_after=DEFAULT_FINISHED_AFTER_DAYS * DAY_SECONDS,
+        )
+
+    def emit_updated(self) -> None:
+        data = self.summary()
+        data["seq"] = self.seq + 1  # the seq of this very event
+        self._emit("session.updated", data)
+
+    def save(self, **changes: Any) -> None:
+        """Write record fields to the database and memory."""
+        assignments = ", ".join(f"{column} = ?" for column in changes)
+        with closing(db.connect(self._db_path)) as conn:
+            conn.execute(
+                f"UPDATE sessions SET {assignments} WHERE session_id = ?",
+                (*changes.values(), self.session_id),
+            )
+        for key, value in changes.items():
+            setattr(self.record, key, value)
+
+    async def has_history(self) -> bool:
+        return self._has_connected or await self._check_history()
 
     # Sending ---------------------------------------------------------------
 
@@ -260,6 +369,10 @@ class ActiveSession:
             raise SessionClosedError("O servidor está encerrando. A mensagem não foi enviada.")
         # The user's message is recorded first so it is never lost.
         self._emit_events(self.builder.add_user_message(text))
+        self._touch()
+        if self.record.finished:
+            self.save(finished=False)
+            self.emit_updated()
         first = self._sent_messages == 0
         self._sent_messages += 1
         if first and self.record.title == DEFAULT_TITLE:
@@ -394,12 +507,7 @@ class ActiveSession:
             await self._fail("O agente encerrou a conexão.")
 
     def _touch(self) -> None:
-        self.record.last_activity_at = _now()
-        with closing(db.connect(self._db_path)) as conn:
-            conn.execute(
-                "UPDATE sessions SET last_activity_at = ? WHERE session_id = ?",
-                (self.record.last_activity_at, self.session_id),
-            )
+        self.save(last_activity_at=_now())
 
     # Interruption and failure ---------------------------------------------
 
@@ -535,11 +643,17 @@ class SessionManager:
         *,
         agent_factory: AgentFactory | None = None,
         history_exists: HistoryExists | None = None,
+        rename_session: RenameSession | None = None,
+        idle_timeout: float = DEFAULT_IDLE_TIMEOUT,
+        finished_after_days: float = DEFAULT_FINISHED_AFTER_DAYS,
     ) -> None:
         self._db_path = db_path
         self._publish = publish
         self._agent_factory = agent_factory or default_agent_factory
         self._history_exists = history_exists or sdk_history_exists
+        self._rename_session = rename_session or sdk_rename_session
+        self._idle_timeout = idle_timeout
+        self._finished_after_days = finished_after_days
         self._sessions: dict[str, ActiveSession] = {}
 
     def create_session(self, project: Project) -> SessionRecord:
@@ -553,10 +667,12 @@ class SessionManager:
             title=DEFAULT_TITLE,
             created_at=now,
             last_activity_at=now,
+            last_seen_at=now,
+            finished=False,
         )
         with closing(db.connect(self._db_path)) as conn:
             conn.execute(
-                f"INSERT INTO sessions ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO sessions ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.session_id,
                     record.project_id,
@@ -564,6 +680,8 @@ class SessionManager:
                     record.title,
                     record.created_at,
                     record.last_activity_at,
+                    record.last_seen_at,
+                    int(record.finished),
                 ),
             )
         return record
@@ -584,9 +702,45 @@ class SessionManager:
             publish=self._publish,
             agent_factory=self._agent_factory,
             history_exists=self._history_exists,
+            describe=self._describe_active,
         )
         self._sessions[session_id] = session
         return session
+
+    def active_ids(self) -> set[str]:
+        return set(self._sessions)
+
+    # Descriptions ------------------------------------------------------------
+
+    def finished_after(self) -> float:
+        """Seconds without activity after which a session counts as finished.
+
+        `preferences.finished_after_days` in `app_state` overrides the default.
+        """
+        days = self._finished_after_days
+        with closing(db.connect(self._db_path)) as conn:
+            row = conn.execute("SELECT value FROM app_state WHERE key = 'preferences'").fetchone()
+        if row is not None:
+            try:
+                value = json.loads(row["value"]).get("finished_after_days")
+            except (ValueError, AttributeError):
+                value = None
+            if isinstance(value, int | float) and not isinstance(value, bool) and value > 0:
+                days = float(value)
+        return days * DAY_SECONDS
+
+    def _describe_active(self, session: ActiveSession) -> dict[str, Any]:
+        return describe(
+            session.record, session.state, session.error, session.seq,
+            finished_after=self.finished_after(),
+        )
+
+    def describe_record(self, record: SessionRecord) -> dict[str, Any]:
+        """A session without an active client (e.g. just created)."""
+        return describe(record, "closed", None, 0, finished_after=self.finished_after())
+
+    def summary(self, session_id: str) -> dict[str, Any]:
+        return self.get(session_id).summary()
 
     def list_for_project(self, project_id: int) -> list[SessionSummary]:
         with closing(db.connect(self._db_path)) as conn:
@@ -603,6 +757,98 @@ class SessionManager:
             else:
                 summaries.append(SessionSummary(_record(row), "closed", None))
         return summaries
+
+    def list_sessions(
+        self, *, project_id: int | None = None, display_state: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Sessions of every project (or one), newest activity first, with the current seq."""
+        query = f"SELECT {_COLUMNS} FROM sessions"
+        params: tuple[Any, ...] = ()
+        if project_id is not None:
+            query += " WHERE project_id = ?"
+            params = (project_id,)
+        query += " ORDER BY last_activity_at DESC, created_at DESC"
+        with closing(db.connect(self._db_path)) as conn:
+            rows = conn.execute(query, params).fetchall()
+        finished_after = self.finished_after()
+        now = time.time()
+        result = []
+        for row in rows:
+            active = self._sessions.get(row["session_id"])
+            if active is not None:
+                item = describe(
+                    active.record, active.state, active.error, active.seq,
+                    finished_after=finished_after, now=now,
+                )
+            else:
+                item = describe(_record(row), "closed", None, 0,
+                                finished_after=finished_after, now=now)
+            if display_state is None or item["display_state"] == display_state:
+                result.append(item)
+        return result
+
+    # Changes -----------------------------------------------------------------
+
+    async def update(
+        self, session_id: str, *, finished: bool | None = None, title: str | None = None
+    ) -> dict[str, Any]:
+        """Finish, reopen or rename. Emits `session.updated` when something changed."""
+        session = self.get(session_id)
+        changes: dict[str, Any] = {}
+        if finished is not None and finished != session.record.finished:
+            changes["finished"] = finished
+        if title is not None:
+            title = title.strip()
+            if title and title != session.record.title:
+                changes["title"] = title
+        if not changes:
+            return session.summary()
+        session.save(**changes)
+        if "title" in changes and await session.has_history():
+            try:
+                await asyncio.to_thread(
+                    self._rename_session, session_id, changes["title"], session.record.cwd
+                )
+            except Exception:
+                logger.exception("Falha ao renomear a sessão %s no SDK", session_id)
+        session.emit_updated()
+        return session.summary()
+
+    async def mark_seen(self, session_id: str) -> dict[str, Any]:
+        session = self.get(session_id)
+        session.save(last_seen_at=max(_now(), session.record.last_activity_at))
+        session.emit_updated()
+        return session.summary()
+
+    # Closing -----------------------------------------------------------------
+
+    async def close_project(self, project_id: int) -> None:
+        """Close and forget every active session of a project being removed."""
+        for session_id, session in list(self._sessions.items()):
+            if session.record.project_id == project_id:
+                await session.close(final=True)
+                self._sessions.pop(session_id, None)
+
+    async def close_idle(self) -> None:
+        """Close clients idle longer than the timeout. They resume on the next message."""
+        now = time.monotonic()
+        for session in list(self._sessions.values()):
+            if (
+                session.state == "idle"
+                and not session.busy
+                and session.idle_since is not None
+                and now - session.idle_since >= self._idle_timeout
+            ):
+                logger.info("Sessão %s ociosa; fechando o cliente", session.session_id)
+                await session.close()
+
+    async def run_idle_sweep(self, interval: float) -> None:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await self.close_idle()
+            except Exception:
+                logger.exception("Falha na varredura de sessões ociosas")
 
     async def shutdown(self) -> None:
         for session in list(self._sessions.values()):

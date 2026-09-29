@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from vibing import projects
@@ -78,8 +78,11 @@ def update_project(project_id: int, body: ProjectUpdate, conn: DbDep) -> project
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(project_id: int, conn: DbDep) -> Response:
+async def delete_project(project_id: int, conn: DbDep, request: Request) -> Response:
+    """Close the project's active sessions (pending prompts cancelled), then delete it."""
     try:
+        projects.get_project(conn, project_id)
+        await request.app.state.sessions.close_project(project_id)
         projects.delete_project(conn, project_id)
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
