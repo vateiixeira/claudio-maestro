@@ -55,9 +55,9 @@ describe('Dashboard', () => {
   it('mostra cartões das conversas ativas com a última ação', async () => {
     const { wrapper } = await mountDashboard()
     const cards = wrapper.findAll('[data-test="now-card"]')
-    expect(cards.map((c) => c.find('a').text())).toEqual(['Rodando', 'Pede'])
-    expect(cards[0]!.text()).toContain('Edit main.py')
-    expect(cards[1]!.text()).toContain('Pede permissão: Bash')
+    expect(cards.map((c) => c.find('a').text())).toEqual(['Pede', 'Rodando'])
+    expect(cards[0]!.text()).toContain('Pede permissão: Bash')
+    expect(cards[1]!.text()).toContain('Edit main.py')
   })
 
   it('permite pelo cartão', async () => {
@@ -131,5 +131,49 @@ describe('Dashboard', () => {
     expect(wrapper.find('[data-test="activity-empty"]').exists()).toBe(true)
     await wrapper.find('[data-test="load-retry"]').trigger('click')
     expect(loadEverything).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Dashboard: bloco Agora limitado', () => {
+  const waitingSession = (id: number, over: Record<string, unknown> = {}) =>
+    makeSession({ session_id: `x${id}`, title: `Espera ${id}`, display_state: 'waiting', state: 'closed', last_activity_at: now - id, ...over })
+
+  it('com mais de 6 ativas mostra 6 cartões e o link para a Inbox', async () => {
+    useSessionsStore(pinia).setForProject(1, Array.from({ length: 8 }, (_, i) => waitingSession(i)))
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.findAll('[data-test="now-card"]')).toHaveLength(6)
+    const more = wrapper.find('[data-test="now-more"]')
+    expect(more.text()).toBe('Ver todas as 8 na Inbox')
+    expect(more.attributes('href')).toBe('/inbox?aba=todas')
+  })
+
+  it('com 6 ou menos não mostra o link', async () => {
+    useSessionsStore(pinia).setForProject(1, Array.from({ length: 6 }, (_, i) => waitingSession(i)))
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.findAll('[data-test="now-card"]')).toHaveLength(6)
+    expect(wrapper.find('[data-test="now-more"]').exists()).toBe(false)
+  })
+
+  it('ordena: pedido pendente, depois em execução, depois "Sua vez"; cada grupo do mais novo ao mais antigo', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      waitingSession(1, { session_id: 'vez', title: 'Sua vez', last_activity_at: now }),
+      makeSession({ session_id: 'run-old', title: 'Rodando antiga', display_state: 'running', state: 'running', last_activity_at: now - 50 }),
+      makeSession({ session_id: 'run-new', title: 'Rodando nova', display_state: 'running', state: 'running', last_activity_at: now - 5 }),
+      waitingSession(2, { session_id: 'ask-old', title: 'Pede antiga', awaiting_decision: true, pending_kind: 'tool', last_activity_at: now - 1000 }),
+      waitingSession(3, { session_id: 'ask-kind', title: 'Pede pergunta', pending_kind: 'question', last_activity_at: now - 2000 }),
+    ])
+    const { wrapper } = await mountDashboard()
+    const titles = wrapper.findAll('[data-test="now-card"]').map((c) => c.find('a').text())
+    expect(titles).toEqual(['Pede antiga', 'Pede pergunta', 'Rodando nova', 'Rodando antiga', 'Sua vez'])
+  })
+
+  it('os números continuam contando todas as ativas', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      ...Array.from({ length: 5 }, (_, i) => makeSession({ session_id: `r${i}`, display_state: 'running', state: 'running', last_activity_at: now - i })),
+      ...Array.from({ length: 3 }, (_, i) => waitingSession(i)),
+    ])
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.find('[data-test="stat-running"] span').text()).toBe('5')
+    expect(wrapper.find('[data-test="stat-waiting"] span').text()).toBe('3')
   })
 })

@@ -12,14 +12,22 @@ import { useLoadState } from '../loadState'
 import { changedCount, repoLabel, useGitStore } from '../stores/git'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
-import type { ActivityDay } from '../types/api'
+import type { ActivityDay, Session } from '../types/api'
 
 const sessions = useSessionsStore()
 const projects = useProjectsStore()
 const git = useGitStore()
 const loadState = useLoadState()
 
+const NOW_LIMIT = 6
 const active = computed(() => sessions.all.filter((s) => s.display_state === 'running' || s.display_state === 'waiting'))
+// Pending requests first, then running, then the rest of the waiting ones; newest first inside each group.
+const nowRank = (s: Session) => (s.awaiting_decision || s.pending_kind != null ? 0 : s.display_state === 'running' ? 1 : 2)
+const nowCards = computed(() =>
+  [...active.value]
+    .sort((a, b) => nowRank(a) - nowRank(b) || b.last_activity_at - a.last_activity_at)
+    .slice(0, NOW_LIMIT),
+)
 const running = computed(() => active.value.filter((s) => s.display_state === 'running').length)
 const waiting = computed(() => active.value.filter((s) => s.display_state === 'waiting').length)
 const startOfToday = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000 }
@@ -62,9 +70,12 @@ function scrollToProjects() {
     <section v-if="loadState === 'ready'" aria-labelledby="now-title" class="flex flex-col gap-3">
       <h2 id="now-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Agora</h2>
       <p v-if="active.length === 0" data-test="now-empty" class="m-0 text-fg-muted">Nenhuma conversa ativa agora.</p>
-      <div v-else class="grid gap-3 md:grid-cols-2">
-        <NowCard v-for="s in active" :key="s.session_id" :session="s" :project="projects.byId(s.project_id)" />
-      </div>
+      <template v-else>
+        <div class="grid gap-3 md:grid-cols-2">
+          <NowCard v-for="s in nowCards" :key="s.session_id" :session="s" :project="projects.byId(s.project_id)" />
+        </div>
+        <RouterLink v-if="active.length > NOW_LIMIT" data-test="now-more" to="/inbox?aba=todas" class="self-start text-sm text-fg-muted no-underline hover:text-fg">Ver todas as {{ active.length }} na Inbox</RouterLink>
+      </template>
     </section>
 
     <section v-if="loadState === 'ready'" aria-label="Números" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
