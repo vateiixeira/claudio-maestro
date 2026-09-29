@@ -25,7 +25,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
-| 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Em andamento | 8 de 11 |
+| 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. Os marcos 8 e 9 só começam quando o usuário pedir.
 
@@ -279,9 +279,9 @@ Fonte dos dados: o arquivo do plano em `docs/superpowers/plans/`. Uma regra no `
 - [x] Faixa fixa na página da conversa com tarefa atual, barra e lista expansível (2026-09-29)
 - [x] Plano em Detalhes: trocar, desligar e religar o automático (2026-09-29)
 - [x] Selo "4/12" na linha de conversa e tarefa atual no bloco "Agora" do Dashboard (2026-09-29)
-- [ ] Conversa do CLI no meio de um turno aparece como em andamento (sinal de turno aberto, inclusive com subagente rodando), com evento também para conversas fora de memória (achado bloqueante da revisão do marco 9)
-- [ ] Leitura de plano recusa arquivo especial e lê no máximo o limite; cabeçalhos de tarefa com qualquer separador; caminho relativo recusado no vínculo; subagentes do CLI contam para o vínculo
-- [ ] Tooltip do selo visível, lista da faixa recarrega ao trocar de plano, contraste do estado parado
+- [x] Conversa do CLI no meio de um turno aparece como em andamento (sinal de turno aberto, inclusive com subagente rodando), com evento também para conversas fora de memória (achado bloqueante da revisão do marco 9) (2026-09-29)
+- [x] Leitura de plano recusa arquivo especial e lê no máximo o limite; cabeçalhos de tarefa com qualquer separador; caminho relativo recusado no vínculo; subagentes do CLI contam para o vínculo (2026-09-29)
+- [x] Tooltip do selo visível, lista da faixa recarrega ao trocar de plano, contraste do estado parado (2026-09-29)
 
 Decidido no desenho (2026-09-29): a fonte é o arquivo do plano com a regra de marcação; vínculo automático com ajuste manual; tarefa inteira, sem "em andamento"; conversa parada mostra o progresso apagado, e finalizada ou plano 100% só em Detalhes.
 
@@ -344,4 +344,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | Nova navegação no estilo do Paperclip vira o marco 7 e substitui as colunas lado a lado. Agrupador passa a marco 8 e progresso de planos a marco 9 |
 | 2026-09-29 | Pendências do marco 7 fechadas, revisadas e marco 7 concluído de novo |
 | 2026-09-29 | Progresso de planos lido do arquivo do plano, com regra de marcação no CLAUDE.md global; ferramenta de tarefas descartada por não existir nas sessões com Opus |
+| 2026-09-29 | Marco 9 concluído: progresso lido do plano, vínculo automático, sinal de turno aberto das conversas do CLI; revisado e testado no app real |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |

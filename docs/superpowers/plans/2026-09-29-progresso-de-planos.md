@@ -838,7 +838,7 @@ Expected: PASS.
 - Modify: `/home/vi/.claude/CLAUDE.md` (arquivo do usuário, aprovado por ele)
 - Modify: `ROADMAP.md`
 
-- [ ] **Step 1: Acrescentar a regra**
+- [x] **Step 1: Acrescentar a regra**
 
 Na seção "Superpowers" de `/home/vi/.claude/CLAUDE.md`:
 
@@ -846,14 +846,14 @@ Na seção "Superpowers" de `/home/vi/.claude/CLAUDE.md`:
 - Ao concluir uma tarefa de um plano em `docs/superpowers/plans/` (depois da revisão e do commit), marque como feitas todas as caixas (`- [x]`) daquela tarefa no arquivo do plano, no checkout principal. Não marque caixas de tarefas que ainda não foram concluídas.
 ```
 
-- [ ] **Step 2: Aplicar a regra a este plano durante a execução**
+- [x] **Step 2: Aplicar a regra a este plano durante a execução**
 
 A cada tarefa deste plano aprovada e commitada, marcar as caixas dela neste arquivo (é o primeiro teste real da funcionalidade).
 
-- [ ] **Step 3: Teste manual**
+- [x] **Step 3: Teste manual**
 
 Com o app rodando (o usuário já o mantém em `localhost:6600`), abrir a conversa que executa este plano e conferir: faixa com a tarefa atual, selo na linha, Detalhes. Registrar no roadmap o que foi visto.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 `[Docs] Concluir marco 9 de progresso de planos`
