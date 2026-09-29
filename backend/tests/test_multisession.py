@@ -503,6 +503,84 @@ async def test_mark_seen_many_never_goes_before_last_activity(env, tmp_path):
 
 
 @pytest.mark.anyio
+async def test_mark_seen_many_memory_matches_database_when_touch_runs_during_write(
+    env, tmp_path, monkeypatch
+):
+    import threading
+
+    ids = _make_sessions(env, tmp_path, 2)
+    _reset_seen(env, ids)
+    loop = asyncio.get_running_loop()
+    future = int(time.time()) + 5000
+    real = env.manager._write_seen
+
+    def write_then_touch(marks):
+        result = real(marks)
+        # A message arrives on the event loop right after the commit, before the
+        # coroutine resumes: it must not leak into the read mark held in memory.
+        done = threading.Event()
+
+        def touch():
+            env.manager.get(ids[0]).save(last_activity_at=future)
+            done.set()
+
+        loop.call_soon_threadsafe(touch)
+        assert done.wait(5)
+        return result
+
+    monkeypatch.setattr(env.manager, "_write_seen", write_then_touch)
+
+    await env.manager.mark_seen_many(ids)
+
+    for sid in ids:
+        assert env.manager.get(sid).record.last_seen_at == session_row(env.db_path, sid)["last_seen_at"]
+    assert env.manager.get(ids[0]).record.last_activity_at == future
+    assert env.manager.get(ids[0]).record.last_seen_at < future  # still unread
+
+
+@pytest.mark.anyio
+async def test_mark_seen_many_applies_memory_and_events_when_cancelled_during_write(
+    env, tmp_path, monkeypatch
+):
+    import threading
+
+    ids = _make_sessions(env, tmp_path, 2)
+    _reset_seen(env, ids)
+    env.recorder.envelopes.clear()
+    real = env.manager._write_seen
+    committed = threading.Event()
+    release = threading.Event()
+
+    def write_then_wait(marks):
+        result = real(marks)
+        committed.set()
+        assert release.wait(5)
+        return result
+
+    monkeypatch.setattr(env.manager, "_write_seen", write_then_wait)
+
+    task = asyncio.create_task(env.manager.mark_seen_many(ids))
+    while not committed.is_set():
+        await asyncio.sleep(0.005)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):  # cancellation is not held back by the thread
+        await task
+    assert env.manager.get(ids[0]).record.last_seen_at == 0
+
+    release.set()
+    for _ in range(400):
+        if all(env.manager.get(sid).record.last_seen_at > 0 for sid in ids):
+            break
+        await asyncio.sleep(0.005)
+
+    for sid in ids:
+        assert session_row(env.db_path, sid)["last_seen_at"] > 0
+        assert env.manager.get(sid).record.last_seen_at == session_row(env.db_path, sid)["last_seen_at"]
+    updates = [e for e in env.recorder.envelopes if e["type"] == "session.updated"]
+    assert sorted(e["session_id"] for e in updates) == sorted(ids)
+
+
+@pytest.mark.anyio
 async def test_mark_seen_many_handles_a_large_list(env, tmp_path):
     ids = _make_sessions(env, tmp_path, 40)
     _reset_seen(env, ids)

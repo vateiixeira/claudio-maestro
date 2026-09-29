@@ -2329,31 +2329,51 @@ class SessionManager:
              if session_id in self._sessions else now)
             for session_id in unique
         ]
-        found = await asyncio.to_thread(self._write_seen, marks)
-        for session_id, mark in marks:
-            if session_id not in found:
-                continue
+        # The thread hands back the value it really wrote per session, so memory
+        # ends up equal to the database even if a `_touch()` ran meanwhile.
+        write = asyncio.ensure_future(asyncio.to_thread(self._write_seen, marks))
+        try:
+            written = await asyncio.shield(write)
+        except asyncio.CancelledError:
+            # The transaction may still commit after the caller is gone (shutdown,
+            # client disconnect): apply memory and events when the thread finishes,
+            # without holding the cancellation back.
+            write.add_done_callback(self._apply_seen_after_cancel)
+            raise
+        self._apply_seen(written)
+        return len(written)
+
+    def _apply_seen_after_cancel(self, write: "asyncio.Future[dict[str, int]]") -> None:
+        if write.cancelled() or write.exception() is not None:
+            return  # nothing committed (or the error was already the caller's to see)
+        self._apply_seen(write.result())
+
+    def _apply_seen(self, written: dict[str, int]) -> None:
+        for session_id, seen_at in written.items():
             try:
                 session = self.get(session_id)
             except SessionNotFoundError:
                 continue  # removed while writing
-            session.record.last_seen_at = max(mark, session.record.last_activity_at)
+            session.record.last_seen_at = seen_at
             session.emit_updated()
-        return len(found)
 
-    def _write_seen(self, marks: list[tuple[str, int]]) -> set[str]:
-        """Set `last_seen_at` of every existing session in one transaction; return the ids found."""
-        found: set[str] = set()
+    def _write_seen(self, marks: list[tuple[str, int]]) -> dict[str, int]:
+        """Set `last_seen_at` of every existing session in one transaction.
+
+        Returns the value written per session found (`MAX(mark, last_activity_at)`
+        as the database computed it).
+        """
+        written: dict[str, int] = {}
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             for session_id, mark in marks:
-                cursor = conn.execute(
+                row = conn.execute(
                     "UPDATE sessions SET last_seen_at = MAX(?, last_activity_at)"
-                    " WHERE session_id = ?",
+                    " WHERE session_id = ? RETURNING last_seen_at",
                     (mark, session_id),
-                )
-                if cursor.rowcount:
-                    found.add(session_id)
-        return found
+                ).fetchone()
+                if row is not None:
+                    written[session_id] = row[0]
+        return written
 
     # Closing -----------------------------------------------------------------
 
