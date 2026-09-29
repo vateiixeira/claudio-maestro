@@ -60,6 +60,7 @@ uv run python scripts/sdk_smoke.py                                              
 - Mensagens no formato do usuário: `[Tipo] Título` em português, verbo no infinitivo, até 72 caracteres, sem ponto final. Tipos: Feat, Bugfix, Refactor, UI, Docs, Test, Chore.
 - Não faça push nem crie repositório remoto sem o usuário pedir.
 - Escreva os testes antes do código que eles cobrem.
+- No frontend use só `pnpm` (`pnpm --dir frontend test`, `pnpm --dir frontend exec vitest ...`). Nunca `npx` nem `yarn`: o `npx` já criou arquivos do Yarn PnP em `frontend/` e quebrou a compilação.
 - Textos da interface e documentação em português brasileiro. Código e identificadores em inglês.
 - Não use a marca "Claude Code" na interface.
 - Use o login de assinatura existente. Não configure nem peça `ANTHROPIC_API_KEY`.
