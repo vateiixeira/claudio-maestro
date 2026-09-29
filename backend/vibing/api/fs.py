@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
+from collections.abc import Awaitable
 from contextlib import suppress
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/fs")
 
-# How often to check whether the browser gave up on the picker request.
+# How often long requests (folder picker, repository preview) check whether the browser gave up.
 DISCONNECT_POLL = 0.5
 
 
@@ -67,22 +67,14 @@ async def list_dirs(settings: SettingsDep, path: str | None = None) -> fs.DirLis
     return await fs.with_branches(listing)
 
 
-@router.get("/repos", response_model=ReposOut)
-async def preview_repos(settings: SettingsDep, path: str) -> dict:
-    try:
-        repos, limit_reached = await fs.preview_repos(path, settings.home_dir)
-    except fs.BrowseError as exc:
-        raise HTTPException(status_code=_STATUS[type(exc)], detail=str(exc)) from exc
-    return {"repos": repos, "limit_reached": limit_reached}
-
-
-async def _pick_until_disconnect(request: Request, initial: Path) -> str | None:
-    """Run the picker, but cancel it (killing zenity) if the browser disconnects.
+async def _run_until_disconnect[T](request: Request, work: Awaitable[T]) -> T | None:
+    """Run `work` as a task, but cancel it if the browser disconnects.
 
     Starlette does not cancel the route when the client goes away, so the
-    connection is polled. Returns None when the client left.
+    connection is polled. Cancelling stops what `work` awaits (the picker's zenity,
+    the git processes). Returns None when the client left.
     """
-    task = asyncio.ensure_future(request.app.state.pick_folder(initial))
+    task = asyncio.ensure_future(work)
     try:
         while True:
             done, _ = await asyncio.wait({task}, timeout=DISCONNECT_POLL)
@@ -97,6 +89,18 @@ async def _pick_until_disconnect(request: Request, initial: Path) -> str | None:
                 await task
 
 
+@router.get("/repos", response_model=ReposOut)
+async def preview_repos(settings: SettingsDep, request: Request, path: str) -> dict:
+    try:
+        result = await _run_until_disconnect(request, fs.preview_repos(path, settings.home_dir))
+    except fs.BrowseError as exc:
+        raise HTTPException(status_code=_STATUS[type(exc)], detail=str(exc)) from exc
+    if result is None:  # the browser left: nobody reads the answer
+        return {"repos": [], "limit_reached": False}
+    repos, limit_reached = result
+    return {"repos": repos, "limit_reached": limit_reached}
+
+
 @router.post("/pick", response_model=PickOut)
 async def pick_folder(settings: SettingsDep, request: Request) -> dict:
     """Open the system folder picker and return the chosen folder (null: cancelled)."""
@@ -108,7 +112,9 @@ async def pick_folder(settings: SettingsDep, request: Request) -> dict:
         )
     async with lock:
         try:
-            chosen = await _pick_until_disconnect(request, settings.home_dir)
+            chosen = await _run_until_disconnect(
+                request, request.app.state.pick_folder(settings.home_dir)
+            )
         except picker.PickerUnavailableError as exc:
             logger.warning("Seletor de pastas indisponível: %s", exc)
             raise HTTPException(

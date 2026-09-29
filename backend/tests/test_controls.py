@@ -415,6 +415,82 @@ async def test_effort_does_not_reconnect_between_autonomous_and_user_turn(
     assert texts[-2:] == ["autônomo", "resposta do usuário"]
 
 
+@pytest.mark.anyio
+async def test_followup_init_ends_the_wait_before_message_start(
+    make_env, env_cleanup, monkeypatch
+):
+    """The follow-up turn opens with an init; the first stream event only comes after
+    the time to the first byte, which can outlast the grace period."""
+    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
+    pause, user_pause = PauseStep(), PauseStep()
+
+    def user_turn(sid):
+        turn = text_turn(sid, "resposta do usuário")
+        return [turn[0], user_pause, *turn[1:]]
+
+    env, session = await connected(make_env, env_cleanup, user_turn)
+    client = env.factory.clients[0]
+    sid = session.session_id
+    turn = text_turn(sid, "autônomo")
+    client.push([init_message(sid), turn[2], pause, *turn[3:]])
+    await pause.reached.wait()
+    await wait_until(lambda: session.state == "running")
+    await env.manager.update(sid, effort="high")
+    await session.send("pergunta")
+    pause.release.set()
+
+    await asyncio.wait_for(user_pause.reached.wait(), 2)
+    # Several times the grace period, with only the init of the follow-up seen.
+    await asyncio.sleep(0.3)
+    assert session.state == "running"
+    assert session.pending_turns == 1
+    assert len(env.factory.clients) == 1
+    assert not client.closed
+
+    user_pause.release.set()
+    await wait_until(lambda: len(results_of(env, session)) == 3)
+    await wait_until(lambda: len(env.factory.clients) == 2 and not session.effort_pending)
+    texts = [i["text"] for i in session.snapshot()["items"] if i["type"] == "text"]
+    assert texts[-2:] == ["autônomo", "resposta do usuário"]
+    events = env.recorder.of(sid)
+    ends = [i for i, e in enumerate(events) if e["type"] == "turn.result"]
+    between = [e["data"]["state"] for e in events[ends[1]:ends[2]] if e["type"] == "session.state"]
+    assert "idle" not in between
+
+
+@pytest.mark.anyio
+async def test_followup_expiry_keeps_effort_pending_until_next_send(
+    make_env, env_cleanup, monkeypatch
+):
+    """When no follow-up turn comes the session goes idle without reconnecting (that
+    would drop an answer still in flight); the next send applies the new effort."""
+    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
+    pause = PauseStep()
+    env, session = await connected(
+        make_env, env_cleanup, lambda sid: [], lambda sid: text_turn(sid, "depois"))
+    client = env.factory.clients[0]
+    sid = session.session_id
+    client.push([*response_messages(sid, [TextBlock(text="a")])[:1], pause,
+                 *response_messages(sid, [TextBlock(text="b")])[1:],
+                 result_message(sid)])
+    await pause.reached.wait()
+    await wait_until(lambda: session.state == "running")
+    await env.manager.update(sid, effort="high")
+    await session.send("pergunta")
+    pause.release.set()
+
+    await wait_until(lambda: session.state == "idle")
+    await asyncio.sleep(0.05)
+    assert session.pending_turns == 0
+    assert session.effort_pending
+    assert len(env.factory.clients) == 1
+
+    await session.send("de novo")
+    await wait_until(lambda: len(env.factory.clients) == 2 and not session.effort_pending)
+    assert env.factory.clients[1].options.effort == "high"
+    await wait_until(lambda: session.state == "idle")
+
+
 # Questions -----------------------------------------------------------------
 
 QUESTIONS = {

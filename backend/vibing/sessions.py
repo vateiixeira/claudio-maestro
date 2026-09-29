@@ -1184,6 +1184,16 @@ class ActiveSession:
                     else:
                         # The turn that answers a message sent during an autonomous one.
                         self._clear_followup()
+                elif (
+                    self._followup_owed
+                    and isinstance(message, SystemMessage)
+                    and message.subtype == "init"
+                ):
+                    # The follow-up turn opens with an init ~0.6 s after the autonomous
+                    # one ends; the first stream event only comes after the time to
+                    # the first byte, which can outlast the grace period. A debt only
+                    # exists right after an autonomous result, so this init is that turn's.
+                    self._clear_followup()
                 self._emit_events(self.builder.handle(message))
                 if (
                     isinstance(message, RateLimitEvent)
@@ -1259,7 +1269,8 @@ class ActiveSession:
         self._followup_owed = 0
         self._refresh_state()
         self.emit_updated()
-        self._schedule_effort()
+        # No `_schedule_effort()` here: a reconnect could still lose an answer the CLI
+        # is preparing. A pending effort is applied by the next send.
 
     def _request_context(self, client: AgentClient) -> None:
         """Read the context usage in the background; the turn does not wait for it.

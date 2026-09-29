@@ -1,10 +1,16 @@
 """GET /api/fs/repos, `detached` in /api/fs/dirs and `limit_reached` in the project git route."""
 
+import asyncio
 import os
 from pathlib import Path
 
+import pytest
+
+from conftest import APP_ORIGIN
 from git_helpers import git, make_repo
 from vibing import history
+from vibing.app import create_app
+from vibing.config import Settings
 
 
 def repos(client, path) -> dict:
@@ -170,3 +176,72 @@ def test_repos_needs_the_api_header(home: Path):
     with TestClient(create_app(), base_url="http://127.0.0.1:6660") as anon:
         response = anon.get("/api/fs/repos", params={"path": str(home)})
         assert response.status_code == 403
+
+
+# Client gone -----------------------------------------------------------------
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+@pytest.mark.anyio
+async def test_full_app_disconnect_stops_the_git_processes(
+    home: Path, data_dir: Path, tmp_path: Path, monkeypatch
+):
+    """Whole ASGI app: `http.disconnect` while the preview runs kills its git
+    processes instead of letting them run to the end (Starlette keeps the route)."""
+    from vibing import gitinfo
+    from vibing.api import fs as fs_api
+
+    monkeypatch.setattr(fs_api, "DISCONNECT_POLL", 0.02)
+    pids = tmp_path / "pids"
+    fake = tmp_path / "hanginggit"
+    fake.write_text(f"#!/bin/sh\necho $$ >> {pids}\nexec sleep 30\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(gitinfo, "GIT_BINARY", str(fake))
+    root = home / "proj"
+    fake_repo(root / "a")
+    fake_repo(root / "b")
+
+    app = create_app(settings=Settings(home_dir=home, data_dir=data_dir))
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET",
+        "path": "/api/fs/repos", "raw_path": b"/api/fs/repos",
+        "query_string": f"path={root}".encode(),
+        "headers": [
+            (b"host", b"localhost:6660"),
+            (b"origin", APP_ORIGIN.encode()),
+            (b"x-vibing", b"1"),
+        ],
+        "server": ("127.0.0.1", 6660), "client": ("127.0.0.1", 1),
+        "scheme": "http", "root_path": "",
+    }
+    incoming: asyncio.Queue = asyncio.Queue()
+    await incoming.put({"type": "http.request", "body": b"", "more_body": False})
+
+    async def receive():
+        return await incoming.get()
+
+    async def send(message):
+        pass
+
+    async with app.router.lifespan_context(app):
+        request = asyncio.create_task(app(scope, receive, send))
+        for _ in range(250):
+            await asyncio.sleep(0.02)
+            if pids.exists() and len(pids.read_text().split()) >= 2:
+                break
+        started = [int(p) for p in pids.read_text().split()]
+        assert len(started) == 2
+        assert all(_pid_alive(p) for p in started)
+        await incoming.put({"type": "http.disconnect"})
+        # Well under GIT_TIMEOUT (5 s): the git limit must not be what ends it.
+        await asyncio.wait_for(request, 2)
+        # Nothing more is started after the client left, and the started ones are dead.
+        assert [int(p) for p in pids.read_text().split()] == started
+        assert not any(_pid_alive(p) for p in started)
