@@ -130,8 +130,11 @@ DAY_SECONDS = 86_400
 # Context window of a model; ids ending in "[1m]" have the large one.
 DEFAULT_CONTEXT_WINDOW = 200_000
 LARGE_CONTEXT_WINDOW = 1_000_000
-# How long the end of a turn waits for `get_context_usage()`.
-CONTEXT_USAGE_TIMEOUT = 2.0  # seconds
+# How long a context read holds its slot; a call that takes longer is abandoned.
+CONTEXT_READ_LIMIT = 10.0  # seconds
+# After an autonomous turn ends with a message sent meanwhile, how long to wait for
+# the turn that answers it before deciding the CLI answered inside the autonomous one.
+AUTONOMOUS_FOLLOWUP_GRACE = 3.0  # seconds
 # Entries of the cache of contexts read from history files.
 CONTEXT_CACHE_SIZE = 512
 PERMISSION_SUMMARY_MAX = 200  # characters
@@ -316,12 +319,9 @@ def context_from_sdk(usage: Any) -> dict[str, Any] | None:
     limit = integer(usage.get("rawMaxTokens")) or integer(usage.get("maxTokens"))
     if used is None or used < 0 or limit is None or limit <= 0:
         return None
-    percentage = usage.get("percentage")
-    if isinstance(percentage, int | float) and not isinstance(percentage, bool):
-        percent = round(min(max(float(percentage), 0.0), 100.0), 1)
-    else:
-        percent = _percent(used, limit)
-    return {"used_tokens": used, "max_tokens": limit, "percent": percent}
+    # The SDK's `percentage` is over `maxTokens` (smaller than `rawMaxTokens`): it would
+    # not match the maximum shown, so the percent is computed over the same base.
+    return {"used_tokens": used, "max_tokens": limit, "percent": _percent(used, limit)}
 
 
 def describe(
@@ -600,8 +600,17 @@ class ActiveSession:
         # Model id the CLI resolved (from the last init); not saved.
         self.model_resolved: str | None = None
         self._effort_task: asyncio.Task[None] | None = None
+        self._context_task: asyncio.Task[None] | None = None
+        self._context_again = False
+        # Every `get_context_usage()` call still running, including abandoned ones.
+        self._context_calls: set[asyncio.Future[Any]] = set()
         # A turn the CLI opened by itself (no send pending) is running.
         self._autonomous_turn = False
+        # Messages sent during an autonomous turn: the CLI answers them in the turn
+        # that follows it (`_followup_owed`), or, if none starts within the grace
+        # period (`_followup_task`), it answered them inside the autonomous one.
+        self._followup_owed = 0
+        self._followup_task: asyncio.Task[None] | None = None
         self.builder = ConversationBuilder()
         self.pending_turns = 0
         self.prompts: dict[str, PendingPrompt] = {}
@@ -1168,9 +1177,13 @@ class ActiveSession:
     async def _read(self, client: AgentClient) -> None:
         try:
             async for message in client.messages():
-                if self.pending_turns == 0 and self._starts_turn(message):
-                    # The CLI opened a turn by itself (a background subagent finished).
-                    self._autonomous_turn = True
+                if self._starts_turn(message):
+                    if self.pending_turns == 0:
+                        # The CLI opened a turn by itself (a background subagent finished).
+                        self._autonomous_turn = True
+                    else:
+                        # The turn that answers a message sent during an autonomous one.
+                        self._clear_followup()
                 self._emit_events(self.builder.handle(message))
                 if (
                     isinstance(message, RateLimitEvent)
@@ -1185,11 +1198,16 @@ class ActiveSession:
                 if isinstance(message, SystemMessage) and message.subtype == "init":
                     self._apply_init()
                 if isinstance(message, ResultMessage):
-                    # Before the turn counts as over, so the state does not flicker to idle.
-                    await self._refresh_context(client)
-                    # An autonomous turn may also have answered a message sent meanwhile.
-                    self._autonomous_turn = False
-                    self.pending_turns = max(0, self.pending_turns - 1)
+                    # Read in the background: the turn does not wait for it.
+                    self._request_context(client)
+                    if self._autonomous_turn:
+                        # It started with no message pending, so it does not answer
+                        # any: those sent since get a turn of their own (or, if none
+                        # starts, the grace period settles the count).
+                        self._autonomous_turn = False
+                        self._expect_followup(client)
+                    else:
+                        self.pending_turns = max(0, self.pending_turns - 1)
                     self._touch()
                     self.emit_updated()
                     # The conversation is on disk after the first turn.
@@ -1217,20 +1235,91 @@ class ActiveSession:
         if self.client is client:
             await self._fail("O agente encerrou a conexão.")
 
-    async def _refresh_context(self, client: AgentClient) -> None:
-        """Read the context usage from the client; a failure keeps the last value."""
-        try:
-            usage = await asyncio.wait_for(client.get_context_usage(), CONTEXT_USAGE_TIMEOUT)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.warning(
-                "Falha ao ler o uso de contexto da sessão %s", self.session_id, exc_info=True
-            )
+    def _expect_followup(self, client: AgentClient) -> None:
+        """An autonomous turn ended while messages sent during it wait for an answer."""
+        self._clear_followup()
+        if self.pending_turns == 0:
             return
-        context = context_from_sdk(usage)
-        if context is not None and self.client is client:
-            self.context = context
+        self._followup_owed = self.pending_turns
+        self._followup_task = asyncio.create_task(self._followup_expired(client))
+
+    def _clear_followup(self) -> None:
+        task, self._followup_task = self._followup_task, None
+        self._followup_owed = 0
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+
+    async def _followup_expired(self, client: AgentClient) -> None:
+        await asyncio.sleep(AUTONOMOUS_FOLLOWUP_GRACE)
+        if self.client is not client or self._followup_task is not asyncio.current_task():
+            return
+        # No turn came: the CLI answered those messages inside the autonomous turn.
+        self.pending_turns = max(0, self.pending_turns - self._followup_owed)
+        self._followup_task = None
+        self._followup_owed = 0
+        self._refresh_state()
+        self.emit_updated()
+        self._schedule_effort()
+
+    def _request_context(self, client: AgentClient) -> None:
+        """Read the context usage in the background; the turn does not wait for it.
+
+        One read at a time, for at most `CONTEXT_READ_LIMIT`: a turn that ends while
+        one is running makes it read again when it finishes. A call that does not
+        answer in time is abandoned (its late result is discarded) but not cancelled,
+        which would leave its control request orphaned in the SDK: it ends on its own
+        or when the client goes away (`_cancel_context_read`)."""
+        if self._context_task is not None and not self._context_task.done():
+            self._context_again = True
+            return
+        self._context_task = asyncio.create_task(self._read_context_usage(client))
+
+    async def _read_context_usage(self, client: AgentClient) -> None:
+        """Read until no turn ended meanwhile; a failure keeps the last value."""
+        while self.client is client:
+            self._context_again = False
+            call = asyncio.ensure_future(client.get_context_usage())
+            self._context_calls.add(call)
+            call.add_done_callback(self._context_call_done)
+            await asyncio.wait([call], timeout=CONTEXT_READ_LIMIT)
+            usage = None
+            if not call.done():
+                logger.warning(
+                    "Leitura do uso de contexto da sessão %s passou do limite", self.session_id
+                )
+            elif call.cancelled():
+                return
+            elif call.exception() is not None:
+                logger.warning(
+                    "Falha ao ler o uso de contexto da sessão %s",
+                    self.session_id,
+                    exc_info=call.exception(),
+                )
+            else:
+                usage = call.result()
+            context = context_from_sdk(usage)
+            if self.client is not client:
+                return
+            if context is not None and context != self.context:
+                self.context = context
+                self.emit_updated()
+            if not self._context_again:
+                return
+
+    def _context_call_done(self, call: asyncio.Future[Any]) -> None:
+        self._context_calls.discard(call)
+        if not call.cancelled():
+            call.exception()  # an abandoned call that fails: nobody else reads it
+
+    def _cancel_context_read(self) -> None:
+        """The client is going away: nothing pending or abandoned is left running."""
+        task, self._context_task = self._context_task, None
+        self._context_again = False
+        if task is not None and not task.done():
+            task.cancel()
+        for call in list(self._context_calls):
+            call.cancel()
+        self._context_calls.clear()
 
     @staticmethod
     def _starts_turn(message: Any) -> bool:
@@ -1386,6 +1475,13 @@ class ActiveSession:
         self._cancel_prompts()
         self._refresh_state()
 
+    async def stop_subagents(self) -> None:
+        """Stop every running subagent, in any state, without touching the main turn.
+        Without a client or a running subagent it does nothing."""
+        client = self.client
+        if client is not None:
+            await self._stop_subagents(client)
+
     async def _stop_subagents(self, client: AgentClient) -> None:
         # A task that cannot be stopped (e.g. it just ended) must not end the
         # session: logged, and the others are still stopped.
@@ -1408,6 +1504,7 @@ class ActiveSession:
         self.error = message
         self.pending_turns = 0
         self._autonomous_turn = False
+        self._clear_followup()
         self.builder.clear_local_echo()
         self._emit_events(self.builder.close_open_items())
         self._emit_events(self.builder.stop_running_subagents())
@@ -1445,6 +1542,7 @@ class ActiveSession:
         self._reader = None
         self.pending_turns = 0
         self._autonomous_turn = False
+        self._clear_followup()
         self.builder.clear_local_echo()
         if client is not None:
             self._emit_events(self.builder.stop_running_subagents())
@@ -1476,6 +1574,7 @@ class ActiveSession:
     ) -> None:
         if reader is asyncio.current_task():
             reader = None  # the reader is failing itself: it must not be cancelled
+        self._cancel_context_read()
         task = asyncio.create_task(self._do_dispose(client, reader))
         self._disposal = task
         try:

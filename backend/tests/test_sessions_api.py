@@ -278,6 +278,7 @@ def test_unknown_prompt(api, home):
         ("get", "", None),
         ("post", "/messages", {"text": "oi"}),
         ("post", "/interrupt", None),
+        ("post", "/subagents/stop", None),
         ("post", "/prompts/p1", {"decision": "deny"}),
     ],
 )
@@ -357,3 +358,51 @@ def test_shutdown_closes_clients(home, factory):
         assert factory.clients[0].closed is False
 
     assert factory.clients[0].closed is True
+
+
+# Subagents -----------------------------------------------------------------
+
+
+def test_stop_subagents_route_stops_running_subagents(api, home, factory):
+    from test_controls_review import background_agent
+
+    session = new_session(api, home)
+    sid = session["session_id"]
+    factory.script = lambda content: background_agent(sid)
+    api.post(f"/api/sessions/{sid}/messages", json={"text": "rode"})
+    wait_state(api, sid, "idle")
+    deadline = time.monotonic() + WAIT
+    while not any(
+        (i.get("subagent") or {}).get("status") == "running"
+        for i in api.get(f"/api/sessions/{sid}").json()["items"]
+    ):
+        assert time.monotonic() < deadline
+        time.sleep(0.005)
+
+    response = api.post(f"/api/sessions/{sid}/subagents/stop")
+
+    assert response.status_code == 202
+    assert factory.clients[0].stopped_tasks == ["task-1"]
+    assert factory.clients[0].interrupts == 0
+
+
+def test_stop_subagents_route_without_subagent_has_no_effect(api, home, factory):
+    session = new_session(api, home)
+    sid = session["session_id"]
+
+    # No client yet.
+    assert api.post(f"/api/sessions/{sid}/subagents/stop").status_code == 202
+
+    factory.script = lambda content: text_turn(sid, "oi")
+    api.post(f"/api/sessions/{sid}/messages", json={"text": "oi"})
+    wait_state(api, sid, "idle")
+    assert api.post(f"/api/sessions/{sid}/subagents/stop").status_code == 202
+    assert factory.clients[0].stopped_tasks == []
+
+
+def test_stop_subagents_route_needs_the_vibing_header(api, home):
+    session = new_session(api, home)
+    response = api.post(
+        f"/api/sessions/{session['session_id']}/subagents/stop", headers={"x-vibing": ""}
+    )
+    assert response.status_code in (400, 403)

@@ -267,3 +267,55 @@ def test_sdk_options_raise_buffer_size(tmp_path):
         cwd=tmp_path, session_id="s", resume=False, can_use_tool=allow))
 
     assert sdk.max_buffer_size == 64 * 1024 * 1024
+
+
+# Stopping subagents on demand ------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_stop_subagents_when_idle(make_env, env_cleanup):
+    env, session = await with_background_agent(make_env, env_cleanup)
+    client = env.factory.clients[0]
+
+    await session.stop_subagents()
+
+    assert client.stopped_tasks == ["task-1"]
+    assert client.interrupts == 0
+    assert session.state == "idle"
+
+
+@pytest.mark.anyio
+async def test_stop_subagents_during_a_turn_does_not_interrupt_it(make_env, env_cleanup):
+    pause = PauseStep()
+
+    def turn(sid):
+        steps = background_agent(sid)
+        return [*steps[:-1], pause, steps[-1]]
+
+    env, session = await connected(make_env, env_cleanup, turn)
+    await session.send("rode em segundo plano")
+    await pause.reached.wait()
+    await wait_until(lambda: session.subagents_running)
+    client = env.factory.clients[0]
+    assert session.state == "running"
+
+    await session.stop_subagents()
+
+    assert client.stopped_tasks == ["task-1"]
+    assert client.interrupts == 0
+    assert session.state == "running"
+    pause.release.set()
+    await wait_until(lambda: session.state == "idle")
+
+
+@pytest.mark.anyio
+async def test_stop_subagents_without_subagent_or_client_does_nothing(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+
+    await session.stop_subagents()
+    assert client.stopped_tasks == []
+
+    await session.close()
+    await session.stop_subagents()  # no client: no effect, no error
+    assert client.stopped_tasks == []

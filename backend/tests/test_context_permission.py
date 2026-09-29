@@ -6,6 +6,7 @@ the `claude` process or reads the real SDK history.
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,7 @@ SDK_USAGE = {
     "totalTokens": 50_000,
     "maxTokens": 167_000,
     "rawMaxTokens": 200_000,
-    "percentage": 25.0,
+    "percentage": 29.9,  # over maxTokens: not the base of the maximum shown
     "model": "claude-opus-5-5",
 }
 
@@ -138,6 +139,7 @@ async def test_context_updated_at_end_of_turn(make_env, env_cleanup):
 
     await session.send("olá")
     await wait_until(lambda: session.state == "idle")
+    await wait_until(lambda: session.context is not None)
 
     expected = {"used_tokens": 50_000, "max_tokens": 200_000, "percent": 25.0}
     assert session.summary()["context"] == expected
@@ -161,6 +163,7 @@ async def test_context_failure_keeps_last_value_and_turn_finishes(make_env, env_
 
     await session.send("a")
     await wait_until(lambda: session.state == "idle")
+    await wait_until(lambda: session.context is not None)
     first = session.summary()["context"]
     assert first is not None
 
@@ -169,10 +172,16 @@ async def test_context_failure_keeps_last_value_and_turn_finishes(make_env, env_
     async def failing():
         raise AgentError("sem dados")
 
-    client.get_context_usage = failing
+    async def counted_failure():
+        client.context_failures += 1
+        await failing()
+
+    client.context_failures = 0
+    client.get_context_usage = counted_failure
     await session.send("b")
     await wait_until(lambda: len(env.recorder.of(session.session_id, "turn.result")) == 2)
     await wait_until(lambda: session.state == "idle")
+    await wait_until(lambda: client.context_failures == 1)
 
     assert session.error is None
     assert session.summary()["context"] == first
@@ -195,29 +204,173 @@ async def test_context_ignores_malformed_response(make_env, env_cleanup):
     assert session.state == "idle"
 
 
-@pytest.mark.anyio
-async def test_context_hanging_response_does_not_hold_the_turn(make_env, env_cleanup, monkeypatch):
-    monkeypatch.setattr("vibing.sessions.CONTEXT_USAGE_TIMEOUT", 0.05)
-    script, ids = by_session(lambda sid: text_turn(sid, "oi"))
+async def hanging_context_env(make_env, env_cleanup):
+    """Session with a first turn done whose `get_context_usage` waits for `release`."""
+    script, ids = by_session(
+        lambda sid: text_turn(sid, "oi"), lambda sid: text_turn(sid, "dois"),
+        lambda sid: text_turn(sid, "três"),
+    )
     factory = ContextFactory(script)
+    factory.usage = SDK_USAGE
     env = make_env(factory=factory)
     env_cleanup.append(env.manager)
     session = env.new_session()
     ids.append(session.session_id)
     await session.send("olá")
     await wait_until(lambda: session.state == "idle")
+    await wait_until(lambda: session.context is not None)
     client = env.factory.clients[0]
+    release = asyncio.Event()
+    stats = {"calls": 0, "cancelled": 0}
 
     async def hang():
-        await asyncio.sleep(60)
+        stats["calls"] += 1
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            stats["cancelled"] += 1
+            raise
+        return {**SDK_USAGE, "totalTokens": 80_000}
 
     client.get_context_usage = hang
-    client.script = lambda content: text_turn(session.session_id, "de novo")
+    return env, session, client, release, stats
+
+
+def turn_results(env, session) -> int:
+    return len(env.recorder.of(session.session_id, "turn.result"))
+
+
+@pytest.mark.anyio
+async def test_context_hanging_response_does_not_hold_the_turn(make_env, env_cleanup):
+    env, session, _client, release, stats = await hanging_context_env(make_env, env_cleanup)
+    before = len(env.recorder.of(session.session_id, "session.updated"))
+
     await session.send("de novo")
-    await wait_until(lambda: len(env.recorder.of(session.session_id, "turn.result")) == 2)
+    await wait_until(lambda: turn_results(env, session) == 2)
     await wait_until(lambda: session.state == "idle")
 
+    # The turn ended (state and update) while the read still hangs, and the SDK
+    # call was not cancelled from our side.
     assert session.error is None
+    assert stats == {"calls": 1, "cancelled": 0}
+    updates = env.recorder.of(session.session_id, "session.updated")
+    assert len(updates) > before
+    assert updates[-1]["data"]["context"]["used_tokens"] == 50_000
+
+    release.set()
+    await wait_until(lambda: session.context["used_tokens"] == 80_000)
+    updates = env.recorder.of(session.session_id, "session.updated")
+    assert updates[-1]["data"]["context"]["used_tokens"] == 80_000
+    assert stats["cancelled"] == 0
+
+
+@pytest.mark.anyio
+async def test_context_reads_one_at_a_time_and_again_after_a_turn_meanwhile(
+    make_env, env_cleanup
+):
+    env, session, _client, release, stats = await hanging_context_env(make_env, env_cleanup)
+
+    await session.send("dois")
+    await wait_until(lambda: turn_results(env, session) == 2)
+    await session.send("três")
+    await wait_until(lambda: turn_results(env, session) == 3)
+    await wait_until(lambda: session.state == "idle")
+    assert stats["calls"] == 1  # not one call per turn while the first one hangs
+
+    release.set()
+    await wait_until(lambda: stats["calls"] == 2)  # reads again for the later turn
+    await wait_until(lambda: session.context["used_tokens"] == 80_000)
+
+
+@pytest.mark.anyio
+async def test_context_read_is_cancelled_when_the_session_closes(make_env, env_cleanup):
+    env, session, _client, _release, stats = await hanging_context_env(make_env, env_cleanup)
+    await session.send("dois")
+    await wait_until(lambda: stats["calls"] == 1)
+
+    await session.close()
+    await wait_until(lambda: stats["cancelled"] == 1)
+
+    assert session._context_task is None
+    assert session.context["used_tokens"] == 50_000  # not touched by the dead read
+
+
+@pytest.mark.anyio
+async def test_context_late_result_of_replaced_client_is_ignored(make_env, env_cleanup):
+    env, session, _client, release, stats = await hanging_context_env(make_env, env_cleanup)
+    await session.send("dois")
+    await wait_until(lambda: stats["calls"] == 1)
+
+    await session.close()
+    release.set()
+    await asyncio.sleep(0.01)
+
+    assert session.context["used_tokens"] == 50_000
+
+
+@pytest.mark.anyio
+async def test_context_read_slot_is_freed_after_the_limit(make_env, env_cleanup, monkeypatch):
+    monkeypatch.setattr("vibing.sessions.CONTEXT_READ_LIMIT", 0.05)
+    env, session, client, release, stats = await hanging_context_env(make_env, env_cleanup)
+
+    await session.send("dois")
+    await wait_until(lambda: turn_results(env, session) == 2)
+    await wait_until(lambda: stats["calls"] == 1)
+    # The first call never returns: the slot is freed anyway, without cancelling it.
+    await wait_until(lambda: session._context_task is None or session._context_task.done())
+    assert stats["cancelled"] == 0
+
+    async def answer():
+        stats["calls"] += 1
+        return {**SDK_USAGE, "totalTokens": 90_000}
+
+    client.get_context_usage = answer
+    await session.send("três")
+    await wait_until(lambda: turn_results(env, session) == 3)
+    await wait_until(lambda: session.context["used_tokens"] == 90_000)
+    assert stats["calls"] == 2
+    assert stats["cancelled"] == 0
+
+    # The abandoned call ends later: its stale result is discarded.
+    release.set()
+    await asyncio.sleep(0.02)
+    assert session.context["used_tokens"] == 90_000
+
+
+@pytest.mark.anyio
+async def test_dispose_cancels_pending_and_abandoned_context_calls(
+    make_env, env_cleanup, monkeypatch
+):
+    monkeypatch.setattr("vibing.sessions.CONTEXT_READ_LIMIT", 0.05)
+    env, session, client, _release, stats = await hanging_context_env(make_env, env_cleanup)
+    await session.send("dois")
+    await wait_until(lambda: stats["calls"] == 1)
+    await wait_until(lambda: session._context_task is None or session._context_task.done())
+    await session.send("três")
+    await wait_until(lambda: stats["calls"] == 2)  # a second call, the first abandoned
+
+    await session.close()
+
+    await wait_until(lambda: stats["cancelled"] == 2)
+
+
+# Context conversion ----------------------------------------------------------
+
+
+def test_context_percent_uses_the_base_of_the_maximum_shown():
+    from vibing.sessions import context_from_sdk
+
+    context = context_from_sdk(SDK_USAGE)
+
+    assert context == {"used_tokens": 50_000, "max_tokens": 200_000, "percent": 25.0}
+
+
+def test_context_percent_falls_back_to_max_tokens_and_ignores_percentage():
+    from vibing.sessions import context_from_sdk
+
+    context = context_from_sdk({"totalTokens": 50_000, "maxTokens": 100_000, "percentage": 7.0})
+
+    assert context == {"used_tokens": 50_000, "max_tokens": 100_000, "percent": 50.0}
 
 
 # Context without a client (history) ----------------------------------------
@@ -389,6 +542,7 @@ async def test_active_session_events_and_lists_carry_in_memory_context(make_env,
     ids.append(session.session_id)
     await session.send("olá")
     await wait_until(lambda: session.state == "idle")
+    await wait_until(lambda: session.context is not None)
 
     assert env.manager.list_sessions()[0]["context"]["used_tokens"] == 50_000
     assert read.calls == []  # type: ignore[attr-defined]
@@ -407,6 +561,7 @@ async def test_connected_context_is_kept_and_snapshot_reads_history_after_close(
     ids.append(session.session_id)
     await session.send("olá")
     await wait_until(lambda: session.state == "idle")
+    await wait_until(lambda: session.context is not None)
 
     # Connected: the in-memory value, no file read.
     assert (await env.manager.open(session.session_id))["context"]["used_tokens"] == 50_000
@@ -815,6 +970,10 @@ def test_api_context_after_turn(api, home, factory):
     factory.script = lambda content: text_turn(sid, "oi")
     api.post(f"/api/sessions/{sid}/messages", json={"text": "olá"})
     wait_api_state(api, sid, "idle")
+    deadline = time.monotonic() + 2
+    while api.get("/api/sessions").json()[0]["context"] is None:
+        assert time.monotonic() < deadline
+        time.sleep(0.005)
 
     [listed] = api.get("/api/sessions").json()
 

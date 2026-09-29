@@ -1,4 +1,4 @@
-"""Session routes: create, list, snapshot, send, interrupt, answer prompts."""
+"""Session routes: create, list, snapshot, send, interrupt, stop subagents, answer prompts."""
 
 import sqlite3
 from typing import Annotated, Any, Literal
@@ -230,6 +230,14 @@ async def send_message(session_id: str, body: MessageIn, manager: ManagerDep) ->
 async def interrupt(session_id: str, manager: ManagerDep) -> dict[str, Any]:
     session = _get_session(manager, session_id)
     await session.interrupt()
+    return {"state": session.state}
+
+
+@router.post("/sessions/{session_id}/subagents/stop", status_code=status.HTTP_202_ACCEPTED)
+async def stop_subagents(session_id: str, manager: ManagerDep) -> dict[str, Any]:
+    """Stop the running subagents, during a turn or not, without interrupting the turn."""
+    session = _get_session(manager, session_id)
+    await session.stop_subagents()
     return {"state": session.state}
 
 

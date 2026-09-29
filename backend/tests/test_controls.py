@@ -296,8 +296,13 @@ async def test_stray_result_does_not_go_negative(make_env, env_cleanup):
     assert session.pending_turns == 0
 
 
+def results_of(env, session):
+    return env.recorder.of(session.session_id, "turn.result")
+
+
 @pytest.mark.anyio
 async def test_autonomous_turn_then_user_turn(make_env, env_cleanup):
+    """The CLI answers a message sent during an autonomous turn in a turn of its own."""
     pause = PauseStep()
     env, session = await connected(
         make_env, env_cleanup, lambda sid: text_turn(sid, "resposta do usuário"))
@@ -309,9 +314,103 @@ async def test_autonomous_turn_then_user_turn(make_env, env_cleanup):
 
     await session.send("pergunta")
     pause.release.set()
+    await wait_until(lambda: len(results_of(env, session)) == 3)
     await wait_until(lambda: session.state == "idle")
 
     assert session.pending_turns == 0
+    texts = [i["text"] for i in session.snapshot()["items"] if i["type"] == "text"]
+    assert texts[-2:] == ["autônomo", "resposta do usuário"]
+
+
+@pytest.mark.anyio
+async def test_no_idle_between_autonomous_turn_and_user_turn(make_env, env_cleanup):
+    pause = PauseStep()
+    env, session = await connected(
+        make_env, env_cleanup, lambda sid: text_turn(sid, "resposta do usuário"))
+    client = env.factory.clients[0]
+    sid = session.session_id
+    turn = text_turn(sid, "autônomo")
+    client.push([init_message(sid), turn[2], pause, *turn[3:]])
+    await pause.reached.wait()
+    await wait_until(lambda: session.state == "running")
+    await session.send("pergunta")
+    pause.release.set()
+    await wait_until(lambda: len(results_of(env, session)) == 3)
+    await wait_until(lambda: session.state == "idle")
+
+    events = env.recorder.of(sid)
+    autonomous_end = [i for i, e in enumerate(events) if e["type"] == "turn.result"][1]
+    user_end = [i for i, e in enumerate(events) if e["type"] == "turn.result"][2]
+    between = [
+        e["data"]["state"] for e in events[autonomous_end:user_end]
+        if e["type"] == "session.state"
+    ]
+    assert "idle" not in between
+    assert all(
+        e["data"]["state"] == "running"
+        for e in events[autonomous_end:user_end] if e["type"] == "session.updated"
+    )
+
+
+@pytest.mark.anyio
+async def test_two_messages_during_autonomous_turn_get_two_turns(make_env, env_cleanup):
+    pause = PauseStep()
+    env, session = await connected(
+        make_env, env_cleanup,
+        lambda sid: text_turn(sid, "resposta 1"), lambda sid: text_turn(sid, "resposta 2"))
+    client = env.factory.clients[0]
+    sid = session.session_id
+    turn = text_turn(sid, "autônomo")
+    client.push([init_message(sid), turn[2], pause, *turn[3:]])
+    await pause.reached.wait()
+    await wait_until(lambda: session.state == "running")
+    await session.send("primeira")
+    await session.send("segunda")
+    assert session.pending_turns == 2
+
+    pause.release.set()
+    await wait_until(lambda: len(results_of(env, session)) == 4)
+    await wait_until(lambda: session.state == "idle")
+
+    assert session.pending_turns == 0
+    events = env.recorder.of(sid)
+    ends = [i for i, e in enumerate(events) if e["type"] == "turn.result"]
+    between = [e["data"]["state"] for e in events[ends[1]:ends[3]] if e["type"] == "session.state"]
+    assert "idle" not in between
+    texts = [i["text"] for i in session.snapshot()["items"] if i["type"] == "text"]
+    assert texts[-3:] == ["autônomo", "resposta 1", "resposta 2"]
+
+
+@pytest.mark.anyio
+async def test_effort_does_not_reconnect_between_autonomous_and_user_turn(
+    make_env, env_cleanup
+):
+    pause, user_pause = PauseStep(), PauseStep()
+
+    def user_turn(sid):
+        turn = text_turn(sid, "resposta do usuário")
+        return [turn[0], turn[1], turn[2], user_pause, *turn[3:]]
+
+    env, session = await connected(make_env, env_cleanup, user_turn)
+    client = env.factory.clients[0]
+    sid = session.session_id
+    turn = text_turn(sid, "autônomo")
+    client.push([init_message(sid), turn[2], pause, *turn[3:]])
+    await pause.reached.wait()
+    await wait_until(lambda: session.state == "running")
+    await env.manager.update(sid, effort="high")
+    await session.send("pergunta")
+
+    pause.release.set()
+    await asyncio.wait_for(user_pause.reached.wait(), 2)
+    await asyncio.sleep(0.02)
+    # The CLI is answering the user: the client must not be swapped under it.
+    assert len(env.factory.clients) == 1
+    assert not client.closed
+    assert session.state == "running"
+
+    user_pause.release.set()
+    await wait_until(lambda: len(env.factory.clients) == 2 and not session.effort_pending)
     texts = [i["text"] for i in session.snapshot()["items"] if i["type"] == "text"]
     assert texts[-2:] == ["autônomo", "resposta do usuário"]
 
@@ -522,8 +621,10 @@ async def test_init_right_after_connect_does_not_stick_in_running(make_env, env_
 
 
 @pytest.mark.anyio
-async def test_send_during_autonomous_turn_ends_idle(make_env, env_cleanup):
-    """If the CLI answers the user inside the autonomous turn (one result only)."""
+async def test_send_during_autonomous_turn_ends_idle(make_env, env_cleanup, monkeypatch):
+    """If the CLI answers the user inside the autonomous turn (one result only): no
+    turn follows, and after a short wait the session stops counting the message."""
+    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
     pause = PauseStep()
     env, session = await connected(make_env, env_cleanup, lambda sid: [])
     client = env.factory.clients[0]
@@ -536,8 +637,32 @@ async def test_send_during_autonomous_turn_ends_idle(make_env, env_cleanup):
 
     await session.send("pergunta")
     pause.release.set()
+    await wait_until(lambda: len(results_of(env, session)) == 2)
+    # Still running while it waits for a turn that may follow.
+    assert session.state == "running"
     await wait_until(lambda: session.state == "idle")
     assert session.pending_turns == 0
+
+
+@pytest.mark.anyio
+async def test_close_during_followup_grace_leaves_nothing_running(make_env, env_cleanup):
+    pause = PauseStep()
+    env, session = await connected(make_env, env_cleanup, lambda sid: [])
+    client = env.factory.clients[0]
+    sid = session.session_id
+    turn = text_turn(sid, "autônomo")
+    client.push([init_message(sid), turn[2], pause, *turn[3:]])
+    await pause.reached.wait()
+    await wait_until(lambda: session.state == "running")
+    await session.send("pergunta")
+    pause.release.set()
+    await wait_until(lambda: len(results_of(env, session)) == 2)
+
+    await session.close()
+
+    assert session.state == "closed"
+    assert session.pending_turns == 0
+    assert session._followup_task is None or session._followup_task.done()
 
 
 @pytest.mark.anyio
