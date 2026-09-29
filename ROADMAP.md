@@ -23,7 +23,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
-| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Em andamento | 16 de 23 |
+| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Em andamento | 18 de 23 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -218,8 +218,8 @@ Pedido pelo usuário em 2026-09-29, depois de analisar o Paperclip (orquestrador
 
 Pendências da revisão do marco 7 e sugestões que sobraram das revisões do marco 6:
 
-- [ ] Ações escondidas da linha de conversa não recebem toque (`pointer-events-none` enquanto invisíveis), e o botão de copiar resposta aparece em tela sem mouse
-- [ ] Esc da gaveta de Detalhes em tela estreita não dispara junto com outros Esc (modal, renomear, menu ⋯, busca)
+- [x] Ações escondidas da linha de conversa não recebem toque (`pointer-events-none` enquanto invisíveis), e o botão de copiar resposta aparece em tela sem mouse (2026-09-29)
+- [x] Esc da gaveta de Detalhes em tela estreita não dispara junto com outros Esc (modal, renomear, menu ⋯, busca) (2026-09-29)
 - [ ] Sair de uma conversa antes do retrato chegar não a devolve ao store sem inscrição; "Tentar de novo" desabilitado enquanto recarrega
 - [ ] Modal de nova conversa: anexar imagem, soltar arquivo e miniaturas; título e opções preservados se o PATCH falhar depois de criar; atalho `C` não abre por cima de outros diálogos
 - [ ] `POST /api/sessions/seen` grava todas as sessões numa transação, fora do loop de eventos
