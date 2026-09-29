@@ -165,6 +165,9 @@ class FakeAgentClient:
         self.stopped_tasks: list[str] = []
         self.model_calls: list[str | None] = []
         self.permission_mode_calls: list[str] = []
+        # Raised by set_model / set_permission_mode (after recording the call).
+        self.set_model_error: AgentError | None = None
+        self.set_permission_mode_error: AgentError | None = None
         self.permission_results: list[PermissionRecord] = []
         self.connected = False
         self.closed = False
@@ -253,9 +256,13 @@ class FakeAgentClient:
 
     async def set_model(self, model: str | None) -> None:
         self.model_calls.append(model)
+        if self.set_model_error is not None:
+            raise self.set_model_error
 
     async def set_permission_mode(self, mode: str) -> None:
         self.permission_mode_calls.append(mode)
+        if self.set_permission_mode_error is not None:
+            raise self.set_permission_mode_error
 
     async def close(self) -> None:
         if self.close_pause is not None:

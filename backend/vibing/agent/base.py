@@ -26,12 +26,18 @@ class AgentError(Exception):
 
     `session_in_use` marks a connect that failed because the session id already
     exists on disk (it must be resumed, not started again).
+    `refused` marks a control request (model or mode change) the agent answered
+    with an error while its process is alive; `message_pt` then holds the agent's
+    own text. Any other failure means the client is gone.
     """
 
-    def __init__(self, message_pt: str, *, session_in_use: bool = False) -> None:
+    def __init__(
+        self, message_pt: str, *, session_in_use: bool = False, refused: bool = False
+    ) -> None:
         super().__init__(message_pt)
         self.message_pt = message_pt
         self.session_in_use = session_in_use
+        self.refused = refused
 
 
 @dataclass

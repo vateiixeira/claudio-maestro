@@ -196,7 +196,9 @@ def test_agent_error_str_is_the_message():
 class StubSdkClient:
     """Stands in for ClaudeSDKClient: records calls, starts nothing."""
 
-    def __init__(self, messages=(), connect_error=None, receive_error=None):
+    def __init__(
+        self, messages=(), connect_error=None, receive_error=None, control_error=None
+    ):
         self.queries: list[Any] = []
         self.connected = False
         self.disconnected = False
@@ -206,6 +208,7 @@ class StubSdkClient:
         self._messages = list(messages)
         self._connect_error = connect_error
         self._receive_error = receive_error
+        self.control_error = control_error
 
     async def connect(self, prompt=None):
         if self._connect_error:
@@ -228,9 +231,13 @@ class StubSdkClient:
         self.interrupts += 1
 
     async def set_model(self, model=None):
+        if self.control_error is not None:
+            raise self.control_error
         self.models.append(model)
 
     async def set_permission_mode(self, mode):
+        if self.control_error is not None:
+            raise self.control_error
         self.modes.append(mode)
 
     async def get_server_info(self):
@@ -331,6 +338,43 @@ async def test_controls_are_forwarded(tmp_path):
     assert stub.models == ["sonnet", None]
     assert stub.modes == ["plan"]
     assert stub.disconnected is True
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method,arg", [("set_model", "opus"), ("set_permission_mode", "auto")])
+async def test_control_refused_by_the_cli_is_marked_refused(tmp_path, method, arg):
+    # The SDK raises a bare Exception with the CLI's text when it answers "error".
+    text = "Cannot set permission mode to auto: auto mode unavailable for this model"
+    stub = StubSdkClient(control_error=Exception(text))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    with pytest.raises(AgentError) as info:
+        await getattr(client, method)(arg)
+
+    assert info.value.refused is True
+    assert info.value.message_pt == text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method,arg", [("set_model", "opus"), ("set_permission_mode", "plan")])
+@pytest.mark.parametrize(
+    "error",
+    [
+        ProcessError("died", exit_code=1),
+        CLIConnectionError("Not connected. Call connect() first."),
+        OSError("broken pipe"),
+    ],
+)
+async def test_control_failure_of_the_process_is_not_refused(tmp_path, method, arg, error):
+    stub = StubSdkClient(control_error=error)
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    with pytest.raises(AgentError) as info:
+        await getattr(client, method)(arg)
+
+    assert info.value.refused is False
 
 
 def test_default_sdk_client_is_built_from_options(tmp_path):

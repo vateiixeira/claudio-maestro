@@ -227,6 +227,12 @@ class ConversationBuilder:
             if text.startswith(prefix):
                 self._expected_echoes[prefix] = self._expected_echoes.get(prefix, 0) + 1
 
+    def cancel_local_echo(self, text: str) -> None:
+        """The change `expect_local_echo` announced was refused: no echo will come."""
+        for prefix in ECHO_PREFIXES:
+            if text.startswith(prefix) and self._expected_echoes.get(prefix, 0) > 0:
+                self._expected_echoes[prefix] -= 1
+
     def clear_local_echo(self) -> None:
         self._expected_echoes.clear()
 

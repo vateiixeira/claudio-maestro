@@ -71,6 +71,7 @@ PERMISSION_MODES: tuple[str, ...] = (
 # Model ids and aliases, e.g. "opus", "claude-opus-5-5", "opus[1m]".
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._\[\]-]{1,100}$")
 DEFAULT_MODEL_VALUE = "default"
+MODE_AUTO_UNAVAILABLE = "O modo Automático não está disponível para este modelo."
 MODEL_FIELDS = ("value", "displayName", "description", "supportsEffort", "supportedEffortLevels")
 # The stored models list is asked again after this long (3 times a day).
 MODELS_MAX_AGE = 8 * 3600
@@ -1078,17 +1079,68 @@ class ActiveSession:
         """Model or mode changed while connecting: apply them live now.
         Returns False when the client failed meanwhile."""
         model, mode = self.record.model, self.record.permission_mode
-        try:
-            if model != used[0]:
-                self.builder.expect_local_echo(f"Set model to {model}")
-                await client.set_model(None if model in (None, DEFAULT_MODEL_VALUE) else model)
-            if mode != used[1] and mode is not None:
-                await client.set_permission_mode(mode)
-        except AgentError as error:
-            if self.client is client:
-                await self._fail(error.message_pt)
-            return False
+        return await self._apply_live(
+            client,
+            model=(model, used[0]) if model != used[0] else None,
+            mode=(mode, used[1]) if mode != used[1] and mode is not None else None,
+        )
+
+    async def _apply_live(
+        self,
+        client: AgentClient,
+        *,
+        model: tuple[str | None, str | None] | None,
+        mode: tuple[str, str | None] | None,
+    ) -> bool:
+        """Send a model and/or mode change to the client; each is `(new, previous)`.
+
+        An error the agent answered (`AgentError.refused`, its process is alive)
+        does not end the session: the option goes back to the previous value and a
+        notice says why. Any other error means the client is gone and fails the
+        session. Returns False when the session failed or lost this client."""
+        if model is not None:
+            new, previous = model
+            self.builder.expect_local_echo(f"Set model to {new}")
+            try:
+                await client.set_model(None if new in (None, DEFAULT_MODEL_VALUE) else new)
+            except AgentError as error:
+                if not await self._control_failed(client, error):
+                    return False
+                self.builder.cancel_local_echo(f"Set model to {new}")
+                self._revert_option(
+                    "model", new, previous, f"Não foi possível trocar o modelo: {error.message_pt}"
+                )
+        if mode is not None:
+            new, previous = mode
+            try:
+                # Verified with the real SDK: this one sends no echo.
+                await client.set_permission_mode(new)
+            except AgentError as error:
+                if not await self._control_failed(client, error):
+                    return False
+                text = (
+                    MODE_AUTO_UNAVAILABLE
+                    if "auto mode unavailable" in error.message_pt.lower()
+                    else f"Não foi possível trocar o modo: {error.message_pt}"
+                )
+                self._revert_option("permission_mode", new, previous, text)
         return True
+
+    async def _control_failed(self, client: AgentClient, error: AgentError) -> bool:
+        """True when the change was only refused and the session goes on."""
+        if self.client is not client:
+            return False
+        if error.refused:
+            return True
+        await self._fail(error.message_pt)
+        return False
+
+    def _revert_option(self, field: str, attempted: Any, previous: Any, text: str) -> None:
+        # Something else (e.g. the CLI's init) may have set it meanwhile: leave that.
+        if getattr(self.record, field) == attempted:
+            self.save(**{field: previous})
+        self._emit_events(self.builder.add_notice("warning", text))
+        self._emit_options()
 
     def _new_client(self, resume: bool) -> AgentClient:
         model = self.record.model
@@ -1241,6 +1293,7 @@ class ActiveSession:
             changes["permission_mode"] = permission_mode
         if not changes:
             return False
+        previous = {"model": self.record.model, "permission_mode": self.record.permission_mode}
         self.save(**changes)
         client = self.client
         if client is not None or self._connecting:
@@ -1248,16 +1301,16 @@ class ActiveSession:
                 self.effort_pending = True
         self._emit_options()
         if client is not None:
-            try:
-                if "model" in changes:
-                    self.builder.expect_local_echo(f"Set model to {model}")
-                    await client.set_model(None if model == DEFAULT_MODEL_VALUE else model)
-                if "permission_mode" in changes:
-                    # Verified with the real SDK: this one sends no echo.
-                    await client.set_permission_mode(changes["permission_mode"])
-            except AgentError as error:
-                if self.client is client:
-                    await self._fail(error.message_pt)
+            applied = await self._apply_live(
+                client,
+                model=(changes["model"], previous["model"]) if "model" in changes else None,
+                mode=(
+                    (changes["permission_mode"], previous["permission_mode"])
+                    if "permission_mode" in changes
+                    else None
+                ),
+            )
+            if not applied:
                 return True
         self._schedule_effort()
         return True

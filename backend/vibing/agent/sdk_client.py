@@ -107,6 +107,16 @@ def to_agent_error(error: BaseException) -> AgentError:
     return AgentError(f"Falha inesperada no agente: {error}")
 
 
+def to_control_error(error: BaseException) -> AgentError:
+    """Like `to_agent_error` for a model or mode change. The SDK raises a bare
+    `Exception` carrying the CLI's text when the CLI answers the request with an
+    error: the process is alive and only refused the change. Typed SDK errors,
+    OS errors and timeouts of the transport mean the client is gone."""
+    if type(error) is Exception:
+        return AgentError(str(error), refused=True)
+    return to_agent_error(error)
+
+
 class SdkAgentClient:
     """AgentClient backed by the real SDK.
 
@@ -172,13 +182,13 @@ class SdkAgentClient:
         try:
             await self._client.set_model(model)
         except Exception as error:
-            raise to_agent_error(error) from error
+            raise to_control_error(error) from error
 
     async def set_permission_mode(self, mode: str) -> None:
         try:
             await self._client.set_permission_mode(mode)
         except Exception as error:
-            raise to_agent_error(error) from error
+            raise to_control_error(error) from error
 
     async def get_server_info(self) -> dict[str, Any] | None:
         try:
