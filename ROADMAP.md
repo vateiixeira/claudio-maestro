@@ -23,7 +23,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
-| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Em andamento | 23 de 24 |
+| 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Em andamento | 24 de 24 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -225,7 +225,7 @@ Pendências da revisão do marco 7 e sugestões que sobraram das revisões do ma
 - [x] `POST /api/sessions/seen` grava todas as sessões numa transação, fora do loop de eventos (2026-09-29)
 - [x] Rota `PUT /api/state/layout` sem cliente removida (ou volta a ter uso) (2026-09-29)
 - [x] Comando do editor nas preferências valida argumento vazio no navegador, com mensagem própria (2026-09-29)
-- [ ] Teste intermitente de imagem arrastada em `ConversationThread.spec.ts` estabilizado
+- [x] Teste intermitente de imagem arrastada em `ConversationThread.spec.ts` estabilizado (2026-09-29)
 
 ## Marco 8. Agrupador de sessões
 
