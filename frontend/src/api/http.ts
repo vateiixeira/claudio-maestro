@@ -8,8 +8,10 @@ import type {
   GitRepo,
   ImageInput,
   ModelInfo,
+  PlanState,
   Project,
   ProjectCreate,
+  ProjectPlan,
   ProjectUpdate,
   SendResult,
   Session,
@@ -239,4 +241,20 @@ export function getSessionChanges(sessionId: string, signal?: AbortSignal): Prom
 
 export function openInEditor(path: string): Promise<void> {
   return request('POST', '/api/open-in-editor', { path })
+}
+
+export function getSessionPlan(id: string): Promise<PlanState> {
+  return request('GET', `/api/sessions/${id}/plan`)
+}
+
+export function linkSessionPlan(id: string, body: { path: string } | { auto: true }): Promise<PlanState> {
+  return request('PUT', `/api/sessions/${id}/plan`, body)
+}
+
+export function unlinkSessionPlan(id: string): Promise<PlanState> {
+  return request('DELETE', `/api/sessions/${id}/plan`)
+}
+
+export function listProjectPlans(projectId: number): Promise<ProjectPlan[]> {
+  return request('GET', `/api/projects/${projectId}/plans`)
 }

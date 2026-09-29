@@ -4,6 +4,8 @@ import { RouterLink } from 'vue-router'
 import ConversationHeader from '../components/conversation/ConversationHeader.vue'
 import ConversationThread from '../components/conversation/ConversationThread.vue'
 import DetailsPanel from '../components/details/DetailsPanel.vue'
+import PlanStrip from '../components/plan/PlanStrip.vue'
+import { planVisible } from '../components/plan/planText'
 import { noteOpened } from '../recentConversations'
 import { readDetailsOpen, writeDetailsOpen } from '../detailsPanelPref'
 import { useMediaQuery } from '../useMediaQuery'
@@ -19,6 +21,7 @@ const conversations = useConversationStore()
 const projects = useProjectsStore()
 const changesPanel = useChangesPanelStore()
 
+const listed = computed(() => sessions.find(props.id))
 const title = computed(() => conversations.get(props.id)?.title ?? sessions.find(props.id)?.title ?? '')
 const project = computed(() => {
   const id = sessions.find(props.id)?.project_id ?? conversations.get(props.id)?.projectId
@@ -108,6 +111,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
       <template v-else>
         <!-- Keyed by id: a rename in progress or the scroll position must not carry over to another conversation. -->
         <ConversationHeader :key="id" :id="id" />
+        <PlanStrip v-if="listed && planVisible(listed)" :key="id" :session="listed" />
         <ConversationThread :key="id" :id="id" @missing="missing = true" />
       </template>
     </div>

@@ -59,6 +59,18 @@ async function mountAt(path: string, handlers = {}) {
 }
 
 describe('página da conversa', () => {
+  it('mostra a faixa do plano abaixo do cabeçalho quando a conversa tem plano em andamento', async () => {
+    const plan = { path: '/home/vi/dev/loja-online/docs/plan.md', title: 'Plano da loja', total: 12, done: 3, current: { number: 4, title: 'Faixa do plano' } }
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'running', plan })])
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.find('[data-test="plan-strip"]').text()).toContain('Tarefa 4 de 12: Faixa do plano')
+  })
+
+  it('não mostra a faixa do plano sem plano', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.find('[data-test="plan-strip"]').exists()).toBe(false)
+  })
+
   it('mostra trilha, título e o painel Detalhes aberto por padrão', async () => {
     const { wrapper } = await mountAt('/sessions/s1')
 
