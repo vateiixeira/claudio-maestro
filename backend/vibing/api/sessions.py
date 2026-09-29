@@ -59,6 +59,20 @@ class PendingPermissionOut(BaseModel):
     can_allow_always: bool
 
 
+class PlanCurrentOut(BaseModel):
+    number: int
+    title: str
+
+
+class PlanOut(BaseModel):
+    path: str
+    title: str
+    total: int
+    done: int
+    # First task not done; None when the plan is complete.
+    current: PlanCurrentOut | None = None
+
+
 class SessionOut(BaseModel):
     session_id: str
     project_id: int
@@ -91,6 +105,9 @@ class SessionOut(BaseModel):
     last_action: str | None = None
     # Kind of the oldest pending prompt.
     pending_kind: Literal["tool", "question", "plan"] | None = None
+    # Progress of the plan the conversation executes, from the memory cache; None
+    # without a plan, with an unreadable one or before its first reading.
+    plan: PlanOut | None = None
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]

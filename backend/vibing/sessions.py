@@ -17,7 +17,7 @@ import time
 import unicodedata
 import uuid
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import closing, suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -33,7 +33,9 @@ from claude_agent_sdk import (
     StreamEvent,
     SystemMessage,
     ToolPermissionContext,
+    ToolResultBlock,
     ToolUseBlock,
+    UserMessage,
 )
 
 from vibing import db
@@ -41,7 +43,9 @@ from vibing import history as history_module
 from vibing.agent.base import AgentClient, AgentError, AgentFactory, AgentOptions
 from vibing.config import read_user_claude_settings
 from vibing.conversation import ConversationBuilder, Event, cap_items, rate_limit_text
+from vibing.plans import PLAN_TOOLS, PlanCache, is_plan_path, looks_like_plan_path
 from vibing.projects import Project
+from vibing.projects import project_roots as registered_project_roots
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +166,7 @@ AUTONOMOUS_FOLLOWUP_GRACE = 3.0  # seconds
 # Entries of the cache of contexts read from history files.
 CONTEXT_CACHE_SIZE = 512
 PERMISSION_SUMMARY_MAX = 200  # characters
+PLAN_EDITS_MAX = 64  # edit calls on plans waiting for their result, per session
 # read_context(session_id, directory): {used_tokens, model} of the last assistant message.
 ReadContext = Callable[[str, str], dict[str, Any] | None]
 
@@ -247,6 +252,10 @@ class SessionRecord:
     permission_mode: str | None = None
     # When the user finished the session (seconds); None when open or finished by inactivity.
     finished_at: int | None = None
+    # Plan in docs/superpowers/plans the conversation executes (resolved path) and
+    # how it was linked: "auto", "manual" or "off" (None = auto without a plan).
+    plan_path: str | None = None
+    plan_link: str | None = None
 
 
 @dataclass
@@ -265,10 +274,13 @@ _INSERT_COLUMNS = (
 _COLUMNS = (
     _INSERT_COLUMNS
     + ", summary, first_prompt, title_custom, rename_pending, file_modified_at, app_modified_at"
-    + ", model, effort, permission_mode, finished_at"
+    + ", model, effort, permission_mode, finished_at, plan_path, plan_link"
 )
 # Record fields kept out of what the frontend receives.
-_INTERNAL_FIELDS = ("title_custom", "rename_pending", "file_modified_at", "app_modified_at")
+_INTERNAL_FIELDS = (
+    "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
+    "plan_path", "plan_link",
+)
 _BOOL_FIELDS = ("finished", "title_custom", "rename_pending")
 
 
@@ -364,6 +376,7 @@ def describe(
     pending_permission: dict[str, Any] | None = None,
     last_action: str | None = None,
     pending_kind: str | None = None,
+    plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`."""
     now = time.time() if now is None else now
@@ -391,6 +404,7 @@ def describe(
         "pending_permission": pending_permission,
         "last_action": last_action,
         "pending_kind": pending_kind,
+        "plan": plan,
     }
 
 
@@ -615,9 +629,18 @@ class ActiveSession:
         on_turn_end: Callable[[int], None] | None = None,
         on_connected: Callable[[AgentClient], Any] | None = None,
         read_transcript: history_module.ReadTranscript | None = None,
+        link_plan: Callable[[str, str], bool] | None = None,
+        refresh_plan: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         self.record = record
         self._read_transcript = read_transcript
+        # The manager links a plan the conversation touches and rereads its progress.
+        self._link_plan = link_plan
+        self._refresh_plan = refresh_plan
+        # Plan refreshes scheduled by this session; cancelled when the client goes away.
+        self._plan_tasks: set[asyncio.Task[bool]] = set()
+        # Edit-like plan-tool calls waiting for their result: tool_use_id -> file_path.
+        self._plan_edits: dict[str, str] = {}
         # The last load failed: the next open tries again.
         self._history_failed = False
         self._on_turn_end = on_turn_end
@@ -1239,8 +1262,12 @@ class ActiveSession:
                     # exists right after an autonomous result, so this init is that turn's.
                     self._clear_followup()
                 self._emit_events(self.builder.handle(message))
-                if isinstance(message, AssistantMessage) and message.parent_tool_use_id is None:
-                    self._note_tool_use(message)
+                if isinstance(message, AssistantMessage):
+                    if message.parent_tool_use_id is None:
+                        self._note_tool_use(message)
+                    self._note_plan_use(message)
+                elif isinstance(message, UserMessage):
+                    self._note_plan_result(message)
                 if (
                     isinstance(message, RateLimitEvent)
                     and message.rate_limit_info.status == "rejected"
@@ -1256,6 +1283,7 @@ class ActiveSession:
                 if isinstance(message, ResultMessage):
                     # Read in the background: the turn does not wait for it.
                     self._request_context(client)
+                    self._schedule_plan_refresh()
                     if self._autonomous_turn:
                         # It started with no message pending, so it does not answer
                         # any: those sent since get a turn of their own (or, if none
@@ -1518,6 +1546,73 @@ class ActiveSession:
             self.last_action = action
             self.emit_updated()
 
+    # Plan of the conversation ------------------------------------------
+
+    def _on_linked_plan(self, file_path: str) -> bool:
+        """`file_path` is the plan this session is linked to."""
+        linked = self.record.plan_path
+        if not linked:
+            return False
+        try:
+            return str(Path(file_path).expanduser().resolve()) == linked
+        except (OSError, RuntimeError, ValueError):
+            return False
+
+    def _note_plan_use(self, message: AssistantMessage) -> None:
+        """Link the conversation to a plan it reads or edits (subagents included)."""
+        if self._link_plan is None:
+            return
+        for block in message.content:
+            if not isinstance(block, ToolUseBlock) or block.name not in PLAN_TOOLS:
+                continue
+            file_path = (block.input or {}).get("file_path")
+            if not isinstance(file_path, str) or not file_path:
+                continue
+            if not looks_like_plan_path(file_path):
+                continue  # cheap filter: no database and no disk for other files
+            try:
+                changed = self._link_plan(self.session_id, file_path)
+            except Exception:
+                logger.exception("Falha ao vincular o plano da sessão %s", self.session_id)
+                continue
+            on_plan = self._on_linked_plan(file_path)
+            if changed or on_plan:
+                self._schedule_plan_refresh()
+            if block.name != "Read" and on_plan:
+                if len(self._plan_edits) >= PLAN_EDITS_MAX:
+                    self._plan_edits.clear()
+                self._plan_edits[block.id] = file_path
+
+    def _note_plan_result(self, message: UserMessage) -> None:
+        """The result of an edit of the linked plan: its progress may have changed."""
+        if not self._plan_edits or isinstance(message.content, str):
+            return
+        for block in message.content:
+            if isinstance(block, ToolResultBlock) and block.tool_use_id in self._plan_edits:
+                file_path = self._plan_edits.pop(block.tool_use_id)
+                if self._on_linked_plan(file_path):
+                    self._schedule_plan_refresh()
+
+    def _schedule_plan_refresh(self) -> None:
+        if self._refresh_plan is None or not self.record.plan_path:
+            return
+        task = asyncio.create_task(self._refresh_plan(self.session_id))
+        self._plan_tasks.add(task)
+        task.add_done_callback(self._plan_refresh_done)
+
+    def _plan_refresh_done(self, task: asyncio.Task[bool]) -> None:
+        self._plan_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error(
+                "Falha ao atualizar o plano da sessão %s", self.session_id,
+                exc_info=task.exception(),
+            )
+
+    def _cancel_plan_tasks(self) -> None:
+        for task in list(self._plan_tasks):
+            task.cancel()
+        self._plan_edits.clear()
+
     def _touch(self) -> None:
         self._app_activity_at = time.time()
         self.save(last_activity_at=_now())
@@ -1642,6 +1737,7 @@ class ActiveSession:
         if reader is asyncio.current_task():
             reader = None  # the reader is failing itself: it must not be cancelled
         self._cancel_context_read()
+        self._cancel_plan_tasks()
         task = asyncio.create_task(self._do_dispose(client, reader))
         self._disposal = task
         try:
@@ -1818,6 +1914,11 @@ class SessionManager:
         self._idle_timeout = idle_timeout
         self._finished_after_days = finished_after_days
         self._sessions: dict[str, ActiveSession] = {}
+        # Parsed plans by file (reread only when the file changes) and the last
+        # progress known per plan path, kept in memory: listings only read the latter.
+        self.plan_cache = PlanCache()
+        self._plan_progress: dict[str, dict[str, Any] | None] = {}
+        self._plan_locks: dict[str, asyncio.Lock] = {}
         # Models of `get_server_info()`, kept in `app_state` so a restart starts
         # with the last list. `_models_fetched_at` is when it was last confirmed.
         self._models: list[dict[str, Any]] | None = None
@@ -1984,6 +2085,8 @@ class SessionManager:
             on_turn_end=self._on_turn_end,
             on_connected=self._on_connected,
             read_transcript=self._read_transcript,
+            link_plan=lambda sid, path: self.link_plan(sid, path, source="auto"),
+            refresh_plan=self.refresh_plan,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:
@@ -2150,31 +2253,35 @@ class SessionManager:
             found["used_tokens"], record.model, session.model_resolved, found.get("model")
         )
 
-    @staticmethod
-    def _extras(active: ActiveSession | None = None) -> dict[str, Any]:
-        """In-memory fields of a session (context, pending prompt, last action), for `describe`."""
+    def _extras(
+        self, record: SessionRecord, active: ActiveSession | None = None
+    ) -> dict[str, Any]:
+        """In-memory fields of a session (context, pending prompt, last action, plan
+        progress), for `describe`."""
+        plan = self.plan_summary(record)
         if active is None:
             return {"context": None, "pending_permission": None,
-                    "last_action": None, "pending_kind": None}
+                    "last_action": None, "pending_kind": None, "plan": plan}
         return {
             "context": active.context,
             "pending_permission": active.pending_permission,
             "last_action": active.last_action,
             "pending_kind": active.pending_kind,
+            "plan": plan,
         }
 
     def _describe_active(self, session: ActiveSession) -> dict[str, Any]:
         return describe(
             session.record, session.state, session.error, session.seq,
             finished_after=self.finished_after(), effort_pending=session.effort_pending,
-            model_resolved=session.model_resolved, **self._extras(session),
+            model_resolved=session.model_resolved, **self._extras(session.record, session),
         )
 
     def describe_record(self, record: SessionRecord) -> dict[str, Any]:
         """A session without an active client (e.g. just created)."""
         return describe(
             record, "closed", None, 0, finished_after=self.finished_after(),
-            **self._extras(),
+            **self._extras(record),
         )
 
     def summary(self, session_id: str) -> dict[str, Any]:
@@ -2225,16 +2332,88 @@ class SessionManager:
                     finished_after=finished_after, now=now,
                     effort_pending=active.effort_pending,
                     model_resolved=active.model_resolved,
-                    **self._extras(active),
+                    **self._extras(active.record, active),
                 )
             else:
                 record = _record(row)
                 item = describe(record, "closed", None, 0,
                                 finished_after=finished_after, now=now,
-                                **self._extras())
+                                **self._extras(record))
             if display_state is None or item["display_state"] == display_state:
                 result.append(item)
         return result
+
+    # Plans -------------------------------------------------------------------
+
+    def project_roots(self) -> list[Path]:
+        """Folders of the registered projects."""
+        with closing(db.connect(self._db_path)) as conn:
+            return registered_project_roots(conn)
+
+    def plan_summary(self, record: SessionRecord) -> dict[str, Any] | None:
+        """Last known progress of the record's plan. Memory only: never reads a file."""
+        if not record.plan_path:
+            return None
+        return self._plan_progress.get(record.plan_path)
+
+    async def refresh_plan(self, session_id: str) -> bool:
+        """Reread the session's plan (the file only when it changed) and announce a
+        new progress. Returns whether the progress changed."""
+        try:
+            record = self.get(session_id).record
+        except SessionNotFoundError:
+            return False
+        path = record.plan_path
+        if not path:
+            return False
+        # One refresh per plan at a time: a read that started earlier must not
+        # publish its older summary after a later one.
+        async with self._plan_locks.setdefault(path, asyncio.Lock()):
+            progress = await asyncio.to_thread(self.plan_cache.read, Path(path))
+            summary = progress.summary(path) if progress is not None else None
+            if path in self._plan_progress and self._plan_progress[path] == summary:
+                return False
+            self._plan_progress[path] = summary
+        self._emit_plan_change(path)
+        return True
+
+    def _emit_plan_change(self, path: str) -> None:
+        """`session.updated` for every session in memory linked to this plan. Sessions
+        only in the database need no event: their listing reads the memory cache."""
+        for session in list(self._sessions.values()):
+            if session.record.plan_path == path:
+                session.emit_updated()
+
+    def link_plan(
+        self, session_id: str, path: str, *, source: Literal["auto", "manual"]
+    ) -> bool:
+        """Link a session to a plan file. The path must be a plan of a registered
+        project. The automatic source never replaces a `manual` or `off` link.
+        Returns whether the link changed."""
+        session = self.get(session_id)
+        record = session.record
+        if source == "auto" and record.plan_link in ("manual", "off"):
+            return False
+        resolved = is_plan_path(path, self.project_roots())
+        if resolved is None:
+            return False
+        if record.plan_path == str(resolved) and record.plan_link == source:
+            return False
+        session.save(plan_path=str(resolved), plan_link=source)
+        session.emit_updated()
+        return True
+
+    def unlink_plan(self, session_id: str) -> None:
+        """Turn the plan off: no plan and no automatic link."""
+        session = self.get(session_id)
+        session.save(plan_path=None, plan_link="off")
+        session.emit_updated()
+
+    def auto_plan(self, session_id: str) -> None:
+        """Back to the automatic link, keeping the current plan if any."""
+        session = self.get(session_id)
+        session.save(plan_link="auto")
+        session.emit_updated()
 
     # Changes -----------------------------------------------------------------
 
@@ -2455,7 +2634,7 @@ class SessionManager:
             seq = forgotten[0] if forgotten is not None else 0
             data = describe(
                 record, "closed", None, seq, finished_after=self.finished_after(),
-                **self._extras(),
+                **self._extras(record),
             )
             self._publish(
                 {"session_id": session_id, "seq": seq, "type": "session.updated", "data": data}

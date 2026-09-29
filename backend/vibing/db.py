@@ -98,6 +98,12 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         # finished by inactivity). Feeds "Finalizadas hoje" in the dashboard.
         "ALTER TABLE sessions ADD COLUMN finished_at INTEGER",
     ],
+    [
+        # Marco 9: plan the conversation executes. `plan_link` is "auto" (last plan
+        # read or edited), "manual" (chosen by the user) or "off" (never auto-link).
+        "ALTER TABLE sessions ADD COLUMN plan_path TEXT",
+        "ALTER TABLE sessions ADD COLUMN plan_link TEXT",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

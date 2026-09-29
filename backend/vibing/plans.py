@@ -14,6 +14,8 @@ from typing import Any
 
 MAX_PLAN_BYTES = 2 * 1024 * 1024
 PLAN_DIR = ("docs", "superpowers", "plans")
+# Tools whose `file_path` input links a conversation to the plan it touches.
+PLAN_TOOLS = frozenset({"Read", "Edit", "MultiEdit", "Write"})
 
 _TASK = re.compile(r"^###\s+(?:Tarefa|Task)\s+(\d+)\s*[:.\-—]\s*(.+?)\s*$", re.IGNORECASE)
 _HEADING = re.compile(r"^(#{1,3})\s+\S")
@@ -91,6 +93,12 @@ def parse_plan(text: str, fallback_title: str) -> PlanProgress | None:
     if not tasks:
         return None
     return PlanProgress(title or fallback_title, tuple(tasks))
+
+
+def looks_like_plan_path(path: str) -> bool:
+    """Cheap textual check (no disk, no database) that `path` may be a plan: a `.md`
+    with `docs/superpowers/plans/` in it. Only `is_plan_path` decides."""
+    return path.lower().endswith(".md") and "/".join(PLAN_DIR) + "/" in path
 
 
 def is_plan_path(path: str | Path, project_roots: Iterable[Path]) -> Path | None:
