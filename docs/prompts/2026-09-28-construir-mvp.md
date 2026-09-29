@@ -227,3 +227,12 @@ Outros
 - A `description` do `task_progress` vem em inglês e resume a ação atual ("Reading dados.txt").
 - Itens do subagente e atualizações do cartão chegam com a sessão em `idle`, entre o fim do turno e o turno autônomo. O `init` do turno autônomo chega antes de o estado passar a `running`.
 - `get_server_info()["models"]` trouxe 12 modelos com `displayName` em inglês; o haiku vem com `supportedEffortLevels=None`, mas aceita `effort`.
+
+## Fatos verificados no teste real do marco 6 (2026-09-29)
+
+- Cliente com `setting_sources=[]`, sem enviar mensagem: `connect` + `get_server_info()` trouxe os 12 modelos em cerca de 2,6 s e não deixou arquivo de sessão em `~/.claude/projects`.
+- O modo `auto` depende do modelo. Com haiku, `permission_mode="auto"` nas opções é ignorado em silêncio (o `init` reporta `default`), e `set_permission_mode("auto")` falha com "Cannot set permission mode to auto: auto mode unavailable for this model". Com sonnet, o `init` reporta `auto`.
+- `get_context_usage()` devolve, entre outras, as chaves `totalTokens`, `maxTokens`, `rawMaxTokens`, `percentage`, `model`, `categories`, `autoCompactThreshold` e `isAutoCompactEnabled`. Depois de um "ok" com haiku e `setting_sources=[]`: 15710 de 200000 tokens (8%).
+- Subagente em segundo plano (`Agent` com `run_in_background=true`) chega como `TaskStartedMessage` com `task_type="local_agent"`. `stop_task(task_id)` depois do fim do turno encerra o subagente na hora: chega `TaskUpdatedMessage` com `patch.status="killed"`, sem `TaskNotificationMessage`.
+- Login expirado e limite da assinatura não foram provocados de verdade; a conversão das mensagens é coberta só pelos testes automatizados.
+

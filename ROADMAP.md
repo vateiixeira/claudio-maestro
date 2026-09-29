@@ -22,7 +22,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 3. Histórico | Retomada, busca e ocultação | Concluído | 8 de 8 |
 | 4. Git | Branches em todas as telas e painel de alterações | Concluído | 8 de 8 |
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
-| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 42 de 43 |
+| 6. Acabamento | Erros, robustez e uso diário | Em andamento | 42 de 44 |
 | 7. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
 | 8. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Depois do MVP | 0 de 7 |
 
@@ -180,6 +180,7 @@ Objetivo: o app aguenta o uso diário sem surpresas.
 - [x] Ações seguidas do chat viram um grupo, aberto enquanto o turno roda e recolhido depois (2026-09-29)
 - [x] Saídas longas no chat limitadas a 8 linhas e barra fixa do turno com navegação entre turnos (2026-09-29)
 - [x] Aviso de mais de 50 repositórios também atualizado pelo evento `project.git`, sem recarregar (2026-09-29)
+- [ ] Modo "Automático" recusado pelo modelo (o haiku não tem modo automático) não derruba a sessão: o modo volta ao anterior com aviso legível
 - [ ] Testes intermitentes estabilizados: `composerExtras.spec.ts` (frontend) e `test_controls.py::test_autonomous_turn_then_user_turn` (backend)
 
 ## Marco 7. Agrupador de sessões
