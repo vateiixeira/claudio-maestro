@@ -46,6 +46,19 @@ class DecisionIn(BaseModel):
     message: Annotated[str, StringConstraints(max_length=20_000)] | None = None
 
 
+class ContextOut(BaseModel):
+    used_tokens: int
+    max_tokens: int
+    percent: float
+
+
+class PendingPermissionOut(BaseModel):
+    prompt_id: str
+    tool_name: str
+    summary: str
+    can_allow_always: bool
+
+
 class SessionOut(BaseModel):
     session_id: str
     project_id: int
@@ -68,6 +81,10 @@ class SessionOut(BaseModel):
     permission_mode: str | None = None
     effort_pending: bool = False
     model_resolved: str | None = None
+    # Context window usage; None when unknown.
+    context: ContextOut | None = None
+    # Oldest pending tool permission (answered by POST /sessions/{id}/prompts/{prompt_id}).
+    pending_permission: PendingPermissionOut | None = None
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]

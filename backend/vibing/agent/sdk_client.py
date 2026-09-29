@@ -186,6 +186,12 @@ class SdkAgentClient:
         except Exception as error:
             raise to_agent_error(error) from error
 
+    async def get_context_usage(self) -> dict[str, Any] | None:
+        try:
+            return await self._client.get_context_usage()
+        except Exception as error:
+            raise to_agent_error(error) from error
+
     async def close(self) -> None:
         try:
             await self._client.disconnect()

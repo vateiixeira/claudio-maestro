@@ -16,6 +16,7 @@ import sqlite3
 import time
 import unicodedata
 import uuid
+from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import closing, suppress
 from dataclasses import asdict, dataclass
@@ -125,6 +126,16 @@ APP_WRITE_TOLERANCE = 2  # seconds
 PROJECT_CLOSE_WAIT = 30.0  # seconds
 DEFAULT_FINISHED_AFTER_DAYS = 3.0
 DAY_SECONDS = 86_400
+# Context window of a model; ids ending in "[1m]" have the large one.
+DEFAULT_CONTEXT_WINDOW = 200_000
+LARGE_CONTEXT_WINDOW = 1_000_000
+# How long the end of a turn waits for `get_context_usage()`.
+CONTEXT_USAGE_TIMEOUT = 2.0  # seconds
+# Entries of the cache of contexts read from history files.
+CONTEXT_CACHE_SIZE = 512
+PERMISSION_SUMMARY_MAX = 200  # characters
+# read_context(session_id, directory): {used_tokens, model} of the last assistant message.
+ReadContext = Callable[[str, str], dict[str, Any] | None]
 
 
 # Errors --------------------------------------------------------------------
@@ -266,6 +277,52 @@ def display_state(
     return "waiting"
 
 
+def context_window(*models: str | None) -> int:
+    """Context window of the model: the large one when any id ends in `[1m]`."""
+    if any(model and model.endswith("[1m]") for model in models):
+        return LARGE_CONTEXT_WINDOW
+    return DEFAULT_CONTEXT_WINDOW
+
+
+def _percent(used: int, limit: int) -> float:
+    return round(min(used / limit * 100, 100.0), 1)
+
+
+def context_from_usage(
+    used_tokens: int, *models: str | None
+) -> dict[str, Any] | None:
+    """`{used_tokens, max_tokens, percent}` from the tokens of the last message.
+
+    Without `[1m]` in any model id, more than 200k tokens can only fit the large window.
+    """
+    if used_tokens <= 0:
+        return None
+    limit = context_window(*models)
+    if used_tokens > limit:
+        limit = LARGE_CONTEXT_WINDOW
+    return {"used_tokens": used_tokens, "max_tokens": limit, "percent": _percent(used_tokens, limit)}
+
+
+def context_from_sdk(usage: Any) -> dict[str, Any] | None:
+    """Context of a `get_context_usage()` response; None when it is unusable."""
+
+    def integer(value: Any) -> int | None:
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    if not isinstance(usage, dict):
+        return None
+    used = integer(usage.get("totalTokens"))
+    limit = integer(usage.get("rawMaxTokens")) or integer(usage.get("maxTokens"))
+    if used is None or used < 0 or limit is None or limit <= 0:
+        return None
+    percentage = usage.get("percentage")
+    if isinstance(percentage, int | float) and not isinstance(percentage, bool):
+        percent = round(min(max(float(percentage), 0.0), 100.0), 1)
+    else:
+        percent = _percent(used, limit)
+    return {"used_tokens": used, "max_tokens": limit, "percent": percent}
+
+
 def describe(
     record: SessionRecord,
     state: SessionState,
@@ -276,6 +333,8 @@ def describe(
     now: float | None = None,
     effort_pending: bool = False,
     model_resolved: str | None = None,
+    context: dict[str, Any] | None = None,
+    pending_permission: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`."""
     now = time.time() if now is None else now
@@ -299,6 +358,8 @@ def describe(
         "awaiting_decision": state == "awaiting_decision",
         "effort_pending": effort_pending,
         "model_resolved": model_resolved,
+        "context": context,
+        "pending_permission": pending_permission,
     }
 
 
@@ -321,6 +382,32 @@ class PendingPrompt:
         if self.tool_name == PLAN_TOOL:
             return "plan"
         return "tool"
+
+    def subject(self) -> str:
+        """One readable line: the command, file, path or URL the tool works on."""
+        for key in ("command", "file_path", "path", "url"):
+            value = self.input.get(key)
+            if isinstance(value, str) and value.strip():
+                text = value
+                break
+        else:
+            try:
+                text = json.dumps(self.input, ensure_ascii=False)
+            except (TypeError, ValueError):
+                text = str(self.input)
+        text = " ".join(text.split())
+        if len(text) > PERMISSION_SUMMARY_MAX:
+            text = text[: PERMISSION_SUMMARY_MAX - 1] + "…"
+        return text
+
+    def pending_dict(self) -> dict[str, Any]:
+        """What the session summary shows for a pending tool permission."""
+        return {
+            "prompt_id": self.prompt_id,
+            "tool_name": self.tool_name,
+            "summary": self.subject(),
+            "can_allow_always": bool(self.suggestions),
+        }
 
     def to_dict(self) -> dict[str, Any]:
         extra: dict[str, Any] = {}
@@ -507,6 +594,8 @@ class ActiveSession:
         self._on_connected = on_connected
         # A new effort waits for a reconnect between turns.
         self.effort_pending = False
+        # Context usage read from the connected client at the end of each turn.
+        self.context: dict[str, Any] | None = None
         # Model id the CLI resolved (from the last init); not saved.
         self.model_resolved: str | None = None
         self._effort_task: asyncio.Task[None] | None = None
@@ -575,6 +664,14 @@ class ActiveSession:
         if self.pending_turns > 0 or self._autonomous_turn:
             return "running"
         return "idle"
+
+    @property
+    def pending_permission(self) -> dict[str, Any] | None:
+        """The oldest tool permission still pending (questions and plans do not count)."""
+        for prompt in self.prompts.values():
+            if prompt.kind == "tool":
+                return prompt.pending_dict()
+        return None
 
     @property
     def subagents_running(self) -> bool:
@@ -801,6 +898,8 @@ class ActiveSession:
             finished_after=DEFAULT_FINISHED_AFTER_DAYS * DAY_SECONDS,
             effort_pending=self.effort_pending,
             model_resolved=self.model_resolved,
+            context=self.context,
+            pending_permission=self.pending_permission,
         )
 
     def emit_updated(self) -> None:
@@ -1034,6 +1133,8 @@ class ActiveSession:
                 if isinstance(message, SystemMessage) and message.subtype == "init":
                     self._apply_init()
                 if isinstance(message, ResultMessage):
+                    # Before the turn counts as over, so the state does not flicker to idle.
+                    await self._refresh_context(client)
                     # An autonomous turn may also have answered a message sent meanwhile.
                     self._autonomous_turn = False
                     self.pending_turns = max(0, self.pending_turns - 1)
@@ -1063,6 +1164,21 @@ class ActiveSession:
         # The stream ended without close() from us: the process went away.
         if self.client is client:
             await self._fail("O agente encerrou a conexão.")
+
+    async def _refresh_context(self, client: AgentClient) -> None:
+        """Read the context usage from the client; a failure keeps the last value."""
+        try:
+            usage = await asyncio.wait_for(client.get_context_usage(), CONTEXT_USAGE_TIMEOUT)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning(
+                "Falha ao ler o uso de contexto da sessão %s", self.session_id, exc_info=True
+            )
+            return
+        context = context_from_sdk(usage)
+        if context is not None and self.client is client:
+            self.context = context
 
     @staticmethod
     def _starts_turn(message: Any) -> bool:
@@ -1340,17 +1456,26 @@ class ActiveSession:
             tool_use_id=context.tool_use_id,
             suggestions=list(context.suggestions),
         )
+        before = self.pending_permission
         self.prompts[prompt.prompt_id] = prompt
         self._emit("prompt.request", prompt.to_dict())
         self._refresh_state()
+        self._emit_pending_change(before)
         try:
             return await prompt.future
         except asyncio.CancelledError:
             # The SDK cancels this task when the turn is interrupted.
+            before = self.pending_permission
             if self.prompts.pop(prompt.prompt_id, None) is not None:
                 self._emit_resolved(prompt.prompt_id, "cancelled")
                 self._refresh_state()
+                self._emit_pending_change(before)
             raise
+
+    def _emit_pending_change(self, before: dict[str, Any] | None) -> None:
+        """Update the summary when the pending permission it shows changed."""
+        if self.pending_permission != before:
+            self.emit_updated()
 
     def resolve_prompt(
         self,
@@ -1388,6 +1513,7 @@ class ActiveSession:
             result = PermissionResultAllow(updated_permissions=list(prompt.suggestions))
         else:
             result = PermissionResultDeny(message=DENY_MESSAGE)
+        before = self.pending_permission
         del self.prompts[prompt_id]
         prompt.future.set_result(result)
         self._emit_resolved(prompt_id, decision)
@@ -1396,9 +1522,11 @@ class ActiveSession:
             self.save(permission_mode="default")
             self._emit_options()
         self._refresh_state()
+        self._emit_pending_change(before)
         self._schedule_effort()
 
     def _cancel_prompts(self) -> None:
+        before = self.pending_permission
         for prompt_id in list(self.prompts):
             prompt = self.prompts.pop(prompt_id)
             if not prompt.future.done():
@@ -1406,6 +1534,7 @@ class ActiveSession:
                     PermissionResultDeny(message=CANCELLED_MESSAGE, interrupt=True)
                 )
             self._emit_resolved(prompt_id, "cancelled")
+        self._emit_pending_change(before)
 
     def _emit_resolved(self, prompt_id: str, decision: str) -> None:
         self._emit("prompt.resolved", {"prompt_id": prompt_id, "decision": decision})
@@ -1435,8 +1564,13 @@ class SessionManager:
         read_transcript: history_module.ReadTranscript | None = None,
         read_edits: history_module.ReadEdits | None = None,
         clock: Callable[[], float] = time.time,
+        read_context: ReadContext | None = None,
     ) -> None:
         self._clock = clock
+        # Context usage of sessions without a client, from the last assistant message.
+        self._read_context = read_context or history_module.sdk_read_context
+        # session_id -> (file modification it was read at, read result); see `_history_context`.
+        self._history_contexts: OrderedDict[str, tuple[int, dict[str, Any] | None]] = OrderedDict()
         # Mode of new sessions (the user's CLI `defaultMode`).
         self._default_permission_mode = default_permission_mode or user_default_permission_mode
         # One pass over the transcript file. Only by default: tests that inject
@@ -1655,6 +1789,13 @@ class SessionManager:
             await session.reload_if_modified()
             await session.ensure_history()
             await self.refresh_file_info(session)
+            if session.client is None or session.context is None:
+                # No value from a connected client: the last message of the history.
+                before = session.context
+                history = await self._history_context(session)
+                # A turn that ended during the read already set a newer value.
+                if history is not None and session.context is before:
+                    session.context = history
             return session.snapshot()
         finally:
             session.users -= 1
@@ -1759,16 +1900,57 @@ class SessionManager:
                 days = float(value)
         return days * DAY_SECONDS
 
+    async def _history_context(self, session: ActiveSession) -> dict[str, Any] | None:
+        """Context of a session from its last assistant message in the history file.
+
+        The file is read in a thread, once per modification of the history file
+        (`file_modified_at`, bounded cache); a session whose file is not indexed
+        yet is read every time. Only the snapshot calls this: listings, search
+        and events never read history files.
+        """
+        record = session.record
+        key = record.file_modified_at
+        cached = self._history_contexts.get(record.session_id)
+        if key is not None and cached is not None and cached[0] == key:
+            self._history_contexts.move_to_end(record.session_id)
+            found = cached[1]
+        else:
+            try:
+                found = await asyncio.to_thread(self._read_context, record.session_id, record.cwd)
+            except Exception:
+                logger.exception("Falha ao ler o contexto da sessão %s", record.session_id)
+                found = None
+            if key is not None:
+                self._history_contexts[record.session_id] = (key, found)
+                self._history_contexts.move_to_end(record.session_id)
+                while len(self._history_contexts) > CONTEXT_CACHE_SIZE:
+                    self._history_contexts.popitem(last=False)
+        if found is None:
+            return None
+        return context_from_usage(
+            found["used_tokens"], record.model, session.model_resolved, found.get("model")
+        )
+
+    @staticmethod
+    def _extras(active: ActiveSession | None = None) -> dict[str, Any]:
+        """Context (in memory only) and pending permission of a session, for `describe`."""
+        if active is None:
+            return {"context": None, "pending_permission": None}
+        return {"context": active.context, "pending_permission": active.pending_permission}
+
     def _describe_active(self, session: ActiveSession) -> dict[str, Any]:
         return describe(
             session.record, session.state, session.error, session.seq,
             finished_after=self.finished_after(), effort_pending=session.effort_pending,
-            model_resolved=session.model_resolved,
+            model_resolved=session.model_resolved, **self._extras(session),
         )
 
     def describe_record(self, record: SessionRecord) -> dict[str, Any]:
         """A session without an active client (e.g. just created)."""
-        return describe(record, "closed", None, 0, finished_after=self.finished_after())
+        return describe(
+            record, "closed", None, 0, finished_after=self.finished_after(),
+            **self._extras(),
+        )
 
     def summary(self, session_id: str) -> dict[str, Any]:
         return self.get(session_id).summary()
@@ -1790,9 +1972,15 @@ class SessionManager:
         return summaries
 
     def list_sessions(
-        self, *, project_id: int | None = None, display_state: str | None = None
+        self,
+        *,
+        project_id: int | None = None,
+        display_state: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Sessions of every project (or one), newest activity first, with the current seq."""
+        """Sessions of every project (or one), newest activity first, with the current seq.
+
+        The context is only the in-memory value of active sessions: no history file is read.
+        """
         query = f"SELECT {_COLUMNS} FROM sessions"
         params: tuple[Any, ...] = ()
         if project_id is not None:
@@ -1812,10 +2000,13 @@ class SessionManager:
                     finished_after=finished_after, now=now,
                     effort_pending=active.effort_pending,
                     model_resolved=active.model_resolved,
+                    **self._extras(active),
                 )
             else:
-                item = describe(_record(row), "closed", None, 0,
-                                finished_after=finished_after, now=now)
+                record = _record(row)
+                item = describe(record, "closed", None, 0,
+                                finished_after=finished_after, now=now,
+                                **self._extras())
             if display_state is None or item["display_state"] == display_state:
                 result.append(item)
         return result
@@ -1975,7 +2166,10 @@ class SessionManager:
         if session is None:
             forgotten = self._forgotten.get(session_id)
             seq = forgotten[0] if forgotten is not None else 0
-            data = describe(record, "closed", None, seq, finished_after=self.finished_after())
+            data = describe(
+                record, "closed", None, seq, finished_after=self.finished_after(),
+                **self._extras(),
+            )
             self._publish(
                 {"session_id": session_id, "seq": seq, "type": "session.updated", "data": data}
             )

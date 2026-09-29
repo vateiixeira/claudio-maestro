@@ -72,6 +72,10 @@ class AgentClient(Protocol):
         """Initialization info of the CLI; `models` lists the available models."""
         ...
 
+    async def get_context_usage(self) -> dict[str, Any] | None:
+        """Context window usage (`/context`): `totalTokens`, `rawMaxTokens`, `maxTokens`, `percentage`."""
+        ...
+
     async def close(self) -> None: ...
 
 

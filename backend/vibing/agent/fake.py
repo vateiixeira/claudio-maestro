@@ -154,6 +154,9 @@ class FakeAgentClient:
             server_info if server_info is not None else {"models": DEFAULT_SERVER_MODELS}
         )
         self.server_info_calls = 0
+        # Answer of `get_context_usage()` (SDK format); None: no data.
+        self.context_usage: dict[str, Any] | None = None
+        self.context_usage_calls = 0
         # When set, close() stops here until the test releases it.
         self.close_pause: PauseStep | None = None
 
@@ -198,6 +201,10 @@ class FakeAgentClient:
     async def get_server_info(self) -> dict[str, Any] | None:
         self.server_info_calls += 1
         return self.server_info
+
+    async def get_context_usage(self) -> dict[str, Any] | None:
+        self.context_usage_calls += 1
+        return self.context_usage
 
     async def messages(self) -> AsyncIterator[Message]:
         while True:

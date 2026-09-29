@@ -321,6 +321,76 @@ def sdk_read_edits(session_id: str, directory: str) -> list[dict[str, Any]]:
         return []
 
 
+# The tail of a session file is read in growing steps until an assistant line with usage shows up.
+CONTEXT_TAIL_START = 64 * 1024
+CONTEXT_TAIL_MAX = 4 * 1024 * 1024
+_USAGE_TOKEN_FIELDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
+def _context_from_line(line: str) -> dict[str, Any] | None:
+    """`{used_tokens, model}` from one transcript line, or None if it has no usable usage."""
+    if '"assistant"' not in line:
+        return None
+    try:
+        entry = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(entry, dict) or entry.get("type") != "assistant":
+        return None
+    if entry.get("isSidechain"):
+        return None  # a subagent's context, not the session's
+    message = entry.get("message")
+    usage = message.get("usage") if isinstance(message, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    model = message.get("model")
+    if model == "<synthetic>":
+        return None  # messages written by the CLI itself, with zeroed usage
+    total = 0
+    for name in _USAGE_TOKEN_FIELDS:
+        value = usage.get(name, 0)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        total += value
+    if total <= 0:
+        return None
+    return {"used_tokens": total, "model": model if isinstance(model, str) else None}
+
+
+def read_context_file(path: Path) -> dict[str, Any] | None:
+    """Context size at the last assistant message of a `.jsonl` transcript.
+
+    `used_tokens` is input + cache creation + cache read tokens of that message
+    (what the model received). Only the tail of the file is read. None when the
+    file is missing or has no such message.
+    """
+    try:
+        with path.open("rb") as file:
+            size = file.seek(0, os.SEEK_END)
+            window = CONTEXT_TAIL_START
+            while True:
+                start = max(0, size - window)
+                file.seek(start)
+                data = file.read(size - start)
+                lines = data.decode("utf-8", errors="replace").split("\n")
+                if start > 0:
+                    lines = lines[1:]  # the first line is probably cut in the middle
+                for line in reversed(lines):
+                    found = _context_from_line(line.strip()) if line.strip() else None
+                    if found is not None:
+                        return found
+                if start == 0 or window >= CONTEXT_TAIL_MAX:
+                    return None
+                window *= 4
+    except OSError:
+        return None
+
+
+def sdk_read_context(session_id: str, directory: str) -> dict[str, Any] | None:
+    path = _session_file(session_id, directory)
+    return None if path is None else read_context_file(path)
+
+
 def sdk_get_session_info(session_id: str, directory: str) -> Any | None:
     import claude_agent_sdk
 
