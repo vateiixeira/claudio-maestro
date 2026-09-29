@@ -43,8 +43,19 @@ INHERITED_ENV_VARS: tuple[str, ...] = (
 
 CLI_NOT_FOUND_MESSAGE = "O comando `claude` não foi encontrado nesta máquina."
 LOGIN_MESSAGE = "O login do Claude expirou ou é inválido. Rode `claude` no terminal e faça /login."
-# What the CLI writes when the subscription login is missing or expired.
-LOGIN_MARKERS = ("/login", "OAuth token has expired", "Invalid API key")
+# What the CLI writes when the subscription login is missing or expired. Phrases
+# taken from the bundled CLI binary. A bare "/login" is not a marker: other
+# messages tell the user to run it (e.g. another organization's Artifact) and
+# it would turn any later process death into "login expired".
+LOGIN_MARKERS = (
+    "Not logged in",
+    "Please run /login",
+    "Invalid API key",
+    "OAuth token has expired",
+    "OAuth token revoked",
+    "OAuth session expired",
+    "Login expired",
+)
 # What the CLI prints when started with `session_id` of a session already on disk.
 SESSION_IN_USE_MARKER = "already in use"
 STDERR_LINES_KEPT = 50

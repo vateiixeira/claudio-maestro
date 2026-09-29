@@ -4,6 +4,7 @@ import asyncio
 import os
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -144,3 +145,120 @@ def test_pick_is_protected(home: Path, data_dir: Path, base_url, headers, status
 def test_default_picker_never_opens_real_zenity(client):
     """conftest replaces the process starter: the default picker cannot run zenity."""
     assert client.post("/api/fs/pick").status_code == 503
+
+
+# The browser gives up (tab closed or reloaded) while the picker is open.
+
+
+class FakeRequest:
+    """Just what the route touches: app state and `is_disconnected`."""
+
+    def __init__(self, pick, lock: asyncio.Lock, disconnect_after: int):
+        self.app = SimpleNamespace(state=SimpleNamespace(pick_folder=pick, pick_lock=lock))
+        self._polls = 0
+        self._disconnect_after = disconnect_after
+
+    async def is_disconnected(self) -> bool:
+        self._polls += 1
+        return self._polls > self._disconnect_after
+
+
+class HangingProcess:
+    def __init__(self):
+        self.returncode: int | None = None
+        self.killed = False
+
+    async def communicate(self):
+        await asyncio.sleep(3600)
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+
+    async def wait(self):
+        return self.returncode
+
+
+@pytest.mark.anyio
+async def test_disconnect_kills_picker_and_frees_lock(home: Path, data_dir: Path, monkeypatch):
+    from vibing.api import fs as fs_api
+
+    monkeypatch.setattr(fs_api, "DISCONNECT_POLL", 0.01)
+    processes: list[HangingProcess] = []
+
+    async def spawn(*argv, **kwargs):
+        processes.append(HangingProcess())
+        return processes[-1]
+
+    async def pick(initial: Path) -> str | None:
+        return await picker.pick_folder(initial, spawn=spawn)
+
+    lock = asyncio.Lock()
+    settings = Settings(home_dir=home, data_dir=data_dir)
+    request = FakeRequest(pick, lock, disconnect_after=3)
+
+    await asyncio.wait_for(fs_api.pick_folder(settings, request), 5)
+
+    assert len(processes) == 1
+    assert processes[0].killed
+    assert not lock.locked()
+
+    # A new request is not turned away with 409.
+    async def quick(initial: Path) -> str | None:
+        return None
+
+    again = FakeRequest(quick, lock, disconnect_after=100)
+    assert await fs_api.pick_folder(settings, again) == {"path": None}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("content_length", [True, False])
+async def test_full_app_detects_disconnect_after_empty_body(
+    home: Path, data_dir: Path, monkeypatch, content_length: bool
+):
+    """Whole ASGI app (all security middlewares): an empty `http.request` followed by
+    `http.disconnect` cancels the hanging picker and frees the lock."""
+    from vibing.api import fs as fs_api
+
+    monkeypatch.setattr(fs_api, "DISCONNECT_POLL", 0.02)
+    cancelled = asyncio.Event()
+
+    async def hanging(initial: Path) -> str | None:
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    app = create_app(settings=Settings(home_dir=home, data_dir=data_dir), pick_folder=hanging)
+    headers = [
+        (b"host", b"localhost:6660"),
+        (b"origin", APP_ORIGIN.encode()),
+        (b"x-vibing", b"1"),
+    ]
+    if content_length:
+        headers.append((b"content-length", b"0"))
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+        "path": "/api/fs/pick", "raw_path": b"/api/fs/pick", "query_string": b"",
+        "headers": headers, "server": ("127.0.0.1", 6660), "client": ("127.0.0.1", 1),
+        "scheme": "http", "root_path": "",
+    }
+    incoming: asyncio.Queue = asyncio.Queue()
+    await incoming.put({"type": "http.request", "body": b"", "more_body": False})
+
+    async def receive():
+        return await incoming.get()
+
+    async def send(message):
+        pass
+
+    async with app.router.lifespan_context(app):
+        request = asyncio.create_task(app(scope, receive, send))
+        await asyncio.sleep(0.15)
+        assert not cancelled.is_set()
+        assert app.state.pick_lock.locked()
+        await incoming.put({"type": "http.disconnect"})
+        await asyncio.wait_for(cancelled.wait(), 5)
+        await asyncio.wait_for(request, 5)
+        assert not app.state.pick_lock.locked()

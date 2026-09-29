@@ -569,6 +569,67 @@ async def test_expired_login_on_connect_is_readable(tmp_path, stderr):
     assert "/login" in LOGIN_MESSAGE
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("stderr", ["Not logged in · Please run /login", "OAuth token revoked · Please run /login",
+                                    "Login expired · Please run /login",
+                                    "Failed to authenticate: OAuth session expired and could not be refreshed"])
+async def test_specific_cli_login_phrases_are_recognised(tmp_path, stderr):
+    from claude_agent_sdk import ProcessError
+    from test_agent_sdk_client import StubSdkClient, make_options
+
+    from vibing.agent.base import AgentError
+    from vibing.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
+
+    stub = StubSdkClient(connect_error=ProcessError("Command failed", exit_code=1))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    client.sdk_options.stderr(stderr)
+
+    with pytest.raises(AgentError) as error:
+        await client.connect()
+
+    assert error.value.message_pt == LOGIN_MESSAGE
+
+
+@pytest.mark.anyio
+async def test_stray_login_mention_does_not_turn_process_death_into_expired_login(tmp_path):
+    from claude_agent_sdk import ProcessError
+    from test_agent_sdk_client import StubSdkClient, make_options
+
+    from vibing.agent.base import AgentError
+    from vibing.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
+
+    stub = StubSdkClient(receive_error=ProcessError("Command failed", exit_code=137))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+    client.sdk_options.stderr("hook output: see the docs about /login for details")
+    client.sdk_options.stderr("Killed")
+
+    with pytest.raises(AgentError) as error:
+        async for _ in client.messages():
+            pass
+
+    assert error.value.message_pt != LOGIN_MESSAGE
+    assert "encerrou inesperadamente" in error.value.message_pt
+
+
+@pytest.mark.anyio
+async def test_stray_login_mention_on_connect_is_not_expired_login(tmp_path):
+    from claude_agent_sdk import ProcessError
+    from test_agent_sdk_client import StubSdkClient, make_options
+
+    from vibing.agent.base import AgentError
+    from vibing.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
+
+    stub = StubSdkClient(connect_error=ProcessError("Command failed", exit_code=1))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    client.sdk_options.stderr("Run /login to sign in with your claude.ai account")
+
+    with pytest.raises(AgentError) as error:
+        await client.connect()
+
+    assert error.value.message_pt != LOGIN_MESSAGE
+
+
 def test_cli_not_found_message_is_readable():
     from claude_agent_sdk import CLINotFoundError
 

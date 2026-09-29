@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+from contextlib import suppress
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
@@ -13,6 +15,9 @@ from vibing.security import PathNotAllowedError, resolve_within
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/fs")
+
+# How often to check whether the browser gave up on the picker request.
+DISCONNECT_POLL = 0.5
 
 
 class DirEntryOut(BaseModel):
@@ -71,6 +76,27 @@ async def preview_repos(settings: SettingsDep, path: str) -> dict:
     return {"repos": repos, "limit_reached": limit_reached}
 
 
+async def _pick_until_disconnect(request: Request, initial: Path) -> str | None:
+    """Run the picker, but cancel it (killing zenity) if the browser disconnects.
+
+    Starlette does not cancel the route when the client goes away, so the
+    connection is polled. Returns None when the client left.
+    """
+    task = asyncio.ensure_future(request.app.state.pick_folder(initial))
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=DISCONNECT_POLL)
+            if done:
+                return task.result()
+            if await request.is_disconnected():
+                return None
+    finally:
+        if not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+
 @router.post("/pick", response_model=PickOut)
 async def pick_folder(settings: SettingsDep, request: Request) -> dict:
     """Open the system folder picker and return the chosen folder (null: cancelled)."""
@@ -82,7 +108,7 @@ async def pick_folder(settings: SettingsDep, request: Request) -> dict:
         )
     async with lock:
         try:
-            chosen = await request.app.state.pick_folder(settings.home_dir)
+            chosen = await _pick_until_disconnect(request, settings.home_dir)
         except picker.PickerUnavailableError as exc:
             logger.warning("Seletor de pastas indisponível: %s", exc)
             raise HTTPException(

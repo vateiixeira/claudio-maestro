@@ -41,7 +41,8 @@ async def pick_folder(
 
     Returns the chosen path as zenity printed it, or None when the user
     cancels. The process is killed when the time runs out or the caller is
-    cancelled (e.g. the browser closed the request).
+    cancelled. The route cancels it when the browser disconnects (Starlette
+    does not cancel the route itself, so `api/fs.py` polls the connection).
     """
     start = spawn or default_spawn
     try:
