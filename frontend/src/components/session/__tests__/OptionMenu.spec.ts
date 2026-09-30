@@ -30,6 +30,14 @@ function mountMenu(buttonRect: DOMRect, extra: Record<string, unknown> = {}) {
   return { wrapper, trigger, host }
 }
 
+/** The button ends up above the viewport, as if an ancestor scrolled it away. */
+function scrollButtonOut(trigger: { element: Element }) {
+  vi.mocked(trigger.element.getBoundingClientRect).mockReturnValue(rect(50, -100))
+}
+function scrollButtonBack(trigger: { element: Element }) {
+  vi.mocked(trigger.element.getBoundingClientRect).mockReturnValue(rect(50, 700))
+}
+
 const body = () => new DOMWrapper(document.body)
 const menuEl = () => document.body.querySelector<HTMLElement>('[role="menu"]')
 
@@ -185,10 +193,12 @@ describe('OptionMenu', () => {
     expect(document.activeElement).toBe(trigger.element)
 
     await trigger.trigger('click')
+    scrollButtonOut(trigger)
     host.dispatchEvent(new Event('scroll'))
     await wrapper.vm.$nextTick()
     expect(menuEl()).toBeNull()
     expect(document.activeElement).toBe(trigger.element)
+    scrollButtonBack(trigger)
 
     await trigger.trigger('click')
     elsewhere.focus()
@@ -199,6 +209,7 @@ describe('OptionMenu', () => {
 
     await trigger.trigger('click')
     elsewhere.focus()
+    scrollButtonOut(trigger)
     host.dispatchEvent(new Event('scroll'))
     await wrapper.vm.$nextTick()
     expect(menuEl()).toBeNull()
@@ -213,15 +224,64 @@ describe('OptionMenu', () => {
     expect(menuEl()).toBeNull()
   })
 
-  it('closes on scroll of an ancestor, but not on scroll inside the panel', async () => {
-    const { wrapper, trigger, host } = mountMenu(rect(50, 700))
+  it('ignores scrolling of the panel itself', async () => {
+    const { wrapper, trigger } = mountMenu(rect(50, 700))
     await trigger.trigger('click')
+    const before = menuEl()!.style.cssText
     menuEl()!.dispatchEvent(new Event('scroll'))
     await wrapper.vm.$nextTick()
     expect(menuEl()).not.toBeNull()
+    expect(menuEl()!.style.cssText).toBe(before)
+  })
+
+  it('ignores scrolling of an element that does not contain the button, without touching the focus', async () => {
+    const { wrapper, trigger } = mountMenu(rect(50, 700))
+    const sibling = document.createElement('div')
+    document.body.appendChild(sibling)
+    await trigger.trigger('click')
+    const focused = document.activeElement
+    expect(menuEl()!.contains(focused)).toBe(true)
+    const before = menuEl()!.style.cssText
+    sibling.dispatchEvent(new Event('scroll'))
+    await wrapper.vm.$nextTick()
+    expect(menuEl()).not.toBeNull()
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(focused)
+    expect(menuEl()!.style.cssText).toBe(before)
+  })
+
+  it('repositions, instead of closing, when an ancestor of the button scrolls and the button stays visible', async () => {
+    const { wrapper, trigger, host } = mountMenu(rect(50, 700))
+    await trigger.trigger('click')
+    const focused = document.activeElement
+    expect(menuEl()!.style.bottom).toBe(`${800 - 700 + 4}px`)
+    vi.mocked(trigger.element.getBoundingClientRect).mockReturnValue(rect(60, 500))
+    host.dispatchEvent(new Event('scroll'))
+    await wrapper.vm.$nextTick()
+    expect(menuEl()).not.toBeNull()
+    expect(document.activeElement).toBe(focused)
+    expect(menuEl()!.style.bottom).toBe(`${800 - 500 + 4}px`)
+    expect(menuEl()!.style.left).toBe('60px')
+  })
+
+  it('repositions when the page itself scrolls', async () => {
+    const { wrapper, trigger } = mountMenu(rect(50, 700))
+    await trigger.trigger('click')
+    vi.mocked(trigger.element.getBoundingClientRect).mockReturnValue(rect(50, 600))
+    document.dispatchEvent(new Event('scroll'))
+    await wrapper.vm.$nextTick()
+    expect(menuEl()).not.toBeNull()
+    expect(menuEl()!.style.bottom).toBe(`${800 - 600 + 4}px`)
+  })
+
+  it('closes when an ancestor scrolls the button out of the viewport', async () => {
+    const { wrapper, trigger, host } = mountMenu(rect(50, 700))
+    await trigger.trigger('click')
+    scrollButtonOut(trigger)
     host.dispatchEvent(new Event('scroll'))
     await wrapper.vm.$nextTick()
     expect(menuEl()).toBeNull()
+    expect(trigger.attributes('aria-expanded')).toBe('false')
   })
 
   it('removes the listeners when it closes and when it unmounts', async () => {

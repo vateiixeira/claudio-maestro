@@ -93,8 +93,19 @@ function onResize() {
   hideKeepingFocus()
 }
 function onScroll(event: Event) {
-  // Scrolling the panel's own list is fine; anything else moves the button away from it.
-  if (!menu.value?.contains(event.target as Node)) hideKeepingFocus()
+  const target = event.target as Node | null
+  const button = trigger.value
+  // Scrolling the panel's own list is fine. So is anything that does not carry the
+  // button along (the conversation thread following a turn, another panel): those
+  // scroll all the time and must not close the menu.
+  if (!button || (target && menu.value?.contains(target))) return
+  const moved = !target || target === document || target === document.documentElement || target.contains(button)
+  if (!moved) return
+  // The button moved with its container: follow it, unless it left the screen.
+  const rect = button.getBoundingClientRect()
+  const visible = rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth
+  if (visible) place()
+  else hideKeepingFocus()
 }
 onBeforeUnmount(removeListeners)
 
