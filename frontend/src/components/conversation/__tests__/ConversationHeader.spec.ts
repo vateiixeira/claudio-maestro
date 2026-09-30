@@ -32,6 +32,14 @@ describe('chip do agrupador no cabeçalho', () => {
     expect(mountHeader(2).find('[data-test="header-group"]').text()).toContain('Checkout')
   })
 
+  it('esconde o glifo decorativo dos leitores de tela', () => {
+    const chip = mountHeader(2).find('[data-test="header-group"]')
+    const glyph = chip.find('[aria-hidden="true"]')
+    expect(glyph.exists()).toBe(true)
+    expect(glyph.text()).toBe('▤')
+    expect(chip.text()).toContain('Checkout')
+  })
+
   it('não mostra nada sem agrupador ou com agrupador desconhecido', () => {
     expect(mountHeader(null).find('[data-test="header-group"]').exists()).toBe(false)
     expect(mountHeader(99).find('[data-test="header-group"]').exists()).toBe(false)

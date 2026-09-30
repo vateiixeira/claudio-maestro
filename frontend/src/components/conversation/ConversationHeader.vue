@@ -188,7 +188,7 @@ async function openProject() {
       <span v-if="project" class="flex items-center gap-1.5 rounded-full border border-line-strong bg-card px-2.5 py-[3px] text-xs">
         <span class="size-2 rounded-[3px]" :style="{ backgroundColor: project.color }" />{{ project.name }}
       </span>
-      <span v-if="group" data-test="header-group" class="flex items-center gap-1.5 rounded-full border border-line-strong bg-card px-2.5 py-[3px] text-xs">▤ {{ group.name }}</span>
+      <span v-if="group" data-test="header-group" class="flex items-center gap-1.5 rounded-full border border-line-strong bg-card px-2.5 py-[3px] text-xs"><span aria-hidden="true">▤</span>{{ group.name }}</span>
       <span v-for="repo in repos" :key="repo.path" class="flex items-center rounded-full border border-line-strong bg-card px-2.5 py-[3px]">
         <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
       </span>
