@@ -2010,7 +2010,7 @@ Item 8 do marco 13.
 5. Envolva o `textarea` num `<div class="relative flex min-h-40 grow flex-col">`: o `textarea` fica com `grow` e o `SuggestionMenu` fica ao lado.
 6. `placement`: ao abrir, calcule o espaço acima do `textarea` dentro do corpo rolável (`promptEl.value.getBoundingClientRect().top - scrollBody.getBoundingClientRect().top`). Com 288 px ou mais (a altura máxima do menu), use `'above'`; com menos, `'below'`. No jsdom tudo mede 0, então o resultado é `'below'`.
 
-- [ ] **Passo 1: testes que falham.** Use o setup de `NewConversationModal.spec.ts` (pinia real, projetos 1, 2 e 3, `openModal`). Acrescente aos handlers `'GET /api/projects/2/commands'` e `'GET /api/projects/1/commands'`:
+- [x] **Passo 1: testes que falham.** Use o setup de `NewConversationModal.spec.ts` (pinia real, projetos 1, 2 e 3, `openModal`). Acrescente aos handlers `'GET /api/projects/2/commands'` e `'GET /api/projects/1/commands'`:
 
 ```ts
 it('usa os comandos do projeto escolhido', async () => {
@@ -2078,10 +2078,10 @@ it('Enter com menu aberto escolhe e não cria a conversa', async () => {
 
 Confira o nome do getter de aberto no store `useNewConversationStore` (`isOpen`) e ajuste se for outro.
 
-- [ ] **Passo 2: rodar e ver falhar.**
-- [ ] **Passo 3: implementar** as mudanças 1 a 6.
-- [ ] **Passo 4: rodar e ver passar.** Rode o arquivo novo e os três `NewConversationModal*.spec.ts` existentes, depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
-- [ ] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 8 no roadmap.
+- [x] **Passo 2: rodar e ver falhar.**
+- [x] **Passo 3: implementar** as mudanças 1 a 6.
+- [x] **Passo 4: rodar e ver passar.** Rode o arquivo novo e os três `NewConversationModal*.spec.ts` existentes, depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
+- [x] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 8 no roadmap.
 
 ```bash
 git add frontend/src/components/NewConversationModal.vue frontend/src/components/__tests__/NewConversationModalSuggestions.spec.ts ROADMAP.md

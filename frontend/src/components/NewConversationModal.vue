@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import SuggestionMenu from './conversation/SuggestionMenu.vue'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
 import { errorMessage, sendMessage, updateSession } from '../api/http'
 import { type DraftImage, IMAGE_TYPES, attachImages, base64Of, filesFrom, formatSize } from '../conversation/images'
 import { useDictation } from '../conversation/dictation'
+import { useComposerSuggestions } from '../conversation/useComposerSuggestions'
 import { rememberSentImages } from '../conversation/localImages'
 import { setPendingDraft } from '../conversation/pendingDrafts'
 import { sortGroups } from '../groupList'
@@ -39,6 +41,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const fullscreen = ref(false)
 const promptEl = ref<HTMLTextAreaElement | null>(null)
 const dialogEl = ref<HTMLElement | null>(null)
+const scrollBody = ref<HTMLElement | null>(null)
 // Where focus was before the modal opened; it goes back there when the modal closes.
 const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
 const lastProject = loadLastProject()
@@ -144,8 +147,34 @@ function onPaste(event: ClipboardEvent) {
   void addFiles(files)
 }
 
+const promptText = computed({
+  get: () => draft.value.prompt,
+  set: (value: string) => {
+    draft.value.prompt = value
+  },
+})
+// The menus read the commands and files of the chosen project; changing it resets the list and closes the menu.
+const suggestions = useComposerSuggestions({
+  textarea: promptEl,
+  text: promptText,
+  scope: () => (draft.value.projectId != null ? { projectId: draft.value.projectId } : null),
+})
+// The menu opens above the field when the scrollable body has room for its full height (max-h-72 = 288 px), else below.
+const MENU_HEIGHT = 288
+const menuPlacement = ref<'above' | 'below'>('below')
+watch(
+  () => suggestions.isOpen.value,
+  (open) => {
+    if (!open || !promptEl.value || !scrollBody.value) return
+    const room = promptEl.value.getBoundingClientRect().top - scrollBody.value.getBoundingClientRect().top
+    menuPlacement.value = room >= MENU_HEIGHT ? 'above' : 'below'
+  },
+  { flush: 'sync' },
+)
+
 const dictation = useDictation({
   begin() {
+    suggestions.close()
     const el = promptEl.value
     return { text: draft.value.prompt, cursor: el?.selectionStart ?? draft.value.prompt.length }
   },
@@ -164,11 +193,19 @@ function stopDictation() {
 // Typing while dictating stops it, so it does not overwrite what was typed.
 function onPromptInput() {
   stopDictation()
+  suggestions.refresh()
+}
+// setSelectionRange (used by the dictation to place the cursor) fires `select`, so the event is
+// ignored while recording: dictated text must never open the menus.
+function onPromptSelect() {
+  if (dictation.recording.value) return
+  suggestions.refresh()
 }
 // The modal stays mounted while closed: closing it by any path stops the dictation.
 watch(() => store.isOpen, (open) => { if (!open) stopDictation() })
 
 function onPromptKey(event: KeyboardEvent) {
+  if (suggestions.onKeydown(event)) return
   if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return
   if (event.shiftKey) return // the browser inserts the line break
   event.preventDefault()
@@ -185,6 +222,7 @@ function onPromptKey(event: KeyboardEvent) {
 
 async function submit() {
   if (!canSubmit.value) return
+  suggestions.close()
   stopDictation()
   submitting.value = true
   error.value = null
@@ -310,7 +348,7 @@ function onKeydown(event: KeyboardEvent) {
         <RouterLink to="/projects/new" class="text-primary-soft" @click="close">Cadastrar projeto</RouterLink>
       </div>
       <template v-else>
-        <div class="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-5 py-4">
+        <div ref="scrollBody" class="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-5 py-4">
           <label class="flex items-center gap-2 text-sm text-fg-muted">
             em
             <select v-model.number="draft.projectId" data-test="nc-project" :disabled="createdId !== null" @change="draft.groupId = null" :title="createdId !== null ? 'A conversa já foi criada neste projeto.' : undefined" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg">
@@ -325,17 +363,41 @@ function onKeydown(event: KeyboardEvent) {
             </select>
           </label>
           <input v-model="draft.title" data-test="nc-title" placeholder="Título (opcional)" aria-label="Título (opcional)" maxlength="200" class="h-10 rounded-md border border-line-strong bg-bg px-3 text-base font-semibold text-fg outline-none focus:border-primary" />
-          <textarea
-            ref="promptEl"
-            v-model="draft.prompt"
-            data-test="nc-prompt"
-            aria-label="Prompt"
-            placeholder="O que você quer fazer? (Ctrl+V cola imagens)"
-            class="min-h-40 grow resize-none rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-primary"
-            @input="onPromptInput"
-            @keydown="onPromptKey"
-            @paste="onPaste"
-          />
+          <div class="relative flex min-h-40 grow flex-col">
+            <textarea
+              ref="promptEl"
+              v-model="draft.prompt"
+              data-test="nc-prompt"
+              aria-label="Prompt"
+              placeholder="O que você quer fazer? (Ctrl+V cola imagens)"
+              role="combobox"
+              aria-autocomplete="list"
+              :aria-expanded="suggestions.isOpen.value"
+              :aria-controls="suggestions.menuId"
+              :aria-activedescendant="suggestions.isOpen.value && suggestions.items.value.length ? suggestions.optionId(suggestions.active.value) : undefined"
+              class="min-h-40 grow resize-none rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-primary"
+              @input="onPromptInput"
+              @keydown="onPromptKey"
+              @keyup="suggestions.refresh()"
+              @click="suggestions.refresh()"
+              @select="onPromptSelect"
+              @blur="suggestions.onBlur()"
+              @paste="onPaste"
+            />
+            <SuggestionMenu
+              v-if="suggestions.isOpen.value && suggestions.kind.value"
+              :id="suggestions.menuId"
+              :items="suggestions.items.value"
+              :active="suggestions.active.value"
+              :status="suggestions.status.value"
+              :error="suggestions.error.value"
+              :kind="suggestions.kind.value"
+              :option-id="suggestions.optionId"
+              :placement="menuPlacement"
+              @choose="(i) => suggestions.choose(i, 'click')"
+              @hover="(i) => (suggestions.active.value = i)"
+            />
+          </div>
           <div v-if="images.length" class="flex flex-wrap gap-2">
             <div v-for="image in images" :key="image.id" data-test="attachment-draft" class="flex items-center gap-2.5 rounded-lg border border-line-strong bg-card p-1.5">
               <img :src="image.url" alt="" class="size-11 rounded-md bg-line object-cover" />
