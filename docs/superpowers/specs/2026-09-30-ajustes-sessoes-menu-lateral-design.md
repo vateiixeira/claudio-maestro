@@ -14,6 +14,8 @@ Sete ajustes pedidos pelo usuário em 2026-09-30:
 5. Sessão que roda em uma worktree informa em qual worktree está.
 6. Identificador do projeto nas linhas de Recentes.
 7. Botão de ditado no modal de nova conversa.
+8. Recentes não reordena ao clicar numa sessão que já está nela (pedido durante o desenho).
+9. O progresso do plano sai do topo da conversa e vai para o painel Detalhes (pedido durante o desenho).
 
 Critérios de sucesso:
 
@@ -147,8 +149,8 @@ O banco de desenvolvimento é compartilhado entre worktrees (`~/.local/share/vin
   - Sem sessões em execução, a seção não aparece.
 - **Recentes:**
   - Continua mostrando 5, mas sem as sessões em execução.
-  - Quando uma sessão passa a `running` por um `session.updated`, do app ou do CLI, `sessions.applyEvent` chama `noteOpened(id)` de `recentConversations.ts`. Assim ela fica em Recentes quando parar.
-  - Uma sessão já em execução no carregamento inicial também é anotada.
+  - `AppSidebar` observa as sessões em execução, do app ou do CLI, incluindo as do carregamento inicial. Cada sessão que passa a rodar é anotada com `noteRunning(id)`, que só a põe no topo da lista guardada se ela ainda não estiver lá. Assim ela fica em Recentes quando parar.
+  - **Ordem estável (item 8):** `noteOpened(id)` não move uma sessão que já aparece em Recentes. O menu lateral publica os ids visíveis em `shownRecentIds`, um `ref` de `recentConversations.ts`. Uma sessão fora desse conjunto vai para o topo, como hoje.
 - `AppSidebar.vue` só compõe os dois componentes. O marco 8 também muda esse arquivo, e os componentes separados reduzem o conflito.
 
 ### 5.4 Worktree nas telas
@@ -171,6 +173,18 @@ Em `ConversationHeader.vue`, sai o item "Renomear" (`menu-rename`) do menu "⋯"
 - O texto reconhecido entra no campo do prompt, da mesma forma que no composer.
 - A linha de estado da gravação usa o mesmo texto do composer.
 - O ditado para ao enviar, ao fechar e ao desmontar.
+
+### 5.7 Plano no painel Detalhes (item 9)
+
+- `ConversationView.vue` deixa de mostrar `PlanStrip` acima da conversa.
+- `DetailsPanel.vue` ganha a seção "Plano" (`data-test="details-plan"`), entre Propriedades e Alterações, só quando `planVisible(session)`.
+- A seção usa `PlanStrip` com a nova prop `variant: 'panel'`:
+  - sem a largura máxima e o recuo de coluna;
+  - lista de tarefas aberta de saída, carregada ao montar;
+  - o botão continua recolhendo e expandindo;
+  - lista sem altura máxima própria (o painel já rola).
+- `variant` padrão continua `'strip'`, para não quebrar os testes existentes.
+- Com o painel fechado, o progresso fica visível só pelo ícone do plano nas listas (`PlanBadge`), que não muda.
 
 ## 6. Erros
 

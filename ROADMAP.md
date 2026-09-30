@@ -26,8 +26,9 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 0 de 10 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
+| 10. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 0 de 12 |
 
-Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário. O marco 10 começou em 2026-09-30, a pedido do usuário, em paralelo ao marco 8.
 
 ## Preparação
 
@@ -283,6 +284,28 @@ Fonte dos dados: o arquivo do plano em `docs/superpowers/plans/`. Uma regra no `
 Decidido no desenho (2026-09-29): a fonte é o arquivo do plano com a regra de marcação; vínculo automático com ajuste manual; tarefa inteira, sem "em andamento"; conversa parada mostra o progresso apagado, e finalizada ou plano 100% só em Detalhes.
 
 Sugestões da revisão do marco 9 deixadas para depois: cercas de código de tipos diferentes no leitor; cache e locks de plano sem limite; `GET /api/sessions/{id}/plan` com efeito colateral; `auto_plan` emite sem mudança; observador carrega a sessão mesmo com vínculo manual ou desligado; varredura não revalida o caminho guardado; Tab não fecha o aviso de lista vazia; desligar o automático antes de haver plano.
+
+## Marco 10. Ajustes de sessões e menu lateral
+
+Objetivo: enxergar o que roda (inclusive no terminal) e onde cada sessão trabalha, com ajustes de uso diário no menu lateral, no Detalhes e no modal.
+
+Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhorias-ui-sessoes`, em paralelo ao marco 8.
+
+- Spec: `docs/superpowers/specs/2026-09-30-ajustes-sessoes-menu-lateral-design.md`
+- Plano: `docs/superpowers/plans/2026-09-30-ajustes-sessoes-menu-lateral.md`
+
+- [ ] Detectar a worktree atual pela transcrição (`worktree.py`)
+- [ ] Colunas de worktree, branch e pasta do histórico na sessão
+- [ ] Conversa do CLI no meio de um turno aparece como "Em execução"
+- [ ] Indexar sessões guardadas nas pastas das worktrees
+- [ ] Ler o histórico pela pasta certa e retomar a sessão na worktree
+- [ ] Worktree e branch no cabeçalho, no Detalhes e na lista
+- [ ] Renomear só pelo clique no título
+- [ ] Largura ajustável do painel Detalhes
+- [ ] Progresso do plano no painel Detalhes
+- [ ] Menu lateral com "Em execução", sigla do projeto e Recentes em ordem estável
+- [ ] Ditado no modal de nova conversa
+- [ ] Retomada de sessão movida para worktree conferida contra o SDK real
 
 ## Fora do MVP
 
