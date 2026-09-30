@@ -1,11 +1,11 @@
-// State of the `/` (and, later, `@`) suggestion menu of the message field. The
-// menu moves only through refresh(), which the textarea's input, keyup, click and
-// select events call. It does not watch the text, so dictation (which changes the
-// text by program) never opens it.
-import { computed, nextTick, ref, watch, type ComputedRef, type Ref } from 'vue'
-import { errorMessage, listCommands } from '../api/http'
-import type { CommandInfo, SuggestionScope } from '../types/api'
-import { applySuggestion, findTrigger, rankCommands, type Trigger, type TriggerKind } from './suggestions'
+// State of the `/` and `@` suggestion menus of the message field. The menu moves
+// only through refresh(), which the textarea's input, keyup, click and select
+// events call. It does not watch the text, so dictation (which changes the text by
+// program) never opens it.
+import { computed, nextTick, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { errorMessage, listCommands, searchFiles } from '../api/http'
+import type { CommandInfo, FileMatch, SuggestionScope } from '../types/api'
+import { applySuggestion, findTrigger, mentionText, rankCommands, type Trigger, type TriggerKind } from './suggestions'
 
 export interface SuggestionItem {
   key: string
@@ -31,6 +31,7 @@ export interface ComposerSuggestionsOptions {
 }
 
 let nextMenu = 0
+const SEARCH_DELAY_MS = 200
 
 export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
   isOpen: ComputedRef<boolean>
@@ -42,6 +43,8 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
   menuId: string
   optionId: (index: number) => string
   commands: Ref<CommandInfo[] | null>
+  /** Mentions inserted from the list (no trailing space), e.g. '@backend/fs.py'. */
+  mentions: Ref<Set<string>>
   refresh: () => void
   onKeydown: (event: KeyboardEvent) => boolean
   choose: (index: number, via: 'enter' | 'tab' | 'click') => void
@@ -55,14 +58,21 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
   const status = ref<SuggestionStatus>('ready')
   const error = ref<string | null>(null)
   const commands = ref<CommandInfo[] | null>(null)
+  // Result of the last file search; null until the first answer since the menu opened.
+  const files = ref<FileMatch[] | null>(null)
+  const mentions = ref<Set<string>>(new Set())
   // Source key of the request in flight, so a stale one never blocks the new source.
   let loadingKey: string | null = null
+  let searchTimer: ReturnType<typeof setTimeout> | null = null
+  let searchAbort: AbortController | null = null
+  let lastSeq = 0
   const scopeKey = () => JSON.stringify(options.scope())
 
   const kind = computed<TriggerKind | null>(() => trigger.value?.kind ?? null)
   const isOpen = computed(() => trigger.value !== null && !suppressed.value)
   const items = computed<SuggestionItem[]>(() => {
     const t = trigger.value
+    if (t?.kind === 'mention') return (files.value ?? []).map(fileItem)
     if (!t || t.kind !== 'command' || !commands.value) return []
     return rankCommands(commands.value, t.query).map((c) => ({
       key: `c:${c.name}`,
@@ -75,17 +85,38 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
   })
   const optionId = (index: number) => `${menuId}-opt-${index}`
 
-  function close() {
-    trigger.value = null
+  function fileItem(file: FileMatch): SuggestionItem {
+    if (file.type === 'directory') {
+      return { key: `d:${file.path}`, kind: 'directory', label: file.path, detail: '', hint: '', insert: mentionText(file.path) }
+    }
+    const folder = file.path.slice(0, file.path.length - file.name.length).replace(/\/$/, '')
+    return { key: `f:${file.path}`, kind: 'file', label: file.name, detail: folder, hint: '', insert: mentionText(file.path) }
   }
 
+  // Drops the pending timer and any search in flight, so a late answer is ignored.
+  function cancelSearch() {
+    if (searchTimer !== null) clearTimeout(searchTimer)
+    searchTimer = null
+    searchAbort?.abort()
+    searchAbort = null
+    lastSeq++
+  }
+
+  function close() {
+    cancelSearch()
+    trigger.value = null
+  }
+  onBeforeUnmount(cancelSearch)
+
   // The selection goes back to the first item only when the list changes (kind and
-  // query are handled in refresh(); a new command list here), never on a plain refresh.
+  // query are handled in refresh(); a new command list here, a new file answer in
+  // runSearch()), never on a plain refresh.
   watch(commands, () => {
     active.value = 0
   })
   watch(scopeKey, () => {
     commands.value = null
+    files.value = null
     loadingKey = null
     close()
   })
@@ -113,12 +144,51 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     }
   }
 
+  // Waits for the typing to settle; a new term replaces the pending search.
+  function scheduleSearch(query: string) {
+    if (searchTimer !== null) clearTimeout(searchTimer)
+    searchTimer = null
+    const scope = options.scope()
+    if (!scope) return
+    // After a failure the old message is stale as soon as the term changes.
+    if (status.value === 'error') {
+      status.value = 'loading'
+      error.value = null
+    }
+    const key = scopeKey()
+    searchTimer = setTimeout(() => {
+      searchTimer = null
+      void runSearch(scope, key, query)
+    }, SEARCH_DELAY_MS)
+  }
+
+  async function runSearch(scope: SuggestionScope, key: string, query: string) {
+    const seq = ++lastSeq
+    searchAbort?.abort()
+    const controller = new AbortController()
+    searchAbort = controller
+    try {
+      const list = await searchFiles(scope, query, controller.signal)
+      if (seq !== lastSeq || key !== scopeKey()) return
+      files.value = list
+      status.value = 'ready'
+      error.value = null
+      active.value = 0
+    } catch (e) {
+      if (seq !== lastSeq || key !== scopeKey()) return
+      files.value = []
+      status.value = 'error'
+      error.value = errorMessage(e)
+    } finally {
+      if (searchAbort === controller) searchAbort = null
+    }
+  }
+
   function refresh() {
     const el = options.textarea.value
-    let found = el ? findTrigger(options.text.value, el.selectionStart ?? options.text.value.length) : null
-    // The `@` menu arrives with a later task; until then it counts as no trigger.
-    if (found?.kind === 'mention') found = null
+    const found = el ? findTrigger(options.text.value, el.selectionStart ?? options.text.value.length) : null
     if (!found) {
+      cancelSearch()
       trigger.value = null
       suppressed.value = false
       return
@@ -131,26 +201,48 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     }
     trigger.value = found
     active.value = 0
+    const opening = !current || current.kind !== found.kind
+    if (found.kind === 'mention') {
+      // The first answer since the menu opened shows "loading"; later searches keep
+      // the old items on screen until the new answer arrives.
+      if (opening) {
+        cancelSearch()
+        files.value = null
+        status.value = 'loading'
+        error.value = null
+      }
+      scheduleSearch(found.query)
+      return
+    }
     // Loading (or retrying after an error) happens only when the menu opens, not on
     // every key typed while it is open.
-    if (found.kind === 'command' && !current) {
+    if (opening) {
+      cancelSearch()
       if (commands.value) status.value = 'ready'
       else void loadCommands()
     }
   }
 
-  function choose(index: number, _via: 'enter' | 'tab' | 'click') {
+  function choose(index: number, via: 'enter' | 'tab' | 'click') {
     const t = trigger.value
     const item = items.value[index]
     if (!t || !item) return
-    const result = applySuggestion(options.text.value, t, item.insert, true)
+    // A folder picked with Tab or a click goes in without the space and the menu
+    // stays open on the folder's contents; Enter finishes the mention.
+    const descend = item.kind === 'directory' && via !== 'enter'
+    const result = applySuggestion(options.text.value, t, item.insert, !descend)
     options.text.value = result.text
     const el = options.textarea.value
     if (el) {
       el.value = result.text
       el.setSelectionRange(result.cursor, result.cursor)
     }
-    close()
+    if (descend) {
+      refresh()
+    } else {
+      if (item.kind !== 'command') mentions.value.add(item.insert)
+      close()
+    }
     void nextTick(() => options.onApplied?.())
   }
 
@@ -190,5 +282,5 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     close()
   }
 
-  return { isOpen, kind, items, active, status, error, menuId, optionId, commands, refresh, onKeydown, choose, close, onBlur }
+  return { isOpen, kind, items, active, status, error, menuId, optionId, commands, mentions, refresh, onKeydown, choose, close, onBlur }
 }

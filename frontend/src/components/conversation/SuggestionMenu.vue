@@ -55,9 +55,20 @@ watch(
       @mouseenter="emit('hover', i)"
       @click="emit('choose', i)"
     >
-      <span class="font-mono">{{ item.label }}</span>
-      <span class="font-mono text-xs text-fg-muted">{{ item.hint }}</span>
-      <span class="min-w-0 truncate text-xs text-fg-muted">{{ item.detail }}</span>
+      <template v-if="item.kind === 'file'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 self-center text-fg-muted" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></svg>
+        <span class="shrink-0 text-fg">{{ item.label }}</span>
+        <span class="min-w-0 truncate text-xs text-fg-muted">{{ item.detail }}</span>
+      </template>
+      <template v-else-if="item.kind === 'directory'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 self-center stroke-fg-muted" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+        <span class="min-w-0 truncate text-fg">{{ item.label }}</span>
+      </template>
+      <template v-else>
+        <span class="font-mono">{{ item.label }}</span>
+        <span class="font-mono text-xs text-fg-muted">{{ item.hint }}</span>
+        <span class="min-w-0 truncate text-xs text-fg-muted">{{ item.detail }}</span>
+      </template>
     </li>
     <li v-if="stateText !== null" role="option" aria-disabled="true" class="px-2.5 py-1.5 text-sm text-fg-muted">
       {{ stateText }}

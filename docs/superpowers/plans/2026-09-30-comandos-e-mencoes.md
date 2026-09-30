@@ -1743,7 +1743,7 @@ Item 6 do marco 13.
   - Arquivo: ícone de arquivo (SVG inline de `ReadTool.vue` L24), nome em `text-fg` e pasta em `text-xs text-fg-muted`.
   - Pasta: ícone de pasta (path de `FolderBrowser.vue` L136-149, `stroke-fg-muted`) e o caminho com `/`.
 
-- [ ] **Passo 1: testes que falham.** Acrescente em `useComposerSuggestions.spec.ts`, num `describe('menu @')` com `vi.useFakeTimers()` no `beforeEach` e `vi.useRealTimers()` no `afterEach`:
+- [x] **Passo 1: testes que falham.** Acrescente em `useComposerSuggestions.spec.ts`, num `describe('menu @')` com `vi.useFakeTimers()` no `beforeEach` e `vi.useRealTimers()` no `afterEach`:
 
 ```ts
 const FILES = [
@@ -1858,10 +1858,10 @@ Em `SuggestionMenu.spec.ts`: teste de que uma linha de arquivo mostra o nome e a
 
 Com os timers falsos, confira que `flushPromises` e `advanceTimersByTimeAsync` resolvem o `fetch` falso. Se `routeFetch` depender de microtarefas, `advanceTimersByTimeAsync` já as esvazia.
 
-- [ ] **Passo 2: rodar e ver falhar.**
-- [ ] **Passo 3: implementar** conforme as regras e tirar o filtro de `mention` da Tarefa 5.
-- [ ] **Passo 4: rodar e ver passar.** Rode os arquivos, depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
-- [ ] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 6 no roadmap.
+- [x] **Passo 2: rodar e ver falhar.**
+- [x] **Passo 3: implementar** conforme as regras e tirar o filtro de `mention` da Tarefa 5.
+- [x] **Passo 4: rodar e ver passar.** Rode os arquivos, depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
+- [x] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 6 no roadmap.
 
 ```bash
 git add frontend/src/conversation/useComposerSuggestions.ts frontend/src/conversation/__tests__/useComposerSuggestions.spec.ts frontend/src/components/conversation/SuggestionMenu.vue frontend/src/components/conversation/__tests__/SuggestionMenu.spec.ts ROADMAP.md

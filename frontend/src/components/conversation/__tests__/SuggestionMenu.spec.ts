@@ -42,4 +42,19 @@ describe('SuggestionMenu', () => {
     expect(option.text()).toBe(text)
     expect(option.attributes('aria-disabled')).toBe('true')
   })
+  it('linha de arquivo mostra o nome e a pasta, com ícone', () => {
+    const file = { key: 'f:backend/fs.py', kind: 'file' as const, label: 'fs.py', detail: 'backend', hint: '', insert: '@backend/fs.py' }
+    const w = mount(SuggestionMenu, { props: { ...base, kind: 'mention' as const, items: [file], active: 0, status: 'ready' } })
+    const row = w.get('[role="option"]')
+    expect(row.find('svg').exists()).toBe(true)
+    expect(row.find('span.text-fg').text()).toBe('fs.py')
+    expect(row.find('span.text-fg-muted').text()).toBe('backend')
+  })
+  it('linha de pasta mostra o caminho com barra, com ícone', () => {
+    const dir = { key: 'd:backend/', kind: 'directory' as const, label: 'backend/', detail: '', hint: '', insert: '@backend/' }
+    const w = mount(SuggestionMenu, { props: { ...base, kind: 'mention' as const, items: [dir], active: 0, status: 'ready' } })
+    const row = w.get('[role="option"]')
+    expect(row.find('svg').exists()).toBe(true)
+    expect(row.text()).toBe('backend/')
+  })
 })
