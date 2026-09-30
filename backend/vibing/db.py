@@ -129,6 +129,35 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         "ALTER TABLE sessions ADD COLUMN worktree_path TEXT",
         "ALTER TABLE sessions ADD COLUMN git_branch TEXT",
     ],
+    [
+        # Marco 10: summary of each conversation kept by the digest agent, and the
+        # log of its passes (only the newest MAX_RUNS are kept).
+        """
+        CREATE TABLE session_digests (
+          session_id  TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+          cursor      TEXT,
+          read_at     INTEGER,
+          short       TEXT,
+          phases      TEXT NOT NULL DEFAULT '[]',
+          plan_done   INTEGER NOT NULL DEFAULT 0,
+          plan_ref    TEXT,
+          error       TEXT,
+          error_at    INTEGER
+        )
+        """,
+        """
+        CREATE TABLE digest_runs (
+          id             INTEGER PRIMARY KEY,
+          started_at     INTEGER NOT NULL,
+          finished_at    INTEGER,
+          trigger        TEXT NOT NULL,
+          read_count     INTEGER NOT NULL DEFAULT 0,
+          skipped_count  INTEGER NOT NULL DEFAULT 0,
+          errors         TEXT NOT NULL DEFAULT '[]',
+          stopped        TEXT
+        )
+        """,
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)
