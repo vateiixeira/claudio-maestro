@@ -1,8 +1,11 @@
 """Group routes and the group of a session. Uses the scripted fake agent."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from test_sessions_api import api, connect_ws, factory, make_project, receive  # noqa: F401
 
@@ -42,6 +45,52 @@ def test_crud_and_listing(api, home: Path):
 
     assert api.delete(f"/api/groups/{group['id']}").status_code == 204
     assert api.get("/api/groups").json() == []
+
+
+@contextmanager
+def without_header(api: TestClient, name: str) -> Iterator[None]:
+    """Send requests without a default header of the client (not with it empty)."""
+    value = api.headers[name]
+    del api.headers[name]
+    try:
+        yield
+    finally:
+        api.headers[name] = value
+
+
+def group_requests(project_id: int, group_id: int) -> list[tuple[str, str, dict | None]]:
+    return [
+        ("POST", f"/api/projects/{project_id}/groups", {"name": "Novo"}),
+        ("PATCH", f"/api/groups/{group_id}", {"name": "Renomeado"}),
+        ("DELETE", f"/api/groups/{group_id}", None),
+    ]
+
+
+@pytest.mark.parametrize("index", [0, 1, 2])
+def test_group_routes_refuse_a_request_without_the_app_header(api, home: Path, index: int):
+    project = make_project(api, home)
+    group = create_group(api, project["id"], "Checkout")
+    method, url, body = group_requests(project["id"], group["id"])[index]
+
+    with without_header(api, "x-vibing"):
+        assert "x-vibing" not in api.headers
+        response = api.request(method, url, json=body)
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Cabeçalho do app ausente."
+    # Nothing was created, renamed or removed.
+    assert api.get("/api/groups").json() == [group]
+
+
+@pytest.mark.parametrize("index", [0, 1, 2])
+def test_group_routes_refuse_a_foreign_origin(api, home: Path, index: int):
+    project = make_project(api, home)
+    group = create_group(api, project["id"], "Checkout")
+    method, url, body = group_requests(project["id"], group["id"])[index]
+
+    response = api.request(method, url, json=body, headers={"origin": "http://evil.example"})
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Origem não permitida."
+    assert api.get("/api/groups").json() == [group]
 
 
 def test_errors(api, home: Path):
