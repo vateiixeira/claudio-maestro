@@ -398,6 +398,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 - Agrupar projetos no menu (diferente do agrupador de sessões, que é o marco 8)
 - Execução em Docker
 - Manter o app sempre ativo, iniciando junto com a máquina
+- Internacionalização (i18n) da interface em português do Brasil e inglês (pedido do usuário em 2026-09-30)
 
 ## Pontos em aberto
 
