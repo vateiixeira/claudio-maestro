@@ -98,7 +98,7 @@ Os números de linha citados abaixo são do ramo `m8-agrupador` em 2026-09-30; c
   - `finish_run(conn, run_id: int, *, at: int, read_count: int, skipped_count: int, errors: list[dict], stopped: str | None) -> dict`
   - `list_runs(conn) -> list[dict]` (mais nova primeiro; `errors` já como lista)
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_store.py
@@ -207,12 +207,12 @@ def test_finish_run_returns_the_run(conn: sqlite3.Connection) -> None:
     assert run["stopped"] == "Desligado." and run["trigger"] == "manual_all"
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_store.py -q`
 Expected: FAIL com `ModuleNotFoundError: No module named 'vibing.digest'`
 
-- [ ] **Passo 3: Acrescentar a migração**
+- [x] **Passo 3: Acrescentar a migração**
 
 No fim de `MIGRATIONS` em `backend/vibing/db.py`, depois do bloco do Marco 8:
 
@@ -248,7 +248,7 @@ No fim de `MIGRATIONS` em `backend/vibing/db.py`, depois do bloco do Marco 8:
     ],
 ```
 
-- [ ] **Passo 4: Escrever `store.py`**
+- [x] **Passo 4: Escrever `store.py`**
 
 `backend/vibing/digest/__init__.py` vazio, com a docstring `"""Digest agent: keeps a phased summary of each conversation in progress."""`.
 
@@ -400,17 +400,17 @@ def list_runs(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 ```
 
-- [ ] **Passo 5: Rodar e ver passar**
+- [x] **Passo 5: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_store.py backend/tests/test_db.py -q`
 Expected: PASS
 
-- [ ] **Passo 6: Rodar a suíte do backend**
+- [x] **Passo 6: Rodar a suíte do backend**
 
 Run: `uv run pytest -q`
 Expected: PASS (mesma contagem da linha de base mais os testes novos)
 
-- [ ] **Passo 7: Commit**
+- [x] **Passo 7: Commit**
 
 ```bash
 git add backend/vibing/db.py backend/vibing/digest/__init__.py backend/vibing/digest/store.py backend/tests/test_digest_store.py
@@ -436,7 +436,7 @@ git commit -m "[Feat] Criar tabelas de resumos e do registro do agente"
   - `validate(raw: Any, known_models: Iterable[str]) -> DigestConfig` (corpo do PUT; levanta `ConfigError` com todos os erros)
   - `load_config(conn) -> DigestConfig`, `save_config(conn, config: DigestConfig) -> None`
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_config.py
@@ -540,12 +540,12 @@ def test_save_and_load(tmp_path: Path) -> None:
         assert load_config(conn) == DigestConfig(enabled=True, window_days=7)
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_config.py -q`
 Expected: FAIL com `ModuleNotFoundError: No module named 'vibing.digest.config'`
 
-- [ ] **Passo 3: Escrever `config.py`**
+- [x] **Passo 3: Escrever `config.py`**
 
 ```python
 # backend/vibing/digest/config.py
@@ -673,16 +673,16 @@ def save_config(conn: sqlite3.Connection, config: DigestConfig) -> None:
     )
 ```
 
-- [ ] **Passo 4: Rodar e ver passar**
+- [x] **Passo 4: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_config.py -q`
 Expected: PASS
 
-- [ ] **Passo 5: Roadmap**
+- [x] **Passo 5: Roadmap**
 
 Em `ROADMAP.md`, marco 10: trocar o estado para "Em andamento" na tabela, marcar `[x] Configuração do agente em app_state e tabelas session_digests e digest_runs (AAAA-MM-DD)` e atualizar a contagem ("1 de 10").
 
-- [ ] **Passo 6: Commit**
+- [x] **Passo 6: Commit**
 
 ```bash
 git add backend/vibing/digest/config.py backend/tests/test_digest_config.py ROADMAP.md
@@ -709,7 +709,7 @@ git commit -m "[Feat] Adicionar configuração do agente de resumos"
   - `tool_line(name: str, tool_input: Any, cwd: str | None) -> str`
   - `condense(messages: list[Any], tool_results: dict[str, dict], cwd: str | None, budget: int = DEFAULT_BUDGET) -> Condensed`
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_condense.py
@@ -860,12 +860,12 @@ def test_empty_slice() -> None:
     assert condense([], {}, CWD) == Condensed(text="", count=0, paths=[])
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_condense.py -q`
 Expected: FAIL com `ModuleNotFoundError: No module named 'vibing.digest.condense'`
 
-- [ ] **Passo 3: Expor `classify_user_text`**
+- [x] **Passo 3: Expor `classify_user_text`**
 
 Em `backend/vibing/conversation.py`, logo depois da função `_classify_user_text`:
 
@@ -875,7 +875,7 @@ def classify_user_text(text: str) -> tuple[str, str | None]:
     return _classify_user_text(text)
 ```
 
-- [ ] **Passo 4: Escrever `condense.py`**
+- [x] **Passo 4: Escrever `condense.py`**
 
 ```python
 # backend/vibing/digest/condense.py
@@ -1055,16 +1055,16 @@ def condense(
     return Condensed(text=_fit(lines, budget), count=len(lines), paths=paths)
 ```
 
-- [ ] **Passo 5: Rodar e ver passar**
+- [x] **Passo 5: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_condense.py backend/tests/test_conversation.py -q`
 Expected: PASS
 
-- [ ] **Passo 6: Roadmap**
+- [x] **Passo 6: Roadmap**
 
 Marcar `[x] Leitura incremental do .jsonl por cursor e condensação do trecho (AAAA-MM-DD)` e atualizar a contagem.
 
-- [ ] **Passo 7: Commit**
+- [x] **Passo 7: Commit**
 
 ```bash
 git add backend/vibing/conversation.py backend/vibing/digest/condense.py backend/tests/test_digest_condense.py ROADMAP.md
@@ -1089,7 +1089,7 @@ git commit -m "[Feat] Condensar trecho novo da conversa para o agente de resumos
   - `spec_refs(paths: Iterable[str], roots: Iterable[Path]) -> list[tuple[str, str]]` (bloqueante: lê disco)
   - `build_prompt(*, project: str, title: str, digest: Digest | None, plan: tuple[str, PlanProgress] | None, specs: list[tuple[str, str]], text: str, restarted: bool) -> str`
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_prompt.py
@@ -1173,12 +1173,12 @@ def test_build_prompt_without_summary_plan_or_specs() -> None:
     assert "compactado ou reescrito" in text
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_prompt.py -q`
 Expected: FAIL com `ModuleNotFoundError`
 
-- [ ] **Passo 3: Escrever `prompt.py`**
+- [x] **Passo 3: Escrever `prompt.py`**
 
 ```python
 # backend/vibing/digest/prompt.py
@@ -1330,12 +1330,12 @@ def build_prompt(
     return "\n\n".join(parts)
 ```
 
-- [ ] **Passo 4: Rodar e ver passar**
+- [x] **Passo 4: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_prompt.py -q`
 Expected: PASS
 
-- [ ] **Passo 5: Commit**
+- [x] **Passo 5: Commit**
 
 ```bash
 git add backend/vibing/digest/prompt.py backend/tests/test_digest_prompt.py
@@ -1359,7 +1359,7 @@ git commit -m "[Feat] Definir prompt e schema do agente de resumos"
 
 Regras (seção 6 da spec, com um detalhe decidido aqui): as fases `done` gravadas são mantidas como estavam, na ordem. Da resposta, saem as fases cujo título (sem diferenciar maiúsculas nem espaços nas pontas) é igual ao de uma fase congelada; o resto entra depois delas. Isso cobre tanto a resposta que repete as fases congeladas quanto a que as omite.
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_merge.py
@@ -1482,12 +1482,12 @@ def test_plan_seal_stays_until_the_plan_changes() -> None:
     assert merge(old, answer(), plan_path="/outro.md").plan_done is False
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_merge.py -q`
 Expected: FAIL com `ModuleNotFoundError`
 
-- [ ] **Passo 3: Escrever `merge.py`**
+- [x] **Passo 3: Escrever `merge.py`**
 
 ```python
 # backend/vibing/digest/merge.py
@@ -1624,16 +1624,16 @@ def merge_digest(
     )
 ```
 
-- [ ] **Passo 4: Rodar e ver passar**
+- [x] **Passo 4: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_merge.py -q`
 Expected: PASS
 
-- [ ] **Passo 5: Roadmap**
+- [x] **Passo 5: Roadmap**
 
 Marcar `[x] Mesclagem que congela fases concluídas e valida o selo "Plano concluído" (AAAA-MM-DD)` e atualizar a contagem.
 
-- [ ] **Passo 6: Commit**
+- [x] **Passo 6: Commit**
 
 ```bash
 git add backend/vibing/digest/merge.py backend/tests/test_digest_merge.py ROADMAP.md
@@ -1659,7 +1659,7 @@ git commit -m "[Feat] Mesclar resumo novo preservando fases concluídas"
   - `build_digest_options(request: DigestRequest, cwd: Path, stderr: Callable[[str], None] | None = None) -> ClaudeAgentOptions`
   - `class SdkDigestModel(cwd: Path, query_fn=None, delete_fn=None)`
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_model.py
@@ -1799,12 +1799,12 @@ async def test_fake_model_returns_scripted_answers_and_errors() -> None:
 
 Confira no SDK instalado os nomes dos campos obrigatórios de `RateLimitEvent` (`grep -n "class RateLimitEvent" -A12 .venv/lib/python3.13/site-packages/claude_agent_sdk/types.py`) e ajuste a construção no teste se forem outros.
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_model.py -q`
 Expected: FAIL com `ModuleNotFoundError`
 
-- [ ] **Passo 3: Escrever `model.py`**
+- [x] **Passo 3: Escrever `model.py`**
 
 ```python
 # backend/vibing/digest/model.py
@@ -1978,7 +1978,7 @@ class SdkDigestModel:
         return output
 ```
 
-- [ ] **Passo 4: Proteger os testes do cliente real**
+- [x] **Passo 4: Proteger os testes do cliente real**
 
 Em `backend/tests/conftest.py`, acrescentar:
 
@@ -1996,16 +1996,16 @@ def no_real_digest_model(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 ```
 
-- [ ] **Passo 5: Rodar e ver passar**
+- [x] **Passo 5: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_model.py -q`
 Expected: PASS
 
-- [ ] **Passo 6: Roadmap**
+- [x] **Passo 6: Roadmap**
 
 Marcar `[x] Interface DigestModel, cliente real sobre o SDK e cliente falso (AAAA-MM-DD)` e atualizar a contagem.
 
-- [ ] **Passo 7: Commit**
+- [x] **Passo 7: Commit**
 
 ```bash
 git add backend/vibing/digest/model.py backend/tests/test_digest_model.py backend/tests/conftest.py ROADMAP.md
@@ -2028,7 +2028,7 @@ git commit -m "[Feat] Adicionar cliente do SDK para o agente de resumos"
   - `SessionManager.set_digest_brief(session_id: str, short: str | None, plan_done: bool) -> Awaitable[None]` (async): guarda na memória e, se mudou, publica `session.updated` pela via de `_announce_session`.
   - `SessionOut.digest_short: str | None = None`, `SessionOut.plan_done: bool = False`.
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_brief.py
@@ -2087,12 +2087,12 @@ def test_session_out_accepts_the_fields() -> None:
     assert "digest_short" in SessionOut.model_fields and "plan_done" in SessionOut.model_fields
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_brief.py -q`
 Expected: FAIL (`KeyError: 'digest_short'` ou `AttributeError: set_digest_brief`)
 
-- [ ] **Passo 3: Implementar em `sessions.py`**
+- [x] **Passo 3: Implementar em `sessions.py`**
 
 1. Import no topo: `from vibing.digest import store as digest_store`.
 2. Em `describe`, acrescentar os parâmetros `digest_short: str | None = None, plan_done: bool = False` depois de `cli_running`, e no dicionário devolvido, depois de `"cli_running"`:
@@ -2137,7 +2137,7 @@ Expected: FAIL (`KeyError: 'digest_short'` ou `AttributeError: set_digest_brief`
 
 e `"digest_short": short, "plan_done": plan_done` em cada `return`.
 
-- [ ] **Passo 4: Implementar em `api/sessions.py`**
+- [x] **Passo 4: Implementar em `api/sessions.py`**
 
 Em `SessionOut`, depois de `group_id`:
 
@@ -2148,17 +2148,17 @@ Em `SessionOut`, depois de `group_id`:
     plan_done: bool = False
 ```
 
-- [ ] **Passo 5: Rodar e ver passar**
+- [x] **Passo 5: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_brief.py backend/tests/test_navigation_summary.py backend/tests/test_sessions_api.py -q`
 Expected: PASS. Se algum teste compara o dicionário inteiro de `describe`, acrescente os dois campos nele.
 
-- [ ] **Passo 6: Rodar a suíte do backend**
+- [x] **Passo 6: Rodar a suíte do backend**
 
 Run: `uv run pytest -q`
 Expected: PASS
 
-- [ ] **Passo 7: Commit**
+- [x] **Passo 7: Commit**
 
 ```bash
 git add backend/vibing/sessions.py backend/vibing/api/sessions.py backend/tests/test_digest_brief.py
@@ -2185,7 +2185,7 @@ git commit -m "[Feat] Incluir frase do resumo e selo do plano na sessão"
 
 Envelope publicado por leitura: `{"session_id": None, "seq": 0, "type": "session.digest", "data": {"session_id": sid, "digest": digest.to_dict()}}`.
 
-- [ ] **Passo 1: Escrever os ajudantes de teste**
+- [x] **Passo 1: Escrever os ajudantes de teste**
 
 ```python
 # backend/tests/digest_fakes.py
@@ -2311,7 +2311,7 @@ class World:
         return [e for e in self.envelopes if e["type"] == type_]
 ```
 
-- [ ] **Passo 2: Escrever os testes que falham**
+- [x] **Passo 2: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_pass.py
@@ -2589,12 +2589,12 @@ async def test_plan_file_complete_sets_the_seal(tmp_path: Path) -> None:
     assert "- [x] Tarefa 1: A" in model.requests[0].prompt
 ```
 
-- [ ] **Passo 3: Rodar e ver falhar**
+- [x] **Passo 3: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_pass.py -q`
 Expected: FAIL com `ModuleNotFoundError: No module named 'vibing.digest.service'`
 
-- [ ] **Passo 4: Escrever a parte 1 de `service.py`**
+- [x] **Passo 4: Escrever a parte 1 de `service.py`**
 
 ```python
 # backend/vibing/digest/service.py
@@ -2922,12 +2922,12 @@ class DigestService:
         return "read"
 ```
 
-- [ ] **Passo 5: Rodar e ver passar**
+- [x] **Passo 5: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_pass.py -q`
 Expected: PASS
 
-- [ ] **Passo 6: Commit**
+- [x] **Passo 6: Commit**
 
 ```bash
 git add backend/vibing/digest/service.py backend/tests/digest_fakes.py backend/tests/test_digest_pass.py
@@ -2951,7 +2951,7 @@ git commit -m "[Feat] Implementar passada do agente de resumos"
   - `async run() -> None` (laço: carrega, espera, `tick`)
   - `start_schedule() -> None` (primeira passada automática um intervalo depois de agora)
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_scheduler.py
@@ -3083,12 +3083,12 @@ async def test_run_wakes_up_for_a_request(tmp_path: Path) -> None:
         await loop
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_scheduler.py -q`
 Expected: FAIL com `AttributeError: 'DigestService' object has no attribute 'update_config'`
 
-- [ ] **Passo 3: Implementar a parte 2**
+- [x] **Passo 3: Implementar a parte 2**
 
 Em `DigestService.__init__`, acrescentar:
 
@@ -3194,16 +3194,16 @@ No fim da classe:
                 logger.exception("Falha no agente de resumos")
 ```
 
-- [ ] **Passo 4: Rodar e ver passar**
+- [x] **Passo 4: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_scheduler.py backend/tests/test_digest_pass.py -q`
 Expected: PASS
 
-- [ ] **Passo 5: Roadmap**
+- [x] **Passo 5: Roadmap**
 
 Marcar `[x] Agendador: elegibilidade, uma sessão por vez, lock, fila de pedidos manuais, parada por erro e limite (AAAA-MM-DD)` e atualizar a contagem.
 
-- [ ] **Passo 6: Commit**
+- [x] **Passo 6: Commit**
 
 ```bash
 git add backend/vibing/digest/service.py backend/tests/test_digest_scheduler.py ROADMAP.md
@@ -3226,7 +3226,7 @@ git commit -m "[Feat] Agendar passadas do agente de resumos"
   - `HistoryIndex(..., ignored_dirs: Iterable[Path] = ())`
   - Rotas: `GET /api/digest/config` → `{"config": {...}, "status": {...}}`; `PUT /api/digest/config` → mesma forma, 422 com `detail` em texto; `POST /api/digest/run` → 202 com o estado; `GET /api/digest/runs` → lista; `GET /api/sessions/{id}/digest` → resumo ou `null`, 404 para sessão desconhecida; `POST /api/sessions/{id}/digest` → 202 `{"queued": true}`, 404 para sessão desconhecida.
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```python
 # backend/tests/test_digest_api.py
@@ -3340,12 +3340,12 @@ async def test_sessions_in_ignored_dirs_are_not_indexed(tmp_path: Path) -> None:
     assert set(rows(db_path)) == {"mine"}
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_digest_api.py backend/tests/test_history.py -q`
 Expected: FAIL (`TypeError: create_app() got an unexpected keyword argument 'digest_model'`)
 
-- [ ] **Passo 3: `HistoryIndex` ignora a pasta do agente**
+- [x] **Passo 3: `HistoryIndex` ignora a pasta do agente**
 
 Em `backend/vibing/history.py`:
 
@@ -3357,7 +3357,7 @@ Em `backend/vibing/history.py`:
                     continue  # the digest agent's own throwaway sessions
 ```
 
-- [ ] **Passo 4: Escrever as rotas**
+- [x] **Passo 4: Escrever as rotas**
 
 ```python
 # backend/vibing/api/digest.py
@@ -3474,7 +3474,7 @@ async def request_session_digest(
 
 Use esta versão, não a síncrona.
 
-- [ ] **Passo 5: Integrar no app**
+- [x] **Passo 5: Integrar no app**
 
 Em `backend/vibing/app.py`:
 
@@ -3495,21 +3495,21 @@ Em `backend/vibing/app.py`:
 4. Na criação de `history.HistoryIndex(...)`, passar `ignored_dirs=[agent_dir]`.
 5. Em `tasks`, acrescentar `asyncio.create_task(app.state.digest.run())`.
 
-- [ ] **Passo 6: Rodar e ver passar**
+- [x] **Passo 6: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_digest_api.py backend/tests/test_history.py -q`
 Expected: PASS
 
-- [ ] **Passo 7: Rodar a suíte do backend**
+- [x] **Passo 7: Rodar a suíte do backend**
 
 Run: `uv run pytest -q`
 Expected: PASS
 
-- [ ] **Passo 8: Roadmap**
+- [x] **Passo 8: Roadmap**
 
 Marcar `[x] Rotas de configuração, disparo, registro e resumo por sessão, com eventos no WebSocket` e `[x] Sessões do agente apagadas com delete_session e ignoradas pelo índice do histórico`, com a data, e atualizar a contagem.
 
-- [ ] **Passo 9: Commit**
+- [x] **Passo 9: Commit**
 
 ```bash
 git add backend/vibing/api/digest.py backend/vibing/api/__init__.py backend/vibing/app.py backend/vibing/history.py backend/tests/test_digest_api.py backend/tests/test_history.py ROADMAP.md
@@ -3531,7 +3531,7 @@ git commit -m "[Feat] Expor rotas do agente de resumos e iniciar o agendador"
 - Produz, em `stores/digest.ts` (`useDigestStore`): `status: Ref<DigestStatus | null>`, `digests: Ref<Record<string, SessionDigest | null>>`, `pending: Ref<Record<string, boolean>>`, `errors: Ref<Record<string, string | null>>`, `applyStatus(data: unknown)`, `applyDigest(data: unknown)`, `load(sessionId: string): Promise<void>`, `request(sessionId: string): Promise<void>`, `invalidate(): void`.
 - Produz, em `digestConfig.ts`: `DIGEST_LIMITS`, `DIGEST_MESSAGES`, `MAX_INSTRUCTIONS`, `PHASE_KIND_LABELS`, `digestConfigProblem(form: DigestForm): string | null`, `digestStatusText(status: DigestStatus | null, now?: Date): string`, `type DigestForm` (valores do formulário como texto para os números).
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```ts
 // frontend/src/__tests__/digestConfig.spec.ts
@@ -3645,12 +3645,12 @@ describe('store do agente de resumos', () => {
 })
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/__tests__/digestConfig.spec.ts src/stores/__tests__/digest.spec.ts`
 Expected: FAIL (módulos inexistentes)
 
-- [ ] **Passo 3: Tipos**
+- [x] **Passo 3: Tipos**
 
 Em `frontend/src/types/api.ts`, em `Session`, depois de `group_id`:
 
@@ -3708,7 +3708,7 @@ export interface DigestRun {
 }
 ```
 
-- [ ] **Passo 4: Chamadas**
+- [x] **Passo 4: Chamadas**
 
 No fim de `frontend/src/api/http.ts` (importando os tipos novos no import de `../types/api`):
 
@@ -3740,7 +3740,7 @@ export function requestSessionDigest(id: string): Promise<{ queued: boolean }> {
 }
 ```
 
-- [ ] **Passo 5: `digestConfig.ts`**
+- [x] **Passo 5: `digestConfig.ts`**
 
 ```ts
 // frontend/src/digestConfig.ts
@@ -3817,7 +3817,7 @@ export function digestStatusText(status: DigestStatus | null, now: Date = new Da
 }
 ```
 
-- [ ] **Passo 6: Store**
+- [x] **Passo 6: Store**
 
 ```ts
 // frontend/src/stores/digest.ts
@@ -3886,7 +3886,7 @@ export const useDigestStore = defineStore('digest', () => {
 })
 ```
 
-- [ ] **Passo 7: Eventos**
+- [x] **Passo 7: Eventos**
 
 Em `frontend/src/stores/realtime.ts`, importar `useDigestStore` e acrescentar à lista `offs`, antes de `socket.onReconnect`:
 
@@ -3928,12 +3928,12 @@ Acrescente em `frontend/src/stores/__tests__/realtime.spec.ts` (importando `useD
   })
 ```
 
-- [ ] **Passo 8: Rodar e ver passar**
+- [x] **Passo 8: Rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/__tests__/digestConfig.spec.ts src/stores/__tests__/digest.spec.ts src/stores/__tests__/realtime.spec.ts`
 Expected: PASS
 
-- [ ] **Passo 9: Commit**
+- [x] **Passo 9: Commit**
 
 ```bash
 git add frontend/src/types/api.ts frontend/src/api/http.ts frontend/src/stores/digest.ts frontend/src/stores/realtime.ts frontend/src/digestConfig.ts frontend/src/__tests__/digestConfig.spec.ts frontend/src/stores/__tests__/digest.spec.ts frontend/src/stores/__tests__/realtime.spec.ts
@@ -3954,7 +3954,7 @@ git commit -m "[Feat] Adicionar store e chamadas do agente de resumos no fronten
 - Consome: `getDigestConfig`, `putDigestConfig`, `runDigest`, `listDigestRuns`, `useDigestStore`, `useModelsStore`, `digestConfigProblem`, `digestStatusText`, `EFFORT_LABELS`, `ALL_EFFORTS` de `sessionOptions.ts`, `formatActivity`.
 - Produz: aba na URL `?aba=agente` (padrão: Geral). Seletores de teste: `[data-test="tab-general"]`, `[data-test="tab-agent"]`, `#digest-enabled`, `#digest-model`, `#digest-effort`, `#digest-instructions`, `#digest-interval`, `#digest-min`, `#digest-open-turn`, `#digest-window`, `[data-test="digest-save"]`, `[data-test="digest-saved"]`, `[data-test="digest-run"]`, `[data-test="digest-status"]`, `[data-test="digest-runs"]`, `[data-test="digest-run-row"]`, `[data-test="digest-run-toggle"]`, `[data-test="digest-run-details"]`.
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 Em `frontend/src/views/__tests__/PreferencesView.spec.ts`, acrescentar ao `stub` as rotas do agente (`'GET /api/digest/config'`, `'GET /api/digest/runs'`) e os testes:
 
@@ -4116,16 +4116,16 @@ describe('aba do agente de resumos', () => {
 })
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/views/__tests__/PreferencesView.spec.ts src/components/preferences`
 Expected: FAIL
 
-- [ ] **Passo 3: Mover o formulário atual para `GeneralPreferences.vue`**
+- [x] **Passo 3: Mover o formulário atual para `GeneralPreferences.vue`**
 
 Crie `frontend/src/components/preferences/GeneralPreferences.vue` com todo o `<script setup>` atual de `PreferencesView.vue` (ajuste os caminhos de import de `../` para `../../`) e o `<template>` atual **sem** o `<header>` do título (ele passa para a casca). O `<form>` perde `aria-labelledby` e ganha `aria-label="Preferências gerais"`; o resto (ids, `data-test`, textos, rodapé) fica igual.
 
-- [ ] **Passo 4: Casca com abas**
+- [x] **Passo 4: Casca com abas**
 
 ```vue
 <!-- frontend/src/views/PreferencesView.vue -->
@@ -4195,7 +4195,7 @@ function onKey(event: KeyboardEvent) {
 
 Se algum teste antigo de `PreferencesView.spec.ts` procurar o título dentro do `form`, ajuste o seletor para a página (o texto continua o mesmo).
 
-- [ ] **Passo 5: Aba do agente**
+- [x] **Passo 5: Aba do agente**
 
 ```vue
 <!-- frontend/src/components/preferences/DigestAgentPreferences.vue -->
@@ -4473,21 +4473,21 @@ const input = 'h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm te
 </template>
 ```
 
-- [ ] **Passo 6: Rodar e ver passar**
+- [x] **Passo 6: Rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/views/__tests__/PreferencesView.spec.ts src/components/preferences`
 Expected: PASS
 
-- [ ] **Passo 7: Suíte e compilação**
+- [x] **Passo 7: Suíte e compilação**
 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: PASS e compilação sem erro de tipo
 
-- [ ] **Passo 8: Roadmap**
+- [x] **Passo 8: Roadmap**
 
 Marcar `[x] Aba "Agente de resumos" nas Preferências, com registro das passadas e "Rodar agora"` com a data e atualizar a contagem.
 
-- [ ] **Passo 9: Commit**
+- [x] **Passo 9: Commit**
 
 ```bash
 git add frontend/src/views/PreferencesView.vue frontend/src/components/preferences frontend/src/views/__tests__/PreferencesView.spec.ts ROADMAP.md
@@ -4507,7 +4507,7 @@ git commit -m "[UI] Adicionar aba do agente de resumos nas preferências"
 - Consome: `useDigestStore` (`digests`, `pending`, `errors`, `load`, `request`), `PHASE_KIND_LABELS`, `formatActivity`.
 - Seletores: `[data-test="details-digest"]`, `[data-test="digest-empty"]`, `[data-test="digest-short"]`, `[data-test="digest-plan-done"]`, `[data-test="digest-phase"]`, `[data-test="digest-error"]`, `[data-test="digest-read-at"]`, `[data-test="digest-request"]`.
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 ```ts
 // frontend/src/components/details/__tests__/DigestSection.spec.ts
@@ -4617,12 +4617,12 @@ describe('seção Resumo', () => {
 })
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/details/__tests__/DigestSection.spec.ts`
 Expected: FAIL
 
-- [ ] **Passo 3: Escrever o componente**
+- [x] **Passo 3: Escrever o componente**
 
 ```vue
 <!-- frontend/src/components/details/DigestSection.vue -->
@@ -4711,27 +4711,27 @@ const fileName = (path: string) => path.split('/').pop() ?? path
 
 Nota: `formatActivity` devolve "agora" para menos de um minuto, então o rodapé fica "Lido agora"; nos outros casos, "Lido há 2 min", "Lido ontem" etc.
 
-- [ ] **Passo 4: Incluir no painel**
+- [x] **Passo 4: Incluir no painel**
 
 Em `DetailsPanel.vue`, importar `DigestSection` e colocar `<DigestSection :session-id="sessionId" />` entre a `<section data-test="details-properties">` e a `<section data-test="details-changes">`.
 
 Nos testes de `DetailsPanel` que usam `routeFetch`, acrescente `'GET /api/sessions/s1/digest': () => jsonResponse(null)` (ou o id que o teste usa) para não cair na resposta 599.
 
-- [ ] **Passo 5: Rodar e ver passar**
+- [x] **Passo 5: Rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/details`
 Expected: PASS
 
-- [ ] **Passo 6: Suíte e compilação**
+- [x] **Passo 6: Suíte e compilação**
 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: PASS
 
-- [ ] **Passo 7: Roadmap**
+- [x] **Passo 7: Roadmap**
 
 Marcar `[x] Seção "Resumo" em Detalhes com fases, selo e "Resumir agora"` com a data e atualizar a contagem.
 
-- [ ] **Passo 8: Commit**
+- [x] **Passo 8: Commit**
 
 ```bash
 git add frontend/src/components/details ROADMAP.md
@@ -4750,7 +4750,7 @@ git commit -m "[UI] Mostrar resumo em fases no painel Detalhes"
 - Consome: `Session.digest_short`, `Session.plan_done`.
 - Seletores: `[data-test="row-digest"]`, `[data-test="row-plan-done"]`.
 
-- [ ] **Passo 1: Escrever os testes que falham**
+- [x] **Passo 1: Escrever os testes que falham**
 
 Acrescentar ao arquivo de testes da linha, usando o `mount` e o `makeSession` que ele já usa:
 
@@ -4777,12 +4777,12 @@ Acrescentar ao arquivo de testes da linha, usando o `mount` e o `makeSession` qu
 
 O arquivo já tem `mountRow(session, variant?)` e importa `makeSession` e `flushPromises`.
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/conversation/__tests__/ConversationRow.spec.ts`
 Expected: FAIL
 
-- [ ] **Passo 3: Implementar**
+- [x] **Passo 3: Implementar**
 
 Em `ConversationRow.vue`, dentro de `<div data-test="row-title">`, depois de `<GroupTag ... />`:
 
@@ -4801,21 +4801,21 @@ Em `ConversationRow.vue`, dentro de `<div data-test="row-title">`, depois de `<G
 
 E no `RouterLink` do título, para a frase não espremer o título a zero, acrescentar à lista de classes dinâmicas: `session.digest_short ? 'max-w-[55%] shrink-0' : ''` (a classe `min-w-0 truncate` fica).
 
-- [ ] **Passo 4: Rodar e ver passar**
+- [x] **Passo 4: Rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/conversation/__tests__/ConversationRow.spec.ts`
 Expected: PASS
 
-- [ ] **Passo 5: Suíte e compilação**
+- [x] **Passo 5: Suíte e compilação**
 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: PASS
 
-- [ ] **Passo 6: Roadmap**
+- [x] **Passo 6: Roadmap**
 
 Marcar `[x] Frase curta do resumo na linha de conversa` com a data e atualizar a contagem.
 
-- [ ] **Passo 7: Commit**
+- [x] **Passo 7: Commit**
 
 ```bash
 git add frontend/src/components/conversation/ConversationRow.vue frontend/src/components/conversation/__tests__/ConversationRow.spec.ts ROADMAP.md
@@ -4832,7 +4832,7 @@ Esta tarefa é da sessão principal, não de subagente: consome a assinatura do 
 - Criar: `scripts/digest_smoke.py`
 - Modificar: `ROADMAP.md` (decisões e pontos em aberto, se houver achados)
 
-- [ ] **Passo 1: Escrever o roteiro**
+- [x] **Passo 1: Escrever o roteiro**
 
 ```python
 # scripts/digest_smoke.py
@@ -4879,28 +4879,28 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-- [ ] **Passo 2: Rodar**
+- [x] **Passo 2: Rodar**
 
 Run: `uv run python scripts/digest_smoke.py`
 Expected: um dicionário com `short`, `phases`, `plan_completed`, `plan_evidence`, e "sessões deixadas para trás: nenhuma".
 
 Se a resposta não vier (por exemplo, erro de `max_turns`), anote a mensagem, ajuste `MAX_TURNS` em `backend/vibing/digest/model.py`, rode de novo e registre o ajuste em "Decisões" do `ROADMAP.md`. Se sobrar sessão, registre em "Pontos em aberto" e confira que o `HistoryIndex` não a mostra.
 
-- [ ] **Passo 3: Conferir o modelo padrão**
+- [x] **Passo 3: Conferir o modelo padrão**
 
 Com o backend rodando, `curl -s -H 'X-Vibing: 1' http://127.0.0.1:6660/api/models` e confira a descrição do alias `sonnet`. Se não for o Sonnet 5.5, avise o usuário antes de fechar o marco.
 
-- [ ] **Passo 4: Conferir no app**
+- [x] **Passo 4: Conferir no app**
 
 Com backend e frontend rodando: abrir Preferências → "Agente de resumos", ligar com `haiku` e raciocínio baixo, clicar "Resumir agora" em Detalhes de uma conversa curta e ver a seção preencher, a frase aparecer na linha e a passada entrar no registro. Depois voltar a configuração ao padrão (desligado).
 
-- [ ] **Passo 5: Commit**
+- [x] **Passo 5: Commit**
 
 ```bash
 git add scripts/digest_smoke.py ROADMAP.md
 git commit -m "[Test] Adicionar teste manual do agente de resumos contra o SDK"
 ```
 
-- [ ] **Passo 6: Revisão do marco**
+- [x] **Passo 6: Revisão do marco**
 
 Disparar o `milestone-reviewer` sobre o ramo inteiro. Depois da aprovação, trocar o estado do marco 10 para "Concluído" no `ROADMAP.md`, registrar a decisão com data e fazer o commit `[Docs] Concluir marco 10 do agente de resumos`.
