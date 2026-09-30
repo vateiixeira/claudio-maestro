@@ -38,7 +38,7 @@ function handlers(extra = {}) {
   }
 }
 
-async function openModal(preset: number | null = 2, extra = {}, presetGroup: number | null = null) {
+async function openModal(preset: number | null = 2, extra = {}, presetGroup?: number | null) {
   const fetch = routeFetch(handlers(extra))
   vi.stubGlobal('fetch', fetch)
   const router = createAppRouter(createMemoryHistory())
@@ -351,6 +351,44 @@ describe('modal de nova conversa: agrupador', () => {
     await flushPromises()
     expect(groupText(wrapper)).toBe('Nenhum')
     expect(JSON.parse(localStorage.getItem('vibing:new-conversation')!).groupId).toBeNull()
+  })
+
+  it('aberto antes de os agrupadores carregarem, guarda o pedido e o aplica quando chegam', async () => {
+    const groups = useGroupsStore(pinia)
+    groups.loaded = false
+    const { wrapper } = await openModal(1, {}, 2)
+    // The draft was not wiped while the groups were unknown.
+    expect(JSON.parse(localStorage.getItem('vibing:new-conversation')!).groupId).toBe(2)
+
+    groups.groups = [makeGroup({ id: 2, project_id: 1, name: 'Checkout' })]
+    groups.loaded = true
+    await flushPromises()
+    expect(groupValue(wrapper)).toBe('2')
+  })
+
+  it('aberto antes da carga, o agrupador do rascunho também volta quando os agrupadores chegam', async () => {
+    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
+    const groups = useGroupsStore(pinia)
+    groups.loaded = false
+    const { wrapper } = await openModal(null)
+    groups.groups = [makeGroup({ id: 2, project_id: 1, name: 'Checkout' })]
+    groups.loaded = true
+    await flushPromises()
+    expect(groupValue(wrapper)).toBe('2')
+  })
+
+  it('aberto de uma conversa sem agrupador (null), mostra Nenhum mesmo com rascunho', async () => {
+    seedGroups()
+    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
+    const { wrapper } = await openModal(1, {}, null)
+    expect(groupText(wrapper)).toBe('Nenhum')
+  })
+
+  it('aberto sem preferência de agrupador (undefined), vale o rascunho', async () => {
+    seedGroups()
+    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
+    const { wrapper } = await openModal(1)
+    expect(groupValue(wrapper)).toBe('2')
   })
 
   it('guarda o agrupador no rascunho e o restaura ao abrir', async () => {

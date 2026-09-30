@@ -147,6 +147,22 @@ describe('menu lateral', () => {
     expect(store.presetGroupId).toBe(4)
   })
 
+  it('"Nova conversa" numa conversa sem agrupador pede "Nenhum" (null)', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', project_id: 1, group_id: null })])
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1')
+    const wrapper = mount(AppSidebar, { global: { plugins: [pinia, router] } })
+    await wrapper.find('[data-test="nav-new"]').trigger('click')
+    expect(useNewConversationStore(pinia).presetGroupId).toBeNull()
+  })
+
+  it('"Nova conversa" fora de uma conversa não indica agrupador (undefined)', async () => {
+    const wrapper = mountSidebar()
+    await wrapper.find('[data-test="nav-new"]').trigger('click')
+    expect(useNewConversationStore(pinia).presetGroupId).toBeUndefined()
+  })
+
   it('mostra o indicador de conexão no rodapé, abaixo de Preferências, só sem conexão', async () => {
     const wrapper = mountSidebar()
     expect(wrapper.find('[data-test="connection-lost"]').exists()).toBe(false)

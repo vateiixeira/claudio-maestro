@@ -43,9 +43,11 @@ const activeProjectId = computed<number | null>(() => {
 })
 const currentProjectId = computed(() => activeProjectId.value)
 // The group of the open conversation, so a new one starts next to it.
-const currentGroupId = computed<number | null>(() => {
-  if (route.name !== 'session') return null
-  return sessions.find(String(route.params.id))?.group_id ?? null
+// `null` = the conversation has no group; `undefined` = no conversation open, so no preference.
+const currentGroupId = computed<number | null | undefined>(() => {
+  if (route.name !== 'session') return undefined
+  const session = sessions.find(String(route.params.id))
+  return session ? (session.group_id ?? null) : undefined
 })
 const itemClass = (active: boolean) => [
   'flex min-h-10 items-center gap-2.5 rounded-lg px-3 no-underline hover:bg-card',

@@ -52,11 +52,17 @@ function pickProject() {
 const projectGroups = computed(() =>
   draft.value.projectId == null ? [] : sortGroups(groups.forProject(draft.value.projectId), sessions.forProject(draft.value.projectId)),
 )
-// The group: the one asked for, else the draft's, when it belongs to the chosen project.
+// The group: the one asked for (`null` = none, whatever the draft says), else the draft's, when it belongs to
+// the chosen project. While the groups are still loading nothing is known, so the choice is kept as it is and
+// picked again once they arrive.
 function pickGroup() {
+  const wanted = store.presetGroupId === undefined ? draft.value.groupId : store.presetGroupId
+  if (!groups.loaded) {
+    draft.value.groupId = wanted
+    return
+  }
   const ids = projectGroups.value.map((g) => g.id)
-  const wanted = [store.presetGroupId, draft.value.groupId].find((id) => id != null && ids.includes(id))
-  draft.value.groupId = wanted ?? null
+  draft.value.groupId = wanted != null && ids.includes(wanted) ? wanted : null
 }
 onMounted(async () => {
   pickProject()
@@ -65,6 +71,12 @@ onMounted(async () => {
   promptEl.value?.focus()
 })
 watch(draft, (value) => saveDraft(value), { deep: true })
+watch(
+  () => groups.loaded,
+  (loaded) => {
+    if (loaded && createdId.value === null) pickGroup()
+  },
+)
 // Projects that load after the modal opened, or one that becomes unavailable while it is open.
 watch(available, () => {
   if (!available.value.some((p) => p.id === draft.value.projectId)) {

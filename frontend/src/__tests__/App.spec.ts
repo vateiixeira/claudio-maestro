@@ -48,4 +48,27 @@ describe('estrutura do app', () => {
     expect(store.presetProjectId).toBe(1)
     expect(store.presetGroupId).toBe(4)
   })
+
+  it('o atalho C numa conversa sem agrupador pede "Nenhum" (null), não "sem preferência"', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', project_id: 1, group_id: null })])
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1')
+    mount(App, { global: { plugins: [pinia, router] }, attachTo: document.body })
+    await flushPromises()
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }))
+    expect(useNewConversationStore(pinia).presetGroupId).toBeNull()
+  })
+
+  it('o atalho C fora de uma conversa não indica agrupador (undefined)', async () => {
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/inbox')
+    mount(App, { global: { plugins: [pinia, router] }, attachTo: document.body })
+    await flushPromises()
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }))
+    const store = useNewConversationStore(pinia)
+    expect(store.isOpen).toBe(true)
+    expect(store.presetGroupId).toBeUndefined()
+  })
 })

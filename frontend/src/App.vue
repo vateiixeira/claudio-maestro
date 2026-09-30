@@ -25,9 +25,11 @@ function currentProjectId(): number | null {
   return null
 }
 // The group of the open conversation, so a new one starts next to it.
-function currentGroupId(): number | null {
-  if (route.name !== 'session') return null
-  return sessions.find(String(route.params.id))?.group_id ?? null
+// `null` = the conversation has no group; `undefined` = no conversation open, so no preference.
+function currentGroupId(): number | null | undefined {
+  if (route.name !== 'session') return undefined
+  const session = sessions.find(String(route.params.id))
+  return session ? (session.group_id ?? null) : undefined
 }
 function onKey(event: KeyboardEvent) {
   if (newConversation.isOpen || !shouldOpenNewConversation(event)) return
