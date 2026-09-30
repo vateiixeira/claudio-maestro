@@ -3,11 +3,13 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import SessionStateIcon from '../components/SessionStateIcon.vue'
 import ConversationRow from '../components/conversation/ConversationRow.vue'
+import ProjectGroups from '../components/groups/ProjectGroups.vue'
 import BranchLabel from '../components/git/BranchLabel.vue'
 import { branchText, changedCount, useGitStore } from '../stores/git'
 import type { GitRepo } from '../types/api'
 import { errorMessage, openInEditor } from '../api/http'
 import { groupByDate } from '../conversationList'
+import { useGroupsStore } from '../stores/groups'
 import { useProjectsStore } from '../stores/projects'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useSessionsStore } from '../stores/sessions'
@@ -45,7 +47,10 @@ const projectSessions = computed(() =>
   ),
 )
 
-const dateGroups = computed(() => groupByDate(projectSessions.value, new Date(), true))
+const groups = useGroupsStore()
+const hasGroups = computed(() => groups.forProject(props.id).length > 0)
+const ungrouped = computed(() => projectSessions.value.filter((s) => s.group_id == null))
+const dateGroups = computed(() => groupByDate(ungrouped.value, new Date(), true))
 
 const sessionsError = ref<string | null>(null)
 const actionError = ref<string | null>(null)
@@ -333,11 +338,14 @@ async function remove(): Promise<void> {
       </div>
     </section>
 
+    <ProjectGroups :project-id="id" :available="project.available" @error="actionError = $event" />
+
     <p v-if="sessionsError" role="alert" class="text-sm text-secondary-soft">{{ sessionsError }}</p>
     <p v-else-if="projectSessions.length === 0" class="text-sm text-fg-muted">
       Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa nesta pasta.
     </p>
     <template v-else>
+      <h2 v-if="hasGroups && ungrouped.length" id="ungrouped-title" data-test="ungrouped-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Sem agrupador</h2>
       <section v-for="group in dateGroups" :key="group.label" :aria-label="group.label" class="flex flex-col">
         <div class="flex items-center gap-3 py-2">
           <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />

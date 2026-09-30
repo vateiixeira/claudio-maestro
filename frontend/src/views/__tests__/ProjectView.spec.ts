@@ -4,10 +4,11 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory, type Router } from 'vue-router'
 import ProjectView from '../ProjectView.vue'
 import { createAppRouter } from '../../router'
-import { jsonResponse, makeGitRepo, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { jsonResponse, makeGitRepo, makeGroup, makeProject, makeSession, routeFetch } from '../../test/factories'
 import { useProjectsStore } from '../../stores/projects'
 import { useGitStore } from '../../stores/git'
 import { useNewConversationStore } from '../../stores/newConversation'
+import { useGroupsStore } from '../../stores/groups'
 
 enableAutoUnmount(afterEach)
 
@@ -254,5 +255,30 @@ describe('tela do projeto', () => {
     expect(wrapper.find('[data-test="repo-limit"]').exists()).toBe(false)
     expect(useGitStore(pinia).limitReached(1)).toBe(false)
     expect(wrapper.find('[data-test="repo"]').text()).toContain('HEAD solto · abc1234')
+  })
+
+  it('a lista por data mostra só as conversas sem agrupador e ganha o título "Sem agrupador"', async () => {
+    seed()
+    useGroupsStore(pinia).groups = [makeGroup({ id: 1, project_id: 1, name: 'Checkout' })]
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Agrupada', group_id: 1 }),
+      makeSession({ session_id: 'b', title: 'Solta', group_id: null }),
+    ]) }))
+    const wrapper = await mountView()
+
+    const dated = wrapper.findAll('[data-test="date-group"]').map((g) => g.element.closest('section')!)
+    expect(dated).toHaveLength(1)
+    expect(dated[0]!.textContent).toContain('Solta')
+    expect(dated[0]!.textContent).not.toContain('Agrupada')
+    expect(wrapper.find('[data-test="ungrouped-title"]').text()).toBe('Sem agrupador')
+    expect(wrapper.find('[data-test="group-section"]').text()).toContain('Agrupada')
+  })
+
+  it('sem agrupadores não mostra o título "Sem agrupador"', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([makeSession({ session_id: 'b', title: 'Solta' })]) }))
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="ungrouped-title"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="groups-empty"]').exists()).toBe(true)
   })
 })
