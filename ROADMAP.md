@@ -239,6 +239,7 @@ Caso de uso que motivou: uma sessão gera um prompt, e esse prompt é executado 
 Pedido pelo usuário em 2026-09-28. Só começa depois do MVP completo e funcionando.
 
 - Spec: `docs/superpowers/specs/2026-09-30-agrupador-de-sessoes-design.md`
+- Plano: `docs/superpowers/plans/2026-09-30-agrupador-de-sessoes.md`
 
 O agrupador existe só no banco do backend. O Claude e o CLI não sabem dele, e o histórico em `~/.claude/projects` não muda.
 
