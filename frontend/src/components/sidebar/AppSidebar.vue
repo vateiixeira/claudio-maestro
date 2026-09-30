@@ -5,10 +5,13 @@ import BrandMark from '../BrandMark.vue'
 import ConnectionIndicator from '../ConnectionIndicator.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import SessionSearch from './SessionSearch.vue'
+import SidebarGroups from './SidebarGroups.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import { useEventSocket } from '../../api/socket'
 import { recentIds } from '../../recentConversations'
+import { isCollapsed, setCollapsed } from '../../sidebarCollapse'
 import { repoLabel, useGitStore } from '../../stores/git'
+import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
@@ -16,6 +19,7 @@ import { useSessionsStore } from '../../stores/sessions'
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const git = useGitStore()
+const groups = useGroupsStore()
 const newConversation = useNewConversationStore()
 const route = useRoute()
 const socket = useEventSocket()
@@ -76,26 +80,39 @@ const itemClass = (active: boolean) => [
       </div>
       <p v-if="projects.loadError" class="px-3 py-2 text-xs text-secondary-soft" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
       <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-3 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
-      <RouterLink
-        v-for="project in projects.projects"
-        :key="project.id"
-        data-test="project"
-        :data-available="String(project.available)"
-        :to="{ name: 'project', params: { id: project.id } }"
-        :class="[itemClass(activeProjectId === project.id), { 'opacity-50': !project.available }]"
-        :aria-current="route.name === 'project' && activeProjectId === project.id ? 'page' : undefined"
-      >
-        <span data-test="project-color" class="size-2.5 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
-        <span class="flex min-w-0 grow flex-col">
-          <span data-test="project-name" class="truncate font-medium text-fg">{{ project.name }}</span>
-          <span v-if="!project.available" class="text-xs">pasta indisponível</span>
-          <span v-else-if="git.reposFor(project.id)[0]" data-test="project-branch"><BranchLabel :text="repoLabel(git.reposFor(project.id)[0]!)" muted /></span>
-          <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-secondary-soft">Só os 50 primeiros repositórios</span>
-        </span>
-        <span v-if="waitingIn(project.id)" data-test="project-waiting" class="flex items-center gap-1 text-xs text-secondary">
-          <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}
-        </span>
-      </RouterLink>
+      <template v-for="project in projects.projects" :key="project.id">
+        <div class="flex items-center">
+          <button
+            v-if="groups.forProject(project.id).length"
+            type="button"
+            data-test="project-toggle"
+            :aria-expanded="!isCollapsed('project', project.id)"
+            :aria-label="`${isCollapsed('project', project.id) ? 'Expandir' : 'Recolher'} ${project.name}`"
+            class="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg"
+            @click="setCollapsed('project', project.id, !isCollapsed('project', project.id))"
+          ><span aria-hidden="true" class="inline-block transition-transform" :class="isCollapsed('project', project.id) ? '' : 'rotate-90'">›</span></button>
+          <span v-else class="size-6 shrink-0" aria-hidden="true" />
+          <RouterLink
+            data-test="project"
+            :data-available="String(project.available)"
+            :to="{ name: 'project', params: { id: project.id } }"
+            :class="[itemClass(activeProjectId === project.id), 'min-w-0 grow', { 'opacity-50': !project.available }]"
+            :aria-current="route.name === 'project' && activeProjectId === project.id ? 'page' : undefined"
+          >
+            <span data-test="project-color" class="size-2.5 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
+            <span class="flex min-w-0 grow flex-col">
+              <span data-test="project-name" class="truncate font-medium text-fg">{{ project.name }}</span>
+              <span v-if="!project.available" class="text-xs">pasta indisponível</span>
+              <span v-else-if="git.reposFor(project.id)[0]" data-test="project-branch"><BranchLabel :text="repoLabel(git.reposFor(project.id)[0]!)" muted /></span>
+              <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-secondary-soft">Só os 50 primeiros repositórios</span>
+            </span>
+            <span v-if="waitingIn(project.id)" data-test="project-waiting" class="flex items-center gap-1 text-xs text-secondary">
+              <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}
+            </span>
+          </RouterLink>
+        </div>
+        <SidebarGroups v-if="groups.forProject(project.id).length && !isCollapsed('project', project.id)" :project-id="project.id" />
+      </template>
 
       <template v-if="recent.length">
         <div class="px-3 pt-4 pb-0.5 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Recentes</div>

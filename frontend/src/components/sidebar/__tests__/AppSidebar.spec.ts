@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import { ref } from 'vue'
@@ -13,11 +13,13 @@ vi.mock('../../../api/socket', () => ({
 import AppSidebar from '../AppSidebar.vue'
 import { createAppRouter } from '../../../router'
 import { useGitStore } from '../../../stores/git'
+import { useGroupsStore } from '../../../stores/groups'
 import { useNewConversationStore } from '../../../stores/newConversation'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 import { noteOpened, recentIds } from '../../../recentConversations'
-import { makeGitRepo, makeProject, makeSession } from '../../../test/factories'
+import { setCollapsed } from '../../../sidebarCollapse'
+import { makeGitRepo, makeGroup, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -156,5 +158,38 @@ describe('menu lateral', () => {
     const preferences = wrapper.find('[data-test="preferences"]').element
     expect(preferences.compareDocumentPosition(lost.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(wrapper.element.contains(lost.element)).toBe(true)
+  })
+})
+
+describe('menu lateral em árvore', () => {
+  beforeEach(() => { setCollapsed('project', 1, false) })
+
+  it('não mostra a seta do projeto sem agrupadores', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    expect(mountSidebar().find('[data-test="project-toggle"]').exists()).toBe(false)
+  })
+
+  it('mostra os agrupadores do projeto e recolhe pela seta', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
+    useGroupsStore(pinia).groups = [makeGroup({ id: 1, project_id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ group_id: 1, display_state: 'running' })])
+    const wrapper = mountSidebar()
+    const toggle = wrapper.find('[data-test="project-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(toggle.attributes('aria-label')).toBe('Recolher loja-online')
+    expect(wrapper.find('[data-test="sidebar-group"]').exists()).toBe(true)
+    await toggle.trigger('click')
+    expect(wrapper.find('[data-test="sidebar-group"]').exists()).toBe(false)
+    expect(toggle.attributes('aria-label')).toBe('Expandir loja-online')
+  })
+
+  it('o nome do projeto continua levando à tela do projeto', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useGroupsStore(pinia).groups = [makeGroup({ id: 1, project_id: 1 })]
+    const router = createAppRouter(createMemoryHistory())
+    const wrapper = mount(AppSidebar, { global: { plugins: [pinia, router] } })
+    await wrapper.find('[data-test="project"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/projects/1')
   })
 })
