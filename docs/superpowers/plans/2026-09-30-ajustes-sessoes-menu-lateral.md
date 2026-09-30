@@ -61,7 +61,7 @@
   - `current_worktree(transcript: Path) -> tuple[bool, Worktree | None]`: o primeiro item diz se decidiu. `False` significa manter o que estava gravado.
   - `parse_worktree_list(output: str) -> list[str]`
 
-- [ ] **Step 1: Escrever os testes que falham**
+- [x] **Step 1: Escrever os testes que falham**
 
 ```python
 """Worktree detection from transcripts and `.git` markers (no git process)."""
@@ -157,12 +157,12 @@ def test_parse_worktree_list():
     assert parse_worktree_list("") == []
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_worktree.py -q`
 Expected: FAIL com `ModuleNotFoundError: No module named 'vibing.worktree'`
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```python
 """Which git worktree a session is working in, read from its transcript.
@@ -247,12 +247,12 @@ def parse_worktree_list(output: str) -> list[str]:
     return [line[len("worktree "):] for line in output.splitlines() if line.startswith("worktree ")]
 ```
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_worktree.py -q`
 Expected: PASS (10 testes)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/vibing/worktree.py backend/tests/test_worktree.py
