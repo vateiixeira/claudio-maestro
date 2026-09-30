@@ -27,6 +27,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 0 de 10 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | A fazer | 0 de 10 |
+| 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Em andamento | 0 de 5 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário.
 
@@ -307,6 +308,20 @@ Um agente único do app, sem ferramentas, lê a conversa de forma incremental co
 - [ ] Frase curta do resumo na linha de conversa
 
 Decidido no desenho (2026-09-30): o agente só lê e resume; "plano concluído" é um selo no app, sem tocar o arquivo; instruções extras em texto livre, sem ferramentas; padrão Sonnet 5.5 com raciocínio médio; passada a cada 10 min, mínimo de 10 mensagens novas, teto de 30 min com turno aberto, janela de 3 dias; fases concluídas congeladas.
+
+## Marco 11. Tela do projeto e ajustes
+
+Objetivo: ver o estado git de cada repositório do projeto e abrir conversas sem sair da tela do projeto, com dois ajustes de uso diário.
+
+Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/tela-projeto`, branch `tela-projeto`, a partir da `main`. Design curto aprovado na conversa, sem spec.
+
+- [ ] Menus de opção (`OptionMenu`) desenhados fora do modal, com posição calculada e rolagem própria
+- [ ] Ícone de "em execução" trocado por um arco girando, parado com movimento reduzido
+- [ ] Backend: upstream, ahead/behind, arquivos alterados com +/- e últimos commits por repositório
+- [ ] Tela do projeto: estado git de cada repositório, arquivos com diff ao clicar e últimos commits
+- [ ] Tela do projeto dividida: conversa aberta ao lado pela URL (`?sessao=`), divisória arrastável
+
+Decidido no desenho (2026-09-30): o app não roda `git fetch`, então "para baixar" reflete o último fetch; abaixo de 1200px o clique abre a conversa inteira; o ícone novo vale em todas as listas.
 
 ## Fora do MVP
 
