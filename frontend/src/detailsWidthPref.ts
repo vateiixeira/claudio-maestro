@@ -6,13 +6,18 @@ export const DETAILS_KEY_STEP = 16
 /** Width of the app sidebar; matches its `w-64`. */
 export const SIDEBAR_WIDTH = 256
 
-/** Widest the panel may be: 70% of the window, leaving at least 400px for the conversation beside the sidebar. */
-export function detailsMaxWidth(viewport: number): number {
-  return Math.max(DETAILS_MIN_WIDTH, Math.min(Math.floor(viewport * 0.7), viewport - 400 - SIDEBAR_WIDTH))
+/**
+ * Widest the panel may be: 70% of the window, leaving at least 400px for the
+ * conversation beside the sidebar. As a drawer (it overlays the conversation) only
+ * the 70% applies.
+ */
+export function detailsMaxWidth(viewport: number, drawer = false): number {
+  const share = Math.floor(viewport * 0.7)
+  return Math.max(DETAILS_MIN_WIDTH, drawer ? share : Math.min(share, viewport - 400 - SIDEBAR_WIDTH))
 }
 
-export function clampDetailsWidth(width: number, viewport: number): number {
-  return Math.round(Math.min(Math.max(width, DETAILS_MIN_WIDTH), detailsMaxWidth(viewport)))
+export function clampDetailsWidth(width: number, viewport: number, drawer = false): number {
+  return Math.round(Math.min(Math.max(width, DETAILS_MIN_WIDTH), detailsMaxWidth(viewport, drawer)))
 }
 
 /** Width chosen by the user (default 360). Limits are applied where it is shown. */

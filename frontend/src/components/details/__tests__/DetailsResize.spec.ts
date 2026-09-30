@@ -27,7 +27,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-async function mountPanel() {
+async function mountPanel(drawer = false) {
   vi.stubGlobal('fetch', routeFetch({
     'GET /api/sessions/s1/changes': () => jsonResponse({ repos: [] }),
     'GET /api/sessions/s1/plan': () => jsonResponse({ link: 'auto', path: null, plan: null, tasks: [] }),
@@ -35,7 +35,7 @@ async function mountPanel() {
   }))
   await useConversationStore(pinia).load('s1')
   const router = createAppRouter(createMemoryHistory())
-  const wrapper = mount(DetailsPanel, { props: { sessionId: 's1' }, global: { plugins: [pinia, router] } })
+  const wrapper = mount(DetailsPanel, { props: { sessionId: 's1', drawer }, global: { plugins: [pinia, router] } })
   await flushPromises()
   return wrapper
 }
@@ -91,6 +91,21 @@ describe('largura do painel Detalhes', () => {
     localStorage.setItem('vibing:details-width', '3000')
     const w = await mountPanel()
     expect(width(w)).toBe('944px') // min(0.7 × 1600, 1600 − 400 − 256)
+  })
+
+  it('na gaveta (janela estreita) mantém uma largura salva de 600px', async () => {
+    Object.defineProperty(window, 'innerWidth', { value: 900, configurable: true })
+    localStorage.setItem('vibing:details-width', '600')
+    const w = await mountPanel(true)
+    expect(width(w)).toBe('600px')
+    expect(w.find('[data-test="details-resize"]').attributes('aria-valuemax')).toBe('630')
+  })
+
+  it('fora da gaveta, a mesma janela estreita limita a 300px', async () => {
+    Object.defineProperty(window, 'innerWidth', { value: 900, configurable: true })
+    localStorage.setItem('vibing:details-width', '600')
+    const w = await mountPanel(false)
+    expect(width(w)).toBe('300px')
   })
 
   it('a alça tem papel de separador acessível', async () => {

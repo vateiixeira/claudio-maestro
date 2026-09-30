@@ -510,12 +510,30 @@ async def test_client_starts_in_existing_worktree(make_env):
     sessions.append(sid)
     worktree = env.folder / ".claude" / "worktrees" / "feat"
     worktree.mkdir(parents=True)
-    set_row(env, sid, worktree_name="feat", worktree_path=str(worktree))
+    set_row(
+        env, sid, worktree_name="feat", worktree_path=str(worktree), history_dir=str(worktree),
+    )
 
     await env.manager.send(sid, "continua")
     await wait_until(lambda: env.manager.get(sid).state == "idle")
 
     assert env.factory.clients[0].options.cwd == worktree
+
+
+@pytest.mark.anyio
+async def test_client_stays_in_cwd_when_transcript_was_not_moved_to_worktree(make_env):
+    sessions: list[str] = []
+    env = make_env(script=lambda content: text_turn(sessions[0], "r"))
+    sid = env.add_old_session()
+    sessions.append(sid)
+    worktree = env.folder / ".claude" / "worktrees" / "feat"
+    worktree.mkdir(parents=True)
+    set_row(env, sid, worktree_name="feat", worktree_path=str(worktree))
+
+    await env.manager.send(sid, "continua")
+    await wait_until(lambda: env.manager.get(sid).state == "idle")
+
+    assert env.factory.clients[0].options.cwd == Path(env.folder)
 
 
 @pytest.mark.anyio

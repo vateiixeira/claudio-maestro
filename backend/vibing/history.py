@@ -102,17 +102,18 @@ def worktree_probe(directory: str) -> tuple[bool, int | None]:
         return True, None
 
 
-async def git_worktrees(repo: Path) -> list[str]:
-    """Linked worktrees of `repo`, its own folder left out. Empty on any git failure."""
+async def git_worktrees(repo: Path) -> list[str] | None:
+    """Linked worktrees of `repo`, its own folder left out. None on any git failure
+    (an empty list means git answered and there are none)."""
     from vibing import gitinfo  # gitinfo imports this module
 
     try:
         code, out, _ = await gitinfo.run_git(repo, "worktree", "list", "--porcelain")
     except gitinfo.GitError:
         logger.warning("Não foi possível listar as worktrees de %s", repo)
-        return []
+        return None
     if code != 0:
-        return []
+        return None
     own = os.path.realpath(repo)
     return [path for path in parse_worktree_list(out) if os.path.realpath(path) != own]
 
@@ -570,7 +571,7 @@ class HistoryIndex:
         is_in_use: IsInUse | None = None,
         file_exists: Callable[[str, str], bool | None] | None = None,
         folder_signature: FolderSignature | None = None,
-        list_worktrees: Callable[[Path], Awaitable[list[str]]] | None = None,
+        list_worktrees: Callable[[Path], Awaitable[list[str] | None]] | None = None,
         session_file: Callable[[str, str], Path | None] | None = None,
         detect_worktree: Callable[[Path], tuple[bool, Worktree | None]] | None = None,
     ) -> None:
@@ -731,7 +732,11 @@ class HistoryIndex:
         cached = self._worktree_lists.get(directory)
         if key is not None and cached is not None and cached[0] == key:
             return cached[1]
-        found = list(await self._list_worktrees(Path(directory)))
+        listed = await self._list_worktrees(Path(directory))
+        if listed is None:  # git failed: none this time, and asked again next time
+            self._worktree_lists.pop(directory, None)
+            return []
+        found = list(listed)
         if key is None:
             self._worktree_lists.pop(directory, None)
         else:

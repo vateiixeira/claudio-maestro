@@ -71,9 +71,17 @@ describe('ordem estável em Recentes', () => {
     expect(noteOpened('c')).toEqual(['c', 'a', 'b'])
   })
 
-  it('noteRunning só acrescenta quem ainda não está na lista', () => {
+  it('noteRunning mantém no lugar quem está visível e leva ao topo quem é novo', () => {
     noteOpened('b'); noteOpened('a') // [a, b]
+    shownRecentIds.value = ['a', 'b']
     expect(noteRunning('b')).toEqual(['a', 'b'])
     expect(noteRunning('z')).toEqual(['z', 'a', 'b'])
+  })
+
+  it('noteRunning leva ao topo quem está guardado além da lista visível', () => {
+    noteOpened('c'); noteOpened('b'); noteOpened('a') // [a, b, c]
+    shownRecentIds.value = ['a', 'b']
+    expect(noteRunning('c')).toEqual(['c', 'a', 'b'])
+    expect(readRecent()).toEqual(['c', 'a', 'b'])
   })
 })

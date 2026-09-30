@@ -25,6 +25,12 @@ def test_history_directory_and_work_dir(tmp_path: Path):
     assert _record(history_dir="/h").history_directory == "/h"
     wt = tmp_path / "wt"
     wt.mkdir()
-    assert _record(worktree_path=str(wt)).work_dir() == str(wt)
-    assert _record(worktree_path=str(tmp_path / "gone")).work_dir() == "/p"
+    # The transcript lives in the worktree's history folder: work there.
+    assert _record(worktree_path=str(wt), history_dir=str(wt)).work_dir() == str(wt)
+    # The transcript stayed elsewhere (or nowhere known): keep the recorded cwd.
+    assert _record(worktree_path=str(wt)).work_dir() == "/p"
+    assert _record(worktree_path=str(wt), history_dir="/p").work_dir() == "/p"
+    # The worktree is gone.
+    gone = tmp_path / "gone"
+    assert _record(worktree_path=str(gone), history_dir=str(gone)).work_dir() == "/p"
     assert _record().work_dir() == "/p"

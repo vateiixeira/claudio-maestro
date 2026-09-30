@@ -274,8 +274,17 @@ class SessionRecord:
         return self.history_dir or self.cwd
 
     def work_dir(self) -> str:
-        """Folder the session works in: its worktree while it exists, else `cwd`."""
-        if self.worktree_path and Path(self.worktree_path).is_dir():
+        """Folder the session works in: its worktree while it exists and the transcript
+        lives in that worktree's history folder, else `cwd`. Resuming elsewhere than
+        where the file is would split the conversation."""
+        from vibing.cliwatch import history_folder_name  # cliwatch imports this module
+
+        if (
+            self.worktree_path
+            and self.history_dir
+            and Path(self.worktree_path).is_dir()
+            and history_folder_name(self.history_dir) == history_folder_name(self.worktree_path)
+        ):
             return self.worktree_path
         return self.cwd
 

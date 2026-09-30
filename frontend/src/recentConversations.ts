@@ -46,9 +46,13 @@ export function noteOpened(id: string): string[] {
   return save([id, ...current.filter((other) => other !== id)].slice(0, RECENT_MAX))
 }
 
-/** A conversation started running (in the app or elsewhere): listed once, at the front. */
+/**
+ * A conversation started running (in the app or elsewhere). One already shown under
+ * "Recentes" stays where it is; any other (new, or stored beyond the visible ones)
+ * goes to the front so it does not vanish from the sidebar when it stops.
+ */
 export function noteRunning(id: string): string[] {
   const current = readRecent()
-  if (current.includes(id)) return current
-  return save([id, ...current].slice(0, RECENT_MAX))
+  if (shownRecentIds.value.includes(id) && current.includes(id)) return current
+  return save([id, ...current.filter((other) => other !== id)].slice(0, RECENT_MAX))
 }

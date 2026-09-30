@@ -80,8 +80,8 @@ onMounted(() => window.addEventListener('resize', onWindowResize))
 onBeforeUnmount(() => window.removeEventListener('resize', onWindowResize))
 
 const width = ref(readDetailsWidth())
-const applied = computed(() => clampDetailsWidth(width.value, viewport.value))
-const maxWidth = computed(() => detailsMaxWidth(viewport.value))
+const applied = computed(() => clampDetailsWidth(width.value, viewport.value, props.drawer))
+const maxWidth = computed(() => detailsMaxWidth(viewport.value, props.drawer))
 
 // The handle sits on the left edge: moving the pointer left makes the panel wider.
 let drag: { startX: number; startWidth: number } | null = null
@@ -92,7 +92,7 @@ function startDrag(event: PointerEvent) {
 }
 function moveDrag(event: PointerEvent) {
   if (!drag) return
-  width.value = clampDetailsWidth(drag.startWidth + (drag.startX - event.clientX), viewport.value)
+  width.value = clampDetailsWidth(drag.startWidth + (drag.startX - event.clientX), viewport.value, props.drawer)
 }
 function endDrag() {
   if (!drag) return
@@ -103,7 +103,7 @@ function onResizeKey(event: KeyboardEvent) {
   const delta = event.key === 'ArrowLeft' ? DETAILS_KEY_STEP : event.key === 'ArrowRight' ? -DETAILS_KEY_STEP : 0
   if (!delta) return
   event.preventDefault()
-  width.value = clampDetailsWidth(applied.value + delta, viewport.value)
+  width.value = clampDetailsWidth(applied.value + delta, viewport.value, props.drawer)
   writeDetailsWidth(width.value)
 }
 function resetWidth() {

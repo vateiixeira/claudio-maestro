@@ -822,23 +822,49 @@ async def test_git_worktrees_uses_run_git_and_drops_own_folder(tmp_path: Path, m
 
 
 @pytest.mark.anyio
-async def test_git_worktrees_empty_on_git_error(tmp_path: Path, monkeypatch):
+async def test_git_worktrees_none_on_git_error(tmp_path: Path, monkeypatch):
     from vibing import gitinfo
 
     async def failing(repo, *args, **kw):
         raise gitinfo.GitError("sem git")
 
     monkeypatch.setattr("vibing.gitinfo.run_git", failing)
-    assert await REAL_GIT_WORKTREES(tmp_path) == []
+    assert await REAL_GIT_WORKTREES(tmp_path) is None
 
 
 @pytest.mark.anyio
-async def test_git_worktrees_empty_on_nonzero_exit(tmp_path: Path, monkeypatch):
+async def test_git_worktrees_none_on_nonzero_exit(tmp_path: Path, monkeypatch):
     async def nonzero(repo, *args, **kw):
         return 128, "", "fatal: not a git repository"
 
     monkeypatch.setattr("vibing.gitinfo.run_git", nonzero)
+    assert await REAL_GIT_WORKTREES(tmp_path) is None
+
+
+@pytest.mark.anyio
+async def test_git_worktrees_empty_list_when_there_are_none(tmp_path: Path, monkeypatch):
+    async def only_main(repo, *args, **kw):
+        return 0, f"worktree {tmp_path}\nHEAD a\n", ""
+
+    monkeypatch.setattr("vibing.gitinfo.run_git", only_main)
     assert await REAL_GIT_WORKTREES(tmp_path) == []
+
+
+@pytest.mark.anyio
+async def test_failed_worktree_listing_is_not_cached(tmp_path: Path):
+    project = with_worktrees_dir(tmp_path / "proj")
+    idx, calls = _index_with_lister(tmp_path, project)
+    answers: list[list[str] | None] = [None, ["/x/wt"]]
+
+    async def flaky(repo: Path):
+        calls.append(str(repo))
+        return answers.pop(0)
+
+    idx._list_worktrees = flaky
+    assert await idx._worktrees_of(str(project)) == []
+    assert await idx._worktrees_of(str(project)) == ["/x/wt"]  # mtime unchanged, asked again
+    assert await idx._worktrees_of(str(project)) == ["/x/wt"]  # a real answer is cached
+    assert len(calls) == 2
 
 
 def _index_with_lister(tmp_path: Path, project: Path):
