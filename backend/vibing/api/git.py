@@ -37,6 +37,15 @@ async def project_git(project_id: int, conn: DbDep) -> dict[str, Any]:
     return {"repos": [repo.to_dict() for repo in repos], "limit_reached": limit_reached}
 
 
+@router.get("/projects/{project_id}/git/details")
+async def project_git_details(project_id: int, conn: DbDep) -> dict[str, Any]:
+    project = _project(conn, project_id)
+    if not project.available:
+        return {"repos": [], "limit_reached": False}
+    repos, limit_reached = await gitinfo.project_details_scan(Path(project.path))
+    return {"repos": repos, "limit_reached": limit_reached}
+
+
 @router.get("/projects/{project_id}/diff")
 async def file_diff(project_id: int, repo: str, file: str, conn: DbDep) -> dict[str, Any]:
     project = _project(conn, project_id)

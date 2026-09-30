@@ -78,7 +78,7 @@ def test_project_git(api, home):
     assert repos[0] == {
         "path": str(root), "rel_path": ".", "branch": "main", "detached": False,
         "head": repos[0]["head"], "changed": {"staged": 0, "unstaged": 0, "untracked": 2},  # novo.txt + api/ (nested)
-        "error": None,
+        "upstream": None, "ahead": None, "behind": None, "error": None,
     }
     assert repos[1]["detached"] is True and repos[1]["branch"] is None
     assert repos[1]["head"]
