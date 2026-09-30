@@ -4,9 +4,11 @@ import { errorMessage, interruptSession, sendMessage } from '../../api/http'
 import { useDictation } from '../../conversation/dictation'
 import { type DraftImage, attachImages, base64Of, filesFrom, formatSize } from '../../conversation/images'
 import { takePendingDraft } from '../../conversation/pendingDrafts'
+import { useComposerSuggestions } from '../../conversation/useComposerSuggestions'
 import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
 import type { SessionState } from '../../types/api'
+import SuggestionMenu from './SuggestionMenu.vue'
 
 // `blockedReason`: why sending is not possible now (e.g. the project folder is gone).
 const props = defineProps<{ sessionId: string; state: SessionState; blockedReason?: string | null }>()
@@ -47,8 +49,16 @@ function onDrop(event: DragEvent) {
   void addFiles(files)
 }
 
+const suggestions = useComposerSuggestions({
+  textarea,
+  text,
+  scope: () => ({ sessionId: props.sessionId }),
+  onApplied: resize,
+})
+
 const dictation = useDictation({
   begin() {
+    suggestions.close()
     const el = textarea.value
     return { text: text.value, cursor: el?.selectionStart ?? text.value.length }
   },
@@ -80,6 +90,14 @@ function resize() {
 function onInput() {
   if (dictation.recording.value) dictation.stop()
   resize()
+  suggestions.refresh()
+}
+
+// setSelectionRange (used by the dictation to place the cursor) fires `select`, so the
+// event is ignored while recording: dictated text must never open the menus.
+function onSelect() {
+  if (dictation.recording.value) return
+  suggestions.refresh()
 }
 
 function insertNewline() {
@@ -94,6 +112,7 @@ function insertNewline() {
 }
 
 function onKeydown(event: KeyboardEvent) {
+  if (suggestions.onKeydown(event)) return
   if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return
   if (event.shiftKey) return // browser inserts the line break
   event.preventDefault()
@@ -106,6 +125,7 @@ async function send() {
   // A copy: an image that finishes reading while the request is out is not part of this message.
   const attached = [...images.value]
   if (!canSend.value) return
+  suggestions.close()
   if (dictation.recording.value) dictation.stop()
   sending.value = true
   error.value = null
@@ -172,17 +192,40 @@ async function interrupt() {
     </div>
     <div class="flex items-end gap-2">
       <label :for="`msg-${sessionId}`" class="sr-only">Mensagem para a sessão</label>
-      <textarea
-        :id="`msg-${sessionId}`"
-        ref="textarea"
-        v-model="text"
-        rows="1"
-        placeholder="Mensagem (Ctrl+V cola imagens)"
-        class="min-h-11 min-w-0 grow resize-none overflow-hidden rounded-lg border border-line-strong bg-panel px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
-        @input="onInput"
-        @keydown="onKeydown"
-        @paste="onPaste"
-      />
+      <div class="relative min-w-0 grow">
+        <textarea
+          :id="`msg-${sessionId}`"
+          ref="textarea"
+          v-model="text"
+          rows="1"
+          placeholder="Mensagem (Ctrl+V cola imagens)"
+          role="combobox"
+          aria-autocomplete="list"
+          :aria-expanded="suggestions.isOpen.value"
+          :aria-controls="suggestions.menuId"
+          :aria-activedescendant="suggestions.isOpen.value && suggestions.items.value.length ? suggestions.optionId(suggestions.active.value) : undefined"
+          class="min-h-11 w-full resize-none overflow-hidden rounded-lg border border-line-strong bg-panel px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
+          @input="onInput"
+          @keydown="onKeydown"
+          @keyup="suggestions.refresh()"
+          @click="suggestions.refresh()"
+          @select="onSelect"
+          @blur="suggestions.onBlur()"
+          @paste="onPaste"
+        />
+        <SuggestionMenu
+          v-if="suggestions.isOpen.value && suggestions.kind.value"
+          :id="suggestions.menuId"
+          :items="suggestions.items.value"
+          :active="suggestions.active.value"
+          :status="suggestions.status.value"
+          :error="suggestions.error.value"
+          :kind="suggestions.kind.value"
+          :option-id="suggestions.optionId"
+          @choose="(i) => suggestions.choose(i, 'click')"
+          @hover="(i) => (suggestions.active.value = i)"
+        />
+      </div>
       <button
         v-if="dictation.supported"
         type="button"

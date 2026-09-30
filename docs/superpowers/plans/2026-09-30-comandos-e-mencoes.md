@@ -1893,7 +1893,7 @@ Item 7 do marco 13.
 6. O `div` do `textarea` passa a envolver o `textarea` (que perde `grow` e ganha `w-full`) e o `<SuggestionMenu v-if="suggestions.isOpen.value" ... @choose="(i) => suggestions.choose(i, 'click')" @hover="(i) => (suggestions.active.value = i)" />`.
 7. A dica do rodapé continua como está.
 
-- [ ] **Passo 1: testes que falham** em `composerSuggestions.spec.ts`. Use o setup de `composer.spec.ts`, com `attachTo: document.body`:
+- [x] **Passo 1: testes que falham** em `composerSuggestions.spec.ts`. Use o setup de `composer.spec.ts`, com `attachTo: document.body`:
 
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -1979,10 +1979,10 @@ describe('MessageComposer com sugestões', () => {
 
 Confira em `src/test/fakeRecognition.ts` os nomes reais (`FakeRecognition.last`, o método que emite resultado) e ajuste o último teste a eles. O teste precisa mostrar duas coisas: começar o ditado fecha o menu, e o texto ditado não o abre.
 
-- [ ] **Passo 2: rodar e ver falhar.**
-- [ ] **Passo 3: implementar** as mudanças 1 a 7.
-- [ ] **Passo 4: rodar e ver passar.** Rode o arquivo novo, `composer.spec.ts` e `composerExtras.spec.ts` (que não podem quebrar), depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
-- [ ] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 7 no roadmap.
+- [x] **Passo 2: rodar e ver falhar.**
+- [x] **Passo 3: implementar** as mudanças 1 a 7.
+- [x] **Passo 4: rodar e ver passar.** Rode o arquivo novo, `composer.spec.ts` e `composerExtras.spec.ts` (que não podem quebrar), depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
+- [x] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 7 no roadmap.
 
 ```bash
 git add frontend/src/components/conversation/MessageComposer.vue frontend/src/components/conversation/__tests__/composerSuggestions.spec.ts ROADMAP.md
