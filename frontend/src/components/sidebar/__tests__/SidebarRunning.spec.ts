@@ -32,14 +32,17 @@ function running(id: string, at: number, extra: Partial<Session> = {}) {
 }
 
 describe('seção Em execução', () => {
-  it('lista as sessões em execução, da mais recente para a mais antiga, com a sigla do projeto', async () => {
+  it('lista as sessões em execução, da mais recente para a mais antiga, com o nome do projeto', async () => {
     sessions.setForProject(1, [running('a', 10), running('b', 30), makeSession({ session_id: 'c', project_id: 1 })])
     const w = await mountRunning()
     const rows = w.findAll('[data-test="running"]')
     expect(rows.map((r) => r.text())).toEqual([expect.stringContaining('T b'), expect.stringContaining('T a')])
-    const badge = rows[0]!.find('[data-test="project-badge"]')
-    expect(badge.text()).toBe('LO')
-    expect(badge.attributes('title')).toBe('loja-online')
+    const project = rows[0]!.find('[data-test="row-project"]')
+    expect(project.text()).toBe('loja-online')
+    expect(project.attributes('title')).toBe('loja-online')
+    expect(rows[0]!.find('[data-test="project-badge"]').exists()).toBe(false)
+    const html = rows[0]!.html()
+    expect(html.indexOf('row-title')).toBeLessThan(html.indexOf('row-project'))
   })
 
   it('conversa do CLI em execução aparece', async () => {

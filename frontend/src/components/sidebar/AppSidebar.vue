@@ -35,11 +35,12 @@ const runningIds = computed(() => new Set(sessions.all.filter((s) => s.display_s
 // A conversation that starts running (here or in a terminal) joins "Recentes", so it
 // stays there when it stops.
 watch(runningIds, (ids) => { for (const id of ids) noteRunning(id) }, { immediate: true })
-// Conversations opened or seen running, newest first, minus those listed under "Em execução".
+// Conversations opened or seen running, newest first, minus those listed under "Em execução"
+// and those the user finished (their ids stay stored, so reopening one brings it back).
 const recent = computed(() =>
   recentIds.value
     .map((id) => sessions.find(id))
-    .filter((s): s is NonNullable<typeof s> => s != null && !runningIds.value.has(s.session_id))
+    .filter((s): s is NonNullable<typeof s> => s != null && !runningIds.value.has(s.session_id) && s.display_state !== 'finished')
     .slice(0, RECENT_VISIBLE),
 )
 watchEffect(() => { shownRecentIds.value = recent.value.map((s) => s.session_id) })
@@ -61,7 +62,7 @@ const itemClass = sidebarItemClass
 </script>
 
 <template>
-  <nav aria-label="Navegação" class="flex h-full w-64 shrink-0 flex-col gap-3 border-r border-line bg-panel px-3 pt-5 pb-3 text-sm">
+  <nav aria-label="Navegação" class="flex h-full w-[308px] shrink-0 flex-col gap-3 border-r border-line bg-panel px-3 pt-5 pb-3 text-sm">
     <RouterLink to="/inbox" class="flex min-h-11 items-center gap-2.5 rounded-lg px-2 text-fg no-underline">
       <BrandMark />
       <span class="text-xl font-bold tracking-tight">Vini7 Vibing</span>

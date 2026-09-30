@@ -155,12 +155,50 @@ describe('menu lateral', () => {
     expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toContain('/sessions/cli')
   })
 
-  it('linhas de Recentes mostram a sigla do projeto', async () => {
+  it('linhas de Recentes mostram o nome do projeto depois do título, sem badge', async () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
     noteOpened('b')
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'b', project_id: 1 })])
     const w = mountSidebar()
-    expect(w.find('[data-test="recent"] [data-test="project-badge"]').text()).toBe('LO')
+    const row = w.find('[data-test="recent"]')
+    expect(row.find('[data-test="row-project"]').text()).toBe('loja-online')
+    expect(row.find('[data-test="row-project"]').attributes('title')).toBe('loja-online')
+    expect(row.find('[data-test="project-badge"]').exists()).toBe(false)
+  })
+
+  it('Recentes não mostra conversa finalizada e ela volta ao ser reaberta', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    noteOpened('a'); noteOpened('b')
+    const sessions = useSessionsStore(pinia)
+    sessions.setForProject(1, [
+      makeSession({ session_id: 'a', project_id: 1 }),
+      makeSession({ session_id: 'b', project_id: 1, display_state: 'finished', finished: true }),
+    ])
+    const w = mountSidebar()
+    await flushPromises()
+    expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toEqual(['/sessions/a'])
+    expect(shownRecentIds.value).toEqual(['a'])
+    expect(recentIds.value).toContain('b')
+    sessions.find('b')!.display_state = 'waiting'
+    await flushPromises()
+    expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toEqual(['/sessions/b', '/sessions/a'])
+  })
+
+  it('finalizadas não ocupam as vagas de Recentes', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+    ids.forEach((id) => noteOpened(id))
+    useSessionsStore(pinia).setForProject(1, ids.map((id) =>
+      makeSession({ session_id: id, project_id: 1, ...(id === 'g' || id === 'f' ? { display_state: 'finished', finished: true } : {}) })))
+    const w = mountSidebar()
+    await flushPromises()
+    expect(w.findAll('[data-test="recent"]').length).toBe(5)
+    expect(shownRecentIds.value).toEqual(['e', 'd', 'c', 'b', 'a'])
+  })
+
+  it('a barra lateral tem 308px de largura', () => {
+    const w = mountSidebar()
+    expect(w.find('nav').classes()).toContain('w-[308px]')
   })
 
   it('publica os ids visíveis em Recentes', async () => {
