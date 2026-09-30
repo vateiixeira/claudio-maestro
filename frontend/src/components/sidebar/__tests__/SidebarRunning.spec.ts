@@ -45,6 +45,12 @@ describe('seção Em execução', () => {
     expect(html.indexOf('row-title')).toBeLessThan(html.indexOf('row-project'))
   })
 
+  it('sessão ociosa com subagente em segundo plano aparece', async () => {
+    sessions.setForProject(1, [running('sub', 5, { state: 'idle', subagents_running: true })])
+    const w = await mountRunning()
+    expect(w.findAll('[data-test="running"]').map((r) => r.text())).toEqual([expect.stringContaining('T sub')])
+  })
+
   it('conversa do CLI em execução aparece', async () => {
     sessions.setForProject(1, [running('cli', 5, { state: 'closed', cli_running: true })])
     const w = await mountRunning()

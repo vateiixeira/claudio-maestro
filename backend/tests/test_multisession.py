@@ -261,6 +261,29 @@ def test_cli_mid_turn_shows_as_running():
     assert display_state("closed", cli_running=True, **{**kw, "finished": True}) == "running"
 
 
+def test_idle_with_running_subagent_shows_as_running():
+    kw = dict(finished=False, last_activity_at=100, last_seen_at=100, now=110, finished_after=3600)
+    assert display_state("idle", subagents_running=True, **kw) == "running"
+    assert display_state("idle", **kw) == "waiting"
+    # Without a client there is no subagent of the app running: the flag is ignored.
+    assert display_state("closed", subagents_running=True, **kw) == "waiting"
+    assert display_state("error", subagents_running=True, **kw) == "waiting"
+    assert display_state("closed", subagents_running=True, **{**kw, "finished": True}) == "finished"
+
+
+def test_describe_uses_subagents_running_for_display_state():
+    record = SessionRecord(session_id="s", project_id=1, cwd="/p", title="t", created_at=1, last_activity_at=100)
+    idle = describe(record, "idle", None, 0, finished_after=3600, now=110, subagents_running=True)
+    assert idle["display_state"] == "running"
+    assert idle["subagents_running"] is True
+    plain = describe(record, "idle", None, 0, finished_after=3600, now=110)
+    assert plain["display_state"] == "waiting"
+    assert plain["subagents_running"] is False
+    closed = describe(record, "closed", None, 0, finished_after=3600, now=110, subagents_running=True)
+    assert closed["display_state"] == "waiting"
+    assert closed["subagents_running"] is False
+
+
 def test_describe_uses_cli_running_for_display_state():
     record = SessionRecord(session_id="s", project_id=1, cwd="/p", title="t", created_at=1, last_activity_at=100)
     out = describe(record, "closed", None, 0, finished_after=3600, now=110, cli_running=True)

@@ -129,6 +129,8 @@ MAX_IMAGES = 10
 MAX_IMAGES_TOTAL_BYTES = 30 * 1024 * 1024
 
 DisplayState = Literal["running", "waiting", "finished"]
+# States in which the session has a client of the app.
+_WITH_CLIENT: tuple[str, ...] = ("idle", "running", "awaiting_decision")
 DISPLAY_STATES: tuple[str, ...] = ("running", "waiting", "finished")
 
 Publish = Callable[[dict[str, Any]], None]
@@ -341,18 +343,22 @@ def display_state(
     now: float,
     finished_after: float,
     cli_running: bool = False,
+    subagents_running: bool = False,
 ) -> DisplayState:
     """State shown to the user: running, waiting for them, or finished.
 
     `finished_after` is in seconds: a session without activity for longer counts
     as finished. A pending decision always waits for the user. A session without a
-    client (`closed`) whose CLI is mid-turn is running.
+    client (`closed`) whose CLI is mid-turn is running, and so is an idle one whose
+    client still runs a subagent (in the background, after the main turn ended).
     """
     if state in ("connecting", "running"):
         return "running"
     if state == "awaiting_decision":
         return "waiting"
     if cli_running and state == "closed":
+        return "running"
+    if subagents_running and state == "idle":
         return "running"
     if finished or now - last_activity_at > finished_after:
         return "finished"
@@ -420,12 +426,16 @@ def describe(
     cli_running: bool = False,
     digest_short: str | None = None,
     plan_done: bool = False,
+    subagents_running: bool = False,
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`.
 
     `cli_running` (the CLI is in the middle of a turn) only counts for a session
-    without a client (`closed`): with one, the app itself knows what is going on."""
+    without a client (`closed`): with one, the app itself knows what is going on.
+    `subagents_running` (a subagent of the app's client has not finished) only
+    counts with a client."""
     now = time.time() if now is None else now
+    subagents_running = subagents_running and state in _WITH_CLIENT
     fields = asdict(record)
     for key in _INTERNAL_FIELDS:
         del fields[key]
@@ -442,6 +452,7 @@ def describe(
             now=now,
             finished_after=finished_after,
             cli_running=cli_running,
+            subagents_running=subagents_running,
         ),
         "unread": record.last_activity_at > (record.last_seen_at or 0),
         "awaiting_decision": state == "awaiting_decision",
@@ -453,6 +464,7 @@ def describe(
         "pending_kind": pending_kind,
         "plan": plan,
         "cli_running": cli_running and state == "closed",
+        "subagents_running": subagents_running,
         "digest_short": digest_short,
         "plan_done": plan_done,
     }
@@ -771,6 +783,8 @@ class ActiveSession:
         self.users = 0
         # Wall time of the app's own last activity in this session (seconds).
         self._app_activity_at = 0.0
+        # `subagents_running` as last announced in a `session.updated`.
+        self._subagents_announced = False
 
     @property
     def session_id(self) -> str:
@@ -1038,12 +1052,22 @@ class ActiveSession:
             pending_permission=self.pending_permission,
             last_action=self.last_action,
             pending_kind=self.pending_kind,
+            subagents_running=self.subagents_running,
         )
 
     def emit_updated(self) -> None:
         data = self.summary()
         data["seq"] = self.seq + 1  # the seq of this very event
+        self._subagents_announced = bool(data.get("subagents_running"))
         self._emit("session.updated", data)
+
+    def sync_subagents(self) -> None:
+        """Announce the session when `subagents_running` differs from what the
+        clients last saw: a subagent started or ended without the state changing
+        (an idle session shows as running while one works), or the last one
+        outlived SUBAGENT_MAX_SECONDS and no longer counts."""
+        if self.subagents_running != self._subagents_announced:
+            self.emit_updated()
 
     def save(self, **changes: Any) -> None:
         """Write record fields to the database and memory."""
@@ -1366,6 +1390,7 @@ class ActiveSession:
                     # Last: the reconnect it may start cancels this reader.
                     self._schedule_effort()
                 self._refresh_state()
+                self.sync_subagents()
                 if isinstance(message, ResultMessage):
                     # After every event of the turn: this only writes the database.
                     await self._record_app_mtime()
@@ -1590,6 +1615,7 @@ class ActiveSession:
         self._reader = None
         self.builder.clear_local_echo()
         self._emit_events(self.builder.stop_running_subagents())
+        self.sync_subagents()
         await self._dispose(client, reader)
         if self._final or generation != self._generation:
             # close() ran meanwhile: no new client.
@@ -1754,6 +1780,7 @@ class ActiveSession:
             self._emit_events(self.builder.add_notice("error", message))
         self._cancel_prompts()
         self._refresh_state()
+        self.sync_subagents()
         await self._dispose(client, reader)
         if client is not None:
             await self._record_app_mtime()
@@ -1790,6 +1817,7 @@ class ActiveSession:
             self._emit_events(self.builder.stop_running_subagents())
         self._cancel_prompts()
         self._refresh_state()
+        self.sync_subagents()
         await self._dispose(client, reader)
         if client is not None:
             await self._record_app_mtime()
@@ -2379,7 +2407,8 @@ class SessionManager:
         if active is None:
             return {"context": None, "pending_permission": None, "last_action": None,
                     "pending_kind": None, "plan": plan, "cli_running": cli_running,
-                    "digest_short": short, "plan_done": plan_done}
+                    "digest_short": short, "plan_done": plan_done,
+                    "subagents_running": False}
         return {
             "context": active.context,
             "pending_permission": active.pending_permission,
@@ -2389,6 +2418,7 @@ class SessionManager:
             "cli_running": cli_running,
             "digest_short": short,
             "plan_done": plan_done,
+            "subagents_running": active.subagents_running,
         }
 
     def _load_digest_briefs(self) -> None:
@@ -2746,6 +2776,9 @@ class SessionManager:
         """Close clients idle longer than the timeout. They resume on the next message."""
         now = time.monotonic()
         for session in list(self._sessions.values()):
+            # A subagent that outlived its limit stops counting without any event:
+            # tell the clients, so the session stops showing as running.
+            session.sync_subagents()
             if (
                 session.state == "idle"
                 and not session.busy

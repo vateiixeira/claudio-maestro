@@ -16,6 +16,7 @@ from vibing.agent.fake import (
     DEFAULT_SERVER_MODELS,
     FakeAgentFactory,
     PauseStep,
+    background_tasks_changed_message,
     init_message,
     response_messages,
     result_message,
@@ -24,6 +25,7 @@ from vibing.agent.fake import (
     text_turn,
 )
 from vibing.agent.sdk_client import build_sdk_options
+from vibing.conversation import SUBAGENT_MAX_SECONDS
 from vibing.sessions import InvalidDecisionError, InvalidImageError
 
 
@@ -222,6 +224,97 @@ async def test_failure_marks_running_subagents_stopped(make_env, env_cleanup):
 
     [tool] = [i for i in session.snapshot()["items"] if i["type"] == "tool"]
     assert tool["subagent"]["status"] == "stopped"
+
+
+# Display state with a background subagent ------------------------------------
+
+
+def _updates(env, sid):
+    return [e["data"] for e in env.recorder.of(sid, "session.updated")]
+
+
+@pytest.mark.anyio
+async def test_idle_with_background_subagent_shows_as_running(make_env, env_cleanup):
+    env, session = await with_background_agent(make_env, env_cleanup)
+    sid = session.session_id
+
+    summary = env.manager.summary(sid)
+    assert summary["state"] == "idle"
+    assert summary["display_state"] == "running"
+    assert summary["subagents_running"] is True
+    last = _updates(env, sid)[-1]
+    assert last["display_state"] == "running"
+    assert last["subagents_running"] is True
+
+
+@pytest.mark.anyio
+async def test_subagent_end_announces_waiting(make_env, env_cleanup):
+    env, session = await with_background_agent(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    sid = session.session_id
+    before = len(_updates(env, sid))
+
+    turn = text_turn(sid, "o subagente terminou")
+    client.push([task_notification_message(sid, "task-1", "toolu_agent"), init_message(sid), *turn[2:]])
+    await wait_until(lambda: session.state == "idle" and not session.subagents_running)
+    await asyncio.sleep(0.02)
+
+    assert env.manager.summary(sid)["display_state"] == "waiting"
+    later = _updates(env, sid)[before:]
+    assert any(u["subagents_running"] is False for u in later)
+    assert later[-1]["display_state"] == "waiting"
+    assert later[-1]["subagents_running"] is False
+
+
+@pytest.mark.anyio
+async def test_background_tasks_cleared_announces_without_a_turn(make_env, env_cleanup):
+    env, session = await with_background_agent(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    sid = session.session_id
+    before = len(_updates(env, sid))
+
+    await session.stop_subagents()
+    client.push([background_tasks_changed_message(sid, [])])
+    await wait_until(lambda: not session.subagents_running)
+    await asyncio.sleep(0.02)
+
+    later = _updates(env, sid)[before:]
+    assert len(later) == 1
+    assert later[0]["state"] == "idle"
+    assert later[0]["display_state"] == "waiting"
+    assert later[0]["subagents_running"] is False
+
+
+@pytest.mark.anyio
+async def test_close_announces_subagents_stopped(make_env, env_cleanup):
+    env, session = await with_background_agent(make_env, env_cleanup)
+    sid = session.session_id
+    before = len(_updates(env, sid))
+
+    await session.close()
+
+    later = _updates(env, sid)[before:]
+    assert later, "close() must announce the session"
+    assert later[-1]["display_state"] != "running"
+    assert later[-1]["subagents_running"] is False
+
+
+@pytest.mark.anyio
+async def test_expired_subagent_is_announced_by_the_idle_sweep(make_env, env_cleanup):
+    env, session = await with_background_agent(make_env, env_cleanup)
+    sid = session.session_id
+    before = len(_updates(env, sid))
+
+    for key in session.builder._subagent_started:
+        session.builder._subagent_started[key] -= SUBAGENT_MAX_SECONDS + 1
+    assert not session.subagents_running
+    await env.manager.close_idle()
+
+    later = _updates(env, sid)[before:]
+    assert len(later) == 1
+    assert later[0]["display_state"] == "waiting"
+    assert later[0]["subagents_running"] is False
+    assert session.client is not None  # the sweep only announced; idle timeout not reached
 
 
 # Models --------------------------------------------------------------------

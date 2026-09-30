@@ -100,6 +100,8 @@ export interface Session {
   plan?: PlanSummary | null
   /** True when the app has no client for the conversation but the CLI is mid-turn (subagents included). */
   cli_running?: boolean
+  /** True when the app's client still runs a subagent (in the background) after the main turn ended. */
+  subagents_running?: boolean
   /** Group of related sessions in the project; null (or absent) when loose. */
   group_id?: number | null
   /** Linked git worktree the session works in; null outside worktrees. */

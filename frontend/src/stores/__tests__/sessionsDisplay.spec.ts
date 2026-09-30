@@ -28,6 +28,16 @@ describe('derivação do estado exibido', () => {
     store.applyEvent({ session_id: 'a', seq: 3, type: 'session.state', data: { state: 'running', error: null } })
     expect(store.find('a')).toMatchObject({ display_state: 'running', awaiting_decision: false })
   })
+
+  it('session.state ociosa mantém em execução enquanto o resumo diz que há subagente rodando', () => {
+    const store = useSessionsStore()
+    store.setForProject(1, [makeSession({ session_id: 'a', state: 'running', display_state: 'running', subagents_running: true })])
+    store.applyEvent({ session_id: 'a', seq: 2, type: 'session.state', data: { state: 'idle', error: null } })
+    expect(store.find('a')).toMatchObject({ display_state: 'running', awaiting_decision: false })
+    store.applyEvent({ session_id: 'a', seq: 3, type: 'session.updated', data: makeSession({ session_id: 'a', seq: 3, state: 'idle', display_state: 'waiting', subagents_running: false }) })
+    store.applyEvent({ session_id: 'a', seq: 4, type: 'session.state', data: { state: 'idle', error: null } })
+    expect(store.find('a')).toMatchObject({ display_state: 'waiting' })
+  })
 })
 
 describe('session.updated e dados velhos', () => {
