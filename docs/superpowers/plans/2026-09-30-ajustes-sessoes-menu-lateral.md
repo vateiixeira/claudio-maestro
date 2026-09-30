@@ -2151,14 +2151,14 @@ git commit -m "[UI] Adicionar Em execução e sigla do projeto ao menu lateral"
 - Consumes: `useDictation(target)` de `frontend/src/conversation/dictation.ts`, que devolve `supported`, `recording`, `error`, `toggle()` e `stop()`.
 - Produces: o helper de teste `FakeRecognition`, exportado de `frontend/src/test/fakeRecognition.ts`.
 
-- [ ] **Step 1: Extrair o helper**
+- [x] **Step 1: Extrair o helper**
 
 Mova a classe `FakeRecognition` do fim de `composerExtras.spec.ts` para `frontend/src/test/fakeRecognition.ts`, como `export class FakeRecognition { ... }`, com o corpo idêntico. No spec, importe com `import { FakeRecognition } from '../../../test/fakeRecognition'`.
 
 Run: `pnpm --dir frontend exec vitest run src/components/conversation/__tests__/composerExtras.spec.ts`
 Expected: PASS (a refatoração não muda nada)
 
-- [ ] **Step 2: Testes que falham**
+- [x] **Step 2: Testes que falham**
 
 `frontend/src/components/__tests__/NewConversationModalDictation.spec.ts`. Copie o `beforeEach`, `handlers` e `openModal` de `NewConversationModal.spec.ts`.
 
@@ -2223,12 +2223,12 @@ describe('modal de nova conversa: ditado', () => {
 
 Se Esc no prompt não fechar o modal nos testes existentes, use o mesmo caminho que `NewConversationModal.spec.ts` usa para fechar (botão × ou Esc no diálogo).
 
-- [ ] **Step 3: Rodar e ver falhar**
+- [x] **Step 3: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/__tests__/NewConversationModalDictation.spec.ts`
 Expected: FAIL (sem `nc-dictate`)
 
-- [ ] **Step 4: Implementar**
+- [x] **Step 4: Implementar**
 
 No script de `NewConversationModal.vue`:
 
@@ -2292,12 +2292,12 @@ Logo depois da `div` da barra, antes de `nc-error`:
           <p v-else-if="dictation.error.value" role="alert" class="m-0 text-sm text-diff-del-fg">{{ dictation.error.value }}</p>
 ```
 
-- [ ] **Step 5: Rodar tudo e ver passar**
+- [x] **Step 5: Rodar tudo e ver passar**
 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/
