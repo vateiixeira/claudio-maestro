@@ -22,7 +22,7 @@ from test_plan_sync import Rounds, append_line, index_session, process, tool_lin
 from test_sessions_api import api, factory, make_project  # noqa: F401  (fixtures)
 from watchfiles import Change
 
-from vibing.cliwatch import turn_open
+from vibing.cliwatch import turn_open, was_interrupted
 from vibing.sessions import CLI_TURN_STALE_SECONDS, SessionRecord, describe
 
 T0 = 1_700_000_500  # epoch seconds of the first modification
@@ -128,6 +128,40 @@ def test_turn_open_task_notification_opens_a_turn():
 
 def test_turn_open_interruption_closes_the_turn():
     assert turn_open([prompt_line(), assistant_line("tool_use"), interrupt_line()]) is False
+
+
+def test_turn_open_sidechain_reads_sidechain_entries_and_skips_the_main_chain():
+    lines = [
+        prompt_line("tarefa", isSidechain=True),
+        assistant_line("tool_use", sidechain=True),
+        assistant_line("end_turn"),  # main chain entry in the same lines: ignored
+    ]
+    assert turn_open(lines, sidechain=True) is True
+    assert turn_open(lines) is False  # without the flag the sidechain is still ignored
+    assert turn_open([assistant_line("tool_use", sidechain=True)]) is None
+    assert turn_open([assistant_line("tool_use", sidechain=True)], sidechain=True) is True
+    assert turn_open([assistant_line("end_turn")], sidechain=True) is None
+
+
+def test_turn_open_sidechain_closes_on_end_turn_and_opens_on_result():
+    done = [assistant_line("tool_use", sidechain=True), assistant_line("end_turn", sidechain=True)]
+    assert turn_open(done, sidechain=True) is False
+    result = json.dumps({"type": "user", "isSidechain": True, "message": {
+        "role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}})
+    assert turn_open([*done, result], sidechain=True) is True
+    assert turn_open([assistant_line(None, sidechain=True)], sidechain=True) is True  # old CLI
+    skipped = [prompt_line("meta", isMeta=True, isSidechain=True),
+               prompt_line("<bash-input>ls</bash-input>", isSidechain=True)]
+    assert turn_open([*done, *skipped], sidechain=True) is False
+
+
+def test_was_interrupted_only_when_the_last_decisive_main_entry_is_the_interruption():
+    assert was_interrupted([prompt_line(), assistant_line("tool_use"), interrupt_line()]) is True
+    assert was_interrupted([interrupt_line(), json.dumps({"type": "attachment"})]) is True
+    assert was_interrupted([interrupt_line(), prompt_line("de novo")]) is False
+    assert was_interrupted([interrupt_line(), assistant_line("end_turn")]) is False
+    assert was_interrupted([assistant_line("end_turn")]) is False
+    assert was_interrupted([]) is False
 
 
 def test_only_closed_sessions_report_cli_running():
@@ -284,6 +318,208 @@ async def test_active_subagent_keeps_the_turn_open_while_the_main_file_is_still(
     assert updates(cli)[-1]["cli_running"] is True
     # It lives on the newest of the files: 20 minutes after the subagent's last write.
     cli.now["t"] = T0 + 590 + CLI_TURN_STALE_SECONDS + 1
+    assert item(cli)["cli_running"] is False
+
+
+async def process_together(env: CliEnv, main: Path, subs: list[Path], mtime: float) -> None:
+    """One watcher pass for changes to the main file and to subagent files."""
+    done = len(env.processed)
+    for file in (main, *subs):
+        os.utime(file, (mtime, mtime))
+    for file in (main, *subs):
+        env.watch.push((Change.modified, file))
+    await wait_until_real(lambda: len(env.processed) > done)
+
+
+def sub_write(path: Path, *lines: str) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(line + "\n")
+
+
+def sub_open(env: CliEnv, session_id: str = "s1") -> dict[str, bool]:
+    return {p.name: v for p, v in env.watcher._subagent_open.get(session_id, {}).items()}
+
+
+@pytest.mark.anyio
+async def test_main_end_turn_and_subagent_tool_use_in_the_same_pass_keep_the_turn_open(cli):
+    path = await index_session(cli)
+    path.write_text(prompt_line() + "\n" + assistant_line("end_turn") + "\n", encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+
+    await process_together(cli, path, [sub], T0)
+
+    assert item(cli)["cli_running"] is True
+    assert sub_open(cli) == {"agent-a1.jsonl": True}
+
+
+@pytest.mark.anyio
+async def test_background_subagent_keeps_the_turn_open_after_the_main_end_turn(cli):
+    # The real case: main `end_turn` at 14:20:13, the subagent silent until 14:22:04.
+    path = await index_session(cli)
+    path.write_text(prompt_line() + "\n" + assistant_line("tool_use") + "\n", encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(prompt_line("tarefa", isSidechain=True) + "\n"
+                   + assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [sub], T0)
+    assert item(cli)["cli_running"] is True
+
+    append_line(path, assistant_line("end_turn"))  # only the main chain writes
+    await process(cli, "s1", T0 + 5)
+    assert item(cli)["cli_running"] is True
+    assert updates(cli)[-1]["cli_running"] is True
+
+    # A pass with nothing decisive from anyone changes nothing.
+    append_line(path, json.dumps({"type": "attachment"}))
+    await process(cli, "s1", T0 + 10)
+    assert item(cli)["cli_running"] is True
+
+
+@pytest.mark.anyio
+async def test_the_turn_closes_when_the_subagent_ends_and_the_main_chain_is_closed(cli):
+    path = await index_session(cli)
+    path.write_text(assistant_line("end_turn") + "\n", encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [sub], T0)
+    assert item(cli)["cli_running"] is True
+
+    sub_write(sub, assistant_line("end_turn", sidechain=True))
+    await process_sub(cli, sub, T0 + 5)
+
+    assert item(cli)["cli_running"] is False
+    assert updates(cli)[-1]["cli_running"] is False
+    assert sub_open(cli) == {"agent-a1.jsonl": False}
+
+
+@pytest.mark.anyio
+async def test_the_main_chain_keeps_the_turn_open_after_the_subagent_ends(cli):
+    path = await index_session(cli)
+    path.write_text(OPEN_FILE, encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(assistant_line("end_turn", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+
+    await process_together(cli, path, [sub], T0)
+
+    assert item(cli)["cli_running"] is True
+
+
+@pytest.mark.anyio
+async def test_a_turn_is_open_while_any_of_two_subagents_is_open(cli):
+    path = await index_session(cli)
+    path.write_text(assistant_line("end_turn") + "\n", encoding="utf-8")
+    first = sub_file(cli, name="agent-a1.jsonl")
+    second = sub_file(cli, name="agent-a2.jsonl")
+    first.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    second.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [first, second], T0)
+    assert item(cli)["cli_running"] is True
+
+    sub_write(first, assistant_line("end_turn", sidechain=True))
+    await process_sub(cli, first, T0 + 5)
+    assert item(cli)["cli_running"] is True  # the other one still runs
+    assert sub_open(cli) == {"agent-a1.jsonl": False, "agent-a2.jsonl": True}
+
+    sub_write(second, assistant_line("end_turn", sidechain=True))
+    await process_sub(cli, second, T0 + 10)
+    assert item(cli)["cli_running"] is False
+
+
+@pytest.mark.anyio
+async def test_a_subagent_pass_without_a_decisive_entry_keeps_its_previous_state(cli):
+    path = await index_session(cli)
+    path.write_text(assistant_line("end_turn") + "\n", encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [sub], T0)
+
+    sub_write(sub, json.dumps({"type": "attachment", "isSidechain": True}))
+    await process_sub(cli, sub, T0 + 5)
+
+    assert sub_open(cli) == {"agent-a1.jsonl": True}
+    assert item(cli)["cli_running"] is True
+
+
+@pytest.mark.anyio
+async def test_a_subagent_file_without_a_decisive_entry_does_not_count(cli):
+    path = await index_session(cli)
+    path.write_text(assistant_line("end_turn") + "\n", encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(json.dumps({"type": "attachment", "isSidechain": True}) + "\n", encoding="utf-8")
+    cli.start()
+
+    await process_together(cli, path, [sub], T0)
+
+    assert item(cli)["cli_running"] is False
+    assert sub_open(cli) == {}
+
+
+@pytest.mark.anyio
+async def test_an_interruption_of_the_main_chain_resets_the_subagents(cli):
+    path = await index_session(cli)
+    path.write_text(OPEN_FILE, encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [sub], T0)
+    assert item(cli)["cli_running"] is True
+
+    append_line(path, interrupt_line())  # Esc: the foreground subagent dies without `end_turn`
+    await process(cli, "s1", T0 + 5)
+    assert item(cli)["cli_running"] is False
+    assert sub_open(cli) == {}
+
+    # A subagent that is still alive reopens the turn when it writes again.
+    sub_write(sub, assistant_line("tool_use", sidechain=True))
+    await process_sub(cli, sub, T0 + 10)
+    assert item(cli)["cli_running"] is True
+    assert sub_open(cli) == {"agent-a1.jsonl": True}
+
+
+@pytest.mark.anyio
+async def test_subagent_states_are_forgotten_when_the_app_takes_over_the_session(cli, monkeypatch):
+    path = await index_session(cli)
+    path.write_text(assistant_line("end_turn") + "\n", encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [sub], T0)
+    assert sub_open(cli) == {"agent-a1.jsonl": True}
+
+    monkeypatch.setattr(cli.manager, "app_writing", lambda sid: True)
+    append_line(path, assistant_line("tool_use"))
+    os.utime(path, (T0 + 5, T0 + 5))
+    cli.watch.push((Change.modified, path))
+    await asyncio.sleep(0.5)
+    await wait_until_real(lambda: not cli.watcher._bursts)
+    monkeypatch.undo()
+
+    assert "s1" not in cli.watcher._subagent_open
+    assert item(cli)["cli_running"] is False
+
+
+@pytest.mark.anyio
+async def test_subagent_states_are_forgotten_when_the_file_is_gone(cli):
+    path = await index_session(cli)
+    path.write_text(assistant_line("end_turn") + "\n", encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [sub], T0)
+    assert "s1" in cli.watcher._subagent_open
+
+    path.unlink()
+    cli.watch.push((Change.deleted, path))
+    await wait_until_real(lambda: len(cli.processed) > 1)
+
+    assert "s1" not in cli.watcher._subagent_open
     assert item(cli)["cli_running"] is False
 
 

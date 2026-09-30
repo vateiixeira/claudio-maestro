@@ -28,7 +28,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
-| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 17 de 19 |
+| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 18 de 19 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode | Não iniciado | 0 de 11 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e tem spec, mas ainda não tem plano.
@@ -362,7 +362,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 - [x] Ditado no modal de nova conversa (2026-09-30)
 - [x] Retomada de sessão movida para worktree conferida contra o SDK real (2026-09-30)
 - [x] Sessão do app ociosa com subagente em segundo plano conta como "Em execução" no estado exibido (menu lateral, Inbox e Dashboard), com `subagents_running` no resumo da sessão e evento ao começar e terminar (bug relatado pelo usuário em 2026-09-30) (2026-09-30)
-- [ ] Sessão do CLI com subagente em segundo plano depois do `end_turn` da cadeia principal conta como "Em execução": `turn_open` hoje só considera a escrita do subagente quando a cadeia principal não decide nada, e o `end_turn` costuma vir depois do subagente terminar, então exige comparar a ordem de escrita entre os arquivos
+- [x] Sessão do CLI com subagente em segundo plano depois do `end_turn` da cadeia principal conta como "Em execução": `turn_open` hoje só considera a escrita do subagente quando a cadeia principal não decide nada, e o `end_turn` costuma vir depois do subagente terminar, então exige comparar a ordem de escrita entre os arquivos. Resolvido com estado próprio por arquivo de subagente (aberto até o `end_turn` dele), sem comparar a ordem de escrita; a interrupção na cadeia principal zera os subagentes (2026-09-30)
 - [ ] Nova revisão do marco pelo `milestone-reviewer`, depois dos itens reabertos
 
 ## Marco 13. Comandos e menções

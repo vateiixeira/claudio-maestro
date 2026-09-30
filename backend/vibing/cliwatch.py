@@ -8,7 +8,9 @@ as activity of the parent session and feeds the plan link. Memory and other deep
 files are ignored. The periodic sync remains as a fallback.
 
 The lines written since the last pass also tell whether the CLI is in the middle of
-a turn (`turn_open`), announced to the manager as `cli_running`.
+a turn (`turn_open`), announced to the manager as `cli_running`. The main chain and each
+subagent file have their own open/closed state; the session is in a turn while any of
+them is open, so a background subagent keeps it running after the main chain ended.
 """
 
 import asyncio
@@ -72,28 +74,19 @@ def _first_text(message: Any) -> str:
     return ""
 
 
-def turn_open(lines: Iterable[str]) -> bool | None:
-    """Whether the CLI is in the middle of a turn, from JSONL lines of a session's main
-    chain; None when they say nothing about it.
-
-    The last decisive entry wins. Open: an `assistant` whose `message.stop_reason` is
-    `tool_use` or absent (still being written), or a `user` entry (a prompt, a tool
-    result, a `<task-notification>` that makes the CLI start a turn by itself).
-    Closed: an `assistant` with any other stop reason (`end_turn`, `stop_sequence`,
-    `max_tokens`, `refusal`, ...) or the "[Request interrupted by user]" entry.
-    Skipped: sidechain entries, meta entries, compact summaries, slash-command and
-    shell-escape entries, and every other type (attachments, system, titles).
-    """
+def _last_decisive(lines: Iterable[str], sidechain: bool) -> tuple[bool, bool] | None:
+    """(turn open, it is the interruption entry) of the last decisive entry; None when
+    none of the lines is decisive."""
     for line in reversed(list(lines)):
         try:
             entry = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(entry, dict) or entry.get("isSidechain") is True:
+        if not isinstance(entry, dict) or (entry.get("isSidechain") is True) is not sidechain:
             continue
         message = entry.get("message")
         if entry.get("type") == "assistant" and isinstance(message, dict):
-            return message.get("stop_reason") in (None, "tool_use")
+            return message.get("stop_reason") in (None, "tool_use"), False
         if (
             entry.get("type") == "user"
             and entry.get("isMeta") is not True
@@ -102,8 +95,34 @@ def turn_open(lines: Iterable[str]) -> bool | None:
             text = _first_text(message)
             if text.startswith(_COMMAND_PREFIXES):
                 continue
-            return not text.startswith(_INTERRUPTED)
+            interrupted = text.startswith(_INTERRUPTED)
+            return not interrupted, interrupted
     return None
+
+
+def turn_open(lines: Iterable[str], *, sidechain: bool = False) -> bool | None:
+    """Whether a chain is in the middle of a turn, from JSONL lines of the session's
+    main chain (or, with `sidechain=True`, of one subagent file); None when they say
+    nothing about it.
+
+    The last decisive entry wins. Open: an `assistant` whose `message.stop_reason` is
+    `tool_use` or absent (still being written), or a `user` entry (a prompt, a tool
+    result, a `<task-notification>` that makes the CLI start a turn by itself).
+    Closed: an `assistant` with any other stop reason (`end_turn`, `stop_sequence`,
+    `max_tokens`, `refusal`, ...) or the "[Request interrupted by user]" entry.
+    Skipped: entries of the other chain (the main chain ignores `isSidechain: true`
+    entries, which are all a subagent file holds; `sidechain=True` ignores the rest),
+    meta entries, compact summaries, slash-command and shell-escape entries, and every
+    other type (attachments, system, titles).
+    """
+    decisive = _last_decisive(lines, sidechain)
+    return None if decisive is None else decisive[0]
+
+
+def was_interrupted(lines: Iterable[str]) -> bool:
+    """Whether the last decisive main-chain entry is the user's interruption (Esc)."""
+    decisive = _last_decisive(lines, False)
+    return decisive is not None and decisive[1]
 
 
 def _jsonl_only(change: Any, path: str) -> bool:
@@ -173,6 +192,8 @@ class CliWatcher:
         self._subagent_offsets: dict[str, dict[Path, int]] = {}
         # session id -> whether its last main-chain lines left the turn open
         self._turn_open: dict[str, bool] = {}
+        # session id -> {subagent file: whether its last decisive entry left it open}
+        self._subagent_open: dict[str, dict[Path, bool]] = {}
         # (session id, history folder) pairs whose move already triggered a project sync
         self._moved_synced: set[tuple[str, str]] = set()
         # directory -> (clock time, {session_id: info})
@@ -316,6 +337,7 @@ class CliWatcher:
 
     def _forget_turn(self, session_id: str) -> None:
         self._turn_open.pop(session_id, None)
+        self._subagent_open.pop(session_id, None)
         self._sessions.forget_cli_turn(session_id)
 
     async def _read_new_lines(self, session_id: str, path: Path, subagents: set[Path]) -> None:
@@ -327,7 +349,7 @@ class CliWatcher:
                 read_new_lines, path, self._plan_offsets.get(session_id)
             )
             self._plan_offsets[session_id] = offset
-            sub_lines: list[str] = []
+            sub_lines: dict[Path, list[str]] = {}
             for sub in sorted(subagents):
                 offsets = self._subagent_offsets.setdefault(session_id, {})
                 try:
@@ -337,31 +359,51 @@ class CliWatcher:
                 except OSError:
                     offsets.pop(sub, None)  # gone between the event and the read
                     continue
-                sub_lines.extend(lines)
+                sub_lines[sub] = lines
         except Exception:
             logger.exception("Falha ao ler as linhas novas da sessão %s do CLI", session_id)
             return
-        await self._note_turn(session_id, path, main_lines, bool(sub_lines))
-        await self._link_plan(session_id, main_lines + sub_lines)
+        await self._note_turn(session_id, path, main_lines, sub_lines)
+        await self._link_plan(
+            session_id, main_lines + [line for lines in sub_lines.values() for line in lines]
+        )
 
     async def _note_turn(
-        self, session_id: str, path: Path, main_lines: list[str], subagent_wrote: bool
+        self,
+        session_id: str,
+        path: Path,
+        main_lines: list[str],
+        sub_lines: dict[Path, list[str]],
     ) -> None:
         """Tell the manager whether the CLI is in the middle of a turn. The main chain
-        decides; without a decision in the new lines, a subagent that wrote opens the
-        turn and anything else keeps what was known. Never fails the pass."""
+        and each subagent file keep their own state, updated from their new lines
+        (without a decisive entry the previous state of the same file stands); the
+        session is in a turn while any of them is open. An interruption that ends the
+        new main lines resets the subagents (a foreground one dies without `end_turn`;
+        a background one that is still alive reopens by writing again), and the
+        subagent lines of that pass are not counted. Never fails the pass."""
         try:
             decision = turn_open(main_lines)
-            if decision is None and subagent_wrote:
-                decision = True
-            if decision is None:
-                decision = self._turn_open.get(session_id)
-            if decision is None:
+            if decision is not None:
+                self._turn_open[session_id] = decision
+            if was_interrupted(main_lines):
+                self._subagent_open.pop(session_id, None)
+                sub_lines = {}
+            for sub, lines in sub_lines.items():
+                state = turn_open(lines, sidechain=True)
+                if state is not None:
+                    self._subagent_open.setdefault(session_id, {})[sub] = state
+            subagents = self._subagent_open.get(session_id, {})
+            main_open = self._turn_open.get(session_id)
+            if main_open is None and not subagents:
                 return
-            self._turn_open[session_id] = decision
             activity = await asyncio.to_thread(_latest_mtime, path)
             if activity is not None:
-                self._sessions.note_cli_turn(session_id, open=decision, activity_at=activity)
+                self._sessions.note_cli_turn(
+                    session_id,
+                    open=bool(main_open) or any(subagents.values()),
+                    activity_at=activity,
+                )
         except Exception:
             logger.exception("Falha ao ler o turno da sessão %s do CLI", session_id)
 
