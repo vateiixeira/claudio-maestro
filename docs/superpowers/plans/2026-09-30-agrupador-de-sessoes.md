@@ -54,7 +54,7 @@
   - `rename_group(conn, group_id: int, name: str) -> Group`
   - `delete_group(conn, group_id: int) -> tuple[Group, list[str]]` (o agrupador removido e os `session_id` que ficaram soltos)
 
-- [ ] **Passo 1: Escrever os testes da migração (falham)**
+- [x] **Passo 1: Escrever os testes da migração (falham)**
 
 Acrescentar em `backend/tests/test_db.py`:
 
@@ -107,12 +107,12 @@ def test_removing_project_removes_its_groups(tmp_path: Path):
         assert conn.execute("SELECT COUNT(*) FROM session_groups").fetchone()[0] == 0
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Rodar: `uv run pytest backend/tests/test_db.py -v`
 Esperado: FAIL nos três testes novos (`session_groups` não existe).
 
-- [ ] **Passo 3: Acrescentar a migração**
+- [x] **Passo 3: Acrescentar a migração**
 
 Em `backend/vibing/db.py`, depois do bloco `# Marco 9: ...`, acrescentar como novo item da lista `MIGRATIONS`:
 
@@ -135,12 +135,12 @@ Em `backend/vibing/db.py`, depois do bloco `# Marco 9: ...`, acrescentar como no
     ],
 ```
 
-- [ ] **Passo 4: Rodar e ver passar**
+- [x] **Passo 4: Rodar e ver passar**
 
 Rodar: `uv run pytest backend/tests/test_db.py -v`
 Esperado: PASS.
 
-- [ ] **Passo 5: Escrever os testes do módulo (falham)**
+- [x] **Passo 5: Escrever os testes do módulo (falham)**
 
 Criar `backend/tests/test_groups.py`:
 
@@ -246,12 +246,12 @@ def test_check_group_for(conn):
         groups.check_group_for(conn, 999, 1)
 ```
 
-- [ ] **Passo 6: Rodar e ver falhar**
+- [x] **Passo 6: Rodar e ver falhar**
 
 Rodar: `uv run pytest backend/tests/test_groups.py -v`
 Esperado: FAIL com `ImportError` (o módulo `groups` não existe).
 
-- [ ] **Passo 7: Criar `backend/vibing/groups.py`**
+- [x] **Passo 7: Criar `backend/vibing/groups.py`**
 
 ```python
 """Groups: related sessions of a project. Only the app knows them."""
@@ -394,17 +394,17 @@ def delete_group(conn: sqlite3.Connection, group_id: int) -> tuple[Group, list[s
     return group, released
 ```
 
-- [ ] **Passo 8: Rodar e ver passar**
+- [x] **Passo 8: Rodar e ver passar**
 
 Rodar: `uv run pytest backend/tests/test_groups.py backend/tests/test_db.py -v`
 Esperado: PASS.
 
-- [ ] **Passo 9: Rodar a suíte do backend**
+- [x] **Passo 9: Rodar a suíte do backend**
 
 Rodar: `uv run pytest -q`
 Esperado: tudo passa (a migração nova não pode quebrar os testes que já existem).
 
-- [ ] **Passo 10: Commit (sessão principal)**
+- [x] **Passo 10: Commit (sessão principal)**
 
 Marcar no `ROADMAP.md` o item "Tabela de agrupadores no SQLite..." com a data e atualizar a contagem.
 
@@ -435,7 +435,7 @@ git commit -m "[Feat] Criar tabela e módulo de agrupadores de sessões"
   - Rotas: `GET /api/groups` → `[{id, project_id, name, created_at}]`; `POST /api/projects/{id}/groups` `{name}` → 201; `PATCH /api/groups/{id}` `{name}` → 200; `DELETE /api/groups/{id}` → 204. `PATCH /api/sessions/{id}` aceita `group_id`. `POST /api/projects/{id}/sessions` aceita o corpo opcional `{group_id}`.
   - Evento `{"session_id": None, "seq": 0, "type": "groups.changed", "data": {"project_id": <int>}}` ao criar, renomear e remover.
 
-- [ ] **Passo 1: Escrever os testes (falham)**
+- [x] **Passo 1: Escrever os testes (falham)**
 
 Criar `backend/tests/test_groups_api.py`:
 
@@ -607,12 +607,12 @@ def test_removing_project_removes_groups(api, home: Path):
 
 Antes de rodar, confirme em `backend/tests/test_sessions_api.py` que `api`, `factory`, `make_project`, `connect_ws` e `receive` existem com esses nomes (existem nas linhas 25 a 85). `SessionManager._sessions` é o dicionário das sessões em memória (`sessions.py` ~linha 1950). Tirar a sessão dele simula uma sessão que só existe no banco.
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Rodar: `uv run pytest backend/tests/test_groups_api.py -v`
 Esperado: FAIL (rotas inexistentes, `group_id` ausente em `SessionOut`).
 
-- [ ] **Passo 3: Registro da sessão**
+- [x] **Passo 3: Registro da sessão**
 
 Em `backend/vibing/sessions.py`:
 
@@ -628,7 +628,7 @@ Em `backend/vibing/sessions.py`:
 
 `describe()` usa `asdict(record)`, então `group_id` já vai para o frontend. Não o coloque em `_INTERNAL_FIELDS`.
 
-- [ ] **Passo 4: `create_session` com agrupador**
+- [x] **Passo 4: `create_session` com agrupador**
 
 Trocar o método por:
 
@@ -672,7 +672,7 @@ Trocar o método por:
         return record
 ```
 
-- [ ] **Passo 5: `update` com agrupador**
+- [x] **Passo 5: `update` com agrupador**
 
 Na assinatura de `update`, depois de `confirm_bypass: bool = False,`, acrescentar `group_id: int | None | EllipsisType = ...,`. Na docstring, acrescentar: "`group_id` moves the session to a group of its project; `None` takes it out, `...` keeps it."
 
@@ -703,7 +703,7 @@ Trocar a linha `session.save(**changes)` por:
 
 (`sqlite3` já é importado em `sessions.py`, linha 15.)
 
-- [ ] **Passo 6: `remove_group`**
+- [x] **Passo 6: `remove_group`**
 
 Acrescentar a `SessionManager`, logo depois de `refresh_records`:
 
@@ -731,7 +731,7 @@ Acrescentar a `SessionManager`, logo depois de `refresh_records`:
         return group
 ```
 
-- [ ] **Passo 7: Busca pelo nome do agrupador**
+- [x] **Passo 7: Busca pelo nome do agrupador**
 
 Em `search`, depois de `if not needle: return []`:
 
@@ -751,7 +751,7 @@ Trocar o cálculo de `haystack` por:
 
 Na docstring: "Sessions whose title, summary, first prompt or group name contain `query`, ...".
 
-- [ ] **Passo 8: Modelos e rotas de sessão**
+- [x] **Passo 8: Modelos e rotas de sessão**
 
 Em `backend/vibing/api/sessions.py`:
 
@@ -811,7 +811,7 @@ async def create_session(
 `group_id=body.group_id if "group_id" in body.model_fields_set else ...,`
 e acrescentar `except groups.GroupError as exc: raise group_http_error(exc) from exc` depois do `except` que já existe.
 
-- [ ] **Passo 9: Rotas de agrupador**
+- [x] **Passo 9: Rotas de agrupador**
 
 Criar `backend/vibing/api/groups.py`:
 
@@ -908,17 +908,17 @@ async def delete_group(group_id: int, request: Request, manager: ManagerDep) -> 
 
 Em `backend/vibing/api/__init__.py`, importar `groups` junto dos outros módulos e acrescentar `router.include_router(groups.router)` depois de `plans.router`.
 
-- [ ] **Passo 10: Rodar e ver passar**
+- [x] **Passo 10: Rodar e ver passar**
 
 Rodar: `uv run pytest backend/tests/test_groups_api.py -v`
 Esperado: PASS.
 
-- [ ] **Passo 11: Suíte do backend**
+- [x] **Passo 11: Suíte do backend**
 
 Rodar: `uv run pytest -q`
 Esperado: tudo passa. Se algum teste comparar o dicionário inteiro de uma sessão, acrescente `"group_id": None` ao esperado.
 
-- [ ] **Passo 12: Commit (sessão principal)**
+- [x] **Passo 12: Commit (sessão principal)**
 
 ```bash
 git add backend/vibing/sessions.py backend/vibing/api/sessions.py backend/vibing/api/groups.py backend/vibing/api/__init__.py backend/tests/test_groups_api.py
@@ -947,7 +947,7 @@ git commit -m "[Feat] Adicionar rotas de agrupadores e agrupador da sessão"
   - `useNewConversationStore()`: `presetGroupId`, `open(projectId: number | null = null, groupId: number | null = null)`
   - `makeGroup(overrides)` em `test/factories.ts`
 
-- [ ] **Passo 1: Fábrica de teste**
+- [x] **Passo 1: Fábrica de teste**
 
 Em `frontend/src/test/factories.ts`, importar `SessionGroup` e acrescentar:
 
@@ -957,7 +957,7 @@ export function makeGroup(overrides: Partial<SessionGroup> = {}): SessionGroup {
 }
 ```
 
-- [ ] **Passo 2: Escrever os testes (falham)**
+- [x] **Passo 2: Escrever os testes (falham)**
 
 Criar `frontend/src/__tests__/groupList.spec.ts`:
 
@@ -1077,12 +1077,12 @@ describe('store de agrupadores', () => {
 
 Em `frontend/src/stores/__tests__/realtime.spec.ts`, seguindo o formato dos testes de `project.synced` que já existem ali, acrescentar dois testes: (1) um evento `groups.changed` faz `GET /api/groups` de novo; (2) `loadEverything()` chama `GET /api/groups`. Em `frontend/src/stores/__tests__/projects.spec.ts`, no teste "carrega, cria, renomeia e remove", antes de `store.remove(2)`, pôr `useGroupsStore().groups = [makeGroup({ id: 5, project_id: 2 })]` e, depois, conferir `expect(useGroupsStore().groups).toEqual([])`.
 
-- [ ] **Passo 3: Rodar e ver falhar**
+- [x] **Passo 3: Rodar e ver falhar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/__tests__/groupList.spec.ts src/stores/__tests__/groups.spec.ts src/stores/__tests__/realtime.spec.ts src/stores/__tests__/projects.spec.ts`
 Esperado: FAIL (módulos inexistentes).
 
-- [ ] **Passo 4: Tipos e cliente**
+- [x] **Passo 4: Tipos e cliente**
 
 Em `frontend/src/types/api.ts`, no fim de `Session`:
 
@@ -1129,7 +1129,7 @@ export function deleteGroup(id: number): Promise<void> {
 }
 ```
 
-- [ ] **Passo 5: `groupList.ts`**
+- [x] **Passo 5: `groupList.ts`**
 
 ```ts
 import type { Session, SessionGroup } from './types/api'
@@ -1157,7 +1157,7 @@ export function sortGroups(groups: SessionGroup[], list: Session[]): SessionGrou
 }
 ```
 
-- [ ] **Passo 6: Store de agrupadores**
+- [x] **Passo 6: Store de agrupadores**
 
 Criar `frontend/src/stores/groups.ts`:
 
@@ -1221,7 +1221,7 @@ export const useGroupsStore = defineStore('groups', () => {
 })
 ```
 
-- [ ] **Passo 7: Sessões, projetos, nova conversa e tempo real**
+- [x] **Passo 7: Sessões, projetos, nova conversa e tempo real**
 
 `frontend/src/stores/sessions.ts`:
 - `create(projectId: number, groupId: number | null = null)` chama `api.createSession(projectId, groupId)`.
@@ -1270,17 +1270,17 @@ export const useNewConversationStore = defineStore('newConversation', () => {
     }),
 ```
 
-- [ ] **Passo 8: Rodar e ver passar**
+- [x] **Passo 8: Rodar e ver passar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/__tests__/groupList.spec.ts src/stores/__tests__/groups.spec.ts src/stores/__tests__/realtime.spec.ts src/stores/__tests__/projects.spec.ts`
 Esperado: PASS.
 
-- [ ] **Passo 9: Suíte e compilação**
+- [x] **Passo 9: Suíte e compilação**
 
 Rodar: `pnpm --dir frontend test` e `pnpm --dir frontend build`
 Esperado: tudo passa, e a compilação sai sem erro de tipo. Testes que conferem `fetch` chamado sem corpo em `POST /sessions` devem continuar passando, porque `groupId` nulo não manda corpo.
 
-- [ ] **Passo 10: Commit (sessão principal)**
+- [x] **Passo 10: Commit (sessão principal)**
 
 ```bash
 git add frontend/src/types/api.ts frontend/src/api/http.ts frontend/src/groupList.ts frontend/src/stores frontend/src/test/factories.ts frontend/src/__tests__/groupList.spec.ts
@@ -1309,7 +1309,7 @@ Comportamento (da spec, seção 4, "Tela do projeto"):
 - O corpo mostra `ConversationRow` para cada `sessionsOf(group.id, sessions)`, inclusive as finalizadas.
 - Em `ProjectView.vue`: `ProjectGroups` entra logo antes da lista por data. `dateGroups` passa a usar só as sessões com `group_id == null`. Quando o projeto tem ao menos um agrupador, a lista por data ganha o título `h2` "Sem agrupador" (`data-test="ungrouped-title"`). A mensagem "Nenhuma conversa ainda..." continua valendo só quando o projeto não tem nenhuma sessão.
 
-- [ ] **Passo 1: Escrever os testes (falham)**
+- [x] **Passo 1: Escrever os testes (falham)**
 
 Criar `frontend/src/components/groups/__tests__/ProjectGroups.spec.ts`, no formato de `views/__tests__/ProjectView.spec.ts` (pinia real, `routeFetch` para `fetch`, router de memória com `createAppRouter(createMemoryHistory())`). Casos, cada um com as asserções indicadas:
 
@@ -1441,12 +1441,12 @@ describe('agrupadores na tela do projeto', () => {
 
 Em `frontend/src/views/__tests__/ProjectView.spec.ts`, acrescentar um teste: com um agrupador e as sessões `a` (`group_id: 1`) e `b` (`group_id: null`), a lista por data (as seções com `[data-test="date-group"]`) mostra só `b`, e `[data-test="ungrouped-title"]` existe. Sem agrupadores, `ungrouped-title` não existe. Siga o `mount` e os stubs de `fetch` que o arquivo já usa, e acrescente `'GET /api/groups': () => jsonResponse([...])` se o arquivo carregar tudo por `routeFetch`.
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/components/groups src/views/__tests__/ProjectView.spec.ts`
 Esperado: FAIL (componentes inexistentes).
 
-- [ ] **Passo 3: `GroupSection.vue`**
+- [x] **Passo 3: `GroupSection.vue`**
 
 ```vue
 <script setup lang="ts">
@@ -1569,7 +1569,7 @@ async function remove() {
 </template>
 ```
 
-- [ ] **Passo 4: `ProjectGroups.vue`**
+- [x] **Passo 4: `ProjectGroups.vue`**
 
 ```vue
 <script setup lang="ts">
@@ -1636,24 +1636,24 @@ async function create() {
 </template>
 ```
 
-- [ ] **Passo 5: `ProjectView.vue`**
+- [x] **Passo 5: `ProjectView.vue`**
 
 - Importar `ProjectGroups` e `useGroupsStore`.
 - `const groups = useGroupsStore()`, `const hasGroups = computed(() => groups.forProject(props.id).length > 0)`, `const ungrouped = computed(() => projectSessions.value.filter((s) => s.group_id == null))`, e `dateGroups` sobre `ungrouped.value`.
 - No template, logo antes de `<p v-if="sessionsError" ...>`: `<ProjectGroups :project-id="id" :available="project.available" @error="actionError = $event" />`.
 - Dentro do `<template v-else>` da lista por data, antes do `v-for`: `<h2 v-if="hasGroups && ungrouped.length" id="ungrouped-title" data-test="ungrouped-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Sem agrupador</h2>`.
 
-- [ ] **Passo 6: Rodar e ver passar**
+- [x] **Passo 6: Rodar e ver passar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/components/groups src/views/__tests__/ProjectView.spec.ts src/views/__tests__/ProjectViewStates.spec.ts`
 Esperado: PASS.
 
-- [ ] **Passo 7: Suíte e compilação**
+- [x] **Passo 7: Suíte e compilação**
 
 Rodar: `pnpm --dir frontend test` e `pnpm --dir frontend build`
 Esperado: PASS.
 
-- [ ] **Passo 8: Commit (sessão principal)**
+- [x] **Passo 8: Commit (sessão principal)**
 
 Marcar no `ROADMAP.md` os itens "Criar agrupador", "Renomear agrupador", "Remover agrupador..." e "Tela do projeto mostra os agrupadores...".
 
@@ -1683,7 +1683,7 @@ Comportamento:
 - `ConversationRow`: `<GroupTag :group-id="session.group_id" />` logo depois de `<PlanBadge :session="session" />`.
 - `ConversationHeader`: depois do chip do projeto, `<span v-if="group" data-test="header-group" class="...mesmas classes do chip do projeto...">▤ {{ group.name }}</span>`, com `group = computed(() => listed.value?.group_id != null ? groups.byId(listed.value.group_id) : undefined)`.
 
-- [ ] **Passo 1: Escrever os testes (falham)**
+- [x] **Passo 1: Escrever os testes (falham)**
 
 `GroupTag.spec.ts`:
 
@@ -1721,12 +1721,12 @@ describe('etiqueta do agrupador', () => {
 4. Novo agrupador: `setValue('__new__')` mostra `[data-test="prop-group-new"]`. Digitar "Novo" e Enter faz `POST /api/projects/1/groups` com `{ name: 'Novo' }` (resposta `id: 5`) e depois `PATCH /api/sessions/s1` com `{ group_id: 5 }`, e o campo fecha.
 5. Erro: `POST` respondendo 409 mostra o `detail` em `[role="alert"]`, deixa o campo aberto e não manda `PATCH`.
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/components/groups/__tests__/GroupTag.spec.ts src/components/groups/__tests__/GroupProperty.spec.ts`
 Esperado: FAIL.
 
-- [ ] **Passo 3: `GroupTag.vue`**
+- [x] **Passo 3: `GroupTag.vue`**
 
 ```vue
 <script setup lang="ts">
@@ -1749,7 +1749,7 @@ const group = computed(() => (props.groupId != null ? groups.byId(props.groupId)
 </template>
 ```
 
-- [ ] **Passo 4: `GroupProperty.vue`**
+- [x] **Passo 4: `GroupProperty.vue`**
 
 ```vue
 <script setup lang="ts">
@@ -1830,7 +1830,7 @@ async function createAndMove() {
 </template>
 ```
 
-- [ ] **Passo 5: Encaixar nos componentes**
+- [x] **Passo 5: Encaixar nos componentes**
 
 - `DetailsPanel.vue`: importar `GroupProperty` e, logo depois de `<PlanProperty ... />`, pôr `<GroupProperty v-if="projectId != null" :session-id="sessionId" :project-id="projectId" />`.
 - `ConversationRow.vue`: importar `GroupTag` e pôr `<GroupTag :group-id="session.group_id" />` depois de `<PlanBadge :session="session" />`.
@@ -1838,17 +1838,17 @@ async function createAndMove() {
 
 Acrescentar um teste em `components/conversation/__tests__/ConversationRow.spec.ts` (a linha mostra `[data-test="group-tag"]` com o nome quando a sessão tem agrupador conhecido) e um em `ConversationHeader.spec.ts` (o chip `[data-test="header-group"]` aparece com o nome), no formato dos testes vizinhos.
 
-- [ ] **Passo 6: Rodar e ver passar**
+- [x] **Passo 6: Rodar e ver passar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/components/groups src/components/conversation src/components/details`
 Esperado: PASS.
 
-- [ ] **Passo 7: Suíte e compilação**
+- [x] **Passo 7: Suíte e compilação**
 
 Rodar: `pnpm --dir frontend test` e `pnpm --dir frontend build`
 Esperado: PASS.
 
-- [ ] **Passo 8: Commit (sessão principal)**
+- [x] **Passo 8: Commit (sessão principal)**
 
 Marcar no `ROADMAP.md` o item "Mover sessão para um agrupador...".
 
@@ -1878,7 +1878,7 @@ Comportamento:
 - No envio, `sessions.create(projectId!, groupId)`.
 - `App.vue` e `AppSidebar.vue`: ao abrir o modal a partir de uma conversa (rota `session`), passar também o agrupador dela: `newConversation.open(currentProjectId(), currentGroupId())`, com `currentGroupId()` = `route.name === 'session' ? sessions.find(String(route.params.id))?.group_id ?? null : null`.
 
-- [ ] **Passo 1: Escrever os testes (falham)**
+- [x] **Passo 1: Escrever os testes (falham)**
 
 No arquivo de testes do modal, no formato dos testes que já existem (procure por `nc-project`), acrescentar:
 
@@ -1891,16 +1891,16 @@ No arquivo de testes do modal, no formato dos testes que já existem (procure po
 
 Em `App.spec.ts` (atalho C) e `AppSidebar.spec.ts` (botão `nav-new`): numa rota `/sessions/<id>` de uma sessão com `group_id: 4`, abrir o modal deixa `useNewConversationStore().presetGroupId === 4`.
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/components/__tests__/NewConversationModal.spec.ts src/components/__tests__/NewConversationModalExtras.spec.ts src/__tests__/App.spec.ts src/components/sidebar/__tests__/AppSidebar.spec.ts`
 Esperado: FAIL nos casos novos.
 
-- [ ] **Passo 3: Rascunho**
+- [x] **Passo 3: Rascunho**
 
 Em `newConversationDraft.ts`: `groupId: number | null` na interface, `groupId: null` em `emptyDraft()`, e em `loadDraft()`: `groupId: typeof value.groupId === 'number' ? value.groupId : null,`.
 
-- [ ] **Passo 4: Modal**
+- [x] **Passo 4: Modal**
 
 Em `NewConversationModal.vue`:
 
@@ -1939,7 +1939,7 @@ function pickGroup() {
 
 - Em `submit`: `const { projectId, groupId, title, ... } = draft.value` e `sessions.create(projectId!, groupId)`.
 
-- [ ] **Passo 5: Atalho e botão do menu**
+- [x] **Passo 5: Atalho e botão do menu**
 
 Em `App.vue`, acrescentar:
 
@@ -1953,17 +1953,17 @@ function currentGroupId(): number | null {
 
 e trocar a chamada por `newConversation.open(currentProjectId(), currentGroupId())`. Em `AppSidebar.vue`, criar o computed `currentGroupId` com a mesma regra e usar `@click="newConversation.open(currentProjectId, currentGroupId)"`.
 
-- [ ] **Passo 6: Rodar e ver passar**
+- [x] **Passo 6: Rodar e ver passar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/components/__tests__/NewConversationModal.spec.ts src/components/__tests__/NewConversationModalExtras.spec.ts src/__tests__/App.spec.ts src/components/sidebar/__tests__/AppSidebar.spec.ts`
 Esperado: PASS.
 
-- [ ] **Passo 7: Suíte e compilação**
+- [x] **Passo 7: Suíte e compilação**
 
 Rodar: `pnpm --dir frontend test` e `pnpm --dir frontend build`
 Esperado: PASS.
 
-- [ ] **Passo 8: Commit (sessão principal)**
+- [x] **Passo 8: Commit (sessão principal)**
 
 Marcar no `ROADMAP.md` o item "Criar sessão nova já dentro do agrupador...".
 
@@ -1995,7 +1995,7 @@ Comportamento (da spec, seção 4, "Menu lateral"):
 - Cada agrupador parado tem uma linha `RouterLink` (`data-test="sidebar-group-idle"`) para a tela do projeto, com `opacity-50`, `▤` e o nome, sem seta.
 - As alturas mínimas seguem o menu (`min-h-9` nas linhas internas; o menu já usa `min-h-10` nos itens principais).
 
-- [ ] **Passo 1: Escrever os testes (falham)**
+- [x] **Passo 1: Escrever os testes (falham)**
 
 `frontend/src/__tests__/sidebarTree.spec.ts`:
 
@@ -2075,12 +2075,12 @@ Em `AppSidebar.spec.ts`:
 
 Confira os testes que já existem em `AppSidebar.spec.ts` e `AppSidebarStates.spec.ts` que procuram `[data-test="project"]`. O atributo continua no `RouterLink`, então eles devem seguir passando sem mudança.
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/__tests__/sidebarTree.spec.ts src/__tests__/sidebarCollapse.spec.ts src/components/sidebar`
 Esperado: FAIL.
 
-- [ ] **Passo 3: `sidebarTree.ts`**
+- [x] **Passo 3: `sidebarTree.ts`**
 
 ```ts
 import { isActive, sessionsOf, sortGroups } from './groupList'
@@ -2105,7 +2105,7 @@ export function projectTree(groups: SessionGroup[], sessions: Session[]): { acti
 }
 ```
 
-- [ ] **Passo 4: `sidebarCollapse.ts`**
+- [x] **Passo 4: `sidebarCollapse.ts`**
 
 ```ts
 import { ref } from 'vue'
@@ -2147,7 +2147,7 @@ export function setCollapsed(kind: Kind, id: number, value: boolean): void {
 }
 ```
 
-- [ ] **Passo 5: `SidebarGroups.vue`**
+- [x] **Passo 5: `SidebarGroups.vue`**
 
 ```vue
 <script setup lang="ts">
@@ -2217,7 +2217,7 @@ const rowClass = 'flex min-h-9 items-center gap-2 rounded-lg px-2 no-underline h
 </template>
 ```
 
-- [ ] **Passo 6: `AppSidebar.vue`**
+- [x] **Passo 6: `AppSidebar.vue`**
 
 Importar `SidebarGroups`, `useGroupsStore`, `isCollapsed` e `setCollapsed`. Trocar o `RouterLink` do `v-for` de projetos por:
 
@@ -2247,17 +2247,17 @@ Importar `SidebarGroups`, `useGroupsStore`, `isCollapsed` e `setCollapsed`. Troc
 
 com `const groups = useGroupsStore()` no `<script setup>`. O conteúdo interno do `RouterLink` (cor, nome, branch, limite de repositórios, contagem de espera) não muda.
 
-- [ ] **Passo 7: Rodar e ver passar**
+- [x] **Passo 7: Rodar e ver passar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/__tests__/sidebarTree.spec.ts src/__tests__/sidebarCollapse.spec.ts src/components/sidebar`
 Esperado: PASS.
 
-- [ ] **Passo 8: Suíte e compilação**
+- [x] **Passo 8: Suíte e compilação**
 
 Rodar: `pnpm --dir frontend test` e `pnpm --dir frontend build`
 Esperado: PASS.
 
-- [ ] **Passo 9: Commit (sessão principal)**
+- [x] **Passo 9: Commit (sessão principal)**
 
 Marcar no `ROADMAP.md` o item "Menu lateral: cada projeto vira uma árvore...".
 
@@ -2284,7 +2284,7 @@ Comportamento:
 - Trocar o projeto limpa `agrupador` na mesma navegação: `router.replace({ query: { ...route.query, projeto: value || undefined, agrupador: undefined } })`, pelo mesmo encadeamento `navigation` que `setQuery` usa. Crie `setProject(value: string)` para isso.
 - A busca de texto também compara `groups.byId(s.group_id)?.name`, com o mesmo `toLocaleLowerCase('pt-BR')` usado no título.
 
-- [ ] **Passo 1: Escrever os testes (falham)**
+- [x] **Passo 1: Escrever os testes (falham)**
 
 Em `ConversationsView.spec.ts`, no formato dos testes de filtro que já existem ali (procure `conversations-project`), acrescentar:
 
@@ -2294,12 +2294,12 @@ Em `ConversationsView.spec.ts`, no formato dos testes de filtro que já existem 
 4. Trocar o projeto no select remove `agrupador` da query (confira `router.currentRoute.value.query`).
 5. `?busca=checkout` encontra a sessão de título "Ajustar botão" que está no agrupador "Checkout".
 
-- [ ] **Passo 2: Rodar e ver falhar**
+- [x] **Passo 2: Rodar e ver falhar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/views/__tests__/ConversationsView.spec.ts`
 Esperado: FAIL nos casos novos.
 
-- [ ] **Passo 3: Implementar**
+- [x] **Passo 3: Implementar**
 
 Em `ConversationsView.vue`:
 
@@ -2351,17 +2351,17 @@ No template, o select de projeto passa a chamar `@change="setProject(($event.tar
 
 `SessionSearch.vue` não muda: o placeholder "Procurar sessões" não lista campos, e a busca do backend já cobre o nome do agrupador desde a Tarefa 2.
 
-- [ ] **Passo 4: Rodar e ver passar**
+- [x] **Passo 4: Rodar e ver passar**
 
 Rodar: `pnpm --dir frontend exec vitest run src/views/__tests__/ConversationsView.spec.ts`
 Esperado: PASS.
 
-- [ ] **Passo 5: Suítes e compilação**
+- [x] **Passo 5: Suítes e compilação**
 
 Rodar: `uv run pytest -q`, `pnpm --dir frontend test` e `pnpm --dir frontend build`
 Esperado: tudo passa.
 
-- [ ] **Passo 6: Commit (sessão principal)**
+- [x] **Passo 6: Commit (sessão principal)**
 
 Marcar no `ROADMAP.md` os itens "Etiqueta do agrupador na linha de conversa e filtro..." e "Busca de sessões também encontra pelo nome do agrupador".
 
