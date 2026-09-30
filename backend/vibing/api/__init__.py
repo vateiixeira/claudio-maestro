@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from vibing.api import (
     activity,
     app_state,
+    digest,
     editor,
     fs,
     git,
@@ -22,6 +23,7 @@ router.include_router(projects.router)
 router.include_router(fs.router)
 router.include_router(sessions.router)
 router.include_router(plans.router)
+router.include_router(digest.router)
 router.include_router(groups.router)
 router.include_router(activity.router)
 router.include_router(app_state.router)

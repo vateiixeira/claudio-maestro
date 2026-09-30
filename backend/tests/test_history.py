@@ -962,3 +962,19 @@ async def test_worktree_cache_is_pruned_only_by_a_sync_of_every_project(tmp_path
     assert set(idx._worktree_cache) == {"s1"}
     await idx.sync_all()
     assert idx._worktree_cache == {}
+
+
+@pytest.mark.anyio
+async def test_sessions_in_ignored_dirs_are_not_indexed(tmp_path: Path) -> None:
+    """The digest agent's throwaway sessions never enter the index, even when a
+    registered project contains the app's data folder."""
+    db_path = tmp_path / "data" / "vibing.db"
+    db.init_db(db_path)
+    home = tmp_path / "home"
+    add_project(db_path, home, "home")
+    agent_dir = home / ".local" / "share" / "vini7-vibing" / "digest-agent"
+    fake = FakeHistory()
+    fake.add(str(home), info("mine", str(home / "app")), info("agent", str(agent_dir)))
+    index = HistoryIndex(db_path, fake.list_sessions, ignored_dirs=[agent_dir])
+    await index.sync_all()
+    assert set(rows(db_path)) == {"mine"}

@@ -16,6 +16,8 @@ from vibing.api import router
 from vibing.api.editor import SpawnEditor, spawn_detached
 from vibing.cliwatch import CliWatcher
 from vibing.config import Settings, claude_projects_dir, load_settings
+from vibing.digest.model import DigestModel, SdkDigestModel
+from vibing.digest.service import AGENT_DIR_NAME, DigestService
 from vibing.events import EventHub
 from vibing.gitmonitor import GitMonitor
 from vibing.picker import PickFolder, pick_folder as system_pick_folder
@@ -45,6 +47,7 @@ def create_app(
     refresh_models: bool | None = None,
     session_file: SessionFile | None = None,
     plan_sweep: bool | None = None,
+    digest_model: DigestModel | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -54,6 +57,7 @@ def create_app(
     a throwaway agent client: by default it runs only with the real agent, so
     tests with a fake factory keep seeing only the clients of their sessions.
     `plan_sweep` turns on the periodic reread of plan progress (same default).
+    `digest_model` defaults to the real SDK; the agent only calls it when enabled or asked.
     """
 
     @asynccontextmanager
@@ -91,12 +95,20 @@ def create_app(
             on_turn_end=refresh_git,
         )
         app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
+        agent_dir = app.state.settings.data_dir / AGENT_DIR_NAME
+        app.state.digest = DigestService(
+            app.state.settings.db_path,
+            app.state.sessions,
+            app.state.hub.publish,
+            digest_model or SdkDigestModel(agent_dir),
+        )
         app.state.history = history.HistoryIndex(
             app.state.settings.db_path,
             list_sessions or history.sdk_list_sessions,
             on_change=app.state.sessions.refresh_records,
             on_projects_changed=lambda ids: publish_synced(app.state.hub.publish, ids),
             is_in_use=app.state.sessions.in_use,
+            ignored_dirs=[agent_dir],
         )
         tasks = [
             asyncio.create_task(
@@ -110,6 +122,7 @@ def create_app(
                     app.state.settings.git_refresh_interval_seconds
                 )
             ),
+            asyncio.create_task(app.state.digest.run()),
         ]
         if refresh_models if refresh_models is not None else agent_factory is None:
             tasks.append(

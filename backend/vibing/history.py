@@ -17,7 +17,7 @@ import os
 import sqlite3
 import time
 from dataclasses import dataclass, field, replace
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -574,8 +574,11 @@ class HistoryIndex:
         list_worktrees: Callable[[Path], Awaitable[list[str] | None]] | None = None,
         session_file: Callable[[str, str], Path | None] | None = None,
         detect_worktree: Callable[[Path], tuple[bool, Worktree | None]] | None = None,
+        ignored_dirs: Iterable[Path] = (),
     ) -> None:
         self._db_path = db_path
+        # Sessions whose cwd is inside one of these folders never enter the index.
+        self._ignored = tuple(str(Path(d)) for d in ignored_dirs)
         # A directory whose history folder did not change is not listed again.
         self._folder_signature = folder_signature or (lambda d: sdk_folder_signature(d))
         self._listings: dict[str, tuple[Any, list[Any]]] = {}
@@ -841,6 +844,8 @@ class HistoryIndex:
             current = {project_id for project_id, _ in projects}
             for session_id, (info, directory, fallback) in listed.items():
                 cwd = info.cwd or directory
+                if any(_is_within(cwd, ignored) for ignored in self._ignored):
+                    continue  # the digest agent's own throwaway sessions
                 # The session's own cwd decides; a worktree outside every project
                 # belongs to the project whose repository listed it.
                 project_id = owner_project(cwd, projects)
