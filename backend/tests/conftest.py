@@ -68,6 +68,19 @@ def no_real_folder_picker(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_digest_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The digest agent never reaches the real SDK in tests."""
+
+    def no_real_query(*, prompt, options):
+        raise RuntimeError("Os testes não podem chamar o SDK real no agente de resumos.")
+
+    monkeypatch.setattr("vibing.digest.model._sdk_query", no_real_query)
+    monkeypatch.setattr(
+        "vibing.digest.model._sdk_delete", lambda session_id, directory: None
+    )
+
+
+@pytest.fixture(autouse=True)
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point home and data dirs to temporary folders in every test."""
     home = tmp_path / "home"
