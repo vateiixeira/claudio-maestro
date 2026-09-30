@@ -20,6 +20,7 @@ from vibing.config import Settings, claude_projects_dir, load_settings
 from vibing.digest.model import DigestModel, SdkDigestModel
 from vibing.digest.service import AGENT_DIR_NAME, DigestService
 from vibing.events import EventHub
+from vibing.filesearch import FileIndex
 from vibing.gitmonitor import GitMonitor
 from vibing.picker import PickFolder, pick_folder as system_pick_folder
 from vibing.security import BodySizeLimitMiddleware, HostOriginMiddleware
@@ -96,6 +97,7 @@ def create_app(
             on_turn_end=refresh_git,
         )
         app.state.commands = CommandCatalog(app.state.sessions.agent_factory)
+        app.state.files = FileIndex()
         app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
         agent_dir = (app.state.settings.data_dir / AGENT_DIR_NAME).resolve()
         app.state.digest = DigestService(

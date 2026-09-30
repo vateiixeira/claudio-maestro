@@ -101,3 +101,47 @@ def test_requests_without_the_app_header_are_refused(api, home):
         f"/api/projects/{project['id']}/commands", headers={"x-vibing": ""}
     )
     assert response.status_code == 403
+
+
+def test_project_files(api, home):
+    project = make_project(api, home)
+    (Path(project["path"]) / "backend").mkdir()
+    (Path(project["path"]) / "backend" / "fs.py").write_text("x")
+    response = api.get(f"/api/projects/{project['id']}/files", params={"q": "fs"})
+    assert response.status_code == 200
+    assert response.json() == [{"path": "backend/fs.py", "name": "fs.py", "type": "file"}]
+
+
+def test_session_files(api, home):
+    project = make_project(api, home)
+    (Path(project["path"]) / "a.py").write_text("x")
+    session = new_session(api, project)
+    response = api.get(f"/api/sessions/{session['session_id']}/files", params={"q": ""})
+    assert response.status_code == 200
+    assert [m["path"] for m in response.json()] == ["a.py"]
+
+
+def test_files_query_longer_than_200_is_refused(api, home):
+    project = make_project(api, home)
+    response = api.get(f"/api/projects/{project['id']}/files", params={"q": "x" * 201})
+    assert response.status_code == 422
+
+
+def test_files_unknown_ids_and_missing_folder(api, home):
+    assert api.get(f"/api/sessions/{MISSING}/files").status_code == 404
+    project = make_project(api, home)
+    shutil.rmtree(project["path"])
+    assert api.get(f"/api/projects/{project['id']}/files").status_code == 409
+
+
+def test_files_search_failure_is_502(api, home, monkeypatch):
+    from vibing.filesearch import FileSearchError
+
+    async def boom(self, folder, query):
+        raise FileSearchError("Falha ao listar os arquivos: x")
+
+    monkeypatch.setattr("vibing.filesearch.FileIndex.search", boom)
+    project = make_project(api, home)
+    response = api.get(f"/api/projects/{project['id']}/files")
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Falha ao listar os arquivos: x"

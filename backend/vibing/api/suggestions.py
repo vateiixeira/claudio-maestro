@@ -10,8 +10,11 @@ from vibing import projects, sessions
 from vibing.api.deps import DbDep
 from vibing.api.sessions import ManagerDep
 from vibing.commands import CommandCatalogError
+from vibing.filesearch import FileSearchError
 
 router = APIRouter(prefix="/api")
+
+Q = Annotated[str, Query(max_length=200)]
 
 
 def _existing(folder: Path) -> Path:
@@ -60,3 +63,25 @@ async def session_commands(
 @router.get("/projects/{project_id}/commands")
 async def project_commands(project_id: int, request: Request, conn: DbDep) -> list[dict[str, str]]:
     return await _commands(request, project_folder(conn, project_id))
+
+
+async def _files(request: Request, folder: Path, q: str) -> list[dict[str, str]]:
+    try:
+        found = await request.app.state.files.search(folder, q)
+    except FileSearchError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return [{"path": m.path, "name": m.name, "type": m.type} for m in found]
+
+
+@router.get("/sessions/{session_id}/files")
+async def session_files(
+    session_id: str, request: Request, manager: ManagerDep, q: Q = ""
+) -> list[dict[str, str]]:
+    return await _files(request, session_folder(manager, session_id), q)
+
+
+@router.get("/projects/{project_id}/files")
+async def project_files(
+    project_id: int, request: Request, conn: DbDep, q: Q = ""
+) -> list[dict[str, str]]:
+    return await _files(request, project_folder(conn, project_id), q)

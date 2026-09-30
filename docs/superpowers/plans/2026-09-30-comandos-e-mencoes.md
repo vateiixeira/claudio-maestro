@@ -698,7 +698,7 @@ Item 3 do marco 13.
   - Rotas `GET /api/sessions/{id}/files?q=` e `GET /api/projects/{id}/files?q=`, que devolvem `[{path, name, type}]`.
   - `app.state.files: FileIndex`.
 
-- [ ] **Passo 1: escrever os testes** em `backend/tests/test_filesearch.py`:
+- [x] **Passo 1: escrever os testes** em `backend/tests/test_filesearch.py`:
 
 ```python
 """File suggestions for @ mentions."""
@@ -888,9 +888,9 @@ def test_files_search_failure_is_502(api, home, monkeypatch):
     assert response.json()["detail"] == "Falha ao listar os arquivos: x"
 ```
 
-- [ ] **Passo 2: rodar e ver falhar.** Rode `uv run pytest backend/tests/test_filesearch.py backend/tests/test_suggestions_api.py -q`. Esperado: `ModuleNotFoundError: No module named 'vibing.filesearch'`.
+- [x] **Passo 2: rodar e ver falhar.** Rode `uv run pytest backend/tests/test_filesearch.py backend/tests/test_suggestions_api.py -q`. Esperado: `ModuleNotFoundError: No module named 'vibing.filesearch'`.
 
-- [ ] **Passo 3: implementar `backend/vibing/filesearch.py`:**
+- [x] **Passo 3: implementar `backend/vibing/filesearch.py`:**
 
 ```python
 """File and folder suggestions for `@` mentions, like the VS Code extension:
@@ -1034,7 +1034,7 @@ class FileIndex:
 
 Confira que `discover(folder)` devolve caminhos de mesma forma que `folder / nome` para a comparação em `skip` funcionar. Se `discover` resolver os caminhos de outra maneira, normalize os dois lados com `.resolve()`. Confira também que `WALK_LIMIT` é lido em tempo de execução (o teste troca o valor com `monkeypatch`). É, porque `_walk` usa o nome global.
 
-- [ ] **Passo 4: rotas.** Em `api/suggestions.py`:
+- [x] **Passo 4: rotas.** Em `api/suggestions.py`:
 
 ```python
 from vibing.filesearch import FileSearchError
@@ -1066,9 +1066,9 @@ async def project_files(
 
 No `lifespan`: `app.state.files = FileIndex()`, com `from vibing.filesearch import FileIndex`.
 
-- [ ] **Passo 5: rodar e ver passar.** Rode `uv run pytest backend/tests/test_filesearch.py backend/tests/test_suggestions_api.py -q` e depois `uv run pytest -q`.
+- [x] **Passo 5: rodar e ver passar.** Rode `uv run pytest backend/tests/test_filesearch.py backend/tests/test_suggestions_api.py -q` e depois `uv run pytest -q`.
 
-- [ ] **Passo 6: commit** (sessão principal, depois do `reviewer`). Marque o item 3 no roadmap.
+- [x] **Passo 6: commit** (sessão principal, depois do `reviewer`). Marque o item 3 no roadmap.
 
 ```bash
 git add backend/vibing/filesearch.py backend/vibing/api/suggestions.py backend/vibing/app.py backend/tests/test_filesearch.py backend/tests/test_suggestions_api.py ROADMAP.md
