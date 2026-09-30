@@ -1406,7 +1406,7 @@ Item 5 do marco 13. Esta tarefa cobre só o menu de comandos. O `@` entra na Tar
   - `error`: o texto de `error`.
 - `watch(() => props.active)` rola o item marcado com `document.getElementById(optionId(active))?.scrollIntoView?.({ block: 'nearest' })`. O `?.` protege o jsdom, que não tem `scrollIntoView`.
 
-- [ ] **Passo 1: testes do composable** em `frontend/src/conversation/__tests__/useComposerSuggestions.spec.ts`. Monte um componente de teste mínimo que usa o composable com um `textarea` real:
+- [x] **Passo 1: testes do composable** em `frontend/src/conversation/__tests__/useComposerSuggestions.spec.ts`. Monte um componente de teste mínimo que usa o composable com um `textarea` real:
 
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -1567,7 +1567,7 @@ describe('menu /', () => {
 })
 ```
 
-- [ ] **Passo 2: testes do menu** em `frontend/src/components/conversation/__tests__/SuggestionMenu.spec.ts`:
+- [x] **Passo 2: testes do menu** em `frontend/src/components/conversation/__tests__/SuggestionMenu.spec.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1617,9 +1617,9 @@ describe('SuggestionMenu', () => {
 })
 ```
 
-- [ ] **Passo 3: rodar e ver falhar.** Rode `pnpm --dir frontend exec vitest run src/conversation/__tests__/useComposerSuggestions.spec.ts src/components/conversation/__tests__/SuggestionMenu.spec.ts`.
+- [x] **Passo 3: rodar e ver falhar.** Rode `pnpm --dir frontend exec vitest run src/conversation/__tests__/useComposerSuggestions.spec.ts src/components/conversation/__tests__/SuggestionMenu.spec.ts`.
 
-- [ ] **Passo 4: implementar** o composable e o componente seguindo as regras acima. Esboço do núcleo do composable:
+- [x] **Passo 4: implementar** o composable e o componente seguindo as regras acima. Esboço do núcleo do composable:
 
 ```ts
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
@@ -1693,9 +1693,9 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions) {
 
 Na Tarefa 5, `refresh()` também abre o menu para `@`, mas sem itens e com status `ready`, o que mostraria "Nenhum arquivo encontrado". Para não expor isso antes da Tarefa 6, `refresh()` **ignora** `kind === 'mention'` nesta tarefa, tratando o caso como sem trecho. A Tarefa 6 tira esse filtro.
 
-- [ ] **Passo 5: rodar e ver passar.** Rode os dois arquivos, depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
+- [x] **Passo 5: rodar e ver passar.** Rode os dois arquivos, depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
 
-- [ ] **Passo 6: commit** (sessão principal, depois do `reviewer`). Marque o item 5 no roadmap.
+- [x] **Passo 6: commit** (sessão principal, depois do `reviewer`). Marque o item 5 no roadmap.
 
 ```bash
 git add frontend/src/conversation/useComposerSuggestions.ts frontend/src/conversation/__tests__/useComposerSuggestions.spec.ts frontend/src/components/conversation/SuggestionMenu.vue frontend/src/components/conversation/__tests__/SuggestionMenu.spec.ts ROADMAP.md
