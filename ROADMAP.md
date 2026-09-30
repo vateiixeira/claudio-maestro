@@ -26,9 +26,9 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 0 de 10 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
-| 10. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 11 de 12 |
+| 11. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 12 de 12 |
 
-Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário. O marco 10 começou em 2026-09-30, a pedido do usuário, em paralelo ao marco 8.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário. O marco 11 começou e foi concluído em 2026-09-30, a pedido do usuário, em paralelo ao marco 8 (numerado 11 porque o main já tem um marco 10).
 
 ## Preparação
 
@@ -285,7 +285,7 @@ Decidido no desenho (2026-09-29): a fonte é o arquivo do plano com a regra de m
 
 Sugestões da revisão do marco 9 deixadas para depois: cercas de código de tipos diferentes no leitor; cache e locks de plano sem limite; `GET /api/sessions/{id}/plan` com efeito colateral; `auto_plan` emite sem mudança; observador carrega a sessão mesmo com vínculo manual ou desligado; varredura não revalida o caminho guardado; Tab não fecha o aviso de lista vazia; desligar o automático antes de haver plano.
 
-## Marco 10. Ajustes de sessões e menu lateral
+## Marco 11. Ajustes de sessões e menu lateral
 
 Objetivo: enxergar o que roda (inclusive no terminal) e onde cada sessão trabalha, com ajustes de uso diário no menu lateral, no Detalhes e no modal.
 
@@ -305,7 +305,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 - [x] Progresso do plano no painel Detalhes (2026-09-30)
 - [x] Menu lateral com "Em execução", sigla do projeto e Recentes em ordem estável (2026-09-30)
 - [x] Ditado no modal de nova conversa (2026-09-30)
-- [ ] Retomada de sessão movida para worktree conferida contra o SDK real
+- [x] Retomada de sessão movida para worktree conferida contra o SDK real (2026-09-30)
 
 ## Fora do MVP
 
@@ -331,8 +331,11 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
 | Tecnologia do ditado por voz | Decidido em 2026-09-29: reconhecimento do navegador (Chrome/Edge). O áudio vai ao serviço de reconhecimento do navegador |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
-| Conversa do CLI ativa aparece como "Aguardando você" | Decidido em 2026-09-30: `cli_running` passa a contar como "Em execução" no estado exibido, na Inbox, no Dashboard e no menu lateral (marco 10) |
+| Conversa do CLI ativa aparece como "Aguardando você" | Decidido em 2026-09-30: `cli_running` passa a contar como "Em execução" no estado exibido, na Inbox, no Dashboard e no menu lateral (marco 11) |
 | Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
+| Painel Alterações em sessões de worktree | Visto na revisão do marco 11 (2026-09-30): arquivos editados numa worktree ficam no grupo do repositório principal (branch errado, diff como arquivo novo), e worktrees fora da pasta do projeto caem no grupo sem repositório e não abrem no editor. Precisa incluir as worktrees ligadas como donas possíveis e aceitar esses caminhos em `/diff` e no editor |
+| "Em execução" preso depois de o CLI morrer | Um CLI morto no meio do turno, ou parado pedindo permissão no terminal, conta como "Em execução" por até 20 minutos (`CLI_TURN_STALE_SECONDS`). Desde o marco 11 isso aparece na Inbox, no Dashboard e no menu lateral |
+| Retomada de sessão movida para worktree | Conferido contra o SDK real em 2026-09-30: a transcrição movida é lida com `directory` na worktree, e a retomada com `cwd` na worktree mantém o id e continua gravando no mesmo arquivo |
 
 ## Decisões
 
@@ -366,3 +369,4 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | Progresso de planos lido do arquivo do plano, com regra de marcação no CLAUDE.md global; ferramenta de tarefas descartada por não existir nas sessões com Opus |
 | 2026-09-29 | Marco 9 concluído: progresso lido do plano, vínculo automático, sinal de turno aberto das conversas do CLI; revisado e testado no app real |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
+| 2026-09-30 | Marco 11 concluído: conversa do CLI no meio de um turno conta como "Em execução"; sessões de worktree são indexadas sob o projeto dono e retomadas na worktree só quando a transcrição está na pasta dela; o marco foi numerado 11 porque o main já tem um marco 10 |

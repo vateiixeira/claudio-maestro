@@ -544,7 +544,7 @@ Em `stores/sessions.ts`, dentro de `applyEvent`, troque por:
 No `ROADMAP.md`, troque a situação do ponto em aberto "Conversa do CLI ativa aparece como 'Aguardando você'" por:
 
 ```
-Decidido em 2026-09-30: `cli_running` passa a contar como "Em execução" no estado exibido, na Inbox, no Dashboard e no menu lateral (marco 10)
+Decidido em 2026-09-30: `cli_running` passa a contar como "Em execução" no estado exibido, na Inbox, no Dashboard e no menu lateral (marco 11)
 ```
 
 - [x] **Step 4: Rodar tudo e ver passar**
@@ -2310,7 +2310,7 @@ git commit -m "[Feat] Adicionar ditado ao modal de nova conversa"
 
 Feita pela sessão principal, não por subagente.
 
-- [ ] **Step 1: Teste manual da retomada numa worktree.** Siga as regras do `CLAUDE.md`: `haiku`, pasta temporária, `setting_sources=[]`, variáveis `CLAUDE*` removidas, `delete_session` ao final.
+- [x] **Step 1: Teste manual da retomada numa worktree.** Siga as regras do `CLAUDE.md`: `haiku`, pasta temporária, `setting_sources=[]`, variáveis `CLAUDE*` removidas, `delete_session` ao final.
   1. Numa pasta temporária, criar um repositório git com um commit e uma worktree (`git worktree add`).
   2. Criar uma sessão curta com `cwd` no repositório principal, com um prompt de uma palavra.
   3. Mover o `.jsonl` para a pasta de histórico sanitizada da worktree, como o CLI faz.
@@ -2318,6 +2318,6 @@ Feita pela sessão principal, não por subagente.
   5. Retomar com `cwd=<worktree>` e `resume=sid`, com mais um prompt mínimo, e confirmar a resposta.
   6. Apagar a sessão.
   7. Registrar o resultado em "Pontos em aberto" do `ROADMAP.md`.
-- [ ] **Step 2: Rodar tudo.** `uv run pytest -q`, `pnpm --dir frontend test` e `pnpm --dir frontend build`.
-- [ ] **Step 3: Revisão do marco pelo `milestone-reviewer`.**
-- [ ] **Step 4: Atualizar o `ROADMAP.md`.** Marcar os itens com a data e mudar o estado do marco 10 para Concluído.
+- [x] **Step 2: Rodar tudo.** `uv run pytest -q`, `pnpm --dir frontend test` e `pnpm --dir frontend build`.
+- [x] **Step 3: Revisão do marco pelo `milestone-reviewer`.**
+- [x] **Step 4: Atualizar o `ROADMAP.md`.** Marcar os itens com a data e mudar o estado do marco 11 (renumerado; o main já tem um marco 10) para Concluído.
