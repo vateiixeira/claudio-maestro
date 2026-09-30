@@ -34,7 +34,7 @@
 - **Banco:** o backend desta worktree nunca roda contra o banco real (`~/.local/share/vini7-vibing`). Teste manual usa `VIBING_DATA_DIR` numa pasta temporária.
 - **Migração:** a migração nova fica no fim de `MIGRATIONS`. Na junção com o `main`, continua depois das que já estiverem lá (o marco 8 também cria migrações).
 - **Rótulo de worktree:** `worktree <nome> · <branch>`, ou `worktree <nome>` sem branch.
-- **Largura do Detalhes:** padrão 360 px, mínimo 300 px, máximo `min(70vw, janela − 400 px)`, passo de 16 px no teclado, chave `vibing:details-width`.
+- **Largura do Detalhes:** padrão 360 px, mínimo 300 px, máximo `min(70vw, janela − 400 px − 256 px do menu lateral)`, passo de 16 px no teclado, chave `vibing:details-width`.
 - **Menu lateral:** "Em execução" mostra até 8 linhas. "Recentes" mostra até 5.
 
 ## Review Focus
@@ -1386,7 +1386,7 @@ git commit -m "[UI] Remover Renomear do menu e manter o clique no título"
   - `readDetailsWidth(): number`
   - `writeDetailsWidth(width: number): void`
 
-- [ ] **Step 1: Testes que falham**
+- [x] **Step 1: Testes que falham**
 
 `frontend/src/__tests__/detailsWidthPref.spec.ts`:
 
@@ -1480,12 +1480,12 @@ it('a alça tem papel de separador acessível', async () => {
 
 Se `trigger('pointerdown', ...)` não repassar `clientX` no jsdom, use `handle.element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 1000, bubbles: true }))`, seguido de `await nextTick()`.
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/__tests__/detailsWidthPref.spec.ts src/components/details`
 Expected: FAIL
 
-- [ ] **Step 3: Implementar `detailsWidthPref.ts`**
+- [x] **Step 3: Implementar `detailsWidthPref.ts`**
 
 ```ts
 const KEY = 'vibing:details-width'
@@ -1521,7 +1521,7 @@ export function writeDetailsWidth(width: number): void {
 }
 ```
 
-- [ ] **Step 4: Implementar a alça em `DetailsPanel.vue`**
+- [x] **Step 4: Implementar a alça em `DetailsPanel.vue`**
 
 No script:
 
@@ -1602,12 +1602,12 @@ No template, troque a abertura do `<aside>` e ponha a alça como primeiro filho:
     />
 ```
 
-- [ ] **Step 5: Rodar tudo e ver passar**
+- [x] **Step 5: Rodar tudo e ver passar**
 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: PASS. Testes antigos que procuravam a classe `w-[360px]` devem passar a conferir `style.width === '360px'`. Ajuste-os e cite no relatório.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/

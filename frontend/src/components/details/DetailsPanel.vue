@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import BranchLabel from '../git/BranchLabel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
@@ -13,6 +13,10 @@ import { toolDiff } from '../../conversation/diff'
 import { str } from '../../conversation/tool'
 import { waitingReason } from '../../conversationList'
 import { formatActivity, formatTokens } from '../../format'
+import {
+  DETAILS_DEFAULT_WIDTH, DETAILS_KEY_STEP, DETAILS_MIN_WIDTH,
+  clampDetailsWidth, detailsMaxWidth, readDetailsWidth, writeDetailsWidth,
+} from '../../detailsWidthPref'
 import { displayStateLabels } from '../../sessionState'
 import { useChangesPanelStore } from '../../stores/changesPanel'
 import { useConversationStore } from '../../stores/conversation'
@@ -67,6 +71,43 @@ function back() {
 watch(() => props.sessionId, back)
 // An edit opened from the conversation replaces a selected file.
 watch(editOpen, (open) => { if (open) selectedFile.value = null })
+
+const viewport = ref(window.innerWidth)
+const onWindowResize = () => { viewport.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onWindowResize))
+onBeforeUnmount(() => window.removeEventListener('resize', onWindowResize))
+
+const width = ref(readDetailsWidth())
+const applied = computed(() => clampDetailsWidth(width.value, viewport.value))
+const maxWidth = computed(() => detailsMaxWidth(viewport.value))
+
+// The handle sits on the left edge: moving the pointer left makes the panel wider.
+let drag: { startX: number; startWidth: number } | null = null
+function startDrag(event: PointerEvent) {
+  event.preventDefault()
+  ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
+  drag = { startX: event.clientX, startWidth: applied.value }
+}
+function moveDrag(event: PointerEvent) {
+  if (!drag) return
+  width.value = clampDetailsWidth(drag.startWidth + (drag.startX - event.clientX), viewport.value)
+}
+function endDrag() {
+  if (!drag) return
+  drag = null
+  writeDetailsWidth(applied.value)
+}
+function onResizeKey(event: KeyboardEvent) {
+  const delta = event.key === 'ArrowLeft' ? DETAILS_KEY_STEP : event.key === 'ArrowRight' ? -DETAILS_KEY_STEP : 0
+  if (!delta) return
+  event.preventDefault()
+  width.value = clampDetailsWidth(applied.value + delta, viewport.value)
+  writeDetailsWidth(width.value)
+}
+function resetWidth() {
+  width.value = DETAILS_DEFAULT_WIDTH
+  writeDetailsWidth(width.value)
+}
 </script>
 
 <template>
@@ -74,9 +115,29 @@ watch(editOpen, (open) => { if (open) selectedFile.value = null })
     data-test="details-panel"
     :data-wide="String(wide)"
     aria-label="Detalhes da conversa"
-    class="flex h-full shrink-0 flex-col border-l border-line bg-panel"
-    :class="wide ? 'w-[60vw]' : 'w-[360px]'"
+    class="relative flex h-full shrink-0 flex-col border-l border-line bg-panel"
+    :class="wide ? 'w-[60vw]' : ''"
+    :style="wide ? undefined : { width: `${applied}px` }"
   >
+    <div
+      v-if="!wide"
+      data-test="details-resize"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Redimensionar detalhes"
+      tabindex="0"
+      :aria-valuenow="applied"
+      :aria-valuemin="DETAILS_MIN_WIDTH"
+      :aria-valuemax="maxWidth"
+      title="Arraste para redimensionar · duplo clique volta ao padrão"
+      class="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize touch-none hover:bg-primary/30 focus-visible:bg-primary/40 focus-visible:outline-none"
+      @pointerdown="startDrag"
+      @pointermove="moveDrag"
+      @pointerup="endDrag"
+      @pointercancel="endDrag"
+      @dblclick="resetWidth"
+      @keydown="onResizeKey"
+    />
     <header class="flex min-h-12 items-center gap-2 border-b border-line px-4">
       <template v-if="showingDiff">
         <button

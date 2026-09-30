@@ -131,7 +131,7 @@ O banco de desenvolvimento é compartilhado entre worktrees (`~/.local/share/vin
   - Setas esquerda e direita mudam 16 px.
   - Duplo clique volta a 360.
   - Ao soltar, grava.
-- Limites: mínimo de 300 px, máximo de `min(70vw, largura da janela menos 400 px)`, recalculado na hora de aplicar. Um valor salvo fora dos limites é ajustado.
+- Limites: mínimo de 300 px, máximo de `min(70vw, largura da janela menos 400 px menos o menu lateral de 256 px)`, recalculado na hora de aplicar. Um valor salvo fora dos limites é ajustado. (O desconto do menu lateral foi decidido na revisão, para a conversa manter pelo menos 400 px.)
 - A largura vale no painel lateral e na gaveta. No modo expandido do diff (`wide`), segue 60vw, e a alça fica escondida.
 
 ### 5.3 Menu lateral
