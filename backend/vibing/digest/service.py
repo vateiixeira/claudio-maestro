@@ -104,6 +104,10 @@ class DigestService:
         self._running = False
         self._next_run_at: float | None = None
         self._paused_until: float | None = None
+        self._pending_all = False
+        self._pending_sessions: dict[str, None] = {}
+        self._wake = asyncio.Event()
+        self._current: asyncio.Task[dict[str, Any]] | None = None
 
     # State -------------------------------------------------------------------
 
@@ -124,7 +128,8 @@ class DigestService:
             "enabled": self._config.enabled,
             "running": self._running,
             "next_run_at": whole(self._next_run_at) if self._config.enabled else None,
-            "paused_until": whole(self._paused_until),
+            "paused_until": whole(self._paused_until)
+            if self._paused_until is not None and self._paused_until > self._clock() else None,
         }
 
     def _publish_status(self) -> None:
@@ -352,3 +357,101 @@ class DigestService:
             # The digest is saved and published; only the session brief is missing.
             logger.exception("Could not update the brief of session %s", sid)
         return "read"
+
+    # Scheduler -----------------------------------------------------------------
+
+    def start_schedule(self) -> None:
+        """The first automatic pass waits a whole interval."""
+        self._next_run_at = (
+            self._clock() + self._config.interval_minutes * 60 if self._config.enabled else None
+        )
+
+    def request_all(self) -> None:
+        self._pending_all = True
+        self._wake.set()
+
+    def request_session(self, session_id: str) -> None:
+        self._pending_sessions[session_id] = None
+        self._wake.set()
+
+    async def update_config(self, config: DigestConfig) -> None:
+        """Save, reschedule and publish. Disabling cancels the pass in progress."""
+        from vibing.digest.config import save_config
+
+        def save() -> None:
+            with closing(db.connect(self._db_path)) as conn:
+                save_config(conn, config)
+
+        await asyncio.to_thread(save)
+        previous = self._config
+        self._config = config
+        if not config.enabled:
+            self._next_run_at = None
+            if previous.enabled and self._current is not None:
+                self._current.cancel()
+        elif not previous.enabled or previous.interval_minutes != config.interval_minutes:
+            self.start_schedule()
+        self._publish_status()
+        self._wake.set()
+
+    def _due_at(self) -> float | None:
+        if not self._config.enabled or self._next_run_at is None:
+            return None
+        if self._paused_until is not None and self._paused_until > self._next_run_at:
+            return self._paused_until
+        return self._next_run_at
+
+    async def _run_child(self, trigger: str, session_ids: list[str] | None = None) -> None:
+        """Run a pass as a child task, so disabling the agent cancels only the pass."""
+        task = asyncio.create_task(self.run_pass(trigger, session_ids))
+        self._current = task
+        try:
+            await asyncio.wait({task})
+            if not task.cancelled():
+                task.result()  # a failure of the pass surfaces here, to be logged by `run`
+        finally:
+            if not task.done():  # the loop itself is being cancelled
+                task.cancel()
+                # Wait for the pass to close its run (it logs `stopped` while unwinding).
+                await asyncio.gather(task, return_exceptions=True)
+            self._current = None
+
+    async def tick(self) -> None:
+        """Do what is pending or due, one pass at a time."""
+        if self._pending_all:
+            self._pending_all = False
+            await self._run_child("manual_all")
+        if self._pending_sessions:
+            ids = list(self._pending_sessions)
+            self._pending_sessions.clear()
+            await self._run_child("manual_session", ids)
+        due = self._due_at()
+        now = self._clock()
+        if due is not None and now >= due:
+            if self._paused_until is not None and now >= self._paused_until:
+                self._paused_until = None
+            self._next_run_at = now + self._config.interval_minutes * 60
+            await self._run_child("auto")
+
+    async def _wait(self) -> None:
+        if self._pending_all or self._pending_sessions:
+            return
+        due = self._due_at()
+        timeout = None if due is None else max(due - self._clock(), 0)
+        self._wake.clear()
+        try:
+            await asyncio.wait_for(self._wake.wait(), timeout)
+        except TimeoutError:
+            pass
+
+    async def run(self) -> None:
+        """Scheduler loop, started with the app."""
+        await asyncio.to_thread(self.load)
+        self.start_schedule()
+        self._publish_status()
+        while True:
+            await self._wait()
+            try:
+                await self.tick()
+            except Exception:
+                logger.exception("Falha no agente de resumos")
