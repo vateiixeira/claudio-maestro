@@ -119,6 +119,10 @@ class SessionOut(BaseModel):
     worktree_name: str | None = None
     worktree_path: str | None = None
     git_branch: str | None = None
+    # Short sentence of the digest agent's summary; None before the first reading.
+    digest_short: str | None = None
+    # The digest agent marked the linked plan as completed.
+    plan_done: bool = False
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]

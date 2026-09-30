@@ -44,6 +44,7 @@ from vibing import history as history_module
 from vibing.agent.base import AgentClient, AgentError, AgentFactory, AgentOptions
 from vibing.config import read_user_claude_settings
 from vibing.conversation import ConversationBuilder, Event, cap_items, rate_limit_text
+from vibing.digest import store as digest_store
 from vibing.plans import PLAN_TOOLS, PlanCache, is_plan_path, last_plan_ref, looks_like_plan_path
 from vibing.projects import Project
 from vibing.projects import project_roots as registered_project_roots
@@ -417,6 +418,8 @@ def describe(
     pending_kind: str | None = None,
     plan: dict[str, Any] | None = None,
     cli_running: bool = False,
+    digest_short: str | None = None,
+    plan_done: bool = False,
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`.
 
@@ -450,6 +453,8 @@ def describe(
         "pending_kind": pending_kind,
         "plan": plan,
         "cli_running": cli_running and state == "closed",
+        "digest_short": digest_short,
+        "plan_done": plan_done,
     }
 
 
@@ -1998,6 +2003,9 @@ class SessionManager:
         self._models: list[dict[str, Any]] | None = None
         self._models_fetched_at = 0.0
         self._load_models()
+        # Short sentence and plan seal of the digest agent, by session (memory copy).
+        self._digest_briefs: dict[str, tuple[str | None, bool]] = {}
+        self._load_digest_briefs()
 
     def list_models(self) -> list[dict[str, Any]]:
         return [dict(m) for m in (self._models or FALLBACK_MODELS)]
@@ -2364,9 +2372,11 @@ class SessionManager:
         progress, CLI turn signal), for `describe`."""
         plan = self.plan_summary(record)
         cli_running = self._cli_running(record.session_id)
+        short, plan_done = self._digest_briefs.get(record.session_id, (None, False))
         if active is None:
             return {"context": None, "pending_permission": None, "last_action": None,
-                    "pending_kind": None, "plan": plan, "cli_running": cli_running}
+                    "pending_kind": None, "plan": plan, "cli_running": cli_running,
+                    "digest_short": short, "plan_done": plan_done}
         return {
             "context": active.context,
             "pending_permission": active.pending_permission,
@@ -2374,7 +2384,24 @@ class SessionManager:
             "pending_kind": active.pending_kind,
             "plan": plan,
             "cli_running": cli_running,
+            "digest_short": short,
+            "plan_done": plan_done,
         }
+
+    def _load_digest_briefs(self) -> None:
+        try:
+            with closing(db.connect(self._db_path)) as conn:
+                self._digest_briefs = digest_store.briefs(conn)
+        except sqlite3.Error:
+            logger.exception("Falha ao ler os resumos do agente")
+
+    async def set_digest_brief(self, session_id: str, short: str | None, plan_done: bool) -> None:
+        """The digest agent wrote a new summary: show its sentence and seal in the lists."""
+        brief = (short, plan_done)
+        if self._digest_briefs.get(session_id) == brief:
+            return
+        self._digest_briefs[session_id] = brief
+        await self._announce_session(session_id)
 
     def _describe_active(self, session: ActiveSession) -> dict[str, Any]:
         return describe(
