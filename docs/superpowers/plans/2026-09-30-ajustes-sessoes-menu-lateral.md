@@ -1780,7 +1780,7 @@ git commit -m "[UI] Levar o progresso do plano para o painel Detalhes"
     - `noteRunning(id): string[]`
   - Constantes `RUNNING_MAX = 8` (em `SidebarRunning.vue`) e `RECENT_VISIBLE = 5` (em `recentConversations.ts`).
 
-- [ ] **Step 1: Testes que falham, com a sigla e os recentes**
+- [x] **Step 1: Testes que falham, com a sigla e os recentes**
 
 `frontend/src/__tests__/projectInitials.spec.ts`:
 
@@ -1833,12 +1833,12 @@ it('noteRunning só acrescenta quem ainda não está na lista', () => {
 })
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/__tests__/projectInitials.spec.ts src/__tests__/recentConversations.spec.ts`
 Expected: FAIL
 
-- [ ] **Step 3: Implementar `projectInitials.ts` e `recentConversations.ts`**
+- [x] **Step 3: Implementar `projectInitials.ts` e `recentConversations.ts`**
 
 ```ts
 /** Two-letter tag of a project: first letters of its first two words, or the first two letters. */
@@ -1894,7 +1894,7 @@ export function noteRunning(id: string): string[] {
 }
 ```
 
-- [ ] **Step 4: Testes que falham, com os componentes**
+- [x] **Step 4: Testes que falham, com os componentes**
 
 `frontend/src/components/sidebar/__tests__/SidebarRunning.spec.ts`. Siga o setup de `AppSidebar.spec.ts`: Pinia, `useSessionsStore().setForProject(...)`, `useProjectsStore().projects = [...]` e `createAppRouter(createMemoryHistory())`.
 
@@ -1983,12 +1983,12 @@ it('publica os ids visíveis em Recentes', async () => {
 
 Confira o formato de rota da conversa usado nos testes existentes (`/sessions/<id>` ou outro) e use o mesmo.
 
-- [ ] **Step 5: Rodar e ver falhar**
+- [x] **Step 5: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/sidebar`
 Expected: FAIL
 
-- [ ] **Step 6: Implementar os componentes**
+- [x] **Step 6: Implementar os componentes**
 
 `frontend/src/components/sidebar/itemClass.ts`:
 
@@ -2124,12 +2124,12 @@ Importe `watch` e `watchEffect` de `vue`. No template, troque o bloco `<template
       </template>
 ```
 
-- [ ] **Step 7: Rodar tudo e ver passar**
+- [x] **Step 7: Rodar tudo e ver passar**
 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: PASS. Testes antigos de Recentes que esperavam a sessão aberta sempre no topo ainda passam, porque `shownRecentIds` começa vazio em cada teste. Se algum falhar por isso, zere `shownRecentIds.value = []` no `beforeEach` dele.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add frontend/src/

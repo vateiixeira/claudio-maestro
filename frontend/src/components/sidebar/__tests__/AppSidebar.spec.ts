@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import { ref } from 'vue'
@@ -16,7 +16,7 @@ import { useGitStore } from '../../../stores/git'
 import { useNewConversationStore } from '../../../stores/newConversation'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
-import { noteOpened, recentIds } from '../../../recentConversations'
+import { noteOpened, readRecent, recentIds, shownRecentIds } from '../../../recentConversations'
 import { makeGitRepo, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
@@ -26,6 +26,7 @@ beforeEach(() => {
   setActivePinia(pinia)
   localStorage.clear()
   recentIds.value = []
+  shownRecentIds.value = []
   socketStatus.current = ref<ConnectionStatus>('connected')
 })
 
@@ -75,7 +76,7 @@ describe('menu lateral', () => {
     for (let i = 0; i < 7; i++) noteOpened(`s${i}`)
 
     const recent = mountSidebar().findAll('[data-test="recent"]')
-    expect(recent.map((r) => r.text())).toEqual(['T6', 'T5', 'T4', 'T3', 'T2'])
+    expect(recent.map((r) => r.find('[data-test="row-title"]').text())).toEqual(['T6', 'T5', 'T4', 'T3', 'T2'])
     expect(recent[0]!.attributes('href')).toBe('/sessions/s6')
   })
 
@@ -86,7 +87,7 @@ describe('menu lateral', () => {
     noteOpened('sumiu')
     noteOpened('b')
 
-    expect(mountSidebar().findAll('[data-test="recent"]').map((r) => r.text())).toEqual(['B', 'A'])
+    expect(mountSidebar().findAll('[data-test="recent"]').map((r) => r.find('[data-test="row-title"]').text())).toEqual(['B', 'A'])
   })
 
   it('conversa marcada como lida, mas nunca aberta, não aparece em Recentes', () => {
@@ -97,7 +98,7 @@ describe('menu lateral', () => {
     ])
     noteOpened('aberta')
 
-    expect(mountSidebar().findAll('[data-test="recent"]').map((r) => r.text())).toEqual(['Aberta'])
+    expect(mountSidebar().findAll('[data-test="recent"]').map((r) => r.find('[data-test="row-title"]').text())).toEqual(['Aberta'])
   })
 
   it('atualiza na hora quando uma conversa é aberta', async () => {
@@ -108,7 +109,7 @@ describe('menu lateral', () => {
 
     noteOpened('a')
     await wrapper.vm.$nextTick()
-    expect(wrapper.findAll('[data-test="recent"]').map((r) => r.text())).toEqual(['A'])
+    expect(wrapper.findAll('[data-test="recent"]').map((r) => r.find('[data-test="row-title"]').text())).toEqual(['A'])
   })
 
   it('marca com aria-current só o link da conversa aberta em Recentes', async () => {
@@ -125,6 +126,48 @@ describe('menu lateral', () => {
 
     const links = wrapper.findAll('[data-test="recent"]')
     expect(links.map((l) => l.attributes('aria-current'))).toEqual([undefined, 'page'])
+  })
+
+  it('Recentes não repete o que está em execução', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    noteOpened('b'); noteOpened('a')
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', project_id: 1, display_state: 'running' }),
+      makeSession({ session_id: 'b', project_id: 1 }),
+    ])
+    const w = mountSidebar()
+    await flushPromises()
+    expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toEqual(['/sessions/b'])
+    expect(w.findAll('[data-test="running"]').length).toBe(1)
+  })
+
+  it('conversa que passou a rodar entra em Recentes e fica lá quando para', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    const sessions = useSessionsStore(pinia)
+    const w = mountSidebar()
+    sessions.setForProject(1, [makeSession({ session_id: 'cli', project_id: 1, display_state: 'running', cli_running: true })])
+    await flushPromises()
+    expect(readRecent()).toContain('cli')
+    sessions.find('cli')!.display_state = 'waiting'
+    await flushPromises()
+    expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toContain('/sessions/cli')
+  })
+
+  it('linhas de Recentes mostram a sigla do projeto', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
+    noteOpened('b')
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'b', project_id: 1 })])
+    const w = mountSidebar()
+    expect(w.find('[data-test="recent"] [data-test="project-badge"]').text()).toBe('LO')
+  })
+
+  it('publica os ids visíveis em Recentes', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    noteOpened('b'); noteOpened('a')
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 }), makeSession({ session_id: 'b', project_id: 1 })])
+    mountSidebar()
+    await flushPromises()
+    expect(shownRecentIds.value).toEqual(['a', 'b'])
   })
 
   it('"Nova conversa" abre o modal', async () => {

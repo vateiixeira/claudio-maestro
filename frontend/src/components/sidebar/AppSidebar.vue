@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch, watchEffect } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BrandMark from '../BrandMark.vue'
 import ConnectionIndicator from '../ConnectionIndicator.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import SessionSearch from './SessionSearch.vue'
+import SidebarRunning from './SidebarRunning.vue'
+import SidebarSessionRow from './SidebarSessionRow.vue'
+import { sidebarItemClass } from './itemClass'
 import BranchLabel from '../git/BranchLabel.vue'
 import { useEventSocket } from '../../api/socket'
-import { recentIds } from '../../recentConversations'
+import { RECENT_VISIBLE, noteRunning, recentIds, shownRecentIds } from '../../recentConversations'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
@@ -24,13 +27,18 @@ const waitingCount = computed(() => sessions.all.filter((s) => s.display_state =
 function waitingIn(projectId: number): number {
   return sessions.forProject(projectId).filter((s) => s.display_state === 'waiting').length
 }
-// Conversations the user opened (not just marked as read), most recently opened first.
+const runningIds = computed(() => new Set(sessions.all.filter((s) => s.display_state === 'running').map((s) => s.session_id)))
+// A conversation that starts running (here or in a terminal) joins "Recentes", so it
+// stays there when it stops.
+watch(runningIds, (ids) => { for (const id of ids) noteRunning(id) }, { immediate: true })
+// Conversations opened or seen running, newest first, minus those listed under "Em execução".
 const recent = computed(() =>
   recentIds.value
     .map((id) => sessions.find(id))
-    .filter((s): s is NonNullable<typeof s> => s != null)
-    .slice(0, 5),
+    .filter((s): s is NonNullable<typeof s> => s != null && !runningIds.value.has(s.session_id))
+    .slice(0, RECENT_VISIBLE),
 )
+watchEffect(() => { shownRecentIds.value = recent.value.map((s) => s.session_id) })
 // The project being looked at, directly or through one of its conversations.
 const activeProjectId = computed<number | null>(() => {
   if (route.name === 'project') return Number(route.params.id)
@@ -38,10 +46,7 @@ const activeProjectId = computed<number | null>(() => {
   return null
 })
 const currentProjectId = computed(() => activeProjectId.value)
-const itemClass = (active: boolean) => [
-  'flex min-h-10 items-center gap-2.5 rounded-lg px-3 no-underline hover:bg-card',
-  active ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg',
-]
+const itemClass = sidebarItemClass
 </script>
 
 <template>
@@ -92,19 +97,10 @@ const itemClass = (active: boolean) => [
         </span>
       </RouterLink>
 
+      <SidebarRunning />
       <template v-if="recent.length">
         <div class="px-3 pt-4 pb-0.5 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Recentes</div>
-        <RouterLink
-          v-for="session in recent"
-          :key="session.session_id"
-          data-test="recent"
-          :to="{ name: 'session', params: { id: session.session_id } }"
-          :class="itemClass(route.name === 'session' && route.params.id === session.session_id)"
-          :aria-current="route.name === 'session' && route.params.id === session.session_id ? 'page' : undefined"
-        >
-          <DisplayStateIcon :display="session.display_state" :size="11" />
-          <span class="min-w-0 grow truncate text-[13px]">{{ session.title }}</span>
-        </RouterLink>
+        <SidebarSessionRow v-for="session in recent" :key="session.session_id" data-test="recent" :session="session" />
       </template>
     </div>
 
