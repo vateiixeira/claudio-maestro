@@ -171,9 +171,9 @@ def _http_error(exc: sessions.SessionError) -> HTTPException:
 
 _GROUP_STATUS = {
     groups.GroupNotFoundError: status.HTTP_404_NOT_FOUND,
-    groups.InvalidGroupNameError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    groups.InvalidGroupNameError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     groups.DuplicateGroupNameError: status.HTTP_409_CONFLICT,
-    groups.GroupProjectMismatchError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    groups.GroupProjectMismatchError: status.HTTP_422_UNPROCESSABLE_CONTENT,
 }
 
 
