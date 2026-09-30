@@ -10,7 +10,7 @@
 - Worktree da sessão visível.
 - Sigla do projeto nas linhas do menu.
 - Ditado no modal de nova conversa.
-- Recentes com ordem estável.
+- Recentes com ordem estável. *(Substituído em 2026-09-30, commit 6a4ed93: Recentes lista todas as abertas por última interação.)*
 - Plano no painel Detalhes.
 
 **Architecture:**
@@ -35,7 +35,7 @@
 - **Migração:** a migração nova fica no fim de `MIGRATIONS`. Na junção com o `main`, continua depois das que já estiverem lá (o marco 8 também cria migrações).
 - **Rótulo de worktree:** `worktree <nome> · <branch>`, ou `worktree <nome>` sem branch.
 - **Largura do Detalhes:** padrão 360 px, mínimo 300 px, máximo `min(70vw, janela − 400 px − 256 px do menu lateral)`, passo de 16 px no teclado, chave `vibing:details-width`.
-- **Menu lateral:** "Em execução" mostra até 8 linhas. "Recentes" mostra até 5.
+- **Menu lateral:** "Em execução" mostra até 8 linhas. "Recentes" mostra até 5. *(Substituído em 2026-09-30, commit 6a4ed93: Recentes não tem mais teto.)*
 
 ## Review Focus
 
@@ -1749,6 +1749,8 @@ git commit -m "[UI] Levar o progresso do plano para o painel Detalhes"
 ---
 
 ### Task 10: Menu lateral com "Em execução", sigla do projeto e Recentes estável
+
+> **Substituído em 2026-09-30 (commit 6a4ed93).** A parte de "Recentes estável" e o módulo `recentConversations.ts` foram removidos: Recentes lista todas as conversas abertas por `last_activity_at`. "Em execução" e a sigla do projeto continuam como aqui.
 
 **Files:**
 - Create:

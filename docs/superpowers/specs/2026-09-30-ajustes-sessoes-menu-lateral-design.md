@@ -14,7 +14,7 @@ Sete ajustes pedidos pelo usuário em 2026-09-30:
 5. Sessão que roda em uma worktree informa em qual worktree está.
 6. Identificador do projeto nas linhas de Recentes.
 7. Botão de ditado no modal de nova conversa.
-8. Recentes não reordena ao clicar numa sessão que já está nela (pedido durante o desenho).
+8. Recentes não reordena ao clicar numa sessão que já está nela (pedido durante o desenho). **Substituído em 2026-09-30 (commit 6a4ed93):** Recentes passou a listar todas as conversas abertas, ordenadas pela última interação, sem `localStorage` nem teto.
 9. O progresso do plano sai do topo da conversa e vai para o painel Detalhes (pedido durante o desenho).
 
 Critérios de sucesso:
@@ -147,7 +147,7 @@ O banco de desenvolvimento é compartilhado entre worktrees (`~/.local/share/vin
   - Lista as sessões com `display_state === 'running'`, da mais recente para a mais antiga (`last_activity_at`).
   - Mostra até 8. Com mais de 8, mostra o link "Ver todas" para a aba Em execução da Inbox.
   - Sem sessões em execução, a seção não aparece.
-- **Recentes:**
+- **Recentes:** **Substituído em 2026-09-30 (commit 6a4ed93):** os três pontos abaixo descrevem o comportamento anterior. Hoje Recentes é `sessions.all` sem as finalizadas e sem as em execução, na ordem de `last_activity_at`; `recentConversations.ts` foi apagado.
   - Continua mostrando 5, mas sem as sessões em execução.
   - `AppSidebar` observa as sessões em execução, do app ou do CLI, incluindo as do carregamento inicial. Cada sessão que passa a rodar é anotada com `noteRunning(id)`, que só a põe no topo da lista guardada se ela ainda não estiver lá. Assim ela fica em Recentes quando parar.
   - **Ordem estável (item 8):** `noteOpened(id)` não move uma sessão que já aparece em Recentes. O menu lateral publica os ids visíveis em `shownRecentIds`, um `ref` de `recentConversations.ts`. Uma sessão fora desse conjunto vai para o topo, como hoje.
