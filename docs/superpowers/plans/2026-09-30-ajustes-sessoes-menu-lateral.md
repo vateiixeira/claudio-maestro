@@ -1332,7 +1332,7 @@ git commit -m "[UI] Mostrar worktree e branch da sessão no cabeçalho, Detalhes
 - Modify: `frontend/src/components/conversation/ConversationHeader.vue` (linha 177)
 - Test: `frontend/src/components/conversation/__tests__/ConversationHeader.spec.ts`
 
-- [ ] **Step 1: Teste que falha**
+- [x] **Step 1: Teste que falha**
 
 Troque o teste que clica em `menu-rename`, se houver, por:
 
@@ -1346,21 +1346,21 @@ it('o menu ⋯ não tem Renomear; clicar no título abre a edição', async () =
 })
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/conversation/__tests__/ConversationHeader.spec.ts`
 Expected: FAIL (`menu-rename` existe)
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 Apague a linha do botão `data-test="menu-rename"`. Se `startRename` fechava o menu (`menuOpen.value = false`), mantenha: não faz mal.
 
-- [ ] **Step 4: Rodar tudo e ver passar**
+- [x] **Step 4: Rodar tudo e ver passar**
 
 Run: `pnpm --dir frontend test`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/components/conversation/

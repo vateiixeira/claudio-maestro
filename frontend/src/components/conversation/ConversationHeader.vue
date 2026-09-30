@@ -177,7 +177,6 @@ async function openProject() {
           role="menu"
           class="absolute right-0 z-20 mt-1 flex w-56 flex-col rounded-lg border border-line-strong bg-elevated py-1 shadow-lg"
         >
-          <button type="button" role="menuitem" data-test="menu-rename" class="px-3 py-2 text-left text-sm hover:bg-card" @click="startRename">Renomear</button>
           <button type="button" role="menuitem" data-test="menu-editor" class="px-3 py-2 text-left text-sm hover:bg-card" :disabled="!project" @click="openProject">Abrir projeto no editor</button>
           <button type="button" role="menuitem" data-test="menu-copy-id" class="px-3 py-2 text-left text-sm hover:bg-card" @click="copyId">Copiar ID da sessão</button>
         </div>

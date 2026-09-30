@@ -163,6 +163,16 @@ describe('página da conversa', () => {
 
     expect(writeText).toHaveBeenCalledWith('s1')
   })
+
+  it('o menu ⋯ não tem Renomear; clicar no título abre a edição', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+
+    await wrapper.find('[data-test="header-menu"]').trigger('click')
+    expect(wrapper.find('[data-test="menu-rename"]').exists()).toBe(false)
+    expect(wrapper.findAll('[role="menuitem"]').map((b) => b.text())).toEqual(['Abrir projeto no editor', 'Copiar ID da sessão'])
+    await wrapper.find('[data-test="conversation-title"]').trigger('click')
+    expect(wrapper.find('[data-test="title-input"]').exists()).toBe(true)
+  })
   const editItem: ToolItem = {
     type: 'tool', id: 'e1', tool_use_id: 'e1', name: 'Edit', input: { file_path: '/p/a.ts' },
     result: null, streaming: false, parent_tool_use_id: null,
