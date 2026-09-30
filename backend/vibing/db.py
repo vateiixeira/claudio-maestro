@@ -104,6 +104,22 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         "ALTER TABLE sessions ADD COLUMN plan_path TEXT",
         "ALTER TABLE sessions ADD COLUMN plan_link TEXT",
     ],
+    [
+        # Marco 8: groups of related sessions of a project. Only the app knows them;
+        # removing a group leaves its sessions loose (ON DELETE SET NULL).
+        """
+        CREATE TABLE session_groups (
+          id          INTEGER PRIMARY KEY,
+          project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          name        TEXT NOT NULL,
+          created_at  INTEGER NOT NULL
+        )
+        """,
+        "CREATE INDEX session_groups_project_id ON session_groups(project_id)",
+        "ALTER TABLE sessions ADD COLUMN group_id INTEGER"
+        " REFERENCES session_groups(id) ON DELETE SET NULL",
+        "CREATE INDEX sessions_group_id ON sessions(group_id)",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

@@ -24,7 +24,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
-| 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 0 de 10 |
+| 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 1 de 10 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário.
@@ -243,7 +243,7 @@ Pedido pelo usuário em 2026-09-28. Só começa depois do MVP completo e funcion
 
 O agrupador existe só no banco do backend. O Claude e o CLI não sabem dele, e o histórico em `~/.claude/projects` não muda.
 
-- [ ] Tabela de agrupadores no SQLite, ligada ao projeto, e vínculo da sessão com o agrupador
+- [x] Tabela de agrupadores no SQLite, ligada ao projeto, e vínculo da sessão com o agrupador (2026-09-30)
 - [ ] Criar agrupador dentro de um projeto
 - [ ] Renomear agrupador
 - [ ] Remover agrupador; as sessões dele voltam a ficar soltas e não são apagadas
