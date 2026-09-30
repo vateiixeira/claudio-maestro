@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, watchEffect } from 'vue'
+import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BrandMark from '../BrandMark.vue'
 import ConnectionIndicator from '../ConnectionIndicator.vue'
@@ -11,7 +11,6 @@ import SidebarSessionRow from './SidebarSessionRow.vue'
 import { sidebarItemClass } from './itemClass'
 import BranchLabel from '../git/BranchLabel.vue'
 import { useEventSocket } from '../../api/socket'
-import { RECENT_VISIBLE, noteRunning, recentIds, shownRecentIds } from '../../recentConversations'
 import { isCollapsed, setCollapsed } from '../../sidebarCollapse'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
@@ -32,18 +31,12 @@ function waitingIn(projectId: number): number {
   return sessions.forProject(projectId).filter((s) => s.display_state === 'waiting').length
 }
 const runningIds = computed(() => new Set(sessions.all.filter((s) => s.display_state === 'running').map((s) => s.session_id)))
-// A conversation that starts running (here or in a terminal) joins "Recentes", so it
-// stays there when it stops.
-watch(runningIds, (ids) => { for (const id of ids) noteRunning(id) }, { immediate: true })
-// Conversations opened or seen running, newest first, minus those listed under "Em execução"
-// and those the user finished (their ids stay stored, so reopening one brings it back).
+// "Recentes" = every open conversation, i.e. not finished. The running ones stay only in
+// "Em execução". `sessions.all` is already sorted by `last_activity_at` (latest first), which
+// moves on any interaction, from the operator or from the agent, so no limit and no reordering here.
 const recent = computed(() =>
-  recentIds.value
-    .map((id) => sessions.find(id))
-    .filter((s): s is NonNullable<typeof s> => s != null && !runningIds.value.has(s.session_id) && s.display_state !== 'finished')
-    .slice(0, RECENT_VISIBLE),
+  sessions.all.filter((s) => s.display_state !== 'finished' && !runningIds.value.has(s.session_id)),
 )
-watchEffect(() => { shownRecentIds.value = recent.value.map((s) => s.session_id) })
 // The project being looked at, directly or through one of its conversations.
 const activeProjectId = computed<number | null>(() => {
   if (route.name === 'project') return Number(route.params.id)
