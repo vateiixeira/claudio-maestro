@@ -61,7 +61,7 @@ const itemClass = sidebarItemClass
 </script>
 
 <template>
-  <nav aria-label="Navegação" class="flex h-full w-64 shrink-0 flex-col gap-3 border-r border-line bg-panel px-3 pt-5 pb-3 text-sm">
+  <nav aria-label="Navegação" class="flex h-full w-[308px] shrink-0 flex-col gap-3 border-r border-line bg-panel px-3 pt-5 pb-3 text-sm">
     <RouterLink to="/inbox" class="flex min-h-11 items-center gap-2.5 rounded-lg px-2 text-fg no-underline">
       <BrandMark />
       <span class="text-xl font-bold tracking-tight">Vini7 Vibing</span>

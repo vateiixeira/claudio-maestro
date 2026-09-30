@@ -166,6 +166,11 @@ describe('menu lateral', () => {
     expect(row.find('[data-test="project-badge"]').exists()).toBe(false)
   })
 
+  it('a barra lateral tem 308px de largura', () => {
+    const w = mountSidebar()
+    expect(w.find('nav').classes()).toContain('w-[308px]')
+  })
+
   it('publica os ids visíveis em Recentes', async () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     noteOpened('b'); noteOpened('a')
