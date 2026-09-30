@@ -5,8 +5,9 @@ import { createMemoryHistory } from 'vue-router'
 import ConversationRow from '../ConversationRow.vue'
 import { createAppRouter } from '../../../router'
 import { useGitStore } from '../../../stores/git'
+import { useGroupsStore } from '../../../stores/groups'
 import { useProjectsStore } from '../../../stores/projects'
-import { jsonResponse, makeGitRepo, makeProject, makeSession, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeGitRepo, makeGroup, makeProject, makeSession, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -179,5 +180,14 @@ describe('linha de conversa', () => {
         'focus-visible:after:ring-2', 'focus-visible:after:ring-primary',
       ]))
     })
+  })
+})
+
+describe('etiqueta do agrupador na linha', () => {
+  it('mostra o nome do agrupador conhecido e nada para um desconhecido', () => {
+    useGroupsStore(pinia).groups = [makeGroup({ id: 2, name: 'Checkout' })]
+    expect(mountRow(makeSession({ group_id: 2 })).find('[data-test="group-tag"]').text()).toContain('Checkout')
+    expect(mountRow(makeSession({ group_id: 99 })).find('[data-test="group-tag"]').exists()).toBe(false)
+    expect(mountRow(makeSession({ group_id: null })).find('[data-test="group-tag"]').exists()).toBe(false)
   })
 })

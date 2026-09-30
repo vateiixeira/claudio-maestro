@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import BranchLabel from '../git/BranchLabel.vue'
+import GroupTag from '../groups/GroupTag.vue'
 import PlanBadge from '../plan/PlanBadge.vue'
 import { errorMessage, markSessionSeen } from '../../api/http'
 import { waitingReason } from '../../conversationList'
@@ -65,6 +66,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
         :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal']"
       >{{ session.title }}</RouterLink>
       <PlanBadge :session="session" />
+      <GroupTag :group-id="session.group_id" />
     </div>
     <span class="sr-only">{{ displayStateLabels[session.display_state] }}{{ session.unread ? ', com novidade' : '' }}</span>
     <span v-if="reason" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs text-secondary-soft">{{ reason }}</span>

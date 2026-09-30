@@ -53,14 +53,15 @@ async function mountPanel(fetchHandlers = {}) {
 }
 
 describe('painel Detalhes', () => {
-  it('mostra a propriedade Plano depois das outras propriedades', async () => {
+  it('mostra as propriedades Plano e Agrupador depois das outras propriedades', async () => {
     const wrapper = await mountPanel()
 
     const props = wrapper.find('[data-test="details-properties"]')
     expect(props.find('[data-test="prop-plan"]').text()).toContain('Nenhum')
     expect(props.find('[data-test="prop-plan"]').text()).toContain('Escolher plano…')
     const labels = props.findAll('dt').map((dt) => dt.text())
-    expect(labels[labels.length - 1]).toBe('Plano')
+    expect(labels.slice(-2)).toEqual(['Plano', 'Agrupador'])
+    expect(props.find('[data-test="prop-group"]').exists()).toBe(true)
   })
 
   it('mostra as propriedades da conversa', async () => {

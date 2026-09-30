@@ -5,6 +5,7 @@ import DisplayStateIcon from '../DisplayStateIcon.vue'
 import { errorMessage, openInEditor } from '../../api/http'
 import { useConversationStore } from '../../stores/conversation'
 import { repoLabel, useGitStore } from '../../stores/git'
+import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { displayStateLabels } from '../../sessionState'
@@ -15,12 +16,15 @@ const sessions = useSessionsStore()
 const conversations = useConversationStore()
 const projects = useProjectsStore()
 const git = useGitStore()
+const groups = useGroupsStore()
 
 const listed = computed(() => sessions.find(props.id))
 const conv = computed(() => conversations.get(props.id))
 const title = computed(() => conv.value?.title ?? listed.value?.title ?? '')
 const projectId = computed(() => listed.value?.project_id ?? conv.value?.projectId ?? null)
 const project = computed(() => (projectId.value != null ? projects.byId(projectId.value) : undefined))
+// Unknown ids (a group this tab has not loaded yet) show nothing.
+const group = computed(() => (listed.value?.group_id != null ? groups.byId(listed.value.group_id) : undefined))
 const repos = computed(() => (projectId.value != null ? git.reposFor(projectId.value) : []))
 watch(projectId, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
 // Announced politely when it changes, for people who cannot see the state icon.
@@ -184,6 +188,7 @@ async function openProject() {
       <span v-if="project" class="flex items-center gap-1.5 rounded-full border border-line-strong bg-card px-2.5 py-[3px] text-xs">
         <span class="size-2 rounded-[3px]" :style="{ backgroundColor: project.color }" />{{ project.name }}
       </span>
+      <span v-if="group" data-test="header-group" class="flex items-center gap-1.5 rounded-full border border-line-strong bg-card px-2.5 py-[3px] text-xs">▤ {{ group.name }}</span>
       <span v-for="repo in repos" :key="repo.path" class="flex items-center rounded-full border border-line-strong bg-card px-2.5 py-[3px]">
         <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
       </span>
