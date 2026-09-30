@@ -29,6 +29,11 @@ function stub(state: unknown, put?: (body: unknown) => Response) {
     },
     'GET /api/projects': () => jsonResponse([]),
     'GET /api/models': () => jsonResponse([]),
+    'GET /api/digest/config': () => jsonResponse({
+      config: { enabled: false, model: 'sonnet', effort: 'medium', extra_instructions: '', interval_minutes: 10, min_new_messages: 10, open_turn_minutes: 30, window_days: 3 },
+      status: { enabled: false, running: false, next_run_at: null, paused_until: null },
+    }),
+    'GET /api/digest/runs': () => jsonResponse([]),
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -49,6 +54,31 @@ describe('tela de preferências', () => {
   it('a rota existe', () => {
     const router = createAppRouter(createMemoryHistory())
     expect(router.resolve('/preferencias').name).toBe('preferences')
+  })
+
+  it('abre na aba Geral e troca para a do agente pela URL', async () => {
+    stub({ preferences: {} })
+    const w = await mountView()
+    expect(w.find('[data-test="tab-general"]').attributes('aria-selected')).toBe('true')
+    expect(w.find('#pref-editor').exists()).toBe(true)
+    await w.find('[data-test="tab-agent"]').trigger('click')
+    await flushPromises()
+    expect(w.find('#digest-enabled').exists()).toBe(true)
+    expect(w.find('#pref-editor').exists()).toBe(false)
+  })
+
+  it('a aba ativa vem da URL e as setas trocam de aba', async () => {
+    stub({ preferences: {} })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias?aba=agente')
+    const w = mount(PreferencesView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="tab-agent"]').attributes('aria-selected')).toBe('true')
+    expect(w.find('[data-test="tab-general"]').attributes('tabindex')).toBe('-1')
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
+    await flushPromises()
+    expect(router.currentRoute.value.query.aba).toBeUndefined()
+    expect(w.find('#pref-editor').exists()).toBe(true)
   })
 
   it('mostra os valores salvos e explica como o comando é usado', async () => {
