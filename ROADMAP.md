@@ -26,7 +26,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Concluído | 11 de 11 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
-| 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Em andamento | 10 de 10 |
+| 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 12 de 12 |
 
@@ -313,6 +313,10 @@ Um agente único do app, sem ferramentas, lê a conversa de forma incremental co
 
 Decidido no desenho (2026-09-30): o agente só lê e resume; "plano concluído" é um selo no app, sem tocar o arquivo; instruções extras em texto livre, sem ferramentas; padrão Sonnet 5.5 com raciocínio médio; passada a cada 10 min, mínimo de 10 mensagens novas, teto de 30 min com turno aberto, janela de 3 dias; fases concluídas congeladas.
 
+Concluído em 2026-09-30, com aprovação da revisão do marco depois de uma rodada de correções: login expirado passa a parar a passada, o agente roda com `strict_mcp_config` (verificado no SDK real: só a ferramenta interna `StructuredOutput`, nenhum servidor MCP), e uma fase nova com o título de uma fase concluída não some mais na mesclagem. Teste manual contra o SDK real (`scripts/digest_smoke.py`, haiku): duas leituras da mesma sessão, a incremental manteve a fase anterior, nenhuma sessão ficou em `~/.claude/projects`. Não conferido no navegador.
+
+Deixado para depois (achados menores das revisões): marcadores de login procurados também no texto do modelo podem parar a passada por engano numa conversa que cita "Please run /login" e falha na saída estruturada; cancelamento durante o fechamento normal da passada grava o fim um instante depois; `refreshStatus` sem guarda de ordem; `finish_run` fora de transação; limites do prompt fixo escritos à mão; `_digest_briefs` não é limpo ao apagar sessão; `aria-controls` das abas e teclas Home/End.
+
 ## Marco 11. Tela do projeto e ajustes
 
 Objetivo: ver o estado git de cada repositório do projeto e abrir conversas sem sair da tela do projeto, com dois ajustes de uso diário.
@@ -414,6 +418,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | Pendências do marco 7 fechadas, revisadas e marco 7 concluído de novo |
 | 2026-09-29 | Progresso de planos lido do arquivo do plano, com regra de marcação no CLAUDE.md global; ferramenta de tarefas descartada por não existir nas sessões com Opus |
 | 2026-09-29 | Marco 9 concluído: progresso lido do plano, vínculo automático, sinal de turno aberto das conversas do CLI; revisado e testado no app real |
+| 2026-09-30 | Marco 10 concluído: agente de resumos com leitura incremental, fases congeladas, selo de plano concluído no app e aba nas Preferências; revisado e testado contra o SDK real |
 | 2026-09-30 | Agente de resumos vira o marco 10: uma chamada curta do SDK por sessão, incremental, sem ferramentas, configurável numa aba das Preferências |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
 | 2026-09-30 | Marco 12 concluído: conversa do CLI no meio de um turno conta como "Em execução"; sessões de worktree são indexadas sob o projeto dono e retomadas na worktree só quando a transcrição está na pasta dela; o marco foi numerado 11 porque o main já tem um marco 10 |
