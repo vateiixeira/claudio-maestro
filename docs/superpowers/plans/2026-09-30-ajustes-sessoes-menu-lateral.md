@@ -582,11 +582,11 @@ git commit -m "[Feat] Mostrar conversa do CLI no meio de um turno como em execu�
     - `detect_worktree: Callable[[Path], tuple[bool, Worktree | None]] | None`, padrão `current_worktree`.
   - `HistoryIndex.update_session(session_id, mtime, info, path: Path | None = None) -> bool`.
 
-- [ ] **Step 1: `history_fakes.info` com branch**
+- [x] **Step 1: `history_fakes.info` com branch**
 
 Em `backend/tests/history_fakes.py`, acrescente o parâmetro `git_branch: str | None = None` a `info()` e repasse com `git_branch=git_branch` ao `SDKSessionInfo(...)`.
 
-- [ ] **Step 2: Testes que falham**
+- [x] **Step 2: Testes que falham**
 
 Em `backend/tests/test_history.py`, siga o padrão dos testes que já criam um `HistoryIndex` com `FakeHistory` e um projeto no banco. Use os helpers do arquivo para criar o banco e inserir o projeto: veja `test_sessions_of_subrepositories_keep_their_cwd` e o fixture `env`. Os nomes abaixo (`make_index`, `add_project`, `rows`) são os que você vai criar ou reaproveitar no topo do bloco novo.
 
@@ -739,12 +739,12 @@ async def test_transcript_in_another_history_folder_triggers_project_sync(...):
 
 Escreva os dois com o fixture e os helpers que o arquivo já usa. Os comentários acima dizem o que arrumar e o que conferir.
 
-- [ ] **Step 3: Rodar e ver falhar**
+- [x] **Step 3: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_history.py backend/tests/test_cliwatch.py -q`
 Expected: FAIL (`HistoryIndex` não aceita `list_worktrees`, falta `git_worktrees`, `update_session` não recebe `path`).
 
-- [ ] **Step 4: Implementar em `history.py`**
+- [x] **Step 4: Implementar em `history.py`**
 
 Imports no topo:
 
@@ -1009,7 +1009,7 @@ Em `update_session`:
             return True
 ```
 
-- [ ] **Step 5: Implementar em `cliwatch.py`**
+- [x] **Step 5: Implementar em `cliwatch.py`**
 
 `_indexed_session` devolve também a pasta do histórico:
 
@@ -1045,12 +1045,12 @@ Em `_process`:
 
 No `__init__` do `CliWatcher`: `self._moved_synced: set[tuple[str, str]] = set()`. Confira que `history_folder_name` é a função já usada em `_projects_for_folder`. Ela está importada no arquivo.
 
-- [ ] **Step 6: Rodar tudo e ver passar**
+- [x] **Step 6: Rodar tudo e ver passar**
 
 Run: `uv run pytest -q`
 Expected: PASS em tudo. Testes antigos que chamavam `_store(listed, gone)` com pares precisam passar trios `(info, directory, None)`. Ajuste-os e cite no relatório.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/vibing/history.py backend/vibing/cliwatch.py backend/tests/

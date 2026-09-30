@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from history_fakes import FakeHistory, info
+from history_fakes import REAL_GIT_WORKTREES, FakeHistory, info
 
 from vibing import db
 from vibing.history import HistoryIndex, find_repositories, session_title
@@ -564,3 +564,348 @@ async def test_file_checks_run_before_the_transaction(tmp_path, monkeypatch):
 
     assert seen == [False]
     assert rows(db_path) == {}
+
+
+# Worktrees -----------------------------------------------------------------
+
+
+def _worktrees(mapping: dict[str, list[str]]):
+    async def list_worktrees(repo: Path) -> list[str]:
+        return list(mapping.get(str(repo), []))
+
+    return list_worktrees
+
+
+def make_index(db_path, fake, *, worktrees=None, detected=None):
+    """HistoryIndex with fake listing, worktree listing, file lookup and detection."""
+    detected = {} if detected is None else detected  # the caller may mutate it later
+    return HistoryIndex(
+        db_path, fake.list_sessions,
+        folder_signature=lambda d: None,
+        list_worktrees=_worktrees({} if worktrees is None else worktrees),
+        session_file=lambda sid, directory: Path(f"/fake/{sid}.jsonl"),
+        detect_worktree=lambda path: detected.get(path.stem, (False, None)),
+        file_exists=lambda sid, d: True,
+    )
+
+
+def with_worktrees_dir(folder: Path) -> Path:
+    """A repository that has linked worktrees: `.git/worktrees` exists (git is asked)."""
+    (folder / ".git" / "worktrees").mkdir(parents=True)
+    return folder
+
+
+def bump_mtime(folder: Path) -> None:
+    stat = folder.stat()
+    os.utime(folder, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
+
+
+def counting_lister(mapping: dict[str, list[str]] | None = None):
+    calls: list[str] = []
+
+    async def list_worktrees(repo: Path) -> list[str]:
+        calls.append(str(repo))
+        return list((mapping or {}).get(str(repo), []))
+
+    return list_worktrees, calls
+
+
+def new_db(tmp_path: Path) -> Path:
+    db_path = tmp_path / "data" / "vibing.db"
+    db.init_db(db_path)
+    return db_path
+
+
+@pytest.mark.anyio
+async def test_sessions_in_worktree_folders_are_indexed_under_the_project(tmp_path: Path):
+    project = with_worktrees_dir(tmp_path / "proj")
+    outside = tmp_path / "proj-wt"  # worktree outside the project folder
+    inside = project / ".claude" / "worktrees" / "a"
+    db_path = new_db(tmp_path)
+    pid = add_project(db_path, project)
+    fake = FakeHistory()
+    fake.add(str(inside), info("s-in", str(project), git_branch="worktree-a"))
+    fake.add(str(outside), info("s-out", str(outside)))
+    idx = make_index(db_path, fake, worktrees={str(project): [str(inside), str(outside)]})
+    await idx.sync_all()
+    got = rows(db_path)
+    assert got["s-in"]["project_id"] == pid
+    assert got["s-in"]["history_dir"] == str(inside)
+    assert got["s-in"]["git_branch"] == "worktree-a"
+    # cwd outside every project: owned by the project whose repo listed the worktree.
+    assert got["s-out"]["project_id"] == pid
+    assert got["s-out"]["history_dir"] is None  # its cwd is the listed folder
+
+
+@pytest.mark.anyio
+async def test_worktree_listing_failure_keeps_the_project_complete(tmp_path: Path):
+    project = with_worktrees_dir(tmp_path / "proj")
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project)))
+
+    async def boom(repo: Path) -> list[str]:
+        raise RuntimeError("git quebrou")
+
+    idx = make_index(db_path, fake)
+    idx._list_worktrees = boom  # simulates an unexpected failure
+    await idx.sync_all()
+    assert "s1" in rows(db_path)
+    # The project still counts as completely listed: a vanished session can leave.
+    idx._file_exists = lambda sid, d: False
+    fake.by_directory[str(project)] = []
+    await idx.sync_all()
+    assert rows(db_path) == {}
+
+
+@pytest.mark.anyio
+async def test_worktree_detection_is_written_and_kept_when_folder_is_gone(tmp_path: Path):
+    from vibing.worktree import Worktree
+
+    project = tmp_path / "proj"
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project), modified_ms=1_000_000_000_000))
+    detected = {"s1": (True, Worktree(name="a", path="/wt/a"))}
+    idx = make_index(db_path, fake, detected=detected)
+    await idx.sync_all()
+    assert (rows(db_path)["s1"]["worktree_name"], rows(db_path)["s1"]["worktree_path"]) == (
+        "a", "/wt/a"
+    )
+    # File changed, folder gone: not decided, the previous value stays.
+    fake.by_directory[str(project)] = [info("s1", str(project), modified_ms=1_000_000_100_000)]
+    detected["s1"] = (False, None)
+    await idx.sync_all()
+    assert rows(db_path)["s1"]["worktree_name"] == "a"
+    # Back in the main checkout: cleared.
+    fake.by_directory[str(project)] = [info("s1", str(project), modified_ms=1_000_000_200_000)]
+    detected["s1"] = (True, None)
+    await idx.sync_all()
+    assert rows(db_path)["s1"]["worktree_name"] is None
+
+
+@pytest.mark.anyio
+async def test_worktree_detection_reads_the_file_only_when_it_changed(tmp_path: Path):
+    project = tmp_path / "proj"
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project), modified_ms=1_000_000_000_000))
+    idx = make_index(db_path, fake)
+    reads: list[Path] = []
+
+    def detect(path: Path):
+        reads.append(path)
+        return (False, None)
+
+    idx._detect_worktree = detect
+    await idx.sync_all()
+    await idx.sync_all()
+    assert len(reads) == 1
+    fake.by_directory[str(project)] = [info("s1", str(project), modified_ms=1_000_000_100_000)]
+    await idx.sync_all()
+    assert len(reads) == 2
+
+
+@pytest.mark.anyio
+async def test_worktree_detection_runs_off_the_event_loop(tmp_path: Path):
+    import threading
+
+    project = tmp_path / "proj"
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project)))
+    idx = make_index(db_path, fake)
+    loop_thread = threading.get_ident()
+    threads: list[int] = []
+
+    def detect(path: Path):
+        threads.append(threading.get_ident())
+        return (False, None)
+
+    idx._detect_worktree = detect
+    await idx.sync_all()
+    assert threads and threads[0] != loop_thread
+
+
+@pytest.mark.anyio
+async def test_session_moved_to_worktree_keeps_row_and_gains_history_dir(tmp_path: Path):
+    project = with_worktrees_dir(tmp_path / "proj")
+    wt = project / ".claude" / "worktrees" / "m"
+    db_path = new_db(tmp_path)
+    pid = add_project(db_path, project)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project)))
+    worktrees: dict[str, list[str]] = {}
+    idx = make_index(db_path, fake, worktrees=worktrees)
+    await idx.sync_all()
+    assert rows(db_path)["s1"]["history_dir"] is None
+    # The CLI moved the transcript into the worktree's history folder.
+    fake.by_directory[str(project)] = []
+    fake.add(str(wt), info("s1", str(project), modified_ms=1_000_000_100_000))
+    worktrees[str(project)] = [str(wt)]
+    bump_mtime(project / ".git" / "worktrees")  # what git does when it adds a worktree
+    await idx.sync_all()
+    got = rows(db_path)
+    assert list(got) == ["s1"]
+    assert got["s1"]["project_id"] == pid
+    assert got["s1"]["history_dir"] == str(wt)
+
+
+@pytest.mark.anyio
+async def test_file_check_of_a_moved_session_uses_its_history_dir(tmp_path: Path):
+    project = with_worktrees_dir(tmp_path / "proj")
+    wt = project / ".claude" / "worktrees" / "m"
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    fake = FakeHistory()
+    fake.add(str(wt), info("s1", str(project)))
+    idx = make_index(db_path, fake, worktrees={str(project): [str(wt)]})
+    await idx.sync_all()
+    checked: list[tuple[str, str]] = []
+
+    def exists(sid, directory):
+        checked.append((sid, directory))
+        return False
+
+    idx._file_exists = exists
+    fake.by_directory[str(wt)] = []
+    await idx.sync_all()
+    assert checked == [("s1", str(wt))]
+    assert rows(db_path) == {}
+
+
+@pytest.mark.anyio
+async def test_update_session_writes_the_detected_worktree(tmp_path: Path):
+    from vibing.worktree import Worktree
+
+    project = tmp_path / "proj"
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project), modified_ms=1_000_000_000_000))
+    detected: dict[str, tuple[bool, Worktree | None]] = {}
+    idx = make_index(db_path, fake, detected=detected)
+    await idx.sync_all()
+    path = tmp_path / "s1.jsonl"
+    detected["s1"] = (True, Worktree(name="a", path="/wt/a"))
+    # Without info: a worktree change alone counts as a change, even with the same mtime.
+    assert idx.update_session("s1", 1_000_000_000, None, path) is True
+    assert rows(db_path)["s1"]["worktree_name"] == "a"
+    assert idx.update_session("s1", 1_000_000_000, None, path) is False
+    # Undecided keeps the stored value.
+    detected["s1"] = (False, None)
+    idx.update_session("s1", 1_000_000_000, None, path)
+    assert rows(db_path)["s1"]["worktree_path"] == "/wt/a"
+    # With info: a decided "main checkout" clears it.
+    detected["s1"] = (True, None)
+    assert idx.update_session(
+        "s1", 1_000_000_100, info("s1", str(project), modified_ms=1_000_000_100_000), path
+    ) is True
+    assert rows(db_path)["s1"]["worktree_name"] is None
+
+
+@pytest.mark.anyio
+async def test_git_worktrees_uses_run_git_and_drops_own_folder(tmp_path: Path, monkeypatch):
+    calls = []
+
+    async def fake_run_git(repo, *args, **kw):
+        calls.append((repo, args))
+        return 0, f"worktree {tmp_path}\nHEAD a\n\nworktree /x/y\nHEAD b\n", ""
+
+    monkeypatch.setattr("vibing.gitinfo.run_git", fake_run_git)
+    assert await REAL_GIT_WORKTREES(tmp_path) == ["/x/y"]
+    assert calls == [(tmp_path, ("worktree", "list", "--porcelain"))]
+
+
+@pytest.mark.anyio
+async def test_git_worktrees_empty_on_git_error(tmp_path: Path, monkeypatch):
+    from vibing import gitinfo
+
+    async def failing(repo, *args, **kw):
+        raise gitinfo.GitError("sem git")
+
+    monkeypatch.setattr("vibing.gitinfo.run_git", failing)
+    assert await REAL_GIT_WORKTREES(tmp_path) == []
+
+
+@pytest.mark.anyio
+async def test_git_worktrees_empty_on_nonzero_exit(tmp_path: Path, monkeypatch):
+    async def nonzero(repo, *args, **kw):
+        return 128, "", "fatal: not a git repository"
+
+    monkeypatch.setattr("vibing.gitinfo.run_git", nonzero)
+    assert await REAL_GIT_WORKTREES(tmp_path) == []
+
+
+def _index_with_lister(tmp_path: Path, project: Path):
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    fake = FakeHistory()
+    idx = make_index(db_path, fake)
+    lister, calls = counting_lister()
+    idx._list_worktrees = lister
+    return idx, calls
+
+
+@pytest.mark.anyio
+async def test_git_is_not_asked_without_a_git_entry(tmp_path: Path):
+    project = tmp_path / "proj"
+    idx, calls = _index_with_lister(tmp_path, project)
+    await idx.sync_all()
+    assert calls == []
+
+
+@pytest.mark.anyio
+async def test_git_is_not_asked_when_git_folder_has_no_worktrees_dir(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".git").mkdir(parents=True)
+    idx, calls = _index_with_lister(tmp_path, project)
+    await idx.sync_all()
+    await idx.sync_all()
+    assert calls == []
+
+
+@pytest.mark.anyio
+async def test_worktree_list_is_cached_until_git_worktrees_dir_changes(tmp_path: Path):
+    project = with_worktrees_dir(tmp_path / "proj")
+    idx, calls = _index_with_lister(tmp_path, project)
+    await idx.sync_all()
+    await idx.sync_all()
+    assert calls == [str(project)]
+    bump_mtime(project / ".git" / "worktrees")
+    await idx.sync_all()
+    assert calls == [str(project), str(project)]
+    await idx.sync_all()
+    assert len(calls) == 2
+
+
+@pytest.mark.anyio
+async def test_linked_worktree_git_file_is_never_cached(tmp_path: Path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / ".git").write_text("gitdir: /main/.git/worktrees/proj\n")
+    idx, calls = _index_with_lister(tmp_path, project)
+    await idx.sync_all()
+    await idx.sync_all()
+    assert calls == [str(project), str(project)]
+
+
+@pytest.mark.anyio
+async def test_worktree_cache_is_pruned_only_by_a_sync_of_every_project(tmp_path: Path):
+    project = tmp_path / "proj"
+    db_path = new_db(tmp_path)
+    pid = add_project(db_path, project)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project)))
+    idx = make_index(db_path, fake)
+    await idx.sync_all()
+    assert set(idx._worktree_cache) == {"s1"}
+    fake.by_directory[str(project)] = []
+    await idx.sync_project(pid)  # lists part of the sessions: keeps the cache
+    assert set(idx._worktree_cache) == {"s1"}
+    await idx.sync_all()
+    assert idx._worktree_cache == {}

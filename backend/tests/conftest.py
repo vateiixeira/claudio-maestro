@@ -39,6 +39,13 @@ def no_real_sdk_history(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr("vibing.history.sdk_folder_signature", lambda directory: None)
     monkeypatch.setattr("vibing.history.sdk_session_file", lambda session_id, directory: None)
+
+    async def no_worktrees(repo):
+        return []
+
+    # The index would start git processes on every sync; slow and racy against the app's
+    # startup sync. Tests of `git_worktrees` itself use history_fakes.REAL_GIT_WORKTREES.
+    monkeypatch.setattr("vibing.history.git_worktrees", no_worktrees)
     monkeypatch.setattr(
         "vibing.sessions.sdk_rename_session", lambda session_id, title, directory: None
     )
