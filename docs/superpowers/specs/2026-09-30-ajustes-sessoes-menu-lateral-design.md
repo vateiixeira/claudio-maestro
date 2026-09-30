@@ -22,7 +22,7 @@ Critérios de sucesso:
 1. Arrastar a borda do Detalhes muda a largura, e ela é lembrada ao recarregar.
 2. Uma conversa do CLI no meio de um turno aparece como "Em execução" no menu lateral, na Inbox e no Dashboard.
 3. Uma sessão que entrou numa worktree (como a do `EnterWorktree`) ou começou nela aparece no projeto dono do repositório e mostra "worktree `<nome>` · `<branch>`".
-4. Cada linha de "Em execução" e de Recentes mostra a sigla do projeto na cor dele.
+4. Cada linha de "Em execução" e de Recentes mostra a sigla do projeto na cor dele. **Substituído em 2026-09-30 (commit 86548dc):** a linha mostra o nome do projeto no lugar da sigla, e `projectInitials.ts` e `ProjectBadge.vue` foram removidos.
 5. O modal de nova conversa tem o botão de ditado, com o mesmo comportamento do campo de mensagem.
 
 ## 2. Decisões
@@ -31,7 +31,7 @@ Critérios de sucesso:
 |---|---|
 | Microfone no modal | Adicionar o ditado (o modal não tinha) |
 | O que a sessão em worktree informa | Nome da worktree e branch, no cabeçalho, no Detalhes e nas linhas da lista. No menu lateral, só um ícone com dica |
-| Identificador do projeto em Recentes | Quadrado na cor do projeto com uma sigla de 2 letras |
+| Identificador do projeto em Recentes | Quadrado na cor do projeto com uma sigla de 2 letras (substituído em 2026-09-30, commit 86548dc, pelo nome do projeto) |
 | "Em execução" e Recentes | Duas seções, sem repetir. Uma conversa que parou continua em Recentes |
 | Conversa do CLI no meio de um turno | Passa a contar como `running` no estado exibido. Resolve o ponto em aberto do roadmap |
 
@@ -131,17 +131,17 @@ O banco de desenvolvimento é compartilhado entre worktrees (`~/.local/share/vin
   - Setas esquerda e direita mudam 16 px.
   - Duplo clique volta a 360.
   - Ao soltar, grava.
-- Limites: mínimo de 300 px, máximo de `min(70vw, largura da janela menos 400 px menos o menu lateral de 256 px)`, recalculado na hora de aplicar. Um valor salvo fora dos limites é ajustado. (O desconto do menu lateral foi decidido na revisão, para a conversa manter pelo menos 400 px.)
+- Limites: mínimo de 300 px, máximo de `min(70vw, largura da janela menos 400 px menos o menu lateral de 256 px)`, recalculado na hora de aplicar. Um valor salvo fora dos limites é ajustado. (O desconto do menu lateral foi decidido na revisão, para a conversa manter pelo menos 400 px.) **Atualizado em 2026-09-30 (commit 9676a21):** o menu lateral passou a 308 px, e o cálculo em `detailsWidthPref.ts` usa esse valor.
 - A largura vale no painel lateral e na gaveta. No modo expandido do diff (`wide`), segue 60vw, e a alça fica escondida.
 
 ### 5.3 Menu lateral
 
-- **Sigla do projeto:** nova função `projectInitials(name)` em `frontend/src/projectInitials.ts`.
+- **Sigla do projeto:** nova função `projectInitials(name)` em `frontend/src/projectInitials.ts`. **Substituído em 2026-09-30 (commit 86548dc):** a linha mostra o nome do projeto no lugar da sigla, e `projectInitials.ts` e `ProjectBadge.vue` foram removidos.
   - Divide o nome em palavras por `-`, `_`, `.`, espaço e troca de minúscula para maiúscula.
   - Com duas ou mais palavras, usa a primeira letra de cada uma das duas primeiras. Com uma palavra, usa as duas primeiras letras.
   - Tudo em maiúsculas, sem acentos. Nome vazio vira `?`.
   - Exemplos: `loja-online` → `LO`, `vini7-vibing` → `VV`, `dash-crm` → `DC`, `Vibing` → `VI`.
-- **`ProjectBadge.vue`:** quadrado arredondado de 18×14 px no fundo da cor do projeto, com a sigla em 9 px, peso 600, e texto escuro (as cores da paleta são claras). A dica (`title`) traz o nome completo. `data-test="project-badge"`.
+- **`ProjectBadge.vue`:** quadrado arredondado de 18×14 px no fundo da cor do projeto, com a sigla em 9 px, peso 600, e texto escuro (as cores da paleta são claras). A dica (`title`) traz o nome completo. `data-test="project-badge"`. **Substituído em 2026-09-30 (commit 86548dc):** a linha mostra o nome do projeto no lugar da sigla, e `projectInitials.ts` e `ProjectBadge.vue` foram removidos.
 - **`SidebarSessionRow.vue`:** `RouterLink` com `DisplayStateIcon`, `ProjectBadge`, título truncado e, se `worktree_name`, um ícone de worktree com a dica "worktree `<nome>` · `<branch>`".
 - **`SidebarRunning.vue`, seção "Em execução", acima de Recentes:**
   - Lista as sessões com `display_state === 'running'`, da mais recente para a mais antiga (`last_activity_at`).

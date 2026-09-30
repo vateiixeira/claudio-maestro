@@ -28,10 +28,10 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
-| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 18 de 19 |
-| 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode | Não iniciado | 0 de 11 |
+| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 19 de 23 |
+| 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, e padrões de modelo, raciocínio e modo nas Preferências | Em andamento | 0 de 12 |
 
-Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e tem spec, mas ainda não tem plano.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e está em andamento junto com o fim do marco 12.
 
 ## Preparação
 
@@ -363,13 +363,19 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 - [x] Retomada de sessão movida para worktree conferida contra o SDK real (2026-09-30)
 - [x] Sessão do app ociosa com subagente em segundo plano conta como "Em execução" no estado exibido (menu lateral, Inbox e Dashboard), com `subagents_running` no resumo da sessão e evento ao começar e terminar (bug relatado pelo usuário em 2026-09-30) (2026-09-30)
 - [x] Sessão do CLI com subagente em segundo plano depois do `end_turn` da cadeia principal conta como "Em execução": `turn_open` hoje só considera a escrita do subagente quando a cadeia principal não decide nada, e o `end_turn` costuma vir depois do subagente terminar, então exige comparar a ordem de escrita entre os arquivos. Resolvido com estado próprio por arquivo de subagente (aberto até o `end_turn` dele), sem comparar a ordem de escrita; a interrupção na cadeia principal zera os subagentes (2026-09-30)
+- [ ] Subagente do CLI que morre sem `end_turn` deixa de contar como aberto depois de `CLI_TURN_STALE_SECONDS` sem escrever (bloqueante da revisão do marco em 2026-09-30)
+- [ ] Fim de subagente do app seguido de turno autônomo não pisca "Aguardando você" na Inbox (achado da revisão do marco em 2026-09-30)
+- [ ] Apagar do navegador a chave antiga de Recentes, que ficou órfã com a remoção de `recentConversations.ts` (achado da revisão do marco em 2026-09-30)
+- [x] Spec e plano do marco anotam a troca da sigla pelo nome do projeto e a largura nova do menu lateral (achado da revisão do marco em 2026-09-30) (2026-09-30)
 - [ ] Nova revisão do marco pelo `milestone-reviewer`, depois dos itens reabertos
 
 ## Marco 13. Comandos e menções
 
 Objetivo: sugestões de `/` (comandos) e `@` (arquivos e pastas) no campo de mensagem, com o mesmo comportamento da extensão do VSCode.
 
-Pedido pelo usuário em 2026-09-30. Falta escrever o plano.
+Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/pendencias-12-13`, junto com o fim do marco 12.
+
+- Plano: `docs/superpowers/plans/2026-09-30-comandos-e-mencoes.md`
 
 - Spec: `docs/superpowers/specs/2026-09-30-comandos-e-mencoes-design.md`
 
@@ -384,6 +390,7 @@ Pedido pelo usuário em 2026-09-30. Falta escrever o plano.
 - [ ] Realce das menções e dica de argumentos (`MentionMirror`)
 - [ ] Comando como balão no histórico
 - [ ] Verificação manual contra o SDK real e no app
+- [ ] Preferências com modelo, raciocínio e modo padrão das novas conversas: o que estiver salvo lá vale para toda sessão nova, no campo da conversa e no modal (pedido do usuário em 2026-09-30, fora da spec de comandos; substitui a decisão de 2026-09-29 de herdar o modo padrão do CLI quando houver valor salvo)
 
 ## Fora do MVP
 

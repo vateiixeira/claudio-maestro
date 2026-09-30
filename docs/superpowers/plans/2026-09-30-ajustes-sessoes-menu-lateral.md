@@ -34,7 +34,7 @@
 - **Banco:** o backend desta worktree nunca roda contra o banco real (`~/.local/share/vini7-vibing`). Teste manual usa `VIBING_DATA_DIR` numa pasta temporária.
 - **Migração:** a migração nova fica no fim de `MIGRATIONS`. Na junção com o `main`, continua depois das que já estiverem lá (o marco 8 também cria migrações).
 - **Rótulo de worktree:** `worktree <nome> · <branch>`, ou `worktree <nome>` sem branch.
-- **Largura do Detalhes:** padrão 360 px, mínimo 300 px, máximo `min(70vw, janela − 400 px − 256 px do menu lateral)`, passo de 16 px no teclado, chave `vibing:details-width`.
+- **Largura do Detalhes:** padrão 360 px, mínimo 300 px, máximo `min(70vw, janela − 400 px − 256 px do menu lateral)`, passo de 16 px no teclado, chave `vibing:details-width`. **Atualizado em 2026-09-30 (commit 9676a21):** o menu lateral passou a 308 px, e o cálculo em `detailsWidthPref.ts` usa esse valor.
 - **Menu lateral:** "Em execução" mostra até 8 linhas. "Recentes" mostra até 5. *(Substituído em 2026-09-30, commit 6a4ed93: Recentes não tem mais teto.)*
 
 ## Review Focus
@@ -1750,7 +1750,7 @@ git commit -m "[UI] Levar o progresso do plano para o painel Detalhes"
 
 ### Task 10: Menu lateral com "Em execução", sigla do projeto e Recentes estável
 
-> **Substituído em 2026-09-30 (commit 6a4ed93).** A parte de "Recentes estável" e o módulo `recentConversations.ts` foram removidos: Recentes lista todas as conversas abertas por `last_activity_at`. "Em execução" e a sigla do projeto continuam como aqui.
+> **Substituído em 2026-09-30 (commit 6a4ed93).** A parte de "Recentes estável" e o módulo `recentConversations.ts` foram removidos: Recentes lista todas as conversas abertas por `last_activity_at`. "Em execução" continua como aqui. A sigla do projeto foi trocada pelo nome dele no commit 86548dc.
 
 **Files:**
 - Create:
