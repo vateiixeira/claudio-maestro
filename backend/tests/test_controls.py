@@ -721,6 +721,72 @@ async def test_send_during_autonomous_turn_ends_idle(make_env, env_cleanup, monk
 
 
 @pytest.mark.anyio
+async def test_messages_absorbed_by_user_turn_end_idle(make_env, env_cleanup, monkeypatch):
+    """The CLI folds messages sent during a normal turn into it: one result only. The
+    session must stop counting them after the grace period instead of running forever."""
+    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
+    pause = PauseStep()
+
+    def first_turn(sid):
+        turn = text_turn(sid, "resposta única")
+        return [turn[0], turn[1], turn[2], pause, *turn[3:]]
+
+    env, session = await connected(
+        make_env, env_cleanup, first_turn, lambda sid: [], lambda sid: [])
+    await session.send("primeira")
+    await pause.reached.wait()
+    await wait_until(lambda: session.state == "running")
+    await session.send("segunda")
+    await session.send("terceira")
+    assert session.pending_turns == 3
+
+    pause.release.set()
+    await wait_until(lambda: len(results_of(env, session)) == 2)
+    # Still running while it waits for a turn that may follow.
+    assert session.state == "running"
+    await wait_until(lambda: session.state == "idle")
+    assert session.pending_turns == 0
+    assert len(results_of(env, session)) == 2
+
+
+@pytest.mark.anyio
+async def test_user_turn_followed_by_real_turn_does_not_go_idle_between(
+    make_env, env_cleanup, monkeypatch
+):
+    """One message is absorbed, another gets a turn of its own: the grace period after
+    the first result is cancelled by the next turn, and the second one settles the count."""
+    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.3)
+    pause = PauseStep()
+
+    def first_turn(sid):
+        turn = text_turn(sid, "resposta 1")
+        return [turn[0], turn[1], turn[2], pause, *turn[3:]]
+
+    env, session = await connected(
+        make_env, env_cleanup, first_turn, lambda sid: text_turn(sid, "resposta 2"),
+        lambda sid: [])
+    sid = session.session_id
+    await session.send("primeira")
+    await pause.reached.wait()
+    await wait_until(lambda: session.state == "running")
+    await session.send("segunda")
+    await session.send("terceira")
+    assert session.pending_turns == 3
+
+    pause.release.set()
+    await wait_until(lambda: len(results_of(env, session)) == 3)
+    await wait_until(lambda: session.state == "idle")
+
+    assert session.pending_turns == 0
+    events = env.recorder.of(sid)
+    ends = [i for i, e in enumerate(events) if e["type"] == "turn.result"]
+    between = [e["data"]["state"] for e in events[ends[1]:ends[2]] if e["type"] == "session.state"]
+    assert "idle" not in between
+    texts = [i["text"] for i in session.snapshot()["items"] if i["type"] == "text"]
+    assert texts[-2:] == ["resposta 1", "resposta 2"]
+
+
+@pytest.mark.anyio
 async def test_close_during_followup_grace_leaves_nothing_running(make_env, env_cleanup):
     pause = PauseStep()
     env, session = await connected(make_env, env_cleanup, lambda sid: [])

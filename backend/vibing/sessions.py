@@ -1346,9 +1346,12 @@ class ActiveSession:
                         # any: those sent since get a turn of their own (or, if none
                         # starts, the grace period settles the count).
                         self._autonomous_turn = False
-                        self._expect_followup(client)
                     else:
                         self.pending_turns = max(0, self.pending_turns - 1)
+                    # Whatever is still pending may have been folded into the turn that
+                    # just ended (the CLI sends no result of its own for those), or may
+                    # get a turn of its own: the grace period tells them apart.
+                    self._expect_followup(client)
                     self._touch()
                     self.emit_updated()
                     # The conversation is on disk after the first turn.
@@ -1377,7 +1380,7 @@ class ActiveSession:
             await self._fail("O agente encerrou a conexão.")
 
     def _expect_followup(self, client: AgentClient) -> None:
-        """An autonomous turn ended while messages sent during it wait for an answer."""
+        """A turn ended while messages sent during it still wait for an answer."""
         self._clear_followup()
         if self.pending_turns == 0:
             return
