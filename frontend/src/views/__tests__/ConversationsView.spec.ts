@@ -4,10 +4,11 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import ConversationsView from '../ConversationsView.vue'
 import { createAppRouter } from '../../router'
+import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import { jsonResponse, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { jsonResponse, makeGroup, makeProject, makeSession, routeFetch } from '../../test/factories'
 
 vi.mock('../../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
 import { loadEverything } from '../../stores/realtime'
@@ -129,5 +130,81 @@ describe('Conversas', () => {
     expect(wrapper.find('[data-test="empty"]').exists()).toBe(false)
     await wrapper.find('[data-test="load-retry"]').trigger('click')
     expect(loadEverything).toHaveBeenCalledTimes(1)
+  })
+
+  describe('agrupador', () => {
+    const titles = (wrapper: Awaited<ReturnType<typeof mountList>>['wrapper']) =>
+      wrapper.findAll('[data-test="row-link"]').map((r) => r.text())
+
+    function seedGroups() {
+      useGroupsStore(pinia).groups = [makeGroup({ id: 1, name: 'A' }), makeGroup({ id: 2, name: 'B' })]
+      useSessionsStore(pinia).setForProject(1, [
+        makeSession({ session_id: 'a', title: 'Em A', group_id: 1, last_activity_at: now }),
+        makeSession({ session_id: 'b', title: 'Em B', group_id: 2, last_activity_at: now - 1 }),
+        makeSession({ session_id: 'c', title: 'Solta', group_id: null, last_activity_at: now - 2 }),
+      ])
+    }
+
+    it('sem projeto escolhido não mostra o filtro de agrupador', async () => {
+      seedGroups()
+      const { wrapper } = await mountList()
+      expect(wrapper.find('[data-test="conversations-group"]').exists()).toBe(false)
+    })
+
+    it('lista "Todos", "Sem agrupador" e os agrupadores do projeto', async () => {
+      seedGroups()
+      const { wrapper } = await mountList('/sessions?projeto=1')
+      const options = wrapper.findAll('[data-test="conversations-group"] option').map((o) => o.text())
+      expect(options).toEqual(['Todos os agrupadores', 'Sem agrupador', 'A', 'B'])
+    })
+
+    it('não mostra o filtro quando o projeto não tem agrupadores', async () => {
+      seedGroups()
+      const { wrapper } = await mountList('/sessions?projeto=2')
+      expect(wrapper.find('[data-test="conversations-group"]').exists()).toBe(false)
+    })
+
+    it('filtra por um agrupador e pelas sessões sem agrupador', async () => {
+      seedGroups()
+      const one = await mountList('/sessions?projeto=1&agrupador=1')
+      expect(titles(one.wrapper)).toEqual(['Em A'])
+      const loose = await mountList('/sessions?projeto=1&agrupador=sem')
+      expect(titles(loose.wrapper)).toEqual(['Solta'])
+    })
+
+    it('escolher no select guarda o agrupador na URL', async () => {
+      seedGroups()
+      const { wrapper, router } = await mountList('/sessions?projeto=1')
+      await wrapper.find('[data-test="conversations-group"]').setValue('2')
+      await flushPromises()
+      expect(router.currentRoute.value.query.agrupador).toBe('2')
+      expect(titles(wrapper)).toEqual(['Em B'])
+    })
+
+    it('ignora um agrupador que não é do projeto escolhido', async () => {
+      seedGroups()
+      useGroupsStore(pinia).groups.push(makeGroup({ id: 3, project_id: 2, name: 'C' }))
+      const { wrapper } = await mountList('/sessions?projeto=1&agrupador=3')
+      expect(titles(wrapper)).toEqual(['Em A', 'Em B', 'Solta'])
+      expect((wrapper.find('[data-test="conversations-group"]').element as HTMLSelectElement).value).toBe('')
+    })
+
+    it('trocar o projeto limpa o agrupador da URL', async () => {
+      seedGroups()
+      const { wrapper, router } = await mountList('/sessions?projeto=1&agrupador=1&estado=ativas')
+      await wrapper.find('[data-test="conversations-project"]').setValue('2')
+      await flushPromises()
+      expect(router.currentRoute.value.query).toEqual({ projeto: '2', estado: 'ativas' })
+    })
+
+    it('a busca também encontra pelo nome do agrupador', async () => {
+      useGroupsStore(pinia).groups = [makeGroup({ id: 1, name: 'Checkout' })]
+      useSessionsStore(pinia).setForProject(1, [
+        makeSession({ session_id: 'a', title: 'Ajustar botão', group_id: 1, last_activity_at: now }),
+        makeSession({ session_id: 'b', title: 'Outra coisa', group_id: null, last_activity_at: now - 1 }),
+      ])
+      const { wrapper } = await mountList('/sessions?busca=checkout')
+      expect(titles(wrapper)).toEqual(['Ajustar botão'])
+    })
   })
 })
