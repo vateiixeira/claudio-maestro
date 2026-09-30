@@ -63,7 +63,7 @@ Funções sobre a conexão SQLite, no mesmo estilo de `projects.py`: listar (tod
 - `create_session(project, group_id=None)` cria a sessão já dentro do agrupador, com a mesma validação.
 - Remover um agrupador recarrega nos registros em memória as sessões que ficaram soltas e emite `session.updated` para cada uma, também para as que não estão em memória (`_publish_closed_update`).
 - `search()` procura também no nome do agrupador da sessão, ignorando acentos como já faz com título, resumo e primeiro prompt.
-- A sincronização do histórico, a finalização e o observador do CLI não mexem em `group_id`.
+- A finalização e o observador do CLI não mexem em `group_id`. A sincronização do histórico só o limpa quando muda a sessão de projeto (pasta registrada depois como projeto próprio), porque o agrupador é do projeto antigo.
 
 ### Rotas
 

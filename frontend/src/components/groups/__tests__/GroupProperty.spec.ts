@@ -52,6 +52,13 @@ describe('propriedade Agrupador', () => {
     expect((unknown.wrapper.find('[data-test="prop-group"]').element as HTMLSelectElement).value).toBe('')
   })
 
+  it('agrupador de outro projeto cai em Nenhum, sem deixar o select em branco', () => {
+    const { wrapper } = mountProperty({}, 3)
+    const select = wrapper.find('[data-test="prop-group"]').element as HTMLSelectElement
+    expect(select.value).toBe('')
+    expect(select.selectedOptions[0]?.text).toBe('Nenhum')
+  })
+
   it('move a sessão e tira do agrupador', async () => {
     const { wrapper, fetchMock } = mountProperty({
       'PATCH /api/sessions/s1': (init) => jsonResponse(makeSession({ session_id: 's1', group_id: JSON.parse(String(init?.body)).group_id })),

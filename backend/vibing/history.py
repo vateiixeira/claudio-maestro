@@ -741,8 +741,8 @@ class HistoryIndex:
         first_prompt = truncate_text(info.first_prompt)
         title = session_title(info)
         row = conn.execute(
-            "SELECT project_id, title, title_custom, summary, first_prompt, last_activity_at,"
-            " file_modified_at FROM sessions WHERE session_id = ?",
+            "SELECT project_id, group_id, title, title_custom, summary, first_prompt,"
+            " last_activity_at, file_modified_at FROM sessions WHERE session_id = ?",
             (info.session_id,),
         ).fetchone()
         if row is None:
@@ -761,6 +761,9 @@ class HistoryIndex:
             "file_modified_at": modified,
             "last_activity_at": max(row["last_activity_at"], modified),
         }
+        if row["project_id"] != project_id:
+            # A group belongs to one project: moving to another one leaves it.
+            changes["group_id"] = None
         # A title already set only changes for a new custom title from the CLI.
         if not row["title_custom"]:
             custom = info.custom_title and info.custom_title.strip()

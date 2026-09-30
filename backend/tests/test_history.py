@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from history_fakes import FakeHistory, info
 
-from vibing import db
+from vibing import db, groups
 from vibing.history import HistoryIndex, find_repositories, session_title
 
 
@@ -257,6 +257,33 @@ async def test_session_belongs_to_most_specific_project(env):
         outer_pid = conn.execute("SELECT id FROM projects WHERE name='outer'").fetchone()[0]
     await index.sync_project(outer_pid)
     assert rows(db_path)["s1"]["project_id"] == outer_id == inner_id
+
+
+@pytest.mark.anyio
+async def test_session_moving_to_new_nested_project_leaves_its_group(env):
+    db_path, fake, index, changed, home = env
+    outer = home / "outer"
+    outer_id = add_project(db_path, outer, "outer")
+    inner = outer / "inner"
+    inner.mkdir(parents=True)
+    fake.add(str(outer), info("s1", str(inner), summary="x"))
+    await index.sync_all()
+    assert rows(db_path)["s1"]["project_id"] == outer_id
+    with closing(db.connect(db_path)) as conn:
+        group = groups.create_group(conn, outer_id, "trabalho")
+        conn.execute("UPDATE sessions SET group_id = ? WHERE session_id = 's1'", (group.id,))
+        conn.commit()
+
+    # Sync with no change keeps the group.
+    await index.sync_all()
+    assert rows(db_path)["s1"]["group_id"] == group.id
+
+    inner_id = add_project(db_path, inner, "inner")
+    await index.sync_all()
+
+    row = rows(db_path)["s1"]
+    assert row["project_id"] == inner_id
+    assert row["group_id"] is None
 
 
 # Raw transcript reading ----------------------------------------------------

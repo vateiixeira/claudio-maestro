@@ -274,6 +274,36 @@ describe('tela do projeto', () => {
     expect(wrapper.find('[data-test="group-section"]').text()).toContain('Agrupada')
   })
 
+  it('conversa com agrupador desconhecido ou de outro projeto conta como sem agrupador', async () => {
+    seed()
+    useGroupsStore(pinia).groups = [
+      makeGroup({ id: 1, project_id: 1, name: 'Checkout' }),
+      makeGroup({ id: 7, project_id: 2, name: 'De outro' }),
+    ]
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Agrupada', group_id: 1 }),
+      makeSession({ session_id: 'b', title: 'Alheia', group_id: 7 }),
+      makeSession({ session_id: 'c', title: 'Fantasma', group_id: 99 }),
+    ]) }))
+    const wrapper = await mountView()
+
+    const dated = wrapper.findAll('[data-test="date-group"]').map((g) => g.element.closest('section')!)
+    expect(dated).toHaveLength(1)
+    expect(dated[0]!.textContent).toContain('Alheia')
+    expect(dated[0]!.textContent).toContain('Fantasma')
+    expect(dated[0]!.textContent).not.toContain('Agrupada')
+  })
+
+  it('sem os agrupadores carregados as conversas agrupadas continuam na lista', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Agrupada', group_id: 1 }),
+    ]) }))
+    const wrapper = await mountView()
+    expect(wrapper.findAll('[data-test="date-group"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Agrupada')
+  })
+
   it('sem agrupadores não mostra o título "Sem agrupador"', async () => {
     seed()
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([makeSession({ session_id: 'b', title: 'Solta' })]) }))

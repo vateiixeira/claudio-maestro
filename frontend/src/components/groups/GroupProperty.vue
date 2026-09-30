@@ -14,7 +14,8 @@ const sessions = useSessionsStore()
 const options = computed(() => sortGroups(groups.forProject(props.projectId), sessions.forProject(props.projectId)))
 const current = computed(() => {
   const id = sessions.find(props.sessionId)?.group_id
-  return id != null && groups.byId(id) ? String(id) : ''
+  // Only a group of this project is an option; any other one reads as "Nenhum".
+  return id != null && options.value.some((g) => g.id === id) ? String(id) : ''
 })
 
 const busy = ref(false)
