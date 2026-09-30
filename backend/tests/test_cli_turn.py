@@ -338,7 +338,7 @@ def sub_write(path: Path, *lines: str) -> None:
 
 
 def sub_open(env: CliEnv, session_id: str = "s1") -> dict[str, bool]:
-    return {p.name: v for p, v in env.watcher._subagent_open.get(session_id, {}).items()}
+    return {p.name: v.open for p, v in env.watcher._subagent_open.get(session_id, {}).items()}
 
 
 @pytest.mark.anyio
@@ -393,7 +393,67 @@ async def test_the_turn_closes_when_the_subagent_ends_and_the_main_chain_is_clos
 
     assert item(cli)["cli_running"] is False
     assert updates(cli)[-1]["cli_running"] is False
-    assert sub_open(cli) == {"agent-a1.jsonl": False}
+    assert sub_open(cli) == {}  # closed subagents are not kept
+
+
+@pytest.mark.anyio
+async def test_a_subagent_that_died_open_stops_counting_after_the_20_minute_cap(cli):
+    path = await index_session(cli)
+    path.write_text(prompt_line() + "\n" + assistant_line("tool_use") + "\n", encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [sub], T0)  # the subagent writes once and dies
+    assert item(cli)["cli_running"] is True
+
+    # Main-chain turns much later than the cap after the subagent's last write.
+    for step in range(3):
+        cli.now["t"] = T0 + CLI_TURN_STALE_SECONDS + 100 + step * 10
+        append_line(path, assistant_line("end_turn"))
+        await process(cli, "s1", cli.now["t"])
+        assert item(cli)["cli_running"] is False
+        assert updates(cli)[-1]["cli_running"] is False
+        assert sub_open(cli) == {}
+
+
+@pytest.mark.anyio
+async def test_a_recently_written_open_subagent_keeps_the_turn_after_the_main_end_turn(cli):
+    path = await index_session(cli)
+    path.write_text(prompt_line() + "\n" + assistant_line("tool_use") + "\n", encoding="utf-8")
+    sub = sub_file(cli)
+    sub.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [sub], T0)
+
+    cli.now["t"] = T0 + CLI_TURN_STALE_SECONDS - 60  # the subagent wrote 19 minutes ago
+    append_line(path, assistant_line("end_turn"))
+    await process(cli, "s1", cli.now["t"])
+
+    assert item(cli)["cli_running"] is True
+    assert sub_open(cli) == {"agent-a1.jsonl": True}
+    # With the main chain closed, the signal lives on the subagent's last write.
+    cli.now["t"] = T0 + CLI_TURN_STALE_SECONDS + 1
+    assert item(cli)["cli_running"] is False
+
+
+@pytest.mark.anyio
+async def test_subagent_states_keep_only_files_that_are_open_and_fresh(cli):
+    path = await index_session(cli)
+    path.write_text(assistant_line("end_turn") + "\n", encoding="utf-8")
+    closed, alive, dead = (sub_file(cli, name=f"agent-{n}.jsonl") for n in ("a1", "a2", "a3"))
+    closed.write_text(assistant_line("end_turn", sidechain=True) + "\n", encoding="utf-8")
+    alive.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    dead.write_text(assistant_line("tool_use", sidechain=True) + "\n", encoding="utf-8")
+    cli.start()
+    await process_together(cli, path, [closed, alive, dead], T0)
+    assert sub_open(cli) == {"agent-a2.jsonl": True, "agent-a3.jsonl": True}
+
+    cli.now["t"] = T0 + CLI_TURN_STALE_SECONDS + 100
+    sub_write(alive, assistant_line("tool_use", sidechain=True))
+    await process_sub(cli, alive, cli.now["t"])
+
+    assert sub_open(cli) == {"agent-a2.jsonl": True}  # a1 closed, a3 expired
+    assert item(cli)["cli_running"] is True
 
 
 @pytest.mark.anyio
@@ -424,7 +484,7 @@ async def test_a_turn_is_open_while_any_of_two_subagents_is_open(cli):
     sub_write(first, assistant_line("end_turn", sidechain=True))
     await process_sub(cli, first, T0 + 5)
     assert item(cli)["cli_running"] is True  # the other one still runs
-    assert sub_open(cli) == {"agent-a1.jsonl": False, "agent-a2.jsonl": True}
+    assert sub_open(cli) == {"agent-a2.jsonl": True}
 
     sub_write(second, assistant_line("end_turn", sidechain=True))
     await process_sub(cli, second, T0 + 10)

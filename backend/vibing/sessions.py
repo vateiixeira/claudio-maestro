@@ -2877,8 +2877,13 @@ class SessionManager:
         """The app took over the session (or its file is gone): no CLI signal."""
         self._cli_turns.pop(session_id, None)
 
+    def cli_activity_is_fresh(self, activity_at: float) -> bool:
+        """A write at `activity_at` (epoch seconds) is at most `CLI_TURN_STALE_SECONDS` old,
+        by the manager's own wall clock."""
+        return self._clock() - activity_at <= CLI_TURN_STALE_SECONDS
+
     def _turn_running(self, turn: _CliTurn) -> bool:
-        return self._clock() - turn.activity_at <= CLI_TURN_STALE_SECONDS
+        return self.cli_activity_is_fresh(turn.activity_at)
 
     def _cli_running(self, session_id: str) -> bool:
         """The session's CLI is mid-turn and wrote within `CLI_TURN_STALE_SECONDS`.

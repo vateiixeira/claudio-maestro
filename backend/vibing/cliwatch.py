@@ -10,7 +10,9 @@ files are ignored. The periodic sync remains as a fallback.
 The lines written since the last pass also tell whether the CLI is in the middle of
 a turn (`turn_open`), announced to the manager as `cli_running`. The main chain and each
 subagent file have their own open/closed state; the session is in a turn while any of
-them is open, so a background subagent keeps it running after the main chain ended.
+them is open, so a background subagent keeps it running after the main chain ended. A
+subagent that died without `end_turn` stops counting once its own file has been still for
+`CLI_TURN_STALE_SECONDS`.
 """
 
 import asyncio
@@ -137,6 +139,15 @@ def default_watch(root: Path) -> AsyncIterator[set[tuple[Any, str]]]:
 
 
 @dataclass
+class _SubagentState:
+    """A subagent file left open by its last decisive entry, and when it was last written
+    (epoch seconds, the file's own mtime)."""
+
+    open: bool
+    mtime: float
+
+
+@dataclass
 class _Burst:
     folder: str
     dirty: bool = True
@@ -192,8 +203,8 @@ class CliWatcher:
         self._subagent_offsets: dict[str, dict[Path, int]] = {}
         # session id -> whether its last main-chain lines left the turn open
         self._turn_open: dict[str, bool] = {}
-        # session id -> {subagent file: whether its last decisive entry left it open}
-        self._subagent_open: dict[str, dict[Path, bool]] = {}
+        # session id -> {subagent file: state}; only files that are open and recently written
+        self._subagent_open: dict[str, dict[Path, _SubagentState]] = {}
         # (session id, history folder) pairs whose move already triggered a project sync
         self._moved_synced: set[tuple[str, str]] = set()
         # directory -> (clock time, {session_id: info})
@@ -378,7 +389,9 @@ class CliWatcher:
         """Tell the manager whether the CLI is in the middle of a turn. The main chain
         and each subagent file keep their own state, updated from their new lines
         (without a decisive entry the previous state of the same file stands); the
-        session is in a turn while any of them is open. An interruption that ends the
+        session is in a turn while any of them is open. A subagent file counts only while
+        open and written within the stale cap (by the manager's wall clock); the others
+        are dropped on every pass. An interruption that ends the
         new main lines resets the subagents (a foreground one dies without `end_turn`;
         a background one that is still alive reopens by writing again), and the
         subagent lines of that pass are not counted. Never fails the pass."""
@@ -389,21 +402,34 @@ class CliWatcher:
             if was_interrupted(main_lines):
                 self._subagent_open.pop(session_id, None)
                 sub_lines = {}
+            states = self._subagent_open.setdefault(session_id, {})
             for sub, lines in sub_lines.items():
-                state = turn_open(lines, sidechain=True)
-                if state is not None:
-                    self._subagent_open.setdefault(session_id, {})[sub] = state
-            subagents = self._subagent_open.get(session_id, {})
+                mtime = await asyncio.to_thread(_file_mtime, sub)
+                decision = turn_open(lines, sidechain=True)
+                if mtime is None:
+                    states.pop(sub, None)
+                elif decision is not None:
+                    states[sub] = _SubagentState(decision, mtime)
+                elif sub in states:
+                    states[sub] = _SubagentState(states[sub].open, mtime)
+            for sub in [
+                sub for sub, state in states.items()
+                if not state.open or not self._sessions.cli_activity_is_fresh(state.mtime)
+            ]:
+                del states[sub]
+            if not states:
+                self._subagent_open.pop(session_id, None)
             main_open = self._turn_open.get(session_id)
-            if main_open is None and not subagents:
-                return
-            activity = await asyncio.to_thread(_latest_mtime, path)
+            if main_open:
+                activity = await asyncio.to_thread(_latest_mtime, path)
+            elif states:
+                activity = max(state.mtime for state in states.values())
+            else:
+                activity = None
             if activity is not None:
-                self._sessions.note_cli_turn(
-                    session_id,
-                    open=bool(main_open) or any(subagents.values()),
-                    activity_at=activity,
-                )
+                self._sessions.note_cli_turn(session_id, open=True, activity_at=activity)
+            else:
+                self._sessions.note_cli_turn(session_id, open=False, activity_at=0.0)
         except Exception:
             logger.exception("Falha ao ler o turno da sessão %s do CLI", session_id)
 
