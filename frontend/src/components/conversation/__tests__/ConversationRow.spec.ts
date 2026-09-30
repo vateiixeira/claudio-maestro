@@ -22,9 +22,9 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-function mountRow(session = makeSession(), variant?: 'inbox' | 'list' | 'compact') {
+function mountRow(session = makeSession(), variant?: 'inbox' | 'list' | 'compact', extra: Record<string, unknown> = {}) {
   const router = createAppRouter(createMemoryHistory())
-  return mount(ConversationRow, { props: { session, variant }, global: { plugins: [pinia, router] } })
+  return mount(ConversationRow, { props: { session, variant, ...extra }, global: { plugins: [pinia, router] } })
 }
 
 describe('linha de conversa', () => {
@@ -35,6 +35,24 @@ describe('linha de conversa', () => {
     expect(wrapper.find('[data-test="row-link"]').attributes('href')).toBe('/sessions/abc')
     expect(wrapper.find('[data-test="row-project"]').text()).toContain('loja-online')
     expect(wrapper.find('[data-test="row-branch"]').text()).toContain('develop')
+  })
+
+  it('usa o destino recebido em vez da página da conversa', () => {
+    const wrapper = mountRow(makeSession({ session_id: 'abc' }), undefined, {
+      to: { name: 'project', params: { id: 1 }, query: { sessao: 'abc' } },
+    })
+
+    expect(wrapper.find('[data-test="row-link"]').attributes('href')).toBe('/projects/1?sessao=abc')
+  })
+
+  it('marca a linha aberta com destaque e aria-current', () => {
+    const active = mountRow(makeSession(), undefined, { active: true })
+    expect(active.find('[data-test="row-link"]').attributes('aria-current')).toBe('true')
+    expect(active.get('[data-test="conversation-row"]').attributes('data-active')).toBe('true')
+
+    const idle = mountRow(makeSession())
+    expect(idle.find('[data-test="row-link"]').attributes('aria-current')).toBeUndefined()
+    expect(idle.get('[data-test="conversation-row"]').attributes('data-active')).toBeUndefined()
   })
 
   it('mostra a bolinha de não lida e o motivo da espera', () => {

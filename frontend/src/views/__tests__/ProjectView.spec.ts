@@ -4,7 +4,7 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory, type Router } from 'vue-router'
 import ProjectView from '../ProjectView.vue'
 import { createAppRouter } from '../../router'
-import { jsonResponse, makeGitRepo, makeGroup, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { jsonResponse, makeGitRepo, makeGroup, makeProject, makeRepoCommit, makeRepoDetails, makeSession, routeFetch } from '../../test/factories'
 import { useProjectsStore } from '../../stores/projects'
 import { useGitStore } from '../../stores/git'
 import { useNewConversationStore } from '../../stores/newConversation'
@@ -240,6 +240,7 @@ describe('tela do projeto', () => {
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/projects/1/sessions': () => jsonResponse([]),
       'GET /api/projects/1/git': () => jsonResponse({ repos: [makeGitRepo()], limit_reached: true }),
+      'GET /api/projects/1/git/details': () => jsonResponse({ repos: [makeRepoDetails()], limit_reached: true }),
     }))
     const wrapper = await mountView()
     expect(wrapper.find('[data-test="repo-limit"]').text()).toContain('Mais de 50 repositórios; só os 50 primeiros são acompanhados.')
@@ -250,6 +251,9 @@ describe('tela do projeto', () => {
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/projects/1/sessions': () => jsonResponse([]),
       'GET /api/projects/1/git': () => jsonResponse({ repos: [makeGitRepo({ branch: null, detached: true, head: 'abc1234' })], limit_reached: false }),
+      'GET /api/projects/1/git/details': () => jsonResponse({
+        repos: [makeRepoDetails({ branch: null, detached: true, head: 'abc1234' })], limit_reached: false,
+      }),
     }))
     const wrapper = await mountView()
     expect(wrapper.find('[data-test="repo-limit"]').exists()).toBe(false)
@@ -310,5 +314,40 @@ describe('tela do projeto', () => {
     const wrapper = await mountView()
     expect(wrapper.find('[data-test="ungrouped-title"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="groups-empty"]').exists()).toBe(true)
+  })
+
+  it('mostra o estado git de cada repositório: sincronização, arquivos e commits', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'GET /api/projects/1/git': () => jsonResponse({ repos: [makeGitRepo()], limit_reached: false }),
+      'GET /api/projects/1/git/details': () => jsonResponse({
+        repos: [makeRepoDetails({
+          ahead: 1,
+          files: [{ path: 'src/a.py', status: 'unstaged', added: 2, removed: 1 }],
+          commits: [makeRepoCommit({ subject: 'Ajustar o carrinho', pushed: false })],
+        })],
+        limit_reached: false,
+      }),
+    }))
+    const wrapper = await mountView()
+    const repo = wrapper.find('[data-test="repos"] [data-test="repo"]')
+    expect(repo.text()).toContain('loja-online')
+    expect(repo.text()).toContain('↑1 para subir')
+    expect(repo.text()).toContain('1 não commitados')
+    expect(repo.text()).toContain('src/a.py')
+    expect(repo.text()).toContain('Ajustar o carrinho')
+  })
+
+  it('sem repositório git não monta a visão de detalhes', async () => {
+    seed()
+    const fetchMock = routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'GET /api/projects/1/git': () => jsonResponse({ repos: [], limit_reached: false }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="repos"]').text()).toContain('sem repositório git')
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/git/details'))).toBe(false)
   })
 })

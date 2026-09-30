@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import SessionControls from '../SessionControls.vue'
 import { conversationFromSnapshot, useConversationStore } from '../../../stores/conversation'
@@ -47,6 +47,8 @@ async function mountControls() {
   return w
 }
 const button = (w: ReturnType<typeof mount>, prefix: string) => w.find(`button[aria-label^="${prefix}"]`)
+// The option menus are teleported to <body>, outside the component wrapper.
+const body = () => new DOMWrapper(document.body)
 
 describe('seletores da sessão', () => {
   beforeEach(() => setup())
@@ -62,20 +64,20 @@ describe('seletores da sessão', () => {
   it('lista os modelos da API num menu e troca com PATCH', async () => {
     const w = await mountControls()
     await button(w, 'Modelo').trigger('click')
-    const items = w.findAll('[role="menu"] [role="menuitemradio"]')
+    const items = body().findAll('[role="menu"] [role="menuitemradio"]')
     expect(items).toHaveLength(3)
     expect(items[1]!.text()).toContain('Sonnet 5')
     expect(items[1]!.text()).toContain('Equilíbrio')
     await items.find((i) => i.text().includes('Haiku'))!.trigger('click')
     await flushPromises()
     expect(patches).toEqual([{ model: 'haiku' }])
-    expect(w.find('[role="menu"]').exists()).toBe(false)
+    expect(body().find('[role="menu"]').exists()).toBe(false)
   })
 
   it('foco volta ao seletor depois de salvar', async () => {
     const w = await mountControls()
     await button(w, 'Modelo').trigger('click')
-    await w.findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
     await flushPromises()
     expect(document.activeElement).toBe(button(w, 'Modelo').element)
   })
@@ -84,7 +86,7 @@ describe('seletores da sessão', () => {
     const { store } = setup({ model: 'default' })
     const w = await mountControls()
     await button(w, 'Raciocínio').trigger('click')
-    expect(w.findAll('[role="menuitemradio"]').map((i) => i.text())).toEqual(['Baixo', 'Médio', 'Alto'])
+    expect(body().findAll('[role="menuitemradio"]').map((i) => i.text())).toEqual(['Baixo', 'Médio', 'Alto'])
     store.get('s1')!.options.model = 'haiku'
     await flushPromises()
     expect(button(w, 'Raciocínio').exists()).toBe(false)
@@ -93,7 +95,7 @@ describe('seletores da sessão', () => {
   it('troca o raciocínio com PATCH', async () => {
     const w = await mountControls()
     await button(w, 'Raciocínio').trigger('click')
-    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === 'Máximo')!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === 'Máximo')!.trigger('click')
     await flushPromises()
     expect(patches).toEqual([{ effort: 'max' }])
   })
@@ -102,19 +104,19 @@ describe('seletores da sessão', () => {
     const w = await mountControls()
     const trigger = button(w, 'Modo')
     await trigger.trigger('click')
-    const items = w.findAll('[role="menuitemradio"]')
+    const items = body().findAll('[role="menuitemradio"]')
     expect(document.activeElement).toBe(items.find((i) => i.attributes('aria-checked') === 'true')!.element)
-    await w.find('[role="menu"]').trigger('keydown', { key: 'ArrowDown' })
+    await body().find('[role="menu"]').trigger('keydown', { key: 'ArrowDown' })
     expect(document.activeElement?.textContent?.trim()).toBe('Planejamento')
-    await w.find('[role="menu"]').trigger('keydown', { key: 'Escape' })
-    expect(w.find('[role="menu"]').exists()).toBe(false)
+    await body().find('[role="menu"]').trigger('keydown', { key: 'Escape' })
+    expect(body().find('[role="menu"]').exists()).toBe(false)
     expect(document.activeElement).toBe(trigger.element)
   })
 
   it('"Sem perguntas" pede confirmação antes do PATCH', async () => {
     const w = await mountControls()
     await button(w, 'Modo').trigger('click')
-    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
     const dialog = w.find('[role="alertdialog"]')
     expect(dialog.exists()).toBe(true)
     expect(dialog.text()).toContain('sem pedir')
@@ -124,7 +126,7 @@ describe('seletores da sessão', () => {
     expect(patches).toEqual([])
 
     await button(w, 'Modo').trigger('click')
-    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
     await w.find('[data-test="bypass-confirm"]').trigger('click')
     await flushPromises()
     expect(patches).toEqual([{ permission_mode: 'bypassPermissions', confirm_bypass: true }])
@@ -154,7 +156,7 @@ describe('seletores da sessão', () => {
     setup({}, 400)
     const w = await mountControls()
     await button(w, 'Modelo').trigger('click')
-    await w.findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
     await flushPromises()
     expect(w.find('[role="alert"]').text()).toContain('Não deu.')
   })
@@ -163,7 +165,7 @@ describe('seletores da sessão', () => {
     const trigger = button(w, 'Modo')
     ;(trigger.element as HTMLElement).focus()
     await trigger.trigger('click')
-    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
     await flushPromises()
     return trigger
   }
@@ -215,7 +217,7 @@ describe('modos automático, só o pré-aprovado e desconhecido', () => {
     setup()
     const w = await mountControls()
     await button(w, 'Modo').trigger('click')
-    await w.findAll('[role="menuitemradio"]').find((i) => i.text() === label)!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === label)!.trigger('click')
     await flushPromises()
     expect(w.find('[data-test="bypass-overlay"]').exists()).toBe(false)
     expect(patches).toEqual([{ permission_mode: value }])
@@ -232,7 +234,7 @@ describe('resposta do PATCH', () => {
     }))
     const w = await mountControls()
     await button(w, 'Modelo').trigger('click')
-    await w.findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
     await flushPromises()
     useConversationStore(pinia).receive(makeEvent('session.options', {
       model: 'haiku', model_resolved: null, effort: 'medium', permission_mode: 'plan', effort_pending: false,

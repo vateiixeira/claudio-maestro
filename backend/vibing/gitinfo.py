@@ -7,6 +7,7 @@ time limit. A failure becomes an `error` on that repository only.
 
 import asyncio
 import contextvars
+import logging
 import os
 import time
 import weakref
@@ -17,6 +18,8 @@ from typing import Any
 
 from vibing.history import REPO_MAX_COUNT, scan_repositories
 
+logger = logging.getLogger(__name__)
+
 GIT_BINARY = "git"
 GIT_TIMEOUT = 5.0
 DIFF_LIMIT = 200_000
@@ -24,6 +27,10 @@ DIFF_LIMIT = 200_000
 DIFF_READ_LIMIT = DIFF_LIMIT * 4
 MAX_DIFF_FILE = 5 * 1024 * 1024
 MAX_GIT_PROCESSES = 16
+MAX_FILES = 200
+MAX_COMMITS = 10
+# Bytes read from `status` / `diff --numstat` for the file list.
+FILES_READ_LIMIT = 4 * 1024 * 1024
 BIG_FILE_NOTICE = "Arquivo maior que 5 MB; o diff não é mostrado."
 # Submodules run their own git with their own config (filters included), and
 # `submodule.<n>.ignore` overrides the config key, so only the command line works.
@@ -79,6 +86,9 @@ class RepoStatus:
     changed: dict[str, int] = field(
         default_factory=lambda: {"staged": 0, "unstaged": 0, "untracked": 0}
     )
+    upstream: str | None = None
+    ahead: int | None = None
+    behind: int | None = None
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -269,18 +279,33 @@ def _failure(stderr: str) -> str:
     return text[-1] if text else "Falha ao ler o repositório."
 
 
+def _apply_header(repo: RepoStatus, line: str) -> None:
+    """Fill branch, head, upstream and ahead/behind from a `# branch.*` header line."""
+    if line.startswith("# branch.oid "):
+        oid = line.removeprefix("# branch.oid ")
+        repo.head = None if oid == "(initial)" else oid[:7]
+    elif line.startswith("# branch.head "):
+        head = line.removeprefix("# branch.head ")
+        if head == "(detached)":
+            repo.detached = True
+        else:
+            repo.branch = head
+    elif line.startswith("# branch.upstream "):
+        repo.upstream = line.removeprefix("# branch.upstream ")
+    elif line.startswith("# branch.ab "):
+        parts = line.removeprefix("# branch.ab ").split()
+        try:
+            repo.ahead = int(parts[0].removeprefix("+"))
+            repo.behind = int(parts[1].removeprefix("-"))
+        except (IndexError, ValueError):
+            repo.ahead = repo.behind = None
+
+
 def _parse_status(repo: RepoStatus, output: str) -> None:
     changed = repo.changed
     for line in output.splitlines():
-        if line.startswith("# branch.oid "):
-            oid = line.removeprefix("# branch.oid ")
-            repo.head = None if oid == "(initial)" else oid[:7]
-        elif line.startswith("# branch.head "):
-            head = line.removeprefix("# branch.head ")
-            if head == "(detached)":
-                repo.detached = True
-            else:
-                repo.branch = head
+        if line.startswith("# "):
+            _apply_header(repo, line)
         elif line.startswith(("1 ", "2 ")):
             xy = line[2:4]
             if xy[0] != ".":
@@ -293,13 +318,15 @@ def _parse_status(repo: RepoStatus, output: str) -> None:
             changed["untracked"] += 1
 
 
+def _rel_path(repo: Path, root: Path) -> str:
+    return repo.relative_to(root).as_posix() if repo != root else "."
+
+
 async def repo_status(
     repo: Path, root: Path | None = None, *, timeout: float = GIT_TIMEOUT
 ) -> RepoStatus:
     """Branch and change counts. `rel_path` is relative to `root` ("." for itself)."""
-    root = root or repo
-    rel = repo.relative_to(root).as_posix() if repo != root else "."
-    status = RepoStatus(path=str(repo), rel_path=rel)
+    status = RepoStatus(path=str(repo), rel_path=_rel_path(repo, root or repo))
     try:
         code, out, err = await _within(timeout, run_git(
             repo, "status", STATUS_SUBMODULES, "--porcelain=v2", "--branch", timeout=timeout
@@ -431,3 +458,212 @@ async def _file_diff(repo: Path, file: str, timeout: float) -> FileDiff:
     if len(out) > DIFF_LIMIT:
         return FileDiff(out[:DIFF_LIMIT], True)
     return FileDiff(out, False)
+
+
+# Details: changed files and recent commits ---------------------------------------
+
+_STATUS_ORDER = {"staged": 0, "unstaged": 1, "untracked": 2}
+
+
+def _parse_files(
+    output: str, summary: RepoStatus | None = None
+) -> tuple[list[tuple[str, str]], bool]:
+    """(path, status) pairs from `status --porcelain=v2 -z`, and whether the output
+    was cut short (the last, possibly partial, entry is dropped then).
+
+    Entries that end in `/` are dropped: a nested repository that is not ignored
+    shows up as `sub/`, and it is not a file. With `summary` (for output that also
+    has `--branch`), the branch fields and `changed` are filled from the same output.
+    The counts are per listed file (an untracked folder counts each of its files,
+    unlike `repo_status`, which counts the folder once) and cover only the part that
+    was read when the output was cut short.
+    """
+    fields = output.split("\0")
+    cut = len(output.encode("utf-8", "replace")) > FILES_READ_LIMIT
+    if cut:
+        fields = fields[:-1]
+    entries: list[tuple[str, str]] = []
+    index = 0
+    while index < len(fields):
+        entry = fields[index]
+        index += 1
+        if entry.startswith("# "):
+            if summary is not None:
+                _apply_header(summary, entry)
+        elif entry.startswith(("1 ", "2 ")):
+            renamed = entry.startswith("2 ")
+            path = entry.split(" ", 9 if renamed else 8)[9 if renamed else 8]
+            if renamed:
+                index += 1  # the original path follows
+            if entry[2] != ".":
+                entries.append((path, "staged"))
+            if entry[3] != ".":
+                entries.append((path, "unstaged"))
+        elif entry.startswith("u "):
+            entries.append((entry.split(" ", 10)[10], "unstaged"))
+        elif entry.startswith("? "):
+            entries.append((entry[2:], "untracked"))
+    entries = [entry for entry in entries if not entry[0].endswith("/")]
+    if summary is not None:
+        for _, status in entries:
+            summary.changed[status] += 1
+    return entries, cut
+
+
+def _parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
+    """Path -> (added, removed) from `diff --numstat -z`; binary files give None."""
+    counts: dict[str, tuple[int | None, int | None]] = {}
+    fields = output.split("\0")
+    index = 0
+    while index < len(fields):
+        entry = fields[index]
+        index += 1
+        parts = entry.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        added, removed, path = parts
+        if not path:  # rename: "added<TAB>removed<TAB>", then the old and the new path
+            if index + 1 >= len(fields):
+                break
+            path = fields[index + 1]
+            index += 2
+        try:
+            counts[path] = (int(added), int(removed))
+        except ValueError:
+            counts[path] = (None, None)
+    return counts
+
+
+async def repo_files(
+    repo: Path, *, timeout: float = GIT_TIMEOUT
+) -> tuple[list[dict[str, Any]], bool]:
+    """Changed files of a repository and whether the list was cut at MAX_FILES.
+
+    A file with staged and unstaged changes is listed twice. Untracked and
+    binary files have no line counts.
+    """
+    return await _within(timeout, _repo_files(repo, timeout))
+
+
+async def _repo_files(
+    repo: Path, timeout: float, summary: RepoStatus | None = None
+) -> tuple[list[dict[str, Any]], bool]:
+    """`repo_files`; with `summary`, the same status call also fills it (branch,
+    upstream, ahead/behind and counts), so the details need no second status."""
+    args = ["status", STATUS_SUBMODULES, "--porcelain=v2", "-z", "--untracked-files=all"]
+    if summary is not None:
+        args.append("--branch")
+    code, out, err = await run_git(repo, *args, timeout=timeout, limit=FILES_READ_LIMIT)
+    if code != 0:
+        raise GitError(_failure(err))
+    entries, truncated = _parse_files(out, summary)
+    entries = sorted(set(entries), key=lambda e: (e[0], _STATUS_ORDER[e[1]]))
+    if len(entries) > MAX_FILES:
+        entries, truncated = entries[:MAX_FILES], True
+
+    counts: dict[str, dict[str, tuple[int | None, int | None]]] = {}
+    for status, extra in (("unstaged", ()), ("staged", ("--cached",))):
+        if not any(entry_status == status for _, entry_status in entries):
+            continue
+        code, out, err = await run_git(
+            repo, "diff", *extra, "--numstat", "-z", "--no-color", "--no-ext-diff",
+            "--no-textconv", DIFF_SUBMODULES, timeout=timeout, limit=FILES_READ_LIMIT,
+        )
+        if code != 0:
+            raise GitError(_failure(err))
+        counts[status] = _parse_numstat(out)
+
+    files = []
+    for path, status in entries:
+        added, removed = counts.get(status, {}).get(path, (None, None))
+        files.append({"path": path, "status": status, "added": added, "removed": removed})
+    return files, truncated
+
+
+COMMIT_FORMAT = "%H%x1f%an%x1f%aI%x1f%s%x1e"
+
+
+async def repo_commits(
+    repo: Path, *, has_upstream: bool, timeout: float = GIT_TIMEOUT
+) -> list[dict[str, Any]]:
+    """The last MAX_COMMITS commits of HEAD; empty for a repository without commits.
+
+    `pushed` is False for commits in `@{u}..HEAD`; None when there is no
+    (resolvable) upstream.
+    """
+    return await _within(timeout, _repo_commits(repo, has_upstream, timeout))
+
+
+async def _repo_commits(repo: Path, has_upstream: bool, timeout: float) -> list[dict[str, Any]]:
+    code, _, _ = await run_git(repo, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+    if code != 0:
+        return []
+    code, out, err = await run_git(
+        repo, "log", "-n", str(MAX_COMMITS), "--no-color", "--no-show-signature",
+        f"--format={COMMIT_FORMAT}", "HEAD", "--", timeout=timeout,
+    )
+    if code != 0:
+        raise GitError(_failure(err))
+    unpushed: set[str] | None = None
+    if has_upstream:
+        code, listed, _ = await run_git(
+            repo, "rev-list", "--max-count=1000", "@{u}..HEAD", "--", timeout=timeout
+        )
+        if code == 0:
+            unpushed = set(listed.split())
+    commits = []
+    for record in out.split("\x1e"):
+        parts = record.strip("\n").split("\x1f")
+        if len(parts) != 4:
+            continue
+        full, author, date, subject = parts
+        commits.append({
+            "hash": full[:7], "full_hash": full, "subject": subject, "author": author,
+            "date": date, "pushed": None if unpushed is None else full not in unpushed,
+        })
+    return commits
+
+
+async def repo_details(
+    repo: Path, root: Path | None = None, *, timeout: float = GIT_TIMEOUT
+) -> dict[str, Any]:
+    """Status of a repository plus its changed files and last commits.
+
+    One `git status` gives both the summary and the files, so `changed` counts
+    files (each untracked file, not each untracked folder as `repo_status` does).
+    Any failure becomes `error` with empty lists; it never raises.
+    """
+    root = root or repo
+    status = RepoStatus(path=str(repo), rel_path=str(repo))
+    try:
+        status.rel_path = _rel_path(repo, root)
+        files, truncated = await _within(timeout, _repo_files(repo, timeout, status))
+        commits = await repo_commits(
+            repo, has_upstream=status.upstream is not None, timeout=timeout
+        )
+    except GitError as exc:
+        return _detail(status, error=str(exc))
+    except Exception:
+        logger.exception("Falha inesperada ao ler os detalhes de %s", repo)
+        fresh = RepoStatus(path=str(repo), rel_path=status.rel_path)
+        return _detail(fresh, error="Falha ao ler o repositório.")
+    return _detail(status, files=files, truncated=truncated, commits=commits)
+
+
+def _detail(
+    status: RepoStatus, *, error: str | None = None, files: list[dict[str, Any]] | None = None,
+    truncated: bool = False, commits: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        **status.to_dict(), "error": error, "files": files or [], "files_truncated": truncated,
+        "commits": commits or [],
+    }
+
+
+async def project_details_scan(
+    root: Path, *, timeout: float = GIT_TIMEOUT
+) -> tuple[list[dict[str, Any]], bool]:
+    """Details of every repository of a folder, and whether the limit was reached."""
+    paths, limit_reached = await asyncio.to_thread(discover_scan, root)
+    repos = await asyncio.gather(*(repo_details(path, root, timeout=timeout) for path in paths))
+    return list(repos), limit_reached

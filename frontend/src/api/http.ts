@@ -11,6 +11,7 @@ import type {
   PlanState,
   Project,
   ProjectCreate,
+  ProjectGitDetails,
   ProjectPlan,
   ProjectUpdate,
   SendResult,
@@ -247,6 +248,11 @@ export function putAppState(key: string, value: unknown): Promise<unknown> {
 
 export function getProjectGit(projectId: number): Promise<{ repos: GitRepo[]; limit_reached?: boolean }> {
   return request('GET', `/api/projects/${projectId}/git`)
+}
+
+/** Files and latest commits of each repository of the project. */
+export function getProjectGitDetails(projectId: number, signal?: AbortSignal): Promise<ProjectGitDetails> {
+  return request('GET', `/api/projects/${projectId}/git/details`, undefined, signal)
 }
 
 /** Current diff of a file against the last commit. `file` is relative to the repository. */

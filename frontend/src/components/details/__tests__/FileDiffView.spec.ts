@@ -16,7 +16,7 @@ const file = (rel_path: string, overrides: Partial<ChangedFile> = {}): ChangedFi
 
 const DIFF_URL = '/api/projects/1/diff?repo=.&file=a.py'
 
-function mountView(props: { group?: ChangesGroup; file?: ChangedFile } = {}) {
+function mountView(props: { group?: ChangesGroup; file?: ChangedFile; revision?: number } = {}) {
   return mount(FileDiffView, { props: { projectId: 1, group: group(), file: file('a.py'), ...props } })
 }
 
@@ -174,6 +174,59 @@ describe('diff de um arquivo', () => {
       calls[1]!.resolve(diffOf('do-b'))
       await flushPromises()
       expect(w.text()).toContain('do-b')
+    })
+
+    it('a primeira carga mostra carregando, não "Sem alterações"', async () => {
+      pendingFetch()
+      const w = mountView()
+      await flushPromises()
+      expect(w.find('[data-test="diff-loading"]').exists()).toBe(true)
+      expect(w.text()).not.toContain('Sem alterações')
+    })
+
+    it('reler o mesmo arquivo (nova revisão) mantém o diff antigo até a resposta chegar', async () => {
+      const calls = pendingFetch()
+      const w = mountView({ revision: 1 })
+      calls[0]!.resolve(diffOf('antigo'))
+      await flushPromises()
+      expect(w.text()).toContain('antigo')
+
+      await w.setProps({ revision: 2 })
+      expect(calls).toHaveLength(2)
+      expect(w.text()).toContain('antigo')
+      expect(w.find('[data-test="diff-loading"]').exists()).toBe(false)
+      expect(w.text()).not.toContain('Sem alterações')
+
+      calls[1]!.resolve(diffOf('novo'))
+      await flushPromises()
+      expect(w.text()).toContain('novo')
+      expect(w.text()).not.toContain('antigo')
+    })
+
+    it('na releitura, a resposta antiga que chega depois da nova é descartada', async () => {
+      const calls = pendingFetch()
+      const w = mountView({ revision: 1 })
+      calls[0]!.resolve(diffOf('antigo'))
+      await flushPromises()
+      await w.setProps({ revision: 2 })
+      await w.setProps({ revision: 3 })
+      calls[2]!.resolve(diffOf('novo'))
+      await flushPromises()
+      calls[1]!.resolve(diffOf('velho-demais'))
+      await flushPromises()
+      expect(w.text()).toContain('novo')
+      expect(w.text()).not.toContain('velho-demais')
+    })
+
+    it('trocar de arquivo limpa o diff anterior e volta a mostrar carregando', async () => {
+      const calls = pendingFetch()
+      const w = mountView({ file: file('a.py') })
+      calls[0]!.resolve(diffOf('do-a'))
+      await flushPromises()
+      expect(w.text()).toContain('do-a')
+      await w.setProps({ file: file('b.py') })
+      expect(w.text()).not.toContain('do-a')
+      expect(w.find('[data-test="diff-loading"]').exists()).toBe(true)
     })
 
     it('desmontar cancela a requisição pendente', async () => {

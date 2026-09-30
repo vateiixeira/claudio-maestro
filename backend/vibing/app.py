@@ -71,7 +71,9 @@ def create_app(
         app.state.background = set()
 
         def refresh_git(project_id: int) -> None:
-            task = asyncio.create_task(app.state.git_monitor.refresh_project(project_id))
+            task = asyncio.create_task(
+                app.state.git_monitor.refresh_project(project_id, force=True)
+            )
             app.state.background.add(task)
             task.add_done_callback(app.state.background.discard)
 

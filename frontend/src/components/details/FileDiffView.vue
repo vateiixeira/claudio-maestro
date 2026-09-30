@@ -5,23 +5,36 @@ import { diffFromUnified, diffWithoutHunks, type DiffLine } from '../../conversa
 import DiffLines from '../conversation/DiffLines.vue'
 import type { ChangedFile, ChangesGroup } from '../../types/api'
 
-const props = defineProps<{ projectId: number; group: ChangesGroup; file: ChangedFile }>()
+// `revision` changes when the file may have changed on disk: the same file is reread in place.
+const props = defineProps<{ projectId: number; group: ChangesGroup; file: ChangedFile; revision?: number }>()
 
 const lines = ref<DiffLine[]>([])
 const note = ref<string | null>(null)
 const truncated = ref(false)
 const error = ref<string | null>(null)
+// False until the first answer for the current file: "no changes" must not show before it.
+const loaded = ref(false)
+let shownFor: string | null = null
 const editorError = ref<string | null>(null)
 let generation = 0
 let controller: AbortController | null = null
 
+// What the request depends on. Same identity again (new revision) means a reread of the same file.
+const identity = () => JSON.stringify([props.projectId, props.group.path, props.group.rel_path, props.file.path, props.file.rel_path])
+
 async function load() {
   const mine = ++generation
   controller?.abort()
-  lines.value = []
-  note.value = null
-  truncated.value = false
-  error.value = null
+  const current = identity()
+  if (current !== shownFor) {
+    // Another file: what is on screen belongs to the previous one.
+    shownFor = current
+    lines.value = []
+    note.value = null
+    truncated.value = false
+    error.value = null
+    loaded.value = false
+  }
   if (props.group.rel_path == null) return
   const ctrl = (controller = new AbortController())
   try {
@@ -30,9 +43,15 @@ async function load() {
     lines.value = diffFromUnified(result.diff)
     note.value = result.notice ?? diffWithoutHunks(result.diff)
     truncated.value = result.truncated
+    error.value = null
+    loaded.value = true
   } catch (e) {
     if (mine !== generation) return
+    lines.value = []
+    note.value = null
+    truncated.value = false
     error.value = e instanceof ApiError && e.status === 404 && !e.detail ? 'O arquivo não existe mais.' : errorMessage(e)
+    loaded.value = true
   }
 }
 
@@ -45,7 +64,7 @@ async function openFile() {
   }
 }
 
-watch(() => [props.group.path, props.file.path], load, { immediate: true })
+watch(() => `${identity()}|${props.revision ?? 0}`, load, { immediate: true })
 onBeforeUnmount(() => {
   generation++
   controller?.abort()
@@ -66,6 +85,7 @@ onBeforeUnmount(() => {
     <p v-if="editorError" role="alert" class="m-0 text-sm text-secondary-soft">{{ editorError }}</p>
     <p v-if="error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
     <p v-else-if="group.rel_path == null" class="m-0 text-sm text-fg-muted">Fora de um repositório git, não há diff contra o último commit.</p>
+    <p v-else-if="!loaded" data-test="diff-loading" class="m-0 text-sm text-fg-muted">Carregando…</p>
     <div v-else class="overflow-hidden rounded-lg border border-line bg-bg">
       <p v-if="lines.length === 0" class="m-0 px-3 py-2 text-sm text-fg-muted">{{ note ?? 'Sem alterações' }}</p>
       <DiffLines :lines="lines" />

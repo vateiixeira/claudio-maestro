@@ -26,25 +26,88 @@ const menu = ref<HTMLElement | null>(null)
 
 const items = () => Array.from(menu.value?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [])
 
+const GAP = 4 // between the button and the panel
+const MARGIN = 8 // kept free at the viewport edges
+
+// The panel is teleported to <body> with position: fixed, so no ancestor's
+// overflow can clip it. It starts invisible (see the template) and place()
+// measures it and sets the coordinates directly on the element, so the focus
+// that follows happens in the same tick.
+
+function place() {
+  const button = trigger.value
+  const panel = menu.value
+  if (!button || !panel) return
+  const rect = button.getBoundingClientRect()
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const above = rect.top - GAP - MARGIN
+  const below = viewportHeight - rect.bottom - GAP - MARGIN
+  // scrollHeight leaves out the 1px borders.
+  const needed = panel.scrollHeight + 2
+  // Prefer upward (the fields sit at the bottom); else the side that fits, else the larger one.
+  const up = needed <= above || (needed > below && above >= below)
+  const left = Math.max(MARGIN, Math.min(rect.left, viewportWidth - panel.offsetWidth - MARGIN))
+  const style = panel.style
+  style.left = `${left}px`
+  style.top = up ? '' : `${rect.bottom + GAP}px`
+  style.bottom = up ? `${viewportHeight - rect.top + GAP}px` : ''
+  style.maxHeight = `${Math.max(0, up ? above : below)}px`
+  style.visibility = ''
+}
+
 async function show() {
   open.value = true
   document.addEventListener('pointerdown', onOutside)
+  window.addEventListener('resize', onResize)
+  window.addEventListener('scroll', onScroll, true)
   await nextTick()
+  place()
   const list = items()
   const index = Math.max(0, props.options.findIndex((o) => o.value === props.selected))
   list[index]?.focus()
 }
 
+function removeListeners() {
+  document.removeEventListener('pointerdown', onOutside)
+  window.removeEventListener('resize', onResize)
+  window.removeEventListener('scroll', onScroll, true)
+}
+
 function hide(returnFocus = true) {
   open.value = false
-  document.removeEventListener('pointerdown', onOutside)
+  removeListeners()
   if (returnFocus) trigger.value?.focus()
 }
 
 function onOutside(event: Event) {
-  if (!root.value?.contains(event.target as Node)) hide(false)
+  const target = event.target as Node
+  if (!root.value?.contains(target) && !menu.value?.contains(target)) hide(false)
 }
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside))
+// Closing because the layout changed: the focus only moves if it was inside the
+// panel that is about to disappear; otherwise it stays where the user put it.
+function hideKeepingFocus() {
+  hide(!!menu.value?.contains(document.activeElement))
+}
+function onResize() {
+  hideKeepingFocus()
+}
+function onScroll(event: Event) {
+  const target = event.target as Node | null
+  const button = trigger.value
+  // Scrolling the panel's own list is fine. So is anything that does not carry the
+  // button along (the conversation thread following a turn, another panel): those
+  // scroll all the time and must not close the menu.
+  if (!button || (target && menu.value?.contains(target))) return
+  const moved = !target || target === document || target === document.documentElement || target.contains(button)
+  if (!moved) return
+  // The button moved with its container: follow it, unless it left the screen.
+  const rect = button.getBoundingClientRect()
+  const visible = rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth
+  if (visible) place()
+  else hideKeepingFocus()
+}
+onBeforeUnmount(removeListeners)
 
 function toggle() {
   if (open.value) hide()
@@ -73,7 +136,9 @@ function onMenuKey(event: KeyboardEvent) {
     hide()
     return
   } else if (event.key === 'Tab') {
-    hide(false)
+    // The panel lives in <body>, outside any dialog's focus trap: put the focus back
+    // on the button (no preventDefault) so the native Tab continues from there.
+    hide()
     return
   }
   if (next !== null) {
@@ -115,12 +180,14 @@ function choose(value: string) {
       @click="toggle"
       @keydown="onTriggerKey"
     >{{ text }}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="text-fg-muted"><path d="m6 9 6 6 6-6" /></svg></button>
+    <Teleport to="body">
     <div
       v-if="open"
       ref="menu"
       role="menu"
       :aria-label="name"
-      class="absolute bottom-full left-0 z-20 mb-1 flex min-w-48 flex-col rounded-lg border border-line-strong bg-elevated p-1 shadow-lg"
+      style="position: fixed; visibility: hidden"
+      class="z-[60] flex min-w-48 flex-col overflow-y-auto rounded-lg border border-line-strong bg-elevated p-1 shadow-lg"
       @keydown="onMenuKey"
     >
       <button
@@ -134,5 +201,6 @@ function choose(value: string) {
         @click="choose(option.value)"
       ><span>{{ option.label }}</span><span v-if="option.description" class="text-xs text-fg-muted">{{ option.description }}</span></button>
     </div>
+    </Teleport>
   </div>
 </template>

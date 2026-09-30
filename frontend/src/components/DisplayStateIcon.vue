@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DisplayState } from '../types/api'
 
-// Green circle while it works, orange triangle while it waits, grey check when finished.
+// Green arc spinning while it works (still under reduced motion), orange triangle while it waits, grey check when finished.
 withDefaults(defineProps<{ display: DisplayState; size?: number }>(), { size: 12 })
 </script>
 
@@ -9,26 +9,21 @@ withDefaults(defineProps<{ display: DisplayState; size?: number }>(), { size: 12
   <span
     class="flex shrink-0 items-center justify-center"
     :style="{ width: `${size}px` }"
-    :data-shape="display === 'running' ? 'circle' : display === 'waiting' ? 'triangle' : 'check'"
+    :data-shape="display === 'running' ? 'spinner' : display === 'waiting' ? 'triangle' : 'check'"
     aria-hidden="true"
   >
-    <span
-      v-if="display === 'running'"
-      class="rounded-full bg-primary"
-      :style="{ width: `${size * 0.67}px`, height: `${size * 0.67}px` }"
-    />
     <svg
-      v-else
       :width="size"
       :height="size"
       viewBox="0 0 24 24"
       fill="none"
-      :class="display === 'waiting' ? 'stroke-secondary' : 'stroke-fg-muted'"
+      :class="display === 'running' ? 'stroke-primary motion-safe:animate-spin' : display === 'waiting' ? 'stroke-secondary' : 'stroke-fg-muted'"
       stroke-width="2.4"
       stroke-linecap="round"
       stroke-linejoin="round"
     >
-      <template v-if="display === 'waiting'">
+      <path v-if="display === 'running'" d="M12 3a9 9 0 1 1-9 9" />
+      <template v-else-if="display === 'waiting'">
         <path d="M12 3 2 20h20L12 3z" />
         <line x1="12" y1="10" x2="12" y2="14" />
         <line x1="12" y1="17" x2="12" y2="17.01" />

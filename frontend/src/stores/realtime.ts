@@ -1,5 +1,6 @@
 import type { EventSocket } from '../api/socket'
 import { useGitStore } from './git'
+import { useGitDetailsStore } from './gitDetails'
 import { useGroupsStore } from './groups'
 import { useLayoutStore } from './layout'
 import { useModelsStore } from './models'
@@ -14,6 +15,7 @@ export async function loadEverything(): Promise<void> {
   const git = useGitStore()
   // Branches are secondary: a failure leaves the project without them.
   projects.projects.forEach((p) => void git.load(p.id).catch(() => {}))
+  useGitDetailsStore().reloadOpen()
   void useModelsStore().reload()
   // A failure leaves the menu without groups until the next load.
   void useGroupsStore().load().catch(() => {})

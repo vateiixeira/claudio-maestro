@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
+import type { RouteLocationRaw } from 'vue-router'
 import ConversationRow from '../conversation/ConversationRow.vue'
 import { errorMessage } from '../../api/http'
 import { isActive } from '../../groupList'
@@ -7,7 +8,13 @@ import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
 import type { Session, SessionGroup } from '../../types/api'
 
-const props = defineProps<{ group: SessionGroup; sessions: Session[]; available: boolean }>()
+const props = defineProps<{
+  group: SessionGroup
+  sessions: Session[]
+  available: boolean
+  rowTarget?: (sessionId: string) => RouteLocationRaw | undefined
+  activeId?: string | null
+}>()
 const emit = defineEmits<{ error: [message: string] }>()
 
 const groups = useGroupsStore()
@@ -112,7 +119,14 @@ async function remove() {
       </div>
     </div>
     <div v-if="open && sessions.length" class="flex flex-col px-1 pb-1">
-      <ConversationRow v-for="s in sessions" :key="s.session_id" :session="s" @error="emit('error', $event)" />
+      <ConversationRow
+        v-for="s in sessions"
+        :key="s.session_id"
+        :session="s"
+        :to="rowTarget?.(s.session_id)"
+        :active="activeId != null && s.session_id === activeId"
+        @error="emit('error', $event)"
+      />
     </div>
   </section>
 </template>

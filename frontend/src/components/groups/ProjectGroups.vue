@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
+import type { RouteLocationRaw } from 'vue-router'
 import GroupSection from './GroupSection.vue'
 import { errorMessage } from '../../api/http'
 import { sessionsOf, sortGroups } from '../../groupList'
 import { useGroupsStore } from '../../stores/groups'
 import { useSessionsStore } from '../../stores/sessions'
 
-const props = defineProps<{ projectId: number; available: boolean }>()
+// `rowTarget` and `activeId` let the project screen open rows beside it, as in its loose list.
+const props = defineProps<{
+  projectId: number
+  available: boolean
+  rowTarget?: (sessionId: string) => RouteLocationRaw | undefined
+  activeId?: string | null
+}>()
 const emit = defineEmits<{ error: [message: string] }>()
 
 const groups = useGroupsStore()
@@ -56,6 +63,8 @@ async function create() {
       :group="group"
       :sessions="sessionsOf(group.id, projectSessions)"
       :available="available"
+      :row-target="rowTarget"
+      :active-id="activeId"
       @error="emit('error', $event)"
     />
   </section>
