@@ -2454,4 +2454,51 @@ git commit -m "[Feat] Guardar modelo, raciocínio e modo padrão das conversas n
 
 ---
 
-Depois das Tarefas 1 a 12, `milestone-reviewer` no marco 13 inteiro. Com aprovação, o marco passa a "Concluído" no roadmap.
+### Tarefa 13: botão de copiar em blocos de código
+
+Item 13 do marco 13. O usuário pediu em 2026-09-30, e o pedido não está na spec de comandos. É independente das outras tarefas.
+
+**Desenho:**
+- Cada bloco de código cercado (```` ``` ````) renderizado por `renderMarkdown` fica dentro de um `<div class="code-block">`. No canto superior direito aparece um botão "Copiar" (`data-code-copy`, `aria-label="Copiar código"`), que copia só o código daquele bloco.
+- Vale onde `renderMarkdown` é usado: as respostas (`TextBlock.vue`) e o plano (`PlanCard.vue`).
+- O botão fica visível ao passar o mouse sobre o bloco, com foco pelo teclado e em telas sem mouse, no mesmo padrão do botão "Copiar" da resposta.
+- Depois do clique, o texto do botão vira "Copiado" por 1,5 s. Se a cópia falhar, vira "Não foi possível copiar".
+
+**Arquivos:**
+- Modificar: `frontend/src/conversation/markdown.ts`
+- Criar: `frontend/src/conversation/codeCopy.ts` (tratador de clique delegado)
+- Modificar: `frontend/src/components/conversation/TextBlock.vue` e `frontend/src/components/conversation/PlanCard.vue` (`@click` no contêiner do `v-html`)
+- Modificar: `frontend/src/style.css` (estilo de `.code-block` e `.code-copy` junto das regras de `.markdown`)
+- Teste: `frontend/src/conversation/__tests__/markdown.spec.ts` (acrescentar), `frontend/src/conversation/__tests__/codeCopy.spec.ts` (novo) e `frontend/src/components/conversation/__tests__/` (teste de `TextBlock`)
+
+**Interfaces:**
+- Produz: `onCodeCopyClick(event: MouseEvent): Promise<void>` em `codeCopy.ts`. Quando o alvo está dentro de `[data-code-copy]`, a função copia o `textContent` do `pre code` do mesmo `.code-block` e atualiza o texto do botão. Nos outros casos, não faz nada.
+
+**Atenção:** a função `highlight` do markdown-it só é usada sem embrulho quando o retorno começa com `<pre`. Por isso o embrulho **não** vai em `highlight`: sobrescreva `md.renderer.rules.fence`, chamando a regra padrão e envolvendo o resultado.
+
+```ts
+const defaultFence = md.renderer.rules.fence!
+md.renderer.rules.fence = (tokens, idx, options, env, self) =>
+  `<div class="code-block"><button type="button" class="code-copy" data-code-copy aria-label="Copiar código">Copiar</button>${defaultFence(tokens, idx, options, env, self)}</div>`
+```
+
+- [ ] **Passo 1: testes que falham.**
+  - **`markdown.spec.ts`:** `renderMarkdown('```py\nx = 1\n```')` contém exatamente um `.code-block` com um `button[data-code-copy]` e o `pre`. Código inline (`` `x` ``) não ganha botão. Um bloco sem linguagem também ganha.
+  - **`codeCopy.spec.ts`:** monte um `div` com `innerHTML = renderMarkdown('```js\nconst a = "<b>"\n```')`. Com `navigator.clipboard.writeText` substituído por `vi.fn()` (via `Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })`), disparar `onCodeCopyClick` com o botão como alvo faz três coisas: chama `writeText` com `const a = "<b>"\n` (o texto cru, sem tags do realce), troca o texto do botão para "Copiado" e, com timers falsos, volta a "Copiar" depois de 1,5 s. Se `writeText` rejeitar, o botão mostra "Não foi possível copiar". Um clique fora do botão não chama `writeText`.
+  - **`TextBlock`:** montar com texto que tem bloco de código e clicar em `[data-code-copy]` chama `writeText` com o código, não com a resposta inteira.
+
+  Confira se o `textContent` de `pre code` inclui o `\n` final que o markdown-it deixa. Se incluir, mantenha-o como está, porque é o que o usuário espera colar.
+
+- [ ] **Passo 2: rodar e ver falhar.**
+- [ ] **Passo 3: implementar.** Aplique a regra `fence` acima e crie `codeCopy.ts`, guardando um timer por botão num `WeakMap`. Em `TextBlock.vue` e `PlanCard.vue`, ponha `@click="onCodeCopyClick"` no `div` do `v-html`. No `style.css`, use `.code-block { position: relative }`. O `.code-copy` fica absoluto no topo à direita, com fonte pequena, borda `line-strong`, fundo `panel`, `opacity: 0` e `opacity: 1` em `.code-block:hover`, em `:focus-visible` e em `@media (hover: none)`.
+- [ ] **Passo 4: rodar e ver passar.** Rode os arquivos, `pnpm --dir frontend test` e `pnpm --dir frontend build`.
+- [ ] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 13 no roadmap.
+
+```bash
+git add frontend/src/conversation/markdown.ts frontend/src/conversation/codeCopy.ts frontend/src/components/conversation/TextBlock.vue frontend/src/components/conversation/PlanCard.vue frontend/src/style.css frontend/src/conversation/__tests__ frontend/src/components/conversation/__tests__ ROADMAP.md
+git commit -m "[Feat] Adicionar botão de copiar nos blocos de código"
+```
+
+---
+
+Depois das Tarefas 1 a 13, `milestone-reviewer` no marco 13 inteiro. Com aprovação, o marco passa a "Concluído" no roadmap.
