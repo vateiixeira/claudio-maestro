@@ -155,12 +155,15 @@ describe('menu lateral', () => {
     expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toContain('/sessions/cli')
   })
 
-  it('linhas de Recentes mostram a sigla do projeto', async () => {
+  it('linhas de Recentes mostram o nome do projeto depois do título, sem badge', async () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
     noteOpened('b')
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'b', project_id: 1 })])
     const w = mountSidebar()
-    expect(w.find('[data-test="recent"] [data-test="project-badge"]').text()).toBe('LO')
+    const row = w.find('[data-test="recent"]')
+    expect(row.find('[data-test="row-project"]').text()).toBe('loja-online')
+    expect(row.find('[data-test="row-project"]').attributes('title')).toBe('loja-online')
+    expect(row.find('[data-test="project-badge"]').exists()).toBe(false)
   })
 
   it('publica os ids visíveis em Recentes', async () => {
