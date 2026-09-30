@@ -26,6 +26,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 0 de 10 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
+| 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | A fazer | 0 de 10 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário.
 
@@ -284,6 +285,29 @@ Decidido no desenho (2026-09-29): a fonte é o arquivo do plano com a regra de m
 
 Sugestões da revisão do marco 9 deixadas para depois: cercas de código de tipos diferentes no leitor; cache e locks de plano sem limite; `GET /api/sessions/{id}/plan` com efeito colateral; `auto_plan` emite sem mudança; observador carrega a sessão mesmo com vínculo manual ou desligado; varredura não revalida o caminho guardado; Tab não fecha o aviso de lista vazia; desligar o automático antes de haver plano.
 
+## Marco 10. Agente de resumos
+
+Objetivo: saber, sem reler a conversa, o que cada sessão em andamento está fazendo, em quais fases e o que falta, inclusive em sessões longas com várias features.
+
+Pedido pelo usuário em 2026-09-30.
+
+- Spec: `docs/superpowers/specs/2026-09-30-agente-de-resumos-design.md`
+
+Um agente único do app, sem ferramentas, lê a conversa de forma incremental com uma chamada curta do SDK por sessão. O resumo fica só no SQLite; o histórico e os arquivos dos projetos não mudam.
+
+- [ ] Configuração do agente em `app_state` e tabelas `session_digests` e `digest_runs`
+- [ ] Leitura incremental do `.jsonl` por cursor e condensação do trecho
+- [ ] Interface `DigestModel`, cliente real sobre o SDK e cliente falso
+- [ ] Mesclagem que congela fases concluídas e valida o selo "Plano concluído"
+- [ ] Agendador: elegibilidade, uma sessão por vez, lock, fila de pedidos manuais, parada por erro e limite
+- [ ] Rotas de configuração, disparo, registro e resumo por sessão, com eventos no WebSocket
+- [ ] Sessões do agente apagadas com `delete_session` e ignoradas pelo índice do histórico
+- [ ] Aba "Agente de resumos" nas Preferências, com registro das passadas e "Rodar agora"
+- [ ] Seção "Resumo" em Detalhes com fases, selo e "Resumir agora"
+- [ ] Frase curta do resumo na linha de conversa
+
+Decidido no desenho (2026-09-30): o agente só lê e resume; "plano concluído" é um selo no app, sem tocar o arquivo; instruções extras em texto livre, sem ferramentas; padrão Sonnet 5.5 com raciocínio médio; passada a cada 10 min, mínimo de 10 mensagens novas, teto de 30 min com turno aberto, janela de 3 dias; fases concluídas congeladas.
+
 ## Fora do MVP
 
 Ideias registradas para depois. Não entram sem decisão do usuário.
@@ -342,4 +366,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | Pendências do marco 7 fechadas, revisadas e marco 7 concluído de novo |
 | 2026-09-29 | Progresso de planos lido do arquivo do plano, com regra de marcação no CLAUDE.md global; ferramenta de tarefas descartada por não existir nas sessões com Opus |
 | 2026-09-29 | Marco 9 concluído: progresso lido do plano, vínculo automático, sinal de turno aberto das conversas do CLI; revisado e testado no app real |
+| 2026-09-30 | Agente de resumos vira o marco 10: uma chamada curta do SDK por sessão, incremental, sem ferramentas, configurável numa aba das Preferências |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
