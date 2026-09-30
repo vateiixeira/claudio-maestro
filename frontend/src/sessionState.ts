@@ -32,9 +32,12 @@ export function deriveDisplay(
   state: SessionState,
   finished: boolean,
   current?: DisplayState,
+  cliRunning = false,
 ): { display_state: DisplayState; awaiting_decision: boolean } {
   if (state === 'connecting' || state === 'running') return { display_state: 'running', awaiting_decision: false }
   if (state === 'awaiting_decision') return { display_state: 'waiting', awaiting_decision: true }
+  // Mirrors the backend: no client in the app, but the CLI is mid-turn.
+  if (state === 'closed' && cliRunning) return { display_state: 'running', awaiting_decision: false }
   // A session the backend already shows as finished (marked, or idle for too long) stays so.
   const stays = finished || current === 'finished'
   return { display_state: stays ? 'finished' : 'waiting', awaiting_decision: false }

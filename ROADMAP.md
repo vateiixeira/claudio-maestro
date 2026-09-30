@@ -26,7 +26,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 0 de 10 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
-| 10. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 2 de 12 |
+| 10. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 3 de 12 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário. O marco 10 começou em 2026-09-30, a pedido do usuário, em paralelo ao marco 8.
 
@@ -296,7 +296,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 
 - [x] Detectar a worktree atual pela transcrição (`worktree.py`) (2026-09-30)
 - [x] Colunas de worktree, branch e pasta do histórico na sessão (2026-09-30)
-- [ ] Conversa do CLI no meio de um turno aparece como "Em execução"
+- [x] Conversa do CLI no meio de um turno aparece como "Em execução" (2026-09-30)
 - [ ] Indexar sessões guardadas nas pastas das worktrees
 - [ ] Ler o histórico pela pasta certa e retomar a sessão na worktree
 - [ ] Worktree e branch no cabeçalho, no Detalhes e na lista
@@ -331,7 +331,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
 | Tecnologia do ditado por voz | Decidido em 2026-09-29: reconhecimento do navegador (Chrome/Edge). O áudio vai ao serviço de reconhecimento do navegador |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
-| Conversa do CLI ativa aparece como "Aguardando você" | Uma conversa conduzida pelo CLI não tem cliente no app, então o estado exibido é "Aguardando você" mesmo com o CLI trabalhando. O marco 9 criou o sinal `cli_running` e o usa só no progresso do plano. Decidir se ele também muda o estado exibido e as contagens da Inbox e do Dashboard |
+| Conversa do CLI ativa aparece como "Aguardando você" | Decidido em 2026-09-30: `cli_running` passa a contar como "Em execução" no estado exibido, na Inbox, no Dashboard e no menu lateral (marco 10) |
 | Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
 
 ## Decisões

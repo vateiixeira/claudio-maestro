@@ -436,7 +436,7 @@ git commit -m "[Feat] Guardar worktree, branch e pasta do histórico da sessão"
   - `display_state(state, *, finished, last_activity_at, last_seen_at, now, finished_after, cli_running: bool = False)`.
   - `deriveDisplay(state, finished, current?, cliRunning = false)`.
 
-- [ ] **Step 1: Testes que falham**
+- [x] **Step 1: Testes que falham**
 
 Backend:
 
@@ -477,12 +477,12 @@ describe('deriveDisplay', () => {
 })
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_cli_turn.py -q`, depois `pnpm --dir frontend exec vitest run src/__tests__/sessionState.spec.ts`
 Expected: FAIL (`unexpected keyword argument 'cli_running'`; `display_state` vale `waiting`).
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 Backend, em `display_state`:
 
@@ -547,12 +547,12 @@ No `ROADMAP.md`, troque a situação do ponto em aberto "Conversa do CLI ativa a
 Decidido em 2026-09-30: `cli_running` passa a contar como "Em execução" no estado exibido, na Inbox, no Dashboard e no menu lateral (marco 10)
 ```
 
-- [ ] **Step 4: Rodar tudo e ver passar**
+- [x] **Step 4: Rodar tudo e ver passar**
 
 Run: `uv run pytest -q && pnpm --dir frontend test`
 Expected: PASS. Se algum teste antigo esperava `waiting` para uma sessão `closed` com `cli_running=True`, ele descrevia o comportamento que o usuário pediu para mudar. Atualize a expectativa para `running` e cite isso no relatório.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/vibing/sessions.py backend/tests/ frontend/src/sessionState.ts frontend/src/stores/sessions.ts frontend/src/__tests__/ ROADMAP.md

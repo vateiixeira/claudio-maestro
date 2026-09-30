@@ -327,16 +327,20 @@ def display_state(
     last_seen_at: int | None,
     now: float,
     finished_after: float,
+    cli_running: bool = False,
 ) -> DisplayState:
     """State shown to the user: running, waiting for them, or finished.
 
     `finished_after` is in seconds: a session without activity for longer counts
-    as finished. A pending decision always waits for the user.
+    as finished. A pending decision always waits for the user. A session without a
+    client (`closed`) whose CLI is mid-turn is running.
     """
     if state in ("connecting", "running"):
         return "running"
     if state == "awaiting_decision":
         return "waiting"
+    if cli_running and state == "closed":
+        return "running"
     if finished or now - last_activity_at > finished_after:
         return "finished"
     return "waiting"
@@ -422,6 +426,7 @@ def describe(
             last_seen_at=record.last_seen_at,
             now=now,
             finished_after=finished_after,
+            cli_running=cli_running,
         ),
         "unread": record.last_activity_at > (record.last_seen_at or 0),
         "awaiting_decision": state == "awaiting_decision",

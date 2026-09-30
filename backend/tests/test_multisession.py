@@ -16,7 +16,7 @@ from test_sessions import (
     wait_until,
 )
 from vibing.agent.fake import FailStep, FakeAgentFactory, PauseStep, text_turn, tool_turn
-from vibing.sessions import SessionManager, SessionNotFoundError, display_state
+from vibing.sessions import SessionManager, SessionNotFoundError, SessionRecord, describe, display_state
 
 DAY = 86_400
 
@@ -251,6 +251,24 @@ def test_display_state_old_inactivity_is_finished():
     fields = row(last_activity_at=0, last_seen_at=0)
     assert display_state("closed", now=3 * DAY + 1, finished_after=3 * DAY, **fields) == "finished"
     assert display_state("closed", now=3 * DAY, finished_after=3 * DAY, **fields) == "waiting"
+
+
+def test_cli_mid_turn_shows_as_running():
+    kw = dict(finished=False, last_activity_at=100, last_seen_at=100, now=110, finished_after=3600)
+    assert display_state("closed", cli_running=True, **kw) == "running"
+    assert display_state("closed", **kw) == "waiting"
+    # A session finished by the user whose CLI works again is running too.
+    assert display_state("closed", cli_running=True, **{**kw, "finished": True}) == "running"
+
+
+def test_describe_uses_cli_running_for_display_state():
+    record = SessionRecord(session_id="s", project_id=1, cwd="/p", title="t", created_at=1, last_activity_at=100)
+    out = describe(record, "closed", None, 0, finished_after=3600, now=110, cli_running=True)
+    assert out["display_state"] == "running"
+    assert out["cli_running"] is True
+    idle = describe(record, "idle", None, 0, finished_after=3600, now=110, cli_running=True)
+    assert idle["cli_running"] is False
+    assert idle["display_state"] == "waiting"
 
 
 @pytest.mark.anyio
