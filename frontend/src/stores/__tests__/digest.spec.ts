@@ -63,4 +63,41 @@ describe('store do agente de resumos', () => {
     await flushPromises()
     expect('s1' in store.digests).toBe(false)
   })
+
+  it('uma leitura em andamento não sobrescreve o resumo entregue pelo evento', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/digest': async () => { await gate; return jsonResponse(digest({ short: 'Antigo' })) },
+    }))
+    const store = useDigestStore()
+    const loading = store.load('s1')
+    store.applyDigest({ session_id: 's1', digest: digest({ short: 'Do evento' }) })
+    release()
+    await loading
+    expect(store.digests.s1?.short).toBe('Do evento')
+  })
+
+  it('uma leitura iniciada antes de invalidar não repovoa o resumo', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/digest': async () => { await gate; return jsonResponse(digest({ short: 'Velho' })) },
+    }))
+    const store = useDigestStore()
+    const loading = store.load('s1')
+    store.invalidate()
+    release()
+    await loading
+    expect('s1' in store.digests).toBe(false)
+  })
+
+  it('evento sem resumo válido ainda libera o pendente', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'POST /api/sessions/s1/digest': () => jsonResponse({ queued: true }, 202) }))
+    const store = useDigestStore()
+    await store.request('s1')
+    store.applyDigest({ session_id: 's1', digest: null })
+    expect(store.pending.s1).toBe(false)
+    expect('s1' in store.digests).toBe(false)
+  })
 })

@@ -30,6 +30,7 @@ afterEach(() => vi.unstubAllGlobals())
 async function mountPanel(drawer = false) {
   vi.stubGlobal('fetch', routeFetch({
     'GET /api/sessions/s1/changes': () => jsonResponse({ repos: [] }),
+    'GET /api/sessions/s1/digest': () => jsonResponse(null),
     'GET /api/sessions/s1/plan': () => jsonResponse({ link: 'auto', path: null, plan: null, tasks: [] }),
     'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ items: [] })),
   }))

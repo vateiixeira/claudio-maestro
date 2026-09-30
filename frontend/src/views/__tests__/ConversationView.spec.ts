@@ -44,6 +44,7 @@ afterEach(() => vi.unstubAllGlobals())
 const baseFetch = {
   'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ title: 'Corrigir login' })),
   'GET /api/sessions/s1/changes': () => jsonResponse({ repos: [] }),
+  'GET /api/sessions/s1/digest': () => jsonResponse(null),
   'POST /api/sessions/s1/seen': () => jsonResponse(makeSession()),
   'GET /api/projects/1/git': () => jsonResponse({ repos: [] }),
   'GET /api/models': () => jsonResponse([]),
@@ -349,6 +350,7 @@ describe('página da conversa', () => {
       ...baseFetch,
       'GET /api/sessions/s2': () => jsonResponse(makeSnapshot({ session_id: 's2', title: 'Outra conversa' })),
       'GET /api/sessions/s2/changes': () => jsonResponse({ repos: [] }),
+      'GET /api/sessions/s2/digest': () => jsonResponse(null),
       'POST /api/sessions/s2/seen': () => jsonResponse(makeSession()),
     })
     vi.stubGlobal('fetch', fetch)

@@ -26,7 +26,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Concluído | 11 de 11 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
-| 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Em andamento | 8 de 10 |
+| 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Em andamento | 9 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 12 de 12 |
 
@@ -308,7 +308,7 @@ Um agente único do app, sem ferramentas, lê a conversa de forma incremental co
 - [x] Rotas de configuração, disparo, registro e resumo por sessão, com eventos no WebSocket (2026-09-30)
 - [x] Sessões do agente apagadas com `delete_session` e ignoradas pelo índice do histórico (2026-09-30)
 - [x] Aba "Agente de resumos" nas Preferências, com registro das passadas e "Rodar agora" (2026-09-30)
-- [ ] Seção "Resumo" em Detalhes com fases, selo e "Resumir agora"
+- [x] Seção "Resumo" em Detalhes com fases, selo e "Resumir agora" (2026-09-30)
 - [ ] Frase curta do resumo na linha de conversa
 
 Decidido no desenho (2026-09-30): o agente só lê e resume; "plano concluído" é um selo no app, sem tocar o arquivo; instruções extras em texto livre, sem ferramentas; padrão Sonnet 5.5 com raciocínio médio; passada a cada 10 min, mínimo de 10 mensagens novas, teto de 30 min com turno aberto, janela de 3 dias; fases concluídas congeladas.

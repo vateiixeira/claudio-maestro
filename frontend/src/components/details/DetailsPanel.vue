@@ -10,6 +10,7 @@ import PlanProperty from '../plan/PlanProperty.vue'
 import PlanStrip from '../plan/PlanStrip.vue'
 import { planVisible } from '../plan/planText'
 import ChangesList from './ChangesList.vue'
+import DigestSection from './DigestSection.vue'
 import FileDiffView from './FileDiffView.vue'
 import { useSessionChanges } from '../../conversation/sessionChanges'
 import { toolDiff } from '../../conversation/diff'
@@ -235,6 +236,7 @@ function resetWidth() {
           <h3 id="plan-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Plano</h3>
           <PlanStrip :key="sessionId" :session="session" variant="panel" />
         </section>
+        <DigestSection :session-id="sessionId" />
         <section data-test="details-changes" aria-labelledby="changes-title" class="flex flex-col gap-2">
           <h3 id="changes-title" class="m-0 flex items-center gap-2 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">
             Alterações
