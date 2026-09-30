@@ -28,9 +28,10 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
-| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 13 de 14 |
+| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 17 de 19 |
+| 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode | Não iniciado | 0 de 11 |
 
-Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e tem spec, mas ainda não tem plano.
 
 ## Preparação
 
@@ -353,11 +354,36 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 - [x] Renomear só pelo clique no título (2026-09-30)
 - [x] Largura ajustável do painel Detalhes (2026-09-30)
 - [x] Progresso do plano no painel Detalhes (2026-09-30)
-- [x] Menu lateral com "Em execução", sigla do projeto e Recentes em ordem estável (2026-09-30)
+- [x] Menu lateral com "Em execução", sigla do projeto e Recentes em ordem estável (2026-09-30). A sigla e a ordem estável foram substituídas depois, nos itens abaixo
+- [x] Nome do projeto no lugar da sigla no menu lateral (2026-09-30)
+- [x] Menu lateral 20% mais largo (2026-09-30)
+- [x] Recentes sem as sessões finalizadas (2026-09-30)
+- [x] Recentes lista todas as conversas não finalizadas pela última interação, sem lista guardada no navegador; substitui a ordem estável (decisão do usuário) (2026-09-30)
 - [x] Ditado no modal de nova conversa (2026-09-30)
 - [x] Retomada de sessão movida para worktree conferida contra o SDK real (2026-09-30)
 - [x] Sessão do app ociosa com subagente em segundo plano conta como "Em execução" no estado exibido (menu lateral, Inbox e Dashboard), com `subagents_running` no resumo da sessão e evento ao começar e terminar (bug relatado pelo usuário em 2026-09-30) (2026-09-30)
 - [ ] Sessão do CLI com subagente em segundo plano depois do `end_turn` da cadeia principal conta como "Em execução": `turn_open` hoje só considera a escrita do subagente quando a cadeia principal não decide nada, e o `end_turn` costuma vir depois do subagente terminar, então exige comparar a ordem de escrita entre os arquivos
+- [ ] Nova revisão do marco pelo `milestone-reviewer`, depois dos itens reabertos
+
+## Marco 13. Comandos e menções
+
+Objetivo: sugestões de `/` (comandos) e `@` (arquivos e pastas) no campo de mensagem, com o mesmo comportamento da extensão do VSCode.
+
+Pedido pelo usuário em 2026-09-30. Falta escrever o plano.
+
+- Spec: `docs/superpowers/specs/2026-09-30-comandos-e-mencoes-design.md`
+
+- [ ] `settings` em `AgentOptions` e no cliente do SDK
+- [ ] Catálogo de comandos e rotas `/commands`
+- [ ] Busca de arquivos e rotas `/files`
+- [ ] Funções puras de sugestão (`suggestions.ts`)
+- [ ] Composable e `SuggestionMenu`, com o menu `/`
+- [ ] Menu `@` com pastas
+- [ ] Integração no campo da conversa
+- [ ] Integração no modal de nova conversa
+- [ ] Realce das menções e dica de argumentos (`MentionMirror`)
+- [ ] Comando como balão no histórico
+- [ ] Verificação manual contra o SDK real e no app
 
 ## Fora do MVP
 
@@ -424,3 +450,5 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-30 | Agente de resumos vira o marco 10: uma chamada curta do SDK por sessão, incremental, sem ferramentas, configurável numa aba das Preferências |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
 | 2026-09-30 | Marco 12 concluído: conversa do CLI no meio de um turno conta como "Em execução"; sessões de worktree são indexadas sob o projeto dono e retomadas na worktree só quando a transcrição está na pasta dela; o marco foi numerado 11 porque o main já tem um marco 10 |
+| 2026-09-30 | Recentes do menu lateral passa a listar todas as conversas não finalizadas, pela última interação, e deixa de ser guardado no navegador. Substitui a decisão de 2026-09-29 e a ordem estável do marco 12 |
+| 2026-09-30 | Comandos (`/`) e menções (`@`) no campo de mensagem viram o marco 13, seguindo o comportamento da extensão do VSCode |
