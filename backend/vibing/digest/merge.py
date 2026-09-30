@@ -4,6 +4,7 @@ Done phases already stored are frozen: the answer may only update the open phase
 close it and add new ones. The model alone never sets the plan seal.
 """
 
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,7 @@ class DigestFormatError(ValueError):
 
 
 def _clip(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[:limit] + "…"
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def _items(raw: Any) -> list[str]:
@@ -79,9 +80,15 @@ def _fold(phases: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return phases
     extra = len(phases) - MAX_PHASES + 1
     folded = phases[:extra]
+    items: list[str] = []
+    for p in folded:
+        if p["title"] == FOLDED_TITLE:
+            items.extend(p.get("done") or [])
+        else:
+            items.append(_clip(p["title"], ITEM_LIMIT))
     summary = {
         "title": FOLDED_TITLE, "kind": "other", "status": "done",
-        "done": [_clip(p["title"], ITEM_LIMIT) for p in folded][:MAX_ITEMS],
+        "done": items[-MAX_ITEMS:],
         "pending": [], "ref": None,
     }
     return [summary, *phases[extra:]]
@@ -101,11 +108,19 @@ def merge_digest(
     if not isinstance(result, dict) or not isinstance(result.get("phases"), list):
         raise DigestFormatError()
     frozen = [p for p in (old.phases if old else []) if p.get("status") == "done"]
-    frozen_keys = {_key(p["title"]) for p in frozen}
-    tail = [
-        p for p in (clean_phase(raw, roots) for raw in result["phases"])
-        if p is not None and _key(p["title"]) not in frozen_keys
-    ]
+    # Each frozen phase swallows at most one phase of the answer (multiset by title),
+    # so a new phase that repeats a frozen title survives as the tail.
+    pending_frozen = Counter(_key(p["title"]) for p in frozen)
+    tail = []
+    for raw in result["phases"]:
+        cleaned = clean_phase(raw, roots)
+        if cleaned is None:
+            continue
+        key = _key(cleaned["title"])
+        if pending_frozen[key] > 0:
+            pending_frozen[key] -= 1
+            continue
+        tail.append(cleaned)
     for p in tail[:-1]:
         p["status"] = "done"
     phases = _fold([*frozen, *tail])

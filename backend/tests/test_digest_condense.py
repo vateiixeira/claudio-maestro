@@ -142,5 +142,28 @@ def test_over_budget_keeps_every_prompt_and_both_ends() -> None:
     assert out.count == 102
 
 
+def test_user_prompts_over_budget_keep_the_newest_ones() -> None:
+    messages = []
+    for i in range(30):
+        messages.append(user(f"u{i}", f"pedido {i:02d} " + "y" * 900))
+        messages.append(claude(f"a{i}", text(f"resposta {i:02d}"), tool(f"t{i}", "Read",
+                                                                       file_path=f"/p/{i}.md")))
+    out = condense(messages, {}, CWD, budget=5000)
+    lines = out.text.splitlines()
+    markers = [line for line in lines if line.startswith("[… ")]
+    content = [line for line in lines if not line.startswith("[… ")]
+    assert content[-1].startswith("[Você] pedido 29")
+    assert lines[0].startswith("[… ") and markers
+    assert sum(len(line) + 1 for line in content) <= 5000
+    assert not any(line.startswith("[Claude]") or line.startswith("[Read]") for line in lines)
+    assert "pedido 00" not in out.text
+    assert out.count == 90
+
+
+def test_a_single_huge_prompt_is_still_kept() -> None:
+    out = condense([user("u1", "z" * 9000), user("u2", "final")], {}, CWD, budget=100)
+    assert out.text.splitlines()[-1] == "[Você] final"
+
+
 def test_empty_slice() -> None:
     assert condense([], {}, CWD) == Condensed(text="", count=0, paths=[])

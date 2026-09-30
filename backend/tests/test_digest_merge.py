@@ -56,10 +56,15 @@ def test_limits_are_applied_by_cutting() -> None:
     long = phase("T" * 300, "open", done=["d" * 300] * 20, pending=[" ", "p"])
     got = merge(None, answer(long, short="s" * 300))
     p = got.phases[0]
-    assert len(p["title"]) == 121 and p["title"].endswith("…")
-    assert len(p["done"]) == 12 and len(p["done"][0]) == 201
+    assert len(p["title"]) == 120 and p["title"].endswith("…")
+    assert len(p["done"]) == 12 and len(p["done"][0]) == 200
     assert p["pending"] == ["p"]
-    assert len(got.short) == 141
+    assert len(got.short) == 140 and got.short.endswith("…")
+
+
+def test_text_at_the_limit_is_kept_whole() -> None:
+    got = merge(None, answer(phase("T" * 120, "open"), short="s" * 140))
+    assert got.phases[0]["title"] == "T" * 120 and got.short == "s" * 140
 
 
 def test_too_many_phases_fold_the_oldest() -> None:
@@ -115,3 +120,38 @@ def test_plan_seal_stays_until_the_plan_changes() -> None:
     old = Digest("s1", plan_done=True, plan_ref="/p.md")
     assert merge(old, answer(), plan_path="/p.md").plan_done is True
     assert merge(old, answer(), plan_path="/outro.md").plan_done is False
+
+
+def test_new_phase_repeating_a_frozen_title_is_kept() -> None:
+    old = Digest("s1", phases=[phase("Executar plano X"), phase("Ajustes e melhorias"),
+                               phase("Feature Y")])
+    got = merge(old, answer(phase("Executar plano X"), phase("Ajustes e melhorias"),
+                            phase("Feature Y"), phase("Ajustes e melhorias", "open")))
+    assert [p["title"] for p in got.phases] == [
+        "Executar plano X", "Ajustes e melhorias", "Feature Y", "Ajustes e melhorias"]
+    assert [p["status"] for p in got.phases] == ["done", "done", "done", "open"]
+
+
+def test_repeated_frozen_phase_in_the_answer_collapses_once_per_frozen() -> None:
+    old = Digest("s1", phases=[phase("Plano X")])
+    got = merge(old, answer(phase(" plano x "), phase("Feature Y", "open")))
+    assert [p["title"] for p in got.phases] == ["Plano X", "Feature Y"]
+
+
+def test_folding_again_merges_the_previous_folded_items() -> None:
+    folded = phase("Fases anteriores", kind="other", done=["A", "B"])
+    old = Digest("s1", phases=[folded] + [phase(f"F{i}") for i in range(19)])
+    got = merge(old, answer(phase("Agora", "open")))
+    assert len(got.phases) == 20
+    first = got.phases[0]
+    assert first["title"] == "Fases anteriores"
+    assert first["done"] == ["A", "B", "F0"]
+    assert "Fases anteriores" not in first["done"]
+
+
+def test_folding_keeps_the_newest_items_when_over_the_cap() -> None:
+    folded = phase("Fases anteriores", kind="other", done=[f"old{i}" for i in range(12)])
+    old = Digest("s1", phases=[folded] + [phase(f"F{i}") for i in range(19)])
+    got = merge(old, answer(phase("Agora", "open")))
+    assert len(got.phases[0]["done"]) == 12
+    assert got.phases[0]["done"][-1] == "F0" and got.phases[0]["done"][0] == "old1"

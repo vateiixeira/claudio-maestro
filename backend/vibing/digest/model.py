@@ -84,12 +84,19 @@ def build_digest_options(
         "tools": [],
         "max_turns": MAX_TURNS,
         "setting_sources": [],
+        # `tools=[]` only covers built-in tools; this also cuts the MCP servers
+        # from ~/.claude.json and the claude.ai connectors.
+        "strict_mcp_config": True,
         "system_prompt": request.system_prompt,
         "output_format": {"type": "json_schema", "schema": DIGEST_SCHEMA},
     }
     if stderr is not None:
         kwargs["stderr"] = stderr
     return ClaudeAgentOptions(**kwargs)
+
+
+def _has_login_marker(*texts: str | None) -> bool:
+    return any(marker in text for text in texts if text for marker in LOGIN_MARKERS)
 
 
 def _sdk_query(*, prompt: str, options: Any):
@@ -110,8 +117,10 @@ class SdkDigestModel:
         cwd: Path,
         query_fn: Callable[..., Any] | None = None,
         delete_fn: Callable[[str, str], None] | None = None,
+        on_init: Callable[[dict], None] | None = None,
     ) -> None:
         self._cwd = cwd
+        self._on_init = on_init
         self._query = query_fn or _sdk_query
         self._delete = delete_fn or _sdk_delete
 
@@ -122,7 +131,13 @@ class SdkDigestModel:
             logger.warning("Não foi possível apagar a sessão %s do agente de resumos", session_id)
 
     async def summarize(self, request: DigestRequest) -> dict[str, Any]:
-        from claude_agent_sdk import CLINotFoundError, ResultMessage, SystemMessage
+        from claude_agent_sdk import (
+            AssistantMessage,
+            CLINotFoundError,
+            ResultMessage,
+            SystemMessage,
+            TextBlock,
+        )
         from claude_agent_sdk.types import RateLimitEvent
 
         self._cwd.mkdir(parents=True, exist_ok=True)
@@ -131,11 +146,18 @@ class SdkDigestModel:
         session_id: str | None = None
         output: Any = None
         failure: str | None = None
+        login_seen = False
         try:
             async with aclosing(self._query(prompt=request.prompt, options=options)) as stream:
                 async for message in stream:
                     if isinstance(message, SystemMessage) and message.subtype == "init":
                         session_id = message.data.get("session_id") or session_id
+                        if self._on_init is not None:
+                            self._on_init(message.data)
+                    elif isinstance(message, AssistantMessage):
+                        texts = [b.text for b in message.content if isinstance(b, TextBlock)]
+                        if message.error == "authentication_failed" or _has_login_marker(*texts):
+                            login_seen = True
                     elif isinstance(message, RateLimitEvent):
                         info = message.rate_limit_info
                         if info.status == "rejected":
@@ -145,7 +167,12 @@ class SdkDigestModel:
                             )
                     elif isinstance(message, ResultMessage):
                         session_id = session_id or message.session_id
-                        if message.is_error or message.structured_output is None:
+                        failed = message.is_error or message.structured_output is None
+                        if failed and _has_login_marker(message.result, *(message.errors or [])):
+                            login_seen = True
+                        if failed and login_seen:
+                            raise DigestModelError(LOGIN_MESSAGE, stop_pass=True)
+                        if failed:
                             failure = NO_OUTPUT
                         else:
                             output = message.structured_output
@@ -155,12 +182,14 @@ class SdkDigestModel:
             raise DigestModelError(CLI_NOT_FOUND_MESSAGE, stop_pass=True) from error
         except Exception as error:
             texts = [*stderr_lines, str(error), getattr(error, "stderr", None) or ""]
-            if any(marker in text for text in texts for marker in LOGIN_MARKERS):
+            if (login_seen and output is None) or _has_login_marker(*texts):
                 raise DigestModelError(LOGIN_MESSAGE, stop_pass=True) from error
             raise DigestModelError(to_agent_error(error).message_pt) from error
         finally:
             if session_id:
                 await asyncio.to_thread(self._delete_quietly, session_id)
+        if login_seen and output is None:
+            raise DigestModelError(LOGIN_MESSAGE, stop_pass=True)
         if output is None:
             raise DigestModelError(failure or NO_OUTPUT)
         if not isinstance(output, dict):

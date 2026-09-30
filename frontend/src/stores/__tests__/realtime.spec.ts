@@ -56,6 +56,46 @@ describe('bindRealtime', () => {
     expect(store.status?.running).toBe(true)
   })
 
+  it('relê o estado do agente de resumos ao reconectar', async () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    const status = { enabled: true, running: true, next_run_at: 50, paused_until: null }
+    const fetchMock = vi.fn(async (url: string) =>
+      url === '/api/digest/config' ? jsonResponse({ config: {}, status }) : jsonResponse([]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const store = useDigestStore()
+    store.applyStatus({ enabled: true, running: false, next_run_at: null, paused_until: null })
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    sockets[0]!.onclose?.({})
+    vi.advanceTimersByTime(10)
+    sockets[1]!.onopen?.({})
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/digest/config', expect.anything())
+    expect(store.status).toEqual(status)
+  })
+
+  it('ignora a falha ao reler o estado do agente ao reconectar', async () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      url === '/api/digest/config' ? new Response('x', { status: 500 }) : jsonResponse([]),
+    ))
+    const store = useDigestStore()
+    const before = { enabled: true, running: false, next_run_at: null, paused_until: null }
+    store.applyStatus(before)
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    sockets[0]!.onclose?.({})
+    vi.advanceTimersByTime(10)
+    sockets[1]!.onopen?.({})
+    await flushPromises()
+    expect(store.status).toEqual(before)
+  })
+
   it('leva session.state e session.title ao store e recarrega ao reconectar', async () => {
     const sockets: FakeSocket[] = []
     const socket = new EventSocket({

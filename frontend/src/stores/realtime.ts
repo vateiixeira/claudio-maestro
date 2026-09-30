@@ -53,6 +53,7 @@ export function bindRealtime(socket: EventSocket): () => void {
     socket.on('digest.status', (event) => useDigestStore().applyStatus(event.data)),
     socket.onReconnect(() => {
       useDigestStore().invalidate()
+      void useDigestStore().refreshStatus()
       // The startup read of the preferences failed: read them again now.
       const layout = useLayoutStore()
       if (!layout.loadedFromServer) void layout.restore()

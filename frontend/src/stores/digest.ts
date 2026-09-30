@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { errorMessage, getSessionDigest, requestSessionDigest } from '../api/http'
+import { errorMessage, getDigestConfig, getSessionDigest, requestSessionDigest } from '../api/http'
 import type { DigestStatus, SessionDigest } from '../types/api'
 
 function isStatus(value: unknown): value is DigestStatus {
@@ -66,5 +66,17 @@ export const useDigestStore = defineStore('digest', () => {
     pending.value = {}
   }
 
-  return { status, digests, pending, errors, epoch, applyStatus, applyDigest, load, request, invalidate }
+  /** Reads the agent status again (a `digest.status` event may have been lost). Errors are ignored. */
+  async function refreshStatus(): Promise<void> {
+    try {
+      applyStatus((await getDigestConfig()).status)
+    } catch {
+      // The last known status stays.
+    }
+  }
+
+  return {
+    status, digests, pending, errors, epoch,
+    applyStatus, applyDigest, load, request, invalidate, refreshStatus,
+  }
 })

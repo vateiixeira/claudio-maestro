@@ -978,3 +978,21 @@ async def test_sessions_in_ignored_dirs_are_not_indexed(tmp_path: Path) -> None:
     index = HistoryIndex(db_path, fake.list_sessions, ignored_dirs=[agent_dir])
     await index.sync_all()
     assert set(rows(db_path)) == {"mine"}
+
+
+@pytest.mark.anyio
+async def test_ignored_dirs_are_resolved(tmp_path: Path) -> None:
+    """A symlinked or relative ignored folder still matches the resolved cwd."""
+    db_path = tmp_path / "data" / "vibing.db"
+    db.init_db(db_path)
+    home = tmp_path / "home"
+    add_project(db_path, home, "home")
+    real = home / "real" / "digest-agent"
+    real.mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(home / "real")
+    fake = FakeHistory()
+    fake.add(str(home), info("mine", str(home / "app")), info("agent", str(real)))
+    index = HistoryIndex(db_path, fake.list_sessions, ignored_dirs=[link / "digest-agent"])
+    await index.sync_all()
+    assert set(rows(db_path)) == {"mine"}

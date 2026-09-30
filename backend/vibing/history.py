@@ -578,7 +578,7 @@ class HistoryIndex:
     ) -> None:
         self._db_path = db_path
         # Sessions whose cwd is inside one of these folders never enter the index.
-        self._ignored = tuple(str(Path(d)) for d in ignored_dirs)
+        self._ignored = tuple(str(Path(d).resolve()) for d in ignored_dirs)
         # A directory whose history folder did not change is not listed again.
         self._folder_signature = folder_signature or (lambda d: sdk_folder_signature(d))
         self._listings: dict[str, tuple[Any, list[Any]]] = {}

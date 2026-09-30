@@ -95,7 +95,7 @@ def create_app(
             on_turn_end=refresh_git,
         )
         app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
-        agent_dir = app.state.settings.data_dir / AGENT_DIR_NAME
+        agent_dir = (app.state.settings.data_dir / AGENT_DIR_NAME).resolve()
         app.state.digest = DigestService(
             app.state.settings.db_path,
             app.state.sessions,

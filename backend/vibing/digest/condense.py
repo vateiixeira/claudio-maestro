@@ -133,26 +133,36 @@ def _fit(lines: list[tuple[str, str]], budget: int) -> str:
     sizes = [len(text) + 1 for _, text in lines]
     if sum(sizes) <= budget:
         return "\n".join(text for _, text in lines)
-    user_total = sum(size for (kind, _), size in zip(lines, sizes) if kind == "user")
-    room = max(budget - user_total, 0)
+    users = [i for i, (kind, _) in enumerate(lines) if kind == "user"]
     others = [i for i, (kind, _) in enumerate(lines) if kind != "user"]
     keep: set[int] = set()
-    head = 0
-    for i in others:
-        if head + sizes[i] > room // 2:
-            break
-        keep.add(i)
-        head += sizes[i]
-    tail = 0
-    for i in reversed(others):
-        if i in keep or tail + sizes[i] > room - head:
-            break
-        keep.add(i)
-        tail += sizes[i]
+    if sum(sizes[i] for i in users) <= budget:
+        keep.update(users)
+        room = budget - sum(sizes[i] for i in users)
+        head = 0
+        for i in others:
+            if head + sizes[i] > room // 2:
+                break
+            keep.add(i)
+            head += sizes[i]
+        tail = 0
+        for i in reversed(others):
+            if i in keep or tail + sizes[i] > room - head:
+                break
+            keep.add(i)
+            tail += sizes[i]
+    else:
+        # The prompts alone blow the budget: keep the newest ones that fit (at least one).
+        used = 0
+        for i in reversed(users):
+            if keep and used + sizes[i] > budget:
+                break
+            keep.add(i)
+            used += sizes[i]
     out: list[str] = []
     omitted = 0
-    for i, (kind, text) in enumerate(lines):
-        if kind == "user" or i in keep:
+    for i, (_, text) in enumerate(lines):
+        if i in keep:
             if omitted:
                 out.append(f"[… {omitted} entradas omitidas …]")
                 omitted = 0

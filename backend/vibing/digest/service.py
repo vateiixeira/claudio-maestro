@@ -153,6 +153,8 @@ class DigestService:
         errors: list[dict[str, Any]] = []
         stopped: str | None = None
         handled: set[str] = set()  # sessions that already got a result or an error
+        current: str | None = None  # the session being read right now
+        cancelled = False
         try:
             self._running = True
             self._publish_status()
@@ -162,7 +164,9 @@ class DigestService:
             sessions = await self._candidates(trigger, session_ids, config, errors)
             for session in sessions:
                 handled.add(session["session_id"])
+                current = session["session_id"]
                 outcome = await self._digest_one(session, trigger, config)
+                current = None
                 if outcome == "read":
                     read += 1
                 elif outcome == "skipped":
@@ -178,10 +182,20 @@ class DigestService:
                     await self._fail(sid, stop.message)
         except asyncio.CancelledError:
             stopped = STOPPED_DISABLED
+            cancelled = True
+            # Synchronous on purpose: a second cancel could interrupt an await here.
+            # The requested sessions not finished get the reason, so "Resumindo…" ends.
+            for sid in session_ids or []:
+                if sid not in handled or sid == current:
+                    self._fail_now(sid, STOPPED_DISABLED)
             raise
         finally:
             self._running = False
-            run = self._finish_run(run_id, read, skipped, errors, stopped)
+            if cancelled:
+                run = self._finish_run(run_id, read, skipped, errors, stopped)
+            else:
+                run = await asyncio.to_thread(self._finish_run, run_id, read, skipped,
+                                              errors, stopped)
             self._publish_status()
         return run
 
@@ -191,7 +205,7 @@ class DigestService:
 
     def _finish_run(self, run_id: int, read: int, skipped: int,
                     errors: list[dict[str, Any]], stopped: str | None) -> dict[str, Any]:
-        # Synchronous on purpose: it also runs while the pass is being cancelled.
+        # Blocking: called on the loop only while the pass is being cancelled.
         with closing(db.connect(self._db_path)) as conn:
             return store.finish_run(conn, run_id, at=int(self._clock()), read_count=read,
                                     skipped_count=skipped, errors=errors, stopped=stopped)
@@ -276,6 +290,15 @@ class DigestService:
         digest = await asyncio.to_thread(self._save_error, session_id, message)
         if digest is not None:
             self._publish_digest(digest)
+
+    def _fail_now(self, session_id: str, message: str) -> None:
+        """`_fail` without awaiting, for the cancellation path."""
+        try:
+            digest = self._save_error(session_id, message)
+            if digest is not None:
+                self._publish_digest(digest)
+        except Exception:
+            logger.exception("Could not record the error of session %s", session_id)
 
     def _save_error(self, session_id: str, message: str) -> Digest | None:
         with closing(db.connect(self._db_path)) as conn:
@@ -446,7 +469,10 @@ class DigestService:
 
     async def run(self) -> None:
         """Scheduler loop, started with the app."""
-        await asyncio.to_thread(self.load)
+        try:
+            await asyncio.to_thread(self.load)
+        except Exception:
+            logger.exception("Não foi possível ler a configuração do agente de resumos")
         self.start_schedule()
         self._publish_status()
         while True:

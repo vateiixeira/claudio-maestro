@@ -4,7 +4,14 @@
 from pathlib import Path
 
 import pytest
-from claude_agent_sdk import CLINotFoundError, ResultMessage, SystemMessage
+from claude_agent_sdk import (
+    AssistantMessage,
+    CLINotFoundError,
+    ProcessError,
+    ResultMessage,
+    SystemMessage,
+    TextBlock,
+)
 from claude_agent_sdk.types import RateLimitEvent, RateLimitInfo
 
 from vibing.digest.model import (
@@ -46,6 +53,11 @@ def test_options_have_no_tools_and_no_user_settings(tmp_path: Path) -> None:
     assert options.max_turns == 3 and options.model == "sonnet" and options.effort == "medium"
     assert options.system_prompt == "regras" and options.cwd == str(tmp_path)
     assert options.output_format == {"type": "json_schema", "schema": DIGEST_SCHEMA}
+
+
+def test_options_cut_every_mcp_server(tmp_path: Path) -> None:
+    options = build_digest_options(REQUEST, tmp_path)
+    assert options.strict_mcp_config is True and not options.mcp_servers
 
 
 @pytest.mark.anyio
@@ -131,3 +143,77 @@ async def test_fake_model_returns_scripted_answers_and_errors() -> None:
     with pytest.raises(DigestModelError):
         await fake.summarize(REQUEST)
     assert fake.requests == [REQUEST, REQUEST]
+
+
+LOGIN_TEXT = "Invalid API key · Please run /login"
+
+
+def login_messages():
+    return [
+        SystemMessage("init", {"session_id": "sess-1"}),
+        AssistantMessage(content=[TextBlock(text=LOGIN_TEXT)], model="haiku",
+                         error="authentication_failed"),
+        result(is_error=True, structured_output=None, result=LOGIN_TEXT),
+    ]
+
+
+@pytest.mark.anyio
+async def test_expired_login_followed_by_process_error_stops_the_pass(tmp_path: Path) -> None:
+    error = ProcessError("Command failed with exit code 1", exit_code=1,
+                         stderr="Check stderr output for details")
+    query, _ = stub_query(*login_messages(), error=error)
+    deleted = []
+    model = SdkDigestModel(tmp_path, query_fn=query, delete_fn=lambda s, d: deleted.append(s))
+    with pytest.raises(DigestModelError) as err:
+        await model.summarize(REQUEST)
+    assert err.value.stop_pass is True and "login" in err.value.message
+    assert deleted == ["sess-1"]
+
+
+@pytest.mark.anyio
+async def test_expired_login_with_a_normal_exit_stops_the_pass(tmp_path: Path) -> None:
+    query, _ = stub_query(*login_messages())
+    model = SdkDigestModel(tmp_path, query_fn=query, delete_fn=lambda s, d: None)
+    with pytest.raises(DigestModelError) as err:
+        await model.summarize(REQUEST)
+    assert err.value.stop_pass is True and "login" in err.value.message
+
+
+@pytest.mark.anyio
+async def test_login_marker_only_in_the_result_errors_stops_the_pass(tmp_path: Path) -> None:
+    query, _ = stub_query(result(is_error=True, structured_output=None, result=None,
+                                 errors=["OAuth token has expired"]))
+    model = SdkDigestModel(tmp_path, query_fn=query, delete_fn=lambda s, d: None)
+    with pytest.raises(DigestModelError) as err:
+        await model.summarize(REQUEST)
+    assert err.value.stop_pass is True
+
+
+@pytest.mark.anyio
+async def test_process_error_without_a_login_signal_does_not_stop_the_pass(tmp_path: Path) -> None:
+    error = ProcessError("Command failed with exit code 1", exit_code=1, stderr="boom")
+    query, _ = stub_query(SystemMessage("init", {"session_id": "sess-1"}), error=error)
+    model = SdkDigestModel(tmp_path, query_fn=query, delete_fn=lambda s, d: None)
+    with pytest.raises(DigestModelError) as err:
+        await model.summarize(REQUEST)
+    assert err.value.stop_pass is False
+
+
+@pytest.mark.anyio
+async def test_on_init_receives_the_init_data(tmp_path: Path) -> None:
+    data = {"session_id": "sess-1", "tools": [], "mcp_servers": []}
+    query, _ = stub_query(SystemMessage("init", data), result())
+    seen = []
+    model = SdkDigestModel(tmp_path, query_fn=query, delete_fn=lambda s, d: None,
+                           on_init=seen.append)
+    await model.summarize(REQUEST)
+    assert seen == [data]
+
+
+@pytest.mark.anyio
+async def test_login_words_in_a_successful_reading_do_not_discard_it(tmp_path: Path) -> None:
+    talk = AssistantMessage(content=[TextBlock(text="a sessão falou de Please run /login")],
+                            model="haiku")
+    query, _ = stub_query(SystemMessage("init", {"session_id": "sess-1"}), talk, result())
+    model = SdkDigestModel(tmp_path, query_fn=query, delete_fn=lambda s, d: None)
+    assert await model.summarize(REQUEST) == OUTPUT

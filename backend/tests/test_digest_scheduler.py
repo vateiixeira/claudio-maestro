@@ -1,6 +1,7 @@
 """Scheduler of the digest agent: queue, pause, config changes, cancellation."""
 
 import asyncio
+import threading
 from contextlib import closing
 from pathlib import Path
 
@@ -83,6 +84,80 @@ async def test_disabling_cancels_the_running_pass(tmp_path: Path) -> None:
     assert runs(world)[0]["stopped"] == "Desligado."
     assert service.status() == {"enabled": False, "running": False, "next_run_at": None,
                                 "paused_until": None}
+
+
+@pytest.mark.anyio
+async def test_disabling_during_a_manual_session_pass_ends_every_requested_session(
+    tmp_path: Path,
+) -> None:
+    world = World(tmp_path)
+    world.add("s1", exchange(0, 2))
+    world.add("s2", exchange(0, 2))
+    model = FakeDigestModel()
+    service = world.service(model)
+    await service.update_config(DigestConfig(enabled=True))
+    model.gate = asyncio.Event()  # never set: the first reading hangs
+    service.request_session("s1")
+    service.request_session("s2")
+    tick = asyncio.create_task(service.tick())
+    await model.started.wait()
+    await service.update_config(DigestConfig(enabled=False))
+    await asyncio.wait_for(tick, 1)
+    failed = {e["data"]["session_id"]: e["data"]["digest"]["error"]
+              for e in world.published("session.digest")}
+    assert failed == {"s1": "Desligado.", "s2": "Desligado."}
+    assert world.digest("s1").error == "Desligado." and world.digest("s2").error == "Desligado."
+    assert runs(world)[0]["stopped"] == "Desligado."
+
+
+@pytest.mark.anyio
+async def test_finish_run_is_off_the_loop_thread_unless_cancelled(tmp_path: Path) -> None:
+    world = World(tmp_path)
+    world.add("s1", exchange(0, 2))
+    world.add("s2", exchange(0, 2))
+    service = world.service(FakeDigestModel())
+    threads: list[threading.Thread] = []
+    original = service._finish_run
+
+    def spy(*args, **kwargs):
+        threads.append(threading.current_thread())
+        return original(*args, **kwargs)
+
+    service._finish_run = spy
+    await service.run_pass("manual_session", ["s1"])
+    assert threads[-1] is not threading.main_thread()
+
+    model = FakeDigestModel()
+    model.gate = asyncio.Event()
+    service = world.service(model)
+    service._finish_run = spy
+    task = asyncio.create_task(service.run_pass("manual_session", ["s2"]))
+    await asyncio.wait_for(model.started.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert threads[-1] is threading.main_thread()
+
+
+@pytest.mark.anyio
+async def test_a_failing_initial_load_does_not_kill_the_loop(tmp_path: Path) -> None:
+    world = World(tmp_path)
+    world.add("s1", exchange(0, 2))
+    model = FakeDigestModel()
+    service = world.service(model)
+
+    def boom() -> None:
+        raise RuntimeError("banco indisponível")
+
+    service.load = boom
+    loop = asyncio.create_task(service.run())
+    await asyncio.sleep(0.05)
+    assert not loop.done()
+    service.request_session("s1")
+    await asyncio.wait_for(model.started.wait(), 1)
+    loop.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await loop
 
 
 @pytest.mark.anyio
