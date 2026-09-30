@@ -8,6 +8,7 @@ import { useProjectsStore } from '../projects'
 import { useGitStore } from '../git'
 import { useModelsStore } from '../models'
 import { useGroupsStore } from '../groups'
+import { useDigestStore } from '../digest'
 import { jsonResponse, makeGroup, makeProject, makeSession } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
@@ -29,6 +30,32 @@ afterEach(() => {
 })
 
 describe('bindRealtime', () => {
+  it('leva session.digest e digest.status ao store do agente', () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({
+      url: 'ws://x/ws',
+      createSocket: () => {
+        const s = new FakeSocket()
+        sockets.push(s)
+        return s
+      },
+      initialDelay: 10,
+    })
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    const digest = { session_id: 's1', read_at: 1, short: 'Faz X', phases: [], plan_done: false, error: null, error_at: null }
+    sockets[0]!.onmessage?.({
+      data: JSON.stringify({ session_id: null, seq: 0, type: 'session.digest', data: { session_id: 's1', digest } }),
+    })
+    sockets[0]!.onmessage?.({
+      data: JSON.stringify({ session_id: null, seq: 0, type: 'digest.status', data: { enabled: true, running: true, next_run_at: null, paused_until: null } }),
+    })
+    const store = useDigestStore()
+    expect(store.digests.s1?.short).toBe('Faz X')
+    expect(store.status?.running).toBe(true)
+  })
+
   it('leva session.state e session.title ao store e recarrega ao reconectar', async () => {
     const sockets: FakeSocket[] = []
     const socket = new EventSocket({

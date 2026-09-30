@@ -107,6 +107,10 @@ export interface Session {
   worktree_path?: string | null
   /** Newest git branch recorded in the session's transcript. */
   git_branch?: string | null
+  /** Short sentence of the digest agent's summary; null before the first reading. */
+  digest_short?: string | null
+  /** The digest agent marked the linked plan as completed. */
+  plan_done?: boolean
 }
 
 /** Group of related sessions inside a project (`GET /api/groups`). Only the app knows it. */
@@ -263,4 +267,47 @@ export interface FileDiff {
   diff: string
   truncated: boolean
   notice?: string | null
+}
+
+export type DigestPhaseKind = 'plan' | 'spec' | 'feature' | 'adjustments' | 'investigation' | 'other'
+export interface DigestPhase {
+  title: string
+  kind: DigestPhaseKind
+  status: 'open' | 'done'
+  done: string[]
+  pending: string[]
+  ref: string | null
+}
+/** Summary kept by the digest agent (`GET /api/sessions/{id}/digest`). */
+export interface SessionDigest {
+  session_id: string
+  read_at: number | null
+  short: string | null
+  phases: DigestPhase[]
+  plan_done: boolean
+  error: string | null
+  error_at: number | null
+}
+export interface DigestConfig {
+  enabled: boolean
+  model: string
+  effort: Effort
+  extra_instructions: string
+  interval_minutes: number
+  min_new_messages: number
+  open_turn_minutes: number
+  window_days: number
+}
+export interface DigestStatus { enabled: boolean; running: boolean; next_run_at: number | null; paused_until: number | null }
+export interface DigestState { config: DigestConfig; status: DigestStatus }
+export interface DigestRunError { session_id: string; title: string; message: string }
+export interface DigestRun {
+  id: number
+  started_at: number
+  finished_at: number | null
+  trigger: 'auto' | 'manual_all' | 'manual_session'
+  read_count: number
+  skipped_count: number
+  errors: DigestRunError[]
+  stopped: string | null
 }

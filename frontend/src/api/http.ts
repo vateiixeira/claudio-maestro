@@ -1,5 +1,9 @@
 import type {
   ActivityDay,
+  DigestConfig,
+  DigestRun,
+  DigestState,
+  DigestStatus,
   DirListing,
   ChangesGroup,
   DisplayState,
@@ -16,6 +20,7 @@ import type {
   ProjectUpdate,
   SendResult,
   Session,
+  SessionDigest,
   SessionGroup,
   SessionUpdate,
 } from '../types/api'
@@ -284,4 +289,30 @@ export function unlinkSessionPlan(id: string): Promise<PlanState> {
 
 export function listProjectPlans(projectId: number): Promise<ProjectPlan[]> {
   return request('GET', `/api/projects/${projectId}/plans`)
+}
+
+// Digest agent
+
+export function getDigestConfig(): Promise<DigestState> {
+  return request('GET', '/api/digest/config')
+}
+
+export function putDigestConfig(config: DigestConfig): Promise<DigestState> {
+  return request('PUT', '/api/digest/config', config)
+}
+
+export function runDigest(): Promise<DigestStatus> {
+  return request('POST', '/api/digest/run')
+}
+
+export function listDigestRuns(): Promise<DigestRun[]> {
+  return request('GET', '/api/digest/runs')
+}
+
+export function getSessionDigest(id: string): Promise<SessionDigest | null> {
+  return request('GET', `/api/sessions/${encodeURIComponent(id)}/digest`)
+}
+
+export function requestSessionDigest(id: string): Promise<{ queued: boolean }> {
+  return request('POST', `/api/sessions/${encodeURIComponent(id)}/digest`)
 }

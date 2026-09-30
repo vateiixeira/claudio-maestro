@@ -1,4 +1,5 @@
 import type { EventSocket } from '../api/socket'
+import { useDigestStore } from './digest'
 import { useGitStore } from './git'
 import { useGitDetailsStore } from './gitDetails'
 import { useGroupsStore } from './groups'
@@ -47,7 +48,11 @@ export function bindRealtime(socket: EventSocket): () => void {
     socket.on('models.updated', (event) => {
       useModelsStore().apply((event.data as { models?: unknown } | null)?.models)
     }),
+    // The digest agent wrote a summary, or its state changed (both global events).
+    socket.on('session.digest', (event) => useDigestStore().applyDigest(event.data)),
+    socket.on('digest.status', (event) => useDigestStore().applyStatus(event.data)),
     socket.onReconnect(() => {
+      useDigestStore().invalidate()
       // The startup read of the preferences failed: read them again now.
       const layout = useLayoutStore()
       if (!layout.loadedFromServer) void layout.restore()
