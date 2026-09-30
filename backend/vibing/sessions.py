@@ -21,6 +21,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import closing, suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import EllipsisType
 from typing import Any, Literal
 
 from claude_agent_sdk import (
@@ -38,7 +39,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
-from vibing import db
+from vibing import db, groups
 from vibing import history as history_module
 from vibing.agent.base import AgentClient, AgentError, AgentFactory, AgentOptions
 from vibing.config import read_user_claude_settings
@@ -259,6 +260,8 @@ class SessionRecord:
     # how it was linked: "auto", "manual" or "off" (None = auto without a plan).
     plan_path: str | None = None
     plan_link: str | None = None
+    # Group of related sessions (only the app knows it); None when loose.
+    group_id: int | None = None
 
 
 @dataclass
@@ -277,7 +280,7 @@ _INSERT_COLUMNS = (
 _COLUMNS = (
     _INSERT_COLUMNS
     + ", summary, first_prompt, title_custom, rename_pending, file_modified_at, app_modified_at"
-    + ", model, effort, permission_mode, finished_at, plan_path, plan_link"
+    + ", model, effort, permission_mode, finished_at, plan_path, plan_link, group_id"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
@@ -2063,7 +2066,7 @@ class SessionManager:
                 logger.exception("Falha na atualização periódica dos modelos")
             await sleep(interval)
 
-    def create_session(self, project: Project) -> SessionRecord:
+    def create_session(self, project: Project, group_id: int | None = None) -> SessionRecord:
         if not project.available:
             raise ProjectUnavailableError("A pasta do projeto não está disponível.")
         now = _now()
@@ -2077,11 +2080,15 @@ class SessionManager:
             last_seen_at=now,
             finished=False,
             permission_mode=self._default_permission_mode(),
+            group_id=group_id,
         )
-        with closing(db.connect(self._db_path)) as conn:
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            # Same transaction: the group cannot vanish between the check and the insert.
+            if group_id is not None:
+                groups.check_group_for(conn, group_id, project.id)
             conn.execute(
-                f"INSERT INTO sessions ({_INSERT_COLUMNS}, permission_mode)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO sessions ({_INSERT_COLUMNS}, permission_mode, group_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.session_id,
                     record.project_id,
@@ -2092,6 +2099,7 @@ class SessionManager:
                     record.last_seen_at,
                     int(record.finished),
                     record.permission_mode,
+                    record.group_id,
                 ),
             )
         return record
@@ -2214,16 +2222,41 @@ class SessionManager:
                     session.record = fresh
                     session.emit_updated()
 
+    def remove_group(self, group_id: int) -> groups.Group:
+        """Delete a group; its sessions become loose, and each gets a `session.updated`."""
+        with closing(db.connect(self._db_path)) as conn:
+            group, released = groups.delete_group(conn, group_id)
+        outside = []
+        for session_id in released:
+            session = self._sessions.get(session_id)
+            if session is None:
+                outside.append(session_id)
+                continue
+            session.record.group_id = None
+            session.emit_updated()
+        if outside:
+            marks = ", ".join("?" * len(outside))
+            with closing(db.connect(self._db_path)) as conn:
+                rows = conn.execute(
+                    f"SELECT {_COLUMNS} FROM sessions WHERE session_id IN ({marks})", outside
+                ).fetchall()
+            for row in rows:
+                self._publish_closed_update(_record(row))
+        return group
+
     def search(self, query: str, limit: int = 50) -> list[dict[str, Any]]:
-        """Sessions whose title, summary or first prompt contain `query`, ignoring
+        """Sessions whose title, summary, first prompt or group name contain `query`, ignoring
         case and accents. Includes finished and hidden ones; newest first."""
         needle = _strip_accents(" ".join(query.split()))
         if not needle:
             return []
+        with closing(db.connect(self._db_path)) as conn:
+            group_names = {group.id: group.name for group in groups.list_groups(conn)}
         result = []
         for item in self.list_sessions():
             haystack = " ".join(
-                item.get(key) or "" for key in ("title", "summary", "first_prompt")
+                [item.get(key) or "" for key in ("title", "summary", "first_prompt")]
+                + [group_names.get(item.get("group_id"), "")]
             )
             if needle in _strip_accents(haystack):
                 result.append(item)
@@ -2480,13 +2513,18 @@ class SessionManager:
         effort: str | None = None,
         permission_mode: str | None = None,
         confirm_bypass: bool = False,
+        group_id: int | None | EllipsisType = ...,
     ) -> dict[str, Any]:
         """Finish, reopen, rename or change options (model, effort, permission mode).
 
-        `bypassPermissions` needs `confirm_bypass`. Emits `session.updated` when
+        `group_id` moves the session to a group of its project; `None` takes it out,
+        `...` keeps it. `bypassPermissions` needs `confirm_bypass`. Emits `session.updated` when
         something changed, and `session.options` when an option changed.
         """
         session = self.get(session_id)
+        if group_id is not ... and group_id is not None:
+            with closing(db.connect(self._db_path)) as conn:
+                groups.check_group_for(conn, group_id, session.record.project_id)
         if effort is not None and effort not in EFFORTS:
             raise InvalidDecisionError("Nível de raciocínio inválido.")
         if model is not None and not MODEL_PATTERN.match(model):
@@ -2516,13 +2554,19 @@ class SessionManager:
             if title and title != session.record.title:
                 changes["title"] = title
                 changes["title_custom"] = True
+        if group_id is not ... and group_id != session.record.group_id:
+            changes["group_id"] = group_id
         if "finished" in changes:
             changes["finished_at"] = _now() if changes["finished"] else None
         if not changes:
             if options_changed:
                 session.emit_updated()
             return session.summary()
-        session.save(**changes)
+        try:
+            session.save(**changes)
+        except sqlite3.IntegrityError as exc:
+            # The group was removed between the check and the write.
+            raise groups.GroupNotFoundError("Agrupador não encontrado.") from exc
         if "title" in changes:
             if await session.has_history():
                 try:

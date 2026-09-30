@@ -3,10 +3,10 @@
 import sqlite3
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from vibing import projects, sessions
+from vibing import groups, projects, sessions
 from vibing.api.deps import DbDep
 
 router = APIRouter(prefix="/api")
@@ -112,6 +112,8 @@ class SessionOut(BaseModel):
     # a turn (last main-chain entry left it open and something was written in the last
     # 20 minutes). Always False for sessions the app is connected to.
     cli_running: bool = False
+    # Group of related sessions in the project; None when loose.
+    group_id: int | None = None
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -130,6 +132,13 @@ class SessionPatch(BaseModel):
         "default", "acceptEdits", "plan", "bypassPermissions", "auto", "dontAsk"
     ] | None = None
     confirm_bypass: bool = False
+    group_id: int | None = None
+
+
+class SessionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: int | None = None
 
 
 class SeenManyIn(BaseModel):
@@ -160,6 +169,18 @@ def _http_error(exc: sessions.SessionError) -> HTTPException:
     return HTTPException(status_code=_STATUS[type(exc)], detail=str(exc))
 
 
+_GROUP_STATUS = {
+    groups.GroupNotFoundError: status.HTTP_404_NOT_FOUND,
+    groups.InvalidGroupNameError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    groups.DuplicateGroupNameError: status.HTTP_409_CONFLICT,
+    groups.GroupProjectMismatchError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+}
+
+
+def group_http_error(exc: groups.GroupError) -> HTTPException:
+    return HTTPException(status_code=_GROUP_STATUS[type(exc)], detail=str(exc))
+
+
 def _get_session(manager: sessions.SessionManager, session_id: str) -> sessions.ActiveSession:
     try:
         return manager.get(session_id)
@@ -179,12 +200,19 @@ def _get_project(conn: sqlite3.Connection, project_id: int) -> projects.Project:
     response_model=SessionOut,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_session(project_id: int, conn: DbDep, manager: ManagerDep) -> dict[str, Any]:
+async def create_session(
+    project_id: int,
+    conn: DbDep,
+    manager: ManagerDep,
+    body: Annotated[SessionCreate | None, Body()] = None,
+) -> dict[str, Any]:
     project = _get_project(conn, project_id)
     try:
-        record = manager.create_session(project)
+        record = manager.create_session(project, group_id=body.group_id if body else None)
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
+    except groups.GroupError as exc:
+        raise group_http_error(exc) from exc
     return manager.describe_record(record)
 
 
@@ -225,9 +253,12 @@ async def update_session(
             effort=body.effort,
             permission_mode=body.permission_mode,
             confirm_bypass=body.confirm_bypass,
+            group_id=body.group_id if "group_id" in body.model_fields_set else ...,
         )
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
+    except groups.GroupError as exc:
+        raise group_http_error(exc) from exc
 
 
 @router.post("/sessions/seen")
