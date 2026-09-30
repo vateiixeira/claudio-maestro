@@ -63,6 +63,29 @@ describe('painel Detalhes', () => {
     expect(labels[labels.length - 1]).toBe('Plano')
   })
 
+  it('mostra a seção Plano, com a faixa aberta, quando a sessão tem plano visível', async () => {
+    const plan = { path: '/p/plan.md', title: 'Plano X', total: 8, done: 3, current: { number: 4, title: 'Quarta' } }
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'running', plan })])
+    const wrapper = await mountPanel({
+      'GET /api/sessions/s1/plan': () => jsonResponse({
+        link: 'auto', path: plan.path, plan,
+        tasks: [{ number: 1, title: 'Primeira', done: true }, { number: 4, title: 'Quarta', done: false }],
+      }),
+    })
+    const section = wrapper.find('[data-test="details-plan"]')
+    expect(section.exists()).toBe(true)
+    expect(section.find('h3').text()).toBe('Plano')
+    expect(section.find('[data-test="plan-strip"]').text()).toContain('Tarefa 4 de 8')
+    expect(section.findAll('[data-test="plan-task"]')).toHaveLength(2)
+    const order = wrapper.findAll('[data-test="details-properties"], [data-test="details-plan"], [data-test="details-changes"]').map((e) => e.attributes('data-test'))
+    expect(order).toEqual(['details-properties', 'details-plan', 'details-changes'])
+  })
+
+  it('sem plano, não há seção Plano', async () => {
+    const wrapper = await mountPanel()
+    expect(wrapper.find('[data-test="details-plan"]').exists()).toBe(false)
+  })
+
   it('mostra as propriedades da conversa', async () => {
     const wrapper = await mountPanel()
 

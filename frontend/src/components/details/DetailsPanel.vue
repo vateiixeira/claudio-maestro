@@ -6,6 +6,8 @@ import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import DiffLines from '../conversation/DiffLines.vue'
 import PlanProperty from '../plan/PlanProperty.vue'
+import PlanStrip from '../plan/PlanStrip.vue'
+import { planVisible } from '../plan/planText'
 import ChangesList from './ChangesList.vue'
 import FileDiffView from './FileDiffView.vue'
 import { useSessionChanges } from '../../conversation/sessionChanges'
@@ -226,6 +228,10 @@ function resetWidth() {
             <dd data-test="prop-activity" class="m-0">{{ session ? formatActivity(session.last_activity_at) : '' }}</dd>
             <PlanProperty v-if="projectId != null" :session-id="sessionId" :project-id="projectId" />
           </dl>
+        </section>
+        <section v-if="session && planVisible(session)" data-test="details-plan" aria-labelledby="plan-title" class="flex flex-col gap-2">
+          <h3 id="plan-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Plano</h3>
+          <PlanStrip :key="sessionId" :session="session" variant="panel" />
         </section>
         <section data-test="details-changes" aria-labelledby="changes-title" class="flex flex-col gap-2">
           <h3 id="changes-title" class="m-0 flex items-center gap-2 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">

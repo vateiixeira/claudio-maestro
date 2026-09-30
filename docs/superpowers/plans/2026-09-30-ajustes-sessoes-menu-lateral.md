@@ -1631,7 +1631,7 @@ git commit -m "[UI] Permitir ajustar a largura do painel Detalhes"
 **Interfaces:**
 - Produces: `PlanStrip` com a prop `variant?: 'strip' | 'panel'`, padrão `'strip'`.
 
-- [ ] **Step 1: Testes que falham**
+- [x] **Step 1: Testes que falham**
 
 Em `PlanStrip.spec.ts`, com o setup de montagem do arquivo e a mesma rota falsa de `GET /api/sessions/<id>/plan`:
 
@@ -1677,12 +1677,12 @@ it('o progresso do plano não fica mais acima da conversa', async () => {
 })
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/plan src/components/details src/views/__tests__/ConversationView.spec.ts`
 Expected: FAIL
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 `PlanStrip.vue`:
 
@@ -1734,12 +1734,12 @@ No painel, o título do plano ocupa `max-w-[35%]`, o que fica apertado. Troque a
 
 `ConversationView.vue`: apague a linha 114 (`<PlanStrip ... />`) e os imports de `PlanStrip` e `planVisible`, se não forem mais usados no arquivo.
 
-- [ ] **Step 4: Rodar tudo e ver passar**
+- [x] **Step 4: Rodar tudo e ver passar**
 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/

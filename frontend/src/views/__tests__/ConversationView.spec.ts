@@ -59,14 +59,19 @@ async function mountAt(path: string, handlers = {}) {
 }
 
 describe('página da conversa', () => {
-  it('mostra a faixa do plano abaixo do cabeçalho quando a conversa tem plano em andamento', async () => {
+  it('o progresso do plano fica no painel Detalhes, não acima da conversa', async () => {
     const plan = { path: '/home/vi/dev/loja-online/docs/plan.md', title: 'Plano da loja', total: 12, done: 3, current: { number: 4, title: 'Faixa do plano' } }
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'running', plan })])
-    const { wrapper } = await mountAt('/sessions/s1')
-    expect(wrapper.find('[data-test="plan-strip"]').text()).toContain('Tarefa 4 de 12: Faixa do plano')
+    const { wrapper } = await mountAt('/sessions/s1', {
+      'GET /api/sessions/s1/plan': () => jsonResponse({ link: 'auto', path: plan.path, plan, tasks: [] }),
+    })
+    expect(wrapper.findAll('[data-test="plan-strip"]')).toHaveLength(1)
+    const inPanel = wrapper.find('[data-test="details-panel"] [data-test="plan-strip"]')
+    expect(inPanel.exists()).toBe(true)
+    expect(inPanel.text()).toContain('Tarefa 4 de 12: Faixa do plano')
   })
 
-  it('não mostra a faixa do plano sem plano', async () => {
+  it('não mostra o progresso do plano sem plano', async () => {
     const { wrapper } = await mountAt('/sessions/s1')
     expect(wrapper.find('[data-test="plan-strip"]').exists()).toBe(false)
   })
