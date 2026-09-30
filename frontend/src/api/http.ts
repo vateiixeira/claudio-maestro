@@ -15,6 +15,7 @@ import type {
   ProjectUpdate,
   SendResult,
   Session,
+  SessionGroup,
   SessionUpdate,
 } from '../types/api'
 import type { PromptDecision, PromptExtra, SessionSnapshot } from '../types/conversation'
@@ -156,8 +157,26 @@ export function syncProject(projectId: number): Promise<Session[]> {
   return request('POST', `/api/projects/${projectId}/sync`)
 }
 
-export function createSession(projectId: number): Promise<Session> {
-  return request('POST', `/api/projects/${projectId}/sessions`)
+export function createSession(projectId: number, groupId: number | null = null): Promise<Session> {
+  return request('POST', `/api/projects/${projectId}/sessions`, groupId != null ? { group_id: groupId } : undefined)
+}
+
+// Groups
+
+export function listGroups(): Promise<SessionGroup[]> {
+  return request('GET', '/api/groups')
+}
+
+export function createGroup(projectId: number, name: string): Promise<SessionGroup> {
+  return request('POST', `/api/projects/${projectId}/groups`, { name })
+}
+
+export function renameGroup(id: number, name: string): Promise<SessionGroup> {
+  return request('PATCH', `/api/groups/${id}`, { name })
+}
+
+export function deleteGroup(id: number): Promise<void> {
+  return request('DELETE', `/api/groups/${id}`)
 }
 
 export function getSession(sessionId: string): Promise<SessionSnapshot> {

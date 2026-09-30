@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { EventSocket, type SocketLike } from '../../api/socket'
-import { bindRealtime } from '../realtime'
+import { bindRealtime, loadEverything } from '../realtime'
 import { useSessionsStore } from '../sessions'
 import { useProjectsStore } from '../projects'
 import { useGitStore } from '../git'
 import { useModelsStore } from '../models'
-import { jsonResponse, makeProject, makeSession } from '../../test/factories'
+import { useGroupsStore } from '../groups'
+import { jsonResponse, makeGroup, makeProject, makeSession } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
   onopen: ((ev: unknown) => void) | null = null
@@ -91,6 +92,33 @@ describe('bindRealtime', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/projects/2/sessions', expect.anything())
     expect(sessions.find('z')?.title).toBe('Sincronizada')
+  })
+
+  it('groups.changed recarrega os agrupadores', async () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    const fetchMock = vi.fn(async () => jsonResponse([makeGroup({ id: 7, project_id: 2 })]))
+    vi.stubGlobal('fetch', fetchMock)
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    sockets[0]!.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type: 'groups.changed', data: { project_id: 2 } }) })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/groups', expect.anything())
+    expect(useGroupsStore().byId(7)?.project_id).toBe(2)
+  })
+
+  it('loadEverything também carrega os agrupadores', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/projects') return jsonResponse([makeProject({ id: 1 })])
+      if (url === '/api/groups') return jsonResponse([makeGroup({ id: 3 })])
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await loadEverything()
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/groups', expect.anything())
+    expect(useGroupsStore().byId(3)).toBeDefined()
   })
 
   it('leva project.git ao store git', () => {

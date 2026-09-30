@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useProjectsStore } from '../projects'
 import { useSessionsStore } from '../sessions'
-import { jsonResponse, makeProject, makeSession } from '../../test/factories'
+import { useGroupsStore } from '../groups'
+import { jsonResponse, makeGroup, makeProject, makeSession } from '../../test/factories'
 
 beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => vi.unstubAllGlobals())
@@ -28,10 +29,12 @@ describe('store de projetos', () => {
 
     const sessions = useSessionsStore()
     sessions.setForProject(2, [makeSession({ project_id: 2 })])
+    useGroupsStore().groups = [makeGroup({ id: 5, project_id: 2 })]
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
     await store.remove(2)
     expect(store.projects.map((p) => p.id)).toEqual([1])
     expect(sessions.forProject(2)).toEqual([])
+    expect(useGroupsStore().groups).toEqual([])
   })
 
   it('propaga o erro da API ao criar', async () => {

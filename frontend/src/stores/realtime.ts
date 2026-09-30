@@ -1,5 +1,6 @@
 import type { EventSocket } from '../api/socket'
 import { useGitStore } from './git'
+import { useGroupsStore } from './groups'
 import { useLayoutStore } from './layout'
 import { useModelsStore } from './models'
 import { useProjectsStore } from './projects'
@@ -14,6 +15,8 @@ export async function loadEverything(): Promise<void> {
   // Branches are secondary: a failure leaves the project without them.
   projects.projects.forEach((p) => void git.load(p.id).catch(() => {}))
   void useModelsStore().reload()
+  // A failure leaves the menu without groups until the next load.
+  void useGroupsStore().load().catch(() => {})
   await sessions.loadAll(projects.projects.map((p) => p.id))
 }
 
@@ -33,6 +36,10 @@ export function bindRealtime(socket: EventSocket): () => void {
       if (typeof projectId !== 'number') return
       sessions.loadForProject(projectId).catch(() => {})
       useProjectsStore().load().catch(() => {})
+    }),
+    // Created, renamed or removed in some project: the list is small, reload it all.
+    socket.on('groups.changed', () => {
+      useGroupsStore().load().catch(() => {})
     }),
     socket.on('project.git', (event) => useGitStore().applyEvent(event)),
     socket.on('models.updated', (event) => {

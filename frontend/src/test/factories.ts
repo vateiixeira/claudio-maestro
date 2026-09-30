@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { Project, Session } from '../types/api'
+import type { Project, Session, SessionGroup } from '../types/api'
 
 export function makeProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -33,6 +33,10 @@ export function makeSession(overrides: Partial<Session> = {}): Session {
     awaiting_decision: false,
     ...overrides,
   }
+}
+
+export function makeGroup(overrides: Partial<SessionGroup> = {}): SessionGroup {
+  return { id: 1, project_id: 1, name: 'Checkout', created_at: 1_790_000_000, ...overrides }
 }
 
 type Handler = (init: RequestInit | undefined) => Response | Promise<Response>

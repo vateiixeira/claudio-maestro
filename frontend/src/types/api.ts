@@ -100,6 +100,16 @@ export interface Session {
   plan?: PlanSummary | null
   /** True when the app has no client for the conversation but the CLI is mid-turn (subagents included). */
   cli_running?: boolean
+  /** Group of related sessions in the project; null (or absent) when loose. */
+  group_id?: number | null
+}
+
+/** Group of related sessions inside a project (`GET /api/groups`). Only the app knows it. */
+export interface SessionGroup {
+  id: number
+  project_id: number
+  name: string
+  created_at: number
 }
 
 export interface PlanCurrent { number: number; title: string }
@@ -166,6 +176,7 @@ export interface SessionUpdate {
   effort?: Effort
   permission_mode?: PermissionMode
   confirm_bypass?: boolean
+  group_id?: number | null
 }
 
 /** Image sent with a message: base64 without the `data:` prefix. */

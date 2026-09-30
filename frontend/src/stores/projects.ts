@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as api from '../api/http'
 import type { Project, ProjectCreate } from '../types/api'
+import { useGroupsStore } from './groups'
 import { useSessionsStore } from './sessions'
 
 export const useProjectsStore = defineStore('projects', () => {
@@ -49,6 +50,7 @@ export const useProjectsStore = defineStore('projects', () => {
     await api.deleteProject(id)
     projects.value = projects.value.filter((p) => p.id !== id)
     useSessionsStore().forgetProject(id)
+    useGroupsStore().forgetProject(id)
   }
 
   return { projects, loaded, loadError, byId, load, create, rename, remove }

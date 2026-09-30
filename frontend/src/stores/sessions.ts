@@ -112,15 +112,15 @@ export const useSessionsStore = defineStore('sessions', () => {
     else byProject.value[session.project_id] = [session, ...list]
   }
 
-  async function create(projectId: number): Promise<Session> {
-    const session = await api.createSession(projectId)
+  async function create(projectId: number, groupId: number | null = null): Promise<Session> {
+    const session = await api.createSession(projectId, groupId)
     noteEvent(session.session_id)
     upsert(session)
     return session
   }
 
   /** Sends a PATCH and applies the answer unless an event arrived meanwhile. */
-  async function patch(sessionId: string, changes: { finished?: boolean; title?: string }): Promise<void> {
+  async function patch(sessionId: string, changes: { finished?: boolean; title?: string; group_id?: number | null }): Promise<void> {
     const sentAt = ++clock
     const session = await api.updateSession(sessionId, changes)
     if ((lastEventAt.get(sessionId) ?? 0) > sentAt) return
@@ -133,6 +133,10 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function rename(sessionId: string, title: string): Promise<void> {
     await patch(sessionId, { title })
+  }
+
+  async function setGroup(sessionId: string, groupId: number | null): Promise<void> {
+    await patch(sessionId, { group_id: groupId })
   }
 
   function noteEvent(sessionId: string): void {
@@ -192,6 +196,6 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   return {
     byProject, loaded, all, forProject, find, setForProject, forgetProject,
-    loadForProject, loadAll, sync, create, setFinished, rename, applyEvent,
+    loadForProject, loadAll, sync, create, setFinished, rename, setGroup, applyEvent,
   }
 })
