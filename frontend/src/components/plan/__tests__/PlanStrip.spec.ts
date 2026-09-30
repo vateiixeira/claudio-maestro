@@ -102,6 +102,45 @@ describe('faixa do plano', () => {
     w.unmount()
   })
 
+  it('no painel, a lista de tarefas já vem aberta e sem largura máxima', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())) }))
+    const w = mount(PlanStrip, { props: { session: session(), variant: 'panel' } })
+    await flushPromises()
+    expect(toggle(w).attributes('aria-expanded')).toBe('true')
+    expect(w.findAll('[data-test="plan-task"]')).toHaveLength(5)
+    expect(w.find('[data-test="plan-strip"]').classes()).not.toContain('max-w-[760px]')
+  })
+
+  it('no painel, o botão recolhe a lista', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())) }))
+    const w = mount(PlanStrip, { props: { session: session(), variant: 'panel' } })
+    await flushPromises()
+    await toggle(w).trigger('click')
+    expect(toggle(w).attributes('aria-expanded')).toBe('false')
+    expect(w.findAll('[data-test="plan-task"]')).toHaveLength(0)
+  })
+
+  it('na faixa, a lista continua fechada e com largura máxima', () => {
+    const w = mount(PlanStrip, { props: { session: session() } })
+    expect(toggle(w).attributes('aria-expanded')).toBe('false')
+    expect(w.find('[data-test="plan-strip"]').classes()).toContain('max-w-[760px]')
+  })
+
+  it('no painel, trocar de conversa reabre a lista da nova', async () => {
+    const fetchMock = routeFetch({
+      'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())),
+      'GET /api/sessions/s2/plan': () => jsonResponse(planState(summary())),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const w = mount(PlanStrip, { props: { session: session(), variant: 'panel' } })
+    await flushPromises()
+    await w.setProps({ session: session({ session_id: 's2' }) })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s2/plan', expect.objectContaining({ method: 'GET' }))
+    expect(toggle(w).attributes('aria-expanded')).toBe('true')
+    expect(w.findAll('[data-test="plan-task"]')).toHaveLength(5)
+  })
+
   it('busca a lista de novo quando done muda com a lista aberta', async () => {
     const fetchMock = routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())) })
     vi.stubGlobal('fetch', fetchMock)

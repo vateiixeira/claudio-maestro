@@ -173,6 +173,8 @@ class CliWatcher:
         self._subagent_offsets: dict[str, dict[Path, int]] = {}
         # session id -> whether its last main-chain lines left the turn open
         self._turn_open: dict[str, bool] = {}
+        # (session id, history folder) pairs whose move already triggered a project sync
+        self._moved_synced: set[tuple[str, str]] = set()
         # directory -> (clock time, {session_id: info})
         self._listings: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -276,7 +278,7 @@ class CliWatcher:
             for owner in await asyncio.to_thread(self._projects_for_folder, burst.folder):
                 await self._history.sync_project(owner)
             return True
-        project_id, cwd = known
+        project_id, _cwd, history_dir = known
         mtime = await asyncio.to_thread(_file_mtime, path)
         if mtime is None:
             # Gone (or unreadable): the sync removes it only if confirmed missing.
@@ -287,13 +289,22 @@ class CliWatcher:
             self._forget_turn(session_id)
             await self._history.sync_project(project_id)
             return True
-        info = await self._listed_info(session_id, cwd)
+        info = await self._listed_info(session_id, history_dir)
         if self._sessions.app_writing(session_id):
             burst.reload_owed = False
             burst.subagents.clear()
             self._forget_turn(session_id)
             return True
-        await asyncio.to_thread(self._history.update_session, session_id, int(mtime), info)
+        await asyncio.to_thread(
+            self._history.update_session, session_id, int(mtime), info, path
+        )
+        # The CLI moved the transcript (a session that entered a worktree): the project
+        # sync lists the worktree folders and records where the file lives now.
+        if burst.folder != history_folder_name(history_dir):
+            key = (session_id, burst.folder)
+            if key not in self._moved_synced:
+                self._moved_synced.add(key)
+                await self._history.sync_project(project_id)
         subagents, burst.subagents = burst.subagents, set()
         await self._read_new_lines(session_id, path, subagents)
         now = self._clock()
@@ -386,12 +397,14 @@ class CliWatcher:
             self._listings[cwd] = cached
         return cached[1].get(session_id)
 
-    def _indexed_session(self, session_id: str) -> tuple[int, str] | None:
+    def _indexed_session(self, session_id: str) -> tuple[int, str, str] | None:
+        """(project id, cwd, directory whose history holds the file)."""
         with closing(db.connect(self._history.db_path)) as conn:
             row = conn.execute(
-                "SELECT project_id, cwd FROM sessions WHERE session_id = ?", (session_id,)
+                "SELECT project_id, cwd, COALESCE(history_dir, cwd) AS hdir FROM sessions"
+                " WHERE session_id = ?", (session_id,),
             ).fetchone()
-        return None if row is None else (row["project_id"], row["cwd"])
+        return None if row is None else (row["project_id"], row["cwd"], row["hdir"])
 
     def _projects_for_folder(self, folder: str) -> list[int]:
         """Projects whose folder, or a folder inside it, maps to this history folder."""

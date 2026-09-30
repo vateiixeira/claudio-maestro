@@ -55,6 +55,13 @@ describe('linha de conversa', () => {
     expect(idle.get('[data-test="conversation-row"]').attributes('data-active')).toBeUndefined()
   })
 
+  it('linha da lista mostra a worktree no lugar do branch', () => {
+    const wrapper = mountRow(makeSession({  worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias', git_branch: 'worktree-melhorias' }))
+
+    expect(wrapper.find('[data-test="row-branch"]').text()).toContain('worktree melhorias · worktree-melhorias')
+    expect(wrapper.find('[data-test="row-branch"]').text()).not.toContain('develop')
+  })
+
   it('mostra a bolinha de não lida e o motivo da espera', () => {
     const wrapper = mountRow(makeSession({ unread: true, display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question' }))
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import BranchLabel from '../git/BranchLabel.vue'
+import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import { errorMessage, openInEditor } from '../../api/http'
 import { useConversationStore } from '../../stores/conversation'
@@ -9,6 +10,7 @@ import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { displayStateLabels } from '../../sessionState'
+import { worktreeLabel } from '../../worktree'
 
 const props = defineProps<{ id: string }>()
 
@@ -25,6 +27,7 @@ const projectId = computed(() => listed.value?.project_id ?? conv.value?.project
 const project = computed(() => (projectId.value != null ? projects.byId(projectId.value) : undefined))
 // Unknown ids (a group this tab has not loaded yet) show nothing.
 const group = computed(() => (listed.value?.group_id != null ? groups.byId(listed.value.group_id) : undefined))
+const worktree = computed(() => (listed.value ? worktreeLabel(listed.value) : null))
 const repos = computed(() => (projectId.value != null ? git.reposFor(projectId.value) : []))
 watch(projectId, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
 // Announced politely when it changes, for people who cannot see the state icon.
@@ -178,7 +181,6 @@ async function openProject() {
           role="menu"
           class="absolute right-0 z-20 mt-1 flex w-56 flex-col rounded-lg border border-line-strong bg-elevated py-1 shadow-lg"
         >
-          <button type="button" role="menuitem" data-test="menu-rename" class="px-3 py-2 text-left text-sm hover:bg-card" @click="startRename">Renomear</button>
           <button type="button" role="menuitem" data-test="menu-editor" class="px-3 py-2 text-left text-sm hover:bg-card" :disabled="!project" @click="openProject">Abrir projeto no editor</button>
           <button type="button" role="menuitem" data-test="menu-copy-id" class="px-3 py-2 text-left text-sm hover:bg-card" @click="copyId">Copiar ID da sessão</button>
         </div>
@@ -189,9 +191,14 @@ async function openProject() {
         <span class="size-2 rounded-[3px]" :style="{ backgroundColor: project.color }" />{{ project.name }}
       </span>
       <span v-if="group" data-test="header-group" class="flex items-center gap-1.5 rounded-full border border-line-strong bg-card px-2.5 py-[3px] text-xs"><span aria-hidden="true">▤</span>{{ group.name }}</span>
-      <span v-for="repo in repos" :key="repo.path" class="flex items-center rounded-full border border-line-strong bg-card px-2.5 py-[3px]">
-        <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
+      <span v-if="worktree" data-test="header-worktree" class="flex items-center rounded-full border border-line-strong bg-card px-2.5 py-[3px]" :title="listed?.worktree_path ?? undefined">
+        <WorktreeLabel :text="worktree" />
       </span>
+      <template v-else>
+        <span v-for="repo in repos" :key="repo.path" class="flex items-center rounded-full border border-line-strong bg-card px-2.5 py-[3px]">
+          <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
+        </span>
+      </template>
       <span v-if="copied" role="status" class="text-xs text-primary-soft">ID copiado</span>
     </div>
     <p v-if="error" data-test="header-error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>

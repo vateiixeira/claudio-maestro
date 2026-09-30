@@ -3,8 +3,11 @@
 For each project, `list_sessions(directory=...)` is called for the project folder
 and for every git repository found inside it (up to 3 levels). Each session is
 attached to the registered project whose folder most specifically contains its
-`cwd`. The table only adds what the history lacks (project, finished, last seen);
-the conversations themselves stay in `~/.claude/projects`.
+`cwd`. The history folders of each repository's git worktrees are listed too: the CLI
+moves a transcript there when the session enters a worktree. For each session the table
+records where its file lives (`history_dir`), its current worktree and its newest git
+branch. Besides those, it only adds what the history lacks (project, finished, last
+seen); the conversations themselves stay in `~/.claude/projects`.
 """
 
 import asyncio
@@ -14,13 +17,14 @@ import os
 import sqlite3
 import time
 from dataclasses import dataclass, field, replace
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import closing
 from pathlib import Path
 from typing import Any
 
 from vibing import db
 from vibing.conversation import cap_content, omit_images
+from vibing.worktree import Worktree, current_worktree, parse_worktree_list
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +79,43 @@ DEFAULT_SYNC_INTERVAL = 60.0
 def sdk_list_sessions(directory: str) -> list[Any]:
     import claude_agent_sdk
 
-    # Worktrees are left out: their sessions would carry a cwd outside the project.
+    # Worktrees are listed by the index itself (through run_git), folder by folder.
     return claude_agent_sdk.list_sessions(directory=directory, include_worktrees=False)
+
+
+def worktree_probe(directory: str) -> tuple[bool, int | None]:
+    """(ask git, cache key) for a directory's worktree list. Blocking: two `stat`s.
+
+    No `.git`, or a `.git` folder without `worktrees/`: there is none, git is not
+    asked. A `.git` folder with `worktrees/`: git adds and removes entries there
+    when worktrees are added, removed or pruned, so its mtime is the cache key. A
+    `.git` file (the directory is itself a linked worktree): asked every time.
+    """
+    git = Path(directory) / ".git"
+    try:
+        if git.is_dir():
+            return True, (git / "worktrees").stat().st_mtime_ns
+        return git.exists(), None
+    except FileNotFoundError:
+        return False, None
+    except OSError:
+        return True, None
+
+
+async def git_worktrees(repo: Path) -> list[str] | None:
+    """Linked worktrees of `repo`, its own folder left out. None on any git failure
+    (an empty list means git answered and there are none)."""
+    from vibing import gitinfo  # gitinfo imports this module
+
+    try:
+        code, out, _ = await gitinfo.run_git(repo, "worktree", "list", "--porcelain")
+    except gitinfo.GitError:
+        logger.warning("Não foi possível listar as worktrees de %s", repo)
+        return None
+    if code != 0:
+        return None
+    own = os.path.realpath(repo)
+    return [path for path in parse_worktree_list(out) if os.path.realpath(path) != own]
 
 
 def sdk_get_session_messages(session_id: str, directory: str) -> list[Any]:
@@ -532,6 +571,9 @@ class HistoryIndex:
         is_in_use: IsInUse | None = None,
         file_exists: Callable[[str, str], bool | None] | None = None,
         folder_signature: FolderSignature | None = None,
+        list_worktrees: Callable[[Path], Awaitable[list[str] | None]] | None = None,
+        session_file: Callable[[str, str], Path | None] | None = None,
+        detect_worktree: Callable[[Path], tuple[bool, Worktree | None]] | None = None,
     ) -> None:
         self._db_path = db_path
         # A directory whose history folder did not change is not listed again.
@@ -543,6 +585,13 @@ class HistoryIndex:
         self._is_in_use = is_in_use or (lambda session_id: False)
         # Only a session whose file is confirmed gone leaves the index.
         self._file_exists = file_exists or sdk_session_file_exists
+        self._list_worktrees = list_worktrees or git_worktrees
+        # directory -> (`.git/worktrees` mtime, its linked worktrees)
+        self._worktree_lists: dict[str, tuple[int, list[str]]] = {}
+        self._session_file = session_file or sdk_session_file
+        self._detect_worktree = detect_worktree or current_worktree
+        # session id -> (last_modified seen, detection result): a file read once per change.
+        self._worktree_cache: dict[str, tuple[Any, tuple[bool, Worktree | None]]] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -553,22 +602,38 @@ class HistoryIndex:
     def list_sessions(self) -> ListSessions:
         return self._list_sessions
 
-    def update_session(self, session_id: str, mtime: int, info: Any | None) -> bool:
+    def update_session(
+        self, session_id: str, mtime: int, info: Any | None, path: Path | None = None
+    ) -> bool:
         """Refresh one indexed session from its file's mtime and, when given, its
-        listing entry (title, summary). Blocking: run it in a thread. True if the
-        row changed."""
+        listing entry (title, summary) and its file (current worktree). Blocking:
+        run it in a thread. True if the row changed."""
+        worktree = self._detect_worktree(path) if path is not None else (False, None)
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             row = conn.execute(
-                "SELECT project_id, cwd, last_activity_at, file_modified_at FROM sessions"
-                " WHERE session_id = ?", (session_id,),
+                "SELECT project_id, cwd, history_dir, last_activity_at, file_modified_at,"
+                " worktree_name, worktree_path FROM sessions WHERE session_id = ?", (session_id,),
             ).fetchone()
             if row is None:
                 return False
             if info is not None:
                 info = replace(info, last_modified=mtime * 1000)
-                return self._upsert(conn, info, row["project_id"], row["cwd"]) is not False
+                return self._upsert(
+                    conn, info, row["project_id"], row["cwd"], row["history_dir"], worktree
+                ) is not False
+            changed = False
+            decided, found = worktree
+            if decided:
+                name, wpath = (found.name, found.path) if found else (None, None)
+                if (row["worktree_name"], row["worktree_path"]) != (name, wpath):
+                    conn.execute(
+                        "UPDATE sessions SET worktree_name = ?, worktree_path = ?"
+                        " WHERE session_id = ?",
+                        (name, wpath, session_id),
+                    )
+                    changed = True
             if row["file_modified_at"] == mtime and row["last_activity_at"] >= mtime:
-                return False
+                return changed
             conn.execute(
                 "UPDATE sessions SET file_modified_at = ?,"
                 " last_activity_at = MAX(last_activity_at, ?) WHERE session_id = ?",
@@ -599,25 +664,33 @@ class HistoryIndex:
                     for row in conn.execute("SELECT id, path FROM projects")
                 ]
             targets = [p for p in projects if only is None or p[0] == only]
-            listed: dict[str, tuple[Any, str]] = {}  # session_id -> (info, directory)
+            # session_id -> (info, directory, fallback project for a cwd outside every project)
+            listed: dict[str, tuple[Any, str, int | None]] = {}
             complete: set[int] = set()  # projects listed without failures
             for project_id, path in targets:
                 entries, ok = await self._list_project(path)
                 if ok:
                     complete.add(project_id)
-                for info, directory in entries:
-                    listed.setdefault(info.session_id, (info, directory))
+                for info, directory, from_worktree in entries:
+                    listed.setdefault(
+                        info.session_id, (info, directory, project_id if from_worktree else None)
+                    )
             candidates = self._missing_candidates(listed, complete)
             gone = await asyncio.to_thread(self._confirm_gone, candidates) if candidates else []
-            changed, projects_changed = self._store(listed, gone)
+            worktrees = await asyncio.to_thread(self._worktree_details, listed, only is None)
+            changed, projects_changed = self._store(listed, gone, worktrees)
         if changed and self._on_change is not None:
             self._on_change(changed)
         if projects_changed and self._on_projects_changed is not None:
             self._on_projects_changed(projects_changed)
         return changed
 
-    async def _list_project(self, path: str) -> tuple[list[tuple[Any, str]], bool]:
-        """Sessions listed for the project and whether every listing succeeded."""
+    async def _list_project(self, path: str) -> tuple[list[tuple[Any, str, bool]], bool]:
+        """Sessions listed for the project and whether every listing succeeded.
+
+        The third item is True for sessions found in a worktree's history folder:
+        when their cwd is outside every project, they belong to this one.
+        """
         folder = Path(path)
         if not folder.is_dir():
             return [], False
@@ -626,16 +699,49 @@ class HistoryIndex:
         except Exception:
             logger.exception("Falha ao procurar repositórios em %s", path)
             repos, ok = [], False
-        result: list[tuple[Any, str]] = []
-        for directory in [str(folder), *(str(repo) for repo in repos)]:
+        directories = [str(folder), *(str(repo) for repo in repos)]
+        worktrees: list[str] = []
+        for directory in directories:
+            try:
+                found = await self._worktrees_of(directory)
+            except Exception:
+                logger.exception("Falha ao listar as worktrees de %s", directory)
+                continue  # without worktrees; the project stays complete
+            worktrees.extend(w for w in found if w not in directories and w not in worktrees)
+        result: list[tuple[Any, str, bool]] = []
+        for directory, from_worktree in [
+            *((d, False) for d in directories), *((w, True) for w in worktrees)
+        ]:
             try:
                 infos = await asyncio.to_thread(self._list_cached, directory)
             except Exception:
                 logger.exception("Falha ao listar o histórico de %s", directory)
-                ok = False
+                if not from_worktree:
+                    ok = False
                 continue
-            result.extend((info, directory) for info in infos)
+            result.extend((info, directory, from_worktree) for info in infos)
         return result, ok
+
+    async def _worktrees_of(self, directory: str) -> list[str]:
+        """Linked worktrees of a directory; git is asked only when it can have any and,
+        while `.git/worktrees` is unchanged, the last answer is reused."""
+        ask, key = await asyncio.to_thread(worktree_probe, directory)
+        if not ask:
+            self._worktree_lists.pop(directory, None)
+            return []
+        cached = self._worktree_lists.get(directory)
+        if key is not None and cached is not None and cached[0] == key:
+            return cached[1]
+        listed = await self._list_worktrees(Path(directory))
+        if listed is None:  # git failed: none this time, and asked again next time
+            self._worktree_lists.pop(directory, None)
+            return []
+        found = list(listed)
+        if key is None:
+            self._worktree_lists.pop(directory, None)
+        else:
+            self._worktree_lists[directory] = (key, found)
+        return found
 
     def _list_cached(self, directory: str) -> list[Any]:
         """`list_sessions(directory)`, reused while the folder signature is the same."""
@@ -655,14 +761,14 @@ class HistoryIndex:
         return infos
 
     def _missing_candidates(
-        self, listed: dict[str, tuple[Any, str]], complete: set[int]
+        self, listed: dict[str, tuple[Any, str, int | None]], complete: set[int]
     ) -> list[tuple[str, int, str]]:
         """Indexed sessions of `complete` projects absent from the listing."""
         if not complete:
             return []
         with closing(db.connect(self._db_path)) as conn:
             rows = conn.execute(
-                "SELECT session_id, project_id, cwd FROM sessions"
+                "SELECT session_id, project_id, COALESCE(history_dir, cwd) AS cwd FROM sessions"
                 " WHERE file_modified_at IS NOT NULL"
             ).fetchall()
         return [
@@ -686,10 +792,39 @@ class HistoryIndex:
                 gone.append((session_id, project_id))
         return gone
 
+    def _worktree_details(
+        self, listed: dict[str, tuple[Any, str, int | None]], prune: bool = False
+    ) -> dict[str, tuple[bool, Worktree | None]]:
+        """Worktree of each listed session, reading a file only when it changed.
+        Runs in a thread.
+
+        `prune` (a sync of every project) forgets the sessions that are no longer
+        listed. A single-project sync lists only part of them, so it leaves the rest.
+        """
+        out: dict[str, tuple[bool, Worktree | None]] = {}
+        for session_id, (info, directory, _) in listed.items():
+            cached = self._worktree_cache.get(session_id)
+            if cached is not None and cached[0] == info.last_modified:
+                out[session_id] = cached[1]
+                continue
+            try:
+                path = self._session_file(session_id, directory)
+                result = self._detect_worktree(path) if path is not None else (False, None)
+            except Exception:
+                logger.exception("Falha ao ler a worktree da sessão %s", session_id)
+                result = (False, None)
+            self._worktree_cache[session_id] = (info.last_modified, result)
+            out[session_id] = result
+        if prune:
+            for session_id in self._worktree_cache.keys() - listed.keys():
+                del self._worktree_cache[session_id]
+        return out
+
     def _store(
         self,
-        listed: dict[str, tuple[Any, str]],
+        listed: dict[str, tuple[Any, str, int | None]],
         gone: list[tuple[str, int]],
+        worktrees: dict[str, tuple[bool, Worktree | None]] | None = None,
     ) -> tuple[set[str], set[int]]:
         """Write the listing. Returns changed session ids and changed project ids.
 
@@ -703,20 +838,24 @@ class HistoryIndex:
             projects = [
                 (row["id"], row["path"]) for row in conn.execute("SELECT id, path FROM projects")
             ]
-            for session_id, (info, directory) in listed.items():
+            current = {project_id for project_id, _ in projects}
+            for session_id, (info, directory, fallback) in listed.items():
                 cwd = info.cwd or directory
-                # Only the session's own cwd counts: a folder outside every
-                # registered project is never stored.
+                # The session's own cwd decides; a worktree outside every project
+                # belongs to the project whose repository listed it.
                 project_id = owner_project(cwd, projects)
+                if project_id is None and fallback in current:
+                    project_id = fallback
                 if project_id is None:
                     continue
-                previous = self._upsert(conn, info, project_id, cwd)
+                history_dir = directory if directory != cwd else None
+                worktree = (worktrees or {}).get(session_id, (False, None))
+                previous = self._upsert(conn, info, project_id, cwd, history_dir, worktree)
                 if previous is not False:
                     changed.add(session_id)
                     projects_changed.add(project_id)
                     if isinstance(previous, int) and previous != project_id:
                         projects_changed.add(previous)
-            current = {project_id for project_id, _ in projects}
             for session_id, project_id in gone:
                 # It may have been opened while the files were checked.
                 if project_id not in current or self._is_in_use(session_id):
@@ -732,7 +871,12 @@ class HistoryIndex:
 
     @staticmethod
     def _upsert(
-        conn: sqlite3.Connection, info: Any, project_id: int, cwd: str
+        conn: sqlite3.Connection,
+        info: Any,
+        project_id: int,
+        cwd: str,
+        history_dir: str | None = None,
+        worktree: tuple[bool, Worktree | None] = (False, None),
     ) -> bool | int | None:
         """False when nothing changed; otherwise the previous project id (None if new)."""
         modified = _seconds(info.last_modified) or int(time.time())
@@ -740,18 +884,23 @@ class HistoryIndex:
         summary = truncate_text(info.summary)
         first_prompt = truncate_text(info.first_prompt)
         title = session_title(info)
+        branch = getattr(info, "git_branch", None)
+        decided, found = worktree
         row = conn.execute(
             "SELECT project_id, group_id, title, title_custom, summary, first_prompt,"
-            " last_activity_at, file_modified_at FROM sessions WHERE session_id = ?",
+            " last_activity_at, file_modified_at, history_dir, git_branch, worktree_name,"
+            " worktree_path FROM sessions WHERE session_id = ?",
             (info.session_id,),
         ).fetchone()
         if row is None:
             conn.execute(
                 "INSERT INTO sessions (session_id, project_id, cwd, title, created_at,"
                 " last_activity_at, last_seen_at, finished, summary, first_prompt,"
-                " file_modified_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+                " file_modified_at, history_dir, git_branch, worktree_name, worktree_path)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)",
                 (info.session_id, project_id, cwd, title, created, modified, modified,
-                 summary, first_prompt, modified),
+                 summary, first_prompt, modified, history_dir, branch,
+                 found.name if found else None, found.path if found else None),
             )
             return None
         changes: dict[str, Any] = {
@@ -760,10 +909,16 @@ class HistoryIndex:
             "first_prompt": first_prompt,
             "file_modified_at": modified,
             "last_activity_at": max(row["last_activity_at"], modified),
+            "history_dir": history_dir,
         }
         if row["project_id"] != project_id:
             # A group belongs to one project: moving to another one leaves it.
             changes["group_id"] = None
+        if branch:
+            changes["git_branch"] = branch
+        if decided:
+            changes["worktree_name"] = found.name if found else None
+            changes["worktree_path"] = found.path if found else None
         # A title already set only changes for a new custom title from the CLI.
         if not row["title_custom"]:
             custom = info.custom_title and info.custom_title.strip()

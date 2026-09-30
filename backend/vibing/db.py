@@ -120,6 +120,15 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         " REFERENCES session_groups(id) ON DELETE SET NULL",
         "CREATE INDEX sessions_group_id ON sessions(group_id)",
     ],
+    [
+        # Ajustes de sessões: folder whose history holds the transcript when it is not
+        # the cwd (sessions moved into a worktree), the worktree the session is in now
+        # and the newest branch of the transcript.
+        "ALTER TABLE sessions ADD COLUMN history_dir TEXT",
+        "ALTER TABLE sessions ADD COLUMN worktree_name TEXT",
+        "ALTER TABLE sessions ADD COLUMN worktree_path TEXT",
+        "ALTER TABLE sessions ADD COLUMN git_branch TEXT",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

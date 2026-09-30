@@ -5,6 +5,9 @@ from typing import Any
 
 from claude_agent_sdk import SDKSessionInfo, SessionMessage
 
+# Taken at import time: conftest replaces `vibing.history.git_worktrees` in every test.
+from vibing.history import git_worktrees as REAL_GIT_WORKTREES  # noqa: F401
+
 
 def info(
     session_id: str,
@@ -15,6 +18,7 @@ def info(
     first_prompt: str | None = None,
     created_ms: int | None = None,
     modified_ms: int | None = None,
+    git_branch: str | None = None,
 ) -> SDKSessionInfo:
     modified_ms = modified_ms if modified_ms is not None else 1_000_000_000_000
     return SDKSessionInfo(
@@ -24,6 +28,7 @@ def info(
         custom_title=custom_title,
         first_prompt=first_prompt,
         cwd=cwd,
+        git_branch=git_branch,
         created_at=created_ms if created_ms is not None else modified_ms - 60_000,
     )
 

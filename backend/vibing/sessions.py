@@ -262,6 +262,34 @@ class SessionRecord:
     plan_link: str | None = None
     # Group of related sessions (only the app knows it); None when loose.
     group_id: int | None = None
+    # Folder whose CLI history holds the transcript, when it differs from `cwd` (the
+    # CLI moves the file when a session enters a worktree). SDK reads use it.
+    history_dir: str | None = None
+    # Linked worktree the session works in now (from the transcript's last cwd).
+    worktree_name: str | None = None
+    worktree_path: str | None = None
+    # Newest branch recorded in the transcript.
+    git_branch: str | None = None
+
+    @property
+    def history_directory(self) -> str:
+        """Directory to hand the SDK when reading or renaming this session."""
+        return self.history_dir or self.cwd
+
+    def work_dir(self) -> str:
+        """Folder the session works in: its worktree while it exists and the transcript
+        lives in that worktree's history folder, else `cwd`. Resuming elsewhere than
+        where the file is would split the conversation."""
+        from vibing.cliwatch import history_folder_name  # cliwatch imports this module
+
+        if (
+            self.worktree_path
+            and self.history_dir
+            and Path(self.worktree_path).is_dir()
+            and history_folder_name(self.history_dir) == history_folder_name(self.worktree_path)
+        ):
+            return self.worktree_path
+        return self.cwd
 
 
 @dataclass
@@ -281,11 +309,12 @@ _COLUMNS = (
     _INSERT_COLUMNS
     + ", summary, first_prompt, title_custom, rename_pending, file_modified_at, app_modified_at"
     + ", model, effort, permission_mode, finished_at, plan_path, plan_link, group_id"
+    + ", history_dir, worktree_name, worktree_path, git_branch"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
     "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
-    "plan_path", "plan_link",
+    "plan_path", "plan_link", "history_dir",
 )
 _BOOL_FIELDS = ("finished", "title_custom", "rename_pending")
 
@@ -310,16 +339,20 @@ def display_state(
     last_seen_at: int | None,
     now: float,
     finished_after: float,
+    cli_running: bool = False,
 ) -> DisplayState:
     """State shown to the user: running, waiting for them, or finished.
 
     `finished_after` is in seconds: a session without activity for longer counts
-    as finished. A pending decision always waits for the user.
+    as finished. A pending decision always waits for the user. A session without a
+    client (`closed`) whose CLI is mid-turn is running.
     """
     if state in ("connecting", "running"):
         return "running"
     if state == "awaiting_decision":
         return "waiting"
+    if cli_running and state == "closed":
+        return "running"
     if finished or now - last_activity_at > finished_after:
         return "finished"
     return "waiting"
@@ -405,6 +438,7 @@ def describe(
             last_seen_at=record.last_seen_at,
             now=now,
             finished_after=finished_after,
+            cli_running=cli_running,
         ),
         "unread": record.last_activity_at > (record.last_seen_at or 0),
         "awaiting_decision": state == "awaiting_decision",
@@ -863,7 +897,7 @@ class ActiveSession:
         if self._file_mtime is None:
             return None
         try:
-            return await asyncio.to_thread(self._file_mtime, self.session_id, self.record.cwd)
+            return await asyncio.to_thread(self._file_mtime, self.session_id, self.record.history_directory)
         except Exception:
             logger.exception("Falha ao consultar o arquivo da sessão %s", self.session_id)
             return None
@@ -949,7 +983,7 @@ class ActiveSession:
         """(entries, tool results, skipped lines, compact summary uuids)."""
         if self._read_transcript is not None:
             transcript = await asyncio.to_thread(
-                self._read_transcript, self.session_id, self.record.cwd
+                self._read_transcript, self.session_id, self.record.history_directory
             )
             if transcript is None:
                 return [], {}, 0, set()
@@ -959,14 +993,14 @@ class ActiveSession:
             )
         assert self._get_session_messages is not None
         entries = list(
-            await asyncio.to_thread(self._get_session_messages, self.session_id, self.record.cwd)
+            await asyncio.to_thread(self._get_session_messages, self.session_id, self.record.history_directory)
             or []
         )
         tool_results: dict[str, dict[str, Any]] = {}
         if self._read_tool_results is not None and entries:
             try:
                 tool_results = await asyncio.to_thread(
-                    self._read_tool_results, self.session_id, self.record.cwd
+                    self._read_tool_results, self.session_id, self.record.history_directory
                 )
             except Exception:
                 logger.exception(
@@ -980,7 +1014,7 @@ class ActiveSession:
             return
         try:
             await asyncio.to_thread(
-                self._rename_session, self.session_id, self.record.title, self.record.cwd
+                self._rename_session, self.session_id, self.record.title, self.record.history_directory
             )
         except Exception:
             logger.exception("Falha ao aplicar o nome pendente da sessão %s", self.session_id)
@@ -1109,8 +1143,9 @@ class ActiveSession:
         self._refresh_state()
         client: AgentClient | None = None
         try:
-            if not Path(self.record.cwd).is_dir():
-                raise AgentError(f"A pasta do projeto não existe mais: {self.record.cwd}")
+            work_dir = self.record.work_dir()
+            if not Path(work_dir).is_dir():
+                raise AgentError(f"A pasta do projeto não existe mais: {work_dir}")
             resume = (
                 self._has_connected or self._connected_before or await self._check_history()
             )
@@ -1244,7 +1279,7 @@ class ActiveSession:
         model = self.record.model
         return self._agent_factory(
             AgentOptions(
-                cwd=Path(self.record.cwd),
+                cwd=Path(self.record.work_dir()),
                 session_id=self.session_id,
                 resume=resume,
                 can_use_tool=self._can_use_tool,
@@ -1257,7 +1292,7 @@ class ActiveSession:
     async def _check_history(self) -> bool:
         try:
             return await asyncio.to_thread(
-                self._history_exists, self.session_id, self.record.cwd
+                self._history_exists, self.session_id, self.record.history_directory
             )
         except Exception:
             logger.exception("Falha ao consultar o histórico da sessão %s", self.session_id)
@@ -2199,7 +2234,7 @@ class SessionManager:
         """Every edit tool call in the session's whole transcript (name, path, counts)."""
         session = self.get(session_id)
         try:
-            return await asyncio.to_thread(self._read_edits, session_id, session.record.cwd)
+            return await asyncio.to_thread(self._read_edits, session_id, session.record.history_directory)
         except Exception:
             logger.exception("Falha ao ler as edições da sessão %s", session_id)
             return []
@@ -2307,7 +2342,7 @@ class SessionManager:
             found = cached[1]
         else:
             try:
-                found = await asyncio.to_thread(self._read_context, record.session_id, record.cwd)
+                found = await asyncio.to_thread(self._read_context, record.session_id, record.history_directory)
             except Exception:
                 logger.exception("Falha ao ler o contexto da sessão %s", record.session_id)
                 found = None
@@ -2571,7 +2606,7 @@ class SessionManager:
             if await session.has_history():
                 try:
                     await asyncio.to_thread(
-                        self._rename_session, session_id, changes["title"], session.record.cwd
+                        self._rename_session, session_id, changes["title"], session.record.history_directory
                     )
                 except Exception:
                     logger.exception("Falha ao renomear a sessão %s no SDK", session_id)

@@ -114,6 +114,11 @@ class SessionOut(BaseModel):
     cli_running: bool = False
     # Group of related sessions in the project; None when loose.
     group_id: int | None = None
+    # Linked worktree the session works in (None outside worktrees) and the newest
+    # branch of its transcript.
+    worktree_name: str | None = None
+    worktree_path: str | None = None
+    git_branch: str | None = None
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]

@@ -158,7 +158,7 @@ async def session_changes(session_id: str, conn: DbDep, request: Request) -> dic
             "input": {"file_path": edit["file_path"]},
             "counts": (added, removed) if added is not None and removed is not None else None,
         })
-    files = _edited_files(items, Path(session.record.cwd))
+    files = _edited_files(items, Path(session.record.work_dir()))
 
     repos = await gitinfo.project_repos(root) if project.available else []
     groups: dict[str | None, list[tuple[Path, list[int] | None]]] = {}

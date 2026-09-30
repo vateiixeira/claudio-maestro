@@ -59,14 +59,19 @@ async function mountAt(path: string, handlers = {}) {
 }
 
 describe('página da conversa', () => {
-  it('mostra a faixa do plano abaixo do cabeçalho quando a conversa tem plano em andamento', async () => {
+  it('o progresso do plano fica no painel Detalhes, não acima da conversa', async () => {
     const plan = { path: '/home/vi/dev/loja-online/docs/plan.md', title: 'Plano da loja', total: 12, done: 3, current: { number: 4, title: 'Faixa do plano' } }
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'running', plan })])
-    const { wrapper } = await mountAt('/sessions/s1')
-    expect(wrapper.find('[data-test="plan-strip"]').text()).toContain('Tarefa 4 de 12: Faixa do plano')
+    const { wrapper } = await mountAt('/sessions/s1', {
+      'GET /api/sessions/s1/plan': () => jsonResponse({ link: 'auto', path: plan.path, plan, tasks: [] }),
+    })
+    expect(wrapper.findAll('[data-test="plan-strip"]')).toHaveLength(1)
+    const inPanel = wrapper.find('[data-test="details-panel"] [data-test="plan-strip"]')
+    expect(inPanel.exists()).toBe(true)
+    expect(inPanel.text()).toContain('Tarefa 4 de 12: Faixa do plano')
   })
 
-  it('não mostra a faixa do plano sem plano', async () => {
+  it('não mostra o progresso do plano sem plano', async () => {
     const { wrapper } = await mountAt('/sessions/s1')
     expect(wrapper.find('[data-test="plan-strip"]').exists()).toBe(false)
   })
@@ -162,6 +167,16 @@ describe('página da conversa', () => {
     await wrapper.find('[data-test="menu-copy-id"]').trigger('click')
 
     expect(writeText).toHaveBeenCalledWith('s1')
+  })
+
+  it('o menu ⋯ não tem Renomear; clicar no título abre a edição', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+
+    await wrapper.find('[data-test="header-menu"]').trigger('click')
+    expect(wrapper.find('[data-test="menu-rename"]').exists()).toBe(false)
+    expect(wrapper.findAll('[role="menuitem"]').map((b) => b.text())).toEqual(['Abrir projeto no editor', 'Copiar ID da sessão'])
+    await wrapper.find('[data-test="conversation-title"]').trigger('click')
+    expect(wrapper.find('[data-test="title-input"]').exists()).toBe(true)
   })
   const editItem: ToolItem = {
     type: 'tool', id: 'e1', tool_use_id: 'e1', name: 'Edit', input: { file_path: '/p/a.ts' },

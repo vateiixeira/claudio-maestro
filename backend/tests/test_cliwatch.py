@@ -480,6 +480,82 @@ async def test_app_writing_covers_turns_and_prompts(env):
     assert env.manager.app_writing("unknown") is False
 
 
+# Worktrees -------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_update_session_receives_the_transcript_path(env):
+    env.fake.add(str(env.folder), info("s1", str(env.folder), modified_ms=1_700_000_000_000))
+    await env.index.sync_all()
+    path = env.touch("s1", 1_700_000_500)
+    calls: list[tuple[Any, ...]] = []
+
+    def spy(session_id, mtime, info_, path_=None):
+        calls.append((session_id, mtime, path_))
+        return False
+
+    env.index.update_session = spy
+    env.start()
+    env.watch.push((Change.modified, path))
+
+    await wait_until(lambda: env.processed == ["s1"])
+    assert calls == [("s1", 1_700_000_500, path)]
+
+
+@pytest.mark.anyio
+async def test_session_of_a_worktree_is_listed_from_its_history_dir(env):
+    wt = env.folder / ".claude" / "worktrees" / "x"
+    wt_history = env.root / history_folder_name(str(wt))
+    wt_history.mkdir()
+    env.fake.add(str(env.folder), info("s1", str(env.folder), modified_ms=1_700_000_000_000))
+    await env.index.sync_all()
+    with closing(db.connect(env.db_path)) as conn, conn:
+        conn.execute("UPDATE sessions SET history_dir = ? WHERE session_id = 's1'", (str(wt),))
+    env.fake.by_directory[str(env.folder)] = []
+    env.fake.add(str(wt), info("s1", str(env.folder), custom_title="Na worktree",
+                               modified_ms=1_700_000_000_000))
+    path = wt_history / "s1.jsonl"
+    path.write_text("{}\n")
+    os.utime(path, (1_700_000_500, 1_700_000_500))
+    env.fake.list_calls.clear()
+    env.events.clear()
+    env.start()
+    env.watch.push((Change.modified, path))
+
+    await wait_until(lambda: env.processed == ["s1"])
+    assert env.fake.list_calls == [str(wt)]  # no project sync: the file is where it was
+    assert not any(e["type"] == "project.synced" for e in env.events)
+    assert row(env.db_path, "s1")["title"] == "Na worktree"
+
+
+@pytest.mark.anyio
+async def test_transcript_in_another_history_folder_triggers_project_sync(env):
+    env.fake.add(str(env.folder), info("s1", str(env.folder), modified_ms=1_700_000_000_000))
+    await env.index.sync_all()
+    moved = env.root / history_folder_name(str(env.folder / ".claude" / "worktrees" / "x"))
+    moved.mkdir()
+    path = moved / "s1.jsonl"
+    path.write_text("{}\n")
+    os.utime(path, (1_700_000_500, 1_700_000_500))
+    synced: list[int] = []
+    real_sync = env.index.sync_project
+
+    async def spy(project_id):
+        synced.append(project_id)
+        return await real_sync(project_id)
+
+    env.index.sync_project = spy
+    env.start()
+    env.watch.push((Change.modified, path))
+    await wait_until(lambda: env.processed == ["s1"])
+    assert synced == [env.project_id]
+
+    os.utime(path, (1_700_000_600, 1_700_000_600))
+    env.watch.push((Change.modified, path))
+    await wait_until(lambda: env.processed == ["s1", "s1"])
+    assert synced == [env.project_id]  # the same (session, folder) is synced once
+
+
 # App -------------------------------------------------------------------------
 
 

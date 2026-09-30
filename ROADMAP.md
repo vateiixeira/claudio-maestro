@@ -28,8 +28,9 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | A fazer | 0 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
+| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 12 de 12 |
 
-Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main.
 
 ## Preparação
 
@@ -330,6 +331,28 @@ Concluído em 2026-09-30, com aprovação da revisão do marco. A revisão pediu
 
 Deixado para depois: conversas do CLI não avisam a tela do projeto no fim do turno (o `CliWatcher` não conhece o projeto da sessão), então elas dependem da checagem periódica e do botão "Atualizar"; conversa nova criada pela tela do projeto abre em tela cheia, não ao lado (decisão do usuário); `git config` extra antes de cada `run_git`; menu preso a um botão cortado por um ancestral com `overflow`.
 
+## Marco 12. Ajustes de sessões e menu lateral
+
+Objetivo: enxergar o que roda (inclusive no terminal) e onde cada sessão trabalha, com ajustes de uso diário no menu lateral, no Detalhes e no modal.
+
+Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhorias-ui-sessoes`, em paralelo ao marco 8.
+
+- Spec: `docs/superpowers/specs/2026-09-30-ajustes-sessoes-menu-lateral-design.md`
+- Plano: `docs/superpowers/plans/2026-09-30-ajustes-sessoes-menu-lateral.md`
+
+- [x] Detectar a worktree atual pela transcrição (`worktree.py`) (2026-09-30)
+- [x] Colunas de worktree, branch e pasta do histórico na sessão (2026-09-30)
+- [x] Conversa do CLI no meio de um turno aparece como "Em execução" (2026-09-30)
+- [x] Indexar sessões guardadas nas pastas das worktrees (2026-09-30)
+- [x] Ler o histórico pela pasta certa e retomar a sessão na worktree (2026-09-30)
+- [x] Worktree e branch no cabeçalho, no Detalhes e na lista (2026-09-30)
+- [x] Renomear só pelo clique no título (2026-09-30)
+- [x] Largura ajustável do painel Detalhes (2026-09-30)
+- [x] Progresso do plano no painel Detalhes (2026-09-30)
+- [x] Menu lateral com "Em execução", sigla do projeto e Recentes em ordem estável (2026-09-30)
+- [x] Ditado no modal de nova conversa (2026-09-30)
+- [x] Retomada de sessão movida para worktree conferida contra o SDK real (2026-09-30)
+
 ## Fora do MVP
 
 Ideias registradas para depois. Não entram sem decisão do usuário.
@@ -354,8 +377,11 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Usar o Vibing no próprio repositório | O backend roda com recarga automática em `backend/`. Uma edição do Claude nessa pasta reinicia o backend e derruba todas as sessões. Evitar ou rodar sem `--reload` nesse caso |
 | Tecnologia do ditado por voz | Decidido em 2026-09-29: reconhecimento do navegador (Chrome/Edge). O áudio vai ao serviço de reconhecimento do navegador |
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
-| Conversa do CLI ativa aparece como "Aguardando você" | Uma conversa conduzida pelo CLI não tem cliente no app, então o estado exibido é "Aguardando você" mesmo com o CLI trabalhando. O marco 9 criou o sinal `cli_running` e o usa só no progresso do plano. Decidir se ele também muda o estado exibido e as contagens da Inbox e do Dashboard |
+| Conversa do CLI ativa aparece como "Aguardando você" | Decidido em 2026-09-30: `cli_running` passa a contar como "Em execução" no estado exibido, na Inbox, no Dashboard e no menu lateral (marco 12) |
 | Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
+| Painel Alterações em sessões de worktree | Visto na revisão do marco 12 (2026-09-30): arquivos editados numa worktree ficam no grupo do repositório principal (branch errado, diff como arquivo novo), e worktrees fora da pasta do projeto caem no grupo sem repositório e não abrem no editor. Precisa incluir as worktrees ligadas como donas possíveis e aceitar esses caminhos em `/diff` e no editor |
+| "Em execução" preso depois de o CLI morrer | Um CLI morto no meio do turno, ou parado pedindo permissão no terminal, conta como "Em execução" por até 20 minutos (`CLI_TURN_STALE_SECONDS`). Desde o marco 12 isso aparece na Inbox, no Dashboard e no menu lateral |
+| Retomada de sessão movida para worktree | Conferido contra o SDK real em 2026-09-30: a transcrição movida é lida com `directory` na worktree, e a retomada com `cwd` na worktree mantém o id e continua gravando no mesmo arquivo |
 
 ## Decisões
 
@@ -390,3 +416,4 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-29 | Marco 9 concluído: progresso lido do plano, vínculo automático, sinal de turno aberto das conversas do CLI; revisado e testado no app real |
 | 2026-09-30 | Agente de resumos vira o marco 10: uma chamada curta do SDK por sessão, incremental, sem ferramentas, configurável numa aba das Preferências |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
+| 2026-09-30 | Marco 12 concluído: conversa do CLI no meio de um turno conta como "Em execução"; sessões de worktree são indexadas sob o projeto dono e retomadas na worktree só quando a transcrição está na pasta dela; o marco foi numerado 11 porque o main já tem um marco 10 |

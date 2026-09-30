@@ -3,6 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import MessageComposer from '../MessageComposer.vue'
 import { jsonResponse, routeFetch } from '../../../test/factories'
 import { setPendingDraft } from '../../../conversation/pendingDrafts'
+import { FakeRecognition } from '../../../test/fakeRecognition'
 import { resetFileReads, settleReads, trackFileReads } from '../../../test/fileReader'
 import { localImagesFor, claimLocalImages, forgetSessionImages, resetLocalImages } from '../../../conversation/localImages'
 
@@ -110,25 +111,6 @@ describe('imagens no campo', () => {
     expect(w.find('[data-test="attachment-draft"]').text()).toContain('arrastada.webp')
   })
 })
-
-class FakeRecognition {
-  static last: FakeRecognition | null = null
-  lang = ''
-  interimResults = false
-  continuous = false
-  onresult: ((e: unknown) => void) | null = null
-  onerror: ((e: unknown) => void) | null = null
-  onend: (() => void) | null = null
-  started = false
-  constructor() { FakeRecognition.last = this }
-  start() { this.started = true }
-  stop() { this.started = false; this.onend?.() }
-  abort() { this.stop() }
-  emit(...parts: Array<[string, boolean]>) {
-    const results = parts.map(([t, isFinal]) => Object.assign([{ transcript: t, confidence: 1 }], { isFinal }))
-    this.onresult?.({ resultIndex: 0, results })
-  }
-}
 
 describe('ditado por voz', () => {
   it('sem suporte, o botão não aparece', () => {

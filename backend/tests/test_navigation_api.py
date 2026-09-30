@@ -175,6 +175,26 @@ def test_reader_caches_by_modification_time(tmp_path, files, monkeypatch):
     assert len(reads) == 2
 
 
+def test_reader_finds_file_through_history_dir(tmp_path):
+    db_path = tmp_path / "vibing.db"
+    db.init_db(db_path)
+    insert_project(db_path, 1)
+    now = datetime(2026, 9, 29, 15, 0).timestamp()
+    insert_session(db_path, 1, "a", now)
+    insert_session(db_path, 1, "b", now)
+    with closing(db.connect(db_path)) as conn:
+        conn.execute("UPDATE sessions SET history_dir = '/h' WHERE session_id = 'a'")
+    seen: list[tuple[str, str]] = []
+
+    def finder(session_id: str, directory: str) -> Path | None:
+        seen.append((session_id, directory))
+        return None
+
+    ActivityReader(db_path, session_file=finder, clock=lambda: now).read(14)
+
+    assert sorted(seen) == [("a", "/h"), ("b", "/p")]
+
+
 # Routes ---------------------------------------------------------------------------
 
 

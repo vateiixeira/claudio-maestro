@@ -102,6 +102,11 @@ export interface Session {
   cli_running?: boolean
   /** Group of related sessions in the project; null (or absent) when loose. */
   group_id?: number | null
+  /** Linked git worktree the session works in; null outside worktrees. */
+  worktree_name?: string | null
+  worktree_path?: string | null
+  /** Newest git branch recorded in the session's transcript. */
+  git_branch?: string | null
 }
 
 /** Group of related sessions inside a project (`GET /api/groups`). Only the app knows it. */

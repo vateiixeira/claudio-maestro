@@ -17,9 +17,13 @@ export function readRecent(): string[] {
 /** Shared so the sidebar updates the moment a conversation is opened. */
 export const recentIds = ref<string[]>(readRecent())
 
-/** Moves `id` to the front, without duplicates, keeping at most RECENT_MAX. */
-export function noteOpened(id: string): string[] {
-  const ids = [id, ...readRecent().filter((other) => other !== id)].slice(0, RECENT_MAX)
+/** How many recent conversations the sidebar shows. */
+export const RECENT_VISIBLE = 5
+
+/** Ids the sidebar is showing under "Recentes" right now (it writes them). */
+export const shownRecentIds = ref<string[]>([])
+
+function save(ids: string[]): string[] {
   recentIds.value = ids
   try {
     localStorage.setItem(KEY, JSON.stringify(ids))
@@ -27,4 +31,28 @@ export function noteOpened(id: string): string[] {
     // Without storage the history lasts only for this page.
   }
   return ids
+}
+
+/**
+ * A conversation was opened. One already shown under "Recentes" keeps its place, so
+ * clicking down the list does not reshuffle it; any other goes to the front.
+ */
+export function noteOpened(id: string): string[] {
+  const current = readRecent()
+  if (shownRecentIds.value.includes(id) && current.includes(id)) {
+    recentIds.value = current
+    return current
+  }
+  return save([id, ...current.filter((other) => other !== id)].slice(0, RECENT_MAX))
+}
+
+/**
+ * A conversation started running (in the app or elsewhere). One already shown under
+ * "Recentes" stays where it is; any other (new, or stored beyond the visible ones)
+ * goes to the front so it does not vanish from the sidebar when it stops.
+ */
+export function noteRunning(id: string): string[] {
+  const current = readRecent()
+  if (shownRecentIds.value.includes(id) && current.includes(id)) return current
+  return save([id, ...current.filter((other) => other !== id)].slice(0, RECENT_MAX))
 }

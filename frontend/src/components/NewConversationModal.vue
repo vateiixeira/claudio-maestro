@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
 import { errorMessage, sendMessage, updateSession } from '../api/http'
 import { type DraftImage, IMAGE_TYPES, attachImages, base64Of, filesFrom, formatSize } from '../conversation/images'
+import { useDictation } from '../conversation/dictation'
 import { rememberSentImages } from '../conversation/localImages'
 import { setPendingDraft } from '../conversation/pendingDrafts'
 import { sortGroups } from '../groupList'
@@ -143,6 +144,30 @@ function onPaste(event: ClipboardEvent) {
   void addFiles(files)
 }
 
+const dictation = useDictation({
+  begin() {
+    const el = promptEl.value
+    return { text: draft.value.prompt, cursor: el?.selectionStart ?? draft.value.prompt.length }
+  },
+  update(value, cursor) {
+    draft.value.prompt = value
+    const el = promptEl.value
+    if (el) {
+      el.value = value
+      el.setSelectionRange(cursor, cursor)
+    }
+  },
+})
+function stopDictation() {
+  if (dictation.recording.value) dictation.stop()
+}
+// Typing while dictating stops it, so it does not overwrite what was typed.
+function onPromptInput() {
+  stopDictation()
+}
+// The modal stays mounted while closed: closing it by any path stops the dictation.
+watch(() => store.isOpen, (open) => { if (!open) stopDictation() })
+
 function onPromptKey(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return
   if (event.shiftKey) return // the browser inserts the line break
@@ -160,6 +185,7 @@ function onPromptKey(event: KeyboardEvent) {
 
 async function submit() {
   if (!canSubmit.value) return
+  stopDictation()
   submitting.value = true
   error.value = null
   const { projectId, groupId, title, prompt, model, effort, permissionMode } = draft.value
@@ -306,6 +332,7 @@ function onKeydown(event: KeyboardEvent) {
             aria-label="Prompt"
             placeholder="O que você quer fazer? (Ctrl+V cola imagens)"
             class="min-h-40 grow resize-none rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-primary"
+            @input="onPromptInput"
             @keydown="onPromptKey"
             @paste="onPaste"
           />
@@ -328,10 +355,28 @@ function onKeydown(event: KeyboardEvent) {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l9-9a3.3 3.3 0 0 1 4.7 4.7l-9 9a1.7 1.7 0 0 1-2.4-2.4l8.3-8.3" /></svg>
               Imagem
             </button>
+            <button
+              v-if="dictation.supported"
+              type="button"
+              data-test="nc-dictate"
+              :aria-label="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+              :aria-pressed="dictation.recording.value"
+              :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+              class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-sm"
+              :class="dictation.recording.value ? 'border-secondary/60 bg-secondary/10 text-secondary' : 'border-line-strong bg-transparent text-fg-muted hover:text-fg'"
+              @click="dictation.toggle"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+              Ditar
+            </button>
             <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)" />
             <OptionMenu name="Raciocínio" :text="`Raciocínio ${draft.effort ? EFFORT_LABELS[draft.effort] : 'padrão'}`" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
             <OptionMenu name="Modo" :text="draft.permissionMode ? MODE_LABELS[draft.permissionMode] : 'Modo padrão'" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" @select="(v) => (draft.permissionMode = v === 'default-account' ? null : (v as PermissionMode))" />
           </div>
+          <span v-if="dictation.recording.value" data-test="nc-recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
+            <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
+          </span>
+          <p v-else-if="dictation.error.value" role="alert" class="m-0 text-sm text-diff-del-fg">{{ dictation.error.value }}</p>
           <p v-if="error" data-test="nc-error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
         </div>
         <footer class="flex items-center gap-3 border-t border-line px-5 py-3">

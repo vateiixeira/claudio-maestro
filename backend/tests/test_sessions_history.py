@@ -443,3 +443,108 @@ async def test_external_change_on_forgotten_session_resets_column(make_env):
     # Reopening continues after the reset.
     await env.manager.open(sid)
     assert env.manager.get(sid).seq > resets[0]["seq"]
+
+
+def set_row(env: Env, sid: str, **columns: Any) -> None:
+    sets = ", ".join(f"{name} = ?" for name in columns)
+    with closing(db.connect(env.db_path)) as conn:
+        conn.execute(f"UPDATE sessions SET {sets} WHERE session_id = ?", (*columns.values(), sid))
+
+
+@pytest.mark.anyio
+async def test_sdk_reads_use_history_dir(make_env):
+    env = make_env()
+    sid = env.add_old_session()
+    set_row(env, sid, history_dir="/h")
+    calls: dict[str, set[tuple[str, str]]] = {
+        "mtime": set(), "exists": set(), "edits": set(), "context": set(),
+    }
+
+    def recording(kind, result):
+        def fake(session_id, directory):
+            calls[kind].add((session_id, directory))
+            return result
+        return fake
+
+    env.manager._file_mtime = recording("mtime", None)
+    env.manager._history_exists = recording("exists", True)
+    env.manager._read_edits = recording("edits", [])
+    env.manager._read_context = recording("context", None)
+
+    await env.manager.open(sid)
+    await env.manager.transcript_edits(sid)
+    await env.manager.update(sid, title="Novo")
+    session = env.manager.get(sid)
+    await session._current_mtime()
+    await session._check_history()
+
+    assert env.fake.message_calls == [(sid, "/h")]
+    assert env.fake.renames == [(sid, "Novo", "/h")]
+    assert calls == {
+        "mtime": {(sid, "/h")},
+        "exists": {(sid, "/h")},
+        "edits": {(sid, "/h")},
+        "context": {(sid, "/h")},
+    }
+
+
+@pytest.mark.anyio
+async def test_pending_rename_uses_history_dir(make_env):
+    sessions: list[str] = []
+    env = make_env(script=lambda content: text_turn(sessions[0], "r"))
+    sid = env.add_old_session()
+    sessions.append(sid)
+    set_row(env, sid, history_dir="/h", rename_pending=1, title_custom=1)
+
+    await env.manager.send(sid, "oi")
+    await wait_until(lambda: env.fake.renames)
+
+    assert env.fake.renames == [(sid, "Antiga", "/h")]
+
+
+@pytest.mark.anyio
+async def test_client_starts_in_existing_worktree(make_env):
+    sessions: list[str] = []
+    env = make_env(script=lambda content: text_turn(sessions[0], "r"))
+    sid = env.add_old_session()
+    sessions.append(sid)
+    worktree = env.folder / ".claude" / "worktrees" / "feat"
+    worktree.mkdir(parents=True)
+    set_row(
+        env, sid, worktree_name="feat", worktree_path=str(worktree), history_dir=str(worktree),
+    )
+
+    await env.manager.send(sid, "continua")
+    await wait_until(lambda: env.manager.get(sid).state == "idle")
+
+    assert env.factory.clients[0].options.cwd == worktree
+
+
+@pytest.mark.anyio
+async def test_client_stays_in_cwd_when_transcript_was_not_moved_to_worktree(make_env):
+    sessions: list[str] = []
+    env = make_env(script=lambda content: text_turn(sessions[0], "r"))
+    sid = env.add_old_session()
+    sessions.append(sid)
+    worktree = env.folder / ".claude" / "worktrees" / "feat"
+    worktree.mkdir(parents=True)
+    set_row(env, sid, worktree_name="feat", worktree_path=str(worktree))
+
+    await env.manager.send(sid, "continua")
+    await wait_until(lambda: env.manager.get(sid).state == "idle")
+
+    assert env.factory.clients[0].options.cwd == Path(env.folder)
+
+
+@pytest.mark.anyio
+async def test_client_falls_back_to_cwd_when_worktree_is_gone(make_env, tmp_path: Path):
+    sessions: list[str] = []
+    env = make_env(script=lambda content: text_turn(sessions[0], "r"))
+    sid = env.add_old_session()
+    sessions.append(sid)
+    set_row(env, sid, worktree_name="feat", worktree_path=str(tmp_path / "gone"))
+
+    await env.manager.send(sid, "continua")
+    await wait_until(lambda: env.manager.get(sid).state == "idle")
+
+    assert env.factory.clients[0].options.cwd == Path(env.folder)

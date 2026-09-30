@@ -64,6 +64,29 @@ describe('painel Detalhes', () => {
     expect(props.find('[data-test="prop-group"]').exists()).toBe(true)
   })
 
+  it('mostra a seção Plano, com a faixa aberta, quando a sessão tem plano visível', async () => {
+    const plan = { path: '/p/plan.md', title: 'Plano X', total: 8, done: 3, current: { number: 4, title: 'Quarta' } }
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'running', plan })])
+    const wrapper = await mountPanel({
+      'GET /api/sessions/s1/plan': () => jsonResponse({
+        link: 'auto', path: plan.path, plan,
+        tasks: [{ number: 1, title: 'Primeira', done: true }, { number: 4, title: 'Quarta', done: false }],
+      }),
+    })
+    const section = wrapper.find('[data-test="details-plan"]')
+    expect(section.exists()).toBe(true)
+    expect(section.find('h3').text()).toBe('Plano')
+    expect(section.find('[data-test="plan-strip"]').text()).toContain('Tarefa 4 de 8')
+    expect(section.findAll('[data-test="plan-task"]')).toHaveLength(2)
+    const order = wrapper.findAll('[data-test="details-properties"], [data-test="details-plan"], [data-test="details-changes"]').map((e) => e.attributes('data-test'))
+    expect(order).toEqual(['details-properties', 'details-plan', 'details-changes'])
+  })
+
+  it('sem plano, não há seção Plano', async () => {
+    const wrapper = await mountPanel()
+    expect(wrapper.find('[data-test="details-plan"]').exists()).toBe(false)
+  })
+
   it('mostra as propriedades da conversa', async () => {
     const wrapper = await mountPanel()
 
@@ -73,6 +96,23 @@ describe('painel Detalhes', () => {
     expect(wrapper.find('[data-test="prop-context"]').text()).toContain('42%')
     expect(wrapper.find('[data-test="prop-context"]').text()).toContain('84 mil')
     expect(wrapper.find('[data-test="prop-turns"]').text()).toContain('2')
+  })
+
+  it('Detalhes mostra a linha Worktree com o caminho na dica e o branch da sessão', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias', git_branch: 'worktree-melhorias' })])
+    const wrapper = await mountPanel()
+
+    const prop = wrapper.find('[data-test="prop-worktree"]')
+    expect(prop.text()).toContain('melhorias')
+    expect(prop.find('[title]').attributes('title')).toBe('/p/.claude/worktrees/melhorias')
+    expect(wrapper.find('[data-test="prop-branch"]').text()).toContain('worktree-melhorias')
+    expect(wrapper.find('[data-test="prop-branch"]').text()).not.toContain('main')
+  })
+
+  it('sem worktree, Detalhes não mostra a linha Worktree', async () => {
+    const wrapper = await mountPanel()
+
+    expect(wrapper.find('[data-test="prop-worktree"]').exists()).toBe(false)
   })
 
   it('lista os arquivos alterados e abre o diff de um deles', async () => {
