@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import NewConversationModal from '../NewConversationModal.vue'
@@ -173,11 +173,11 @@ describe('modal de nova conversa: revisão', () => {
     const trigger = wrapper.find('button[aria-label="Modelo"]')
     await trigger.trigger('click')
     await flushPromises()
-    const menu = wrapper.find('[role="menu"]')
+    const menu = new DOMWrapper(document.body).find('[role="menu"]')
     expect(menu.exists()).toBe(true)
     await menu.trigger('keydown', { key: 'Escape' })
     await flushPromises()
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    expect(new DOMWrapper(document.body).find('[role="menu"]').exists()).toBe(false)
     expect(useNewConversationStore(pinia).isOpen).toBe(true)
   })
 
