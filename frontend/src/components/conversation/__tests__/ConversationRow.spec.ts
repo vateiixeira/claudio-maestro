@@ -216,3 +216,26 @@ describe('etiqueta do agrupador na linha', () => {
     expect(mountRow(makeSession({ group_id: null })).find('[data-test="group-tag"]').exists()).toBe(false)
   })
 })
+
+describe('resumo na linha', () => {
+  it('mostra a frase curta do resumo depois do título', async () => {
+    const w = mountRow(makeSession({ digest_short: 'Executa o plano do agrupador' }))
+    await flushPromises()
+    expect(w.find('[data-test="row-digest"]').text()).toBe('Executa o plano do agrupador')
+    expect(w.find('[data-test="row-link"]').classes()).toEqual(expect.arrayContaining(['max-w-[55%]', 'shrink-0', 'truncate']))
+  })
+
+  it('sem resumo não mostra nada a mais', async () => {
+    const w = mountRow(makeSession({ digest_short: null }))
+    await flushPromises()
+    expect(w.find('[data-test="row-digest"]').exists()).toBe(false)
+    expect(w.find('[data-test="row-plan-done"]').exists()).toBe(false)
+    expect(w.find('[data-test="row-link"]').classes()).not.toContain('max-w-[55%]')
+  })
+
+  it('mostra "Plano concluído"', async () => {
+    const w = mountRow(makeSession({ plan_done: true }))
+    await flushPromises()
+    expect(w.find('[data-test="row-plan-done"]').text()).toBe('Plano concluído')
+  })
+})

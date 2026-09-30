@@ -74,10 +74,20 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
         :aria-current="active ? 'true' : undefined"
         :title="planTitle"
         class="min-w-0 truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
-        :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal']"
+        :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal', session.digest_short ? 'max-w-[55%] shrink-0' : '']"
       >{{ session.title }}</RouterLink>
       <PlanBadge :session="session" />
       <GroupTag :group-id="session.group_id" />
+      <span
+        v-if="session.plan_done"
+        data-test="row-plan-done"
+        class="shrink-0 rounded border border-primary/40 px-1.5 font-mono text-[11px] text-primary-soft"
+      >Plano concluído</span>
+      <span
+        v-if="session.digest_short"
+        data-test="row-digest"
+        class="min-w-0 truncate text-xs text-fg-muted"
+      >{{ session.digest_short }}</span>
     </div>
     <span class="sr-only">{{ displayStateLabels[session.display_state] }}{{ session.unread ? ', com novidade' : '' }}</span>
     <span v-if="reason" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs text-secondary-soft">{{ reason }}</span>
