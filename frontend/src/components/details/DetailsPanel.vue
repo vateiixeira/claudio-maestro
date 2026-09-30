@@ -74,7 +74,7 @@ watch(editOpen, (open) => { if (open) selectedFile.value = null })
     :data-wide="String(wide)"
     aria-label="Detalhes da conversa"
     class="flex h-full shrink-0 flex-col border-l border-line bg-panel"
-    :class="wide ? 'w-[60vw]' : 'w-[360px]'"
+    :class="[wide ? 'w-[60vw]' : 'w-[360px]', drawer ? 'max-w-full' : '']"
   >
     <header class="flex min-h-12 items-center gap-2 border-b border-line px-4">
       <template v-if="showingDiff">

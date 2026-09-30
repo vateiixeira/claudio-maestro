@@ -463,4 +463,85 @@ describe('página da conversa', () => {
       expect(live().text()).toBe('Erro')
     })
   })
+
+  describe('embutida na tela do projeto', () => {
+    async function mountEmbedded(handlers = {}, props: Record<string, unknown> = {}) {
+      vi.stubGlobal('fetch', routeFetch({ ...baseFetch, ...handlers }))
+      const router = createAppRouter(createMemoryHistory())
+      await router.push('/projects/1?sessao=s1')
+      const wrapper = mount(ConversationView, { props: { id: 's1', embedded: true, ...props }, global: { plugins: [pinia, router] } })
+      await flushPromises()
+      return wrapper
+    }
+
+    it('troca a trilha por uma barra compacta com título, Detalhes, Tela cheia e Fechar', async () => {
+      const wrapper = await mountEmbedded()
+
+      expect(wrapper.find('[data-test="breadcrumb"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="embedded-bar"] [data-test="embedded-title"]').text()).toBe('Corrigir login')
+      expect(wrapper.find('[data-test="embedded-bar"] [data-test="toggle-details"]').exists()).toBe(true)
+      const full = wrapper.get('[data-test="embedded-fullscreen"]')
+      expect(full.attributes('href')).toBe('/sessions/s1')
+      expect(full.attributes('aria-label')).toBe('Abrir em tela cheia')
+      expect(full.attributes('title')).toBe('Abrir em tela cheia')
+      const close = wrapper.get('[data-test="embedded-close"]')
+      expect(close.attributes('href')).toBe('/projects/1')
+      expect(close.attributes('aria-label')).toBe('Fechar conversa')
+      expect(close.attributes('title')).toBe('Fechar conversa')
+    })
+
+    it('o painel Detalhes é sempre gaveta, mesmo em tela larga e com a preferência aberta', async () => {
+      const wrapper = await mountEmbedded()
+
+      expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(false)
+      await wrapper.get('[data-test="toggle-details"]').trigger('click')
+      expect(wrapper.find('[data-test="details-drawer"] [data-test="details-panel"]').exists()).toBe(true)
+      expect(localStorage.getItem('vibing:details-open')).toBeNull()
+      await wrapper.get('[data-test="toggle-details"]').trigger('click')
+      expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(false)
+    })
+
+    it('mantém cabeçalho e fio da conversa', async () => {
+      const wrapper = await mountEmbedded()
+
+      expect(wrapper.find('[data-test="conversation-title"]').text()).toBe('Corrigir login')
+    })
+
+    it('grava a conversa entre as abertas recentemente', async () => {
+      await mountEmbedded()
+
+      expect(JSON.parse(localStorage.getItem('vibing:recent-conversations')!)).toEqual(['s1'])
+    })
+
+    it('conversa inexistente mostra o aviso e mantém Fechar, usando o projeto recebido', async () => {
+      const wrapper = await mountEmbedded(
+        { 'GET /api/sessions/s9': () => jsonResponse({ detail: 'Sessão não encontrada.' }, 404) },
+        { id: 's9', projectId: 1 },
+      )
+
+      expect(wrapper.find('[data-test="conversation-missing"]').exists()).toBe(true)
+      expect(wrapper.get('[data-test="embedded-close"]').attributes('href')).toBe('/projects/1')
+    })
+
+    it('Fechar volta ao projeto aberto, mesmo que a sessão seja de outro projeto', async () => {
+      const wrapper = await mountEmbedded({}, { projectId: 2 })
+
+      expect(wrapper.get('[data-test="embedded-close"]').attributes('href')).toBe('/projects/2')
+    })
+
+    it('a gaveta de Detalhes não passa da largura da coluna, nem alargada', async () => {
+      const wrapper = await mountEmbedded()
+      await wrapper.get('[data-test="toggle-details"]').trigger('click')
+
+      expect(wrapper.get('[data-test="details-drawer"]').classes()).toContain('max-w-full')
+      expect(wrapper.get('[data-test="details-panel"]').classes()).toContain('max-w-full')
+    })
+
+    it('sem embedded continua com a trilha e sem a barra compacta', async () => {
+      const { wrapper } = await mountAt('/sessions/s1')
+
+      expect(wrapper.find('[data-test="embedded-bar"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="breadcrumb"]').exists()).toBe(true)
+    })
+  })
 })

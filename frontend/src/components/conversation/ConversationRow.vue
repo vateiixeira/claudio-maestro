@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import PlanBadge from '../plan/PlanBadge.vue'
@@ -15,7 +15,12 @@ import { useSessionsStore } from '../../stores/sessions'
 import type { Session } from '../../types/api'
 
 // One conversation in a list. `inbox` adds "Marcar como lida"; `compact` has no actions.
-const props = withDefaults(defineProps<{ session: Session; variant?: 'inbox' | 'list' | 'compact' }>(), { variant: 'list' })
+// `to` replaces the link's destination (still a link, so middle-click opens a tab); `active` marks the open row.
+const props = withDefaults(
+  defineProps<{ session: Session; variant?: 'inbox' | 'list' | 'compact'; to?: RouteLocationRaw; active?: boolean }>(),
+  { variant: 'list' },
+)
+const target = computed<RouteLocationRaw>(() => props.to ?? { name: 'session', params: { id: props.session.session_id } })
 const emit = defineEmits<{ error: [message: string] }>()
 
 const projects = useProjectsStore()
@@ -49,7 +54,9 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
   <div
     data-test="conversation-row"
     :data-unread="String(session.unread)"
+    :data-active="active ? 'true' : undefined"
     class="group relative flex min-h-11 items-center gap-3 rounded-md px-2 hover:bg-card focus-within:bg-card"
+    :class="active ? 'bg-card shadow-[inset_2px_0_0_var(--color-primary)]' : ''"
   >
     <span class="flex w-2 shrink-0 justify-center">
       <span v-if="session.unread" data-test="unread-dot" class="size-2 rounded-full bg-info" />
@@ -59,7 +66,8 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     <div data-test="row-title" class="flex min-w-0 grow items-center gap-2">
       <RouterLink
         data-test="row-link"
-        :to="{ name: 'session', params: { id: session.session_id } }"
+        :to="target"
+        :aria-current="active ? 'true' : undefined"
         :title="planTitle"
         class="min-w-0 truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
         :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal']"

@@ -23,7 +23,11 @@ export const routes: RouteRecordRaw[] = [
     path: '/projects/:id(\\d+)',
     name: 'project',
     component: ProjectView,
-    props: (route) => ({ id: Number(route.params.id) }),
+    // `?sessao=` is the conversation open beside the project; anything but a single string is ignored.
+    props: (route) => {
+      const session = route.query.sessao
+      return { id: Number(route.params.id), session: typeof session === 'string' && session ? session : undefined }
+    },
   },
   { path: '/preferencias', name: 'preferences', component: PreferencesView },
   { path: '/:pathMatch(.*)*', redirect: '/' },
