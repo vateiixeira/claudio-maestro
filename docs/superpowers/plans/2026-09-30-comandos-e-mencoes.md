@@ -155,7 +155,7 @@ Item 2 do marco 13.
   - `vibing.api.suggestions.router` com `GET /api/sessions/{id}/commands` e `GET /api/projects/{id}/commands`, que devolvem `[{name, description, argument_hint}]`.
   - `app.state.commands: CommandCatalog`.
 
-- [ ] **Passo 1: escrever os testes do catálogo** em `backend/tests/test_commands.py`:
+- [x] **Passo 1: escrever os testes do catálogo** em `backend/tests/test_commands.py`:
 
 ```python
 """Slash command catalog: throwaway client, filtering, cache, errors."""
@@ -321,7 +321,7 @@ async def test_connect_failure_raises_with_the_agent_message_and_closes(tmp_path
 
 Antes de escrever o último teste, confira que `FakeAgentClient.close()` marca `closed = True` mesmo sem `connect()` bem-sucedido. Se não marcar, use no teste um cliente próprio no estilo de `_GatedClient`, em vez de mudar o fake.
 
-- [ ] **Passo 2: escrever os testes das rotas** em `backend/tests/test_suggestions_api.py`. Siga o estilo de `test_sessions_api.py`: `create_app(agent_factory=factory, history_exists=...)` e `TestClient` com `origin` e `x-vibing`.
+- [x] **Passo 2: escrever os testes das rotas** em `backend/tests/test_suggestions_api.py`. Siga o estilo de `test_sessions_api.py`: `create_app(agent_factory=factory, history_exists=...)` e `TestClient` com `origin` e `x-vibing`.
 
 ```python
 """Suggestion routes: commands and files of a session or project."""
@@ -431,9 +431,9 @@ def test_requests_without_the_app_header_are_refused(api, home):
 
 Confira como `HostOriginMiddleware` trata o cabeçalho vazio. Se `headers={"x-vibing": ""}` não bastar para removê-lo, use um `TestClient` criado sem `x-vibing`, no mesmo `app`.
 
-- [ ] **Passo 3: rodar e ver falhar.** Rode `uv run pytest backend/tests/test_commands.py backend/tests/test_suggestions_api.py -q`. Esperado: `ModuleNotFoundError: No module named 'vibing.commands'` e 404 nas rotas.
+- [x] **Passo 3: rodar e ver falhar.** Rode `uv run pytest backend/tests/test_commands.py backend/tests/test_suggestions_api.py -q`. Esperado: `ModuleNotFoundError: No module named 'vibing.commands'` e 404 nas rotas.
 
-- [ ] **Passo 4: implementar `backend/vibing/commands.py`:**
+- [x] **Passo 4: implementar `backend/vibing/commands.py`:**
 
 ```python
 """Slash commands available in a folder: user, project and plugin commands and
@@ -567,7 +567,7 @@ class CommandCatalog:
         return await client.get_server_info()
 ```
 
-- [ ] **Passo 5: `SessionManager`.** Em `backend/vibing/sessions.py`, antes de `def get(`:
+- [x] **Passo 5: `SessionManager`.** Em `backend/vibing/sessions.py`, antes de `def get(`:
 
 ```python
     @property
@@ -589,7 +589,7 @@ class CommandCatalog:
 
 Confira se `AgentFactory` já está importado em `sessions.py`; se não estiver, importe de `vibing.agent.base`. `_read_row` já existe (por volta da L2900).
 
-- [ ] **Passo 6: rotas** em `backend/vibing/api/suggestions.py`:
+- [x] **Passo 6: rotas** em `backend/vibing/api/suggestions.py`:
 
 ```python
 """Suggestion routes for the message field: slash commands and files of the folder a
@@ -664,9 +664,9 @@ Registre o router em `backend/vibing/api/__init__.py` (import `suggestions` e `r
 
 Import: `from vibing.commands import CommandCatalog`.
 
-- [ ] **Passo 7: rodar e ver passar.** Rode `uv run pytest backend/tests/test_commands.py backend/tests/test_suggestions_api.py -q` e depois `uv run pytest -q`. Esperado: tudo PASS.
+- [x] **Passo 7: rodar e ver passar.** Rode `uv run pytest backend/tests/test_commands.py backend/tests/test_suggestions_api.py -q` e depois `uv run pytest -q`. Esperado: tudo PASS.
 
-- [ ] **Passo 8: commit** (sessão principal, depois do `reviewer`). Marque o item 2 no roadmap.
+- [x] **Passo 8: commit** (sessão principal, depois do `reviewer`). Marque o item 2 no roadmap.
 
 ```bash
 git add backend/vibing/commands.py backend/vibing/api/suggestions.py backend/vibing/api/__init__.py backend/vibing/sessions.py backend/vibing/app.py backend/tests/test_commands.py backend/tests/test_suggestions_api.py ROADMAP.md

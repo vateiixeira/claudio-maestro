@@ -15,6 +15,7 @@ from vibing.agent.sdk_client import clean_inherited_env
 from vibing.api import router
 from vibing.api.editor import SpawnEditor, spawn_detached
 from vibing.cliwatch import CliWatcher
+from vibing.commands import CommandCatalog
 from vibing.config import Settings, claude_projects_dir, load_settings
 from vibing.digest.model import DigestModel, SdkDigestModel
 from vibing.digest.service import AGENT_DIR_NAME, DigestService
@@ -94,6 +95,7 @@ def create_app(
             read_tool_results=read_tool_results,
             on_turn_end=refresh_git,
         )
+        app.state.commands = CommandCatalog(app.state.sessions.agent_factory)
         app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
         agent_dir = (app.state.settings.data_dir / AGENT_DIR_NAME).resolve()
         app.state.digest = DigestService(

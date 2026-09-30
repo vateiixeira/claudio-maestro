@@ -2219,6 +2219,22 @@ class SessionManager:
             )
         return record
 
+    @property
+    def agent_factory(self) -> AgentFactory:
+        """The factory sessions use; throwaway clients (command catalog) share it."""
+        return self._agent_factory
+
+    def find_record(self, session_id: str) -> SessionRecord:
+        """The session's record, from memory or the database, without loading the
+        session into memory."""
+        session = self._sessions.get(session_id)
+        if session is not None:
+            return session.record
+        row = self._read_row(session_id)
+        if row is None:
+            raise SessionNotFoundError("Sessão não encontrada.")
+        return _record(row)
+
     def get(self, session_id: str) -> ActiveSession:
         session = self._sessions.get(session_id)
         if session is not None:

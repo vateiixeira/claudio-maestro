@@ -14,6 +14,7 @@ from vibing.api import (
     plans,
     projects,
     sessions,
+    suggestions,
     ws,
 )
 
@@ -29,4 +30,5 @@ router.include_router(activity.router)
 router.include_router(app_state.router)
 router.include_router(git.router)
 router.include_router(editor.router)
+router.include_router(suggestions.router)
 router.include_router(ws.router)
