@@ -24,10 +24,15 @@ function currentProjectId(): number | null {
   if (route.name === 'session') return sessions.find(String(route.params.id))?.project_id ?? null
   return null
 }
+// The group of the open conversation, so a new one starts next to it.
+function currentGroupId(): number | null {
+  if (route.name !== 'session') return null
+  return sessions.find(String(route.params.id))?.group_id ?? null
+}
 function onKey(event: KeyboardEvent) {
   if (newConversation.isOpen || !shouldOpenNewConversation(event)) return
   event.preventDefault()
-  newConversation.open(currentProjectId())
+  newConversation.open(currentProjectId(), currentGroupId())
 }
 onMounted(() => document.addEventListener('keydown', onKey))
 onBeforeUnmount(() => document.removeEventListener('keydown', onKey))

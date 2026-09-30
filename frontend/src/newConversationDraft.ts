@@ -6,6 +6,7 @@ const LAST_PROJECT_KEY = 'vibing:new-conversation-last-project'
 
 export interface ConversationDraft {
   projectId: number | null
+  groupId: number | null
   title: string
   prompt: string
   model: string | null
@@ -14,7 +15,7 @@ export interface ConversationDraft {
 }
 
 export function emptyDraft(): ConversationDraft {
-  return { projectId: null, title: '', prompt: '', model: null, effort: null, permissionMode: null }
+  return { projectId: null, groupId: null, title: '', prompt: '', model: null, effort: null, permissionMode: null }
 }
 
 /** The saved draft, or an empty one when there is none, it is invalid or storage fails. */
@@ -25,6 +26,7 @@ export function loadDraft(): ConversationDraft {
     const value = JSON.parse(raw) as Partial<ConversationDraft>
     return {
       projectId: typeof value.projectId === 'number' ? value.projectId : null,
+      groupId: typeof value.groupId === 'number' ? value.groupId : null,
       title: typeof value.title === 'string' ? value.title : '',
       prompt: typeof value.prompt === 'string' ? value.prompt : '',
       model: typeof value.model === 'string' ? value.model : null,

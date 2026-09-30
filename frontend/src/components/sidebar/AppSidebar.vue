@@ -38,6 +38,11 @@ const activeProjectId = computed<number | null>(() => {
   return null
 })
 const currentProjectId = computed(() => activeProjectId.value)
+// The group of the open conversation, so a new one starts next to it.
+const currentGroupId = computed<number | null>(() => {
+  if (route.name !== 'session') return null
+  return sessions.find(String(route.params.id))?.group_id ?? null
+})
 const itemClass = (active: boolean) => [
   'flex min-h-10 items-center gap-2.5 rounded-lg px-3 no-underline hover:bg-card',
   active ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg',
@@ -52,7 +57,7 @@ const itemClass = (active: boolean) => [
     </RouterLink>
 
     <div class="flex flex-col gap-0.5">
-      <button type="button" data-test="nav-new" :class="itemClass(false)" class="w-full text-left" @click="newConversation.open(currentProjectId)">
+      <button type="button" data-test="nav-new" :class="itemClass(false)" class="w-full text-left" @click="newConversation.open(currentProjectId, currentGroupId)">
         <span aria-hidden="true">＋</span><span class="grow">Nova conversa</span><kbd class="font-mono text-[11px] text-fg-muted">C</kbd>
       </button>
       <SessionSearch />

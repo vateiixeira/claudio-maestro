@@ -6,8 +6,10 @@ import NewConversationModal from '../NewConversationModal.vue'
 import { createAppRouter } from '../../router'
 import { takePendingDraft } from '../../conversation/pendingDrafts'
 import { useNewConversationStore } from '../../stores/newConversation'
+import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
-import { jsonResponse, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { loadDraft } from '../../newConversationDraft'
+import { jsonResponse, makeGroup, makeProject, makeSession, routeFetch } from '../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -36,12 +38,12 @@ function handlers(extra = {}) {
   }
 }
 
-async function openModal(preset: number | null = 2, extra = {}) {
+async function openModal(preset: number | null = 2, extra = {}, presetGroup: number | null = null) {
   const fetch = routeFetch(handlers(extra))
   vi.stubGlobal('fetch', fetch)
   const router = createAppRouter(createMemoryHistory())
   await router.push('/inbox')
-  useNewConversationStore(pinia).open(preset)
+  useNewConversationStore(pinia).open(preset, presetGroup)
   const wrapper = mount(NewConversationModal, { global: { plugins: [pinia, router] }, attachTo: document.body })
   await flushPromises()
   return { wrapper, router, fetch }
@@ -272,5 +274,98 @@ describe('modal de nova conversa: revisão', () => {
     await wrapper.find('[data-test="nc-submit"]').trigger('click')
     await flushPromises()
     expect(fetch.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
+  })
+})
+
+describe('modal de nova conversa: agrupador', () => {
+  function seedGroups() {
+    const groups = useGroupsStore(pinia)
+    groups.groups = [makeGroup({ id: 2, project_id: 1, name: 'Checkout' }), makeGroup({ id: 5, project_id: 2, name: 'Outro' })]
+    groups.loaded = true
+    return groups
+  }
+  const groupValue = (wrapper: Awaited<ReturnType<typeof openModal>>['wrapper']) =>
+    (wrapper.find('[data-test="nc-group"]').element as HTMLSelectElement).value
+
+  const groupText = (wrapper: Awaited<ReturnType<typeof openModal>>['wrapper']) => {
+    const select = wrapper.find('[data-test="nc-group"]').element as HTMLSelectElement
+    return select.selectedOptions[0]?.textContent
+  }
+
+  it('começa no agrupador pedido quando ele é do projeto escolhido', async () => {
+    seedGroups()
+    const { wrapper } = await openModal(1, {}, 2)
+    expect(groupValue(wrapper)).toBe('2')
+    expect(wrapper.find('[data-test="nc-group"]').findAll('option').map((o) => o.text())).toEqual(['Nenhum', 'Checkout'])
+  })
+
+  it('ignora o agrupador pedido de outro projeto', async () => {
+    seedGroups()
+    const { wrapper } = await openModal(1, {}, 5)
+    expect(groupText(wrapper)).toBe('Nenhum')
+  })
+
+  it('não mostra o seletor quando o projeto não tem agrupadores', async () => {
+    const { wrapper } = await openModal(1, {}, null)
+    expect(wrapper.find('[data-test="nc-group"]').exists()).toBe(false)
+  })
+
+  it('trocar o projeto volta o agrupador para Nenhum', async () => {
+    seedGroups()
+    const { wrapper } = await openModal(1, {}, 2)
+    const project = wrapper.find('[data-test="nc-project"]')
+    await project.setValue('2')
+    await project.trigger('change')
+    expect(groupText(wrapper)).toBe('Nenhum')
+  })
+
+  it('cria a sessão dentro do agrupador escolhido', async () => {
+    seedGroups()
+    const { wrapper, fetch } = await openModal(1, { 'POST /api/projects/1/sessions': () => jsonResponse(makeSession({ session_id: 'nova', project_id: 1 }), 201) }, 2)
+    await wrapper.find('[data-test="nc-prompt"]').setValue('Corrija')
+    await wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    const create = fetch.mock.calls.find(([url]) => url === '/api/projects/1/sessions')!
+    expect(JSON.parse(create[1]!.body as string)).toEqual({ group_id: 2 })
+  })
+
+  it('o agrupador fica desabilitado depois de a sessão ser criada', async () => {
+    seedGroups()
+    const { wrapper } = await openModal(1, {
+      'POST /api/projects/1/sessions': () => jsonResponse(makeSession({ session_id: 'nova', project_id: 1 }), 201),
+      'PATCH /api/sessions/nova': () => jsonResponse({ detail: 'falhou' }, 500),
+    }, 2)
+    await wrapper.find('[data-test="nc-title"]').setValue('T')
+    await wrapper.find('[data-test="nc-prompt"]').setValue('Corrija')
+    await wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="nc-group"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('volta para Nenhum quando o agrupador escolhido é removido com o modal aberto', async () => {
+    const groups = seedGroups()
+    groups.groups.push(makeGroup({ id: 6, project_id: 1, name: 'Restante' }))
+    const { wrapper } = await openModal(1, {}, 2)
+    expect(groupValue(wrapper)).toBe('2')
+    groups.groups = groups.groups.filter((g) => g.id !== 2)
+    await flushPromises()
+    expect(groupText(wrapper)).toBe('Nenhum')
+    expect(JSON.parse(localStorage.getItem('vibing:new-conversation')!).groupId).toBeNull()
+  })
+
+  it('guarda o agrupador no rascunho e o restaura ao abrir', async () => {
+    seedGroups()
+    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
+    const { wrapper } = await openModal(null)
+    expect(groupValue(wrapper)).toBe('2')
+  })
+
+  it('loadDraft aceita só número como agrupador', () => {
+    localStorage.setItem('vibing:new-conversation', JSON.stringify({ groupId: 'x' }))
+    expect(loadDraft().groupId).toBeNull()
+    localStorage.setItem('vibing:new-conversation', JSON.stringify({ groupId: 3 }))
+    expect(loadDraft().groupId).toBe(3)
+    localStorage.clear()
+    expect(loadDraft().groupId).toBeNull()
   })
 })

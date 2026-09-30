@@ -6,8 +6,10 @@ import { errorMessage, sendMessage, updateSession } from '../api/http'
 import { type DraftImage, IMAGE_TYPES, attachImages, base64Of, filesFrom, formatSize } from '../conversation/images'
 import { rememberSentImages } from '../conversation/localImages'
 import { setPendingDraft } from '../conversation/pendingDrafts'
+import { sortGroups } from '../groupList'
 import { clearDraft, loadDraft, loadLastProject, saveDraft, saveLastProject, type ConversationDraft } from '../newConversationDraft'
 import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, SELECTABLE_MODES } from '../sessionOptions'
+import { useGroupsStore } from '../stores/groups'
 import { useModelsStore } from '../stores/models'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useProjectsStore } from '../stores/projects'
@@ -18,6 +20,7 @@ const store = useNewConversationStore()
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const models = useModelsStore()
+const groups = useGroupsStore()
 const router = useRouter()
 void models.ensure()
 
@@ -45,16 +48,37 @@ function pickProject() {
   const wanted = [store.presetProjectId, draft.value.projectId, lastProject].find((id) => id != null && ids.includes(id))
   draft.value.projectId = wanted ?? ids[0] ?? null
 }
+// The groups of the chosen project, most recently active first.
+const projectGroups = computed(() =>
+  draft.value.projectId == null ? [] : sortGroups(groups.forProject(draft.value.projectId), sessions.forProject(draft.value.projectId)),
+)
+// The group: the one asked for, else the draft's, when it belongs to the chosen project.
+function pickGroup() {
+  const ids = projectGroups.value.map((g) => g.id)
+  const wanted = [store.presetGroupId, draft.value.groupId].find((id) => id != null && ids.includes(id))
+  draft.value.groupId = wanted ?? null
+}
 onMounted(async () => {
   pickProject()
+  pickGroup()
   await nextTick()
   promptEl.value?.focus()
 })
 watch(draft, (value) => saveDraft(value), { deep: true })
 // Projects that load after the modal opened, or one that becomes unavailable while it is open.
 watch(available, () => {
-  if (!available.value.some((p) => p.id === draft.value.projectId)) pickProject()
+  if (!available.value.some((p) => p.id === draft.value.projectId)) {
+    pickProject()
+    pickGroup()
+  }
 })
+// A group removed while the modal is open.
+watch(
+  () => projectGroups.value.map((g) => g.id),
+  (ids) => {
+    if (groups.loaded && draft.value.groupId != null && !ids.includes(draft.value.groupId)) draft.value.groupId = null
+  },
+)
 
 const modelOptions = computed<MenuOption[]>(() => [
   { value: 'default', label: 'Padrão' },
@@ -126,10 +150,10 @@ async function submit() {
   if (!canSubmit.value) return
   submitting.value = true
   error.value = null
-  const { projectId, title, prompt, model, effort, permissionMode } = draft.value
+  const { projectId, groupId, title, prompt, model, effort, permissionMode } = draft.value
   if (createdId.value === null) {
     try {
-      createdId.value = (await sessions.create(projectId!)).session_id
+      createdId.value = (await sessions.create(projectId!, groupId)).session_id
     } catch (e) {
       error.value = errorMessage(e)
       submitting.value = false
@@ -251,8 +275,15 @@ function onKeydown(event: KeyboardEvent) {
         <div class="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-5 py-4">
           <label class="flex items-center gap-2 text-sm text-fg-muted">
             em
-            <select v-model.number="draft.projectId" data-test="nc-project" :disabled="createdId !== null" :title="createdId !== null ? 'A conversa já foi criada neste projeto.' : undefined" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg">
+            <select v-model.number="draft.projectId" data-test="nc-project" :disabled="createdId !== null" @change="draft.groupId = null" :title="createdId !== null ? 'A conversa já foi criada neste projeto.' : undefined" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg">
               <option v-for="p in available" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+          </label>
+          <label v-if="projectGroups.length" class="flex items-center gap-2 text-sm text-fg-muted">
+            agrupador
+            <select v-model="draft.groupId" data-test="nc-group" aria-label="Agrupador" :disabled="createdId !== null" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg">
+              <option :value="null">Nenhum</option>
+              <option v-for="g in projectGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
             </select>
           </label>
           <input v-model="draft.title" data-test="nc-title" placeholder="Título (opcional)" aria-label="Título (opcional)" maxlength="200" class="h-10 rounded-md border border-line-strong bg-bg px-3 text-base font-semibold text-fg outline-none focus:border-primary" />

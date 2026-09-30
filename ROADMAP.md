@@ -24,7 +24,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
-| 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 6 de 10 |
+| 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 7 de 10 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário.
@@ -248,7 +248,7 @@ O agrupador existe só no banco do backend. O Claude e o CLI não sabem dele, e 
 - [x] Renomear agrupador (2026-09-30)
 - [x] Remover agrupador; as sessões dele voltam a ficar soltas e não são apagadas (2026-09-30)
 - [x] Mover sessão para um agrupador, trocar de agrupador e tirar do agrupador (propriedade em Detalhes) (2026-09-30)
-- [ ] Criar sessão nova já dentro do agrupador de uma sessão aberta
+- [x] Criar sessão nova já dentro do agrupador de uma sessão aberta (2026-09-30)
 - [ ] Menu lateral: cada projeto vira uma árvore recolhível com seus agrupadores e as sessões ativas deles
 - [x] Tela do projeto mostra os agrupadores em cima e as sessões sem agrupador embaixo (2026-09-30)
 - [ ] Etiqueta do agrupador na linha de conversa e filtro por agrupador na tela Conversas

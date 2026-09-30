@@ -4,16 +4,20 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import { ref } from 'vue'
 
-vi.mock('../api/socket', () => ({ useEventSocket: () => ({ status: ref('connected') }) }))
+vi.mock('../api/socket', () => ({ useEventSocket: () => ({ status: ref('connected'), onSession: () => () => {}, onOpen: () => () => {}, onClose: () => () => {} }) }))
 vi.mock('../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
 
 import App from '../App.vue'
 import { createAppRouter } from '../router'
-import { jsonResponse, routeFetch } from '../test/factories'
+import { useNewConversationStore } from '../stores/newConversation'
+import { useSessionsStore } from '../stores/sessions'
+import { jsonResponse, makeSession, routeFetch } from '../test/factories'
 
 enableAutoUnmount(afterEach)
+let pinia: ReturnType<typeof createPinia>
 beforeEach(() => {
-  setActivePinia(createPinia())
+  pinia = createPinia()
+  setActivePinia(pinia)
   vi.stubGlobal('fetch', routeFetch({ 'GET /api/layout': () => jsonResponse({}) }))
 })
 afterEach(() => vi.unstubAllGlobals())
@@ -29,5 +33,19 @@ describe('estrutura do app', () => {
     // `relative` gives absolutely positioned children (sr-only) a container inside the
     // scroller; without it they enlarge the whole document and the window scrolls too.
     expect(main.classes()).toEqual(expect.arrayContaining(['relative', 'overflow-y-auto']))
+  })
+
+  it('o atalho C numa conversa abre o modal no projeto e no agrupador dela', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', project_id: 1, group_id: 4 })])
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1')
+    mount(App, { global: { plugins: [pinia, router] }, attachTo: document.body })
+    await flushPromises()
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }))
+    const store = useNewConversationStore(pinia)
+    expect(store.isOpen).toBe(true)
+    expect(store.presetProjectId).toBe(1)
+    expect(store.presetGroupId).toBe(4)
   })
 })
