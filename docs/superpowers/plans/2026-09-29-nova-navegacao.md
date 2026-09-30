@@ -92,7 +92,7 @@ Situações que a spec implica e que um uso real vai encontrar; cada uma tem tes
 - Produz: campos `finished_at: int | None`, `last_action: str | None`, `pending_kind: "tool" | "question" | "plan" | None` em todo resumo de sessão (listagens, PATCH, `session.updated`).
 - Produz: `sessions.last_action_text(name: str, tool_input: dict[str, Any]) -> str`.
 
-- [ ] **Passo 1: escrever os testes que falham**
+- [x] **Passo 1: escrever os testes que falham**
 
 Criar `backend/tests/test_navigation_summary.py`:
 
@@ -289,12 +289,12 @@ def test_session_out_has_navigation_fields(api, home):
     assert listed["pending_kind"] is None
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_navigation_summary.py backend/tests/test_multisession_api.py::test_session_out_has_navigation_fields -q`
 Expected: FAIL (`ImportError: cannot import name 'last_action_text'` e `KeyError: 'finished_at'`).
 
-- [ ] **Passo 3: migração**
+- [x] **Passo 3: migração**
 
 Em `backend/vibing/db.py`, acrescentar ao fim de `MIGRATIONS` (depois da migração 3):
 
@@ -306,7 +306,7 @@ Em `backend/vibing/db.py`, acrescentar ao fim de `MIGRATIONS` (depois da migraç
     ],
 ```
 
-- [ ] **Passo 4: registro, colunas e texto da última ação**
+- [x] **Passo 4: registro, colunas e texto da última ação**
 
 Em `backend/vibing/sessions.py`:
 
@@ -355,7 +355,7 @@ def last_action_text(name: str, tool_input: dict[str, Any]) -> str:
     return text
 ```
 
-- [ ] **Passo 5: `describe` com os campos novos**
+- [x] **Passo 5: `describe` com os campos novos**
 
 Em `describe(...)`, acrescentar os parâmetros depois de `pending_permission`:
 
@@ -373,7 +373,7 @@ e no dicionário devolvido, depois de `"pending_permission": pending_permission,
 
 (`finished_at` já entra pelo `asdict(record)`.)
 
-- [ ] **Passo 6: `ActiveSession` guarda a última ação e o tipo do pedido**
+- [x] **Passo 6: `ActiveSession` guarda a última ação e o tipo do pedido**
 
 1. Em `ActiveSession.__init__`, depois de `self.model_resolved: str | None = None`:
 
@@ -435,7 +435,7 @@ e acrescentar o método (perto de `_touch`):
             self.emit_updated()
 ```
 
-- [ ] **Passo 7: o manager passa os campos e grava `finished_at`**
+- [x] **Passo 7: o manager passa os campos e grava `finished_at`**
 
 1. Trocar `SessionManager._extras` por:
 
@@ -463,7 +463,7 @@ e acrescentar o método (perto de `_touch`):
             changes["finished_at"] = _now() if changes["finished"] else None
 ```
 
-- [ ] **Passo 8: `SessionOut` com os campos novos**
+- [x] **Passo 8: `SessionOut` com os campos novos**
 
 Em `backend/vibing/api/sessions.py`, no fim de `SessionOut`:
 
@@ -476,7 +476,7 @@ Em `backend/vibing/api/sessions.py`, no fim de `SessionOut`:
     pending_kind: Literal["tool", "question", "plan"] | None = None
 ```
 
-- [ ] **Passo 9: rodar e ver passar**
+- [x] **Passo 9: rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_navigation_summary.py backend/tests/test_multisession_api.py -q`
 Expected: PASS.
@@ -484,7 +484,7 @@ Expected: PASS.
 Run: `uv run pytest -q`
 Expected: toda a suíte passa. Se `test_db.py` comparar o número de migrações com um valor fixo, ele já usa `db.SCHEMA_VERSION` e continua passando.
 
-- [ ] **Passo 10: commit (sessão principal, depois do reviewer)**
+- [x] **Passo 10: commit (sessão principal, depois do reviewer)**
 
 ```bash
 git add backend/vibing/db.py backend/vibing/sessions.py backend/vibing/api/sessions.py backend/tests/test_navigation_summary.py backend/tests/test_multisession_api.py
@@ -512,7 +512,7 @@ git commit -m "[Feat] Incluir última ação, tipo do pedido e data de finaliza�
 - Produz: `activity.message_days(path: Path) -> frozenset[date]`, `activity.ActivityReader(db_path, session_file=None, clock=time.time).read(days: int)`.
 - Produz: `create_app(..., session_file=...)` para testes.
 
-- [ ] **Passo 1: escrever os testes que falham**
+- [x] **Passo 1: escrever os testes que falham**
 
 Criar `backend/tests/test_navigation_api.py`:
 
@@ -741,12 +741,12 @@ def test_seen_many_requires_the_vibing_header(home, data_dir):
         assert c.post("/api/sessions/seen", json={"session_ids": []}).status_code in (400, 403)
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_navigation_api.py -q`
 Expected: FAIL (`ModuleNotFoundError: No module named 'vibing.activity'`).
 
-- [ ] **Passo 3: `sdk_session_file` e conftest**
+- [x] **Passo 3: `sdk_session_file` e conftest**
 
 Em `backend/vibing/history.py`, logo depois de `_session_file`:
 
@@ -762,7 +762,7 @@ Em `backend/tests/conftest.py`, dentro de `no_real_sdk_history`, junto dos outro
     monkeypatch.setattr("vibing.history.sdk_session_file", lambda session_id, directory: None)
 ```
 
-- [ ] **Passo 4: leitor de atividade**
+- [x] **Passo 4: leitor de atividade**
 
 Criar `backend/vibing/activity.py`:
 
@@ -881,7 +881,7 @@ class ActivityReader:
         ]
 ```
 
-- [ ] **Passo 5: rota de atividade e registro**
+- [x] **Passo 5: rota de atividade e registro**
 
 Criar `backend/vibing/api/activity.py`:
 
@@ -915,7 +915,7 @@ Em `backend/vibing/app.py`:
         app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
 ```
 
-- [ ] **Passo 6: marcar várias como lidas**
+- [x] **Passo 6: marcar várias como lidas**
 
 Em `backend/vibing/sessions.py`, depois de `mark_seen`:
 
@@ -954,7 +954,7 @@ async def mark_many_seen(body: SeenManyIn, manager: ManagerDep) -> dict[str, int
     return {"updated": await manager.mark_seen_many(body.session_ids)}
 ```
 
-- [ ] **Passo 7: rodar e ver passar**
+- [x] **Passo 7: rodar e ver passar**
 
 Run: `uv run pytest backend/tests/test_navigation_api.py -q`
 Expected: PASS. Se `test_seen_many_requires_the_vibing_header` receber outro código, conferir em `backend/vibing/security.py` qual status o middleware usa e ajustar a asserção para esse valor exato.
@@ -962,7 +962,7 @@ Expected: PASS. Se `test_seen_many_requires_the_vibing_header` receber outro có
 Run: `uv run pytest -q`
 Expected: toda a suíte passa.
 
-- [ ] **Passo 8: commit**
+- [x] **Passo 8: commit**
 
 ```bash
 git add backend/vibing/sessions.py backend/vibing/api/sessions.py backend/vibing/history.py backend/vibing/activity.py backend/vibing/api/activity.py backend/vibing/api/__init__.py backend/vibing/app.py backend/tests/conftest.py backend/tests/test_navigation_api.py
@@ -988,7 +988,7 @@ git commit -m "[Feat] Adicionar rotas de marcar lidas em lote e de atividade por
 - Produz (`conversationList.ts`): `waitingReason(s: Session): string | null`, `type InboxTab = 'pede-voce' | 'nao-lidas' | 'em-execucao' | 'todas'`, `INBOX_TABS`, `isInboxTab(v: unknown): v is InboxTab`, `inInbox(s: Session, tab: InboxTab): boolean`, `type DateLabel = 'Hoje' | 'Ontem' | 'Esta semana' | 'Antes'`, `dateLabel(seconds: number, now: Date, withWeek: boolean): DateLabel`, `groupByDate(list: Session[], now: Date, withWeek: boolean): { label: DateLabel; sessions: Session[] }[]`.
 - Produz: `ConversationRow.vue` com props `{ session: Session; variant?: 'inbox' | 'list' | 'compact' }` (padrão `'list'`), evento `error: [message: string]`; `data-test`: `conversation-row`, `row-link`, `unread-dot`, `waiting-reason`, `row-project`, `row-branch`, `row-finish`, `row-reopen`, `row-mark-read`.
 
-- [ ] **Passo 1: testes das regras (falham)**
+- [x] **Passo 1: testes das regras (falham)**
 
 Criar `frontend/src/__tests__/conversationList.spec.ts`:
 
@@ -1087,12 +1087,12 @@ Acrescentar em `frontend/src/stores/__tests__/sessions.spec.ts` (dentro do `desc
   })
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/__tests__/conversationList.spec.ts src/stores/__tests__/sessions.spec.ts`
 Expected: FAIL (módulo `conversationList` inexistente; `pending_kind` continua `'tool'`).
 
-- [ ] **Passo 3: tipos, http, token e store**
+- [x] **Passo 3: tipos, http, token e store**
 
 Em `frontend/src/types/api.ts`, no fim de `Session`:
 
@@ -1147,7 +1147,7 @@ Em `frontend/src/stores/sessions.ts`, no ramo `if (event.type === 'session.state
       }
 ```
 
-- [ ] **Passo 4: regras de lista**
+- [x] **Passo 4: regras de lista**
 
 Criar `frontend/src/conversationList.ts`:
 
@@ -1221,12 +1221,12 @@ export function groupByDate(list: Session[], now: Date, withWeek: boolean): { la
 }
 ```
 
-- [ ] **Passo 5: rodar os testes das regras e ver passar**
+- [x] **Passo 5: rodar os testes das regras e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/__tests__/conversationList.spec.ts src/stores/__tests__/sessions.spec.ts`
 Expected: PASS.
 
-- [ ] **Passo 6: testes da linha (falham)**
+- [x] **Passo 6: testes da linha (falham)**
 
 Criar `frontend/src/components/conversation/__tests__/ConversationRow.spec.ts`:
 
@@ -1327,12 +1327,12 @@ describe('linha de conversa', () => {
 })
 ```
 
-- [ ] **Passo 7: rodar e ver falhar**
+- [x] **Passo 7: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/conversation/__tests__/ConversationRow.spec.ts`
 Expected: FAIL (componente inexistente).
 
-- [ ] **Passo 8: componente**
+- [x] **Passo 8: componente**
 
 Criar `frontend/src/components/conversation/ConversationRow.vue`:
 
@@ -1444,7 +1444,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
 
 Se `bg-info` não gerar classe, conferir como os outros tokens estão declarados em `style.css` (bloco `@theme`) e declarar `--color-info` no mesmo bloco.
 
-- [ ] **Passo 9: rodar e ver passar**
+- [x] **Passo 9: rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/conversation/__tests__/ConversationRow.spec.ts`
 Expected: PASS.
@@ -1452,7 +1452,7 @@ Expected: PASS.
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa; build sem erros de tipo.
 
-- [ ] **Passo 10: commit**
+- [x] **Passo 10: commit**
 
 ```bash
 git add frontend/src/style.css frontend/src/types/api.ts frontend/src/api/http.ts frontend/src/stores/sessions.ts frontend/src/conversationList.ts frontend/src/components/conversation/ConversationRow.vue frontend/src/__tests__/conversationList.spec.ts frontend/src/components/conversation/__tests__/ConversationRow.spec.ts frontend/src/stores/__tests__/sessions.spec.ts
@@ -1474,7 +1474,7 @@ Refatoração sem mudança de comportamento: tudo que o `SessionColumn` mostra a
 - Produz: `ConversationThread.vue` com props `{ id: string; visible?: boolean }` (padrão `true`), eventos `missing: []` (snapshot 404). Ele carrega a conversa (`conversations.load`), assina os eventos da sessão, marca como vista, mostra a barra de turno, turnos, pedidos, erro, faixa de subagentes e o compositor. O conteúdo rolável fica numa coluna centralizada de até 760 px (`mx-auto w-full max-w-[760px]`); a barra de turno e o compositor usam a mesma largura.
 - `SessionColumn` passa a ser: `<section>` com o cabeçalho atual + `<ConversationThread :id :visible @missing="emit('missing')" />`.
 
-- [ ] **Passo 1: teste do componente novo (falha)**
+- [x] **Passo 1: teste do componente novo (falha)**
 
 Criar `frontend/src/components/conversation/__tests__/ConversationThread.spec.ts`:
 
@@ -1525,12 +1525,12 @@ describe('corpo da conversa', () => {
 
 Se o item `user` do snapshot precisar de outros campos, copiar o formato de um item `user` usado em `components/session/__tests__/SessionColumn.spec.ts`.
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/conversation/__tests__/ConversationThread.spec.ts`
 Expected: FAIL (componente inexistente).
 
-- [ ] **Passo 3: mover o código**
+- [x] **Passo 3: mover o código**
 
 1. Criar `ConversationThread.vue` copiando de `SessionColumn.vue`:
    - Do `<script setup>`: todos os imports e todo o código **exceto** o que só o cabeçalho usa: `stateLabel`, `headerError`, `toggling`, `toggleFinished`, `editing`, `titleDraft`, `titleInput`, `startRename`, `cancelRename`, `saveRename`, `isFinished`, `listed`, `repos`, `git`, o `watch` de `git.ensure`, e os imports `RouterLink`, `SessionStateIcon`, `BranchLabel`, `repoLabel`, `useGitStore`, `deriveDisplay`, `displayStateLabels`, `useSessionsStore`. Mantém `project` e `unavailableReason` (o compositor usa).
@@ -1551,7 +1551,7 @@ Expected: FAIL (componente inexistente).
 
    `SessionColumn` mantém o `<section>` externo, o cabeçalho e o estado sem conversa com "Fechar coluna" (mostrado quando `conv` não existe e há `loadError`; para saber disso, o `SessionColumn` lê `conversations.get(id)`). Os atributos `@focusin`, `@dragover` e `@drop` saem da `section` do `SessionColumn` (agora estão no thread).
 
-- [ ] **Passo 4: rodar e ver passar**
+- [x] **Passo 4: rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/conversation/__tests__/ConversationThread.spec.ts src/components/session`
 Expected: PASS, incluindo os testes antigos de `SessionColumn`, `SessionTurns`, `SessionSubagents` e `SessionColumnHeader`, sem mudar asserções. Se algum teste antigo procurar um elemento pelo `section` do `SessionColumn` (por exemplo, disparar `focusin` na `section`), ajustar o seletor para o elemento do thread e explicar no relatório; não alterar o que ele verifica.
@@ -1559,7 +1559,7 @@ Expected: PASS, incluindo os testes antigos de `SessionColumn`, `SessionTurns`, 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa.
 
-- [ ] **Passo 5: commit**
+- [x] **Passo 5: commit**
 
 ```bash
 git add frontend/src/components/conversation/ConversationThread.vue frontend/src/components/session/SessionColumn.vue frontend/src/components/conversation/__tests__/ConversationThread.spec.ts
@@ -1587,7 +1587,7 @@ git commit -m "[Refactor] Extrair corpo da conversa para ConversationThread"
 - Produz: `DetailsPanel.vue` props `{ sessionId: string; drawer?: boolean }`, evento `close: []` (usado só como gaveta). O ⤢ (largo/normal) é estado local do painel; lembrar se o painel está aberto ou fechado é papel da página (Tarefa 6).
 - `data-test`: `details-panel`, `details-properties`, `prop-state`, `prop-project`, `prop-branch`, `prop-context`, `prop-turns`, `prop-created`, `prop-activity`, `details-changes`, `changed-file`, `changes-error`, `changes-retry`, `details-diff`, `diff-back`, `diff-expand`, `open-file-editor`.
 
-- [ ] **Passo 1: testes (falham)**
+- [x] **Passo 1: testes (falham)**
 
 Criar `frontend/src/components/details/__tests__/DetailsPanel.spec.ts`:
 
@@ -1719,12 +1719,12 @@ describe('painel Detalhes', () => {
 
 Se o formato de `ToolItem` exigir outros campos, copiar um item `tool` de `components/git/__tests__/ChangesPanel.spec.ts`.
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/details`
 Expected: FAIL (componentes inexistentes).
 
-- [ ] **Passo 3: carga da lista de alterações**
+- [x] **Passo 3: carga da lista de alterações**
 
 Criar `frontend/src/conversation/sessionChanges.ts`:
 
@@ -1790,7 +1790,7 @@ export function useSessionChanges(sessionId: () => string) {
 }
 ```
 
-- [ ] **Passo 4: lista e diff de arquivo**
+- [x] **Passo 4: lista e diff de arquivo**
 
 Criar `frontend/src/components/details/ChangesList.vue`:
 
@@ -1927,7 +1927,7 @@ onBeforeUnmount(() => {
 
 Se `DiffLine` não for exportado de `conversation/diff`, importar o tipo do mesmo lugar que o `ChangesPanel` importa.
 
-- [ ] **Passo 5: painel**
+- [x] **Passo 5: painel**
 
 Criar `frontend/src/components/details/DetailsPanel.vue`:
 
@@ -2105,7 +2105,7 @@ watch(editOpen, (open) => { if (open) selectedFile.value = null })
 </template>
 ```
 
-- [ ] **Passo 6: rodar e ver passar**
+- [x] **Passo 6: rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/details`
 Expected: PASS.
@@ -2113,7 +2113,7 @@ Expected: PASS.
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa.
 
-- [ ] **Passo 7: commit**
+- [x] **Passo 7: commit**
 
 ```bash
 git add frontend/src/conversation/sessionChanges.ts frontend/src/components/details
@@ -2140,7 +2140,7 @@ git commit -m "[Feat] Adicionar painel Detalhes com propriedades, alterações e
 - Produz: `useMediaQuery(query: string): Ref<boolean>`.
 - `data-test`: `breadcrumb`, `toggle-details`, `conversation-title`, `title-input`, `toggle-finished`, `header-menu`, `menu-rename`, `menu-editor`, `menu-copy-id`, `header-error`, `external-activity`, `conversation-missing`, `details-drawer`.
 
-- [ ] **Passo 1: testes (falham)**
+- [x] **Passo 1: testes (falham)**
 
 Criar `frontend/src/views/__tests__/ConversationView.spec.ts`:
 
@@ -2276,12 +2276,12 @@ describe('página da conversa', () => {
 
 Em `frontend/src/components/session/__tests__/SessionControls.spec.ts`, localizar o teste que espera ver "Contexto N%" com N abaixo de 80 e trocar a expectativa: com 42% o `[data-test="context-usage"]` **não** existe; acrescentar um caso com 85% em que ele existe e mostra "Contexto 85%".
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/views/__tests__/ConversationView.spec.ts src/components/session/__tests__/SessionControls.spec.ts`
 Expected: FAIL.
 
-- [ ] **Passo 3: preferências e media query**
+- [x] **Passo 3: preferências e media query**
 
 Criar `frontend/src/detailsPanelPref.ts`:
 
@@ -2322,7 +2322,7 @@ export function useMediaQuery(query: string): Ref<boolean> {
 }
 ```
 
-- [ ] **Passo 4: cabeçalho**
+- [x] **Passo 4: cabeçalho**
 
 Criar `frontend/src/components/conversation/ConversationHeader.vue` (renomear e finalizar vêm do cabeçalho do `SessionColumn`):
 
@@ -2494,7 +2494,7 @@ async function openProject() {
 </template>
 ```
 
-- [ ] **Passo 5: página**
+- [x] **Passo 5: página**
 
 Criar `frontend/src/views/ConversationView.vue`:
 
@@ -2593,7 +2593,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
 </template>
 ```
 
-- [ ] **Passo 6: rota e contexto no compositor**
+- [x] **Passo 6: rota e contexto no compositor**
 
 Em `frontend/src/router/index.ts`, importar `ConversationView` e trocar a rota `session`:
 
@@ -2603,7 +2603,7 @@ Em `frontend/src/router/index.ts`, importar `ConversationView` e trocar a rota `
 
 Em `frontend/src/components/session/SessionControls.vue`, no `span` com `data-test="context-usage"` e no `span` `context-usage-sr`, trocar `v-if="context"` por `v-if="context && contextWarn"`.
 
-- [ ] **Passo 7: rodar e ver passar**
+- [x] **Passo 7: rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/views/__tests__/ConversationView.spec.ts src/components/session/__tests__/SessionControls.spec.ts`
 Expected: PASS.
@@ -2611,7 +2611,7 @@ Expected: PASS.
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa. `WorkspaceView.spec.ts` pode ter casos que navegam para `/sessions/:id` esperando colunas; esses casos agora falham porque a rota mudou. Remover esses casos (a tela de colunas sai de vez na Tarefa 12) e listar no relatório quais foram.
 
-- [ ] **Passo 8: commit**
+- [x] **Passo 8: commit**
 
 ```bash
 git add frontend/src/detailsPanelPref.ts frontend/src/useMediaQuery.ts frontend/src/components/conversation/ConversationHeader.vue frontend/src/views/ConversationView.vue frontend/src/router/index.ts frontend/src/components/session/SessionControls.vue frontend/src/views/__tests__/ConversationView.spec.ts frontend/src/components/session/__tests__/SessionControls.spec.ts frontend/src/views/__tests__/WorkspaceView.spec.ts
@@ -2633,7 +2633,7 @@ git commit -m "[Feat] Abrir conversa em página única com painel Detalhes"
 - Produz: `documentTitle(waiting: number): string` em `frontend/src/documentTitle.ts` (`'Vini7 Vibing'` ou `'(N) Vini7 Vibing'`).
 - `data-test` do menu: `nav-new`, `nav-dashboard`, `nav-inbox`, `inbox-count`, `nav-conversations`, `project`, `project-name`, `project-color`, `project-branch`, `project-waiting`, `new-project`, `recent`, `preferences`. O `SessionSearch` continua no menu, logo abaixo de "Nova conversa".
 
-- [ ] **Passo 1: testes (falham)**
+- [x] **Passo 1: testes (falham)**
 
 Reescrever `frontend/src/components/sidebar/__tests__/AppSidebar.spec.ts`:
 
@@ -2730,12 +2730,12 @@ describe('título da aba', () => {
 })
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/sidebar src/__tests__/documentTitle.spec.ts`
 Expected: FAIL.
 
-- [ ] **Passo 3: store do modal e título**
+- [x] **Passo 3: store do modal e título**
 
 Criar `frontend/src/stores/newConversation.ts`:
 
@@ -2784,7 +2784,7 @@ watchEffect(() => { document.title = documentTitle(waiting.value) })
 
 (juntar com o import de `vue` que já existe).
 
-- [ ] **Passo 4: menu**
+- [x] **Passo 4: menu**
 
 Reescrever `frontend/src/components/sidebar/AppSidebar.vue`:
 
@@ -2909,7 +2909,7 @@ Ajustar a rota `project` e as rotas novas em `frontend/src/router/index.ts`, acr
 
 (As Tarefas 8 e 10 trocam esses componentes.)
 
-- [ ] **Passo 5: rodar e ver passar**
+- [x] **Passo 5: rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/sidebar src/__tests__/documentTitle.spec.ts`
 Expected: PASS.
@@ -2917,7 +2917,7 @@ Expected: PASS.
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa.
 
-- [ ] **Passo 6: commit**
+- [x] **Passo 6: commit**
 
 ```bash
 git add frontend/src/components/sidebar frontend/src/App.vue frontend/src/stores/newConversation.ts frontend/src/documentTitle.ts frontend/src/__tests__/documentTitle.spec.ts frontend/src/router/index.ts
@@ -2940,7 +2940,7 @@ git commit -m "[Feat] Trocar menu lateral por entradas fixas, projetos e recente
 - URL da Inbox: `?aba=`; URL de Conversas: `?projeto=<id>&estado=ativas|finalizadas|todas&busca=<texto>`.
 - `data-test`: `inbox-tab` (com `aria-selected`), `inbox-search`, `inbox-project`, `mark-all-read`, `inbox-error`, `date-group`, `empty`, `first-steps`, `conversations-new`, `conversations-search`, `conversations-project`, `conversations-state`, `show-more`.
 
-- [ ] **Passo 1: testes (falham)**
+- [x] **Passo 1: testes (falham)**
 
 Criar `frontend/src/views/__tests__/InboxView.spec.ts`:
 
@@ -3146,16 +3146,16 @@ describe('Conversas', () => {
 })
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/views/__tests__/InboxView.spec.ts src/views/__tests__/ConversationsView.spec.ts`
 Expected: FAIL.
 
-- [ ] **Passo 3: primeiros passos**
+- [x] **Passo 3: primeiros passos**
 
 Criar `frontend/src/components/FirstSteps.vue` com o bloco `v-if="projects.loaded && projects.projects.length === 0"` do `HomeView.vue` (lista numerada e botão "Criar o primeiro projeto"), com `data-test="first-steps"` na raiz e o passo 2 dizendo "Abra uma nova conversa nesse projeto." O componente não verifica se há projetos; quem usa decide.
 
-- [ ] **Passo 4: Inbox**
+- [x] **Passo 4: Inbox**
 
 Criar `frontend/src/views/InboxView.vue`:
 
@@ -3255,7 +3255,7 @@ async function markAll() {
 
 O rótulo do grupo está em maiúsculas só pelo CSS; o texto continua "Hoje", como o teste espera.
 
-- [ ] **Passo 5: Conversas**
+- [x] **Passo 5: Conversas**
 
 Criar `frontend/src/views/ConversationsView.vue`:
 
@@ -3341,7 +3341,7 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
 
 Em `frontend/src/router/index.ts`: importar `InboxView` e `ConversationsView`; a rota `inbox` passa a `component: InboxView` e a rota `sessions` passa a `component: ConversationsView` (substituindo `AllSessionsView`).
 
-- [ ] **Passo 6: rodar e ver passar**
+- [x] **Passo 6: rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/views/__tests__/InboxView.spec.ts src/views/__tests__/ConversationsView.spec.ts`
 Expected: PASS.
@@ -3349,7 +3349,7 @@ Expected: PASS.
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa. `AllSessionsView.spec.ts` monta o componente direto e continua passando; ele é removido na Tarefa 12.
 
-- [ ] **Passo 7: commit**
+- [x] **Passo 7: commit**
 
 ```bash
 git add frontend/src/components/FirstSteps.vue frontend/src/views/InboxView.vue frontend/src/views/ConversationsView.vue frontend/src/router/index.ts frontend/src/views/__tests__/InboxView.spec.ts frontend/src/views/__tests__/ConversationsView.spec.ts
@@ -3379,7 +3379,7 @@ git commit -m "[Feat] Adicionar telas de Inbox e Conversas"
 - Produz: `shouldOpenNewConversation(event: KeyboardEvent): boolean` em `frontend/src/newConversationShortcut.ts`.
 - `data-test`: `new-conversation-modal`, `nc-project`, `nc-title`, `nc-prompt`, `nc-submit`, `nc-discard`, `nc-close`, `nc-error`, `nc-no-projects`.
 
-- [ ] **Passo 1: testes (falham)**
+- [x] **Passo 1: testes (falham)**
 
 Criar `frontend/src/components/__tests__/NewConversationModal.spec.ts`:
 
@@ -3582,12 +3582,12 @@ describe('atalho C', () => {
 
 Em `frontend/src/views/__tests__/ProjectView.spec.ts`, trocar o teste de "Nova sessão" (que esperava `POST /api/projects/1/sessions` e navegação) por: clicar em "Nova sessão" deixa `useNewConversationStore().isOpen` verdadeiro com `presetProjectId` igual ao id do projeto, sem chamada de criação.
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/__tests__/NewConversationModal.spec.ts src/__tests__/newConversationShortcut.spec.ts src/views/__tests__/ProjectView.spec.ts`
 Expected: FAIL.
 
-- [ ] **Passo 3: módulos de apoio**
+- [x] **Passo 3: módulos de apoio**
 
 Criar `frontend/src/sessionOptions.ts` movendo de `SessionControls.vue` as constantes `EFFORT_LABELS`, `ALL_EFFORTS`, `MODE_LABELS` e a função `modeLabel`, exportadas; em `SessionControls.vue`, importar de `../../sessionOptions` e apagar as cópias locais.
 
@@ -3697,7 +3697,7 @@ export function shouldOpenNewConversation(event: KeyboardEvent): boolean {
 }
 ```
 
-- [ ] **Passo 4: modal**
+- [x] **Passo 4: modal**
 
 Criar `frontend/src/components/NewConversationModal.vue`:
 
@@ -3895,7 +3895,7 @@ function close() {
 </template>
 ```
 
-- [ ] **Passo 5: montar o modal, atalho e página do projeto**
+- [x] **Passo 5: montar o modal, atalho e página do projeto**
 
 Em `frontend/src/App.vue`:
 
@@ -3940,7 +3940,7 @@ function newSession(): void {
 
 apagando `creating` se ficar sem uso (e o `:disabled="creating"` do botão).
 
-- [ ] **Passo 6: rodar e ver passar**
+- [x] **Passo 6: rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/__tests__/NewConversationModal.spec.ts src/__tests__/newConversationShortcut.spec.ts src/views/__tests__/ProjectView.spec.ts src/components/session/__tests__/SessionControls.spec.ts`
 Expected: PASS.
@@ -3948,7 +3948,7 @@ Expected: PASS.
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa.
 
-- [ ] **Passo 7: commit**
+- [x] **Passo 7: commit**
 
 ```bash
 git add frontend/src/sessionOptions.ts frontend/src/components/session/SessionControls.vue frontend/src/conversation/pendingDrafts.ts frontend/src/components/conversation/MessageComposer.vue frontend/src/newConversationDraft.ts frontend/src/newConversationShortcut.ts frontend/src/components/NewConversationModal.vue frontend/src/App.vue frontend/src/views/ProjectView.vue frontend/src/components/__tests__/NewConversationModal.spec.ts frontend/src/__tests__/newConversationShortcut.spec.ts frontend/src/views/__tests__/ProjectView.spec.ts
@@ -3972,7 +3972,7 @@ git commit -m "[Feat] Adicionar modal de nova conversa com rascunho e atalho C"
 - Produz: `ActivityChart.vue` props `{ data: ActivityDay[]; projects: Project[]; days: number; today: Date }`.
 - `data-test`: `now-card`, `now-empty`, `now-allow`, `now-deny`, `stat-running`, `stat-waiting`, `stat-finished-today`, `stat-projects-changes`, `activity-chart`, `activity-bar`, `activity-empty`, `activity-error`, `activity-retry`, `recent-list`, `projects-list`.
 
-- [ ] **Passo 1: testes (falham)**
+- [x] **Passo 1: testes (falham)**
 
 Criar `frontend/src/components/dashboard/__tests__/ActivityChart.spec.ts`:
 
@@ -4110,12 +4110,12 @@ describe('Dashboard', () => {
 })
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/dashboard src/views/__tests__/DashboardView.spec.ts`
 Expected: FAIL.
 
-- [ ] **Passo 3: decisão fora da conversa**
+- [x] **Passo 3: decisão fora da conversa**
 
 Criar `frontend/src/conversation/pendingDecision.ts`:
 
@@ -4154,7 +4154,7 @@ export function usePendingDecision(session: () => Session) {
 }
 ```
 
-- [ ] **Passo 4: gráfico**
+- [x] **Passo 4: gráfico**
 
 Criar `frontend/src/components/dashboard/ActivityChart.vue`:
 
@@ -4245,7 +4245,7 @@ function stack(column: { parts: ActivityDay[] }) {
 </template>
 ```
 
-- [ ] **Passo 5: página**
+- [x] **Passo 5: página**
 
 Criar `frontend/src/views/DashboardView.vue`:
 
@@ -4392,7 +4392,7 @@ const NowCard = defineComponent({
 
 Em `frontend/src/router/index.ts`, importar `DashboardView` e trocar o componente da rota `dashboard`.
 
-- [ ] **Passo 6: rodar e ver passar**
+- [x] **Passo 6: rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/components/dashboard src/views/__tests__/DashboardView.spec.ts`
 Expected: PASS.
@@ -4400,7 +4400,7 @@ Expected: PASS.
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa.
 
-- [ ] **Passo 7: commit**
+- [x] **Passo 7: commit**
 
 ```bash
 git add frontend/src/conversation/pendingDecision.ts frontend/src/components/dashboard frontend/src/views/DashboardView.vue frontend/src/router/index.ts frontend/src/views/__tests__/DashboardView.spec.ts
@@ -4419,7 +4419,7 @@ git commit -m "[Feat] Adicionar Dashboard com conversas ativas, números e ativi
 - Consome: `ConversationRow`, `groupByDate` (Tarefa 3).
 - A lista do projeto passa a ser igual à de Conversas já filtrada: todas as conversas do projeto por última atividade, agrupadas em Hoje, Ontem, Esta semana e Antes, com `ConversationRow` (variant `list`). Sai o agrupamento por estado (`SessionGroup`) e a âncora `#finalizadas`.
 
-- [ ] **Passo 1: ajustar os testes (falham)**
+- [x] **Passo 1: ajustar os testes (falham)**
 
 Em `ProjectView.spec.ts` e `ProjectViewStates.spec.ts`, trocar os casos que procuram `[data-test="block-running"]`, `block-waiting`, `block-finished` ou `finished-row` por asserções sobre `[data-test="conversation-row"]` e `[data-test="date-group"]`. Acrescentar:
 
@@ -4439,12 +4439,12 @@ Em `ProjectView.spec.ts` e `ProjectViewStates.spec.ts`, trocar os casos que proc
 
 (usar o nome real do helper de montagem que o arquivo já tem.) Remover o teste de rolagem até `#finalizadas`.
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/views/__tests__/ProjectView.spec.ts src/views/__tests__/ProjectViewStates.spec.ts`
 Expected: FAIL.
 
-- [ ] **Passo 3: trocar a lista**
+- [x] **Passo 3: trocar a lista**
 
 Em `ProjectView.vue`:
 1. Remover os imports de `SessionGroup`, `displayStateLabels` e `DisplayState` se ficarem sem uso; importar `ConversationRow` e `groupByDate`.
@@ -4470,7 +4470,7 @@ const dateGroups = computed(() => groupByDate(projectSessions.value, new Date(),
 
 5. Trocar o texto de lista vazia para: `Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa nesta pasta.`
 
-- [ ] **Passo 4: rodar e ver passar**
+- [x] **Passo 4: rodar e ver passar**
 
 Run: `pnpm --dir frontend exec vitest run src/views/__tests__/ProjectView.spec.ts src/views/__tests__/ProjectViewStates.spec.ts`
 Expected: PASS.
@@ -4478,7 +4478,7 @@ Expected: PASS.
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa.
 
-- [ ] **Passo 5: commit**
+- [x] **Passo 5: commit**
 
 ```bash
 git add frontend/src/views/ProjectView.vue frontend/src/views/__tests__/ProjectView.spec.ts frontend/src/views/__tests__/ProjectViewStates.spec.ts
@@ -4503,7 +4503,7 @@ git commit -m "[UI] Listar conversas do projeto com a linha de conversa"
 - `/` redireciona para `/inbox`. Caminhos desconhecidos continuam indo para `/`.
 - `useLayoutStore()` → `{ restored, loadedFromServer, finishedAfterDays, restore }`. Nada mais grava `layout` em `/api/state`.
 
-- [ ] **Passo 1: testes (falham)**
+- [x] **Passo 1: testes (falham)**
 
 Criar `frontend/src/__tests__/router.spec.ts`:
 
@@ -4555,12 +4555,12 @@ Em `stores/__tests__/layout.spec.ts`, remover os casos de colunas, larguras e gr
   })
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/__tests__/router.spec.ts src/stores/__tests__/layout.spec.ts`
 Expected: FAIL (`/` ainda abre o `WorkspaceView`; o store ainda grava).
 
-- [ ] **Passo 3: rotas**
+- [x] **Passo 3: rotas**
 
 Deixar `frontend/src/router/index.ts` assim:
 
@@ -4603,7 +4603,7 @@ export function createAppRouter(history: RouterHistory = createWebHistory()) {
 
 Procurar com `grep -rn "name: 'home'\|to=\"/\"\|push('/')" frontend/src` e trocar referências à rota `home` por `'/inbox'` (por exemplo, o `router.push('/')` depois de remover um projeto pode ficar, porque `/` redireciona).
 
-- [ ] **Passo 4: store `layout` só com preferências**
+- [x] **Passo 4: store `layout` só com preferências**
 
 Reescrever `frontend/src/stores/layout.ts`:
 
@@ -4649,7 +4649,7 @@ export const useLayoutStore = defineStore('layout', () => {
 
 Conferir `PreferencesView.vue`: ele usa `DEFAULT_FINISHED_AFTER_DAYS` e `useLayoutStore().finishedAfterDays`, que continuam existindo.
 
-- [ ] **Passo 5: remover código e testes das colunas**
+- [x] **Passo 5: remover código e testes das colunas**
 
 ```bash
 git rm frontend/src/views/WorkspaceView.vue frontend/src/views/AllSessionsView.vue frontend/src/views/HomeView.vue \
@@ -4670,7 +4670,7 @@ Depois:
 - Antes de apagar `SessionColumn.spec.ts`, conferir se algum caso cobre comportamento do corpo que não aparece em `ConversationThread.spec.ts`, `SessionTurns.spec.ts` ou `SessionSubagents.spec.ts` (por exemplo: arrastar imagem, marcar como vista ao focar, aviso de pasta indisponível, erro da sessão). Mover esses casos para `ConversationThread.spec.ts`, montando `ConversationThread`.
 - `grep -rn "hidden_sessions" frontend/src` — o campo continua no tipo `Project` (o backend manda), mas nada o mostra; manter o tipo.
 
-- [ ] **Passo 6: rodar tudo**
+- [x] **Passo 6: rodar tudo**
 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: tudo passa; build sem avisos de import ausente.
@@ -4678,7 +4678,7 @@ Expected: tudo passa; build sem avisos de import ausente.
 Run: `uv run pytest -q`
 Expected: toda a suíte do backend passa.
 
-- [ ] **Passo 7: conferir no navegador**
+- [x] **Passo 7: conferir no navegador**
 
 Com backend e frontend rodando (`CLAUDE.md`, seção Comandos), abrir `http://localhost:6600` e verificar, sem enviar mensagens:
 1. `/` abre a Inbox.
@@ -4689,7 +4689,7 @@ Com backend e frontend rodando (`CLAUDE.md`, seção Comandos), abrir `http://lo
 
 Relatar o que foi visto; capturas de tela se possível.
 
-- [ ] **Passo 8: commit**
+- [x] **Passo 8: commit**
 
 ```bash
 git add -A frontend/src
