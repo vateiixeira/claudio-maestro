@@ -89,7 +89,7 @@ Item 1 do marco 13 no `ROADMAP.md`.
 **Interfaces:**
 - Produz: `AgentOptions.settings: str | None = None`. Quando não é `None`, `build_sdk_options` passa `settings=<valor>` ao `ClaudeAgentOptions`. O `FakeAgentClient` já guarda `options` inteiro, então os testes leem `client.options.settings`.
 
-- [ ] **Passo 1: escrever os testes que falham.** Em `backend/tests/test_agent_sdk_client.py`, junto de `test_build_options_passes_empty_setting_sources`:
+- [x] **Passo 1: escrever os testes que falham.** Em `backend/tests/test_agent_sdk_client.py`, junto de `test_build_options_passes_empty_setting_sources`:
 
 ```python
 def test_build_options_does_not_set_settings_by_default(tmp_path):
@@ -102,9 +102,9 @@ def test_build_options_passes_settings_json(tmp_path):
     assert sdk.settings == '{"disableAllHooks": true}'
 ```
 
-- [ ] **Passo 2: rodar e ver falhar.** Rode `uv run pytest backend/tests/test_agent_sdk_client.py -q -k settings`. Esperado: `TypeError: AgentOptions.__init__() got an unexpected keyword argument 'settings'`.
+- [x] **Passo 2: rodar e ver falhar.** Rode `uv run pytest backend/tests/test_agent_sdk_client.py -q -k settings`. Esperado: `TypeError: AgentOptions.__init__() got an unexpected keyword argument 'settings'`.
 
-- [ ] **Passo 3: implementar.** Em `AgentOptions`, depois de `setting_sources`:
+- [x] **Passo 3: implementar.** Em `AgentOptions`, depois de `setting_sources`:
 
 ```python
     # JSON with settings that override the loaded ones (e.g. '{"disableAllHooks": true}'
@@ -119,9 +119,9 @@ Em `build_sdk_options`, depois do bloco de `setting_sources`:
         kwargs["settings"] = options.settings
 ```
 
-- [ ] **Passo 4: rodar e ver passar.** Rode `uv run pytest backend/tests/test_agent_sdk_client.py -q` e depois `uv run pytest -q`. Esperado: tudo PASS.
+- [x] **Passo 4: rodar e ver passar.** Rode `uv run pytest backend/tests/test_agent_sdk_client.py -q` e depois `uv run pytest -q`. Esperado: tudo PASS.
 
-- [ ] **Passo 5: commit** (sessão principal, depois da aprovação do `reviewer`). Marque o item 1 do marco 13 no roadmap.
+- [x] **Passo 5: commit** (sessão principal, depois da aprovação do `reviewer`). Marque o item 1 do marco 13 no roadmap.
 
 ```bash
 git add backend/vibing/agent/base.py backend/vibing/agent/sdk_client.py backend/tests/test_agent_sdk_client.py ROADMAP.md

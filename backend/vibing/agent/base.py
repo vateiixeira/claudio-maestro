@@ -52,6 +52,9 @@ class AgentOptions:
     # None: SDK default (user, project and local settings, hooks and plugins load).
     # []: none of them, for throwaway clients that only query the CLI.
     setting_sources: list[str] | None = None
+    # JSON with settings that override the loaded ones (e.g. '{"disableAllHooks": true}'
+    # for throwaway clients that must not run hooks). None: nothing extra.
+    settings: str | None = None
 
 
 @runtime_checkable

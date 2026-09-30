@@ -29,7 +29,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
-| 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Em andamento | 0 de 13 |
+| 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Em andamento | 1 de 13 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e está em andamento junto com o fim do marco 12.
 
@@ -379,7 +379,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/pendenc
 
 - Spec: `docs/superpowers/specs/2026-09-30-comandos-e-mencoes-design.md`
 
-- [ ] `settings` em `AgentOptions` e no cliente do SDK
+- [x] `settings` em `AgentOptions` e no cliente do SDK (2026-09-30)
 - [ ] Catálogo de comandos e rotas `/commands`
 - [ ] Busca de arquivos e rotas `/files`
 - [ ] Funções puras de sugestão (`suggestions.ts`)

@@ -102,6 +102,18 @@ def test_build_options_passes_given_setting_sources(tmp_path):
     assert sdk.setting_sources == ["user"]
 
 
+def test_build_options_does_not_set_settings_by_default(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path))
+
+    assert sdk.settings == ClaudeAgentOptions().settings
+
+
+def test_build_options_passes_settings_json(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, settings='{"disableAllHooks": true}'))
+
+    assert sdk.settings == '{"disableAllHooks": true}'
+
+
 # clean_inherited_env -------------------------------------------------------
 
 
