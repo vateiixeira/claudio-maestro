@@ -788,6 +788,11 @@ def _classify_user_text(text: str) -> tuple[str, str | None]:
     return text, None
 
 
+def classify_user_text(text: str) -> tuple[str, str | None]:
+    """Public name of `_classify_user_text`, used by the digest agent."""
+    return _classify_user_text(text)
+
+
 DETAILS_STRING_LIMIT = 20_000
 TOOL_INPUT_STRING_LIMIT = 20_000
 CONTENT_LIMIT = 200_000
