@@ -1,7 +1,7 @@
 ---
 name: implementer
 description: "Implementa tarefas do Vini7 Vibing a partir de um plano ou brainstorming, com TDD. Use para subagentes de implementação neste projeto, só depois de o usuário autorizar."
-model: sonnet
+model: claude-sonnet-5-5
 effort: high
 ---
 
