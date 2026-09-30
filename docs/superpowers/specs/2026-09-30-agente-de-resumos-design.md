@@ -37,8 +37,8 @@ Guardada em `app_state`, chave nova `digest_agent` (objeto JSON). `ALLOWED_KEYS`
 | Campo | Tipo | Padrão | Limites |
 |---|---|---|---|
 | `enabled` | bool | `false` | |
-| `model` | string | ID do Sonnet 5.5 na lista de modelos do SDK guardada no SQLite; sem ele na lista, o alias `sonnet` | precisa estar na lista de modelos ou ser um alias aceito pelo seletor de modelo das sessões |
-| `effort` | string | `medium` | `low`, `medium`, `high`, `max` |
+| `model` | string | alias `sonnet` (hoje o Sonnet 5.5; o teste manual confirma o modelo resolvido) | precisa estar na lista de modelos do SDK ou ser um dos aliases `default`, `opus`, `sonnet`, `haiku` |
+| `effort` | string | `medium` | `low`, `medium`, `high`, `xhigh`, `max` (os mesmos das sessões) |
 | `extra_instructions` | string | `""` | até 4.000 caracteres |
 | `interval_minutes` | int | 10 | 2 a 240 |
 | `min_new_messages` | int | 10 | 1 a 500 |
@@ -139,7 +139,7 @@ Pacote `backend/vibing/digest/`.
 `query()` com:
 
 - `model`, `effort` da configuração
-- `allowed_tools=[]`, `max_turns=1`
+- `tools=[]` (nenhuma ferramenta embutida) e `max_turns=3` (a saída estruturada passa por uma ferramenta interna do SDK e pode precisar de mais de um turno; o teste manual confirma)
 - `setting_sources=[]` (sem hooks, plugins nem CLAUDE.md do usuário)
 - `output_format={"type": "json_schema", "schema": DIGEST_SCHEMA}`
 - `cwd` em `<data_dir>/digest-agent/` (criada se faltar), fora de qualquer projeto registrado
@@ -191,7 +191,7 @@ Serviço `DigestScheduler`, criado no ciclo de vida do app, como as varreduras d
    - `last_activity_at` dentro de `window_days`;
    - o `.jsonl` mudou desde `read_at` (por `mtime`, sem abrir o arquivo quando não mudou);
    - `count` de entradas novas ≥ `min_new_messages` (ignorado em pedido manual);
-   - turno fechado (sessão do app fora de `running`; sessão do CLI sem `cli_running`), ou turno aberto há mais de `open_turn_minutes` desde `read_at` (ou desde a primeira entrada nova, na primeira leitura).
+   - turno fechado (sessão do app fora de `running`; sessão do CLI sem `cli_running`), ou turno aberto há mais de `open_turn_minutes` desde `read_at` (ou desde `created_at`, na primeira leitura).
 3. Ordena pela atividade mais recente e lê uma sessão por vez.
 4. Cada leitura bem-sucedida grava `session_digests` e publica `session.digest` no WebSocket com o resumo novo.
 5. Registra a passada em `digest_runs`.
@@ -259,7 +259,7 @@ Seção "Resumo":
 
 ### Linha de conversa
 
-Com `digest_short`, a linha mostra a frase curta no lugar da última ação. Sem ela, continua a última ação. O selo de plano do marco 9 não muda; com `plan_done`, ele mostra "Plano concluído".
+Com `digest_short`, a linha mostra a frase curta em texto apagado, depois do título e das etiquetas, cortada com reticências. Sem ela, nada muda. O selo de plano do marco 9 não muda; com `plan_done`, a linha mostra a etiqueta "Plano concluído".
 
 ## 10. Testes
 
