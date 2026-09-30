@@ -885,7 +885,7 @@ class ActiveSession:
         if self._file_mtime is None:
             return None
         try:
-            return await asyncio.to_thread(self._file_mtime, self.session_id, self.record.cwd)
+            return await asyncio.to_thread(self._file_mtime, self.session_id, self.record.history_directory)
         except Exception:
             logger.exception("Falha ao consultar o arquivo da sessão %s", self.session_id)
             return None
@@ -971,7 +971,7 @@ class ActiveSession:
         """(entries, tool results, skipped lines, compact summary uuids)."""
         if self._read_transcript is not None:
             transcript = await asyncio.to_thread(
-                self._read_transcript, self.session_id, self.record.cwd
+                self._read_transcript, self.session_id, self.record.history_directory
             )
             if transcript is None:
                 return [], {}, 0, set()
@@ -981,14 +981,14 @@ class ActiveSession:
             )
         assert self._get_session_messages is not None
         entries = list(
-            await asyncio.to_thread(self._get_session_messages, self.session_id, self.record.cwd)
+            await asyncio.to_thread(self._get_session_messages, self.session_id, self.record.history_directory)
             or []
         )
         tool_results: dict[str, dict[str, Any]] = {}
         if self._read_tool_results is not None and entries:
             try:
                 tool_results = await asyncio.to_thread(
-                    self._read_tool_results, self.session_id, self.record.cwd
+                    self._read_tool_results, self.session_id, self.record.history_directory
                 )
             except Exception:
                 logger.exception(
@@ -1002,7 +1002,7 @@ class ActiveSession:
             return
         try:
             await asyncio.to_thread(
-                self._rename_session, self.session_id, self.record.title, self.record.cwd
+                self._rename_session, self.session_id, self.record.title, self.record.history_directory
             )
         except Exception:
             logger.exception("Falha ao aplicar o nome pendente da sessão %s", self.session_id)
@@ -1131,8 +1131,9 @@ class ActiveSession:
         self._refresh_state()
         client: AgentClient | None = None
         try:
-            if not Path(self.record.cwd).is_dir():
-                raise AgentError(f"A pasta do projeto não existe mais: {self.record.cwd}")
+            work_dir = self.record.work_dir()
+            if not Path(work_dir).is_dir():
+                raise AgentError(f"A pasta do projeto não existe mais: {work_dir}")
             resume = (
                 self._has_connected or self._connected_before or await self._check_history()
             )
@@ -1266,7 +1267,7 @@ class ActiveSession:
         model = self.record.model
         return self._agent_factory(
             AgentOptions(
-                cwd=Path(self.record.cwd),
+                cwd=Path(self.record.work_dir()),
                 session_id=self.session_id,
                 resume=resume,
                 can_use_tool=self._can_use_tool,
@@ -1279,7 +1280,7 @@ class ActiveSession:
     async def _check_history(self) -> bool:
         try:
             return await asyncio.to_thread(
-                self._history_exists, self.session_id, self.record.cwd
+                self._history_exists, self.session_id, self.record.history_directory
             )
         except Exception:
             logger.exception("Falha ao consultar o histórico da sessão %s", self.session_id)
@@ -2216,7 +2217,7 @@ class SessionManager:
         """Every edit tool call in the session's whole transcript (name, path, counts)."""
         session = self.get(session_id)
         try:
-            return await asyncio.to_thread(self._read_edits, session_id, session.record.cwd)
+            return await asyncio.to_thread(self._read_edits, session_id, session.record.history_directory)
         except Exception:
             logger.exception("Falha ao ler as edições da sessão %s", session_id)
             return []
@@ -2299,7 +2300,7 @@ class SessionManager:
             found = cached[1]
         else:
             try:
-                found = await asyncio.to_thread(self._read_context, record.session_id, record.cwd)
+                found = await asyncio.to_thread(self._read_context, record.session_id, record.history_directory)
             except Exception:
                 logger.exception("Falha ao ler o contexto da sessão %s", record.session_id)
                 found = None
@@ -2552,7 +2553,7 @@ class SessionManager:
             if await session.has_history():
                 try:
                     await asyncio.to_thread(
-                        self._rename_session, session_id, changes["title"], session.record.cwd
+                        self._rename_session, session_id, changes["title"], session.record.history_directory
                     )
                 except Exception:
                     logger.exception("Falha ao renomear a sessão %s no SDK", session_id)

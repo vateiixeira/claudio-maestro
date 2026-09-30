@@ -1073,7 +1073,7 @@ git commit -m "[Feat] Indexar sessões de worktrees com pasta, worktree e branch
 **Interfaces:**
 - Consumes: `SessionRecord.history_directory` e `SessionRecord.work_dir()` (Tarefa 2).
 
-- [ ] **Step 1: Testes que falham**
+- [x] **Step 1: Testes que falham**
 
 Nos testes de sessão que usam o cliente falso e os fakes de histórico:
 
@@ -1099,12 +1099,12 @@ def test_activity_finds_file_through_history_dir(...):
     """Row with history_dir='/h': the session_file finder is called with ('s', '/h')."""
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_sessions.py backend/tests/test_activity.py -q`
 Expected: FAIL (os fakes recebem `cwd`, não `/h`).
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 Em `sessions.py`:
 - Nas leituras e na renomeação (linhas 863, 949, 959, 966, 980, 1257, 2194, 2277 e 2530), troque `self.record.cwd`, `session.record.cwd` ou `record.cwd` passados como `directory` ao SDK pela forma `.history_directory` do mesmo registro. Exemplo da linha 959:
@@ -1138,12 +1138,12 @@ Em `activity.py`, em `read`:
 
 Em `api/git.py`, na linha 152: `files = _edited_files(items, Path(session.record.work_dir()))`
 
-- [ ] **Step 4: Rodar tudo e ver passar**
+- [x] **Step 4: Rodar tudo e ver passar**
 
 Run: `uv run pytest -q`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/vibing/sessions.py backend/vibing/activity.py backend/vibing/api/git.py backend/tests/

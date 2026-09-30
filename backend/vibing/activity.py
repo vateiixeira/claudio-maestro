@@ -76,7 +76,8 @@ class ActivityReader:
         since = datetime.combine(first, datetime.min.time()).timestamp()
         with closing(db.connect(self._db_path)) as conn:
             rows = conn.execute(
-                "SELECT session_id, project_id, cwd FROM sessions WHERE last_activity_at >= ?",
+                "SELECT session_id, project_id, COALESCE(history_dir, cwd) AS cwd FROM sessions"
+                " WHERE last_activity_at >= ?",
                 (int(since),),
             ).fetchall()
         counts: Counter[tuple[date, int]] = Counter()
