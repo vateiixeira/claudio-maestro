@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import BranchLabel from '../git/BranchLabel.vue'
+import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import DiffLines from '../conversation/DiffLines.vue'
 import PlanProperty from '../plan/PlanProperty.vue'
@@ -131,9 +132,21 @@ watch(editOpen, (open) => { if (open) selectedFile.value = null })
             </dd>
             <dt class="text-fg-muted">Branch</dt>
             <dd data-test="prop-branch" class="m-0 flex min-w-0 flex-col gap-1">
-              <BranchLabel v-for="repo in repos" :key="repo.path" :text="repoLabel(repo)" :muted="!!repo.error" />
-              <span v-if="repos.length === 0" class="text-fg-muted">sem repositório git</span>
+              <template v-if="session?.worktree_name">
+                <BranchLabel v-if="session.git_branch" :text="session.git_branch" />
+                <span v-else class="text-fg-muted">desconhecido</span>
+              </template>
+              <template v-else>
+                <BranchLabel v-for="repo in repos" :key="repo.path" :text="repoLabel(repo)" :muted="!!repo.error" />
+                <span v-if="repos.length === 0" class="text-fg-muted">sem repositório git</span>
+              </template>
             </dd>
+            <template v-if="session?.worktree_name">
+              <dt class="text-fg-muted">Worktree</dt>
+              <dd data-test="prop-worktree" class="m-0 min-w-0">
+                <span :title="session.worktree_path ?? undefined"><WorktreeLabel :text="session.worktree_name" /></span>
+              </dd>
+            </template>
             <dt class="text-fg-muted">Contexto</dt>
             <dd data-test="prop-context" class="m-0 flex flex-col gap-1">
               <template v-if="context">

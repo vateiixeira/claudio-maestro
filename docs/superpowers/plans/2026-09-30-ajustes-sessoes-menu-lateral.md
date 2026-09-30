@@ -1175,7 +1175,7 @@ git commit -m "[Feat] Ler histórico pela pasta certa e retomar sessão na workt
   - Componente `WorktreeLabel` com props `{ text: string; muted?: boolean }`.
   - `Session.worktree_name?`, `.worktree_path?` e `.git_branch?`, do tipo `string | null`.
 
-- [ ] **Step 1: Testes que falham**
+- [x] **Step 1: Testes que falham**
 
 `frontend/src/__tests__/worktree.spec.ts`:
 
@@ -1222,12 +1222,12 @@ it('sem worktree, nada muda', async () => {
 })
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `pnpm --dir frontend exec vitest run src/__tests__/worktree.spec.ts src/components/conversation src/components/details`
 Expected: FAIL
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 `frontend/src/types/api.ts`, no fim de `Session`:
 
@@ -1312,12 +1312,12 @@ defineProps<{ text: string; muted?: boolean }>()
     </span>
 ```
 
-- [ ] **Step 4: Rodar tudo e ver passar**
+- [x] **Step 4: Rodar tudo e ver passar**
 
 Run: `pnpm --dir frontend test && pnpm --dir frontend build`
 Expected: PASS, e o build sem erros de tipo.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/

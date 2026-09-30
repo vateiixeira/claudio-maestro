@@ -100,6 +100,11 @@ export interface Session {
   plan?: PlanSummary | null
   /** True when the app has no client for the conversation but the CLI is mid-turn (subagents included). */
   cli_running?: boolean
+  /** Linked git worktree the session works in; null outside worktrees. */
+  worktree_name?: string | null
+  worktree_path?: string | null
+  /** Newest git branch recorded in the session's transcript. */
+  git_branch?: string | null
 }
 
 export interface PlanCurrent { number: number; title: string }

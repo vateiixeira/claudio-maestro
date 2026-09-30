@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import BranchLabel from '../git/BranchLabel.vue'
+import WorktreeLabel from '../git/WorktreeLabel.vue'
 import PlanBadge from '../plan/PlanBadge.vue'
 import { errorMessage, markSessionSeen } from '../../api/http'
 import { waitingReason } from '../../conversationList'
@@ -13,6 +14,7 @@ import { repoLabel, useGitStore } from '../../stores/git'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import type { Session } from '../../types/api'
+import { worktreeLabel } from '../../worktree'
 
 // One conversation in a list. `inbox` adds "Marcar como lida"; `compact` has no actions.
 const props = withDefaults(defineProps<{ session: Session; variant?: 'inbox' | 'list' | 'compact' }>(), { variant: 'list' })
@@ -24,6 +26,7 @@ const sessions = useSessionsStore()
 
 const project = computed(() => projects.byId(props.session.project_id))
 const repo = computed(() => git.reposFor(props.session.project_id)[0])
+const worktree = computed(() => worktreeLabel(props.session))
 const finished = computed(() => props.session.display_state === 'finished')
 const reason = computed(() => waitingReason(props.session))
 // The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it here.
@@ -76,7 +79,8 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       </template>
     </span>
     <span data-test="row-branch" class="hidden w-40 shrink-0 lg:flex">
-      <BranchLabel v-if="repo" :text="repoLabel(repo)" muted />
+      <WorktreeLabel v-if="worktree" :text="worktree" muted />
+      <BranchLabel v-else-if="repo" :text="repoLabel(repo)" muted />
     </span>
     <span class="w-20 shrink-0 text-right text-xs text-fg-muted">{{ formatActivity(session.last_activity_at) }}</span>
     <div

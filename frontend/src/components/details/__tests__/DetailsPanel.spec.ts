@@ -74,6 +74,23 @@ describe('painel Detalhes', () => {
     expect(wrapper.find('[data-test="prop-turns"]').text()).toContain('2')
   })
 
+  it('Detalhes mostra a linha Worktree com o caminho na dica e o branch da sessão', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias', git_branch: 'worktree-melhorias' })])
+    const wrapper = await mountPanel()
+
+    const prop = wrapper.find('[data-test="prop-worktree"]')
+    expect(prop.text()).toContain('melhorias')
+    expect(prop.find('[title]').attributes('title')).toBe('/p/.claude/worktrees/melhorias')
+    expect(wrapper.find('[data-test="prop-branch"]').text()).toContain('worktree-melhorias')
+    expect(wrapper.find('[data-test="prop-branch"]').text()).not.toContain('main')
+  })
+
+  it('sem worktree, Detalhes não mostra a linha Worktree', async () => {
+    const wrapper = await mountPanel()
+
+    expect(wrapper.find('[data-test="prop-worktree"]').exists()).toBe(false)
+  })
+
   it('lista os arquivos alterados e abre o diff de um deles', async () => {
     const wrapper = await mountPanel({
       'GET /api/projects/1/diff?repo=.&file=a.py': () => jsonResponse({ diff: '@@ -1 +1 @@\n-a\n+b\n', truncated: false }),

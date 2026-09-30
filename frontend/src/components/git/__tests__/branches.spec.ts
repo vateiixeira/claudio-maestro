@@ -57,6 +57,28 @@ describe('branches no cabeçalho da conversa', () => {
     expect(w.find('header').text()).toContain('api · feat/x')
     expect(w.find('header').text()).toContain('web · branch indisponível')
   })
+
+  it('mostra a worktree no lugar do branch do projeto', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias', git_branch: 'worktree-melhorias' })])
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1')
+    const w = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    const header = w.find('[data-test="header-worktree"]')
+    expect(header.text()).toBe('worktree melhorias · worktree-melhorias')
+    expect(header.attributes('title')).toBe('/p/.claude/worktrees/melhorias')
+    expect(w.text()).not.toContain('main') // the project's repo branch is not shown
+    expect(w.text()).not.toContain('feat/x')
+  })
+
+  it('sem worktree, o cabeçalho não mostra a linha de worktree', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1' })])
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1')
+    const w = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="header-worktree"]').exists()).toBe(false)
+  })
 })
 
 describe('tela do projeto', () => {
