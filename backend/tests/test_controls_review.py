@@ -267,6 +267,73 @@ async def test_subagent_end_announces_waiting(make_env, env_cleanup):
 
 
 @pytest.mark.anyio
+async def test_subagent_end_before_autonomous_turn_does_not_flash_waiting(make_env, env_cleanup):
+    env, session = await with_background_agent(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    sid = session.session_id
+    before = len(_updates(env, sid))
+
+    pause = PauseStep()
+    turn = text_turn(sid, "o subagente terminou")
+    client.push([task_notification_message(sid, "task-1", "toolu_agent"), pause,
+                 init_message(sid), *turn[2:]])
+    await asyncio.wait_for(pause.reached.wait(), 2)
+    await asyncio.sleep(0.02)
+
+    # The subagent is done and the CLI has not opened its turn yet: still "running".
+    assert env.manager.summary(sid)["display_state"] == "running"
+    assert all(u["display_state"] != "waiting" for u in _updates(env, sid)[before:])
+
+    pause.release.set()
+    await wait_until(lambda: session.state == "idle" and not session._autonomous_turn)
+    await asyncio.sleep(0.02)
+
+    later = _updates(env, sid)[before:]
+    assert later[-1]["display_state"] == "waiting"
+    assert later[-1]["subagents_running"] is False
+    assert all(u["display_state"] != "waiting" for u in later[:-1])
+    assert env.manager.summary(sid)["display_state"] == "waiting"
+
+
+@pytest.mark.anyio
+async def test_subagent_end_without_autonomous_turn_settles_to_waiting(
+    make_env, env_cleanup, monkeypatch
+):
+    monkeypatch.setattr("vibing.sessions.SUBAGENT_END_GRACE_SECONDS", 0.05)
+    env, session = await with_background_agent(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    sid = session.session_id
+    before = len(_updates(env, sid))
+
+    client.push([task_notification_message(sid, "task-1", "toolu_agent")])
+    await asyncio.sleep(0.01)
+    assert env.manager.summary(sid)["display_state"] == "running"
+    assert not _updates(env, sid)[before:]
+
+    await wait_until(lambda: env.manager.summary(sid)["display_state"] == "waiting")
+    await asyncio.sleep(0.02)
+    later = _updates(env, sid)[before:]
+    assert len(later) == 1
+    assert later[0]["display_state"] == "waiting"
+    assert later[0]["subagents_running"] is False
+
+
+@pytest.mark.anyio
+async def test_close_during_subagent_end_grace_announces_waiting(make_env, env_cleanup):
+    env, session = await with_background_agent(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    sid = session.session_id
+
+    client.push([task_notification_message(sid, "task-1", "toolu_agent")])
+    await asyncio.sleep(0.02)
+    await session.close()
+
+    assert not session.subagents_running
+    assert session._subagent_hold is None
+    assert _updates(env, sid)[-1]["display_state"] != "running"
+
+
+@pytest.mark.anyio
 async def test_background_tasks_cleared_announces_without_a_turn(make_env, env_cleanup):
     env, session = await with_background_agent(make_env, env_cleanup)
     client = env.factory.clients[0]

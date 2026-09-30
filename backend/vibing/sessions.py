@@ -33,6 +33,7 @@ from claude_agent_sdk import (
     ResultMessage,
     StreamEvent,
     SystemMessage,
+    TaskNotificationMessage,
     ToolPermissionContext,
     ToolResultBlock,
     ToolUseBlock,
@@ -106,6 +107,10 @@ MODEL_FIELDS = ("value", "displayName", "description", "supportsEffort", "suppor
 # The stored models list is asked again after this long (3 times a day).
 MODELS_MAX_AGE = 8 * 3600
 MODELS_CACHE_KEY = "models_cache"
+# After the last background subagent ends, the CLI opens a turn by itself. The
+# session keeps showing the subagent as running this long, waiting for that turn, so
+# the state does not flash "waiting" in between. Past it, the session settles.
+SUBAGENT_END_GRACE_SECONDS = 3.0
 # Shown by GET /api/models while no list is stored yet.
 FALLBACK_MODELS: list[dict[str, Any]] = [
     {
@@ -785,6 +790,10 @@ class ActiveSession:
         self._app_activity_at = 0.0
         # `subagents_running` as last announced in a `session.updated`.
         self._subagents_announced = False
+        # Timer of the grace period after the last subagent ended (see
+        # SUBAGENT_END_GRACE_SECONDS); while it is set, the session still counts as
+        # having a subagent running. Only ever set while idle.
+        self._subagent_hold: asyncio.TimerHandle | None = None
 
     @property
     def session_id(self) -> str:
@@ -824,8 +833,26 @@ class ActiveSession:
 
     @property
     def subagents_running(self) -> bool:
-        """A subagent (usually in the background) is still running in the client."""
-        return self.builder.subagents_running
+        """A subagent (usually in the background) is still running in the client,
+        or the last one just ended and the turn the CLI opens for it has not started."""
+        return self.builder.subagents_running or (
+            self._subagent_hold is not None and self.client is not None
+        )
+
+    def _hold_subagent_end(self) -> None:
+        """The last subagent just ended while idle: hold the "running" display for
+        the autonomous turn that follows. A turn start, close or the timer ends it."""
+        self._release_subagent_hold(announce=False)
+        self._subagent_hold = asyncio.get_running_loop().call_later(
+            SUBAGENT_END_GRACE_SECONDS, self._release_subagent_hold
+        )
+
+    def _release_subagent_hold(self, announce: bool = True) -> None:
+        hold, self._subagent_hold = self._subagent_hold, None
+        if hold is not None:
+            hold.cancel()
+        if announce:
+            self.sync_subagents()
 
     @property
     def busy(self) -> bool:
@@ -1331,6 +1358,8 @@ class ActiveSession:
         try:
             async for message in client.messages():
                 if self._starts_turn(message):
+                    # The turn the hold waited for (or another one) has begun.
+                    self._release_subagent_hold(announce=False)
                     if self.pending_turns == 0:
                         # The CLI opened a turn by itself (a background subagent finished).
                         self._autonomous_turn = True
@@ -1347,7 +1376,16 @@ class ActiveSession:
                     # the first byte, which can outlast the grace period. A debt only
                     # exists right after an autonomous result, so this init is that turn's.
                     self._clear_followup()
+                had_subagents = self.builder.subagents_running
                 self._emit_events(self.builder.handle(message))
+                if (
+                    had_subagents
+                    and isinstance(message, TaskNotificationMessage)
+                    and not self.builder.subagents_running
+                    and self.state == "idle"
+                ):
+                    # The CLI is about to open a turn for this: do not announce yet.
+                    self._hold_subagent_end()
                 if isinstance(message, AssistantMessage):
                     if message.parent_tool_use_id is None:
                         self._note_tool_use(message)
@@ -1614,6 +1652,7 @@ class ActiveSession:
         self.client = None
         self._reader = None
         self.builder.clear_local_echo()
+        self._release_subagent_hold(announce=False)
         self._emit_events(self.builder.stop_running_subagents())
         self.sync_subagents()
         await self._dispose(client, reader)
@@ -1773,6 +1812,7 @@ class ActiveSession:
         self.pending_turns = 0
         self._autonomous_turn = False
         self._clear_followup()
+        self._release_subagent_hold(announce=False)
         self.builder.clear_local_echo()
         self._emit_events(self.builder.close_open_items())
         self._emit_events(self.builder.stop_running_subagents())
@@ -1812,6 +1852,7 @@ class ActiveSession:
         self.pending_turns = 0
         self._autonomous_turn = False
         self._clear_followup()
+        self._release_subagent_hold(announce=False)
         self.builder.clear_local_echo()
         if client is not None:
             self._emit_events(self.builder.stop_running_subagents())

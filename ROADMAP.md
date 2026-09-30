@@ -28,7 +28,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
-| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 20 de 23 |
+| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 21 de 23 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, e padrões de modelo, raciocínio e modo nas Preferências | Em andamento | 0 de 12 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e está em andamento junto com o fim do marco 12.
@@ -364,7 +364,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 - [x] Sessão do app ociosa com subagente em segundo plano conta como "Em execução" no estado exibido (menu lateral, Inbox e Dashboard), com `subagents_running` no resumo da sessão e evento ao começar e terminar (bug relatado pelo usuário em 2026-09-30) (2026-09-30)
 - [x] Sessão do CLI com subagente em segundo plano depois do `end_turn` da cadeia principal conta como "Em execução": `turn_open` hoje só considera a escrita do subagente quando a cadeia principal não decide nada, e o `end_turn` costuma vir depois do subagente terminar, então exige comparar a ordem de escrita entre os arquivos. Resolvido com estado próprio por arquivo de subagente (aberto até o `end_turn` dele), sem comparar a ordem de escrita; a interrupção na cadeia principal zera os subagentes (2026-09-30)
 - [x] Subagente do CLI que morre sem `end_turn` deixa de contar como aberto depois de `CLI_TURN_STALE_SECONDS` sem escrever (bloqueante da revisão do marco em 2026-09-30) (2026-09-30)
-- [ ] Fim de subagente do app seguido de turno autônomo não pisca "Aguardando você" na Inbox (achado da revisão do marco em 2026-09-30)
+- [x] Fim de subagente do app seguido de turno autônomo não pisca "Aguardando você" na Inbox (achado da revisão do marco em 2026-09-30). Janela de 3 s (`SUBAGENT_END_GRACE_SECONDS`) em que a sessão segue "Em execução" esperando o turno autônomo (2026-09-30)
 - [ ] Apagar do navegador a chave antiga de Recentes, que ficou órfã com a remoção de `recentConversations.ts` (achado da revisão do marco em 2026-09-30)
 - [x] Spec e plano do marco anotam a troca da sigla pelo nome do projeto e a largura nova do menu lateral (achado da revisão do marco em 2026-09-30) (2026-09-30)
 - [ ] Nova revisão do marco pelo `milestone-reviewer`, depois dos itens reabertos
@@ -420,6 +420,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Conversa do CLI ativa aparece como "Aguardando você" | Decidido em 2026-09-30: `cli_running` passa a contar como "Em execução" no estado exibido, na Inbox, no Dashboard e no menu lateral (marco 12) |
 | Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
 | Painel Alterações em sessões de worktree | Visto na revisão do marco 12 (2026-09-30): arquivos editados numa worktree ficam no grupo do repositório principal (branch errado, diff como arquivo novo), e worktrees fora da pasta do projeto caem no grupo sem repositório e não abrem no editor. Precisa incluir as worktrees ligadas como donas possíveis e aceitar esses caminhos em `/diff` e no editor |
+| Janela depois do fim de um subagente do app | 3 s (`SUBAGENT_END_GRACE_SECONDS`) sem medição contra o CLI real. Se o turno autônomo demorar mais, o "Aguardando você" volta a piscar; ajustar o valor se isso aparecer no uso |
 | "Em execução" preso depois de o CLI morrer | Um CLI morto no meio do turno, ou parado pedindo permissão no terminal, conta como "Em execução" por até 20 minutos (`CLI_TURN_STALE_SECONDS`). Desde o marco 12 isso aparece na Inbox, no Dashboard e no menu lateral |
 | Retomada de sessão movida para worktree | Conferido contra o SDK real em 2026-09-30: a transcrição movida é lida com `directory` na worktree, e a retomada com `cwd` na worktree mantém o id e continua gravando no mesmo arquivo |
 
