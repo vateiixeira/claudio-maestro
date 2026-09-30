@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, createProject, deleteProject, listDirs, listProjects } from '../http'
+import { ApiError, createProject, deleteProject, listCommands, listDirs, listProjects, searchFiles } from '../http'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -110,5 +110,25 @@ describe('cliente REST', () => {
     expect(error).toBeInstanceOf(ApiError)
     expect(error.status).toBe(0)
     expect(error.message).toBe('Não foi possível falar com o servidor.')
+  })
+})
+
+describe('sugestões', () => {
+  it('monta as URLs de comandos e arquivos para sessão e para projeto', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse([]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await listCommands({ sessionId: 'a/b' })
+    await listCommands({ projectId: 3 })
+    const signal = new AbortController().signal
+    await searchFiles({ sessionId: 's1' }, 'my file&x', signal)
+    await searchFiles({ projectId: 3 }, '')
+
+    const calls = fetchMock.mock.calls
+    expect(calls[0]![0]).toBe('/api/sessions/a%2Fb/commands')
+    expect(calls[1]![0]).toBe('/api/projects/3/commands')
+    expect(calls[2]![0]).toBe('/api/sessions/s1/files?q=my+file%26x')
+    expect(calls[2]![1]?.signal).toBe(signal)
+    expect(calls[3]![0]).toBe('/api/projects/3/files?q=')
   })
 })

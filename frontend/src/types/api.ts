@@ -313,3 +313,10 @@ export interface DigestRun {
   errors: DigestRunError[]
   stopped: string | null
 }
+
+/** A slash command the agent offers (from the catalog endpoint). */
+export interface CommandInfo { name: string; description: string; argument_hint: string }
+/** A file or folder matched by the `@` mention search. */
+export interface FileMatch { path: string; name: string; type: 'file' | 'directory' }
+/** Where the suggestion endpoints read from: an existing session or a project folder. */
+export type SuggestionScope = { sessionId: string } | { projectId: number }

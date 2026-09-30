@@ -1,5 +1,8 @@
 import type {
   ActivityDay,
+  CommandInfo,
+  FileMatch,
+  SuggestionScope,
   DigestConfig,
   DigestRun,
   DigestState,
@@ -192,6 +195,22 @@ export function getSession(sessionId: string): Promise<SessionSnapshot> {
 export function sendMessage(sessionId: string, text: string, images: ImageInput[] = []): Promise<SendResult> {
   const body = images.length ? { text, images } : { text }
   return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/messages`, body)
+}
+
+function scopeBase(scope: SuggestionScope): string {
+  return 'sessionId' in scope
+    ? `/api/sessions/${encodeURIComponent(scope.sessionId)}`
+    : `/api/projects/${scope.projectId}`
+}
+
+/** Slash commands available in the session folder or in the project folder. */
+export function listCommands(scope: SuggestionScope): Promise<CommandInfo[]> {
+  return request('GET', `${scopeBase(scope)}/commands`)
+}
+
+/** Files and folders under the scope folder that match `q` (for `@` mentions). */
+export function searchFiles(scope: SuggestionScope, q: string, signal?: AbortSignal): Promise<FileMatch[]> {
+  return request('GET', `${scopeBase(scope)}/files?${new URLSearchParams({ q })}`, undefined, signal)
 }
 
 /** Models the agent offers (or a fixed list before the first connection). */

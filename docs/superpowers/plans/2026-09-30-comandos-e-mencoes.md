@@ -1107,7 +1107,7 @@ Item 4 do marco 13.
     - `mentionText(path: string): string`, que devolve `'@' + quotePath(path)`
     - `rankCommands(commands: CommandInfo[], term: string): CommandInfo[]`
 
-- [ ] **Passo 1: escrever os testes** em `frontend/src/conversation/__tests__/suggestions.spec.ts`:
+- [x] **Passo 1: escrever os testes** em `frontend/src/conversation/__tests__/suggestions.spec.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1191,9 +1191,9 @@ describe('rankCommands', () => {
 
 Obs.: em `rankCommands(all, 'COMMIT')`, `code-review` entra pelo grupo 3, porque a descrição "Revisa commits" contém "commit".
 
-- [ ] **Passo 2: rodar e ver falhar.** Rode `pnpm --dir frontend exec vitest run src/conversation/__tests__/suggestions.spec.ts`. Esperado: falha ao importar `../suggestions`.
+- [x] **Passo 2: rodar e ver falhar.** Rode `pnpm --dir frontend exec vitest run src/conversation/__tests__/suggestions.spec.ts`. Esperado: falha ao importar `../suggestions`.
 
-- [ ] **Passo 3: implementar `frontend/src/conversation/suggestions.ts`:**
+- [x] **Passo 3: implementar `frontend/src/conversation/suggestions.ts`:**
 
 ```ts
 // Pure helpers of the `/` and `@` suggestion menus. Behavior follows the VS Code
@@ -1307,9 +1307,9 @@ export function searchFiles(scope: SuggestionScope, q: string, signal?: AbortSig
 }
 ```
 
-- [ ] **Passo 4: rodar e ver passar.** Rode `pnpm --dir frontend exec vitest run src/conversation/__tests__/suggestions.spec.ts`, depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
+- [x] **Passo 4: rodar e ver passar.** Rode `pnpm --dir frontend exec vitest run src/conversation/__tests__/suggestions.spec.ts`, depois `pnpm --dir frontend test` e `pnpm --dir frontend build`.
 
-- [ ] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 4 no roadmap.
+- [x] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 4 no roadmap.
 
 ```bash
 git add frontend/src/conversation/suggestions.ts frontend/src/conversation/__tests__/suggestions.spec.ts frontend/src/types/api.ts frontend/src/api/http.ts ROADMAP.md
