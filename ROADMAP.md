@@ -2,7 +2,7 @@
 
 Acompanha a construção completa do app. É a fonte única do que está feito e do que falta.
 
-Última atualização: 2026-09-29
+Última atualização: 2026-09-30
 
 ## Como usar
 
@@ -24,10 +24,10 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 5. Controles | Modelo, raciocínio, modo, imagens, voz, subagentes, perguntas e planos | Concluído | 15 de 15 |
 | 6. Acabamento | Erros, robustez e uso diário | Concluído | 50 de 50 |
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
-| 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Depois do MVP | 0 de 9 |
+| 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 0 de 10 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 
-Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. Os marcos 8 e 9 só começam quando o usuário pedir.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário.
 
 ## Preparação
 
@@ -238,26 +238,22 @@ Caso de uso que motivou: uma sessão gera um prompt, e esse prompt é executado 
 
 Pedido pelo usuário em 2026-09-28. Só começa depois do MVP completo e funcionando.
 
+- Spec: `docs/superpowers/specs/2026-09-30-agrupador-de-sessoes-design.md`
+
 O agrupador existe só no banco do backend. O Claude e o CLI não sabem dele, e o histórico em `~/.claude/projects` não muda.
 
 - [ ] Tabela de agrupadores no SQLite, ligada ao projeto, e vínculo da sessão com o agrupador
 - [ ] Criar agrupador dentro de um projeto
 - [ ] Renomear agrupador
 - [ ] Remover agrupador; as sessões dele voltam a ficar soltas e não são apagadas
-- [ ] Mover sessão para um agrupador, trocar de agrupador e tirar do agrupador
+- [ ] Mover sessão para um agrupador, trocar de agrupador e tirar do agrupador (propriedade em Detalhes)
 - [ ] Criar sessão nova já dentro do agrupador de uma sessão aberta
-- [ ] Menu lateral mostra as sessões dentro dos agrupadores, que podem ser recolhidos
-- [ ] Tela do projeto mostra os agrupadores
+- [ ] Menu lateral: cada projeto vira uma árvore recolhível com seus agrupadores e as sessões ativas deles
+- [ ] Tela do projeto mostra os agrupadores em cima e as sessões sem agrupador embaixo
+- [ ] Etiqueta do agrupador na linha de conversa e filtro por agrupador na tela Conversas
 - [ ] Busca de sessões também encontra pelo nome do agrupador
 
-A definir quando o marco for desenhado:
-
-| Pergunta | Por que importa |
-|---|---|
-| Uma sessão pode estar em mais de um agrupador? | Muda o modelo de dados. O mais simples é um só |
-| Como os agrupadores aparecem na tela Conversas? | Essa tela organiza por data; agrupador seria um segundo eixo |
-| Agrupador com todas as sessões finalizadas some do menu? | Segue ou não a regra de ocultação das sessões |
-| O agrupador tem cor ou só nome? | O projeto já tem cor; duas cores podem confundir |
+Decidido no desenho (2026-09-30): uma sessão fica em no máximo um agrupador; o agrupador tem só nome, sem cor; o menu mostra só os agrupadores, com as sessões ativas, e o agrupador sem sessão ativa fica numa linha apagada; a tela Conversas continua por data, com etiqueta e filtro.
 
 ## Marco 9. Progresso de planos
 
