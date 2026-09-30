@@ -28,7 +28,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
-| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 22 de 23 |
+| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Em andamento | 0 de 13 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e está em andamento junto com o fim do marco 12.
@@ -367,7 +367,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 - [x] Fim de subagente do app seguido de turno autônomo não pisca "Aguardando você" na Inbox (achado da revisão do marco em 2026-09-30). Janela de 3 s (`SUBAGENT_END_GRACE_SECONDS`) em que a sessão segue "Em execução" esperando o turno autônomo (2026-09-30)
 - [x] Apagar do navegador a chave antiga de Recentes, que ficou órfã com a remoção de `recentConversations.ts` (achado da revisão do marco em 2026-09-30) (2026-09-30)
 - [x] Spec e plano do marco anotam a troca da sigla pelo nome do projeto e a largura nova do menu lateral (achado da revisão do marco em 2026-09-30) (2026-09-30)
-- [ ] Nova revisão do marco pelo `milestone-reviewer`, depois dos itens reabertos
+- [x] Nova revisão do marco pelo `milestone-reviewer`, depois dos itens reabertos (2026-09-30)
 
 ## Marco 13. Comandos e menções
 
@@ -422,6 +422,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
 | Painel Alterações em sessões de worktree | Visto na revisão do marco 12 (2026-09-30): arquivos editados numa worktree ficam no grupo do repositório principal (branch errado, diff como arquivo novo), e worktrees fora da pasta do projeto caem no grupo sem repositório e não abrem no editor. Precisa incluir as worktrees ligadas como donas possíveis e aceitar esses caminhos em `/diff` e no editor |
 | Janela depois do fim de um subagente do app | 3 s (`SUBAGENT_END_GRACE_SECONDS`) sem medição contra o CLI real. Se o turno autônomo demorar mais, o "Aguardando você" volta a piscar; ajustar o valor se isso aparecer no uso |
+| Troca de raciocínio durante subagente | Visto na revisão do marco 12 (2026-09-30): se o raciocínio muda enquanto um subagente roda e o CLI não abre turno depois que ele termina, a reconexão com o valor novo só acontece no próximo turno. Comportamento anterior ao marco |
 | "Em execução" preso depois de o CLI morrer | Um CLI morto no meio do turno, ou parado pedindo permissão no terminal, conta como "Em execução" por até 20 minutos (`CLI_TURN_STALE_SECONDS`). Desde o marco 12 isso aparece na Inbox, no Dashboard e no menu lateral |
 | Retomada de sessão movida para worktree | Conferido contra o SDK real em 2026-09-30: a transcrição movida é lida com `directory` na worktree, e a retomada com `cwd` na worktree mantém o id e continua gravando no mesmo arquivo |
 
@@ -462,3 +463,4 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-30 | Marco 12 concluído: conversa do CLI no meio de um turno conta como "Em execução"; sessões de worktree são indexadas sob o projeto dono e retomadas na worktree só quando a transcrição está na pasta dela; o marco foi numerado 11 porque o main já tem um marco 10 |
 | 2026-09-30 | Recentes do menu lateral passa a listar todas as conversas não finalizadas, pela última interação, e deixa de ser guardado no navegador. Substitui a decisão de 2026-09-29 e a ordem estável do marco 12 |
 | 2026-09-30 | Comandos (`/`) e menções (`@`) no campo de mensagem viram o marco 13, seguindo o comportamento da extensão do VSCode |
+| 2026-09-30 | Marco 12 concluído de novo, depois de reaberto: subagentes em segundo plano do app e do CLI contam como "Em execução" (no CLI, cada arquivo de subagente vale até o próprio `end_turn` ou 20 min sem escrever), Recentes por última interação e nome do projeto no menu lateral; revisado pelo `milestone-reviewer` |
