@@ -21,6 +21,7 @@ export const useGitDetailsStore = defineStore('gitDetails', () => {
   const openCount = new Map<number, number>()
   const generations = new Map<number, number>()
   const timers = new Map<number, ReturnType<typeof setTimeout>>()
+  const controllers = new Map<number, AbortController>()
 
   function reposFor(projectId: number): RepoDetails[] {
     return byProject.value[projectId]?.repos ?? []
@@ -42,13 +43,24 @@ export const useGitDetailsStore = defineStore('gitDetails', () => {
     return loading.value[projectId] === true
   }
 
-  /** Answers that arrive after a newer request started are dropped. */
+  function abortPending(projectId: number): void {
+    controllers.get(projectId)?.abort()
+    controllers.delete(projectId)
+  }
+
+  /**
+   * Answers that arrive after a newer request started are dropped, and the older
+   * request is aborted (its failure is never shown: the generation no longer matches).
+   */
   async function load(projectId: number): Promise<void> {
     const mine = (generations.get(projectId) ?? 0) + 1
     generations.set(projectId, mine)
+    abortPending(projectId)
+    const controller = new AbortController()
+    controllers.set(projectId, controller)
     loading.value[projectId] = true
     try {
-      const result = await api.getProjectGitDetails(projectId)
+      const result = await api.getProjectGitDetails(projectId, controller.signal)
       if (generations.get(projectId) !== mine) return
       byProject.value[projectId] = {
         repos: Array.isArray(result?.repos) ? result.repos : [],
@@ -60,7 +72,10 @@ export const useGitDetailsStore = defineStore('gitDetails', () => {
       if (generations.get(projectId) !== mine) return
       errors.value[projectId] = api.errorMessage(e)
     } finally {
-      if (generations.get(projectId) === mine) loading.value[projectId] = false
+      if (generations.get(projectId) === mine) {
+        loading.value[projectId] = false
+        controllers.delete(projectId)
+      }
     }
   }
 
@@ -86,6 +101,7 @@ export const useGitDetailsStore = defineStore('gitDetails', () => {
     clearTimer(projectId)
     // An answer still on its way has nobody to show it to.
     generations.set(projectId, (generations.get(projectId) ?? 0) + 1)
+    abortPending(projectId)
     loading.value[projectId] = false
   }
 

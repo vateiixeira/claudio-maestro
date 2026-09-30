@@ -27,8 +27,13 @@ class GitMonitor:
                 return None
         return Path(project.path) if project.available else None
 
-    async def refresh_project(self, project_id: int) -> None:
-        """Read the project's repositories and publish them if anything changed."""
+    async def refresh_project(self, project_id: int, force: bool = False) -> None:
+        """Read the project's repositories and publish them if anything changed.
+
+        With `force` it publishes even when the summary is the same: the end of a
+        turn may have edited a file that was already modified, which changes its
+        diff and line counts but nothing in the summary.
+        """
         lock = self._locks.setdefault(project_id, asyncio.Lock())
         async with lock:
             path = await asyncio.to_thread(self._project_path, project_id)
@@ -37,7 +42,7 @@ class GitMonitor:
                 return
             found, limit_reached = await gitinfo.project_repos_scan(path)
             repos = [repo.to_dict() for repo in found]
-            if self._last.get(project_id) == (repos, limit_reached):
+            if not force and self._last.get(project_id) == (repos, limit_reached):
                 return
             self._last[project_id] = (repos, limit_reached)
             self._hub.publish(

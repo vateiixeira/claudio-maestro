@@ -15,6 +15,7 @@ const projects = useProjectsStore()
 const repos = computed(() => details.reposFor(props.projectId))
 const error = computed(() => details.errorFor(props.projectId))
 const loaded = computed(() => details.isLoaded(props.projectId))
+const refreshing = computed(() => details.isLoading(props.projectId))
 
 // Keeps the details fresh while this screen is on the project.
 watch(
@@ -71,7 +72,23 @@ function isCollapsed(repo: RepoDetails): boolean {
     >Tentar de novo</button>
   </div>
   <div v-else-if="repos.length > 0" class="flex flex-col gap-3">
-    <p v-if="error" role="alert" class="m-0 text-xs text-secondary-soft">Não foi possível atualizar: {{ error }}</p>
+    <div class="flex items-center gap-3">
+      <p v-if="error" role="alert" class="m-0 min-w-0 text-xs text-secondary-soft">Não foi possível atualizar: {{ error }}</p>
+      <!-- Edits made outside the app only show up here or on the periodic check. -->
+      <button
+        type="button"
+        data-test="git-refresh"
+        aria-label="Atualizar"
+        title="Reler o estado git"
+        :aria-busy="refreshing"
+        :disabled="refreshing"
+        class="ml-auto flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-xs font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
+        @click="details.load(projectId)"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :class="{ 'motion-safe:animate-spin': refreshing }"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
+        <span aria-hidden="true">Atualizar</span>
+      </button>
+    </div>
     <article
       v-for="repo in repos"
       :key="repo.path"

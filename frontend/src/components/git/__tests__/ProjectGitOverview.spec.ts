@@ -299,4 +299,62 @@ describe('visão git do projeto', () => {
     await flushPromises()
     expect(buttonOf('a.py')!.attributes('aria-expanded')).toBe('false')
   })
+
+  describe('botão Atualizar', () => {
+    it('tem rótulo acessível e dica, e relê os detalhes na hora', async () => {
+      const { wrapper, fetchMock } = await mountWith([makeRepoDetails()])
+      const button = wrapper.find('[data-test="git-refresh"]')
+      expect(button.exists()).toBe(true)
+      expect(button.attributes('aria-label')).toBe('Atualizar')
+      expect(button.attributes('title')).toBe('Reler o estado git')
+      const detailCalls = () => fetchMock.mock.calls.filter((c) => c[0] === '/api/projects/1/git/details').length
+      expect(detailCalls()).toBe(1)
+      await button.trigger('click')
+      await flushPromises()
+      expect(detailCalls()).toBe(2)
+    })
+
+    it('mostra estado de carregando enquanto relê e não dispara duas vezes', async () => {
+      const resolvers: Array<(r: Response) => void> = []
+      const { wrapper, fetchMock } = await mountWith([makeRepoDetails()], {
+        [DETAILS]: () => new Promise<Response>((resolve) => resolvers.push(resolve)),
+      })
+      resolvers[0]!(jsonResponse({ repos: [makeRepoDetails()], limit_reached: false }))
+      await flushPromises()
+      const button = wrapper.find('[data-test="git-refresh"]')
+      expect(button.attributes('aria-busy')).toBe('false')
+      expect(button.attributes('disabled')).toBeUndefined()
+
+      await button.trigger('click')
+      expect(button.attributes('aria-busy')).toBe('true')
+      expect(button.attributes('disabled')).toBeDefined()
+      await button.trigger('click')
+      expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/projects/1/git/details')).toHaveLength(2)
+
+      resolvers[1]!(jsonResponse({ repos: [makeRepoDetails()], limit_reached: false }))
+      await flushPromises()
+      expect(button.attributes('aria-busy')).toBe('false')
+      expect(button.attributes('disabled')).toBeUndefined()
+    })
+
+    it('relê também o diff aberto, mesmo sem mudança no resumo', async () => {
+      let diff = '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-velho\n+novo\n'
+      const { wrapper } = await mountWith(
+        [makeRepoDetails({ files: [file('a.py', 'unstaged')] })],
+        { 'GET /api/projects/1/diff?repo=.&file=a.py': () => jsonResponse({ diff, truncated: false, notice: null }) },
+      )
+      await wrapper.find('[data-test="file-row"] button').trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('novo')
+      diff = '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-velho\n+editado fora do app\n'
+      await wrapper.find('[data-test="git-refresh"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('editado fora do app')
+    })
+
+    it('não aparece sem repositórios nem na primeira carga', async () => {
+      const { wrapper } = await mountWith([])
+      expect(wrapper.find('[data-test="git-refresh"]').exists()).toBe(false)
+    })
+  })
 })

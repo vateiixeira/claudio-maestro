@@ -172,4 +172,75 @@ describe('store de detalhes do git', () => {
     await details.load(1)
     expect(details.revisionFor(1)).toBe(2)
   })
+
+  describe('cancelamento', () => {
+    /** Fetch that stays pending until aborted, recording each request's signal. */
+    function pendingFetch() {
+      const signals: AbortSignal[] = []
+      const fetchMock = routeFetch({
+        [URL]: (init) => new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal as AbortSignal
+          signals.push(signal)
+          signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+        }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      return { signals, fetchMock }
+    }
+
+    it('uma nova carga do mesmo projeto aborta a requisição anterior', async () => {
+      const { signals } = pendingFetch()
+      const details = useGitDetailsStore()
+      const first = details.load(1)
+      await flushPromises()
+      expect(signals[0]!.aborted).toBe(false)
+      const second = details.load(1)
+      await flushPromises()
+      expect(signals[0]!.aborted).toBe(true)
+      expect(signals[1]!.aborted).toBe(false)
+      // O aborto não vira erro visível nem derruba o estado de carregando da nova.
+      await first
+      expect(details.errorFor(1)).toBeNull()
+      expect(details.isLoading(1)).toBe(true)
+      details.close(1)
+      await second
+    })
+
+    it('close aborta a requisição em andamento sem mostrar erro', async () => {
+      const { signals } = pendingFetch()
+      const details = useGitDetailsStore()
+      details.open(1)
+      await flushPromises()
+      expect(signals[0]!.aborted).toBe(false)
+      details.close(1)
+      await flushPromises()
+      expect(signals[0]!.aborted).toBe(true)
+      expect(details.errorFor(1)).toBeNull()
+      expect(details.isLoading(1)).toBe(false)
+    })
+
+    it('close de um uso quando ainda há outro aberto não aborta', async () => {
+      const { signals } = pendingFetch()
+      const details = useGitDetailsStore()
+      details.open(1)
+      details.open(1)
+      await flushPromises()
+      details.close(1)
+      expect(signals.at(-1)!.aborted).toBe(false)
+    })
+
+    it('projetos diferentes não se abortam', async () => {
+      const signals: Record<string, AbortSignal> = {}
+      vi.stubGlobal('fetch', routeFetch({
+        [URL]: (init) => { signals['1'] = init?.signal as AbortSignal; return new Promise<Response>(() => {}) },
+        'GET /api/projects/2/git/details': (init) => { signals['2'] = init?.signal as AbortSignal; return new Promise<Response>(() => {}) },
+      }))
+      const details = useGitDetailsStore()
+      void details.load(1)
+      void details.load(2)
+      await flushPromises()
+      expect(signals['1']!.aborted).toBe(false)
+      expect(signals['2']!.aborted).toBe(false)
+    })
+  })
 })

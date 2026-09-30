@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { branchText, dirBranchText, repoLabel, useGitStore } from '../git'
+import { useGitDetailsStore } from '../gitDetails'
 import { jsonResponse, makeGitRepo, routeFetch } from '../../test/factories'
 import { diffFromUnified } from '../../conversation/diff'
 
@@ -45,6 +46,27 @@ describe('store git', () => {
     const git = useGitStore()
     git.applyEvent({ session_id: null, seq: 0, type: 'project.git', data: { project_id: 5, repos: [], limit_reached: true } } as never)
     expect(git.limitReached(5)).toBe(true)
+  })
+
+  it('evento project.git idêntico ao anterior ainda pede a releitura dos detalhes', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = routeFetch({ 'GET /api/projects/1/git/details': () => jsonResponse({ repos: [], limit_reached: false }) })
+      vi.stubGlobal('fetch', fetchMock)
+      const details = useGitDetailsStore()
+      const git = useGitStore()
+      details.open(1)
+      await flushPromises()
+      const event = { session_id: null, seq: 0, type: 'project.git', data: { project_id: 1, repos: [makeGitRepo({ branch: 'main' })] } } as never
+      git.applyEvent(event)
+      await vi.advanceTimersByTimeAsync(600)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      git.applyEvent(event)
+      await vi.advanceTimersByTimeAsync(600)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('erro ao carregar não lança em ensure', async () => {
