@@ -182,7 +182,47 @@ export interface GitRepo {
   detached: boolean
   head: string | null
   changed: { staged: number; unstaged: number; untracked: number }
+  /** Tracked remote branch ("origin/main"); null when the branch has none. */
+  upstream: string | null
+  /** Commits not pushed yet; null without upstream or when the upstream is gone. */
+  ahead: number | null
+  /** Commits to pull (as of the last fetch); null without upstream or when it is gone. */
+  behind: number | null
   error: string | null
+}
+
+export type RepoFileStatus = 'staged' | 'unstaged' | 'untracked'
+
+/** Changed file of a repository; a file both staged and unstaged shows up twice. */
+export interface RepoFile {
+  /** Relative to the repository. */
+  path: string
+  status: RepoFileStatus
+  /** Null for untracked and binary files. */
+  added: number | null
+  removed: number | null
+}
+
+export interface RepoCommit {
+  hash: string
+  full_hash: string
+  subject: string
+  author: string
+  /** ISO 8601. */
+  date: string
+  /** Null when the branch has no upstream. */
+  pushed: boolean | null
+}
+
+export interface RepoDetails extends GitRepo {
+  files: RepoFile[]
+  files_truncated: boolean
+  commits: RepoCommit[]
+}
+
+export interface ProjectGitDetails {
+  repos: RepoDetails[]
+  limit_reached: boolean
 }
 
 export interface ChangedFile {

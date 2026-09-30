@@ -3,9 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import SessionStateIcon from '../components/SessionStateIcon.vue'
 import ConversationRow from '../components/conversation/ConversationRow.vue'
-import BranchLabel from '../components/git/BranchLabel.vue'
-import { branchText, changedCount, useGitStore } from '../stores/git'
-import type { GitRepo } from '../types/api'
+import ProjectGitOverview from '../components/git/ProjectGitOverview.vue'
+import { useGitStore } from '../stores/git'
 import { errorMessage, openInEditor } from '../api/http'
 import { groupByDate } from '../conversationList'
 import { useProjectsStore } from '../stores/projects'
@@ -18,12 +17,6 @@ const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const git = useGitStore()
 const repos = computed(() => git.reposFor(props.id))
-
-function changesSummary(repo: GitRepo): string {
-  const n = changedCount(repo)
-  if (n === 0) return 'Sem alterações'
-  return n === 1 ? '1 arquivo alterado, sem commit' : `${n} arquivos alterados, sem commit`
-}
 
 const editorError = ref<string | null>(null)
 async function openEditor(): Promise<void> {
@@ -279,18 +272,7 @@ async function remove(): Promise<void> {
     <section v-if="git.isLoaded(id)" data-test="repos" aria-labelledby="repos-title" class="flex flex-col gap-2">
       <h2 id="repos-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Repositórios nesta pasta</h2>
       <p v-if="repos.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
-      <ul v-else class="m-0 flex list-none flex-col rounded-lg border border-line p-0">
-        <li
-          v-for="repo in repos"
-          :key="repo.path"
-          data-test="repo"
-          class="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2 last:border-b-0"
-        >
-          <span class="min-w-0 font-mono text-[13px] font-semibold">{{ repo.rel_path === '.' ? project.name : repo.rel_path }}</span>
-          <BranchLabel :text="branchText(repo)" :muted="!!repo.error" />
-          <span class="ml-auto text-xs" :class="changedCount(repo) > 0 ? 'text-secondary-soft' : 'text-fg-muted'">{{ changesSummary(repo) }}</span>
-        </li>
-      </ul>
+      <ProjectGitOverview v-else :project-id="id" />
       <p v-if="git.limitReached(id)" data-test="repo-limit" class="m-0 text-xs text-secondary-soft">
         Mais de 50 repositórios; só os 50 primeiros são acompanhados.
       </p>

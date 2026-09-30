@@ -85,7 +85,30 @@ export function makeGitRepo(overrides: Partial<import('../types/api').GitRepo> =
     detached: false,
     head: 'abc1234',
     changed: { staged: 0, unstaged: 0, untracked: 0 },
+    upstream: 'origin/main',
+    ahead: 0,
+    behind: 0,
     error: null,
+    ...overrides,
+  }
+}
+
+export function makeRepoDetails(
+  overrides: Partial<import('../types/api').RepoDetails> = {},
+): import('../types/api').RepoDetails {
+  return { ...makeGitRepo(), files: [], files_truncated: false, commits: [], ...overrides }
+}
+
+export function makeRepoCommit(
+  overrides: Partial<import('../types/api').RepoCommit> = {},
+): import('../types/api').RepoCommit {
+  return {
+    hash: 'abc1234',
+    full_hash: 'abc1234abc1234abc1234abc1234abc1234abc12',
+    subject: 'Ajustar o carrinho',
+    author: 'Fulano',
+    date: '2026-09-30T12:00:00-03:00',
+    pushed: true,
     ...overrides,
   }
 }

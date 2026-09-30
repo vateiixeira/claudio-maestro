@@ -3,7 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import { createAppRouter } from '../../../router'
-import { jsonResponse, makeGitRepo, makeProject, makeSession, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeGitRepo, makeProject, makeRepoDetails, makeSession, routeFetch } from '../../../test/factories'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 import { useGitStore } from '../../../stores/git'
@@ -78,13 +78,28 @@ describe('tela do projeto', () => {
       makeGitRepo({ rel_path: '.', branch: 'main', changed: { staged: 1, unstaged: 1, untracked: 0 } }),
       makeGitRepo({ rel_path: 'api', branch: null, detached: true, head: 'abc1234' }),
     ])
-    const w = await mountProject(1)
+    const w = await mountProject(1, {
+      'GET /api/projects/1/git/details': () => jsonResponse({
+        repos: [
+          makeRepoDetails({
+            rel_path: '.',
+            branch: 'main',
+            files: [
+              { path: 'a.py', status: 'staged', added: 1, removed: 0 },
+              { path: 'b.py', status: 'unstaged', added: 1, removed: 0 },
+            ],
+          }),
+          makeRepoDetails({ path: '/home/vi/dev/loja-online/api', rel_path: 'api', branch: null, detached: true, head: 'abc1234' }),
+        ],
+        limit_reached: false,
+      }),
+    })
     const rows = w.findAll('[data-test="repo"]')
     expect(rows).toHaveLength(2)
     expect(rows[0]!.text()).toContain('main')
-    expect(rows[0]!.text()).toContain('2 arquivos alterados, sem commit')
+    expect(rows[0]!.text()).toContain('2 não commitados')
     expect(rows[1]!.text()).toContain('HEAD solto · abc1234')
-    expect(rows[1]!.text()).toContain('Sem alterações')
+    expect(rows[1]!.text()).toContain('limpo')
   })
 
   it('sem git avisa', async () => {

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import * as api from '../api/http'
 import type { GitRepo } from '../types/api'
 import type { WsEvent } from '../types/events'
+import { useGitDetailsStore } from './gitDetails'
 
 /** Branch as the user reads it: name, "HEAD solto · hash" or "branch indisponível". */
 export function branchText(repo: Pick<GitRepo, 'branch' | 'detached' | 'head' | 'error'>): string {
@@ -66,6 +67,8 @@ export const useGitStore = defineStore('git', () => {
     const data = event.data as { project_id?: unknown; repos?: unknown; limit_reached?: unknown } | null
     if (typeof data?.project_id !== 'number' || !Array.isArray(data.repos)) return
     set(data.project_id, data.repos as GitRepo[], typeof data.limit_reached === 'boolean' ? data.limit_reached : undefined)
+    // Files and commits are not in the event: the screen that shows them rereads.
+    useGitDetailsStore().notifyChanged(data.project_id)
   }
 
   return { byProject, reposFor, isLoaded, limitReached, set, load, ensure, applyEvent }
