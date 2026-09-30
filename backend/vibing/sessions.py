@@ -259,6 +259,25 @@ class SessionRecord:
     # how it was linked: "auto", "manual" or "off" (None = auto without a plan).
     plan_path: str | None = None
     plan_link: str | None = None
+    # Folder whose CLI history holds the transcript, when it differs from `cwd` (the
+    # CLI moves the file when a session enters a worktree). SDK reads use it.
+    history_dir: str | None = None
+    # Linked worktree the session works in now (from the transcript's last cwd).
+    worktree_name: str | None = None
+    worktree_path: str | None = None
+    # Newest branch recorded in the transcript.
+    git_branch: str | None = None
+
+    @property
+    def history_directory(self) -> str:
+        """Directory to hand the SDK when reading or renaming this session."""
+        return self.history_dir or self.cwd
+
+    def work_dir(self) -> str:
+        """Folder the session works in: its worktree while it exists, else `cwd`."""
+        if self.worktree_path and Path(self.worktree_path).is_dir():
+            return self.worktree_path
+        return self.cwd
 
 
 @dataclass
@@ -278,11 +297,12 @@ _COLUMNS = (
     _INSERT_COLUMNS
     + ", summary, first_prompt, title_custom, rename_pending, file_modified_at, app_modified_at"
     + ", model, effort, permission_mode, finished_at, plan_path, plan_link"
+    + ", history_dir, worktree_name, worktree_path, git_branch"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
     "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
-    "plan_path", "plan_link",
+    "plan_path", "plan_link", "history_dir",
 )
 _BOOL_FIELDS = ("finished", "title_custom", "rename_pending")
 

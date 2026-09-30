@@ -281,7 +281,7 @@ git commit -m "[Feat] Detectar worktree atual a partir da transcrição"
   - `describe()` devolve `worktree_name`, `worktree_path` e `git_branch`, mas não `history_dir`.
   - `SessionOut` ganha os três campos, opcionais.
 
-- [ ] **Step 1: Testes que falham**
+- [x] **Step 1: Testes que falham**
 
 Em `backend/tests/test_db.py`:
 
@@ -333,12 +333,12 @@ def test_history_directory_and_work_dir(tmp_path: Path):
 
 No teste de API que lista sessões (por exemplo, o que já confere `cli_running` em `GET /api/projects/{id}/sessions`), acrescente uma verificação de que a resposta traz `worktree_name`, `worktree_path` e `git_branch`, com `None` numa sessão comum.
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `uv run pytest backend/tests/test_db.py backend/tests/test_session_record.py -q`
 Expected: FAIL com as colunas ausentes e `TypeError: unexpected keyword argument 'history_dir'`.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 `backend/vibing/db.py`, no fim de `MIGRATIONS`:
 
@@ -405,12 +405,12 @@ _INTERNAL_FIELDS = (
     git_branch: str | None = None
 ```
 
-- [ ] **Step 4: Rodar tudo e ver passar**
+- [x] **Step 4: Rodar tudo e ver passar**
 
 Run: `uv run pytest -q`
 Expected: PASS em tudo, incluindo os testes antigos que comparam `SCHEMA_VERSION`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/vibing/db.py backend/vibing/sessions.py backend/vibing/api/sessions.py backend/tests/

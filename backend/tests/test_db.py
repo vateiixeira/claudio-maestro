@@ -27,6 +27,13 @@ def test_migrate_creates_tables(tmp_path: Path):
         assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
 
 
+def test_sessions_have_worktree_columns(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        db.migrate(conn)
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
+    assert {"history_dir", "worktree_name", "worktree_path", "git_branch"} <= cols
+
+
 def test_migrate_twice_is_harmless(tmp_path: Path):
     path = tmp_path / "test.db"
     with open_db(path) as conn:

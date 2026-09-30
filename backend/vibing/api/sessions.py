@@ -112,6 +112,11 @@ class SessionOut(BaseModel):
     # a turn (last main-chain entry left it open and something was written in the last
     # 20 minutes). Always False for sessions the app is connected to.
     cli_running: bool = False
+    # Linked worktree the session works in (None outside worktrees) and the newest
+    # branch of its transcript.
+    worktree_name: str | None = None
+    worktree_path: str | None = None
+    git_branch: str | None = None
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]

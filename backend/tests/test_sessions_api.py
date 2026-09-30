@@ -144,6 +144,11 @@ def test_list_sessions_with_state(api, home, factory):
     assert listed[first["session_id"]]["state"] == "closed"
     assert listed[second["session_id"]]["state"] == "idle"
     assert listed[second["session_id"]]["title"] == "oi"
+    for session in listed.values():
+        assert session["worktree_name"] is None
+        assert session["worktree_path"] is None
+        assert session["git_branch"] is None
+        assert "history_dir" not in session
 
 
 def test_list_sessions_unknown_project(api):

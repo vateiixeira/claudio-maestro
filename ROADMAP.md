@@ -26,7 +26,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 7. Nova navegação | Inbox, Conversas, página única da conversa, nova conversa e Dashboard | Concluído | 27 de 27 |
 | 8. Agrupador de sessões | Organizar sessões relacionadas dentro do projeto | Em andamento | 0 de 10 |
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
-| 10. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 1 de 12 |
+| 10. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 2 de 12 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 começou em 2026-09-30, ambos a pedido do usuário. O marco 10 começou em 2026-09-30, a pedido do usuário, em paralelo ao marco 8.
 
@@ -295,7 +295,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 - Plano: `docs/superpowers/plans/2026-09-30-ajustes-sessoes-menu-lateral.md`
 
 - [x] Detectar a worktree atual pela transcrição (`worktree.py`) (2026-09-30)
-- [ ] Colunas de worktree, branch e pasta do histórico na sessão
+- [x] Colunas de worktree, branch e pasta do histórico na sessão (2026-09-30)
 - [ ] Conversa do CLI no meio de um turno aparece como "Em execução"
 - [ ] Indexar sessões guardadas nas pastas das worktrees
 - [ ] Ler o histórico pela pasta certa e retomar a sessão na worktree
