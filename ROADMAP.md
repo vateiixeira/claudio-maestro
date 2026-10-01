@@ -31,6 +31,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Concluído | 14 de 14 |
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
+| 15. Worktrees no painel e ajustes | Alterações de sessões em worktree, menu `/` só no início e teste instável | Em andamento | 0 de 4 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido e concluído em 2026-09-30, junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
@@ -410,6 +411,17 @@ Pedido pelo usuário em 2026-09-30, que escolheu a opção A entre três direç�
 - [x] Barra lateral: triângulo laranja forte só em conversa com novidade ou com pedido pendente (2026-09-30)
 - [x] Demais telas: Inbox, Conversas, Dashboard, projeto, Preferências, modais, sem verde em links e sem cores fixas (2026-09-30)
 - [x] Revisão do marco pelo `milestone-reviewer` e conferência no app (2026-09-30)
+
+## Marco 15. Worktrees no painel e ajustes
+
+Objetivo: o painel Alterações mostrar certo o que uma sessão muda numa worktree, e dois ajustes vindos das revisões dos marcos 12 e 13.
+
+Pedido pelo usuário em 2026-09-30, a partir dos "Pontos em aberto". Feito na worktree `.claude/worktrees/marco-15`.
+
+- [ ] Painel Alterações em sessões de worktree: arquivos editados numa worktree ficam no grupo do repositório certo (a worktree, com o branch dela e o diff real), e worktrees fora da pasta do projeto são aceitas em `/diff` e no editor
+- [ ] Menu `/` só abre quando a barra está no início da mensagem, que é onde o CLI executa comandos; o `@` continua em qualquer posição
+- [ ] Teste de tempo instável `test_continuous_writing_updates_during_and_after_the_burst` em `test_cliwatch.py` estabilizado
+- [ ] Revisão do marco pelo `milestone-reviewer`
 
 ## Fora do MVP
 
