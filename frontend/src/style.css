@@ -87,6 +87,7 @@ body {
 /* Rounded outer border while keeping horizontal scroll: separate borders with zero spacing. */
 .markdown table {
   display: block;
+  width: max-content;
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--color-line);

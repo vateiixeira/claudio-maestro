@@ -363,7 +363,7 @@ function onKeydown(event: KeyboardEvent) {
               :aria-pressed="dictation.recording.value"
               :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
               class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-sm"
-              :class="dictation.recording.value ? 'border-secondary/60 bg-secondary/10 text-secondary' : 'border-line-strong bg-transparent text-fg-muted hover:text-fg'"
+              :class="dictation.recording.value ? 'border-secondary/60 bg-secondary-tint text-secondary' : 'border-line-strong bg-transparent text-fg-muted hover:text-fg'"
               @click="dictation.toggle"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>

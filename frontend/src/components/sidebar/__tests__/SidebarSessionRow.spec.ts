@@ -35,6 +35,18 @@ describe('linha de conversa do menu', () => {
     expect(wrapper.find('svg').classes()).not.toContain('stroke-fg-subtle')
   })
 
+  it('mantém o triângulo laranja quando há pergunta, permissão ou plano esperando, mesmo vista', async () => {
+    for (const kind of ['tool', 'question', 'plan'] as const) {
+      const wrapper = await mountRow({ display_state: 'waiting', unread: false, pending_kind: kind })
+      expect(wrapper.find('svg').classes()).toContain('stroke-secondary')
+    }
+  })
+
+  it('mantém o triângulo laranja quando a conversa está com erro, mesmo vista', async () => {
+    const wrapper = await mountRow({ display_state: 'waiting', unread: false, state: 'error' })
+    expect(wrapper.find('svg').classes()).toContain('stroke-secondary')
+  })
+
   it('usa fundo card na linha atual e fg-muted nas demais', async () => {
     const current = await mountRow({ session_id: 'x1' }, '/sessions/x1')
     expect(current.classes()).toContain('bg-card')

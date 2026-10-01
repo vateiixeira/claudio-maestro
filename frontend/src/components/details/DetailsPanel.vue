@@ -134,7 +134,7 @@ function resetWidth() {
       :aria-valuemin="DETAILS_MIN_WIDTH"
       :aria-valuemax="maxWidth"
       title="Arraste para redimensionar · duplo clique volta ao padrão"
-      class="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize touch-none hover:bg-primary/30 focus-visible:bg-primary/40 focus-visible:outline-none"
+      class="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize touch-none hover:bg-line-strong focus-visible:bg-fg-muted/40 focus-visible:outline-none"
       @pointerdown="startDrag"
       @pointermove="moveDrag"
       @pointerup="endDrag"

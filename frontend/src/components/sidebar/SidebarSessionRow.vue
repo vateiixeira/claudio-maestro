@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
-import { sidebarItemClass } from './itemClass'
+import { isQuietSession, sidebarItemClass } from './itemClass'
 import { useProjectsStore } from '../../stores/projects'
 import { worktreeLabel } from '../../worktree'
 import type { Session } from '../../types/api'
@@ -21,7 +21,7 @@ const active = computed(() => route.name === 'session' && route.params.id === pr
     :class="sidebarItemClass(active)"
     :aria-current="active ? 'page' : undefined"
   >
-    <DisplayStateIcon :display="session.display_state" :size="11" :quiet="!session.unread" />
+    <DisplayStateIcon :display="session.display_state" :size="11" :quiet="isQuietSession(session)" />
     <span data-test="row-title" class="min-w-0 grow truncate text-[13px]">{{ session.title }}</span>
     <span v-if="project" data-test="row-project" :title="project.name" class="max-w-[40%] shrink-0 truncate text-[11px] text-fg-subtle">{{ project.name }}</span>
     <span v-if="worktree" data-test="row-worktree" :title="worktree" :aria-label="worktree" class="shrink-0 text-fg-muted">

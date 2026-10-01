@@ -48,7 +48,7 @@ function onKey(event: KeyboardEvent) {
             :aria-controls="`panel-${t.id}`"
             :tabindex="tab === t.id ? 0 : -1"
             class="h-10 border-b-2 px-3 text-sm font-medium"
-            :class="tab === t.id ? 'border-primary text-fg' : 'border-transparent text-fg-muted hover:text-fg'"
+            :class="tab === t.id ? 'border-fg text-fg' : 'border-transparent text-fg-muted hover:text-fg'"
             @click="select(t.id)"
           >{{ t.label }}</button>
         </div>

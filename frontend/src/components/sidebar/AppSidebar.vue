@@ -97,12 +97,12 @@ const itemClass = sidebarItemClass
             data-test="project"
             :data-available="String(project.available)"
             :to="{ name: 'project', params: { id: project.id } }"
-            :class="[itemClass(activeProjectId === project.id), 'min-w-0 grow', { 'opacity-50': !project.available }]"
+            :class="[itemClass(activeProjectId === project.id), 'min-w-0 grow']"
             :aria-current="route.name === 'project' && activeProjectId === project.id ? 'page' : undefined"
           >
-            <span data-test="project-color" class="size-2.5 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
+            <span data-test="project-color" class="size-2.5 shrink-0 rounded-[3px]" :class="{ 'opacity-50': !project.available }" :style="{ backgroundColor: project.color }" />
             <span class="flex min-w-0 grow flex-col">
-              <span data-test="project-name" class="truncate font-medium text-fg">{{ project.name }}</span>
+              <span data-test="project-name" class="truncate font-medium" :class="project.available ? 'text-fg' : 'text-fg-muted'">{{ project.name }}</span>
               <span v-if="!project.available" class="text-xs text-fg-subtle">pasta indisponível</span>
               <span v-else-if="git.reposFor(project.id)[0]" data-test="project-branch"><BranchLabel :text="repoLabel(git.reposFor(project.id)[0]!)" muted /></span>
               <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-secondary-soft">Só os 50 primeiros repositórios</span>

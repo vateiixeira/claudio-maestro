@@ -194,7 +194,7 @@ function shortPath(path: string): string {
       ref="menu"
       role="menu"
       aria-label="Planos do projeto"
-      class="flex max-h-60 flex-col overflow-y-auto rounded-lg border border-line-strong bg-elevated p-1 shadow-lg"
+      class="flex max-h-60 flex-col overflow-y-auto rounded-lg border border-line-strong bg-card p-1 shadow-lg"
       @keydown="onMenuKey"
     >
       <button
@@ -205,7 +205,7 @@ function shortPath(path: string): string {
         tabindex="-1"
         :disabled="busy"
         :title="item.path"
-        class="flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-fg hover:bg-card focus:bg-card focus:outline-none disabled:cursor-default disabled:opacity-60"
+        class="flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-fg hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted disabled:cursor-default disabled:opacity-60"
         :class="item.path === state?.path ? 'text-fg font-semibold' : ''"
         @click="choose(item.path)"
       >

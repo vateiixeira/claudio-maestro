@@ -442,7 +442,7 @@ function resolvePrompt(promptId: string) {
           data-test="retry-load"
           :aria-disabled="reloading"
           :aria-busy="reloading"
-          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary aria-disabled:cursor-default aria-disabled:opacity-60 aria-disabled:hover:bg-elevated"
+          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-line-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary aria-disabled:cursor-default aria-disabled:opacity-60 aria-disabled:hover:bg-elevated"
           @click="!reloading && reload()"
         >
           Tentar de novo
