@@ -66,10 +66,10 @@ function stack(column: { parts: ActivityDay[] }) {
             :fill="colorOf(part.project_id)"
             rx="2"
           ><title>{{ short(column.date) }} · {{ nameOf(part.project_id) }}: {{ part.sessions }}</title></rect>
-          <text v-if="i === 0 || i === columns.length - 1 || i === Math.floor(columns.length / 2)" :x="i * (barWidth + GAP) + barWidth / 2" :y="HEIGHT + 15" text-anchor="middle" font-size="11" fill="var(--color-fg-muted)">{{ short(column.date) }}</text>
+          <text v-if="i === 0 || i === columns.length - 1 || i === Math.floor(columns.length / 2)" :x="i * (barWidth + GAP) + barWidth / 2" :y="HEIGHT + 15" text-anchor="middle" font-size="11" fill="var(--color-fg-subtle)">{{ short(column.date) }}</text>
         </g>
       </svg>
-      <ul class="m-0 flex list-none flex-wrap gap-3 p-0 text-xs text-fg-muted">
+      <ul class="m-0 flex list-none flex-wrap gap-3 p-0 text-xs text-fg-subtle">
         <li v-for="id in legend" :key="id" class="flex items-center gap-1.5"><span class="size-2 rounded-[3px]" :style="{ backgroundColor: colorOf(id) }" />{{ nameOf(id) }}</li>
       </ul>
       <table class="sr-only">

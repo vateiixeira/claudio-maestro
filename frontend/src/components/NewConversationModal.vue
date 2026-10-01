@@ -307,31 +307,31 @@ function onKeydown(event: KeyboardEvent) {
 
       <div v-if="available.length === 0" data-test="nc-no-projects" class="flex flex-col gap-3 px-5 py-6">
         <p class="m-0">Cadastre um projeto antes de iniciar uma conversa.</p>
-        <RouterLink to="/projects/new" class="text-primary-soft" @click="close">Cadastrar projeto</RouterLink>
+        <RouterLink to="/projects/new" class="text-info-soft" @click="close">Cadastrar projeto</RouterLink>
       </div>
       <template v-else>
         <div class="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-5 py-4">
           <label class="flex items-center gap-2 text-sm text-fg-muted">
             em
-            <select v-model.number="draft.projectId" data-test="nc-project" :disabled="createdId !== null" @change="draft.groupId = null" :title="createdId !== null ? 'A conversa já foi criada neste projeto.' : undefined" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg">
+            <select v-model.number="draft.projectId" data-test="nc-project" :disabled="createdId !== null" @change="draft.groupId = null" :title="createdId !== null ? 'A conversa já foi criada neste projeto.' : undefined" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg">
               <option v-for="p in available" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select>
           </label>
           <label v-if="projectGroups.length" class="flex items-center gap-2 text-sm text-fg-muted">
             agrupador
-            <select v-model="draft.groupId" data-test="nc-group" aria-label="Agrupador" :disabled="createdId !== null" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg">
+            <select v-model="draft.groupId" data-test="nc-group" aria-label="Agrupador" :disabled="createdId !== null" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg">
               <option :value="null">Nenhum</option>
               <option v-for="g in projectGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
             </select>
           </label>
-          <input v-model="draft.title" data-test="nc-title" placeholder="Título (opcional)" aria-label="Título (opcional)" maxlength="200" class="h-10 rounded-md border border-line-strong bg-bg px-3 text-base font-semibold text-fg outline-none focus:border-primary" />
+          <input v-model="draft.title" data-test="nc-title" placeholder="Título (opcional)" aria-label="Título (opcional)" maxlength="200" class="h-10 rounded-md border border-line-strong bg-elevated px-3 text-base font-semibold text-fg outline-none focus:border-fg-muted" />
           <textarea
             ref="promptEl"
             v-model="draft.prompt"
             data-test="nc-prompt"
             aria-label="Prompt"
             placeholder="O que você quer fazer? (Ctrl+V cola imagens)"
-            class="min-h-40 grow resize-none rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-primary"
+            class="min-h-40 grow resize-none rounded-md border border-line-strong bg-elevated px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-fg-muted"
             @input="onPromptInput"
             @keydown="onPromptKey"
             @paste="onPaste"

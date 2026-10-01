@@ -175,14 +175,14 @@ function cancel(): void {
 
         <div class="flex flex-col gap-5">
           <div class="flex flex-col gap-2">
-            <label for="project-name" class="font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Nome</label>
+            <label for="project-name" class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Nome</label>
             <input
               id="project-name"
               v-model="name"
               type="text"
               maxlength="100"
               autocomplete="off"
-              class="h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-primary"
+              class="h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-fg-muted"
               placeholder="Selecione uma pasta"
             />
             <div data-test="selected-path" class="font-mono text-xs break-all text-fg-muted">
@@ -191,7 +191,7 @@ function cancel(): void {
           </div>
 
           <div v-if="folder" data-test="found-repos" class="flex flex-col gap-2">
-            <div class="flex items-center gap-2 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">
+            <div class="flex items-center gap-2 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">
               <span class="grow">Repositórios encontrados</span>
               <span v-if="!reposLoading && !reposError" class="normal-case tracking-normal">{{ found.length === 1 ? '1 repositório' : `${found.length} repositórios` }}</span>
             </div>
@@ -215,7 +215,7 @@ function cancel(): void {
           </div>
 
           <fieldset class="m-0 flex flex-col gap-2 border-0 p-0">
-            <legend class="mb-2 p-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Cor no menu</legend>
+            <legend class="mb-2 p-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Cor no menu</legend>
             <div class="flex gap-2">
               <button
                 v-for="option in COLORS"
@@ -223,7 +223,7 @@ function cancel(): void {
                 type="button"
                 :aria-label="option.label"
                 :aria-pressed="color === option.value"
-                class="flex size-11 items-center justify-center rounded-lg bg-bg"
+                class="flex size-11 items-center justify-center rounded-lg bg-elevated"
                 :class="color === option.value ? 'border-2 border-fg' : 'border border-line-strong hover:border-fg-muted'"
                 @click="color = option.value"
               >

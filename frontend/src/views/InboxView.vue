@@ -74,8 +74,8 @@ async function markAll() {
           >{{ t.label }}</button>
         </div>
         <span class="grow" />
-        <input v-model="search" data-test="inbox-search" type="search" placeholder="Buscar na Inbox…" aria-label="Buscar na Inbox" class="h-9 w-56 rounded-md border border-line-strong bg-bg px-3 text-sm text-fg outline-none focus:border-primary" />
-        <select v-model="projectFilter" data-test="inbox-project" aria-label="Projeto" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg">
+        <input v-model="search" data-test="inbox-search" type="search" placeholder="Buscar na Inbox…" aria-label="Buscar na Inbox" class="h-9 w-56 rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg outline-none focus:border-fg-muted" />
+        <select v-model="projectFilter" data-test="inbox-project" aria-label="Projeto" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg">
           <option value="">Todos os projetos</option>
           <option v-for="p in projects.projects" :key="p.id" :value="String(p.id)">{{ p.name }}</option>
         </select>
@@ -87,7 +87,7 @@ async function markAll() {
       <template v-else>
         <section v-for="group in groups" :key="group.label" :aria-label="group.label" class="flex flex-col">
           <div class="flex items-center gap-3 py-2">
-            <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
+            <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
           </div>
           <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" variant="inbox" @error="error = $event" />
         </section>

@@ -138,7 +138,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
       <div v-if="missing" data-test="conversation-missing" class="flex flex-col items-start gap-3 px-6 py-10">
         <h1 class="m-0 text-xl font-semibold">Conversa não encontrada</h1>
         <p class="m-0 text-fg-muted">Ela pode ter sido apagada fora do app.</p>
-        <RouterLink to="/sessions" class="text-primary-soft">Ver todas as conversas</RouterLink>
+        <RouterLink to="/sessions" class="text-info-soft">Ver todas as conversas</RouterLink>
       </div>
       <template v-else>
         <!-- Keyed by id: a rename in progress or the scroll position must not carry over to another conversation. -->

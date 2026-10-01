@@ -93,10 +93,10 @@ async function openPlan() {
         class="flex min-w-0 grow items-baseline gap-2 rounded-md py-1 text-left text-sm hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
         @click="toggle"
       >
-        <span aria-hidden="true" class="shrink-0 text-xs text-fg-muted">{{ open ? '▾' : '▸' }}</span>
-        <span class="shrink-0 truncate text-xs text-fg-muted" :class="inPanel ? 'max-w-[45%]' : 'max-w-[35%]'">{{ plan.title }}</span>
+        <span aria-hidden="true" class="shrink-0 text-xs text-fg-subtle">{{ open ? '▾' : '▸' }}</span>
+        <span class="shrink-0 truncate text-xs text-fg-subtle" :class="inPanel ? 'max-w-[45%]' : 'max-w-[35%]'">{{ plan.title }}</span>
         <span class="min-w-0 truncate text-fg">{{ planPosition(plan) }}</span>
-        <span v-if="stopped" class="shrink-0 text-xs text-fg-muted">· parado</span>
+        <span v-if="stopped" class="shrink-0 text-xs text-fg-subtle">· parado</span>
       </button>
       <button
         type="button"

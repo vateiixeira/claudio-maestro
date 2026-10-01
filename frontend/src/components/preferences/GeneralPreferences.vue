@@ -113,7 +113,7 @@ onMounted(load)
 
     <div class="flex flex-col gap-7 px-7 py-6" :aria-busy="loading">
       <div class="flex flex-col gap-2">
-        <label for="pref-editor" class="font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Comando do editor</label>
+        <label for="pref-editor" class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Comando do editor</label>
         <input
           id="pref-editor"
           v-model="editorText"
@@ -123,7 +123,7 @@ onMounted(load)
           :placeholder="DEFAULT_EDITOR"
           :disabled="!ready"
           aria-describedby="pref-editor-help"
-          class="h-11 rounded-lg border border-line-strong bg-bg px-3.5 font-mono text-sm text-fg outline-none placeholder:text-fg-muted focus:border-primary disabled:opacity-40"
+          class="h-11 rounded-lg border border-line-strong bg-elevated px-3.5 font-mono text-sm text-fg outline-none placeholder:text-fg-muted focus:border-fg-muted disabled:opacity-40"
         />
         <p id="pref-editor-help" data-test="editor-help" class="m-0 text-xs text-fg-muted">
           Usado por "Abrir no editor". O caminho do arquivo ou da pasta é adicionado ao final do comando, como em
@@ -134,7 +134,7 @@ onMounted(load)
       </div>
 
       <div class="flex flex-col gap-2">
-        <label for="pref-days" class="font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Dias para ocultar sessões</label>
+        <label for="pref-days" class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Dias para ocultar sessões</label>
         <input
           id="pref-days"
           v-model="daysText"
@@ -145,7 +145,7 @@ onMounted(load)
           step="1"
           :disabled="!ready"
           aria-describedby="pref-days-help"
-          class="h-11 w-32 rounded-lg border border-line-strong bg-bg px-3.5 text-sm text-fg outline-none focus:border-primary disabled:opacity-40"
+          class="h-11 w-32 rounded-lg border border-line-strong bg-elevated px-3.5 text-sm text-fg outline-none focus:border-fg-muted disabled:opacity-40"
         />
         <p id="pref-days-help" class="m-0 text-xs text-fg-muted">
           Sessões paradas há mais dias que isso saem do menu e ficam em Finalizadas, na tela do projeto. De {{ MIN_DAYS }} a {{ MAX_DAYS }}.

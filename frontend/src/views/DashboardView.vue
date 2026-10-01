@@ -68,24 +68,24 @@ function scrollToProjects() {
     <LoadStatus v-if="loadState !== 'ready'" :state="loadState" />
 
     <section v-if="loadState === 'ready'" aria-labelledby="now-title" class="flex flex-col gap-3">
-      <h2 id="now-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Agora</h2>
+      <h2 id="now-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Agora</h2>
       <p v-if="active.length === 0" data-test="now-empty" class="m-0 text-fg-muted">Nenhuma conversa ativa agora.</p>
       <template v-else>
         <div class="grid gap-3 md:grid-cols-2">
           <NowCard v-for="s in nowCards" :key="s.session_id" :session="s" :project="projects.byId(s.project_id)" />
         </div>
-        <RouterLink v-if="active.length > NOW_LIMIT" data-test="now-more" to="/inbox?aba=todas" class="self-start text-sm text-fg-muted no-underline hover:text-fg">Ver todas as {{ active.length }} na Inbox</RouterLink>
+        <RouterLink v-if="active.length > NOW_LIMIT" data-test="now-more" to="/inbox?aba=todas" class="self-start text-sm text-info-soft no-underline hover:text-fg">Ver todas as {{ active.length }} na Inbox</RouterLink>
       </template>
     </section>
 
     <section v-if="loadState === 'ready'" aria-label="Números" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <RouterLink data-test="stat-running" to="/inbox?aba=em-execucao" class="flex flex-col rounded-lg border border-line p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ running }}</span><span class="text-sm text-fg-muted">Em execução</span></RouterLink>
-      <RouterLink data-test="stat-waiting" to="/inbox?aba=pede-voce" class="flex flex-col rounded-lg border border-line p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ waiting }}</span><span class="text-sm text-fg-muted">Aguardando você</span></RouterLink>
-      <RouterLink data-test="stat-finished-today" to="/sessions?estado=finalizadas" class="flex flex-col rounded-lg border border-line p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ finishedToday }}</span><span class="text-sm text-fg-muted">Finalizadas hoje</span></RouterLink>
-      <button type="button" data-test="stat-projects-changes" class="flex flex-col rounded-lg border border-line p-4 text-left hover:bg-card" @click="scrollToProjects"><span class="text-3xl font-semibold text-fg">{{ projectsWithChanges }}</span><span class="text-sm text-fg-muted">Projetos com alterações</span></button>
+      <RouterLink data-test="stat-running" to="/inbox?aba=em-execucao" class="flex flex-col rounded-lg border border-line bg-panel p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ running }}</span><span class="text-sm text-fg-muted">Em execução</span></RouterLink>
+      <RouterLink data-test="stat-waiting" to="/inbox?aba=pede-voce" class="flex flex-col rounded-lg border border-line bg-panel p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ waiting }}</span><span class="text-sm text-fg-muted">Aguardando você</span></RouterLink>
+      <RouterLink data-test="stat-finished-today" to="/sessions?estado=finalizadas" class="flex flex-col rounded-lg border border-line bg-panel p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ finishedToday }}</span><span class="text-sm text-fg-muted">Finalizadas hoje</span></RouterLink>
+      <button type="button" data-test="stat-projects-changes" class="flex flex-col rounded-lg border border-line bg-panel p-4 text-left hover:bg-card" @click="scrollToProjects"><span class="text-3xl font-semibold text-fg">{{ projectsWithChanges }}</span><span class="text-sm text-fg-muted">Projetos com alterações</span></button>
     </section>
 
-    <section class="rounded-lg border border-line p-4">
+    <section class="rounded-lg border border-line bg-panel p-4">
       <div v-if="activityError" class="flex flex-col items-start gap-2">
         <p data-test="activity-error" role="alert" class="m-0 text-sm text-secondary-soft">Não foi possível carregar a atividade.</p>
         <button type="button" data-test="activity-retry" class="h-8 rounded-md border border-line-strong px-2.5 text-xs text-fg hover:bg-card" @click="loadActivity">Tentar de novo</button>
@@ -95,17 +95,17 @@ function scrollToProjects() {
     </section>
 
     <div v-if="loadState === 'ready'" class="grid gap-6 lg:grid-cols-2">
-      <section data-test="recent-list" aria-labelledby="recent-title" class="flex flex-col gap-2">
-        <h2 id="recent-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Conversas recentes</h2>
+      <section data-test="recent-list" aria-labelledby="recent-title" class="flex flex-col gap-2 rounded-lg border border-line bg-panel p-3">
+        <h2 id="recent-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Conversas recentes</h2>
         <ConversationRow v-for="s in recent" :key="s.session_id" :session="s" variant="compact" />
       </section>
-      <section id="dashboard-projetos" data-test="projects-list" aria-labelledby="projects-title" class="flex flex-col gap-2">
-        <h2 id="projects-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Projetos</h2>
+      <section id="dashboard-projetos" data-test="projects-list" aria-labelledby="projects-title" class="flex flex-col gap-2 rounded-lg border border-line bg-panel p-3">
+        <h2 id="projects-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Projetos</h2>
         <RouterLink v-for="p in projects.projects" :key="p.id" :to="{ name: 'project', params: { id: p.id } }" class="flex min-h-11 items-center gap-3 rounded-md px-2 text-fg no-underline hover:bg-card">
           <span class="size-2.5 rounded-[3px]" :style="{ backgroundColor: p.color }" />
           <span class="min-w-0 grow truncate">{{ p.name }}</span>
           <BranchLabel v-if="git.reposFor(p.id)[0]" :text="repoLabel(git.reposFor(p.id)[0]!)" muted />
-          <span class="text-xs text-fg-muted">{{ changedFiles(p.id) }} {{ changedFiles(p.id) === 1 ? 'arquivo' : 'arquivos' }}</span>
+          <span class="text-xs text-fg-subtle">{{ changedFiles(p.id) }} {{ changedFiles(p.id) === 1 ? 'arquivo' : 'arquivos' }}</span>
           <span v-if="waitingIn(p.id)" class="flex items-center gap-1 text-xs text-secondary"><DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(p.id) }}</span>
         </RouterLink>
       </section>
