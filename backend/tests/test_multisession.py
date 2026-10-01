@@ -15,8 +15,8 @@ from test_sessions import (
     session_row,
     wait_until,
 )
-from vibing.agent.fake import FailStep, FakeAgentFactory, PauseStep, text_turn, tool_turn
-from vibing.sessions import SessionManager, SessionNotFoundError, SessionRecord, describe, display_state
+from claudio_maestro.agent.fake import FailStep, FakeAgentFactory, PauseStep, text_turn, tool_turn
+from claudio_maestro.sessions import SessionManager, SessionNotFoundError, SessionRecord, describe, display_state
 
 DAY = 86_400
 
@@ -318,7 +318,7 @@ async def test_old_session_listed_as_finished(env, env_cleanup):
     record = manager.create_session(env.project)
     from contextlib import closing
 
-    from vibing import db
+    from claudio_maestro import db
 
     with closing(db.connect(env.db_path)) as conn:
         conn.execute(
@@ -463,7 +463,7 @@ def _make_sessions(env, tmp_path, count):
 def _reset_seen(env, ids, value=0):
     from contextlib import closing
 
-    from vibing import db
+    from claudio_maestro import db
 
     with closing(db.connect(env.db_path)) as conn:
         conn.execute(
@@ -478,8 +478,8 @@ def _reset_seen(env, ids, value=0):
 async def test_mark_seen_many_writes_in_one_transaction_off_the_event_loop(env, tmp_path, monkeypatch):
     import threading
 
-    from vibing import db
-    from vibing import sessions as sessions_module
+    from claudio_maestro import db
+    from claudio_maestro import sessions as sessions_module
 
     ids = _make_sessions(env, tmp_path, 3)
     _reset_seen(env, ids)
@@ -509,7 +509,7 @@ async def test_mark_seen_many_writes_in_one_transaction_off_the_event_loop(env, 
 async def test_mark_seen_many_failure_writes_nothing_and_emits_nothing(env, tmp_path):
     from contextlib import closing
 
-    from vibing import db
+    from claudio_maestro import db
 
     ids = _make_sessions(env, tmp_path, 3)
     _reset_seen(env, ids)

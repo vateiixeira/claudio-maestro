@@ -6,7 +6,7 @@ import json
 import anyio
 import pytest
 
-from vibing.events import EventHub
+from claudio_maestro.events import EventHub
 
 WAIT = 2
 

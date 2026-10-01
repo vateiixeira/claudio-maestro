@@ -7,8 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from vibing import db
-from vibing.history import Transcript
+from claudio_maestro import db
+from claudio_maestro.history import Transcript
 
 NOW = 1_000_000.0
 
@@ -54,7 +54,7 @@ class World:
     """Database with one project, sessions with files and transcripts."""
 
     def __init__(self, tmp_path: Path) -> None:
-        self.db_path = tmp_path / "data" / "vibing.db"
+        self.db_path = tmp_path / "data" / "maestro.db"
         db.init_db(self.db_path)
         self.root = tmp_path / "app"
         self.root.mkdir()
@@ -104,7 +104,7 @@ class World:
         return None if path is None else self.transcripts.get(path.stem)
 
     def service(self, model, **kwargs):
-        from vibing.digest.service import DigestService
+        from claudio_maestro.digest.service import DigestService
 
         service = DigestService(
             self.db_path, self.manager, self.envelopes.append, model,
@@ -115,7 +115,7 @@ class World:
         return service
 
     def digest(self, sid: str):
-        from vibing.digest import store
+        from claudio_maestro.digest import store
 
         with closing(db.connect(self.db_path)) as conn:
             return store.get_digest(conn, sid)

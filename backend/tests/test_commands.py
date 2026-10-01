@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from vibing.agent.base import AgentError, AgentOptions
-from vibing.agent.fake import FakeAgentFactory
-from vibing.commands import (
+from claudio_maestro.agent.base import AgentError, AgentOptions
+from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.commands import (
     NO_HOOKS,
     CommandCatalog,
     CommandCatalogError,

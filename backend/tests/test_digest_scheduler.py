@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 from digest_fakes import NOW, World, exchange
 
-from vibing import db
-from vibing.digest import store
-from vibing.digest.config import DigestConfig, load_config
-from vibing.digest.model import DigestModelError, FakeDigestModel
+from claudio_maestro import db
+from claudio_maestro.digest import store
+from claudio_maestro.digest.config import DigestConfig, load_config
+from claudio_maestro.digest.model import DigestModelError, FakeDigestModel
 
 
 def runs(world: World) -> list[dict]:

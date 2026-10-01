@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from git_helpers import git, make_repo
-from vibing.filesearch import FileIndex, FileMatch, is_excluded, match_files
+from claudio_maestro.filesearch import FileIndex, FileMatch, is_excluded, match_files
 
 
 def touch(root: Path, *paths: str) -> None:
@@ -38,9 +38,9 @@ def test_not_excluded(rel):
 
 
 PATHS = sorted([
-    "backend/vibing/fs.py",
-    "backend/vibing/api/fs.py",
-    "backend/vibing/FsHelper.py",
+    "backend/claudio_maestro/fs.py",
+    "backend/claudio_maestro/api/fs.py",
+    "backend/claudio_maestro/FsHelper.py",
     "frontend/src/App.vue",
     "README.md",
 ])
@@ -49,19 +49,19 @@ PATHS = sorted([
 def test_term_without_slash_matches_the_file_name_ignoring_case():
     result = match_files(PATHS, "fs")
     files = [m.path for m in result if m.type == "file"]
-    assert files == ["backend/vibing/FsHelper.py", "backend/vibing/api/fs.py", "backend/vibing/fs.py"]
+    assert files == ["backend/claudio_maestro/FsHelper.py", "backend/claudio_maestro/api/fs.py", "backend/claudio_maestro/fs.py"]
 
 
 def test_term_with_slash_matches_across_one_folder_boundary():
     result = match_files(PATHS, "api/fs")
-    assert [m.path for m in result if m.type == "file"] == ["backend/vibing/api/fs.py"]
+    assert [m.path for m in result if m.type == "file"] == ["backend/claudio_maestro/api/fs.py"]
     assert match_files(PATHS, "backend/fs") == []  # `*` does not cross `/`
 
 
 def test_folders_of_the_matches_whose_path_contains_the_term_end_with_slash():
-    result = match_files(["backend/vibing/vibing_cfg.py", "backend/other.py"], "vibing")
-    assert FileMatch("backend/vibing/", "vibing", "directory") in result
-    assert FileMatch("backend/vibing/vibing_cfg.py", "vibing_cfg.py", "file") in result
+    result = match_files(["backend/claudio_maestro/claudio_maestro_cfg.py", "backend/other.py"], "claudio_maestro")
+    assert FileMatch("backend/claudio_maestro/", "claudio_maestro", "directory") in result
+    assert FileMatch("backend/claudio_maestro/claudio_maestro_cfg.py", "claudio_maestro_cfg.py", "file") in result
     assert all(m.path != "backend/" for m in result)
 
 
@@ -105,7 +105,7 @@ async def test_folder_without_git_is_walked_with_exclusions(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_walk_stops_at_the_limit(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("vibing.filesearch.WALK_LIMIT", 5)
+    monkeypatch.setattr("claudio_maestro.filesearch.WALK_LIMIT", 5)
     touch(tmp_path, *[f"f{i}.txt" for i in range(20)])
     result = await FileIndex().search(tmp_path, "")
     assert len(result) == 5
@@ -141,7 +141,7 @@ async def test_project_inside_a_repository_respects_the_repository_gitignore(tmp
 async def test_walk_skips_cache_and_hidden_folders_so_the_limit_keeps_project_files(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("vibing.filesearch.WALK_LIMIT", 10)
+    monkeypatch.setattr("claudio_maestro.filesearch.WALK_LIMIT", 10)
     touch(tmp_path, *[f".venv/lib/f{i}.py" for i in range(30)])
     touch(tmp_path, *[f"__pycache__/c{i}.pyc" for i in range(30)])
     touch(tmp_path, ".mypy_cache/x.json", ".hidden/y.py", "target/z.py", "app/main.py")

@@ -324,7 +324,7 @@ async function remove(): Promise<void> {
       >
         <h2 id="confirm-remove-title" class="m-0 text-base font-semibold">Remover o projeto {{ project.name }}?</h2>
         <p id="confirm-remove-text" class="m-0 text-sm text-fg-muted">
-          A pasta e as conversas não são apagadas. O projeto só deixa de aparecer no Vibing.
+          A pasta e as conversas não são apagadas. O projeto só deixa de aparecer no Maestro.
           <span class="font-mono text-xs break-all text-fg">{{ project.path }}</span>
           continua como está.
         </p>

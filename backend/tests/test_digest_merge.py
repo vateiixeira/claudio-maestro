@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from vibing.digest.merge import DigestFormatError, clean_phase, merge_digest
-from vibing.digest.store import Digest
-from vibing.plans import PlanProgress, PlanTask
+from claudio_maestro.digest.merge import DigestFormatError, clean_phase, merge_digest
+from claudio_maestro.digest.store import Digest
+from claudio_maestro.plans import PlanProgress, PlanTask
 
 
 def phase(title: str, status: str = "done", kind: str = "feature", **extra) -> dict:

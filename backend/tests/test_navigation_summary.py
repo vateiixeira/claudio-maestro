@@ -6,9 +6,9 @@ import pytest
 from claude_agent_sdk import ToolUseBlock
 
 from test_sessions import by_session, env_cleanup, make_env, session_row, wait_until  # noqa: F401
-from vibing import db
-from vibing.agent.fake import response_messages, text_turn, tool_turn
-from vibing.sessions import last_action_text
+from claudio_maestro import db
+from claudio_maestro.agent.fake import response_messages, text_turn, tool_turn
+from claudio_maestro.sessions import last_action_text
 
 
 # last_action_text -----------------------------------------------------------
@@ -46,7 +46,7 @@ def test_last_action_text_is_cut_at_80_characters():
 
 
 def test_migration_adds_finished_at(tmp_path):
-    path = tmp_path / "vibing.db"
+    path = tmp_path / "maestro.db"
     db.init_db(path)
     with closing(db.connect(path)) as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}

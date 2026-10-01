@@ -1,4 +1,4 @@
-# Vini7 Vibing
+# Cláudio Maestro
 
 App web local que substitui a extensão do VSCode e o CLI do Claude Code no uso diário do Vinicius. Roda na máquina dele, abre no navegador e controla sessões do Claude Code pelo Claude Agent SDK em Python. Usuário único.
 
@@ -46,7 +46,7 @@ Docker foi adiado. Se voltar à pauta, o processo `claude` passa a rodar dentro 
 Rode a partir da raiz do repositório. Na primeira vez: `uv sync` e `pnpm --dir frontend install`.
 
 ```bash
-uv run uvicorn vibing.app:app --reload --reload-dir backend --host 127.0.0.1 --port 6660   # backend
+uv run uvicorn claudio_maestro.app:app --reload --reload-dir backend --host 127.0.0.1 --port 6660   # backend
 pnpm --dir frontend dev                                                                    # frontend
 uv run pytest                                                                              # testes do backend
 pnpm --dir frontend test                                                                   # testes do frontend
@@ -92,8 +92,8 @@ O app executa comandos na máquina, então qualquer site aberto no navegador é 
 - Recuse requisições cujo `Host` não seja `localhost` ou `127.0.0.1` nas portas 6600 e 6660.
 - Recuse WebSockets e requisições que alteram estado cuja origem não seja a do próprio app.
 - Não libere CORS.
-- Toda requisição a `/api/` precisa do cabeçalho `X-Vibing: 1`, que o cliente do frontend envia. Isso impede outros sites de dispararem leituras por `<img>`, formulário ou `fetch`.
-- Todo `git` passa por `run_git` em `backend/vibing/gitinfo.py`, que neutraliza fsmonitor, pager, hooks, diff externo, textconv, filtros e submódulos. Não chame `git` por outro caminho.
+- Toda requisição a `/api/` precisa do cabeçalho `X-Maestro: 1`, que o cliente do frontend envia. Isso impede outros sites de dispararem leituras por `<img>`, formulário ou `fetch`.
+- Todo `git` passa por `run_git` em `backend/claudio_maestro/gitinfo.py`, que neutraliza fsmonitor, pager, hooks, diff externo, textconv, filtros e submódulos. Não chame `git` por outro caminho.
 - Todo caminho recebido precisa estar, depois de resolvido, dentro da pasta de um projeto registrado. A única exceção é uma worktree git ligada a um repositório que está dentro de um projeto, comprovada pelo ponteiro `.git` de ida e volta (com `realpath`) e pela saída de `git worktree list` desse repositório (decisão do usuário em 2026-09-30, marco 16).
 - Execute git e o editor com argumentos em lista, sem shell.
 

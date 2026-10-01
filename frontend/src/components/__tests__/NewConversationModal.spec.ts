@@ -68,7 +68,7 @@ describe('modal de nova conversa', () => {
     expect(fetch.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
     expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
     expect(useNewConversationStore(pinia).isOpen).toBe(false)
-    expect(localStorage.getItem('vibing:new-conversation')).toBeNull()
+    expect(localStorage.getItem('maestro:new-conversation')).toBeNull()
   })
 
   it('envia título quando preenchido', async () => {
@@ -140,7 +140,7 @@ describe('modal de nova conversa', () => {
   })
 
   it('rascunho com projeto removido cai no projeto padrão', async () => {
-    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 99, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({ projectId: 99, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
     const { wrapper } = await openModal(null)
     expect((wrapper.find('[data-test="nc-project"]').element as HTMLSelectElement).value).toBe('1')
   })
@@ -149,7 +149,7 @@ describe('modal de nova conversa', () => {
     const { wrapper } = await openModal(2)
     await wrapper.find('[data-test="nc-prompt"]').setValue('lixo')
     await wrapper.find('[data-test="nc-discard"]').trigger('click')
-    expect(localStorage.getItem('vibing:new-conversation')).toBeNull()
+    expect(localStorage.getItem('maestro:new-conversation')).toBeNull()
     expect(useNewConversationStore(pinia).isOpen).toBe(false)
   })
 
@@ -235,7 +235,7 @@ describe('modal de nova conversa: revisão', () => {
     await first.wrapper.find('[data-test="nc-prompt"]').setValue('oi')
     await first.wrapper.find('[data-test="nc-submit"]').trigger('click')
     await flushPromises()
-    expect(localStorage.getItem('vibing:new-conversation-last-project')).toBe('2')
+    expect(localStorage.getItem('maestro:new-conversation-last-project')).toBe('2')
     first.wrapper.unmount()
 
     const second = await openModal(null)
@@ -243,7 +243,7 @@ describe('modal de nova conversa: revisão', () => {
   })
 
   it('último projeto indisponível cai no primeiro disponível', async () => {
-    localStorage.setItem('vibing:new-conversation-last-project', '3')
+    localStorage.setItem('maestro:new-conversation-last-project', '3')
     const { wrapper } = await openModal(null)
     expect((wrapper.find('[data-test="nc-project"]').element as HTMLSelectElement).value).toBe('1')
   })
@@ -269,7 +269,7 @@ describe('modal de nova conversa: revisão', () => {
   })
 
   it('rascunho com valores inválidos vira nulo', async () => {
-    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 2, title: '', prompt: 'x', model: null, effort: 'enorme', permissionMode: 'bypassPermissions' }))
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({ projectId: 2, title: '', prompt: 'x', model: null, effort: 'enorme', permissionMode: 'bypassPermissions' }))
     const { wrapper, fetch } = await openModal(null)
     await wrapper.find('[data-test="nc-submit"]').trigger('click')
     await flushPromises()
@@ -350,7 +350,7 @@ describe('modal de nova conversa: agrupador', () => {
     groups.groups = groups.groups.filter((g) => g.id !== 2)
     await flushPromises()
     expect(groupText(wrapper)).toBe('Nenhum')
-    expect(JSON.parse(localStorage.getItem('vibing:new-conversation')!).groupId).toBeNull()
+    expect(JSON.parse(localStorage.getItem('maestro:new-conversation')!).groupId).toBeNull()
   })
 
   it('aberto antes de os agrupadores carregarem, guarda o pedido e o aplica quando chegam', async () => {
@@ -358,7 +358,7 @@ describe('modal de nova conversa: agrupador', () => {
     groups.loaded = false
     const { wrapper } = await openModal(1, {}, 2)
     // The draft was not wiped while the groups were unknown.
-    expect(JSON.parse(localStorage.getItem('vibing:new-conversation')!).groupId).toBe(2)
+    expect(JSON.parse(localStorage.getItem('maestro:new-conversation')!).groupId).toBe(2)
 
     groups.groups = [makeGroup({ id: 2, project_id: 1, name: 'Checkout' })]
     groups.loaded = true
@@ -367,7 +367,7 @@ describe('modal de nova conversa: agrupador', () => {
   })
 
   it('aberto antes da carga, o agrupador do rascunho também volta quando os agrupadores chegam', async () => {
-    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
     const groups = useGroupsStore(pinia)
     groups.loaded = false
     const { wrapper } = await openModal(null)
@@ -379,29 +379,29 @@ describe('modal de nova conversa: agrupador', () => {
 
   it('aberto de uma conversa sem agrupador (null), mostra Nenhum mesmo com rascunho', async () => {
     seedGroups()
-    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
     const { wrapper } = await openModal(1, {}, null)
     expect(groupText(wrapper)).toBe('Nenhum')
   })
 
   it('aberto sem preferência de agrupador (undefined), vale o rascunho', async () => {
     seedGroups()
-    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
     const { wrapper } = await openModal(1)
     expect(groupValue(wrapper)).toBe('2')
   })
 
   it('guarda o agrupador no rascunho e o restaura ao abrir', async () => {
     seedGroups()
-    localStorage.setItem('vibing:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({ projectId: 1, groupId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: null }))
     const { wrapper } = await openModal(null)
     expect(groupValue(wrapper)).toBe('2')
   })
 
   it('loadDraft aceita só número como agrupador', () => {
-    localStorage.setItem('vibing:new-conversation', JSON.stringify({ groupId: 'x' }))
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({ groupId: 'x' }))
     expect(loadDraft().groupId).toBeNull()
-    localStorage.setItem('vibing:new-conversation', JSON.stringify({ groupId: 3 }))
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({ groupId: 3 }))
     expect(loadDraft().groupId).toBe(3)
     localStorage.clear()
     expect(loadDraft().groupId).toBeNull()

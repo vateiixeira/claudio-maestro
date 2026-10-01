@@ -17,13 +17,13 @@ from history_fakes import FakeHistory, info
 
 from git_helpers import make_repo
 from test_git_api import add_project, api, factory, spawn  # noqa: F401
-from vibing import db, gitinfo, history
-from vibing.cliwatch import DEFAULT_RELOAD_INTERVAL, CliWatcher
-from vibing.conversation import ConversationBuilder, cap_items
-from vibing.history import HistoryIndex, read_edits_file, read_transcript_file
+from claudio_maestro import db, gitinfo, history
+from claudio_maestro.cliwatch import DEFAULT_RELOAD_INTERVAL, CliWatcher
+from claudio_maestro.conversation import ConversationBuilder, cap_items
+from claudio_maestro.history import HistoryIndex, read_edits_file, read_transcript_file
 # Taken before the autouse fixture replaces it with a stub.
-from vibing.history import sdk_folder_signature as real_folder_signature
-from vibing.history import sdk_read_transcript as real_read_transcript
+from claudio_maestro.history import sdk_folder_signature as real_folder_signature
+from claudio_maestro.history import sdk_read_transcript as real_read_transcript
 
 
 # Transcript files ------------------------------------------------------------
@@ -153,7 +153,7 @@ def test_long_tool_input_strings_are_cut():
 
 
 def make_index(tmp_path: Path, signatures: dict[str, Any]):
-    db_path = tmp_path / "data" / "vibing.db"
+    db_path = tmp_path / "data" / "maestro.db"
     db.init_db(db_path)
     folder = tmp_path / "home" / "app"
     folder.mkdir(parents=True)

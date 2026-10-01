@@ -21,8 +21,8 @@ from test_sessions_api import (
     wait_state,
 )
 
-from vibing.agent.fake import FakeAgentFactory, tool_turn
-from vibing.app import create_app
+from claudio_maestro.agent.fake import FakeAgentFactory, tool_turn
+from claudio_maestro.app import create_app
 
 PLAN_TEXT = "# P\n\n### Tarefa 1: A\n- [x] a\n\n### Tarefa 2: B\n- [ ] b\n"
 NO_TASKS = "# Notas\n\nSem tarefas aqui.\n"
@@ -39,7 +39,7 @@ def api(factory: FakeAgentFactory):
         return any(c.options.session_id == session_id and c.sent for c in factory.clients)
 
     app = create_app(agent_factory=factory, history_exists=history_exists)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as c:
         yield c
 
 
@@ -382,9 +382,9 @@ FOREIGN = "http://evil.com:6660"
 @pytest.mark.parametrize(
     ("base_url", "headers", "status"),
     [
-        (BACKEND_URL, {"origin": APP_ORIGIN}, 403),  # no X-Vibing
-        (BACKEND_URL, {"origin": "http://evil.com", "x-vibing": "1"}, 403),  # foreign Origin
-        (FOREIGN, {"origin": APP_ORIGIN, "x-vibing": "1"}, 400),  # foreign Host
+        (BACKEND_URL, {"origin": APP_ORIGIN}, 403),  # no X-Maestro
+        (BACKEND_URL, {"origin": "http://evil.com", "x-maestro": "1"}, 403),  # foreign Origin
+        (FOREIGN, {"origin": APP_ORIGIN, "x-maestro": "1"}, 400),  # foreign Host
     ],
 )
 def test_plan_routes_are_protected(method, url, body, base_url, headers, status):
@@ -396,5 +396,5 @@ def test_plan_routes_are_protected(method, url, body, base_url, headers, status)
 @pytest.mark.parametrize(("method", "url", "body"), WRITES)
 def test_plan_writes_need_an_origin(method, url, body):
     with TestClient(create_app(), base_url=BACKEND_URL) as client:
-        response = client.request(method, url, json=body, headers={"x-vibing": "1"})
+        response = client.request(method, url, json=body, headers={"x-maestro": "1"})
     assert response.status_code == 403

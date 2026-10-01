@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 from test_sessions import Env
 
-from vibing import db
-from vibing.agent.fake import FakeAgentFactory
-from vibing.digest import store
-from vibing.digest.store import Digest
-from vibing.sessions import SessionManager
+from claudio_maestro import db
+from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.digest import store
+from claudio_maestro.digest.store import Digest
+from claudio_maestro.sessions import SessionManager
 
 
 @pytest.mark.anyio
@@ -48,6 +48,6 @@ async def test_briefs_are_loaded_at_startup(tmp_path: Path) -> None:
 
 
 def test_session_out_accepts_the_fields() -> None:
-    from vibing.api.sessions import SessionOut
+    from claudio_maestro.api.sessions import SessionOut
 
     assert "digest_short" in SessionOut.model_fields and "plan_done" in SessionOut.model_fields

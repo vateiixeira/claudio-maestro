@@ -8,9 +8,9 @@ import asyncio
 import sys
 from pathlib import Path
 
-from vibing.agent.sdk_client import clean_inherited_env
-from vibing.commands import CommandCatalog
-from vibing.sessions import default_agent_factory
+from claudio_maestro.agent.sdk_client import clean_inherited_env
+from claudio_maestro.commands import CommandCatalog
+from claudio_maestro.sessions import default_agent_factory
 
 
 async def main() -> None:

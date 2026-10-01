@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from vibing import picker
+from claudio_maestro import picker
 
 
 class FakeProcess:

@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from history_fakes import REAL_GIT_WORKTREES, FakeHistory, info
 
-from vibing import db, groups
-from vibing.history import HistoryIndex, find_repositories, session_title
+from claudio_maestro import db, groups
+from claudio_maestro.history import HistoryIndex, find_repositories, session_title
 
 
 def add_project(db_path: Path, folder: Path, name: str = "app") -> int:
@@ -33,7 +33,7 @@ def rows(db_path: Path) -> dict[str, dict[str, Any]]:
 
 @pytest.fixture
 def env(tmp_path: Path):
-    db_path = tmp_path / "data" / "vibing.db"
+    db_path = tmp_path / "data" / "maestro.db"
     db.init_db(db_path)
     fake = FakeHistory()
     changed: list[set[str]] = []
@@ -292,7 +292,7 @@ async def test_session_moving_to_new_nested_project_leaves_its_group(env):
 def test_read_tool_results_file_takes_every_branch(tmp_path: Path):
     import json
 
-    from vibing.history import read_tool_results_file
+    from claudio_maestro.history import read_tool_results_file
 
     lines = [
         {"type": "assistant", "uuid": "a", "message": {"content": [
@@ -327,7 +327,7 @@ def test_repository_scan_is_capped(tmp_path: Path, caplog):
 
 
 def test_tests_never_reach_the_real_sdk():
-    from vibing import history, sessions
+    from claudio_maestro import history, sessions
 
     assert history.sdk_list_sessions("/x") == []
     assert history.sdk_get_session_messages("s", "/x") == []
@@ -342,8 +342,8 @@ def test_tests_never_reach_the_real_sdk():
 def test_read_tool_results_file_omits_images_and_caps_while_reading(tmp_path: Path):
     import json
 
-    from vibing.conversation import CONTENT_LIMIT
-    from vibing.history import read_tool_results_file
+    from claudio_maestro.conversation import CONTENT_LIMIT
+    from claudio_maestro.history import read_tool_results_file
 
     big = "x" * (CONTENT_LIMIT + 10)
     line = {"type": "user", "uuid": "b", "message": {"role": "user", "content": [
@@ -381,7 +381,7 @@ async def test_session_outside_registered_projects_is_dropped(env):
 
 @pytest.mark.anyio
 async def test_sync_reports_changed_projects(tmp_path: Path):
-    db_path = tmp_path / "data" / "vibing.db"
+    db_path = tmp_path / "data" / "maestro.db"
     db.init_db(db_path)
     fake = FakeHistory()
     synced: list[set[int]] = []
@@ -426,7 +426,7 @@ async def test_project_removed_during_sync_is_skipped(env):
 
 @pytest.mark.anyio
 async def test_session_deleted_on_disk_leaves_the_index(tmp_path: Path):
-    db_path = tmp_path / "data" / "vibing.db"
+    db_path = tmp_path / "data" / "maestro.db"
     db.init_db(db_path)
     fake = FakeHistory()
     synced: list[set[int]] = []
@@ -472,7 +472,7 @@ async def test_listing_failure_does_not_delete_sessions(env):
 
 
 def deleting_env(tmp_path: Path, exists):
-    db_path = tmp_path / "data" / "vibing.db"
+    db_path = tmp_path / "data" / "maestro.db"
     db.init_db(db_path)
     fake = FakeHistory()
     index = HistoryIndex(db_path, fake.list_sessions, file_exists=exists)
@@ -517,7 +517,7 @@ async def test_repository_limit_reached_does_not_delete(tmp_path, monkeypatch):
     db_path, fake, index, folder = deleting_env(tmp_path, lambda sid, cwd: False)
     await index.sync_all()
     fake.by_directory[str(folder)] = []
-    monkeypatch.setattr("vibing.history.REPO_MAX_COUNT", 1)
+    monkeypatch.setattr("claudio_maestro.history.REPO_MAX_COUNT", 1)
     make_repo(folder / "r1")
     make_repo(folder / "r2")
 
@@ -535,14 +535,14 @@ async def test_repository_scan_error_does_not_delete(tmp_path, monkeypatch):
     def boom(*args, **kwargs):
         raise OSError("falhou")
 
-    monkeypatch.setattr("vibing.history.scan_repositories", boom)
+    monkeypatch.setattr("claudio_maestro.history.scan_repositories", boom)
     await index.sync_all()
 
     assert set(rows(db_path)) == {"s1"}
 
 
 def test_scan_repositories_reports_unreadable_folder(tmp_path, monkeypatch):
-    from vibing import history
+    from claudio_maestro import history
 
     real = os.scandir
 
@@ -561,7 +561,7 @@ def test_scan_repositories_reports_unreadable_folder(tmp_path, monkeypatch):
 
 @pytest.mark.anyio
 async def test_file_checks_run_before_the_transaction(tmp_path, monkeypatch):
-    from vibing import history
+    from claudio_maestro import history
 
     inside = {"value": False}
     real = history.db.transaction
@@ -638,7 +638,7 @@ def counting_lister(mapping: dict[str, list[str]] | None = None):
 
 
 def new_db(tmp_path: Path) -> Path:
-    db_path = tmp_path / "data" / "vibing.db"
+    db_path = tmp_path / "data" / "maestro.db"
     db.init_db(db_path)
     return db_path
 
@@ -688,7 +688,7 @@ async def test_worktree_listing_failure_keeps_the_project_complete(tmp_path: Pat
 
 @pytest.mark.anyio
 async def test_worktree_detection_is_written_and_kept_when_folder_is_gone(tmp_path: Path):
-    from vibing.worktree import Worktree
+    from claudio_maestro.worktree import Worktree
 
     project = tmp_path / "proj"
     db_path = new_db(tmp_path)
@@ -807,7 +807,7 @@ async def test_file_check_of_a_moved_session_uses_its_history_dir(tmp_path: Path
 
 @pytest.mark.anyio
 async def test_update_session_writes_the_detected_worktree(tmp_path: Path):
-    from vibing.worktree import Worktree
+    from claudio_maestro.worktree import Worktree
 
     project = tmp_path / "proj"
     db_path = new_db(tmp_path)
@@ -843,19 +843,19 @@ async def test_git_worktrees_uses_run_git_and_drops_own_folder(tmp_path: Path, m
         calls.append((repo, args))
         return 0, f"worktree {tmp_path}\nHEAD a\n\nworktree /x/y\nHEAD b\n", ""
 
-    monkeypatch.setattr("vibing.gitinfo.run_git", fake_run_git)
+    monkeypatch.setattr("claudio_maestro.gitinfo.run_git", fake_run_git)
     assert await REAL_GIT_WORKTREES(tmp_path) == ["/x/y"]
     assert calls == [(tmp_path, ("worktree", "list", "--porcelain"))]
 
 
 @pytest.mark.anyio
 async def test_git_worktrees_none_on_git_error(tmp_path: Path, monkeypatch):
-    from vibing import gitinfo
+    from claudio_maestro import gitinfo
 
     async def failing(repo, *args, **kw):
         raise gitinfo.GitError("sem git")
 
-    monkeypatch.setattr("vibing.gitinfo.run_git", failing)
+    monkeypatch.setattr("claudio_maestro.gitinfo.run_git", failing)
     assert await REAL_GIT_WORKTREES(tmp_path) is None
 
 
@@ -864,7 +864,7 @@ async def test_git_worktrees_none_on_nonzero_exit(tmp_path: Path, monkeypatch):
     async def nonzero(repo, *args, **kw):
         return 128, "", "fatal: not a git repository"
 
-    monkeypatch.setattr("vibing.gitinfo.run_git", nonzero)
+    monkeypatch.setattr("claudio_maestro.gitinfo.run_git", nonzero)
     assert await REAL_GIT_WORKTREES(tmp_path) is None
 
 
@@ -873,7 +873,7 @@ async def test_git_worktrees_empty_list_when_there_are_none(tmp_path: Path, monk
     async def only_main(repo, *args, **kw):
         return 0, f"worktree {tmp_path}\nHEAD a\n", ""
 
-    monkeypatch.setattr("vibing.gitinfo.run_git", only_main)
+    monkeypatch.setattr("claudio_maestro.gitinfo.run_git", only_main)
     assert await REAL_GIT_WORKTREES(tmp_path) == []
 
 
@@ -968,11 +968,11 @@ async def test_worktree_cache_is_pruned_only_by_a_sync_of_every_project(tmp_path
 async def test_sessions_in_ignored_dirs_are_not_indexed(tmp_path: Path) -> None:
     """The digest agent's throwaway sessions never enter the index, even when a
     registered project contains the app's data folder."""
-    db_path = tmp_path / "data" / "vibing.db"
+    db_path = tmp_path / "data" / "maestro.db"
     db.init_db(db_path)
     home = tmp_path / "home"
     add_project(db_path, home, "home")
-    agent_dir = home / ".local" / "share" / "vini7-vibing" / "digest-agent"
+    agent_dir = home / ".local" / "share" / "claudio-maestro" / "digest-agent"
     fake = FakeHistory()
     fake.add(str(home), info("mine", str(home / "app")), info("agent", str(agent_dir)))
     index = HistoryIndex(db_path, fake.list_sessions, ignored_dirs=[agent_dir])
@@ -983,7 +983,7 @@ async def test_sessions_in_ignored_dirs_are_not_indexed(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_ignored_dirs_are_resolved(tmp_path: Path) -> None:
     """A symlinked or relative ignored folder still matches the resolved cwd."""
-    db_path = tmp_path / "data" / "vibing.db"
+    db_path = tmp_path / "data" / "maestro.db"
     db.init_db(db_path)
     home = tmp_path / "home"
     add_project(db_path, home, "home")

@@ -103,7 +103,7 @@ function isCollapsed(repo: RepoDetails): boolean {
         <template v-if="!repo.error">
           <span
             data-test="repo-sync"
-            title="“Para baixar” reflete o último fetch; o Vibing não consulta o servidor remoto."
+            title="“Para baixar” reflete o último fetch; o Maestro não consulta o servidor remoto."
             class="flex items-center gap-2 text-xs"
           >
             <span v-if="syncOf(repo).kind === 'none'" class="text-fg-subtle">sem upstream</span>

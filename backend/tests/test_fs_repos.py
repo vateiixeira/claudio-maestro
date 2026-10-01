@@ -9,9 +9,9 @@ import pytest
 
 from conftest import APP_ORIGIN
 from git_helpers import git, make_repo
-from vibing import history
-from vibing.app import create_app
-from vibing.config import Settings
+from claudio_maestro import history
+from claudio_maestro.app import create_app
+from claudio_maestro.config import Settings
 
 
 def repos(client, path) -> dict:
@@ -172,7 +172,7 @@ def test_repos_does_not_follow_links_inside_the_folder(client, home: Path, tmp_p
 def test_repos_needs_the_api_header(home: Path):
     from fastapi.testclient import TestClient
 
-    from vibing.app import create_app
+    from claudio_maestro.app import create_app
 
     with TestClient(create_app(), base_url="http://127.0.0.1:6660") as anon:
         response = anon.get("/api/fs/repos", params={"path": str(home)})
@@ -196,8 +196,8 @@ async def test_full_app_disconnect_stops_the_git_processes(
 ):
     """Whole ASGI app: `http.disconnect` while the preview runs kills its git
     processes instead of letting them run to the end (Starlette keeps the route)."""
-    from vibing import gitinfo
-    from vibing.api import fs as fs_api
+    from claudio_maestro import gitinfo
+    from claudio_maestro.api import fs as fs_api
 
     monkeypatch.setattr(fs_api, "DISCONNECT_POLL", 0.02)
     pids = tmp_path / "pids"
@@ -217,7 +217,7 @@ async def test_full_app_disconnect_stops_the_git_processes(
         "headers": [
             (b"host", b"localhost:6660"),
             (b"origin", APP_ORIGIN.encode()),
-            (b"x-vibing", b"1"),
+            (b"x-maestro", b"1"),
         ],
         "server": ("127.0.0.1", 6660), "client": ("127.0.0.1", 1),
         "scheme": "http", "root_path": "",

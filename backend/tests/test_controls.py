@@ -10,7 +10,7 @@ import pytest
 from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny, TextBlock
 
 from test_sessions import by_session, make_env, env_cleanup, session_row, wait_until  # noqa: F401
-from vibing.agent.fake import (
+from claudio_maestro.agent.fake import (
     DEFAULT_SERVER_MODELS,
     FakeAgentFactory,
     PauseStep,
@@ -21,7 +21,7 @@ from vibing.agent.fake import (
     result_message,
     text_turn,
 )
-from vibing.sessions import (
+from claudio_maestro.sessions import (
     FALLBACK_MODELS,
     BypassNotConfirmedError,
     InvalidAnswerError,
@@ -421,7 +421,7 @@ async def test_followup_init_ends_the_wait_before_message_start(
 ):
     """The follow-up turn opens with an init; the first stream event only comes after
     the time to the first byte, which can outlast the grace period."""
-    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
+    monkeypatch.setattr("claudio_maestro.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
     pause, user_pause = PauseStep(), PauseStep()
 
     def user_turn(sid):
@@ -464,7 +464,7 @@ async def test_followup_expiry_keeps_effort_pending_until_next_send(
 ):
     """When no follow-up turn comes the session goes idle without reconnecting (that
     would drop an answer still in flight); the next send applies the new effort."""
-    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
+    monkeypatch.setattr("claudio_maestro.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
     pause = PauseStep()
     env, session = await connected(
         make_env, env_cleanup, lambda sid: [], lambda sid: text_turn(sid, "depois"))
@@ -700,7 +700,7 @@ async def test_init_right_after_connect_does_not_stick_in_running(make_env, env_
 async def test_send_during_autonomous_turn_ends_idle(make_env, env_cleanup, monkeypatch):
     """If the CLI answers the user inside the autonomous turn (one result only): no
     turn follows, and after a short wait the session stops counting the message."""
-    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
+    monkeypatch.setattr("claudio_maestro.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
     pause = PauseStep()
     env, session = await connected(make_env, env_cleanup, lambda sid: [])
     client = env.factory.clients[0]
@@ -724,7 +724,7 @@ async def test_send_during_autonomous_turn_ends_idle(make_env, env_cleanup, monk
 async def test_messages_absorbed_by_user_turn_end_idle(make_env, env_cleanup, monkeypatch):
     """The CLI folds messages sent during a normal turn into it: one result only. The
     session must stop counting them after the grace period instead of running forever."""
-    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
+    monkeypatch.setattr("claudio_maestro.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.05)
     pause = PauseStep()
 
     def first_turn(sid):
@@ -755,7 +755,7 @@ async def test_user_turn_followed_by_real_turn_does_not_go_idle_between(
 ):
     """One message is absorbed, another gets a turn of its own: the grace period after
     the first result is cancelled by the next turn, and the second one settles the count."""
-    monkeypatch.setattr("vibing.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.3)
+    monkeypatch.setattr("claudio_maestro.sessions.AUTONOMOUS_FOLLOWUP_GRACE", 0.3)
     pause = PauseStep()
 
     def first_turn(sid):

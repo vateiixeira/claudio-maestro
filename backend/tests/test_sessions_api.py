@@ -11,8 +11,8 @@ import pytest
 from claude_agent_sdk import PermissionUpdate
 from fastapi.testclient import TestClient
 
-from vibing.agent.fake import FakeAgentFactory, text_turn, tool_turn
-from vibing.app import create_app
+from claudio_maestro.agent.fake import FakeAgentFactory, text_turn, tool_turn
+from claudio_maestro.app import create_app
 
 APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
@@ -32,7 +32,7 @@ def api(factory: FakeAgentFactory):
         return any(c.options.session_id == session_id and c.sent for c in factory.clients)
 
     app = create_app(agent_factory=factory, history_exists=history_exists)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as c:
         yield c
 
 
@@ -354,7 +354,7 @@ def test_websocket_requires_origin(api):
 
 def test_shutdown_closes_clients(home, factory):
     app = create_app(agent_factory=factory, history_exists=lambda sid, cwd: False)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as api:
         session = new_session(api, home)
         sid = session["session_id"]
         factory.script = lambda content: text_turn(sid, "ok")
@@ -405,9 +405,9 @@ def test_stop_subagents_route_without_subagent_has_no_effect(api, home, factory)
     assert factory.clients[0].stopped_tasks == []
 
 
-def test_stop_subagents_route_needs_the_vibing_header(api, home):
+def test_stop_subagents_route_needs_the_maestro_header(api, home):
     session = new_session(api, home)
     response = api.post(
-        f"/api/sessions/{session['session_id']}/subagents/stop", headers={"x-vibing": ""}
+        f"/api/sessions/{session['session_id']}/subagents/stop", headers={"x-maestro": ""}
     )
     assert response.status_code in (400, 403)

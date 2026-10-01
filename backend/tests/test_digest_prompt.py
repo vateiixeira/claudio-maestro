@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from vibing.digest.prompt import (
+from claudio_maestro.digest.prompt import (
     DIGEST_SCHEMA,
     PHASE_KINDS,
     SYSTEM_PROMPT,
@@ -12,8 +12,8 @@ from vibing.digest.prompt import (
     spec_refs,
     system_prompt,
 )
-from vibing.digest.store import Digest
-from vibing.plans import PlanProgress, PlanTask
+from claudio_maestro.digest.store import Digest
+from claudio_maestro.plans import PlanProgress, PlanTask
 
 
 def write_spec(root: Path, name: str, text: str) -> Path:

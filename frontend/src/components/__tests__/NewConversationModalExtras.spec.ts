@@ -206,7 +206,7 @@ describe('modal de nova conversa: título e opções quando o PATCH falha', () =
     expect(useNewConversationStore(pinia).isOpen).toBe(true)
     expect(router.currentRoute.value.fullPath).toBe('/inbox')
     expect(fetch.mock.calls.some(([url]) => url === '/api/sessions/nova/messages')).toBe(false)
-    expect(localStorage.getItem('vibing:new-conversation')).not.toBeNull()
+    expect(localStorage.getItem('maestro:new-conversation')).not.toBeNull()
     expect(wrapper.find('[data-test="nc-submit"]').attributes('disabled')).toBeUndefined()
   })
 
@@ -269,7 +269,7 @@ describe('modal de nova conversa: sessão criada e PATCH falhou', () => {
   function expectLeftToCreated({ router, fetch }: Awaited<ReturnType<typeof openModal>>) {
     expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
     expect(useNewConversationStore(pinia).isOpen).toBe(false)
-    expect(localStorage.getItem('vibing:new-conversation')).toBeNull()
+    expect(localStorage.getItem('maestro:new-conversation')).toBeNull()
     expect(fetch.mock.calls.filter(([url]) => url === '/api/projects/2/sessions')).toHaveLength(1)
     expect(fetch.mock.calls.some(([url]) => url === '/api/sessions/nova/messages')).toBe(false)
     const pending = takePendingDraft('nova')!

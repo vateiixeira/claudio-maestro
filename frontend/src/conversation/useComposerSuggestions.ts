@@ -10,13 +10,13 @@ import { applySuggestion, findTrigger, mentionRanges, mentionText, rankCommands,
 export interface SuggestionItem {
   key: string
   kind: 'command' | 'file' | 'directory'
-  /** '/commit', 'fs.py', 'backend/vibing/' */
+  /** '/commit', 'fs.py', 'backend/claudio_maestro/' */
   label: string
   /** Command description, or the file's folder. */
   detail: string
   /** Command argument hint ('' otherwise). */
   hint: string
-  /** '/commit', '@backend/vibing/fs.py' */
+  /** '/commit', '@backend/claudio_maestro/fs.py' */
   insert: string
 }
 

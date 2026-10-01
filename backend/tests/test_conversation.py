@@ -19,8 +19,8 @@ from claude_agent_sdk import (
     ToolUseBlock,
     UserMessage,
 )
-from vibing.agent.fake import text_turn, tool_turn
-from vibing.conversation import (
+from claudio_maestro.agent.fake import text_turn, tool_turn
+from claudio_maestro.conversation import (
     slim_details,
     ConversationBuilder,
     Event,

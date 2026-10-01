@@ -7,8 +7,8 @@ import pytest
 
 from test_controls import connected, options_events
 from test_sessions import by_session, make_env, env_cleanup, wait_until  # noqa: F401
-from vibing.agent import AgentError
-from vibing.agent.fake import text_turn
+from claudio_maestro.agent import AgentError
+from claudio_maestro.agent.fake import text_turn
 
 AUTO_UNAVAILABLE = "Cannot set permission mode to auto: auto mode unavailable for this model"
 AUTO_MESSAGE = "O modo Automático não está disponível para este modelo."

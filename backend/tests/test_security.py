@@ -7,8 +7,8 @@ from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from vibing.app import create_app
-from vibing.security import (
+from claudio_maestro.app import create_app
+from claudio_maestro.security import (
     HostOriginMiddleware,
     PathNotAllowedError,
     is_within,
@@ -16,7 +16,7 @@ from vibing.security import (
 )
 
 APP_ORIGIN = "http://localhost:6600"
-VIBING = {"x-vibing": "1"}
+MAESTRO = {"x-maestro": "1"}
 VALID_HOSTS = [
     "http://localhost:6600",
     "http://localhost:6660",
@@ -57,13 +57,13 @@ def ws_app() -> FastAPI:
 
 @pytest.mark.parametrize("base_url", VALID_HOSTS)
 def test_valid_host_accepted(base_url):
-    with TestClient(create_app(), base_url=base_url, headers=VIBING) as client:
+    with TestClient(create_app(), base_url=base_url, headers=MAESTRO) as client:
         assert client.get("/api/health").status_code == 200
 
 
 @pytest.mark.parametrize("base_url", INVALID_HOSTS)
 def test_invalid_host_rejected_http(base_url):
-    with TestClient(create_app(), base_url=base_url, headers=VIBING) as client:
+    with TestClient(create_app(), base_url=base_url, headers=MAESTRO) as client:
         response = client.get("/api/health")
         assert response.status_code == 400
 
@@ -154,18 +154,18 @@ def test_post_with_app_origin_accepted(origin):
 
 
 def test_get_without_origin_accepted():
-    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=VIBING) as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=MAESTRO) as client:
         assert client.get("/api/health").status_code == 200
 
 
 def test_get_with_foreign_origin_rejected():
-    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=VIBING) as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=MAESTRO) as client:
         response = client.get("/api/health", headers={"origin": "http://evil.com"})
         assert response.status_code == 403
 
 
 def test_no_cors_headers():
-    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=VIBING) as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=MAESTRO) as client:
         response = client.get("/api/health", headers={"origin": APP_ORIGIN})
         assert "access-control-allow-origin" not in response.headers
 
@@ -291,6 +291,6 @@ def test_api_without_custom_header_rejected(method):
 
 def test_api_get_with_custom_header_accepted():
     with TestClient(create_app(), base_url="http://127.0.0.1:6660") as client:
-        assert client.get("/api/health", headers=VIBING).status_code == 200
+        assert client.get("/api/health", headers=MAESTRO).status_code == 200
         assert client.get("/api/health").status_code == 403
-        assert client.get("/api/health", headers={"x-vibing": "0"}).status_code == 403
+        assert client.get("/api/health", headers={"x-maestro": "0"}).status_code == 403

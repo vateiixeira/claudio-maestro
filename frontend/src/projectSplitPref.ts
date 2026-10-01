@@ -1,4 +1,4 @@
-const KEY = 'vibing:project-split'
+const KEY = 'maestro:project-split'
 
 export const SPLIT_MIN = 30
 export const SPLIT_MAX = 70

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from vibing import db
+from claudio_maestro import db
 
 
 def table_names(conn) -> set[str]:
@@ -50,7 +50,7 @@ def test_migrate_twice_is_harmless(tmp_path: Path):
 
 
 def test_init_db_creates_data_dir(tmp_path: Path):
-    path = tmp_path / "nested" / "dir" / "vibing.db"
+    path = tmp_path / "nested" / "dir" / "maestro.db"
     db.init_db(path)
     assert path.exists()
     with open_db(path) as conn:
@@ -75,7 +75,7 @@ def test_session_requires_existing_project(tmp_path: Path):
 
 
 def test_app_startup_runs_migrations(client, data_dir: Path):
-    with open_db(data_dir / "vibing.db") as conn:
+    with open_db(data_dir / "maestro.db") as conn:
         assert {"projects", "sessions", "app_state"} <= table_names(conn)
 
 

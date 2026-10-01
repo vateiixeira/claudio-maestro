@@ -2,7 +2,7 @@
 
 from history_fakes import assistant_entry, user_entry
 
-from vibing.conversation import ConversationBuilder
+from claudio_maestro.conversation import ConversationBuilder
 
 
 def test_text_tool_with_result_and_tool_without_result():
@@ -199,7 +199,7 @@ def test_empty_and_redacted_thinking_are_dropped():
 
 # Size limits ---------------------------------------------------------------
 
-from vibing.conversation import cap_content, slim_details  # noqa: E402
+from claudio_maestro.conversation import cap_content, slim_details  # noqa: E402
 
 
 def test_edit_details_keep_patch_only():

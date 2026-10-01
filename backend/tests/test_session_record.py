@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from vibing.sessions import SessionRecord, describe
+from claudio_maestro.sessions import SessionRecord, describe
 
 
 def _record(**extra) -> SessionRecord:

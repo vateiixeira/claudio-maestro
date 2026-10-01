@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from vibing.agent.base import AgentError
-from vibing.agent.fake import FakeAgentFactory
-from vibing.app import create_app
+from claudio_maestro.agent.base import AgentError
+from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.app import create_app
 
 APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
@@ -22,7 +22,7 @@ RAW = [
 
 def make_api(factory: FakeAgentFactory):
     app = create_app(agent_factory=factory, history_exists=lambda sid, cwd: False)
-    return TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"})
+    return TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"})
 
 
 @pytest.fixture
@@ -98,7 +98,7 @@ def test_catalog_failure_is_502_with_the_message(home):
 def test_requests_without_the_app_header_are_refused(api, home):
     project = make_project(api, home)
     response = api.get(
-        f"/api/projects/{project['id']}/commands", headers={"x-vibing": ""}
+        f"/api/projects/{project['id']}/commands", headers={"x-maestro": ""}
     )
     assert response.status_code == 403
 
@@ -135,12 +135,12 @@ def test_files_unknown_ids_and_missing_folder(api, home):
 
 
 def test_files_search_failure_is_502(api, home, monkeypatch):
-    from vibing.filesearch import FileSearchError
+    from claudio_maestro.filesearch import FileSearchError
 
     async def boom(self, folder, query):
         raise FileSearchError("Falha ao listar os arquivos: x")
 
-    monkeypatch.setattr("vibing.filesearch.FileIndex.search", boom)
+    monkeypatch.setattr("claudio_maestro.filesearch.FileIndex.search", boom)
     project = make_project(api, home)
     response = api.get(f"/api/projects/{project['id']}/files")
     assert response.status_code == 502

@@ -1,4 +1,4 @@
-// Mirrors the backend contract (backend/vibing/api). Timestamps are Unix seconds.
+// Mirrors the backend contract (backend/claudio_maestro/api). Timestamps are Unix seconds.
 
 export interface Project {
   id: number

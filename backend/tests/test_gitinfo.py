@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from git_helpers import git, make_repo
-from vibing import gitinfo
+from claudio_maestro import gitinfo
 
 pytestmark = pytest.mark.anyio
 

@@ -27,7 +27,7 @@ describe('estado recolhido do menu', () => {
   })
 
   it('ignora conteúdo inválido', async () => {
-    localStorage.setItem('vibing:sidebar-collapsed', '{"project":"x"}')
+    localStorage.setItem('maestro:sidebar-collapsed', '{"project":"x"}')
     const mod = await import('../sidebarCollapse')
     expect(mod.isCollapsed('project', 1)).toBe(false)
   })

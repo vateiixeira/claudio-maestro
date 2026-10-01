@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 from history_fakes import FakeHistory, assistant_entry, info, now_ms, user_entry
 
-from vibing import db, projects
-from vibing.agent.fake import FakeAgentFactory, text_turn
-from vibing.sessions import SessionManager
+from claudio_maestro import db, projects
+from claudio_maestro.agent.fake import FakeAgentFactory, text_turn
+from claudio_maestro.sessions import SessionManager
 
 WAIT = 2
 
@@ -26,7 +26,7 @@ async def wait_until(predicate) -> None:
 
 class Env:
     def __init__(self, tmp_path: Path, script=None, history_limit: int = 500) -> None:
-        self.db_path = tmp_path / "data" / "vibing.db"
+        self.db_path = tmp_path / "data" / "maestro.db"
         db.init_db(self.db_path)
         self.folder = tmp_path / "home" / "app"
         self.folder.mkdir(parents=True)

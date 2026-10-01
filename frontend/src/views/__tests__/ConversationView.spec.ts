@@ -128,7 +128,7 @@ describe('página da conversa', () => {
     await wrapper.find('[data-test="toggle-details"]').trigger('click')
 
     expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(false)
-    expect(localStorage.getItem('vibing:details-open')).toBe('false')
+    expect(localStorage.getItem('maestro:details-open')).toBe('false')
   })
 
   it('funciona sem localStorage', async () => {
@@ -261,7 +261,7 @@ describe('página da conversa', () => {
   })
 
   it('"Ver alterações" abre o painel lateral quando estava fechado', async () => {
-    localStorage.setItem('vibing:details-open', 'false')
+    localStorage.setItem('maestro:details-open', 'false')
     const { wrapper } = await mountAt('/sessions/s1')
     expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(false)
 
@@ -283,7 +283,7 @@ describe('página da conversa', () => {
   })
 
   it('uma edição já aberta ao montar abre o painel', async () => {
-    localStorage.setItem('vibing:details-open', 'false')
+    localStorage.setItem('maestro:details-open', 'false')
     useChangesPanelStore(pinia).open('s1', editItem)
     const { wrapper } = await mountAt('/sessions/s1')
 
@@ -546,7 +546,7 @@ describe('página da conversa', () => {
       expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(false)
       await wrapper.get('[data-test="toggle-details"]').trigger('click')
       expect(wrapper.find('[data-test="details-drawer"] [data-test="details-panel"]').exists()).toBe(true)
-      expect(localStorage.getItem('vibing:details-open')).toBeNull()
+      expect(localStorage.getItem('maestro:details-open')).toBeNull()
       await wrapper.get('[data-test="toggle-details"]').trigger('click')
       expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(false)
     })

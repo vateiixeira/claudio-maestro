@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from vibing.worktree import (
+from claudio_maestro.worktree import (
     Worktree, current_worktree, last_cwd, parse_worktree_list, worktree_of,
 )
 

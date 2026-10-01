@@ -1,4 +1,4 @@
-const KEY = 'vibing:details-open'
+const KEY = 'maestro:details-open'
 
 /** Whether the details panel starts open on wide screens (default: open). */
 export function readDetailsOpen(): boolean {

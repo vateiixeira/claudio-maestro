@@ -11,11 +11,11 @@ from fastapi.testclient import TestClient
 
 from test_multisession_api import new_session
 from test_sessions_api import APP_ORIGIN, BACKEND_URL, make_project, receive
-from vibing.activity import ActivityReader, message_days
-from vibing.agent.fake import FakeAgentFactory
-from vibing.app import create_app
-from vibing.config import Settings
-from vibing import db
+from claudio_maestro.activity import ActivityReader, message_days
+from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.app import create_app
+from claudio_maestro.config import Settings
+from claudio_maestro import db
 
 
 def local(y, m, d, hh=12, mm=0) -> str:
@@ -54,7 +54,7 @@ def api(files, home, data_dir):
         history_exists=lambda session_id, cwd: False,
         session_file=files,
     )
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as c:
         yield c
 
 
@@ -107,7 +107,7 @@ def insert_project(db_path: Path, pid: int) -> None:
 
 
 def test_reader_counts_sessions_per_day_and_project(tmp_path, files):
-    db_path = tmp_path / "vibing.db"
+    db_path = tmp_path / "maestro.db"
     db.init_db(db_path)
     insert_project(db_path, 1)
     insert_project(db_path, 2)
@@ -133,7 +133,7 @@ def test_reader_counts_sessions_per_day_and_project(tmp_path, files):
 
 
 def test_reader_skips_sessions_without_recent_activity_and_missing_files(tmp_path, files):
-    db_path = tmp_path / "vibing.db"
+    db_path = tmp_path / "maestro.db"
     db.init_db(db_path)
     insert_project(db_path, 1)
     now = datetime(2026, 9, 29, 15, 0).timestamp()
@@ -150,7 +150,7 @@ def test_reader_skips_sessions_without_recent_activity_and_missing_files(tmp_pat
 
 
 def test_reader_caches_by_modification_time(tmp_path, files, monkeypatch):
-    db_path = tmp_path / "vibing.db"
+    db_path = tmp_path / "maestro.db"
     db.init_db(db_path)
     insert_project(db_path, 1)
     now = datetime(2026, 9, 29, 15, 0).timestamp()
@@ -160,7 +160,7 @@ def test_reader_caches_by_modification_time(tmp_path, files, monkeypatch):
     files.paths["a"] = path
     insert_session(db_path, 1, "a", now)
     reads = []
-    import vibing.activity as activity_module
+    import claudio_maestro.activity as activity_module
     original = activity_module.message_days
     monkeypatch.setattr(activity_module, "message_days", lambda p: reads.append(p) or original(p))
     reader = ActivityReader(db_path, session_file=files, clock=lambda: now)
@@ -176,7 +176,7 @@ def test_reader_caches_by_modification_time(tmp_path, files, monkeypatch):
 
 
 def test_reader_finds_file_through_history_dir(tmp_path):
-    db_path = tmp_path / "vibing.db"
+    db_path = tmp_path / "maestro.db"
     db.init_db(db_path)
     insert_project(db_path, 1)
     now = datetime(2026, 9, 29, 15, 0).timestamp()
@@ -221,7 +221,7 @@ def test_seen_many_marks_known_sessions_and_ignores_unknown(api, home):
     a = new_session(api, project)["session_id"]
     b = new_session(api, project)["session_id"]
 
-    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
+    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as ws:
         response = api.post("/api/sessions/seen", json={"session_ids": [a, "desconhecida", b, a]})
         events = [receive(ws), receive(ws)]
 
@@ -236,7 +236,7 @@ def test_seen_many_refuses_more_than_500_ids(api):
     assert response.status_code == 422
 
 
-def test_seen_many_requires_the_vibing_header(home, data_dir):
+def test_seen_many_requires_the_maestro_header(home, data_dir):
     app = create_app(settings=Settings(home_dir=home, data_dir=data_dir), agent_factory=FakeAgentFactory())
     with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN}) as c:
         assert c.post("/api/sessions/seen", json={"session_ids": []}).status_code == 403

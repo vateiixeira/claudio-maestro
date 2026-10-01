@@ -5,8 +5,8 @@ from typing import Any
 
 from claude_agent_sdk import SDKSessionInfo, SessionMessage
 
-# Taken at import time: conftest replaces `vibing.history.git_worktrees` in every test.
-from vibing.history import git_worktrees as REAL_GIT_WORKTREES  # noqa: F401
+# Taken at import time: conftest replaces `claudio_maestro.history.git_worktrees` in every test.
+from claudio_maestro.history import git_worktrees as REAL_GIT_WORKTREES  # noqa: F401
 
 
 def info(

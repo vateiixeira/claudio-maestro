@@ -13,15 +13,15 @@ from claude_agent_sdk import (
     ProcessError,
 )
 from fastapi.testclient import TestClient
-from vibing.agent.base import AgentClient, AgentError, AgentOptions
-from vibing.agent.sdk_client import (
+from claudio_maestro.agent.base import AgentClient, AgentError, AgentOptions
+from claudio_maestro.agent.sdk_client import (
     INHERITED_ENV_VARS,
     SdkAgentClient,
     build_sdk_options,
     clean_inherited_env,
     to_agent_error,
 )
-from vibing.app import create_app
+from claudio_maestro.app import create_app
 
 SESSION_ID = "8f2c1a4e-3b7d-4e61-9a0f-5c2d8e7b1a93"
 

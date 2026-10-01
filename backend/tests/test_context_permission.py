@@ -16,17 +16,17 @@ from fastapi.testclient import TestClient
 from test_agent_sdk_client import StubSdkClient, make_options
 from test_sessions import Env, by_session, fake_history, wait_until
 
-from vibing import history as history_module
-from vibing.agent.base import AgentClient, AgentError
-from vibing.agent.fake import (
+from claudio_maestro import history as history_module
+from claudio_maestro.agent.base import AgentClient, AgentError
+from claudio_maestro.agent.fake import (
     FakeAgentClient,
     FakeAgentFactory,
     text_turn,
     tool_turn,
 )
-from vibing.agent.sdk_client import SdkAgentClient
-from vibing.app import create_app
-from vibing.sessions import SessionManager
+from claudio_maestro.agent.sdk_client import SdkAgentClient
+from claudio_maestro.app import create_app
+from claudio_maestro.sessions import SessionManager
 
 APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
@@ -310,7 +310,7 @@ async def test_context_late_result_of_replaced_client_is_ignored(make_env, env_c
 
 @pytest.mark.anyio
 async def test_context_read_slot_is_freed_after_the_limit(make_env, env_cleanup, monkeypatch):
-    monkeypatch.setattr("vibing.sessions.CONTEXT_READ_LIMIT", 0.05)
+    monkeypatch.setattr("claudio_maestro.sessions.CONTEXT_READ_LIMIT", 0.05)
     env, session, client, release, stats = await hanging_context_env(make_env, env_cleanup)
 
     await session.send("dois")
@@ -341,7 +341,7 @@ async def test_context_read_slot_is_freed_after_the_limit(make_env, env_cleanup,
 async def test_dispose_cancels_pending_and_abandoned_context_calls(
     make_env, env_cleanup, monkeypatch
 ):
-    monkeypatch.setattr("vibing.sessions.CONTEXT_READ_LIMIT", 0.05)
+    monkeypatch.setattr("claudio_maestro.sessions.CONTEXT_READ_LIMIT", 0.05)
     env, session, client, _release, stats = await hanging_context_env(make_env, env_cleanup)
     await session.send("dois")
     await wait_until(lambda: stats["calls"] == 1)
@@ -358,7 +358,7 @@ async def test_dispose_cancels_pending_and_abandoned_context_calls(
 
 
 def test_context_percent_uses_the_base_of_the_maximum_shown():
-    from vibing.sessions import context_from_sdk
+    from claudio_maestro.sessions import context_from_sdk
 
     context = context_from_sdk(SDK_USAGE)
 
@@ -366,7 +366,7 @@ def test_context_percent_uses_the_base_of_the_maximum_shown():
 
 
 def test_context_percent_falls_back_to_max_tokens_and_ignores_percentage():
-    from vibing.sessions import context_from_sdk
+    from claudio_maestro.sessions import context_from_sdk
 
     context = context_from_sdk({"totalTokens": 50_000, "maxTokens": 100_000, "percentage": 7.0})
 
@@ -494,7 +494,7 @@ async def test_snapshot_context_is_cached_by_file_modification(make_env, env_cle
 
 @pytest.mark.anyio
 async def test_history_context_cache_is_bounded(make_env, env_cleanup, monkeypatch):
-    monkeypatch.setattr("vibing.sessions.CONTEXT_CACHE_SIZE", 2)
+    monkeypatch.setattr("claudio_maestro.sessions.CONTEXT_CACHE_SIZE", 2)
     read = history_reader({})
     env = make_env(read_context=read)
     env_cleanup.append(env.manager)
@@ -848,7 +848,7 @@ async def test_pending_permission_is_the_oldest_tool_prompt(make_env, env_cleanu
 
 
 def make_options_for(env: Env, session):
-    from vibing.agent.base import AgentOptions
+    from claudio_maestro.agent.base import AgentOptions
 
     async def allow(name, tool_input, context):
         raise AssertionError("not used")
@@ -875,14 +875,14 @@ def api(factory: ContextFactory, monkeypatch: pytest.MonkeyPatch):
         read_calls.append(sid)
         return {"used_tokens": 10_000, "model": None}
 
-    monkeypatch.setattr("vibing.history.sdk_read_context", read_context)
-    monkeypatch.setattr("vibing.history.sdk_session_file_mtime", lambda sid, cwd: 1000.0)
+    monkeypatch.setattr("claudio_maestro.history.sdk_read_context", read_context)
+    monkeypatch.setattr("claudio_maestro.history.sdk_session_file_mtime", lambda sid, cwd: 1000.0)
 
     def history_exists(session_id: str, cwd: str) -> bool:
         return any(c.options.session_id == session_id and c.sent for c in factory.clients)
 
     app = create_app(agent_factory=factory, history_exists=history_exists)
-    headers = {"origin": APP_ORIGIN, "x-vibing": "1"}
+    headers = {"origin": APP_ORIGIN, "x-maestro": "1"}
     with TestClient(app, base_url=BACKEND_URL, headers=headers) as client:
         client.read_calls = read_calls  # type: ignore[attr-defined]
         yield client

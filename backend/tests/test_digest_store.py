@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from vibing import db
-from vibing.digest import store
-from vibing.digest.store import Digest
+from claudio_maestro import db
+from claudio_maestro.digest import store
+from claudio_maestro.digest.store import Digest
 
 
 @pytest.fixture
 def conn(tmp_path: Path):
-    path = tmp_path / "vibing.db"
+    path = tmp_path / "maestro.db"
     db.init_db(path)
     with closing(db.connect(path)) as c:
         c.execute(

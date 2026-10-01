@@ -10,7 +10,7 @@ describe('largura do Detalhes', () => {
     expect(readDetailsWidth()).toBe(512)
   })
   it('valor inválido volta ao padrão', () => {
-    localStorage.setItem('vibing:details-width', 'abc')
+    localStorage.setItem('maestro:details-width', 'abc')
     expect(readDetailsWidth()).toBe(360)
   })
   it('máximo é o menor entre 70% e janela menos 400 menos a barra lateral', () => {

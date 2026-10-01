@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from git_helpers import GIT_ENV, git, make_repo
-from vibing import gitinfo
-from vibing.worktree import LinkedWorktree, linked_worktree
+from claudio_maestro import gitinfo
+from claudio_maestro.worktree import LinkedWorktree, linked_worktree
 
 
 def add_worktree(repo: Path, where: Path, branch: str = "feat") -> Path:

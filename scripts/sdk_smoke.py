@@ -25,7 +25,7 @@ from claude_agent_sdk import (  # noqa: E402
 
 
 async def main() -> None:
-    with tempfile.TemporaryDirectory(prefix="vibing-smoke-") as folder:
+    with tempfile.TemporaryDirectory(prefix="maestro-smoke-") as folder:
         options = ClaudeAgentOptions(cwd=folder, model="haiku", setting_sources=[], max_turns=1)
         session_id = None
         async with ClaudeSDKClient(options=options) as client:
