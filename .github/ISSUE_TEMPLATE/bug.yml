@@ -1,0 +1,39 @@
+name: Bug
+description: Algo não funciona como deveria
+labels: [bug]
+body:
+  - type: textarea
+    id: o-que
+    attributes:
+      label: O que aconteceu
+      description: E o que você esperava que acontecesse.
+    validations:
+      required: true
+  - type: textarea
+    id: passos
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1. Abra um projeto...
+        2. Clique em...
+    validations:
+      required: true
+  - type: dropdown
+    id: sistema
+    attributes:
+      label: Sistema
+      options: [Linux, macOS, Outro]
+    validations:
+      required: true
+  - type: input
+    id: versoes
+    attributes:
+      label: Versões
+      description: Commit do Cláudio Maestro (`git rev-parse --short HEAD`), versão do Claude Code (`claude --version`) e navegador.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Saída do terminal ou do console do navegador
+      render: text

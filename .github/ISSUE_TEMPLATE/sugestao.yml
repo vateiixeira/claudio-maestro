@@ -1,0 +1,23 @@
+name: Sugestão
+description: Uma ideia para o Cláudio Maestro
+labels: [sugestão]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema isso resolve
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: O que você propõe
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas que você considerou
+  - type: markdown
+    attributes:
+      value: O app quer continuar leve e não virar um IDE. Ideias que ajudam a ler e decidir mais rápido têm mais chance.

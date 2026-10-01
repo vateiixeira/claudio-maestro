@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Falha de segurança
+    url: https://github.com/vateiixeira/claudio-maestro/security/advisories/new
+    about: Relate em particular. Não abra issue pública com detalhes da falha.
