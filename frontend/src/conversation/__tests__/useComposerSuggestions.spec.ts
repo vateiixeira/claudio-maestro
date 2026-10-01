@@ -122,8 +122,19 @@ describe('menu /', () => {
     await t.type('/com')
     expect(t.api.isOpen.value).toBe(false)
     await t.type('/com ')
-    await t.type('/com /')
+    expect(t.api.isOpen.value).toBe(false)
+    await t.type('/co')
     expect(t.api.isOpen.value).toBe(true)
+  })
+
+  it('/ no meio da mensagem não abre o menu e Enter não troca o caminho', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/commands': () => jsonResponse(COMMANDS) }))
+    const t = harness()
+    await t.type('salve em /tmp')
+    expect(t.api.isOpen.value).toBe(false)
+    const { handled } = t.key('Enter')
+    expect(handled).toBe(false)
+    expect(t.text.value).toBe('salve em /tmp')
   })
 
   it('trocar a fonte zera a lista e fecha', async () => {

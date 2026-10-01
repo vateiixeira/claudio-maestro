@@ -15,7 +15,9 @@ export interface Trigger {
 
 const PATTERNS: [TriggerKind, RegExp][] = [
   ['mention', /(^|\s)@[^\s]*/g],
-  ['command', /(^|\s)\/[^\s/]*/g],
+  // The CLI only runs a command when the prompt starts with `/`, so this one is anchored to the
+  // first non-whitespace character of the whole text.
+  ['command', /^(\s*)\/[^\s/]*/g],
 ]
 
 export function findTrigger(text: string, cursor: number): Trigger | null {

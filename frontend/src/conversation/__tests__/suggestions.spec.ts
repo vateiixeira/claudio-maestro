@@ -5,10 +5,24 @@ import type { CommandInfo } from '../../types/api'
 const cmd = (name: string, description = ''): CommandInfo => ({ name, description, argument_hint: '' })
 
 describe('findTrigger', () => {
-  it('acha @ e / no início, depois de espaço e de quebra de linha', () => {
+  it('acha @ no início, depois de espaço e de quebra de linha', () => {
     expect(findTrigger('@fs', 3)).toEqual({ kind: 'mention', start: 0, end: 3, query: 'fs' })
     expect(findTrigger('veja @fs', 8)).toEqual({ kind: 'mention', start: 5, end: 8, query: 'fs' })
-    expect(findTrigger('a\n/com', 6)).toEqual({ kind: 'command', start: 2, end: 6, query: 'com' })
+    expect(findTrigger('a\n@fs', 5)).toEqual({ kind: 'mention', start: 2, end: 5, query: 'fs' })
+  })
+  it('/ só abre o menu no início da mensagem, aceitando espaços e quebras de linha antes', () => {
+    expect(findTrigger('/com', 4)).toEqual({ kind: 'command', start: 0, end: 4, query: 'com' })
+    expect(findTrigger('  /com', 6)).toEqual({ kind: 'command', start: 2, end: 6, query: 'com' })
+    expect(findTrigger('\n \n/com', 7)).toEqual({ kind: 'command', start: 3, end: 7, query: 'com' })
+  })
+  it('/ fora do início não abre menu', () => {
+    expect(findTrigger('salve em /tmp', 13)).toBeNull()
+    expect(findTrigger('a\n/com', 6)).toBeNull()
+    expect(findTrigger('oi /', 4)).toBeNull()
+    expect(findTrigger('/com /tmp', 9)).toBeNull()
+  })
+  it('@ continua valendo depois de um comando no início', () => {
+    expect(findTrigger('/review @fs', 11)).toEqual({ kind: 'mention', start: 8, end: 11, query: 'fs' })
   })
   it('o termo vai até o fim do trecho, mesmo com o cursor no meio', () => {
     expect(findTrigger('@backend/fs x', 3)).toEqual({ kind: 'mention', start: 0, end: 11, query: 'backend/fs' })
@@ -31,8 +45,8 @@ describe('findTrigger', () => {
 
 describe('applySuggestion', () => {
   it('troca o trecho e põe espaço', () => {
-    const t = findTrigger('rode /com agora', 9)!
-    expect(applySuggestion('rode /com agora', t, '/commit', true)).toEqual({ text: 'rode /commit agora', cursor: 13 })
+    const t = findTrigger('/com agora', 4)!
+    expect(applySuggestion('/com agora', t, '/commit', true)).toEqual({ text: '/commit agora', cursor: 8 })
   })
   it('põe espaço no fim do texto', () => {
     const t = findTrigger('/com', 4)!
