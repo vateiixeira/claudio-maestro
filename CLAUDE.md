@@ -1,6 +1,6 @@
 # Cláudio Maestro
 
-App web local que substitui a extensão do VSCode e o CLI do Claude Code no uso diário do Vinicius. Roda na máquina dele, abre no navegador e controla sessões do Claude Code pelo Claude Agent SDK em Python. Usuário único.
+App web local que reúne numa tela só as sessões do Claude em vários projetos. Roda na máquina de quem usa, abre no navegador e controla as sessões pelo Claude Agent SDK em Python. Uma pessoa por instalação, sem acesso pela rede.
 
 Resolve dois problemas: a extensão do VSCode é pesada e ruim para multiprojeto, e o terminal dificulta ler diffs, saídas e estados. Na dúvida entre duas soluções, prefira a que mantém o app leve e a leitura clara. O app não deve virar um IDE.
 
@@ -8,102 +8,79 @@ Resolve dois problemas: a extensão do VSCode é pesada e ruim para multiprojeto
 
 | Arquivo | Para que serve |
 |---|---|
-| `ROADMAP.md` | Progresso da construção. Fonte única do que está feito e do que falta |
-| `docs/prompts/2026-09-28-construir-mvp.md` | Requisitos completos, identidade visual e fatos verificados do SDK |
-| `docs/superpowers/specs/2026-09-28-vini7-vibing-design.md` | Detalhamento de dados, estados, rotas e erros |
-| `docs/design/project/*.dc.html` | Telas aprovadas (cópia local do artefato https://claude.ai/artifact/JAVD4f5uhJMr5WZodBe97A) |
-| `docs/design/project/Chat*.dc.html` | Novo desenho do chat, aprovado em 2026-09-29 (cópia local do artefato https://claude.ai/artifact/B6MJz27qejqyqorFhskF11) |
-
-Em caso de divergência, a ordem é: este arquivo, depois o prompt, depois a spec. As portas e a forma de execução descritas aqui substituem as da seção 16 da spec.
-
-## Manter o roadmap em dia
-
-Ao começar um marco do `ROADMAP.md`, troque o estado dele para "Em andamento". Ao terminar um item, marque com `[x]` e a data, e atualize a contagem na tabela. Só marque depois de rodar os testes e vê-los passar. Se descobrir trabalho que não estava previsto, acrescente como item novo em vez de fazer sem registrar.
+| `README.md` | O que é, instalação, configuração |
+| `CONTRIBUTING.md` | Ambiente de desenvolvimento, regras, commits e PRs |
+| `SECURITY.md` | Modelo de ameaça e como relatar falhas |
+| `PRODUCT.md` | Para quem é, princípios de design e identidade visual |
+| `ROADMAP.md` | O que pode vir a seguir |
+| `CHANGELOG.md` | O que mudou em cada versão |
 
 ## Stack
 
 - Monolito: `backend/` e `frontend/` no mesmo repositório, `pyproject.toml` na raiz.
-- Backend: Python 3.13, FastAPI, uv, SQLite, `claude-agent-sdk` 0.2.161 ou superior, pytest.
+- Backend: Python 3.13, FastAPI, uv, SQLite, `claude-agent-sdk` 0.2.161 ou superior, pytest, ruff. Código em `backend/claudio_maestro/`.
 - Frontend: Vue 3, Vite, TypeScript, Pinia, Vue Router, Tailwind CSS, Vitest, pnpm.
 
 ## Execução
 
-Roda direto na máquina, sem Docker, em modo de desenvolvimento. Os dois processos recarregam sozinhos quando o código muda.
-
-| Processo | Roda | Endereço |
+| Modo | Comando | Endereço |
 |---|---|---|
-| Backend | uvicorn com `--reload` | `127.0.0.1:6660` |
-| Frontend | servidor de desenvolvimento do Vite | `127.0.0.1:6600`, com proxy de `/api` e `/ws` para o backend |
+| Uso | `uv run claudio-maestro` (compila o frontend quando preciso e serve tudo) | `http://localhost:6660` |
+| Desenvolvimento, backend | uvicorn com `--reload` | `127.0.0.1:6660` |
+| Desenvolvimento, frontend | Vite, com proxy de `/api` e `/ws` para o backend | `http://localhost:6600` |
 
-O app é acessado em `http://localhost:6600`.
-
-As portas ficam acima de 1024 porque o Linux reserva as menores ao root. Não use 6665 a 6669: os navegadores bloqueiam.
-
-Docker foi adiado. Se voltar à pauta, o processo `claude` passa a rodar dentro do container, o que exige montar `~/.claude`, `~/.claude.json` e a pasta dos projetos no mesmo caminho absoluto do host, e limita o Claude às ferramentas instaladas na imagem. Nada disso foi testado.
+Portas: `MAESTRO_PORT` (backend e modo de uso) e `MAESTRO_DEV_PORT` (Vite). Ficam entre 1024 e 65535; não use 6665 a 6669, que os navegadores bloqueiam.
 
 ### Comandos
 
 Rode a partir da raiz do repositório. Na primeira vez: `uv sync` e `pnpm --dir frontend install`.
 
 ```bash
-uv run uvicorn claudio_maestro.app:app --reload --reload-dir backend --host 127.0.0.1 --port 6660   # backend
-pnpm --dir frontend dev                                                                    # frontend
-uv run pytest                                                                              # testes do backend
-pnpm --dir frontend test                                                                   # testes do frontend
-pnpm --dir frontend build                                                                  # compilação do frontend
-uv run python scripts/sdk_smoke.py                                                         # teste manual contra o SDK real (consome a assinatura)
+uv run claudio-maestro                                                                              # app completo
+uv run uvicorn claudio_maestro.app:app --reload --reload-dir backend --host 127.0.0.1 --port 6660   # backend (desenvolvimento)
+pnpm --dir frontend dev                                                                             # frontend (desenvolvimento)
+uv run pytest                                                                                       # testes do backend
+uv run ruff check                                                                                   # lint do backend
+pnpm --dir frontend test                                                                            # testes do frontend
+pnpm --dir frontend build                                                                           # compilação do frontend
+uv run python scripts/sdk_smoke.py                                                                  # teste manual contra o SDK real (consome assinatura ou créditos)
 ```
 
 ## Regras
 
-- Commits por tarefa estão autorizados neste projeto. Esta regra vale sobre a regra global do usuário de só commitar a pedido.
-- Faça um commit ao concluir cada item do roadmap, depois de ver os testes passarem. Um commit por unidade lógica, sem misturar tipos.
-- Mensagens no formato do usuário: `[Tipo] Título` em português, verbo no infinitivo, até 72 caracteres, sem ponto final. Tipos: Feat, Bugfix, Refactor, UI, Docs, Test, Chore.
-- Não faça push nem crie repositório remoto sem o usuário pedir.
 - Escreva os testes antes do código que eles cobrem.
 - No frontend use só `pnpm` (`pnpm --dir frontend test`, `pnpm --dir frontend exec vitest ...`). Nunca `npx` nem `yarn`: o `npx` já criou arquivos do Yarn PnP em `frontend/` e quebrou a compilação.
 - Textos da interface e documentação em português brasileiro. Código e identificadores em inglês.
 - Não use a marca "Claude Code" na interface.
-- Use o login de assinatura existente. Não configure nem peça `ANTHROPIC_API_KEY`.
-- As conversas ficam em `~/.claude/projects`. O SQLite guarda só metadados.
+- As conversas ficam em `~/.claude/projects`, compatíveis com o CLI. O SQLite guarda só metadados.
+- Commits: `[Tipo] Título` em português, verbo no infinitivo, até 72 caracteres, sem ponto final. Tipos: Feat, Bugfix, Refactor, UI, Docs, Test, Chore. Um commit por unidade lógica.
+- Mudanças que o usuário percebe entram no `CHANGELOG.md`, em "Não lançado".
 - Ao relatar, separe o que você rodou e viu passar do que só escreveu.
-
-## Subagentes
-
-- Ao usar subagentes para implementar (por exemplo, depois de brainstorming ou plano), o padrão é o que está no agente `implementer` (hoje Sonnet com raciocínio alto).
-- Antes de disparar, pergunte ao usuário se pode. Ele responde se usa esse padrão, o modelo atual da sessão ou outro.
-- O agente `implementer` (`.claude/agents/implementer.md`) define modelo e raciocínio. Para usar o modelo da sessão ou outro, passe `model` ao chamá-lo.
-- Subagentes não fazem commit nem `git add`. Quem commita é a sessão principal, depois de conferir o trabalho e ver os testes passarem.
-
-### Revisão de código em duas camadas
-
-| Quando | Agente | Modelo |
-|---|---|---|
-| Depois de cada tarefa | `reviewer` | Sonnet 5, raciocínio médio |
-| No fim de cada marco | `milestone-reviewer` | Opus 5.5, raciocínio alto |
-
-Uma tarefa só é commitada depois de o `reviewer` aprovar. Um marco só é dado como concluído depois de o `milestone-reviewer` aprovar. Quando um revisor reprova, o `implementer` corrige e o mesmo revisor olha de novo.
 
 ## Segurança
 
 O app executa comandos na máquina, então qualquer site aberto no navegador é uma ameaça a um servidor local.
 
 - Escute só em 127.0.0.1.
-- Recuse requisições cujo `Host` não seja `localhost` ou `127.0.0.1` nas portas 6600 e 6660.
+- Recuse requisições cujo `Host` não seja `localhost` ou `127.0.0.1` nas portas do app.
 - Recuse WebSockets e requisições que alteram estado cuja origem não seja a do próprio app.
 - Não libere CORS.
 - Toda requisição a `/api/` precisa do cabeçalho `X-Maestro: 1`, que o cliente do frontend envia. Isso impede outros sites de dispararem leituras por `<img>`, formulário ou `fetch`.
 - Todo `git` passa por `run_git` em `backend/claudio_maestro/gitinfo.py`, que neutraliza fsmonitor, pager, hooks, diff externo, textconv, filtros e submódulos. Não chame `git` por outro caminho.
-- Todo caminho recebido precisa estar, depois de resolvido, dentro da pasta de um projeto registrado. A única exceção é uma worktree git ligada a um repositório que está dentro de um projeto, comprovada pelo ponteiro `.git` de ida e volta (com `realpath`) e pela saída de `git worktree list` desse repositório (decisão do usuário em 2026-09-30, marco 16).
-- Execute git e o editor com argumentos em lista, sem shell.
+- Todo caminho recebido precisa estar, depois de resolvido, dentro da pasta de um projeto registrado. A única exceção é uma worktree git ligada a um repositório que está dentro de um projeto, comprovada pelo ponteiro `.git` de ida e volta (com `realpath`) e pela saída de `git worktree list` desse repositório.
+- Execute git, o editor e o seletor de pastas com argumentos em lista, sem shell.
 
 ## Testes contra o SDK real
 
 Os testes automatizados nunca tocam o SDK real. Ele fica atrás de uma interface, e os testes usam um cliente falso.
 
-Testes manuais contra o SDK real consomem a assinatura do usuário:
+Testes manuais contra o SDK real consomem a assinatura ou os créditos de quem roda:
 
 - Poucas chamadas, prompts mínimos, modelo `haiku`.
 - Pasta temporária e `setting_sources=[]`, para não disparar hooks e plugins.
 - Apague as sessões de teste com `delete_session` ao terminar.
 - Dentro de uma sessão do Claude Code, remova do ambiente as variáveis que começam com `CLAUDE` antes de iniciar o SDK.
+
+## Agentes
+
+`.claude/agents/` tem três agentes para quem contribui com o Claude Code: `implementer` (implementa com testes antes), `reviewer` (revisa uma tarefa) e `milestone-reviewer` (revisão profunda de um conjunto de mudanças). Subagentes não fazem commit.

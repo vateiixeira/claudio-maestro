@@ -34,7 +34,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 15. Ajustes da crítica de design | Leitura de tabelas e diffs, laranja só para o que precisa de você, erros em vermelho | Concluído | 6 de 6 |
 | 16. Worktrees no painel e ajustes | Alterações de sessões em worktree, menu `/` só no início e teste instável | Concluído | 5 de 5 |
 | 17. Melhorias médias da crítica | Cabeçalho compacto, próxima conversa que aguarda você, nomes de estado, seletor de modo e ícones | Concluído | 6 de 6 |
-| 18. Código aberto | Publicar como Cláudio Maestro: nome, comando único, macOS, documentação, CI e limpeza dos documentos de construção | Em andamento | 7 de 15 |
+| 18. Código aberto | Publicar como Cláudio Maestro: nome, comando único, macOS, documentação, CI e limpeza dos documentos de construção | Em andamento | 8 de 15 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido e concluído em 2026-09-30, junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
@@ -470,7 +470,7 @@ Objetivo: publicar o projeto no GitHub como Cláudio Maestro (https://github.com
 - [ ] Comando único `claudio-maestro`
 - [x] README, CONTRIBUTING, SECURITY, CHANGELOG, LICENSE e .editorconfig (2026-09-30)
 - [x] CI, Dependabot e modelos de issue e de PR (2026-09-30)
-- [ ] CLAUDE.md e PRODUCT.md neutros, fluxo pessoal em CLAUDE.local.md
+- [x] CLAUDE.md e PRODUCT.md neutros, fluxo pessoal em CLAUDE.local.md (2026-09-30)
 - [ ] Capturas de tela do README
 - [ ] Tirar `docs/` e o diário do git e criar o roadmap público
 - [ ] Publicar no GitHub

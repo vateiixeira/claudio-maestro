@@ -6,7 +6,7 @@ product
 
 ## Users
 
-Um único usuário, o Vinicius, desenvolvedor que usa o app o dia inteiro na própria máquina Linux, num monitor de mesa, geralmente com várias sessões do agente de código rodando ao mesmo tempo em projetos diferentes. Ele alterna entre acompanhar o que o agente está fazendo, ler respostas longas, conferir diffs e saídas de comando, e responder quando uma sessão espera por ele (permissão, pergunta, aprovação de plano).
+Um desenvolvedor por instalação, que usa o app o dia inteiro na própria máquina (Linux ou macOS), num monitor de mesa, geralmente com várias sessões do agente de código rodando ao mesmo tempo em projetos diferentes. Ele alterna entre acompanhar o que o agente está fazendo, ler respostas longas, conferir diffs e saídas de comando, e responder quando uma sessão espera por ele (permissão, pergunta, aprovação de plano).
 
 ## Product Purpose
 
