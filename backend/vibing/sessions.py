@@ -621,6 +621,34 @@ def normalize_models(info: dict[str, Any] | None) -> list[dict[str, Any]] | None
     return result or None
 
 
+def new_session_defaults(conn: sqlite3.Connection) -> tuple[str | None, str | None, str | None]:
+    """Saved model, effort and mode for new sessions, as `(model, effort, mode)`.
+
+    They come from `preferences` in `app_state`. A missing, unreadable or invalid
+    value is None, which leaves the decision to the CLI.
+    """
+    row = conn.execute("SELECT value FROM app_state WHERE key = 'preferences'").fetchone()
+    if row is None:
+        return None, None, None
+    try:
+        preferences = json.loads(row["value"])
+    except ValueError:
+        return None, None, None
+    if not isinstance(preferences, dict):
+        return None, None, None
+    model = preferences.get("new_session_model")
+    effort = preferences.get("new_session_effort")
+    mode = preferences.get("new_session_mode")
+    model = model.strip() if isinstance(model, str) else None
+    if not model or len(model) > 100:
+        model = None
+    if not isinstance(effort, str) or effort not in EFFORTS:
+        effort = None
+    if not isinstance(mode, str) or mode not in PERMISSION_MODES or mode == "bypassPermissions":
+        mode = None
+    return model, effort, mode
+
+
 def user_default_permission_mode() -> str | None:
     """`permissions.defaultMode` of the user's CLI settings, used by new sessions.
 
@@ -2185,25 +2213,29 @@ class SessionManager:
         if not project.available:
             raise ProjectUnavailableError("A pasta do projeto não está disponível.")
         now = _now()
-        record = SessionRecord(
-            session_id=str(uuid.uuid4()),
-            project_id=project.id,
-            cwd=project.path,
-            title=DEFAULT_TITLE,
-            created_at=now,
-            last_activity_at=now,
-            last_seen_at=now,
-            finished=False,
-            permission_mode=self._default_permission_mode(),
-            group_id=group_id,
-        )
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            model, effort, mode = new_session_defaults(conn)
+            record = SessionRecord(
+                session_id=str(uuid.uuid4()),
+                project_id=project.id,
+                cwd=project.path,
+                title=DEFAULT_TITLE,
+                created_at=now,
+                last_activity_at=now,
+                last_seen_at=now,
+                finished=False,
+                model=model,
+                effort=effort,
+                # Saved preference, then the user's CLI `defaultMode`, then None.
+                permission_mode=mode or self._default_permission_mode(),
+                group_id=group_id,
+            )
             # Same transaction: the group cannot vanish between the check and the insert.
             if group_id is not None:
                 groups.check_group_for(conn, group_id, project.id)
             conn.execute(
-                f"INSERT INTO sessions ({_INSERT_COLUMNS}, permission_mode, group_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.session_id,
                     record.project_id,
@@ -2213,6 +2245,8 @@ class SessionManager:
                     record.last_activity_at,
                     record.last_seen_at,
                     int(record.finished),
+                    record.model,
+                    record.effort,
                     record.permission_mode,
                     record.group_id,
                 ),
