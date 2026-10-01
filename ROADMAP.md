@@ -30,6 +30,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 17 de 19 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode | Não iniciado | 0 de 11 |
+| 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Em andamento | 0 de 6 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e tem spec, mas ainda não tem plano.
 
@@ -384,6 +385,22 @@ Pedido pelo usuário em 2026-09-30. Falta escrever o plano.
 - [ ] Realce das menções e dica de argumentos (`MentionMirror`)
 - [ ] Comando como balão no histórico
 - [ ] Verificação manual contra o SDK real e no app
+
+## Marco 14. Identidade visual
+
+Objetivo: separar as áreas da tela e dar sentido às cores, aplicando a opção A (camadas) em todas as telas. Só tokens, superfícies, tipografia e estilo dos blocos; layout, rotas e comportamento não mudam.
+
+Pedido pelo usuário em 2026-09-30, que escolheu a opção A entre três direções.
+
+- Direções e regras de cor: `docs/design/explorations/README.md`
+- Mockup aprovado: `docs/design/explorations/A-camadas.dc.html`
+
+- [ ] Tokens novos no `@theme`, estilos do markdown e superfícies da estrutura (barra lateral, área central, Detalhes)
+- [ ] Blocos do chat: mensagem do usuário, comando com saída, grupo de ações, trilho, turno concluído e composer
+- [ ] Painel Detalhes: propriedades agrupadas e Resumo com "Falta" antes de "Feito"
+- [ ] Barra lateral: triângulo laranja forte só em conversa com novidade
+- [ ] Demais telas: Inbox, Conversas, Dashboard, projeto, Preferências, modais, sem verde em links e sem cores fixas
+- [ ] Revisão do marco pelo `milestone-reviewer` e conferência no app
 
 ## Fora do MVP
 
