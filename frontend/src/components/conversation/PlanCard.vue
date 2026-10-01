@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { ApiError, answerPrompt, errorMessage } from '../../api/http'
+import { onCodeCopyClick } from '../../conversation/codeCopy'
 import { renderMarkdown } from '../../conversation/markdown'
 import type { PermissionPrompt } from '../../types/conversation'
 
@@ -44,7 +45,7 @@ async function send(decision: 'approve' | 'reject') {
       <span class="font-semibold text-secondary-soft">Plano para aprovar</span>
     </div>
     <!-- Safe: markdown-it runs with `html: false`. -->
-    <div class="markdown max-h-96 overflow-auto rounded-md border border-line bg-bg px-3 py-2.5 text-sm text-fg" v-html="html" />
+    <div class="markdown max-h-96 overflow-auto rounded-md border border-line bg-bg px-3 py-2.5 text-sm text-fg" @click="onCodeCopyClick" v-html="html" />
     <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <div v-if="asking" class="flex flex-col gap-2">
       <label class="flex flex-col gap-1 text-xs text-fg-muted">

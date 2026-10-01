@@ -63,6 +63,34 @@ body {
   overflow-x: auto;
 }
 .markdown pre code { color: var(--color-fg); font-size: 12px; }
+/* Copy button on fenced blocks (see conversation/codeCopy.ts). The wrapper takes over the pre's margin. */
+.markdown .code-block { position: relative; margin: 0 0 0.75em; }
+.markdown .code-block pre { margin: 0; }
+.markdown .code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 6px;
+  background: var(--color-panel);
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.markdown .code-copy:hover { color: var(--color-fg); }
+.markdown .code-block:hover .code-copy,
+.markdown .code-block:focus-within .code-copy,
+.markdown .code-copy:focus-visible { opacity: 1; pointer-events: auto; }
+.markdown .code-copy:focus-visible { outline: 2px solid var(--color-primary); }
+@media (hover: none) {
+  .markdown .code-copy { opacity: 1; pointer-events: auto; }
+}
 .markdown blockquote { border-left: 2px solid var(--color-line-strong); padding-left: 12px; color: var(--color-fg-muted); }
 .markdown table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; }
 .markdown th, .markdown td { border: 1px solid var(--color-line); padding: 4px 8px; }

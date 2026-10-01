@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { onCodeCopyClick } from '../../conversation/codeCopy'
 import { renderMarkdown } from '../../conversation/markdown'
 import type { TextItem } from '../../types/conversation'
 
@@ -27,7 +28,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 <template>
   <div class="group/text">
     <div class="markdown">
-      <div v-html="html" />
+      <div @click="onCodeCopyClick" v-html="html" />
       <span
         v-if="item.streaming"
         data-test="streaming"

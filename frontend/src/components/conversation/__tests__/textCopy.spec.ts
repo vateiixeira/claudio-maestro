@@ -54,3 +54,17 @@ describe('copiar resposta', () => {
     expect(w.find('[data-test="copy"]').exists()).toBe(false)
   })
 })
+
+describe('copiar bloco de código', () => {
+  it('copia só o código do bloco, não a resposta inteira', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard(writeText)
+    const text = 'Veja:\n\n```py\nx = 1\n```\n\nfim'
+    const w = mount(TextBlock, { props: { item: item({ text }) } })
+    await w.find('[data-code-copy]').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith('x = 1\n')
+    expect(w.find('[data-code-copy]').text()).toBe('Copiado')
+  })
+})

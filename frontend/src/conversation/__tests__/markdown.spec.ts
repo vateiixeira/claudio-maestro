@@ -21,4 +21,28 @@ describe('renderMarkdown', () => {
   it('escapa código de linguagem desconhecida', () => {
     expect(renderMarkdown('```zzz\n<b>x</b>\n```')).toContain('&lt;b&gt;')
   })
+
+  it('envolve bloco cercado com botão de copiar', () => {
+    const el = document.createElement('div')
+    el.innerHTML = renderMarkdown('```py\nx = 1\n```')
+    expect(el.querySelectorAll('.code-block')).toHaveLength(1)
+    const block = el.querySelector('.code-block')!
+    expect(block.querySelectorAll('button[data-code-copy]')).toHaveLength(1)
+    expect(block.querySelector('button')!.getAttribute('aria-label')).toBe('Copiar código')
+    expect(block.querySelector('button')!.textContent).toBe('Copiar')
+    expect(block.querySelector('pre')).not.toBeNull()
+  })
+
+  it('bloco sem linguagem também ganha o botão', () => {
+    const el = document.createElement('div')
+    el.innerHTML = renderMarkdown('```\nsó texto\n```')
+    expect(el.querySelectorAll('.code-block button[data-code-copy]')).toHaveLength(1)
+  })
+
+  it('código inline não ganha botão', () => {
+    const el = document.createElement('div')
+    el.innerHTML = renderMarkdown('use `x` aqui')
+    expect(el.querySelector('.code-block')).toBeNull()
+    expect(el.querySelector('button')).toBeNull()
+  })
 })

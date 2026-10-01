@@ -55,6 +55,12 @@ md.renderer.rules.link_open = (...args: Parameters<Rule>) => {
   return defaultLinkOpen(...args)
 }
 
+// Fenced blocks get a copy button (handled by `onCodeCopyClick`). The wrapper is added here and
+// not in `highlight`, because markdown-it only skips its own <pre> wrapper when the result starts with `<pre`.
+const defaultFence = md.renderer.rules.fence!
+md.renderer.rules.fence = (tokens, idx, options, env, self) =>
+  `<div class="code-block"><button type="button" class="code-copy" data-code-copy aria-label="Copiar código">Copiar</button>${defaultFence(tokens, idx, options, env, self)}</div>`
+
 export function renderMarkdown(text: string): string {
   return md.render(text)
 }

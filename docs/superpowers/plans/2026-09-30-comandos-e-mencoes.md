@@ -2482,17 +2482,17 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) =>
   `<div class="code-block"><button type="button" class="code-copy" data-code-copy aria-label="Copiar código">Copiar</button>${defaultFence(tokens, idx, options, env, self)}</div>`
 ```
 
-- [ ] **Passo 1: testes que falham.**
+- [x] **Passo 1: testes que falham.**
   - **`markdown.spec.ts`:** `renderMarkdown('```py\nx = 1\n```')` contém exatamente um `.code-block` com um `button[data-code-copy]` e o `pre`. Código inline (`` `x` ``) não ganha botão. Um bloco sem linguagem também ganha.
   - **`codeCopy.spec.ts`:** monte um `div` com `innerHTML = renderMarkdown('```js\nconst a = "<b>"\n```')`. Com `navigator.clipboard.writeText` substituído por `vi.fn()` (via `Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })`), disparar `onCodeCopyClick` com o botão como alvo faz três coisas: chama `writeText` com `const a = "<b>"\n` (o texto cru, sem tags do realce), troca o texto do botão para "Copiado" e, com timers falsos, volta a "Copiar" depois de 1,5 s. Se `writeText` rejeitar, o botão mostra "Não foi possível copiar". Um clique fora do botão não chama `writeText`.
   - **`TextBlock`:** montar com texto que tem bloco de código e clicar em `[data-code-copy]` chama `writeText` com o código, não com a resposta inteira.
 
   Confira se o `textContent` de `pre code` inclui o `\n` final que o markdown-it deixa. Se incluir, mantenha-o como está, porque é o que o usuário espera colar.
 
-- [ ] **Passo 2: rodar e ver falhar.**
-- [ ] **Passo 3: implementar.** Aplique a regra `fence` acima e crie `codeCopy.ts`, guardando um timer por botão num `WeakMap`. Em `TextBlock.vue` e `PlanCard.vue`, ponha `@click="onCodeCopyClick"` no `div` do `v-html`. No `style.css`, use `.code-block { position: relative }`. O `.code-copy` fica absoluto no topo à direita, com fonte pequena, borda `line-strong`, fundo `panel`, `opacity: 0` e `opacity: 1` em `.code-block:hover`, em `:focus-visible` e em `@media (hover: none)`.
-- [ ] **Passo 4: rodar e ver passar.** Rode os arquivos, `pnpm --dir frontend test` e `pnpm --dir frontend build`.
-- [ ] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 13 no roadmap.
+- [x] **Passo 2: rodar e ver falhar.**
+- [x] **Passo 3: implementar.** Aplique a regra `fence` acima e crie `codeCopy.ts`, guardando um timer por botão num `WeakMap`. Em `TextBlock.vue` e `PlanCard.vue`, ponha `@click="onCodeCopyClick"` no `div` do `v-html`. No `style.css`, use `.code-block { position: relative }`. O `.code-copy` fica absoluto no topo à direita, com fonte pequena, borda `line-strong`, fundo `panel`, `opacity: 0` e `opacity: 1` em `.code-block:hover`, em `:focus-visible` e em `@media (hover: none)`.
+- [x] **Passo 4: rodar e ver passar.** Rode os arquivos, `pnpm --dir frontend test` e `pnpm --dir frontend build`.
+- [x] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 13 no roadmap.
 
 ```bash
 git add frontend/src/conversation/markdown.ts frontend/src/conversation/codeCopy.ts frontend/src/components/conversation/TextBlock.vue frontend/src/components/conversation/PlanCard.vue frontend/src/style.css frontend/src/conversation/__tests__ frontend/src/components/conversation/__tests__ ROADMAP.md
