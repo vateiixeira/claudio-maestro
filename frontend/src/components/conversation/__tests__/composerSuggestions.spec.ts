@@ -7,7 +7,10 @@ import { FakeRecognition } from '../../../test/fakeRecognition'
 enableAutoUnmount(afterEach)
 afterEach(() => vi.unstubAllGlobals())
 
-const COMMANDS = [{ name: 'commit', description: 'Cria commit', argument_hint: '' }]
+const COMMANDS = [
+  { name: 'commit', description: 'Cria commit', argument_hint: '' },
+  { name: 'hello', description: 'Diz olá', argument_hint: '<nome>' },
+]
 
 function setup() {
   const fetchMock = routeFetch({
@@ -86,5 +89,25 @@ describe('MessageComposer com sugestões', () => {
     await flushPromises()
     expect(sent()).toHaveLength(1)
     expect(w.find('[role="listbox"]').exists()).toBe(false)
+  })
+})
+
+describe('MessageComposer com a camada espelhada', () => {
+  it('a camada aparece atrás do campo com o mesmo texto', async () => {
+    const { w, ta, type } = setup()
+    await type('/co')
+    await ta.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const mirror = w.get('div[aria-hidden="true"]')
+    expect(mirror.text()).toContain('/commit')
+    expect(mirror.text()).not.toContain('<nome>')
+  })
+
+  it('mostra a dica de argumentos depois de escolher o comando', async () => {
+    const { w, ta, type } = setup()
+    await type('/he')
+    await ta.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(w.get('div[aria-hidden="true"]').text()).toContain('<nome>')
   })
 })

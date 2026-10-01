@@ -444,3 +444,52 @@ describe('menu @', () => {
     expect(t.api.items.value.map((i) => i.label)).toEqual(['/commit'])
   })
 })
+
+describe('dica de argumentos e poda das menções', () => {
+  it('argumentHint só com o texto igual a /nome ', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/commands': () => jsonResponse(COMMANDS) }))
+    const t = harness()
+    await t.type('/he')
+    t.key('Enter')
+    expect(t.text.value).toBe('/hello ')
+    expect(t.api.argumentHint.value).toBe('<nome>')
+    t.text.value = '/hello V'
+    await nextTick()
+    expect(t.api.argumentHint.value).toBe('')
+  })
+
+  it('argumentHint vazio para comando sem dica e para comando desconhecido', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/commands': () => jsonResponse(COMMANDS) }))
+    const t = harness()
+    await t.type('/co')
+    t.key('Enter')
+    expect(t.text.value).toBe('/commit ')
+    expect(t.api.argumentHint.value).toBe('')
+    t.text.value = '/outro '
+    await nextTick()
+    expect(t.api.argumentHint.value).toBe('')
+  })
+
+  it('menção sai do conjunto quando o texto deixa de contê-la', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', routeFetch({
+        'GET /api/sessions/s1/files?q=fs': () => jsonResponse([{ path: 'backend/fs.py', name: 'fs.py', type: 'file' }]),
+      }))
+      const t = harness()
+      await t.type('veja @fs')
+      await vi.advanceTimersByTimeAsync(200)
+      await flushPromises()
+      t.key('Enter')
+      expect([...t.api.mentions.value]).toEqual(['@backend/fs.py'])
+      t.text.value = 'veja @backend/fs.py e mais'
+      await nextTick()
+      expect(t.api.mentions.value.size).toBe(1)
+      t.text.value = 'veja '
+      await nextTick()
+      expect(t.api.mentions.value.size).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

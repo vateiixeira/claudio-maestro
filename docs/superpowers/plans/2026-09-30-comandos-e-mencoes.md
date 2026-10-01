@@ -2120,7 +2120,7 @@ Item 9 do marco 13.
   - `@scroll` no `textarea` atualiza um `ref` `scrollTop`.
 - No modal, o mesmo, com o fundo `bg-bg` e o preenchimento `px-3 py-2` / `leading-relaxed` do `textarea` dele.
 
-- [ ] **Passo 1: testes que falham.** `MentionMirror.spec.ts`:
+- [x] **Passo 1: testes que falham.** `MentionMirror.spec.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -2190,10 +2190,10 @@ it('menção sai do conjunto quando o texto deixa de contê-la', async () => {
 
 No composer, um teste em `composerSuggestions.spec.ts`: depois de escolher `/commit`, existe `[aria-hidden="true"]` com o texto; com `hello` e dica, o texto `<nome>` aparece.
 
-- [ ] **Passo 2: rodar e ver falhar.**
-- [ ] **Passo 3: implementar.**
-- [ ] **Passo 4: rodar e ver passar.** Rode os arquivos, `pnpm --dir frontend test` e `pnpm --dir frontend build`. Abra o app (`pnpm --dir frontend dev` com o backend rodando) e confira a olho que o texto do `textarea` e a camada ficam alinhados em várias linhas e com rolagem. Relate como verificação visual, separada dos testes.
-- [ ] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 9 no roadmap.
+- [x] **Passo 2: rodar e ver falhar.**
+- [x] **Passo 3: implementar.**
+- [x] **Passo 4: rodar e ver passar.** Rode os arquivos, `pnpm --dir frontend test` e `pnpm --dir frontend build`. Abra o app (`pnpm --dir frontend dev` com o backend rodando) e confira a olho que o texto do `textarea` e a camada ficam alinhados em várias linhas e com rolagem. Relate como verificação visual, separada dos testes.
+- [x] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 9 no roadmap.
 
 ```bash
 git add frontend/src/components/conversation/MentionMirror.vue frontend/src/components/conversation/__tests__/MentionMirror.spec.ts frontend/src/conversation/useComposerSuggestions.ts frontend/src/conversation/__tests__/useComposerSuggestions.spec.ts frontend/src/components/conversation/MessageComposer.vue frontend/src/components/NewConversationModal.vue frontend/src/components/conversation/__tests__/composerSuggestions.spec.ts ROADMAP.md

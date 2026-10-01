@@ -5,7 +5,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { errorMessage, listCommands, searchFiles } from '../api/http'
 import type { CommandInfo, FileMatch, SuggestionScope } from '../types/api'
-import { applySuggestion, findTrigger, mentionText, rankCommands, type Trigger, type TriggerKind } from './suggestions'
+import { applySuggestion, findTrigger, mentionRanges, mentionText, rankCommands, type Trigger, type TriggerKind } from './suggestions'
 
 export interface SuggestionItem {
   key: string
@@ -45,6 +45,8 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
   commands: Ref<CommandInfo[] | null>
   /** Mentions inserted from the list (no trailing space), e.g. '@backend/fs.py'. */
   mentions: Ref<Set<string>>
+  /** The command's argument hint while the whole text is '/name ' ('' otherwise). */
+  argumentHint: ComputedRef<string>
   refresh: () => void
   onKeydown: (event: KeyboardEvent) => boolean
   choose: (index: number, via: 'enter' | 'tab' | 'click') => void
@@ -84,6 +86,18 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     }))
   })
   const optionId = (index: number) => `${menuId}-opt-${index}`
+  const argumentHint = computed(() => {
+    const match = /^\/([^\s/]+) $/.exec(options.text.value)
+    if (!match) return ''
+    return commands.value?.find((c) => c.name === match[1])?.argument_hint ?? ''
+  })
+  // A mention the text no longer contains (edited, deleted or sent) stops being highlighted.
+  watch(options.text, (value) => {
+    if (!mentions.value.size) return
+    for (const mention of [...mentions.value]) {
+      if (!mentionRanges(value, [mention]).length) mentions.value.delete(mention)
+    }
+  })
 
   function fileItem(file: FileMatch): SuggestionItem {
     if (file.type === 'directory') {
@@ -282,5 +296,5 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     close()
   }
 
-  return { isOpen, kind, items, active, status, error, menuId, optionId, commands, mentions, refresh, onKeydown, choose, close, onBlur }
+  return { isOpen, kind, items, active, status, error, menuId, optionId, commands, mentions, argumentHint, refresh, onKeydown, choose, close, onBlur }
 }

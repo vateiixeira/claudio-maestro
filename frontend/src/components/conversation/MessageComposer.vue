@@ -8,6 +8,7 @@ import { useComposerSuggestions } from '../../conversation/useComposerSuggestion
 import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
 import type { SessionState } from '../../types/api'
+import MentionMirror from './MentionMirror.vue'
 import SuggestionMenu from './SuggestionMenu.vue'
 
 // `blockedReason`: why sending is not possible now (e.g. the project folder is gone).
@@ -72,6 +73,12 @@ const dictation = useDictation({
     nextTick(resize)
   },
 })
+
+// The highlight layer behind the field follows its scroll.
+const scrollTop = ref(0)
+function onScroll() {
+  scrollTop.value = textarea.value?.scrollTop ?? 0
+}
 
 const busy = computed(() => props.state === 'running' || props.state === 'awaiting_decision')
 
@@ -192,7 +199,14 @@ async function interrupt() {
     </div>
     <div class="flex items-end gap-2">
       <label :for="`msg-${sessionId}`" class="sr-only">Mensagem para a sessão</label>
-      <div class="relative min-w-0 grow">
+      <div class="relative min-w-0 grow rounded-lg bg-panel">
+        <MentionMirror
+          :text="text"
+          :mentions="suggestions.mentions.value"
+          :hint="suggestions.argumentHint.value"
+          :scroll-top="scrollTop"
+          class="rounded-lg border border-transparent px-3.5 py-[11px] font-sans text-sm leading-normal"
+        />
         <textarea
           :id="`msg-${sessionId}`"
           ref="textarea"
@@ -204,8 +218,9 @@ async function interrupt() {
           :aria-expanded="suggestions.isOpen.value"
           :aria-controls="suggestions.menuId"
           :aria-activedescendant="suggestions.isOpen.value && suggestions.items.value.length ? suggestions.optionId(suggestions.active.value) : undefined"
-          class="min-h-11 w-full resize-none overflow-hidden rounded-lg border border-line-strong bg-panel px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
+          class="relative block min-h-11 w-full resize-none overflow-hidden rounded-lg border border-line-strong bg-transparent px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
           @input="onInput"
+          @scroll="onScroll"
           @keydown="onKeydown"
           @keyup="suggestions.refresh()"
           @click="suggestions.refresh()"

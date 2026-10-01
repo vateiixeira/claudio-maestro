@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import MentionMirror from './conversation/MentionMirror.vue'
 import SuggestionMenu from './conversation/SuggestionMenu.vue'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
 import { errorMessage, sendMessage, updateSession } from '../api/http'
@@ -159,6 +160,11 @@ const suggestions = useComposerSuggestions({
   text: promptText,
   scope: () => (draft.value.projectId != null ? { projectId: draft.value.projectId } : null),
 })
+// The highlight layer behind the prompt follows its scroll.
+const promptScrollTop = ref(0)
+function onPromptScroll() {
+  promptScrollTop.value = promptEl.value?.scrollTop ?? 0
+}
 // The menu opens above the field when the scrollable body has room for its full height (max-h-72 = 288 px), else below.
 const MENU_HEIGHT = 288
 const menuPlacement = ref<'above' | 'below'>('below')
@@ -363,7 +369,14 @@ function onKeydown(event: KeyboardEvent) {
             </select>
           </label>
           <input v-model="draft.title" data-test="nc-title" placeholder="Título (opcional)" aria-label="Título (opcional)" maxlength="200" class="h-10 rounded-md border border-line-strong bg-bg px-3 text-base font-semibold text-fg outline-none focus:border-primary" />
-          <div class="relative flex min-h-40 grow flex-col">
+          <div class="relative flex min-h-40 grow flex-col rounded-md bg-bg">
+            <MentionMirror
+              :text="draft.prompt"
+              :mentions="suggestions.mentions.value"
+              :hint="suggestions.argumentHint.value"
+              :scroll-top="promptScrollTop"
+              class="rounded-md border border-transparent px-3 py-2 text-sm leading-relaxed"
+            />
             <textarea
               ref="promptEl"
               v-model="draft.prompt"
@@ -375,8 +388,9 @@ function onKeydown(event: KeyboardEvent) {
               :aria-expanded="suggestions.isOpen.value"
               :aria-controls="suggestions.menuId"
               :aria-activedescendant="suggestions.isOpen.value && suggestions.items.value.length ? suggestions.optionId(suggestions.active.value) : undefined"
-              class="min-h-40 grow resize-none rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-primary"
+              class="relative min-h-40 grow resize-none rounded-md border border-line-strong bg-transparent px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-primary"
               @input="onPromptInput"
+              @scroll="onPromptScroll"
               @keydown="onPromptKey"
               @keyup="suggestions.refresh()"
               @click="suggestions.refresh()"

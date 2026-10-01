@@ -154,4 +154,16 @@ describe('modal de nova conversa: comandos e menções', () => {
     await typeSlash(wrapper, '/co')
     expect(wrapper.get('[role="listbox"]').classes()).toContain('bottom-full')
   })
+
+  it('a camada espelhada mostra a dica de argumentos do comando escolhido', async () => {
+    const { wrapper } = await openModal(2, {
+      'GET /api/projects/2/commands': () => jsonResponse([{ name: 'hello', description: '', argument_hint: '<nome>' }]),
+    })
+    const ta = await typeSlash(wrapper, '/he')
+    await ta.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const mirror = wrapper.get('div[aria-hidden="true"]')
+    expect(mirror.text()).toContain('/hello')
+    expect(mirror.text()).toContain('<nome>')
+  })
 })

@@ -50,6 +50,31 @@ export function mentionText(path: string): string {
   return '@' + quotePath(path)
 }
 
+/**
+ * Where each mention occurs in the text, as sorted, non-overlapping [start, end) pairs.
+ * An occurrence counts only at the start or after whitespace, and before whitespace or the end.
+ */
+export function mentionRanges(text: string, mentions: Iterable<string>): [number, number][] {
+  const found: [number, number][] = []
+  for (const mention of mentions) {
+    if (!mention) continue
+    let from = 0
+    for (;;) {
+      const at = text.indexOf(mention, from)
+      if (at < 0) break
+      const end = at + mention.length
+      if ((at === 0 || /\s/.test(text[at - 1])) && (end === text.length || /\s/.test(text[end]))) found.push([at, end])
+      from = at + 1
+    }
+  }
+  found.sort((a, b) => a[0] - b[0] || b[1] - a[1])
+  const result: [number, number][] = []
+  for (const range of found) {
+    if (!result.length || range[0] >= result[result.length - 1][1]) result.push(range)
+  }
+  return result
+}
+
 function subsequenceAt(name: string, term: string): number {
   let from = 0
   let first = -1
