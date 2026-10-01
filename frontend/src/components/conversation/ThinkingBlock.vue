@@ -96,7 +96,7 @@ const label = computed(() => {
         v-if="canExpand"
         type="button"
         data-test="thinking-expand"
-        class="mt-1 ml-3 cursor-pointer border-none bg-transparent p-0 text-xs font-semibold text-primary-soft hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+        class="mt-1 ml-3 cursor-pointer border-none bg-transparent p-0 text-xs font-semibold text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
         :aria-expanded="full"
         @click="toggleFull"
       >{{ full ? 'Recolher' : 'Ver tudo' }}</button>

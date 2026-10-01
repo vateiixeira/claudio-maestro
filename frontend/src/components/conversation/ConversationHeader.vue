@@ -153,7 +153,7 @@ async function openProject() {
           type="button"
           data-test="conversation-title"
           title="Clique para renomear"
-          class="max-w-full text-left hover:text-primary-soft focus-visible:outline-2 focus-visible:outline-primary"
+          class="max-w-full text-left hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
           @click="startRename"
         >{{ title }}</button>
       </h1>

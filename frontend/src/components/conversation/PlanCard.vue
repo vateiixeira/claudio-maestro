@@ -38,7 +38,7 @@ async function send(decision: 'approve' | 'reject') {
 </script>
 
 <template>
-  <div data-test="plan-card" class="flex flex-col gap-3 rounded-[10px] border border-secondary/50 bg-secondary/10 p-3.5">
+  <div data-test="plan-card" class="flex flex-col gap-3 rounded-[10px] border border-secondary/50 bg-panel p-3.5">
     <div class="flex items-center gap-2">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-secondary" aria-hidden="true"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
       <span class="font-semibold text-secondary-soft">Plano para aprovar</span>

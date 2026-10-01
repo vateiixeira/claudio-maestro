@@ -36,7 +36,7 @@ function toggleRow(id: string) {
       :aria-expanded="open"
       @click="emit('toggle')"
     >
-      <span class="cap shrink-0 text-fg-muted">{{ items.length }} ações</span>
+      <span class="cap shrink-0 text-fg-subtle">{{ items.length }} ações</span>
       <span class="flex min-w-0 grow flex-wrap gap-1.5">
         <span
           v-for="chip in chips"
@@ -45,7 +45,7 @@ function toggleRow(id: string) {
           class="rounded border border-line px-1.5 py-px font-mono text-[11px] text-fg-muted"
         >{{ chip }}</span>
       </span>
-      <span class="shrink-0 text-xs text-fg-muted">{{ open ? 'Recolher ▾' : 'Ver ▸' }}</span>
+      <span class="shrink-0 text-xs text-fg-subtle">{{ open ? 'Recolher ▾' : 'Ver ▸' }}</span>
     </button>
     <div v-if="open" class="flex flex-col border-t border-line">
       <template v-for="(row, index) in rows" :key="row.item.id">
@@ -57,18 +57,18 @@ function toggleRow(id: string) {
           :aria-expanded="expanded.has(row.item.id)"
           @click="toggleRow(row.item.id)"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-muted" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-subtle" aria-hidden="true">
             <template v-if="row.kind === 'read'"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></template>
             <template v-else-if="row.kind === 'search'"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></template>
             <template v-else-if="row.kind === 'bash'"><path d="m4 17 6-6-6-6" /><line x1="12" y1="19" x2="20" y2="19" /></template>
             <path v-else d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />
           </svg>
-          <span class="cap w-20 shrink-0 text-fg-muted">{{ row.label }}</span>
-          <span class="min-w-0 grow truncate font-mono text-xs">{{ row.target }}</span>
+          <span class="cap w-20 shrink-0 text-fg-subtle">{{ row.label }}</span>
+          <span class="min-w-0 grow truncate font-mono text-xs text-fg">{{ row.target }}</span>
           <span
             v-if="row.meta"
             class="max-w-[45%] shrink-0 truncate font-mono text-[11px]"
-            :class="row.meta === 'rodando…' ? 'animate-pulse text-primary-soft' : 'text-fg-muted'"
+            :class="row.meta === 'rodando…' ? 'animate-pulse text-primary-soft' : 'text-fg-subtle'"
           >{{ row.meta }}</span>
         </button>
         <div v-if="expanded.has(row.item.id)" data-test="action-row-card" class="border-t border-line p-2">

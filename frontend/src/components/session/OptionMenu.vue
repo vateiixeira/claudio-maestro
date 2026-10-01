@@ -175,11 +175,11 @@ function choose(value: string) {
       aria-haspopup="menu"
       :aria-expanded="open"
       :disabled="disabled"
-      class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-2.5 text-[13px] hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
-      :class="highlight ? 'border-secondary/60 bg-secondary/10 text-secondary' : 'border-line-strong text-fg'"
+      class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
+      :class="highlight ? 'border-secondary/60 bg-secondary/10 text-secondary' : 'border-line text-fg-muted hover:text-fg'"
       @click="toggle"
       @keydown="onTriggerKey"
-    >{{ text }}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="text-fg-muted"><path d="m6 9 6 6 6-6" /></svg></button>
+    >{{ text }}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="text-fg-subtle"><path d="m6 9 6 6 6-6" /></svg></button>
     <Teleport to="body">
     <div
       v-if="open"
@@ -197,9 +197,9 @@ function choose(value: string) {
         role="menuitemradio"
         :aria-checked="option.value === selected"
         tabindex="-1"
-        class="flex cursor-pointer flex-col items-start rounded-md px-2.5 py-1.5 text-left text-sm text-fg hover:bg-card focus:bg-card focus:outline-none aria-checked:text-primary-soft"
+        class="flex cursor-pointer flex-col items-start rounded-md px-2.5 py-1.5 text-left text-sm text-fg hover:bg-card focus:bg-card focus:outline-none aria-checked:text-fg aria-checked:font-semibold"
         @click="choose(option.value)"
-      ><span>{{ option.label }}</span><span v-if="option.description" class="text-xs text-fg-muted">{{ option.description }}</span></button>
+      ><span>{{ option.label }}</span><span v-if="option.description" class="text-xs text-fg-subtle">{{ option.description }}</span></button>
     </div>
     </Teleport>
   </div>

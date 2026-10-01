@@ -1,0 +1,92 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia, type Pinia } from 'pinia'
+import { createMemoryHistory } from 'vue-router'
+import { createAppRouter } from '../../../router'
+import { jsonResponse, makeProject, makeSnapshot, routeFetch } from '../../../test/factories'
+import { useProjectsStore } from '../../../stores/projects'
+import { useGitStore } from '../../../stores/git'
+import ConversationBlock from '../ConversationBlock.vue'
+import type { ConversationItem } from '../../../types/conversation'
+
+vi.mock('../../../api/socket', () => ({
+  useEventSocket: () => ({
+    onSession: () => () => {},
+    onReconnect: () => () => {},
+    onOpen: () => () => {},
+  }),
+}))
+
+import ConversationThread from '../ConversationThread.vue'
+
+enableAutoUnmount(afterEach)
+let pinia: Pinia
+beforeEach(() => {
+  pinia = createPinia()
+  setActivePinia(pinia)
+  const projects = useProjectsStore(pinia)
+  projects.projects = [makeProject({ id: 1 })]
+  projects.loaded = true
+  useGitStore(pinia).set(1, [])
+})
+afterEach(() => vi.unstubAllGlobals())
+
+function bash(result: { content: string; is_error: boolean } | null): ConversationItem {
+  return {
+    type: 'tool', id: 't1', tool_use_id: 'tu1', name: 'Bash', input: { command: 'ls -la' },
+    result: result ? { ...result, details: null } : null, streaming: false, parent_tool_use_id: null,
+  } as ConversationItem
+}
+
+describe('camadas visuais do chat (opção A)', () => {
+  it('Bash separa cabeçalho, comando e saída em três fundos', () => {
+    const w = mount(ConversationBlock, { props: { item: bash({ content: 'saida', is_error: false }), sessionActive: false } })
+    expect(w.find('[data-test="bash-header"]').classes()).toContain('bg-panel')
+    const cmd = w.find('[data-test="bash-command"]')
+    expect(cmd.classes()).toContain('bg-bg')
+    expect(cmd.find('[data-test="bash-prompt"]').classes()).toContain('text-fg-subtle')
+    expect(cmd.text()).toBe('$ ls -la')
+    const out = w.find('[data-test="bash-output"]')
+    expect(out.classes()).toEqual(expect.arrayContaining(['bg-panel', 'border-t', 'border-line', 'text-fg-muted']))
+    expect(out.text()).toContain('saida')
+  })
+
+  it('Bash com erro mantém a saída em vermelho', () => {
+    const w = mount(ConversationBlock, { props: { item: bash({ content: 'boom', is_error: true }), sessionActive: false } })
+    expect(w.find('[data-test="tool-error"] [data-test="output-box"]').classes()).toContain('bg-diff-del-bg')
+    expect(w.text()).toContain('falhou')
+  })
+
+  it('TextBlock limita a largura de leitura a 68ch', () => {
+    const w = mount(ConversationBlock, { props: { item: { type: 'text', id: 'x', text: 'oi', streaming: false, parent_tool_use_id: null } } })
+    expect(w.find('.markdown').classes()).toContain('max-w-[68ch]')
+  })
+
+  it('mensagem do usuário usa card com borda forte', () => {
+    const w = mount(ConversationBlock, { props: { item: { type: 'user', id: 'u', text: 'oi', images: [] } } })
+    const card = w.find('[data-test="user-message-card"]')
+    expect(card.classes()).toEqual(expect.arrayContaining(['bg-card', 'border-line-strong']))
+  })
+
+  it('turno concluído, trilho e superfície do chat', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({
+        seq: 1, state: 'running',
+        items: [
+          { type: 'user', id: 'u1', text: 'a' },
+          { type: 'text', id: 'a', text: 'x', streaming: false, parent_tool_use_id: null },
+          { type: 'user', id: 'u2', text: 'b' },
+        ],
+      })),
+    }))
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1')
+    const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    const end = w.find('[data-test="turn-end"]')
+    expect(end.classes()).toEqual(expect.arrayContaining(['bg-panel', 'border-primary/35']))
+    expect(end.find('.text-primary-soft').exists()).toBe(true)
+    expect(end.find('.text-fg-muted').exists()).toBe(true)
+    expect(w.html()).toContain('bg-line-strong')
+  })
+})

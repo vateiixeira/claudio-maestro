@@ -58,9 +58,9 @@ async function stopAll() {
       @click="expanded = !expanded"
     >
       <svg v-if="running" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" class="shrink-0 animate-spin text-primary" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" stroke-linecap="round" /></svg>
-      <span class="cap shrink-0 text-fg-muted">Subagentes</span>
+      <span class="cap shrink-0 text-fg-subtle">Subagentes</span>
       <span class="min-w-0 grow truncate text-xs text-fg">{{ summary }}</span>
-      <span aria-hidden="true" class="shrink-0 text-xs text-fg-muted">{{ expanded ? '▾' : '▸' }}</span>
+      <span aria-hidden="true" class="shrink-0 text-xs text-fg-subtle">{{ expanded ? '▾' : '▸' }}</span>
     </button>
     <ul v-if="showList" class="m-0 flex max-h-40 list-none flex-col overflow-y-auto p-0" :class="collapsible ? 'border-t border-line' : ''">
       <li v-for="(entry, index) in entries" :key="entry.id" :class="index > 0 ? 'border-t border-line' : ''">
@@ -76,13 +76,13 @@ async function stopAll() {
               <svg v-if="entry.status === 'running'" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" class="animate-spin text-primary" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" stroke-linecap="round" /></svg>
               <svg v-else-if="entry.status === 'completed'" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="text-primary" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
               <svg v-else-if="entry.status === 'failed'" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="text-diff-del-fg" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" /><line x1="12" y1="10" x2="12" y2="14" /></svg>
-              <svg v-else width="13" height="13" viewBox="0 0 24 24" class="text-fg-muted" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" /></svg>
+              <svg v-else width="13" height="13" viewBox="0 0 24 24" class="text-fg-subtle" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" /></svg>
             </span>
             <span v-if="entry.kind" class="shrink-0 rounded bg-elevated px-1.5 py-px font-mono text-[11px] text-fg-muted">{{ entry.kind }}</span>
             <span class="min-w-0 grow truncate text-xs">{{ entry.description }}</span>
-            <span class="shrink-0 text-[11px]" :class="entry.status === 'failed' ? 'text-diff-del-fg' : 'text-fg-muted'">{{ STATUS_LABEL[entry.status] }}</span>
+            <span class="shrink-0 text-[11px]" :class="entry.status === 'failed' ? 'text-diff-del-fg' : 'text-fg-subtle'">{{ STATUS_LABEL[entry.status] }}</span>
           </span>
-          <span v-if="entry.lastAction" data-test="subagent-last-action" class="block truncate pl-[21px] font-mono text-[11px] text-fg-muted">{{ entry.lastAction }}</span>
+          <span v-if="entry.lastAction" data-test="subagent-last-action" class="block truncate pl-[21px] font-mono text-[11px] text-fg-subtle">{{ entry.lastAction }}</span>
         </button>
       </li>
     </ul>

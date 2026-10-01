@@ -158,7 +158,7 @@ async function interrupt() {
         <img :src="image.url" alt="" class="size-11 rounded-md bg-line object-cover" />
         <div class="flex min-w-0 flex-col">
           <span class="max-w-40 truncate text-[13px] font-medium">{{ image.name }}</span>
-          <span class="text-xs text-fg-muted">{{ formatSize(image.size) }}</span>
+          <span class="text-xs text-fg-subtle">{{ formatSize(image.size) }}</span>
         </div>
         <button
           type="button"
@@ -178,7 +178,7 @@ async function interrupt() {
         v-model="text"
         rows="1"
         placeholder="Mensagem (Ctrl+V cola imagens)"
-        class="min-h-11 min-w-0 grow resize-none overflow-hidden rounded-lg border border-line-strong bg-panel px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
+        class="min-h-11 min-w-0 grow resize-none overflow-hidden rounded-lg border border-line-strong bg-elevated px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
         @input="onInput"
         @keydown="onKeydown"
         @paste="onPaste"
@@ -224,7 +224,7 @@ async function interrupt() {
       <span v-if="dictation.recording.value" data-test="recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
         <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
       </span>
-      <span class="ml-auto font-mono text-xs text-fg-muted">Enter envia · Ctrl+Enter quebra linha</span>
+      <span class="ml-auto font-mono text-xs text-fg-subtle">Enter envia · Ctrl+Enter quebra linha</span>
     </div>
   </div>
 </template>
