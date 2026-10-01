@@ -31,7 +31,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Concluído | 14 de 14 |
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
-| 15. Worktrees no painel e ajustes | Alterações de sessões em worktree, menu `/` só no início e teste instável | Em andamento | 2 de 5 |
+| 15. Worktrees no painel e ajustes | Alterações de sessões em worktree, menu `/` só no início e teste instável | Em andamento | 3 de 5 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido e concluído em 2026-09-30, junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
@@ -418,7 +418,7 @@ Objetivo: o painel Alterações mostrar certo o que uma sessão muda numa worktr
 
 Pedido pelo usuário em 2026-09-30, a partir dos "Pontos em aberto". Feito na worktree `.claude/worktrees/marco-15`.
 
-- [ ] Painel Alterações em sessões de worktree: arquivos editados numa worktree ficam no grupo do repositório certo (a worktree, com o branch dela e o diff real), e worktrees fora da pasta do projeto são aceitas em `/diff` e no editor
+- [x] Painel Alterações em sessões de worktree: arquivos editados numa worktree ficam no grupo do repositório certo (a worktree, com o branch dela e o diff real), e worktrees fora da pasta do projeto são aceitas em `/diff` e no editor. Worktree provada pelo ponteiro `.git` de ida e volta e pela lista de worktrees do repositório do projeto; exceção registrada no `CLAUDE.md` (2026-09-30)
 - [x] Menu `/` só abre quando a barra está no início da mensagem, que é onde o CLI executa comandos; o `@` continua em qualquer posição (2026-09-30)
 - [x] Teste de tempo instável `test_continuous_writing_updates_during_and_after_the_burst` em `test_cliwatch.py` estabilizado: o teste media o fim dos passes, que pode encurtar sob carga; passou a medir o início, que o `_drive` garante (2026-09-30)
 - [ ] Teste instável `test_full_app_disconnect_stops_the_git_processes` em `test_fs_repos.py` (falhou 2 vezes em 6 rodadas da suíte completa, passa isolado; achado em 2026-09-30)
@@ -451,7 +451,6 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Variáveis `CLAUDE*` herdadas ao iniciar o SDK | O teste passou removendo-as. Não se sabe se falha com elas |
 | Conversa do CLI ativa aparece como "Aguardando você" | Decidido em 2026-09-30: `cli_running` passa a contar como "Em execução" no estado exibido, na Inbox, no Dashboard e no menu lateral (marco 12) |
 | Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
-| Painel Alterações em sessões de worktree | Visto na revisão do marco 12 (2026-09-30): arquivos editados numa worktree ficam no grupo do repositório principal (branch errado, diff como arquivo novo), e worktrees fora da pasta do projeto caem no grupo sem repositório e não abrem no editor. Precisa incluir as worktrees ligadas como donas possíveis e aceitar esses caminhos em `/diff` e no editor |
 | Janela depois do fim de um subagente do app | 3 s (`SUBAGENT_END_GRACE_SECONDS`) sem medição contra o CLI real. Se o turno autônomo demorar mais, o "Aguardando você" volta a piscar; ajustar o valor se isso aparecer no uso |
 | Troca de raciocínio durante subagente | Visto na revisão do marco 12 (2026-09-30): se o raciocínio muda enquanto um subagente roda e o CLI não abre turno depois que ele termina, a reconexão com o valor novo só acontece no próximo turno. Comportamento anterior ao marco |
 | `/design` nas conversas do app | Investigado em 2026-09-30 (CLI 2.1.286): o consentimento passa a funcionar depois de rodar `/design-login` uma vez no terminal (não verificado). Um botão "Conectar Claude Design" no app poderia usar o subcomando oculto `claude design-login --json`, com protocolo ainda desconhecido; só vale se o passo no terminal incomodar |

@@ -46,6 +46,16 @@ async def project_git_details(project_id: int, conn: DbDep) -> dict[str, Any]:
     return {"repos": repos, "limit_reached": limit_reached}
 
 
+async def _worktree_root(repo: str, root: Path) -> Path | None:
+    """`repo` (absolute) when it is exactly the root of a proven worktree, else None."""
+    if not repo or "\x00" in repo or not os.path.isabs(repo):
+        return None
+    found = await gitinfo.project_worktree(Path(repo), [root])
+    if found is None or Path(os.path.realpath(repo)) != found.path:
+        return None
+    return found.path
+
+
 @router.get("/projects/{project_id}/diff")
 async def file_diff(project_id: int, repo: str, file: str, conn: DbDep) -> dict[str, Any]:
     project = _project(conn, project_id)
@@ -53,7 +63,10 @@ async def file_diff(project_id: int, repo: str, file: str, conn: DbDep) -> dict[
     try:
         repo_path = resolve_within(repo, [root], base=root)
     except PathNotAllowedError as exc:
-        raise _forbidden("O repositório precisa estar dentro do projeto.") from exc
+        # The one exception: the root of a proven linked worktree of a repository in the project.
+        repo_path = await _worktree_root(repo, root)
+        if repo_path is None:
+            raise _forbidden("O repositório precisa estar dentro do projeto.") from exc
     if not (repo_path / ".git").exists():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="A pasta não é um repositório git."
@@ -136,6 +149,39 @@ async def _dirty(repo: gitinfo.RepoStatus) -> set[str]:
         return set()
 
 
+async def _with_worktrees(
+    repos: list[gitinfo.RepoStatus],
+    files: dict[Path, list[int] | None],
+    root: Path,
+    names: dict[str, str],
+) -> list[gitinfo.RepoStatus]:
+    """`repos` plus every proven linked worktree an edited file lives in.
+
+    The scan skips dot folders (`.claude/worktrees`) and cannot see worktrees outside the
+    project. `names` receives realpath -> worktree name for each proven worktree.
+    """
+    by_folder: dict[Path, gitinfo.LinkedWorktree | None] = {}
+    for path in files:
+        if path.parent not in by_folder:
+            by_folder[path.parent] = await gitinfo.project_worktree(path.parent, [root])
+    known = {os.path.realpath(repo.path) for repo in repos}
+    result = list(repos)
+    for found in by_folder.values():
+        if found is None or str(found.path) in names:
+            continue
+        names[str(found.path)] = found.name
+        if str(found.path) in known:
+            continue
+        # No `root`: a worktree outside the project has no path relative to it.
+        status_ = await gitinfo.repo_status(found.path)
+        status_.rel_path = (
+            found.path.relative_to(root).as_posix() if found.path.is_relative_to(root)
+            else str(found.path)
+        )
+        result.append(status_)
+    return result
+
+
 @router.get("/sessions/{session_id}/changes")
 async def session_changes(session_id: str, conn: DbDep, request: Request) -> dict[str, Any]:
     manager: sessions.SessionManager = request.app.state.sessions
@@ -161,6 +207,9 @@ async def session_changes(session_id: str, conn: DbDep, request: Request) -> dic
     files = _edited_files(items, Path(session.record.work_dir()))
 
     repos = await gitinfo.project_repos(root) if project.available else []
+    worktree_names: dict[str, str] = {}
+    if project.available:
+        repos = await _with_worktrees(repos, files, root, worktree_names)
     groups: dict[str | None, list[tuple[Path, list[int] | None]]] = {}
     owners: dict[str | None, gitinfo.RepoStatus | None] = {}
     for path, counts in files.items():
@@ -195,6 +244,7 @@ async def session_changes(session_id: str, conn: DbDep, request: Request) -> dic
             "branch": owner.branch if owner else None,
             "detached": owner.detached if owner else False,
             "head": owner.head if owner else None,
+            "worktree": worktree_names.get(os.path.realpath(owner.path)) if owner else None,
             "files": group_files,
         })
     out.sort(key=lambda g: (g["rel_path"] is None, g["rel_path"] or ""))

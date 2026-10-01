@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from vibing.history import REPO_MAX_COUNT, scan_repositories
+from vibing.worktree import LinkedWorktree, linked_worktree, parse_worktree_list
 
 logger = logging.getLogger(__name__)
 
@@ -371,6 +372,52 @@ async def project_repos_scan(
 
 async def project_repos(root: Path, *, timeout: float = GIT_TIMEOUT) -> list[RepoStatus]:
     return (await project_repos_scan(root, timeout=timeout))[0]
+
+
+# main repo -> (mtime of its `.git/worktrees`, realpaths git listed for it). Only a
+# positive hint: the pointers on disk are proven again on every request.
+_listed_worktrees: dict[Path, tuple[int, frozenset[str]]] = {}
+
+
+def _prove_worktree(path: Path, roots: list[Path]) -> tuple[LinkedWorktree, int] | None:
+    """Pointer proof plus "its main repo is inside a project". Blocking: a few `stat`s."""
+    found = linked_worktree(path)
+    if found is None:
+        return None
+    for root in roots:
+        try:
+            inside = found.main_repo.is_relative_to(os.path.realpath(root))
+            stamp = (found.main_repo / ".git" / "worktrees").stat().st_mtime_ns
+        except (OSError, ValueError):
+            continue
+        if inside:
+            return found, stamp
+    return None
+
+
+async def project_worktree(path: Path, roots: list[Path]) -> LinkedWorktree | None:
+    """The linked worktree containing `path`, if it is safe to treat like project files.
+
+    Needs all of: pointers that agree in both directions (`linked_worktree`), a main
+    repository inside one of `roots`, and the worktree listed by that repository's own
+    `git worktree list`. A link or a lookalike folder fails at least one of them.
+    """
+    proven = await asyncio.to_thread(_prove_worktree, path, roots)
+    if proven is None:
+        return None
+    found, stamp = proven
+    cached = _listed_worktrees.get(found.main_repo)
+    if cached is not None and cached[0] == stamp and str(found.path) in cached[1]:
+        return found
+    try:
+        code, out, _ = await run_git(found.main_repo, "worktree", "list", "--porcelain")
+    except GitError:
+        return None
+    if code != 0:
+        return None
+    listed = frozenset(os.path.realpath(entry) for entry in parse_worktree_list(out))
+    _listed_worktrees[found.main_repo] = (stamp, listed)
+    return found if str(found.path) in listed else None
 
 
 async def branch_label(repo: Path, *, timeout: float = GIT_TIMEOUT) -> str | None:

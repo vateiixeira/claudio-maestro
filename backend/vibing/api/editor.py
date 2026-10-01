@@ -3,13 +3,15 @@
 import asyncio
 import json
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from vibing import projects
+from vibing import gitinfo, projects
 from vibing.api.deps import DbDep
 from vibing.security import PathNotAllowedError, resolve_within
 
@@ -80,15 +82,30 @@ def _editor_command(conn) -> list[str]:
     return command
 
 
+async def _worktree_file(raw: str, roots: list[Path]) -> Path | None:
+    """The resolved `raw` (absolute) when it stays inside a proven linked worktree."""
+    if not raw or "\x00" in raw or not os.path.isabs(raw):
+        return None
+    target = Path(os.path.realpath(raw))
+    found = await gitinfo.project_worktree(target, roots)
+    if found is None or not target.is_relative_to(found.path):
+        return None
+    return target
+
+
 @router.post("/open-in-editor", status_code=status.HTTP_204_NO_CONTENT)
 async def open_in_editor(body: OpenIn, conn: DbDep, request: Request) -> Response:
+    roots = projects.project_roots(conn)
     try:
-        target = resolve_within(body.path, projects.project_roots(conn))
+        target = resolve_within(body.path, roots)
     except PathNotAllowedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="O caminho precisa estar dentro de um projeto.",
-        ) from exc
+        # The one exception: a file of a proven linked worktree of a repository in a project.
+        target = await _worktree_file(body.path, roots)
+        if target is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="O caminho precisa estar dentro de um projeto.",
+            ) from exc
     if not target.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Caminho não encontrado.")
     command = _editor_command(conn)
