@@ -29,7 +29,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
-| 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Em andamento | 12 de 14 |
+| 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Em andamento | 13 de 14 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e está em andamento junto com o fim do marco 12.
 
@@ -392,7 +392,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/pendenc
 - [ ] Verificação manual contra o SDK real e no app
 - [x] Preferências com modelo, raciocínio e modo padrão das novas conversas: o que estiver salvo lá vale para toda sessão nova, no campo da conversa e no modal (pedido do usuário em 2026-09-30, fora da spec de comandos; substitui a decisão de 2026-09-29 de herdar o modo padrão do CLI quando houver valor salvo) (2026-09-30)
 - [x] Botão de copiar em cada bloco de código das respostas do Claude e do plano (pedido do usuário em 2026-09-30, fora da spec de comandos) (2026-09-30)
-- [ ] Investigar se dá para fazer o `/design` (Claude Design) funcionar nas conversas do app: hoje `/design consent` falha com 403 e `/design-login` responde que não está disponível neste ambiente (pedido do usuário em 2026-09-30)
+- [x] Investigar se dá para fazer o `/design` (Claude Design) funcionar nas conversas do app: hoje `/design consent` falha com 403 e `/design-login` responde que não está disponível neste ambiente (pedido do usuário em 2026-09-30) (2026-09-30). Conclusão: o 403 vem do token do `/login`, que não tem os escopos `user:design:*`; `/design-login` é um painel interativo que o CLI recusa em sessão não interativa (SDK). Rodar `/design-login` uma vez no `claude` do terminal grava `designOauth` em `~/.claude/.credentials.json`, que as sessões do app leem; o `/design` completo (brief, importar, exportar) depende de flags remotas da conta e não se resolve pelo app
 
 ## Fora do MVP
 
@@ -424,6 +424,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Painel Alterações em sessões de worktree | Visto na revisão do marco 12 (2026-09-30): arquivos editados numa worktree ficam no grupo do repositório principal (branch errado, diff como arquivo novo), e worktrees fora da pasta do projeto caem no grupo sem repositório e não abrem no editor. Precisa incluir as worktrees ligadas como donas possíveis e aceitar esses caminhos em `/diff` e no editor |
 | Janela depois do fim de um subagente do app | 3 s (`SUBAGENT_END_GRACE_SECONDS`) sem medição contra o CLI real. Se o turno autônomo demorar mais, o "Aguardando você" volta a piscar; ajustar o valor se isso aparecer no uso |
 | Troca de raciocínio durante subagente | Visto na revisão do marco 12 (2026-09-30): se o raciocínio muda enquanto um subagente roda e o CLI não abre turno depois que ele termina, a reconexão com o valor novo só acontece no próximo turno. Comportamento anterior ao marco |
+| `/design` nas conversas do app | Investigado em 2026-09-30 (CLI 2.1.286): o consentimento passa a funcionar depois de rodar `/design-login` uma vez no terminal (não verificado). Um botão "Conectar Claude Design" no app poderia usar o subcomando oculto `claude design-login --json`, com protocolo ainda desconhecido; só vale se o passo no terminal incomodar |
 | "Em execução" preso depois de o CLI morrer | Um CLI morto no meio do turno, ou parado pedindo permissão no terminal, conta como "Em execução" por até 20 minutos (`CLI_TURN_STALE_SECONDS`). Desde o marco 12 isso aparece na Inbox, no Dashboard e no menu lateral |
 | Retomada de sessão movida para worktree | Conferido contra o SDK real em 2026-09-30: a transcrição movida é lida com `directory` na worktree, e a retomada com `cwd` na worktree mantém o id e continua gravando no mesmo arquivo |
 
