@@ -20,7 +20,7 @@ beforeEach(() => {
   setCollapsed('group', 2, false)
   useGroupsStore(pinia).groups = [makeGroup({ id: 1, name: 'Checkout' }), makeGroup({ id: 2, name: 'Parado' })]
   useSessionsStore(pinia).setForProject(1, [
-    makeSession({ session_id: 'a1', group_id: 1, title: 'Carrinho', display_state: 'waiting', last_activity_at: 20 }),
+    makeSession({ session_id: 'a1', group_id: 1, title: 'Carrinho', display_state: 'waiting', unread: true, last_activity_at: 20 }),
     makeSession({ session_id: 'a2', group_id: 1, title: 'Frete', display_state: 'running', last_activity_at: 10 }),
     makeSession({ session_id: 'a3', group_id: 1, title: 'Antiga', display_state: 'finished', last_activity_at: 5 }),
     makeSession({ session_id: 'b1', group_id: 2, title: 'Velha', display_state: 'finished' }),
@@ -66,6 +66,14 @@ describe('agrupadores no menu', () => {
   it('conta as conversas que aguardam', async () => {
     const wrapper = await mountGroups()
     expect(wrapper.find('[data-test="group-waiting"]').text()).toBe('1')
+  })
+
+  it('esconde a contagem quando as que aguardam não têm nada novo', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'q1', group_id: 1, display_state: 'waiting', unread: false }),
+    ])
+    const wrapper = await mountGroups()
+    expect(wrapper.find('[data-test="group-waiting"]').exists()).toBe(false)
   })
 
   it('marca a conversa da rota atual', async () => {

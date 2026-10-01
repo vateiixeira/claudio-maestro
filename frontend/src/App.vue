@@ -4,6 +4,7 @@ import { RouterView, useRoute } from 'vue-router'
 import AppSidebar from './components/sidebar/AppSidebar.vue'
 import { loadEverything } from './stores/realtime'
 import { useLayoutStore } from './stores/layout'
+import { needsYou } from './conversation/needsYou'
 import { documentTitle } from './documentTitle'
 import { useSessionsStore } from './stores/sessions'
 import NewConversationModal from './components/NewConversationModal.vue'
@@ -13,7 +14,7 @@ import { useNewConversationStore } from './stores/newConversation'
 const layout = useLayoutStore()
 const sessions = useSessionsStore()
 
-const waiting = computed(() => sessions.all.filter((s) => s.display_state === 'waiting').length)
+const waiting = computed(() => sessions.all.filter((s) => s.display_state === 'waiting' && needsYou(s)).length)
 watchEffect(() => { document.title = documentTitle(waiting.value) })
 
 const newConversation = useNewConversationStore()

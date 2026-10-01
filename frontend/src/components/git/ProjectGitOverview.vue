@@ -63,7 +63,7 @@ function isCollapsed(repo: RepoDetails): boolean {
 <template>
   <div v-if="!loaded && !error" data-test="git-loading" class="text-sm text-fg-muted">Carregando…</div>
   <div v-else-if="!loaded" data-test="git-error" class="flex flex-col items-start gap-2">
-    <p role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
+    <p role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <button
       type="button"
       data-test="git-retry"
@@ -73,7 +73,7 @@ function isCollapsed(repo: RepoDetails): boolean {
   </div>
   <div v-else-if="repos.length > 0" class="flex flex-col gap-3">
     <div class="flex items-center gap-3">
-      <p v-if="error" role="alert" class="m-0 min-w-0 text-xs text-secondary-soft">Não foi possível atualizar: {{ error }}</p>
+      <p v-if="error" role="alert" class="m-0 min-w-0 text-xs text-diff-del-fg">Não foi possível atualizar: {{ error }}</p>
       <!-- Edits made outside the app only show up here or on the periodic check. -->
       <button
         type="button"
@@ -128,7 +128,7 @@ function isCollapsed(repo: RepoDetails): boolean {
         >{{ isCollapsed(repo) ? 'mostrar commits' : 'ocultar commits' }}</button>
       </header>
 
-      <p v-if="repo.error" data-test="repo-error" role="alert" class="m-0 text-sm text-secondary-soft">{{ repo.error }}</p>
+      <p v-if="repo.error" data-test="repo-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ repo.error }}</p>
       <template v-else-if="!isCollapsed(repo)">
         <RepoFileList v-if="repo.files.length > 0" :project-id="projectId" :repo="repo" />
         <RepoCommitList :commits="repo.commits" />

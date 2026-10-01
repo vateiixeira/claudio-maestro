@@ -136,7 +136,7 @@ const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text
 <template>
   <div class="flex flex-col">
     <div v-if="loadError" class="flex flex-col items-start gap-3 px-7 py-6">
-      <p role="alert" class="m-0 w-full rounded-lg border border-secondary/40 bg-card px-3.5 py-2.5 text-sm text-secondary-soft">
+      <p role="alert" class="m-0 w-full rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-3.5 py-2.5 text-sm text-diff-del-fg">
         Não foi possível ler a configuração do agente. {{ loadError }}
       </p>
       <button type="button" class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card" @click="load">Tentar de novo</button>
@@ -211,7 +211,7 @@ const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text
         </p>
       </div>
 
-      <p v-if="error" role="alert" class="mx-7 mb-4 rounded-lg border border-secondary/40 bg-card px-3.5 py-2.5 text-sm text-secondary-soft">{{ error }}</p>
+      <p v-if="error" role="alert" class="mx-7 mb-4 rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-3.5 py-2.5 text-sm text-diff-del-fg">{{ error }}</p>
 
       <footer class="flex items-center justify-end gap-3 border-t border-line px-7 pt-4 pb-5">
         <p v-if="saved" data-test="digest-saved" role="status" class="m-0 text-sm text-primary-soft">Configuração salva</p>
@@ -233,7 +233,7 @@ const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text
 
     <section aria-labelledby="digest-runs-title" class="flex flex-col gap-2 border-t border-line px-7 py-6">
       <h2 id="digest-runs-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Últimas passadas</h2>
-      <p v-if="runsError" role="alert" class="m-0 text-sm text-secondary-soft">{{ runsError }}</p>
+      <p v-if="runsError" role="alert" class="m-0 text-sm text-diff-del-fg">{{ runsError }}</p>
       <p v-else-if="runs.length === 0" class="m-0 text-sm text-fg-muted">Nenhuma passada ainda.</p>
       <table v-else data-test="digest-runs" class="w-full text-left text-sm">
         <thead class="text-xs text-fg-subtle">
@@ -252,7 +252,7 @@ const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text
                   type="button"
                   data-test="digest-run-toggle"
                   :aria-expanded="!!open[run.id]"
-                  class="rounded px-1 text-secondary-soft hover:bg-card"
+                  class="rounded px-1 text-diff-del-fg hover:bg-card"
                   @click="open = { ...open, [run.id]: !open[run.id] }"
                 >{{ run.errors.length }}{{ run.stopped ? ' · parou' : '' }}</button>
                 <span v-else class="text-fg-muted">0</span>

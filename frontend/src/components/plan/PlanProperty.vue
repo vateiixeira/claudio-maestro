@@ -152,6 +152,7 @@ function shortPath(path: string): string {
 function pathParts(path: string): string[] {
   return shortPath(path).split(/(?<=\/)/)
 }
+const unavailableParts = computed(() => (state.value?.path ? pathParts(state.value.path) : []))
 </script>
 
 <template>
@@ -164,7 +165,7 @@ function pathParts(path: string): string[] {
     <template v-else-if="unavailable && state?.path">
       <span class="text-fg-muted">Plano indisponível</span>
       <!-- A <wbr> after each "/" gives the browser a place to break that is not in the middle of a word. -->
-      <span class="break-words font-mono text-xs text-info-soft" :title="state.path"><template v-for="(part, i) in pathParts(state.path)" :key="i">{{ part }}<wbr v-if="i < pathParts(state.path).length - 1" /></template></span>
+      <span class="break-words font-mono text-xs text-info-soft" :title="state.path"><template v-for="(part, i) in unavailableParts" :key="i">{{ part }}<wbr v-if="i < unavailableParts.length - 1" /></template></span>
     </template>
     <span v-else class="text-fg-muted">{{ state ? 'Nenhum' : '…' }}</span>
 

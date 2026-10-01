@@ -59,6 +59,19 @@ describe('busca no menu lateral', () => {
     expect(result.text()).toContain('Finalizada')
   })
 
+  it('resultados em espera comum têm o triângulo discreto, e o que precisa de você o laranja', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Calma', display_state: 'waiting', unread: false }),
+      makeSession({ session_id: 'b', title: 'Pede', display_state: 'waiting', unread: true }),
+    ])))
+    const w = mountSidebar()
+    await type(w, 'x')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    const shapes = w.findAll('[data-test="search-result"]').map((r) => r.find('[data-shape]').attributes('data-shape'))
+    expect(shapes).toEqual(['triangle-quiet', 'triangle'])
+  })
+
   it('descarta respostas antigas', async () => {
     const pending: Record<string, (r: Response) => void> = {}
     vi.stubGlobal('fetch', vi.fn((url: string) => new Promise<Response>((resolve) => {

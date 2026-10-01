@@ -35,6 +35,19 @@ describe('estrutura do app', () => {
     expect(main.classes()).toEqual(expect.arrayContaining(['relative', 'overflow-y-auto']))
   })
 
+  it('o título da aba conta só as esperas que precisam de você', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', display_state: 'waiting', unread: false }),
+      makeSession({ session_id: 'b', display_state: 'waiting', unread: true }),
+      makeSession({ session_id: 'c', display_state: 'waiting', pending_kind: 'tool' }),
+    ])
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias')
+    mount(App, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(document.title).toBe('(2) Vini7 Vibing')
+  })
+
   it('o atalho C numa conversa abre o modal no projeto e no agrupador dela', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', project_id: 1, group_id: 4 })])
     const router = createAppRouter(createMemoryHistory())

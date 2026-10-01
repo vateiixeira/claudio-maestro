@@ -222,7 +222,7 @@ async function remove(): Promise<void> {
             >
               Cancelar
             </button>
-            <p v-if="renameError" role="alert" class="w-full text-sm text-secondary-soft">{{ renameError }}</p>
+            <p v-if="renameError" role="alert" class="w-full text-sm text-diff-del-fg">{{ renameError }}</p>
           </form>
           <div v-else class="flex min-w-0 items-center gap-3">
             <span class="size-3.5 shrink-0 rounded-[4px]" :style="{ backgroundColor: project.color }" />
@@ -296,11 +296,11 @@ async function remove(): Promise<void> {
         </span>
       </p>
 
-      <p v-if="actionError" role="alert" class="rounded-lg border border-secondary/40 bg-card px-4 py-3 text-sm text-secondary-soft">
+      <p v-if="actionError" role="alert" class="rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-4 py-3 text-sm text-diff-del-fg">
         {{ actionError }}
       </p>
 
-      <p v-if="editorError" role="alert" class="rounded-lg border border-secondary/40 bg-card px-4 py-3 text-sm text-secondary-soft">
+      <p v-if="editorError" role="alert" class="rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-4 py-3 text-sm text-diff-del-fg">
         {{ editorError }}
       </p>
 
@@ -308,7 +308,7 @@ async function remove(): Promise<void> {
         <h2 id="repos-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Repositórios nesta pasta</h2>
         <p v-if="repos.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
         <ProjectGitOverview v-else :project-id="id" />
-        <p v-if="git.limitReached(id)" data-test="repo-limit" class="m-0 text-xs text-secondary-soft">
+        <p v-if="git.limitReached(id)" data-test="repo-limit" class="m-0 text-xs text-fg-muted">
           Mais de 50 repositórios; só os 50 primeiros são acompanhados.
         </p>
       </section>
@@ -358,7 +358,7 @@ async function remove(): Promise<void> {
         @error="actionError = $event"
       />
 
-      <p v-if="sessionsError" role="alert" class="text-sm text-secondary-soft">{{ sessionsError }}</p>
+      <p v-if="sessionsError" role="alert" class="text-sm text-diff-del-fg">{{ sessionsError }}</p>
       <p v-else-if="projectSessions.length === 0" class="text-sm text-fg-muted">
         Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa nesta pasta.
       </p>

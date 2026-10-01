@@ -14,6 +14,7 @@ import DigestSection from './DigestSection.vue'
 import FileDiffView from './FileDiffView.vue'
 import { useSessionChanges } from '../../conversation/sessionChanges'
 import { toolDiff } from '../../conversation/diff'
+import { needsYou } from '../../conversation/needsYou'
 import { str } from '../../conversation/tool'
 import { waitingReason } from '../../conversationList'
 import { formatActivity, formatTokens } from '../../format'
@@ -186,8 +187,8 @@ function resetWidth() {
           <div class="overflow-hidden rounded-lg border border-line bg-panel">
             <dl data-test="props-session" class="m-0 grid grid-cols-[7.2rem_1fr] gap-x-3 gap-y-2 px-3 py-2.5 text-[13px]">
               <dt class="text-fg-muted">Estado</dt>
-              <dd data-test="prop-state" class="m-0 flex items-center gap-1.5" :class="session?.display_state === 'waiting' ? 'font-medium text-secondary-soft' : ''">
-                <DisplayStateIcon v-if="session" :display="session.display_state" />{{ stateText }}
+              <dd data-test="prop-state" class="m-0 flex items-center gap-1.5" :class="session?.display_state === 'waiting' ? (needsYou(session) ? 'font-medium text-secondary-soft' : 'text-fg-muted') : ''">
+                <DisplayStateIcon v-if="session" :display="session.display_state" :quiet="!needsYou(session)" />{{ stateText }}
               </dd>
               <dt class="text-fg-muted">Turnos</dt>
               <dd data-test="prop-turns" class="m-0">{{ turns }}</dd>

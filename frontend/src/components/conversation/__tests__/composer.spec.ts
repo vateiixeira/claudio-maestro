@@ -61,6 +61,17 @@ describe('campo de mensagem', () => {
     expect(sent(fetchMock)).toHaveLength(0)
   })
 
+  it('Enviar desativado fica neutro, sem opacidade; ativo fica verde', async () => {
+    const { w, ta } = setup()
+    const send = w.find('[data-test="send"]')
+    expect(send.attributes('disabled')).toBeDefined()
+    expect(send.classes()).toEqual(expect.arrayContaining(['disabled:bg-elevated', 'disabled:text-fg-subtle']))
+    expect(send.classes().some((c) => c.includes('opacity'))).toBe(false)
+    expect(send.classes()).toContain('bg-primary')
+    await ta.setValue('olá')
+    expect(send.attributes('disabled')).toBeUndefined()
+  })
+
   it('erro mantém o texto e mostra o detail', async () => {
     const { w, ta } = setup(503, { detail: 'O servidor está encerrando.' })
     await ta.setValue('olá')
@@ -68,6 +79,7 @@ describe('campo de mensagem', () => {
     await flushPromises()
     expect((ta.element as HTMLTextAreaElement).value).toBe('olá')
     expect(w.find('[role="alert"]').text()).toContain('O servidor está encerrando.')
+    expect(w.find('[role="alert"]').classes()).not.toContain('text-secondary')
   })
 
   it('"Interromper" só aparece rodando e chama a API', async () => {

@@ -139,6 +139,6 @@ async function openPlan() {
         <span class="sr-only">{{ { done: '(concluída)', current: '(atual)', queued: '(na fila)' }[statusOf(task, index)] }}</span>
       </li>
     </ol>
-    <p v-if="error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
+    <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
   </section>
 </template>

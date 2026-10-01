@@ -8,6 +8,7 @@ import WorktreeLabel from '../git/WorktreeLabel.vue'
 import PlanBadge from '../plan/PlanBadge.vue'
 import { errorMessage, markSessionSeen } from '../../api/http'
 import { waitingReason } from '../../conversationList'
+import { needsYou } from '../../conversation/needsYou'
 import { formatActivity } from '../../format'
 import { planPosition, planVisible } from '../plan/planText'
 import { displayStateLabels } from '../../sessionState'
@@ -35,6 +36,8 @@ const repo = computed(() => git.reposFor(props.session.project_id)[0])
 const worktree = computed(() => worktreeLabel(props.session))
 const finished = computed(() => props.session.display_state === 'finished')
 const reason = computed(() => waitingReason(props.session))
+const wantsYou = computed(() => needsYou(props.session))
+const compact = computed(() => props.variant === 'compact')
 // The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it here.
 const planTitle = computed(() => (planVisible(props.session) ? planPosition(props.session.plan!) : undefined))
 const busy = ref(false)
@@ -65,9 +68,9 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     <span class="flex w-2 shrink-0 justify-center">
       <span v-if="session.unread" data-test="unread-dot" class="size-2 rounded-full bg-info" />
     </span>
-    <DisplayStateIcon :display="session.display_state" />
+    <DisplayStateIcon :display="session.display_state" :quiet="!wantsYou" />
     <!-- Not positioned, so the link's stretched ::after still covers the whole row. -->
-    <div data-test="row-title" class="flex min-w-0 grow items-center gap-2">
+    <div data-test="row-title" class="flex grow items-center gap-2" :class="compact ? 'min-w-24' : 'min-w-0'">
       <RouterLink
         data-test="row-link"
         :to="target"
@@ -90,19 +93,19 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       >{{ session.digest_short }}</span>
     </div>
     <span class="sr-only">{{ displayStateLabels[session.display_state] }}{{ session.unread ? ', com novidade' : '' }}</span>
-    <span v-if="reason" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs text-secondary-soft">{{ reason }}</span>
+    <span v-if="reason && !compact" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs" :class="wantsYou ? 'text-secondary-soft' : 'text-fg-muted'">{{ reason }}</span>
     <!-- Fixed widths, kept even when empty, so the columns line up from row to row. The actions float over the right end instead of taking room from them. -->
-    <span data-test="row-project" class="hidden w-36 shrink-0 items-center gap-1.5 text-xs text-fg-subtle md:flex">
+    <span data-test="row-project" class="hidden items-center gap-1.5 text-xs text-fg-subtle md:flex" :class="compact ? 'w-28 min-w-0 shrink' : 'w-36 shrink-0'">
       <template v-if="project">
         <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
         <span class="truncate">{{ project.name }}</span>
       </template>
     </span>
-    <span data-test="row-branch" class="hidden w-40 shrink-0 lg:flex">
+    <span v-if="!compact" data-test="row-branch" class="hidden w-40 shrink-0 lg:flex">
       <WorktreeLabel v-if="worktree" :text="worktree" muted />
       <BranchLabel v-else-if="repo" :text="repoLabel(repo)" muted />
     </span>
-    <span class="w-20 shrink-0 text-right text-xs text-fg-subtle">{{ formatActivity(session.last_activity_at) }}</span>
+    <span class="shrink-0 whitespace-nowrap text-right text-xs text-fg-subtle" :class="compact ? 'min-w-12' : 'w-20'">{{ formatActivity(session.last_activity_at) }}</span>
     <div
       v-if="variant !== 'compact'"
       data-test="row-actions"

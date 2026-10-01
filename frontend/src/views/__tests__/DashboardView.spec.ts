@@ -90,12 +90,25 @@ describe('Dashboard', () => {
     expect(wrapper.find('[data-test="activity-empty"]').exists()).toBe(true)
   })
 
-  it('Conversas recentes ocupa a largura toda, sem dividir a linha com Projetos', async () => {
+  it('Conversas recentes e Projetos dividem a linha em duas colunas nas telas largas', async () => {
     const { wrapper } = await mountDashboard()
     const recent = wrapper.find('[data-test="recent-list"]').element.parentElement!
     const projects = wrapper.find('[data-test="projects-list"]').element.parentElement!
     expect(recent).toBe(projects)
-    expect(recent.className).not.toMatch(/grid-cols-2/)
+    expect(recent.className).toContain('lg:grid-cols-2')
+  })
+
+  it('conta e destaca por projeto só quem precisa de você', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'calm', display_state: 'waiting', state: 'closed', unread: false }),
+    ])
+    useSessionsStore(pinia).setForProject(2, [
+      makeSession({ session_id: 'ask', project_id: 2, display_state: 'waiting', state: 'closed', pending_kind: 'question' }),
+    ])
+    const { wrapper } = await mountDashboard()
+    const rows = wrapper.findAll('[data-test="projects-list"] a')
+    expect(rows[0]!.find('[data-test="project-waiting"]').exists()).toBe(false)
+    expect(rows[1]!.find('[data-test="project-waiting"]').text()).toBe('1')
   })
 
   it('lista conversas recentes e projetos', async () => {
@@ -176,13 +189,15 @@ describe('Dashboard: bloco Agora limitado', () => {
     expect(titles).toEqual(['Pede antiga', 'Pede pergunta', 'Rodando nova', 'Rodando antiga', 'Sua vez'])
   })
 
-  it('os números continuam contando todas as ativas', async () => {
+  it('"Aguardando você" conta só as esperas que precisam de você', async () => {
     useSessionsStore(pinia).setForProject(1, [
       ...Array.from({ length: 5 }, (_, i) => makeSession({ session_id: `r${i}`, display_state: 'running', state: 'running', last_activity_at: now - i })),
-      ...Array.from({ length: 3 }, (_, i) => waitingSession(i)),
+      waitingSession(0),
+      waitingSession(1, { unread: true }),
+      waitingSession(2, { pending_kind: 'plan' }),
     ])
     const { wrapper } = await mountDashboard()
     expect(wrapper.find('[data-test="stat-running"] span').text()).toBe('5')
-    expect(wrapper.find('[data-test="stat-waiting"] span').text()).toBe('3')
+    expect(wrapper.find('[data-test="stat-waiting"] span').text()).toBe('2')
   })
 })

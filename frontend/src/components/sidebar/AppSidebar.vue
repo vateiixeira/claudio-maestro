@@ -9,6 +9,7 @@ import SidebarGroups from './SidebarGroups.vue'
 import SidebarRunning from './SidebarRunning.vue'
 import SidebarSessionRow from './SidebarSessionRow.vue'
 import { sidebarItemClass } from './itemClass'
+import { needsYou } from '../../conversation/needsYou'
 import BranchLabel from '../git/BranchLabel.vue'
 import { useEventSocket } from '../../api/socket'
 import { isCollapsed, setCollapsed } from '../../sidebarCollapse'
@@ -17,6 +18,7 @@ import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import type { Session } from '../../types/api'
 
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
@@ -26,9 +28,11 @@ const newConversation = useNewConversationStore()
 const route = useRoute()
 const socket = useEventSocket()
 
-const waitingCount = computed(() => sessions.all.filter((s) => s.display_state === 'waiting').length)
+// Only the waits that need you count; an ordinary wait with nothing new is not a reason to look.
+const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s)
+const waitingCount = computed(() => sessions.all.filter(isWaitingOnYou).length)
 function waitingIn(projectId: number): number {
-  return sessions.forProject(projectId).filter((s) => s.display_state === 'waiting').length
+  return sessions.forProject(projectId).filter(isWaitingOnYou).length
 }
 const runningIds = computed(() => new Set(sessions.all.filter((s) => s.display_state === 'running').map((s) => s.session_id)))
 // "Recentes" = every open conversation, i.e. not finished. The running ones stay only in
@@ -79,7 +83,7 @@ const itemClass = sidebarItemClass
         <span class="grow font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Projetos</span>
         <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-7 items-center justify-center rounded-md text-fg-muted no-underline hover:bg-card hover:text-fg">＋</RouterLink>
       </div>
-      <p v-if="projects.loadError" class="px-3 py-2 text-xs text-secondary-soft" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
+      <p v-if="projects.loadError" class="px-3 py-2 text-xs text-diff-del-fg" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
       <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-3 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
       <template v-for="project in projects.projects" :key="project.id">
         <div class="flex items-center">
@@ -105,7 +109,7 @@ const itemClass = sidebarItemClass
               <span data-test="project-name" class="truncate font-medium" :class="project.available ? 'text-fg' : 'text-fg-muted'">{{ project.name }}</span>
               <span v-if="!project.available" class="text-xs text-fg-subtle">pasta indisponível</span>
               <span v-else-if="git.reposFor(project.id)[0]" data-test="project-branch"><BranchLabel :text="repoLabel(git.reposFor(project.id)[0]!)" muted /></span>
-              <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-secondary-soft">Só os 50 primeiros repositórios</span>
+              <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-fg-muted">Só os 50 primeiros repositórios</span>
             </span>
             <span v-if="waitingIn(project.id)" data-test="project-waiting" class="flex items-center gap-1 text-xs text-secondary">
               <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}

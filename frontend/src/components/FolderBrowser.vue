@@ -108,7 +108,7 @@ onMounted(() => load())
       </nav>
     </div>
 
-    <p v-if="error" class="rounded-lg border border-secondary/40 bg-card px-3.5 py-2.5 text-sm text-secondary-soft" role="alert">
+    <p v-if="error" class="rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-3.5 py-2.5 text-sm text-diff-del-fg" role="alert">
       {{ error }}
     </p>
 

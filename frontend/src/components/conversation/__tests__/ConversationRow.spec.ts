@@ -69,6 +69,37 @@ describe('linha de conversa', () => {
     expect(wrapper.find('[data-test="waiting-reason"]').text()).toBe('Fez uma pergunta')
   })
 
+  it('espera comum, sem novidade: triângulo discreto e motivo neutro', () => {
+    const wrapper = mountRow(makeSession({ display_state: 'waiting', state: 'idle', unread: false }))
+
+    expect(wrapper.find('svg').classes()).toContain('stroke-fg-subtle')
+    expect(wrapper.find('[data-test="waiting-reason"]').text()).toBe('Sua vez')
+    expect(wrapper.find('[data-test="waiting-reason"]').classes()).toContain('text-fg-muted')
+    expect(wrapper.find('[data-test="waiting-reason"]').classes()).not.toContain('text-secondary-soft')
+  })
+
+  it.each([
+    ['não lida', { unread: true }],
+    ['com plano pendente', { pending_kind: 'plan' as const }],
+    ['com erro', { state: 'error' as const }],
+  ])('espera que precisa de você (%s): triângulo e motivo laranja', (_, extra) => {
+    const wrapper = mountRow(makeSession({ display_state: 'waiting', state: 'idle', unread: false, ...extra }))
+
+    expect(wrapper.find('svg').classes()).toContain('stroke-secondary')
+    expect(wrapper.find('[data-test="waiting-reason"]').classes()).toContain('text-secondary-soft')
+  })
+
+  it('linha compacta esconde branch e motivo e deixa o título com largura mínima', () => {
+    const wrapper = mountRow(makeSession({ display_state: 'waiting', unread: true }), 'compact')
+
+    expect(wrapper.find('[data-test="row-branch"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="waiting-reason"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="row-title"]').classes()).toContain('grow')
+    expect(wrapper.find('[data-test="row-title"]').classes()).toContain('min-w-24')
+    expect(wrapper.find('[data-test="row-link"]').classes()).toContain('min-w-0')
+    expect(wrapper.find('[data-test="row-link"]').classes()).toContain('truncate')
+  })
+
   it('apaga o texto de finalizadas e oferece Reabrir', () => {
     const wrapper = mountRow(makeSession({ display_state: 'finished', finished: true }))
 

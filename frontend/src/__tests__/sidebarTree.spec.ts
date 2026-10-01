@@ -6,7 +6,7 @@ describe('árvore do menu', () => {
   it('separa agrupadores com sessão ativa dos parados e só lista as ativas', () => {
     const groups = [makeGroup({ id: 1, name: 'A' }), makeGroup({ id: 2, name: 'B' }), makeGroup({ id: 3, name: 'Vazio' })]
     const sessions = [
-      makeSession({ session_id: 'a1', group_id: 1, last_activity_at: 10, display_state: 'waiting' }),
+      makeSession({ session_id: 'a1', group_id: 1, last_activity_at: 10, display_state: 'waiting', unread: true }),
       makeSession({ session_id: 'a2', group_id: 1, last_activity_at: 20, display_state: 'finished' }),
       makeSession({ session_id: 'a3', group_id: 1, last_activity_at: 30, display_state: 'running' }),
       makeSession({ session_id: 'b1', group_id: 2, display_state: 'finished' }),
@@ -16,5 +16,15 @@ describe('árvore do menu', () => {
     expect(tree.active[0]!.sessions.map((s) => s.session_id)).toEqual(['a3', 'a1'])
     expect(tree.active[0]!.waiting).toBe(1)
     expect(tree.idle.map((g) => g.id).sort()).toEqual([2, 3])
+  })
+
+  it('conta como aguardando só quem precisa de você', () => {
+    const sessions = [
+      makeSession({ session_id: 'q', group_id: 1, display_state: 'waiting', unread: false }),
+      makeSession({ session_id: 'u', group_id: 1, display_state: 'waiting', unread: true }),
+      makeSession({ session_id: 'p', group_id: 1, display_state: 'waiting', pending_kind: 'plan' }),
+      makeSession({ session_id: 'e', group_id: 1, display_state: 'waiting', state: 'error' }),
+    ]
+    expect(projectTree([makeGroup({ id: 1 })], sessions).active[0]!.waiting).toBe(3)
   })
 })

@@ -85,7 +85,7 @@ function toggle(file: RepoFile): void {
         </li>
       </ul>
     </section>
-    <p v-if="repo.files_truncated" data-test="files-truncated" class="m-0 text-xs text-secondary-soft">
+    <p v-if="repo.files_truncated" data-test="files-truncated" class="m-0 text-xs text-fg-muted">
       Há mais arquivos alterados do que a lista mostra.
     </p>
   </div>

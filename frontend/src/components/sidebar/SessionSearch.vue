@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import { needsYou } from '../../conversation/needsYou'
 import { errorMessage, searchSessions } from '../../api/http'
 import { formatActivity } from '../../format'
 import { displayStateLabels } from '../../sessionState'
@@ -128,7 +129,7 @@ onBeforeUnmount(() => {
           />
           <span class="min-w-0 truncate">{{ projects.byId(session.project_id)?.name ?? 'Projeto removido' }}</span>
           <span aria-hidden="true">·</span>
-          <DisplayStateIcon :display="session.display_state" :size="8" />
+          <DisplayStateIcon :display="session.display_state" :size="8" :quiet="!needsYou(session)" />
           <span class="shrink-0">{{ displayStateLabels[session.display_state] }}</span>
           <span class="grow" />
           <span class="shrink-0 font-mono">{{ formatActivity(session.last_activity_at) }}</span>

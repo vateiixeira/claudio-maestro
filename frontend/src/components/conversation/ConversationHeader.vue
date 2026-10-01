@@ -4,6 +4,7 @@ import BranchLabel from '../git/BranchLabel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import { errorMessage, openInEditor } from '../../api/http'
+import { needsYou } from '../../conversation/needsYou'
 import { useConversationStore } from '../../stores/conversation'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
@@ -136,7 +137,7 @@ async function openProject() {
   <header class="mx-auto flex w-full max-w-[760px] flex-col gap-2 px-4 pt-5 pb-3">
     <span data-test="state-live" role="status" aria-live="polite" class="sr-only">{{ stateLabel }}</span>
     <div class="flex items-start gap-3">
-      <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" class="mt-2" />
+      <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="!needsYou(listed)" class="mt-2" />
       <input
         v-if="editing"
         ref="input"
@@ -201,7 +202,7 @@ async function openProject() {
       </template>
       <span v-if="copied" role="status" class="text-xs text-primary-soft">ID copiado</span>
     </div>
-    <p v-if="error" data-test="header-error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
+    <p v-if="error" data-test="header-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <p
       v-if="conv?.externalActivity"
       data-test="external-activity"

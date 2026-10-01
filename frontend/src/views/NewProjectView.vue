@@ -165,7 +165,7 @@ function cancel(): void {
               </svg>
               {{ picking ? 'Aguardando a escolha…' : 'Escolher pasta…' }}
             </button>
-            <p v-if="pickError" data-test="pick-error" role="alert" class="m-0 rounded-lg border border-secondary/40 bg-card px-3.5 py-2.5 text-sm text-secondary-soft">
+            <p v-if="pickError" data-test="pick-error" role="alert" class="m-0 rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-3.5 py-2.5 text-sm text-diff-del-fg">
               {{ pickError }}
             </p>
             <p v-else class="m-0 text-xs text-fg-muted">Abre o seletor de pastas do sistema. Ou navegue pela lista abaixo.</p>
@@ -196,7 +196,7 @@ function cancel(): void {
               <span v-if="!reposLoading && !reposError" class="normal-case tracking-normal">{{ found.length === 1 ? '1 repositório' : `${found.length} repositórios` }}</span>
             </div>
             <p v-if="reposLoading" role="status" class="m-0 text-sm text-fg-muted">Procurando repositórios…</p>
-            <p v-else-if="reposError" data-test="repos-error" role="status" class="m-0 text-sm text-secondary-soft">Não foi possível procurar os repositórios. {{ reposError }}</p>
+            <p v-else-if="reposError" data-test="repos-error" role="status" class="m-0 text-sm text-diff-del-fg">Não foi possível procurar os repositórios. {{ reposError }}</p>
             <p v-else-if="found.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
             <ul v-else class="m-0 flex list-none flex-col rounded-lg border border-line p-0">
               <li
@@ -209,7 +209,7 @@ function cancel(): void {
                 <BranchLabel :text="repoBranch(repo)" muted />
               </li>
             </ul>
-            <p v-if="limitReached" data-test="repo-limit" class="m-0 text-xs text-secondary-soft">
+            <p v-if="limitReached" data-test="repo-limit" class="m-0 text-xs text-fg-muted">
               Mais de 50 repositórios; só os 50 primeiros serão acompanhados.
             </p>
           </div>
@@ -237,7 +237,7 @@ function cancel(): void {
       <p
         v-if="error"
         role="alert"
-        class="mx-7 mb-4 rounded-lg border border-secondary/40 bg-card px-3.5 py-2.5 text-sm text-secondary-soft"
+        class="mx-7 mb-4 rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-3.5 py-2.5 text-sm text-diff-del-fg"
       >
         {{ error }}
       </p>

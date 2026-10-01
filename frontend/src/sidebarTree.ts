@@ -1,3 +1,4 @@
+import { needsYou } from './conversation/needsYou'
 import { isActive, sessionsOf, sortGroups } from './groupList'
 import type { Session, SessionGroup } from './types/api'
 
@@ -14,7 +15,7 @@ export function projectTree(groups: SessionGroup[], sessions: Session[]): { acti
   for (const group of sortGroups(groups, sessions)) {
     const open = sessionsOf(group.id, sessions).filter(isActive)
     if (open.length === 0) idle.push(group)
-    else active.push({ group, sessions: open, waiting: open.filter((s) => s.display_state === 'waiting').length })
+    else active.push({ group, sessions: open, waiting: open.filter((s) => s.display_state === 'waiting' && needsYou(s)).length })
   }
   return { active, idle }
 }

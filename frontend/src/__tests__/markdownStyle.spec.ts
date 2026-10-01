@@ -1,9 +1,11 @@
 /// <reference types="node" />
 import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 // Read from disk: Vitest turns a CSS import into an empty module.
-const css = readFileSync('src/style.css', 'utf8') // vitest runs from frontend/
+const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../style.css'), 'utf8') // independent of the cwd
 const rule = (selector: string) => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = css.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`))
