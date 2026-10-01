@@ -31,9 +31,9 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Concluído | 14 de 14 |
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
-| 15. Ajustes da crítica de design | Leitura de tabelas e diffs, laranja só para o que precisa de você, erros em vermelho | Em andamento | 5 de 6 |
+| 15. Ajustes da crítica de design | Leitura de tabelas e diffs, laranja só para o que precisa de você, erros em vermelho | Concluído | 6 de 6 |
 | 16. Worktrees no painel e ajustes | Alterações de sessões em worktree, menu `/` só no início e teste instável | Concluído | 5 de 5 |
-| 17. Melhorias médias da crítica | Cabeçalho compacto, próxima conversa que pede você, nomes de estado, seletor de modo e ícones | Em andamento | 5 de 6 |
+| 17. Melhorias médias da crítica | Cabeçalho compacto, próxima conversa que aguarda você, nomes de estado, seletor de modo e ícones | Em andamento | 5 de 6 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido e concluído em 2026-09-30, junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
@@ -452,7 +452,7 @@ Objetivo: aplicar as cinco melhorias de prioridade média da segunda crítica do
 - [x] Um nome por estado de espera em toda a interface (2026-09-30)
 - [x] Seletor de modo com rótulo, descrição de cada modo e marca no selecionado, e atalhos `[` e `]` para trocar de turno (2026-09-30)
 - [x] Ícones em SVG no lugar de caracteres de texto (2026-09-30)
-- [ ] Revisão do marco pelo `milestone-reviewer`
+- [x] Revisão do marco pelo `milestone-reviewer` (2026-09-30)
 
 ## Fora do MVP
 
@@ -529,6 +529,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-30 | Marco 12 concluído: conversa do CLI no meio de um turno conta como "Em execução"; sessões de worktree são indexadas sob o projeto dono e retomadas na worktree só quando a transcrição está na pasta dela; o marco foi numerado 11 porque o main já tem um marco 10 |
 | 2026-09-30 | Marco 14 concluído: opção A de identidade visual em todas as telas; links em azul, verde só para ação e estado, triângulo laranja na barra lateral só com novidade, pedido pendente ou erro; mensagens de erro continuam em laranja até o usuário decidir |
 | 2026-09-30 | Marco 15 concluído: ajustes da crítica do `/impeccable` (nota de 26 para 27 de 40); laranja e a aba "Pede você" só para conversa com pedido pendente, erro ou novidade; erros em vermelho; arquivo novo e diff longo recolhidos; listas com marcadores e realce de sintaxe neutro |
+| 2026-09-30 | Marco 17 concluído: cabeçalho da conversa numa faixa só, botão e tecla `n` para a próxima conversa que aguarda você, "Aguardando você" e "Sua vez" como únicos nomes da espera, seletor "Permissões" com descrições, teclas `[` e `]` para turnos e ícones só em SVG; ficaram de fora o título repetido no modo embutido e a tecla `n` abrindo em tela cheia na tela do projeto |
 | 2026-09-30 | Recentes do menu lateral passa a listar todas as conversas não finalizadas, pela última interação, e deixa de ser guardado no navegador. Substitui a decisão de 2026-09-29 e a ordem estável do marco 12 |
 | 2026-09-30 | Comandos (`/`) e menções (`@`) no campo de mensagem viram o marco 13, seguindo o comportamento da extensão do VSCode |
 | 2026-09-30 | Marco 12 concluído de novo, depois de reaberto: subagentes em segundo plano do app e do CLI contam como "Em execução" (no CLI, cada arquivo de subagente vale até o próprio `end_turn` ou 20 min sem escrever), Recentes por última interação e nome do projeto no menu lateral; revisado pelo `milestone-reviewer` |
