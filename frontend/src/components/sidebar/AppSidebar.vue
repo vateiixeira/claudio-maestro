@@ -63,7 +63,7 @@ const itemClass = sidebarItemClass
 
     <div class="flex flex-col gap-0.5">
       <button type="button" data-test="nav-new" :class="itemClass(false)" class="w-full text-left" @click="newConversation.open(currentProjectId, currentGroupId)">
-        <span aria-hidden="true">＋</span><span class="grow">Nova conversa</span><kbd class="font-mono text-[11px] text-fg-muted">C</kbd>
+        <span aria-hidden="true">＋</span><span class="grow">Nova conversa</span><kbd class="font-mono text-[11px] text-fg-subtle">C</kbd>
       </button>
       <SessionSearch />
       <RouterLink to="/dashboard" data-test="nav-dashboard" :class="itemClass(route.name === 'dashboard')" :aria-current="route.name === 'dashboard' ? 'page' : undefined">Dashboard</RouterLink>
@@ -76,7 +76,7 @@ const itemClass = sidebarItemClass
 
     <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
       <div class="flex items-center px-3 pt-2 pb-0.5">
-        <span class="grow font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Projetos</span>
+        <span class="grow font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Projetos</span>
         <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-7 items-center justify-center rounded-md text-fg-muted no-underline hover:bg-card hover:text-fg">＋</RouterLink>
       </div>
       <p v-if="projects.loadError" class="px-3 py-2 text-xs text-secondary-soft" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
@@ -103,7 +103,7 @@ const itemClass = sidebarItemClass
             <span data-test="project-color" class="size-2.5 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
             <span class="flex min-w-0 grow flex-col">
               <span data-test="project-name" class="truncate font-medium text-fg">{{ project.name }}</span>
-              <span v-if="!project.available" class="text-xs">pasta indisponível</span>
+              <span v-if="!project.available" class="text-xs text-fg-subtle">pasta indisponível</span>
               <span v-else-if="git.reposFor(project.id)[0]" data-test="project-branch"><BranchLabel :text="repoLabel(git.reposFor(project.id)[0]!)" muted /></span>
               <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-secondary-soft">Só os 50 primeiros repositórios</span>
             </span>
@@ -117,7 +117,7 @@ const itemClass = sidebarItemClass
 
       <SidebarRunning />
       <template v-if="recent.length">
-        <div class="px-3 pt-4 pb-0.5 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Recentes</div>
+        <div class="px-3 pt-4 pb-0.5 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Recentes</div>
         <SidebarSessionRow v-for="session in recent" :key="session.session_id" data-test="recent" :session="session" />
       </template>
     </div>

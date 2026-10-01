@@ -72,7 +72,21 @@ describe('agrupadores no menu', () => {
     await flushPromises()
     const rows = wrapper.findAll('[data-test="sidebar-session"]')
     expect(rows[0]!.attributes('aria-current')).toBe('page')
-    expect(rows[0]!.classes()).toContain('bg-elevated')
+    expect(rows[0]!.classes()).toContain('bg-card')
     expect(rows[1]!.attributes('aria-current')).toBeUndefined()
+  })
+
+  it('deixa o triângulo de "Sua vez" discreto quando a conversa não tem novidade', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'q1', group_id: 1, title: 'Lida', display_state: 'waiting', unread: false }),
+      makeSession({ session_id: 'q2', group_id: 1, title: 'Nova', display_state: 'waiting', unread: true }),
+    ])
+    const wrapper = await mountGroups()
+    const [read, unread] = wrapper.findAll('[data-test="sidebar-session"]')
+    expect(read!.find('svg').classes()).toContain('stroke-fg-subtle')
+    expect(unread!.find('svg').classes()).toContain('stroke-secondary')
+    // the per-group counter stays orange
+    expect(wrapper.find('[data-test="group-waiting"]').classes()).toContain('text-secondary')
+    expect(wrapper.find('[data-test="group-waiting"] svg').classes()).toContain('stroke-secondary')
   })
 })

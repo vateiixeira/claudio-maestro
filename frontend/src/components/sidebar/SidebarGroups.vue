@@ -42,9 +42,9 @@ const rowClass = 'flex min-h-9 items-center gap-2 rounded-lg px-2 no-underline h
           data-test="sidebar-session"
           :to="{ name: 'session', params: { id: s.session_id } }"
           :aria-current="isCurrent(s.session_id) ? 'page' : undefined"
-          :class="[rowClass, 'pl-7', isCurrent(s.session_id) ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg']"
+          :class="[rowClass, 'pl-7', isCurrent(s.session_id) ? 'bg-card text-fg' : 'text-fg-muted hover:text-fg']"
         >
-          <DisplayStateIcon :display="s.display_state" :size="11" />
+          <DisplayStateIcon :display="s.display_state" :size="11" :quiet="!s.unread" />
           <span class="min-w-0 grow truncate text-[13px]">{{ s.title }}</span>
         </RouterLink>
       </template>

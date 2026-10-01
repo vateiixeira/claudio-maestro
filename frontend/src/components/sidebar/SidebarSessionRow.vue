@@ -21,9 +21,9 @@ const active = computed(() => route.name === 'session' && route.params.id === pr
     :class="sidebarItemClass(active)"
     :aria-current="active ? 'page' : undefined"
   >
-    <DisplayStateIcon :display="session.display_state" :size="11" />
+    <DisplayStateIcon :display="session.display_state" :size="11" :quiet="!session.unread" />
     <span data-test="row-title" class="min-w-0 grow truncate text-[13px]">{{ session.title }}</span>
-    <span v-if="project" data-test="row-project" :title="project.name" class="max-w-[40%] shrink-0 truncate text-[11px] text-fg-muted opacity-70">{{ project.name }}</span>
+    <span v-if="project" data-test="row-project" :title="project.name" class="max-w-[40%] shrink-0 truncate text-[11px] text-fg-subtle">{{ project.name }}</span>
     <span v-if="worktree" data-test="row-worktree" :title="worktree" :aria-label="worktree" class="shrink-0 text-fg-muted">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><path d="M6.5 10v4a3 3 0 0 0 3 3H14" />
