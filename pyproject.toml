@@ -2,17 +2,35 @@
 name = "claudio-maestro"
 version = "0.1.0"
 description = "Cláudio Maestro: app web local para conduzir sessões do Claude em vários projetos numa tela só"
+license = "MIT"
+authors = [{ name = "Vinicius Alexandre", email = "vateiixeira@gmail.com" }]
 requires-python = ">=3.13"
+keywords = ["claude", "claude-agent-sdk", "agentes", "fastapi", "vue"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Natural Language :: Portuguese (Brazilian)",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+]
 dependencies = [
     "fastapi>=0.141",
     "uvicorn[standard]>=0.54",
     "claude-agent-sdk>=0.2.161",
 ]
 
+[project.urls]
+Homepage = "https://github.com/vateiixeira/claudio-maestro"
+Issues = "https://github.com/vateiixeira/claudio-maestro/issues"
+
 [dependency-groups]
 dev = [
     "pytest>=9.1",
     "httpx>=0.28",
+    "ruff>=0.16.9",
 ]
 
 [build-system]
@@ -24,3 +42,16 @@ packages = ["backend/claudio_maestro"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
+
+[tool.ruff]
+target-version = "py313"
+src = ["backend"]
+
+[tool.ruff.lint]
+# Ruff 0.16 amplia o conjunto padrão (centenas de avisos de estilo); aqui fica o
+# conjunto clássico (erros de sintaxe e pyflakes) mais a ordem dos imports.
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Fixtures do pytest importadas de outros módulos de teste aparecem como redefinição.
+"backend/tests/**" = ["F811"]
