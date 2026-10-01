@@ -4,6 +4,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.1.0] - 2026-10-01
+
 Primeira versão pública.
 
 ### Adicionado
