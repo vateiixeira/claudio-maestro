@@ -65,6 +65,29 @@ describe('painel Detalhes', () => {
     expect(props.find('[data-test="prop-group"]').exists()).toBe(true)
   })
 
+  it('divide as propriedades em sessão e ambiente, nessa ordem', async () => {
+    const wrapper = await mountPanel()
+
+    const groups = wrapper.find('[data-test="details-properties"]').findAll('dl')
+    expect(groups).toHaveLength(2)
+    expect(groups[0].findAll('dt').map((dt) => dt.text())).toEqual(['Estado', 'Turnos', 'Início', 'Última atividade'])
+    expect(groups[1].findAll('dt').map((dt) => dt.text())).toEqual(['Projeto', 'Branch', 'Contexto', 'Plano', 'Agrupador'])
+    expect(groups[0].find('[data-test="prop-state"]').exists()).toBe(true)
+    expect(groups[1].find('[data-test="prop-plan"]').exists()).toBe(true)
+    expect(groups[1].find('[data-test="prop-group"]').exists()).toBe(true)
+  })
+
+  it('com worktree, a linha Worktree fica entre Branch e Contexto', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({
+      session_id: 's1', worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias',
+      display_state: 'waiting', state: 'idle',
+    })])
+    const wrapper = await mountPanel()
+
+    const groups = wrapper.find('[data-test="details-properties"]').findAll('dl')
+    expect(groups[1].findAll('dt').map((dt) => dt.text()).slice(0, 4)).toEqual(['Projeto', 'Branch', 'Worktree', 'Contexto'])
+  })
+
   it('mostra a seção Plano, com a faixa aberta, quando a sessão tem plano visível', async () => {
     const plan = { path: '/p/plan.md', title: 'Plano X', total: 8, done: 3, current: { number: 4, title: 'Quarta' } }
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'running', plan })])

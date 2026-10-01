@@ -42,7 +42,8 @@ describe('agrupadores no menu', () => {
     expect(idle).toHaveLength(1)
     expect(idle[0]!.attributes('href')).toBe('/projects/1')
     expect(idle[0]!.text()).toContain('Parado')
-    expect(idle[0]!.classes()).toContain('opacity-50')
+    expect(idle[0]!.classes()).toContain('text-fg-subtle')
+    expect(idle[0]!.classes()).not.toContain('opacity-50')
   })
 
   it('lista só as sessões ativas, com o caminho de cada uma', async () => {
@@ -72,7 +73,32 @@ describe('agrupadores no menu', () => {
     await flushPromises()
     const rows = wrapper.findAll('[data-test="sidebar-session"]')
     expect(rows[0]!.attributes('aria-current')).toBe('page')
-    expect(rows[0]!.classes()).toContain('bg-elevated')
+    expect(rows[0]!.classes()).toContain('bg-card')
     expect(rows[1]!.attributes('aria-current')).toBeUndefined()
+  })
+
+  it('deixa o triângulo de "Sua vez" discreto quando a conversa não tem novidade', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'q1', group_id: 1, title: 'Lida', display_state: 'waiting', unread: false }),
+      makeSession({ session_id: 'q2', group_id: 1, title: 'Nova', display_state: 'waiting', unread: true }),
+    ])
+    const wrapper = await mountGroups()
+    const [read, unread] = wrapper.findAll('[data-test="sidebar-session"]')
+    expect(read!.find('svg').classes()).toContain('stroke-fg-subtle')
+    expect(unread!.find('svg').classes()).toContain('stroke-secondary')
+    // the per-group counter stays orange
+    expect(wrapper.find('[data-test="group-waiting"]').classes()).toContain('text-secondary')
+    expect(wrapper.find('[data-test="group-waiting"] svg').classes()).toContain('stroke-secondary')
+  })
+
+  it('mantém o triângulo laranja quando há decisão pendente, mesmo sem novidade', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'p1', group_id: 1, title: 'Plano', display_state: 'waiting', unread: false, pending_kind: 'plan' }),
+      makeSession({ session_id: 'p2', group_id: 1, title: 'Erro', display_state: 'waiting', unread: false, state: 'error' }),
+    ])
+    const wrapper = await mountGroups()
+    for (const row of wrapper.findAll('[data-test="sidebar-session"]')) {
+      expect(row.find('svg').classes()).toContain('stroke-secondary')
+    }
   })
 })

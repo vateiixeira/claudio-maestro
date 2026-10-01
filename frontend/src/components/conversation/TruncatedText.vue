@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 // Long outputs start as an 8-line preview; expanded, they still stop at `limit`
 // lines until the user asks for everything.
 const props = withDefaults(
-  defineProps<{ text: string; limit?: number; preview?: number; variant?: 'default' | 'error' }>(),
+  defineProps<{ text: string; limit?: number; preview?: number; variant?: 'default' | 'error'; flat?: boolean }>(),
   { limit: 200, preview: 8, variant: 'default' },
 )
 
@@ -40,15 +40,15 @@ async function copy() {
 onBeforeUnmount(() => { if (copyTimer) clearTimeout(copyTimer) })
 
 const statusText = computed(() => ({ idle: '', done: 'Copiado', failed: 'Não foi possível copiar' })[copyState.value])
-const button = 'cursor-pointer rounded-md border border-line-strong bg-transparent px-2.5 py-1 text-xs text-primary-soft hover:bg-elevated'
+const button = 'cursor-pointer rounded-md border border-line-strong bg-transparent px-2.5 py-1 text-xs text-fg-muted hover:bg-elevated hover:text-fg'
 </script>
 
 <template>
   <div>
     <div
       data-test="output-box"
-      class="relative overflow-hidden rounded-md border px-2.5 py-2"
-      :class="variant === 'error' ? 'border-diff-del-fg/40 bg-diff-del-bg text-diff-del-fg' : 'border-line bg-bg'"
+      class="relative overflow-hidden rounded-md border"
+      :class="variant === 'error' ? 'border-diff-del-fg/40 bg-diff-del-bg px-2.5 py-2 text-diff-del-fg' : flat ? 'border-transparent' : 'border-line bg-bg px-2.5 py-2'"
     >
       <pre class="m-0 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words"><slot :text="shown">{{ shown }}</slot></pre>
       <div
@@ -56,7 +56,7 @@ const button = 'cursor-pointer rounded-md border border-line-strong bg-transpare
         data-test="fade"
         aria-hidden="true"
         class="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent"
-        :class="variant === 'error' ? 'to-diff-del-bg' : 'to-bg'"
+        :class="variant === 'error' ? 'to-diff-del-bg' : flat ? 'to-panel' : 'to-bg'"
       />
     </div>
     <div class="mt-2 flex flex-wrap items-center gap-2">

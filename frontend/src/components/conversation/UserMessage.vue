@@ -27,7 +27,7 @@ function label(attachment: Attachment): string {
 </script>
 
 <template>
-  <div data-test="user-message-card" class="flex w-full flex-col gap-2 rounded-lg border border-line-strong bg-elevated px-3.5 py-3">
+  <div data-test="user-message-card" class="flex w-full flex-col gap-2 rounded-lg border border-line-strong bg-card px-3.5 py-3">
     <div class="flex items-center gap-2">
       <span aria-hidden="true" class="flex size-[18px] items-center justify-center rounded-full bg-fg text-[10px] font-bold text-bg">V</span>
       <span class="cap text-fg">Você</span>
@@ -52,7 +52,7 @@ function label(attachment: Attachment): string {
         v-for="(attachment, index) in item.images"
         :key="index"
         data-test="attachment"
-        class="rounded-md border border-line bg-card px-2 py-0.5 font-mono text-xs text-fg-muted"
+        class="rounded-md border border-line bg-panel px-2 py-0.5 font-mono text-xs text-fg-subtle"
       >{{ label(attachment) }}</span>
     </div>
   </div>

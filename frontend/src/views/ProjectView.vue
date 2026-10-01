@@ -182,7 +182,7 @@ async function remove(): Promise<void> {
   <div v-if="!project" class="px-10 py-8">
     <p v-if="projects.loaded" class="text-fg-muted">
       Projeto não encontrado.
-      <RouterLink to="/inbox" class="text-primary-soft hover:underline">Voltar ao início</RouterLink>
+      <RouterLink to="/inbox" class="text-info-soft hover:underline">Voltar ao início</RouterLink>
     </p>
     <p v-else class="text-fg-muted">Carregando…</p>
   </div>
@@ -210,7 +210,7 @@ async function remove(): Promise<void> {
               v-model="renameValue"
               type="text"
               maxlength="100"
-              class="h-11 min-w-0 flex-1 rounded-lg border border-line-strong bg-bg px-3.5 text-lg font-semibold text-fg outline-none focus:border-primary"
+              class="h-11 min-w-0 flex-1 rounded-lg border border-line-strong bg-elevated px-3.5 text-lg font-semibold text-fg outline-none focus:border-fg-muted"
             />
             <button type="submit" class="h-11 rounded-lg bg-primary px-4 font-semibold text-primary-fg hover:bg-primary-soft">
               Salvar
@@ -228,7 +228,7 @@ async function remove(): Promise<void> {
             <span class="size-3.5 shrink-0 rounded-[4px]" :style="{ backgroundColor: project.color }" />
             <h1 class="m-0 truncate text-[28px] font-semibold tracking-tight">{{ project.name }}</h1>
           </div>
-          <div class="font-mono text-[13px] break-all text-fg-muted">{{ project.path }}</div>
+          <div class="font-mono text-[13px] break-all text-fg-subtle">{{ project.path }}</div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -305,7 +305,7 @@ async function remove(): Promise<void> {
       </p>
 
       <section v-if="git.isLoaded(id)" data-test="repos" aria-labelledby="repos-title" class="flex flex-col gap-2">
-        <h2 id="repos-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Repositórios nesta pasta</h2>
+        <h2 id="repos-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Repositórios nesta pasta</h2>
         <p v-if="repos.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
         <ProjectGitOverview v-else :project-id="id" />
         <p v-if="git.limitReached(id)" data-test="repo-limit" class="m-0 text-xs text-secondary-soft">
@@ -342,7 +342,7 @@ async function remove(): Promise<void> {
             type="button"
             ref="cancelRemoveButton"
             data-test="confirm-remove-cancel"
-            class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-panel"
+            class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-elevated"
             @click="cancelRemove"
           >
             Cancelar
@@ -363,10 +363,10 @@ async function remove(): Promise<void> {
         Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa nesta pasta.
       </p>
       <template v-else>
-        <h2 v-if="hasGroups && ungrouped.length" id="ungrouped-title" data-test="ungrouped-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Sem agrupador</h2>
+        <h2 v-if="hasGroups && ungrouped.length" id="ungrouped-title" data-test="ungrouped-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Sem agrupador</h2>
         <section v-for="group in dateGroups" :key="group.label" :aria-label="group.label" class="flex flex-col">
           <div class="flex items-center gap-3 py-2">
-            <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
+            <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
           </div>
           <ConversationRow
             v-for="s in group.sessions"

@@ -129,8 +129,8 @@ async function runNow() {
 
 onMounted(load)
 
-const label = 'font-mono text-xs tracking-[0.08em] text-fg-muted uppercase'
-const input = 'h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm text-fg outline-none focus:border-primary disabled:opacity-40'
+const label = 'font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase'
+const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text-sm text-fg outline-none focus:border-fg-muted disabled:opacity-40'
 </script>
 
 <template>
@@ -180,7 +180,7 @@ const input = 'h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm te
             :maxlength="MAX_INSTRUCTIONS"
             :disabled="!ready"
             aria-describedby="digest-instructions-help"
-            class="rounded-lg border border-line-strong bg-bg px-3.5 py-2.5 text-sm text-fg outline-none focus:border-primary disabled:opacity-40"
+            class="rounded-lg border border-line-strong bg-elevated px-3.5 py-2.5 text-sm text-fg outline-none focus:border-fg-muted disabled:opacity-40"
           />
           <p id="digest-instructions-help" class="m-0 flex justify-between text-xs text-fg-muted">
             <span>Somadas às regras fixas do agente. Ex.: "cite sempre o número da tarefa".</span>
@@ -232,11 +232,11 @@ const input = 'h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm te
     </form>
 
     <section aria-labelledby="digest-runs-title" class="flex flex-col gap-2 border-t border-line px-7 py-6">
-      <h2 id="digest-runs-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Últimas passadas</h2>
+      <h2 id="digest-runs-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Últimas passadas</h2>
       <p v-if="runsError" role="alert" class="m-0 text-sm text-secondary-soft">{{ runsError }}</p>
       <p v-else-if="runs.length === 0" class="m-0 text-sm text-fg-muted">Nenhuma passada ainda.</p>
       <table v-else data-test="digest-runs" class="w-full text-left text-sm">
-        <thead class="text-xs text-fg-muted">
+        <thead class="text-xs text-fg-subtle">
           <tr><th class="py-1 font-normal">Quando</th><th class="font-normal">Origem</th><th class="font-normal">Lidas</th><th class="font-normal">Puladas</th><th class="font-normal">Erros</th></tr>
         </thead>
         <tbody>

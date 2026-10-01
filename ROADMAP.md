@@ -30,8 +30,9 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Em andamento | 13 de 14 |
+| 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
 
-Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e está em andamento junto com o fim do marco 12.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e está em andamento junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
 ## Preparação
 
@@ -394,6 +395,22 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/pendenc
 - [x] Botão de copiar em cada bloco de código das respostas do Claude e do plano (pedido do usuário em 2026-09-30, fora da spec de comandos) (2026-09-30)
 - [x] Investigar se dá para fazer o `/design` (Claude Design) funcionar nas conversas do app: hoje `/design consent` falha com 403 e `/design-login` responde que não está disponível neste ambiente (pedido do usuário em 2026-09-30) (2026-09-30). Conclusão: o 403 vem do token do `/login`, que não tem os escopos `user:design:*`; `/design-login` é um painel interativo que o CLI recusa em sessão não interativa (SDK). Rodar `/design-login` uma vez no `claude` do terminal grava `designOauth` em `~/.claude/.credentials.json`, que as sessões do app leem; o `/design` completo (brief, importar, exportar) depende de flags remotas da conta e não se resolve pelo app
 
+## Marco 14. Identidade visual
+
+Objetivo: separar as áreas da tela e dar sentido às cores, aplicando a opção A (camadas) em todas as telas. Só tokens, superfícies, tipografia e estilo dos blocos; layout, rotas e comportamento não mudam.
+
+Pedido pelo usuário em 2026-09-30, que escolheu a opção A entre três direções.
+
+- Direções e regras de cor: `docs/design/explorations/README.md`
+- Mockup aprovado: `docs/design/explorations/A-camadas.dc.html`
+
+- [x] Tokens novos no `@theme`, estilos do markdown e superfícies da estrutura (barra lateral, área central, Detalhes) (2026-09-30)
+- [x] Blocos do chat: mensagem do usuário, comando com saída, grupo de ações, trilho, turno concluído e composer (2026-09-30)
+- [x] Painel Detalhes: propriedades agrupadas e Resumo com "Falta" antes de "Feito" (2026-09-30)
+- [x] Barra lateral: triângulo laranja forte só em conversa com novidade ou com pedido pendente (2026-09-30)
+- [x] Demais telas: Inbox, Conversas, Dashboard, projeto, Preferências, modais, sem verde em links e sem cores fixas (2026-09-30)
+- [x] Revisão do marco pelo `milestone-reviewer` e conferência no app (2026-09-30)
+
 ## Fora do MVP
 
 Ideias registradas para depois. Não entram sem decisão do usuário.
@@ -466,6 +483,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-30 | Agente de resumos vira o marco 10: uma chamada curta do SDK por sessão, incremental, sem ferramentas, configurável numa aba das Preferências |
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
 | 2026-09-30 | Marco 12 concluído: conversa do CLI no meio de um turno conta como "Em execução"; sessões de worktree são indexadas sob o projeto dono e retomadas na worktree só quando a transcrição está na pasta dela; o marco foi numerado 11 porque o main já tem um marco 10 |
+| 2026-09-30 | Marco 14 concluído: opção A de identidade visual em todas as telas; links em azul, verde só para ação e estado, triângulo laranja na barra lateral só com novidade, pedido pendente ou erro; mensagens de erro continuam em laranja até o usuário decidir |
 | 2026-09-30 | Recentes do menu lateral passa a listar todas as conversas não finalizadas, pela última interação, e deixa de ser guardado no navegador. Substitui a decisão de 2026-09-29 e a ordem estável do marco 12 |
 | 2026-09-30 | Comandos (`/`) e menções (`@`) no campo de mensagem viram o marco 13, seguindo o comportamento da extensão do VSCode |
 | 2026-09-30 | Marco 12 concluído de novo, depois de reaberto: subagentes em segundo plano do app e do CLI contam como "Em execução" (no CLI, cada arquivo de subagente vale até o próprio `end_turn` ou 20 min sem escrever), Recentes por última interação e nome do projeto no menu lateral; revisado pelo `milestone-reviewer` |

@@ -1,0 +1,58 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia, type Pinia } from 'pinia'
+import { createMemoryHistory } from 'vue-router'
+import SidebarSessionRow from '../SidebarSessionRow.vue'
+import { createAppRouter } from '../../../router'
+import { makeSession } from '../../../test/factories'
+
+enableAutoUnmount(afterEach)
+let pinia: Pinia
+beforeEach(() => {
+  pinia = createPinia()
+  setActivePinia(pinia)
+})
+
+async function mountRow(overrides: Parameters<typeof makeSession>[0], path = '/inbox') {
+  const router = createAppRouter(createMemoryHistory())
+  await router.push(path)
+  await router.isReady()
+  const wrapper = mount(SidebarSessionRow, { props: { session: makeSession(overrides) }, global: { plugins: [pinia, router] } })
+  await flushPromises()
+  return wrapper
+}
+
+describe('linha de conversa do menu', () => {
+  it('mostra o triângulo discreto quando a conversa aguarda sem novidade', async () => {
+    const wrapper = await mountRow({ display_state: 'waiting', unread: false })
+    expect(wrapper.find('svg').classes()).toContain('stroke-fg-subtle')
+    expect(wrapper.find('svg').classes()).not.toContain('stroke-secondary')
+  })
+
+  it('mostra o triângulo laranja quando a conversa aguarda com novidade', async () => {
+    const wrapper = await mountRow({ display_state: 'waiting', unread: true })
+    expect(wrapper.find('svg').classes()).toContain('stroke-secondary')
+    expect(wrapper.find('svg').classes()).not.toContain('stroke-fg-subtle')
+  })
+
+  it('mantém o triângulo laranja quando há pergunta, permissão ou plano esperando, mesmo vista', async () => {
+    for (const kind of ['tool', 'question', 'plan'] as const) {
+      const wrapper = await mountRow({ display_state: 'waiting', unread: false, pending_kind: kind })
+      expect(wrapper.find('svg').classes()).toContain('stroke-secondary')
+    }
+  })
+
+  it('mantém o triângulo laranja quando a conversa está com erro, mesmo vista', async () => {
+    const wrapper = await mountRow({ display_state: 'waiting', unread: false, state: 'error' })
+    expect(wrapper.find('svg').classes()).toContain('stroke-secondary')
+  })
+
+  it('usa fundo card na linha atual e fg-muted nas demais', async () => {
+    const current = await mountRow({ session_id: 'x1' }, '/sessions/x1')
+    expect(current.classes()).toContain('bg-card')
+    expect(current.classes()).not.toContain('bg-elevated')
+    const other = await mountRow({ session_id: 'x2' }, '/sessions/x1')
+    expect(other.classes()).toContain('text-fg-muted')
+    expect(other.classes()).not.toContain('bg-card')
+  })
+})

@@ -16,20 +16,20 @@ const reason = computed(() => waitingReason(props.session) ?? displayStateLabels
 </script>
 
 <template>
-  <article data-test="now-card" class="flex flex-col gap-2 rounded-lg border border-line bg-card p-4">
-    <div class="flex items-center gap-2 text-xs text-fg-muted">
+  <article data-test="now-card" class="flex flex-col gap-2 rounded-lg border border-line bg-panel p-4">
+    <div class="flex items-center gap-2 text-xs text-fg-subtle">
       <span v-if="project" class="size-2 rounded-[3px]" :style="{ backgroundColor: project.color }" />
       {{ project?.name ?? '' }}
       <span class="grow" />
       {{ formatActivity(session.last_activity_at) }}
     </div>
-    <RouterLink :to="{ name: 'session', params: { id: session.session_id } }" class="truncate font-semibold text-fg no-underline hover:text-primary-soft">{{ session.title }}</RouterLink>
+    <RouterLink :to="{ name: 'session', params: { id: session.session_id } }" class="truncate font-semibold text-fg no-underline hover:underline">{{ session.title }}</RouterLink>
     <p v-if="session.plan && planVisible(session)" data-test="now-plan" class="m-0 truncate text-xs text-fg-muted">{{ planPosition(session.plan) }}</p>
     <div class="flex items-center gap-1.5 text-xs">
       <DisplayStateIcon :display="session.display_state" :size="11" />
       <span :class="session.display_state === 'waiting' ? 'text-secondary-soft' : 'text-primary-soft'">{{ reason }}</span>
     </div>
-    <p v-if="session.last_action" class="m-0 truncate font-mono text-xs text-fg-muted">{{ session.last_action }}</p>
+    <p v-if="session.last_action" class="m-0 truncate font-mono text-xs text-fg-subtle">{{ session.last_action }}</p>
     <div v-if="decision.pending.value && !decision.answered.value" class="flex gap-2 pt-1">
       <button
         type="button"

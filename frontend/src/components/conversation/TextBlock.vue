@@ -27,7 +27,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 
 <template>
   <div class="group/text">
-    <div class="markdown">
+    <div class="markdown max-w-[68ch]">
       <div @click="onCodeCopyClick" v-html="html" />
       <span
         v-if="item.streaming"
@@ -46,7 +46,7 @@ onBeforeUnmount(() => clearTimeout(timer))
       >
         Copiar
       </button>
-      <span data-test="copy-status" class="text-fg-muted" aria-live="polite">{{ status }}</span>
+      <span data-test="copy-status" class="text-fg-subtle" aria-live="polite">{{ status }}</span>
     </div>
   </div>
 </template>

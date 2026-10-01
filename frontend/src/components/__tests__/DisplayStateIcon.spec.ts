@@ -35,4 +35,23 @@ describe('DisplayStateIcon', () => {
     expect(wrapper.find('svg').exists()).toBe(true)
     expect(wrapper.html()).not.toContain('animate-spin')
   })
+
+  it('draws the waiting triangle in the secondary color by default', () => {
+    const svg = mount(DisplayStateIcon, { props: { display: 'waiting' } }).find('svg')
+    expect(svg.classes()).toContain('stroke-secondary')
+    expect(svg.classes()).not.toContain('stroke-fg-subtle')
+  })
+
+  it('draws the waiting triangle in the subtle color when quiet', () => {
+    const svg = mount(DisplayStateIcon, { props: { display: 'waiting', quiet: true } }).find('svg')
+    expect(svg.classes()).toContain('stroke-fg-subtle')
+    expect(svg.classes()).not.toContain('stroke-secondary')
+  })
+
+  it('ignores quiet for running and finished', () => {
+    const running = mount(DisplayStateIcon, { props: { display: 'running', quiet: true } }).find('svg')
+    expect(running.classes()).toContain('stroke-primary')
+    const finished = mount(DisplayStateIcon, { props: { display: 'finished', quiet: true } }).find('svg')
+    expect(finished.classes()).toContain('stroke-fg-muted')
+  })
 })

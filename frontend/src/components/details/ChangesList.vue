@@ -38,7 +38,7 @@ const emit = defineEmits<{ select: [group: ChangesGroup, file: ChangedFile]; ret
         :aria-pressed="selected?.group === group.path && selected?.file === file.path"
         @click="emit('select', group, file)"
       >
-        <span class="min-w-0 grow truncate font-mono text-xs">{{ file.rel_path }}</span>
+        <span class="min-w-0 grow truncate font-mono text-xs text-fg">{{ file.rel_path }}</span>
         <span v-if="file.uncommitted" class="shrink-0 text-xs text-secondary-soft">sem commit</span>
         <span v-if="file.added != null" class="font-mono text-xs text-diff-add-fg">+{{ file.added }}</span>
         <span v-if="file.removed != null" class="font-mono text-xs text-diff-del-fg">−{{ file.removed }}</span>

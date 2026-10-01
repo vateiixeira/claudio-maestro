@@ -92,7 +92,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     <span class="sr-only">{{ displayStateLabels[session.display_state] }}{{ session.unread ? ', com novidade' : '' }}</span>
     <span v-if="reason" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs text-secondary-soft">{{ reason }}</span>
     <!-- Fixed widths, kept even when empty, so the columns line up from row to row. The actions float over the right end instead of taking room from them. -->
-    <span data-test="row-project" class="hidden w-36 shrink-0 items-center gap-1.5 text-xs text-fg-muted md:flex">
+    <span data-test="row-project" class="hidden w-36 shrink-0 items-center gap-1.5 text-xs text-fg-subtle md:flex">
       <template v-if="project">
         <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
         <span class="truncate">{{ project.name }}</span>
@@ -102,7 +102,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       <WorktreeLabel v-if="worktree" :text="worktree" muted />
       <BranchLabel v-else-if="repo" :text="repoLabel(repo)" muted />
     </span>
-    <span class="w-20 shrink-0 text-right text-xs text-fg-muted">{{ formatActivity(session.last_activity_at) }}</span>
+    <span class="w-20 shrink-0 text-right text-xs text-fg-subtle">{{ formatActivity(session.last_activity_at) }}</span>
     <div
       v-if="variant !== 'compact'"
       data-test="row-actions"

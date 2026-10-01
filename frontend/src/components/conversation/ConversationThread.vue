@@ -311,7 +311,7 @@ function resolvePrompt(promptId: string) {
           class="sticky top-0 z-10 border-b border-line bg-panel"
         >
           <div class="mx-auto flex h-11 w-full max-w-[760px] items-center gap-2.5 px-4">
-            <span class="cap shrink-0 text-fg-muted">Turno {{ currentTurn + 1 }} de {{ turns.length }}</span>
+            <span class="cap shrink-0 text-fg-subtle">Turno {{ currentTurn + 1 }} de {{ turns.length }}</span>
             <span class="min-w-0 grow truncate text-[13px] text-fg">{{ currentTurnText }}</span>
             <button
               type="button"
@@ -344,7 +344,7 @@ function resolvePrompt(promptId: string) {
           </p>
           <template v-for="({ turn, done, summary }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
             <div v-if="index > 0" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-11 focus-visible:outline-2 focus-visible:outline-primary items-center gap-2.5">
-              <span class="cap text-fg-muted">Turno {{ turn.number }}</span>
+              <span class="cap text-fg-subtle">Turno {{ turn.number }}</span>
               <span aria-hidden="true" class="h-px grow bg-line" />
             </div>
             <div
@@ -355,7 +355,7 @@ function resolvePrompt(promptId: string) {
             >
               <UserMessage v-if="turn.user" :item="turn.user" />
               <div v-if="turn.entries.length" class="relative flex flex-col gap-3.5">
-                <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
+                <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line-strong" />
                 <div v-for="entry in turn.entries" :key="entry.kind === 'group' ? `group-${entry.id}` : entry.item.id" class="relative flex items-start gap-3">
                   <template v-if="entry.kind === 'group'">
                     <RailNode :kind="groupNodeKind(entry.items, sessionActive)" />
@@ -385,7 +385,7 @@ function resolvePrompt(promptId: string) {
               <div
                 v-if="done"
                 data-test="turn-end"
-                class="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-line bg-panel px-3 py-2.5"
+                class="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-primary/35 bg-panel px-3 py-2.5"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-primary" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
                 <span class="cap text-primary-soft">Turno concluído</span>
@@ -442,7 +442,7 @@ function resolvePrompt(promptId: string) {
           data-test="retry-load"
           :aria-disabled="reloading"
           :aria-busy="reloading"
-          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary aria-disabled:cursor-default aria-disabled:opacity-60 aria-disabled:hover:bg-elevated"
+          class="min-h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg hover:bg-line-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary aria-disabled:cursor-default aria-disabled:opacity-60 aria-disabled:hover:bg-elevated"
           @click="!reloading && reload()"
         >
           Tentar de novo

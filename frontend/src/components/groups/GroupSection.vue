@@ -85,17 +85,17 @@ async function remove() {
 </script>
 
 <template>
-  <section data-test="group-section" :aria-label="group.name" class="flex flex-col rounded-lg border border-line">
+  <section data-test="group-section" :aria-label="group.name" class="flex flex-col rounded-lg border border-line bg-panel">
     <div class="flex min-h-11 flex-wrap items-center gap-2 px-2">
       <button type="button" data-test="group-toggle" :aria-expanded="open" :aria-label="open ? `Recolher ${group.name}` : `Expandir ${group.name}`" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card" @click="open = !open">
         <span aria-hidden="true" class="inline-block transition-transform" :class="open ? 'rotate-90' : ''">›</span>
       </button>
       <template v-if="renaming">
-        <input ref="renameInput" v-model="renameValue" data-test="group-rename-input" aria-label="Novo nome do agrupador" maxlength="80" class="h-8 grow rounded-md border border-line-strong bg-bg px-2 text-sm text-fg outline-none focus:border-primary" @keydown.enter.prevent="saveRename" @keydown.esc.prevent="renaming = false" />
+        <input ref="renameInput" v-model="renameValue" data-test="group-rename-input" aria-label="Novo nome do agrupador" maxlength="80" class="h-8 grow rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg outline-none focus:border-fg-muted" @keydown.enter.prevent="saveRename" @keydown.esc.prevent="renaming = false" />
       </template>
       <template v-else>
         <span data-test="group-name" class="min-w-0 truncate font-semibold">{{ group.name }}</span>
-        <span data-test="group-count" class="text-xs text-fg-muted">{{ countText }}</span>
+        <span data-test="group-count" class="text-xs text-fg-subtle">{{ countText }}</span>
       </template>
       <span class="grow" />
       <button type="button" data-test="group-new-session" :disabled="!available" class="h-8 rounded-md px-2 text-xs text-fg-muted hover:bg-card hover:text-fg disabled:opacity-40" @click="newConversation.open(group.project_id, group.id)">＋ Conversa</button>
@@ -115,7 +115,7 @@ async function remove() {
       <p class="m-0 text-sm text-fg-muted">{{ removeText }}</p>
       <div class="flex gap-2">
         <button type="button" data-test="group-confirm-ok" :disabled="removing" class="h-9 rounded-lg bg-secondary px-3 text-sm font-semibold text-secondary-fg hover:bg-secondary-soft disabled:opacity-40" @click="remove">{{ removing ? 'Removendo…' : 'Remover agrupador' }}</button>
-        <button ref="cancelButton" type="button" data-test="group-confirm-cancel" class="h-9 rounded-lg border border-line-strong px-3 text-sm text-fg hover:bg-panel" @click="cancelRemove">Cancelar</button>
+        <button ref="cancelButton" type="button" data-test="group-confirm-cancel" class="h-9 rounded-lg border border-line-strong px-3 text-sm text-fg hover:bg-elevated" @click="cancelRemove">Cancelar</button>
       </div>
     </div>
     <div v-if="open && sessions.length" class="flex flex-col px-1 pb-1">

@@ -2,7 +2,8 @@
 import type { DisplayState } from '../types/api'
 
 // Green arc spinning while it works (still under reduced motion), orange triangle while it waits, grey check when finished.
-withDefaults(defineProps<{ display: DisplayState; size?: number }>(), { size: 12 })
+// `quiet` turns the waiting triangle grey, for lists where waiting is the common case and has nothing new.
+withDefaults(defineProps<{ display: DisplayState; size?: number; quiet?: boolean }>(), { size: 12, quiet: false })
 </script>
 
 <template>
@@ -17,7 +18,7 @@ withDefaults(defineProps<{ display: DisplayState; size?: number }>(), { size: 12
       :height="size"
       viewBox="0 0 24 24"
       fill="none"
-      :class="display === 'running' ? 'stroke-primary motion-safe:animate-spin' : display === 'waiting' ? 'stroke-secondary' : 'stroke-fg-muted'"
+      :class="display === 'running' ? 'stroke-primary motion-safe:animate-spin' : display === 'waiting' ? (quiet ? 'stroke-fg-subtle' : 'stroke-secondary') : 'stroke-fg-muted'"
       stroke-width="2.4"
       stroke-linecap="round"
       stroke-linejoin="round"

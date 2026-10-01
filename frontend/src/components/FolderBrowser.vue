@@ -75,7 +75,7 @@ onMounted(() => load())
 
 <template>
   <div class="flex min-w-0 flex-col gap-2.5">
-    <div class="font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Escolha a pasta</div>
+    <div class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Escolha a pasta</div>
 
     <div class="flex min-w-0 items-center gap-1 font-mono text-[13px]">
       <button
@@ -115,7 +115,7 @@ onMounted(() => load())
     <div
       v-else
       data-test="dir-list"
-      class="flex max-h-[352px] min-h-11 flex-col overflow-y-auto rounded-lg border border-line bg-bg"
+      class="flex max-h-[352px] min-h-11 flex-col overflow-y-auto rounded-lg border border-line bg-surface"
       :aria-busy="loading"
     >
       <p v-if="listing && listing.entries.length === 0" class="px-3.5 py-3 text-sm text-fg-muted">
@@ -127,7 +127,7 @@ onMounted(() => load())
         type="button"
         data-test="dir"
         class="flex min-h-11 shrink-0 items-center gap-2.5 border-b border-line px-3.5 text-left text-sm last:border-b-0"
-        :class="selected === entry.path ? 'bg-primary/10 font-semibold text-fg' : 'text-fg hover:bg-card'"
+        :class="selected === entry.path ? 'bg-elevated font-semibold text-fg' : 'text-fg hover:bg-card'"
         :aria-pressed="selected === entry.path"
         @click="select(entry)"
         @dblclick="enter(entry)"
@@ -138,7 +138,7 @@ onMounted(() => load())
           height="16"
           viewBox="0 0 24 24"
           fill="none"
-          :class="selected === entry.path ? 'stroke-primary' : 'stroke-fg-muted'"
+          :class="selected === entry.path ? 'stroke-primary' : 'stroke-fg-subtle'"
           stroke-width="2"
           stroke-linecap="round"
           stroke-linejoin="round"
@@ -156,8 +156,7 @@ onMounted(() => load())
         />
         <span
           v-else-if="entry.git"
-          class="font-mono text-xs font-normal"
-          :class="selected === entry.path ? 'text-primary-soft' : 'text-fg-muted'"
+          class="font-mono text-xs font-normal text-fg-subtle"
         >git</span>
       </button>
     </div>

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import { isQuietSession } from './itemClass'
 import { isCollapsed, setCollapsed } from '../../sidebarCollapse'
 import { projectTree } from '../../sidebarTree'
 import { useGroupsStore } from '../../stores/groups'
@@ -42,9 +43,9 @@ const rowClass = 'flex min-h-9 items-center gap-2 rounded-lg px-2 no-underline h
           data-test="sidebar-session"
           :to="{ name: 'session', params: { id: s.session_id } }"
           :aria-current="isCurrent(s.session_id) ? 'page' : undefined"
-          :class="[rowClass, 'pl-7', isCurrent(s.session_id) ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg']"
+          :class="[rowClass, 'pl-7', isCurrent(s.session_id) ? 'bg-card text-fg' : 'text-fg-muted hover:text-fg']"
         >
-          <DisplayStateIcon :display="s.display_state" :size="11" />
+          <DisplayStateIcon :display="s.display_state" :size="11" :quiet="isQuietSession(s)" />
           <span class="min-w-0 grow truncate text-[13px]">{{ s.title }}</span>
         </RouterLink>
       </template>
@@ -55,7 +56,7 @@ const rowClass = 'flex min-h-9 items-center gap-2 rounded-lg px-2 no-underline h
       data-test="sidebar-group-idle"
       :to="{ name: 'project', params: { id: projectId } }"
       :title="`${g.name}: sem conversas ativas`"
-      :class="[rowClass, 'text-fg-muted opacity-50 hover:opacity-100']"
+      :class="[rowClass, 'text-fg-subtle hover:text-fg']"
     >
       <span aria-hidden="true" class="w-3" />
       <span aria-hidden="true">▤</span>

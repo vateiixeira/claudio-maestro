@@ -53,7 +53,7 @@ async function send(decision: 'answer' | 'deny') {
 </script>
 
 <template>
-  <div data-test="question-card" class="flex flex-col gap-3 rounded-[10px] border border-secondary/50 bg-secondary/10 p-3.5">
+  <div data-test="question-card" class="flex flex-col gap-3 rounded-[10px] border border-secondary/50 bg-panel p-3.5">
     <div class="flex items-center gap-2">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-secondary" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12" y2="17.01" /></svg>
       <span class="font-semibold text-secondary-soft">Pergunta do Claude</span>
@@ -83,7 +83,7 @@ async function send(decision: 'answer' | 'deny') {
         />
         <span class="flex flex-col">
           <span class="text-sm text-fg">{{ opt.label }}</span>
-          <span v-if="opt.description" class="text-xs text-fg-muted">{{ opt.description }}</span>
+          <span v-if="opt.description" class="text-xs text-fg-subtle">{{ opt.description }}</span>
         </span>
       </label>
       <label class="flex flex-col gap-1 text-xs text-fg-muted">

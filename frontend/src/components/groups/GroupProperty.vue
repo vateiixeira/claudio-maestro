@@ -74,7 +74,7 @@ async function createAndMove() {
       aria-label="Agrupador"
       :value="current"
       :disabled="busy"
-      class="h-8 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg"
+      class="h-8 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg"
       @change="onChange"
     >
       <option value="">Nenhum</option>
@@ -90,7 +90,7 @@ async function createAndMove() {
       placeholder="Nome do agrupador"
       maxlength="80"
       :disabled="busy"
-      class="h-8 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg outline-none focus:border-primary"
+      class="h-8 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg outline-none focus:border-fg-muted"
       @keydown.enter.prevent="createAndMove"
       @keydown.esc.prevent="creating = false"
     />

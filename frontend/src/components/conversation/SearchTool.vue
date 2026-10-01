@@ -27,7 +27,7 @@ const count = computed(() => {
       <button
         v-if="item.result"
         type="button"
-        class="cursor-pointer border-none bg-transparent p-0 text-xs text-fg-muted"
+        class="cursor-pointer border-none bg-transparent p-0 text-xs text-fg-subtle"
         :aria-expanded="open"
         :aria-label="open ? 'Recolher resultado' : 'Expandir resultado'"
         @click="open = !open"
@@ -38,15 +38,15 @@ const count = computed(() => {
         :href="link"
         target="_blank"
         rel="noopener noreferrer"
-        class="min-w-0 grow truncate font-mono text-xs text-primary-soft underline"
+        class="min-w-0 grow truncate font-mono text-xs text-info-soft underline"
       >{{ link }}</a>
       <span v-else class="min-w-0 grow truncate font-mono text-xs text-fg">{{ subject }}</span>
-      <span v-if="path" class="truncate font-mono text-xs text-fg-muted">em {{ path }}</span>
-      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-muted">Resultado não disponível no histórico</span>
+      <span v-if="path" class="truncate font-mono text-xs text-fg-subtle">em {{ path }}</span>
+      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>
       <span v-else-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
       <span v-else-if="isError" class="text-xs text-diff-del-fg">erro</span>
-      <span v-else-if="count" class="text-xs text-fg-muted">{{ count }}</span>
-      <span v-else-if="!item.result" class="text-xs text-fg-muted">sem resultado</span>
+      <span v-else-if="count" class="text-xs text-fg-subtle">{{ count }}</span>
+      <span v-else-if="!item.result" class="text-xs text-fg-subtle">sem resultado</span>
     </div>
     <div v-if="open && item.result" class="border-t border-line px-3 py-2" :class="isError ? 'text-diff-del-fg' : ''">
       <TruncatedText :text="output" />

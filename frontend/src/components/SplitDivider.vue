@@ -87,8 +87,8 @@ onBeforeUnmount(() => {
     @pointerdown="onPointerdown"
   >
     <span
-      class="w-px bg-line transition-colors group-hover:bg-line-strong group-focus-visible:w-0.5 group-focus-visible:bg-primary"
-      :class="dragging ? 'w-0.5 bg-primary' : ''"
+      class="w-px bg-line transition-colors group-hover:bg-line-strong group-focus-visible:w-0.5 group-focus-visible:bg-fg-muted"
+      :class="dragging ? 'w-0.5 bg-fg-muted' : ''"
     />
   </div>
 </template>

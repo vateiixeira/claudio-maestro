@@ -74,7 +74,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex flex-col gap-2">
     <div class="flex items-center gap-2">
-      <span class="min-w-0 grow truncate font-mono text-xs">{{ file.rel_path }}</span>
+      <span class="min-w-0 grow truncate font-mono text-xs text-fg">{{ file.rel_path }}</span>
       <button
         type="button"
         data-test="open-file-editor"
@@ -86,7 +86,7 @@ onBeforeUnmount(() => {
     <p v-if="error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
     <p v-else-if="group.rel_path == null" class="m-0 text-sm text-fg-muted">Fora de um repositório git, não há diff contra o último commit.</p>
     <p v-else-if="!loaded" data-test="diff-loading" class="m-0 text-sm text-fg-muted">Carregando…</p>
-    <div v-else class="overflow-hidden rounded-lg border border-line bg-bg">
+    <div v-else class="overflow-hidden rounded-lg border border-line bg-panel">
       <p v-if="lines.length === 0" class="m-0 px-3 py-2 text-sm text-fg-muted">{{ note ?? 'Sem alterações' }}</p>
       <DiffLines :lines="lines" />
       <p v-if="truncated" class="m-0 border-t border-line px-3 py-2 text-xs text-fg-muted">Diff cortado por ser grande demais.</p>

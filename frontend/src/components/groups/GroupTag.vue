@@ -13,6 +13,6 @@ const group = computed(() => (props.groupId != null ? groups.byId(props.groupId)
     v-if="group"
     data-test="group-tag"
     :title="`Agrupador: ${group.name}`"
-    class="flex max-w-40 shrink-0 items-center gap-1 rounded-full border border-line-strong px-2 text-xs text-fg-muted"
+    class="flex max-w-40 shrink-0 items-center gap-1 rounded-full border border-line-strong px-2 text-xs text-fg-subtle"
   ><span aria-hidden="true">▤</span><span class="truncate">{{ group.name }}</span></span>
 </template>

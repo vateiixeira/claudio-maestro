@@ -42,7 +42,7 @@ async function decide(decision: PromptDecision) {
 </script>
 
 <template>
-  <div data-test="permission-card" class="flex flex-col gap-3 rounded-[10px] border border-secondary/50 bg-secondary/10 p-3.5">
+  <div data-test="permission-card" class="flex flex-col gap-3 rounded-[10px] border border-secondary/50 bg-panel p-3.5">
     <div class="flex items-center gap-2">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-secondary" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" /><line x1="12" y1="10" x2="12" y2="14" /><line x1="12" y1="17" x2="12" y2="17.01" /></svg>
       <span class="font-semibold text-secondary-soft">{{ heading }}</span>

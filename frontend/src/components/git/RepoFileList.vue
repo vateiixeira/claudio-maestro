@@ -64,7 +64,7 @@ function toggle(file: RepoFile): void {
       data-test="file-group"
       class="flex flex-col gap-1"
     >
-      <h4 data-test="file-group-title" class="m-0 font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</h4>
+      <h4 data-test="file-group-title" class="m-0 font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</h4>
       <ul class="m-0 flex list-none flex-col p-0">
         <li v-for="file in group.files" :key="keyOf(file)" data-test="file-row" class="flex flex-col">
           <button
@@ -74,7 +74,7 @@ function toggle(file: RepoFile): void {
             class="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-card"
             @click="toggle(file)"
           >
-            <span class="shrink-0 text-fg-muted" aria-hidden="true">{{ expanded[keyOf(file)] ? '▾' : '▸' }}</span>
+            <span class="shrink-0 text-fg-subtle" aria-hidden="true">{{ expanded[keyOf(file)] ? '▾' : '▸' }}</span>
             <span class="min-w-0 grow truncate font-mono text-xs">{{ file.path }}</span>
             <span v-if="file.added != null" class="shrink-0 font-mono text-xs text-diff-add-fg">+{{ file.added }}</span>
             <span v-if="file.removed != null" class="shrink-0 font-mono text-xs text-diff-del-fg">−{{ file.removed }}</span>

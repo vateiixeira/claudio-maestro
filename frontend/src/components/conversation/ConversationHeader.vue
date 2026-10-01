@@ -144,7 +144,7 @@ async function openProject() {
         data-test="title-input"
         aria-label="Título da conversa"
         maxlength="200"
-        class="h-10 min-w-0 grow rounded-md border border-line-strong bg-bg px-2.5 text-xl font-semibold text-fg outline-none focus:border-primary"
+        class="h-10 min-w-0 grow rounded-md border border-line-strong bg-elevated px-2.5 text-xl font-semibold text-fg outline-none focus:border-fg-muted"
         @keydown.enter.prevent="saveRename"
         @keydown.esc.prevent="editing = false"
       />
@@ -153,7 +153,7 @@ async function openProject() {
           type="button"
           data-test="conversation-title"
           title="Clique para renomear"
-          class="max-w-full text-left hover:text-primary-soft focus-visible:outline-2 focus-visible:outline-primary"
+          class="max-w-full text-left decoration-fg-subtle underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-primary"
           @click="startRename"
         >{{ title }}</button>
       </h1>
@@ -179,10 +179,10 @@ async function openProject() {
         <div
           v-if="menuOpen"
           role="menu"
-          class="absolute right-0 z-20 mt-1 flex w-56 flex-col rounded-lg border border-line-strong bg-elevated py-1 shadow-lg"
+          class="absolute right-0 z-20 mt-1 flex w-56 flex-col rounded-lg border border-line-strong bg-card py-1 shadow-lg"
         >
-          <button type="button" role="menuitem" data-test="menu-editor" class="px-3 py-2 text-left text-sm hover:bg-card" :disabled="!project" @click="openProject">Abrir projeto no editor</button>
-          <button type="button" role="menuitem" data-test="menu-copy-id" class="px-3 py-2 text-left text-sm hover:bg-card" @click="copyId">Copiar ID da sessão</button>
+          <button type="button" role="menuitem" data-test="menu-editor" class="px-3 py-2 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted" :disabled="!project" @click="openProject">Abrir projeto no editor</button>
+          <button type="button" role="menuitem" data-test="menu-copy-id" class="px-3 py-2 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted" @click="copyId">Copiar ID da sessão</button>
         </div>
       </div>
     </div>
@@ -206,7 +206,7 @@ async function openProject() {
       v-if="conv?.externalActivity"
       data-test="external-activity"
       role="status"
-      class="m-0 rounded-md border border-secondary/40 bg-secondary/10 px-3 py-2 text-xs text-secondary-soft"
+      class="m-0 rounded-md border border-secondary/40 bg-secondary-tint px-3 py-2 text-xs text-secondary-soft"
     >Esta sessão foi modificada fora do app no último minuto. Usar a mesma sessão no CLI e aqui ao mesmo tempo pode embaralhar o histórico.</p>
   </header>
 </template>

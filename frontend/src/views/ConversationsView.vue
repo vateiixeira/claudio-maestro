@@ -85,18 +85,18 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
     <h1 class="m-0 font-mono text-sm tracking-[0.08em] text-fg uppercase">Conversas</h1>
     <div class="flex flex-wrap items-center gap-3">
       <button type="button" data-test="conversations-new" class="h-9 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card" @click="newConversation.open(projectId ? Number(projectId) : null)">＋ Nova conversa</button>
-      <input :value="search" data-test="conversations-search" type="search" placeholder="Buscar conversas…" aria-label="Buscar conversas" class="h-9 w-64 rounded-md border border-line-strong bg-bg px-3 text-sm text-fg outline-none focus:border-primary" @input="setQuery('busca', ($event.target as HTMLInputElement).value)" />
+      <input :value="search" data-test="conversations-search" type="search" placeholder="Buscar conversas…" aria-label="Buscar conversas" class="h-9 w-64 rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg outline-none focus:border-fg-muted" @input="setQuery('busca', ($event.target as HTMLInputElement).value)" />
       <span class="grow" />
-      <select :value="projectId" data-test="conversations-project" aria-label="Projeto" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg" @change="setProject(($event.target as HTMLSelectElement).value)">
+      <select :value="projectId" data-test="conversations-project" aria-label="Projeto" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg" @change="setProject(($event.target as HTMLSelectElement).value)">
         <option value="">Todos os projetos</option>
         <option v-for="p in projects.projects" :key="p.id" :value="String(p.id)">{{ p.name }}</option>
       </select>
-      <select v-if="projectGroups.length" :value="groupFilter" data-test="conversations-group" aria-label="Agrupador" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg" @change="setQuery('agrupador', ($event.target as HTMLSelectElement).value)">
+      <select v-if="projectGroups.length" :value="groupFilter" data-test="conversations-group" aria-label="Agrupador" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg" @change="setQuery('agrupador', ($event.target as HTMLSelectElement).value)">
         <option value="">Todos os agrupadores</option>
         <option value="sem">Sem agrupador</option>
         <option v-for="g in projectGroups" :key="g.id" :value="String(g.id)">{{ g.name }}</option>
       </select>
-      <select :value="state" data-test="conversations-state" aria-label="Estado" class="h-9 rounded-md border border-line-strong bg-bg px-2 text-sm text-fg" @change="setQuery('estado', ($event.target as HTMLSelectElement).value)">
+      <select :value="state" data-test="conversations-state" aria-label="Estado" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg" @change="setQuery('estado', ($event.target as HTMLSelectElement).value)">
         <option value="todas">Todas</option>
         <option value="ativas">Ativas</option>
         <option value="finalizadas">Finalizadas</option>
@@ -108,7 +108,7 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
     <template v-else>
       <section v-for="group in dateGroups" :key="group.label" :aria-label="group.label" class="flex flex-col">
         <div class="flex items-center gap-3 py-2">
-          <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-muted uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
+          <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
         </div>
         <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" @error="error = $event" />
       </section>

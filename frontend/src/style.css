@@ -2,14 +2,17 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-bg: #0a0a0a;
-  --color-panel: #111111;
-  --color-card: #171717;
-  --color-elevated: #1a1a1a;
-  --color-line: #262626;
-  --color-line-strong: #333333;
-  --color-fg: #fafafa;
-  --color-fg-muted: #a1a1a1;
+  --color-bg: #0b0b0c;
+  --color-surface: #131315;
+  --color-panel: #19191c;
+  --color-card: #1f1f23;
+  --color-elevated: #26262b;
+  --color-line: #2a2a30;
+  --color-line-strong: #3b3b43;
+  --color-fg: #f4f4f5;
+  --color-fg-muted: #a1a1aa;
+  --color-fg-subtle: #94949d;
+  --color-code-fg: #e4e4e7;
   --color-primary: #4ade80;
   --color-primary-fg: #052e14;
   --color-primary-soft: #86efac;
@@ -21,6 +24,9 @@
   --color-diff-del-bg: #2d1215;
   --color-diff-del-fg: #fca5a5;
   --color-info: #60a5fa;
+  --color-info-soft: #93c5fd;
+  --color-primary-tint: rgb(74 222 128 / 0.10);
+  --color-secondary-tint: rgb(251 146 60 / 0.12);
   --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --radius-DEFAULT: 8px;
@@ -53,16 +59,30 @@ body {
 .markdown ul, .markdown ol { padding-left: 1.4em; }
 .markdown h1, .markdown h2, .markdown h3 { margin: 1.1em 0 0.5em; font-size: 15px; font-weight: 600; }
 .markdown h4 { margin: 1em 0 0.5em; font-size: 1em; font-weight: 600; }
-.markdown a { color: var(--color-primary-soft); }
-.markdown code { font-family: var(--font-mono); font-size: 13px; color: var(--color-primary-soft); }
+.markdown a {
+  color: var(--color-info-soft);
+  text-decoration: underline;
+  text-decoration-color: rgb(147 197 253 / 0.4);
+  text-underline-offset: 2px;
+}
+.markdown a:hover { color: var(--color-fg); text-decoration-color: currentColor; }
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--color-code-fg);
+  background: var(--color-elevated);
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
 .markdown pre {
   padding: 10px 12px;
   border-radius: 8px;
-  background: var(--color-panel);
+  background: var(--color-bg);
   border: 1px solid var(--color-line);
   overflow-x: auto;
 }
-.markdown pre code { color: var(--color-fg); font-size: 12px; }
+.markdown pre code { color: var(--color-fg); font-size: 12px; background: none; border: none; border-radius: 0; padding: 0; }
 /* Copy button on fenced blocks (see conversation/codeCopy.ts). The wrapper takes over the pre's margin. */
 .markdown .code-block { position: relative; margin: 0 0 0.75em; }
 .markdown .code-block pre { margin: 0; }
@@ -92,8 +112,28 @@ body {
   .markdown .code-copy { opacity: 1; pointer-events: auto; }
 }
 .markdown blockquote { border-left: 2px solid var(--color-line-strong); padding-left: 12px; color: var(--color-fg-muted); }
-.markdown table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; }
-.markdown th, .markdown td { border: 1px solid var(--color-line); padding: 4px 8px; }
+/* Rounded outer border while keeping horizontal scroll: separate borders with zero spacing. */
+.markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.markdown th, .markdown td { padding: 4px 8px; }
+.markdown th {
+  background: var(--color-panel);
+  color: var(--color-fg);
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid var(--color-line-strong);
+}
+.markdown td { border-top: 1px solid var(--color-line); }
+.markdown tbody tr:first-child td { border-top: none; }
+.markdown th:not(:last-child), .markdown td:not(:last-child) { border-right: 1px solid var(--color-line); }
 .markdown hr { border: none; border-top: 1px solid var(--color-line); }
 
 .hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta { color: var(--color-secondary-soft); }

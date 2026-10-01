@@ -21,21 +21,21 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
       :aria-expanded="open"
       @click="open = !open"
     >
-      <span aria-hidden="true" class="text-xs text-fg-muted">{{ open ? '▾' : '▸' }}</span>
+      <span aria-hidden="true" class="text-xs text-fg-subtle">{{ open ? '▾' : '▸' }}</span>
       <span class="cap text-fg">Ferramenta</span>
       <span class="min-w-0 grow truncate font-mono text-xs">{{ toolLabel(item.name) }}</span>
-      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-muted">Resultado não disponível no histórico</span>
+      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>
       <span v-else-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
       <span v-else-if="isError" class="text-xs text-diff-del-fg">erro</span>
-      <span v-else-if="!item.result" class="text-xs text-fg-muted">sem resultado</span>
+      <span v-else-if="!item.result" class="text-xs text-fg-subtle">sem resultado</span>
     </button>
     <div v-show="open" class="flex flex-col gap-2 border-t border-line px-3 py-2">
       <div>
-        <div class="mb-1 text-xs text-fg-muted">Entrada</div>
+        <div class="mb-1 text-xs text-fg-subtle">Entrada</div>
         <TruncatedText :text="input" />
       </div>
       <div v-if="item.result">
-        <div class="mb-1 text-xs text-fg-muted">Resultado</div>
+        <div class="mb-1 text-xs text-fg-subtle">Resultado</div>
         <div :class="isError ? 'text-diff-del-fg' : ''" :data-test="isError ? 'tool-error' : 'tool-output'">
           <TruncatedText :text="output" />
         </div>

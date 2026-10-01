@@ -86,7 +86,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col gap-2">
-    <div class="flex h-11 items-center gap-2 rounded-lg border border-line-strong bg-bg px-3 focus-within:border-primary">
+    <div class="flex h-11 items-center gap-2 rounded-lg border border-line bg-panel px-3 focus-within:border-fg-muted">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-muted" aria-hidden="true">
         <circle cx="11" cy="11" r="7" />
         <line x1="21" y1="21" x2="16.5" y2="16.5" />
@@ -104,7 +104,7 @@ onBeforeUnmount(() => {
         @keydown.enter.prevent="onEnter"
         @keydown.esc.prevent="clear"
       />
-      <kbd class="rounded border border-line-strong px-1.5 py-px font-mono text-xs text-fg-muted">Ctrl K</kbd>
+      <kbd class="rounded border border-line-strong px-1.5 py-px font-mono text-xs text-fg-subtle">Ctrl K</kbd>
     </div>
 
     <div v-if="query.trim() && (searched || error)" class="flex max-h-80 flex-col gap-0.5 overflow-y-auto rounded-lg border border-line bg-card p-1" role="list" aria-label="Resultados da busca">

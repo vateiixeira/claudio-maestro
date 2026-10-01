@@ -50,7 +50,7 @@ onMounted(() => {
 <template>
   <div class="flex h-full bg-bg text-sm leading-[1.45] text-fg">
     <AppSidebar />
-    <main class="relative min-w-0 flex-1 overflow-y-auto">
+    <main class="relative min-w-0 flex-1 overflow-y-auto bg-surface">
       <RouterView />
     </main>
     <NewConversationModal v-if="newConversation.isOpen" />

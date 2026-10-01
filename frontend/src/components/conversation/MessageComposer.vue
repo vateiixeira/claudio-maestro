@@ -185,7 +185,7 @@ async function interrupt() {
         <img :src="image.url" alt="" class="size-11 rounded-md bg-line object-cover" />
         <div class="flex min-w-0 flex-col">
           <span class="max-w-40 truncate text-[13px] font-medium">{{ image.name }}</span>
-          <span class="text-xs text-fg-muted">{{ formatSize(image.size) }}</span>
+          <span class="text-xs text-fg-subtle">{{ formatSize(image.size) }}</span>
         </div>
         <button
           type="button"
@@ -199,7 +199,7 @@ async function interrupt() {
     </div>
     <div class="flex items-end gap-2">
       <label :for="`msg-${sessionId}`" class="sr-only">Mensagem para a sessão</label>
-      <div class="relative min-w-0 grow rounded-lg bg-panel">
+      <div class="relative min-w-0 grow rounded-lg bg-elevated">
         <MentionMirror
           :text="text"
           :mentions="suggestions.mentions.value"
@@ -249,7 +249,7 @@ async function interrupt() {
         :aria-pressed="dictation.recording.value"
         :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
         class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border"
-        :class="dictation.recording.value ? 'border-secondary/60 bg-secondary/10 text-secondary' : 'border-line-strong bg-transparent text-fg-muted hover:text-fg'"
+        :class="dictation.recording.value ? 'border-secondary/60 bg-secondary-tint text-secondary' : 'border-line-strong bg-transparent text-fg-muted hover:text-fg'"
         @click="dictation.toggle"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
@@ -282,7 +282,7 @@ async function interrupt() {
       <span v-if="dictation.recording.value" data-test="recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
         <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
       </span>
-      <span class="ml-auto font-mono text-xs text-fg-muted">Enter envia · Ctrl+Enter quebra linha</span>
+      <span class="ml-auto font-mono text-xs text-fg-subtle">Enter envia · Ctrl+Enter quebra linha</span>
     </div>
   </div>
 </template>

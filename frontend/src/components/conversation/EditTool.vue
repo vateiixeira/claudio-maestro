@@ -27,10 +27,10 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
 <template>
   <div class="overflow-hidden rounded-lg border border-line bg-panel">
     <div class="flex items-center gap-2 border-b border-line px-3 py-2">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-muted" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-subtle" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
       <span class="cap text-fg">{{ label }}</span>
-      <span class="min-w-0 grow truncate font-mono text-xs">{{ str(item.input.file_path) }}</span>
-      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-muted">Resultado não disponível no histórico</span>
+      <span class="min-w-0 grow truncate font-mono text-xs text-info-soft">{{ str(item.input.file_path) }}</span>
+      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>
       <span v-else-if="running" class="text-xs text-primary-soft">aplicando…</span>
       <span class="font-mono text-xs text-diff-add-fg">+{{ counts.added }}</span>
       <span class="font-mono text-xs text-diff-del-fg">−{{ counts.removed }}</span>
@@ -38,7 +38,7 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
         v-if="sessionId"
         type="button"
         data-test="view-changes"
-        class="shrink-0 cursor-pointer rounded-md border border-line-strong bg-transparent px-2 py-0.5 text-xs text-primary-soft hover:bg-elevated"
+        class="shrink-0 cursor-pointer rounded-md border border-line-strong bg-transparent px-2 py-0.5 text-xs text-fg-muted hover:bg-elevated hover:text-fg"
         @click="viewChanges"
       >Ver alterações</button>
     </div>
@@ -48,7 +48,7 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
       v-if="lines.length > LIMIT && !showAll"
       type="button"
       data-test="show-all"
-      class="m-2 cursor-pointer rounded-md border border-line-strong bg-transparent px-2.5 py-1 text-xs text-primary-soft hover:bg-elevated"
+      class="m-2 cursor-pointer rounded-md border border-line-strong bg-transparent px-2.5 py-1 text-xs text-fg-muted hover:bg-elevated hover:text-fg"
       @click="showAll = true"
     >
       Ver tudo ({{ lines.length }} linhas)
