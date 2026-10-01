@@ -17,7 +17,9 @@ from claudio_maestro.cliwatch import CliWatcher
 from claudio_maestro.commands import CommandCatalog
 from claudio_maestro.config import (
     Settings,
+    backend_port,
     claude_projects_dir,
+    dev_port,
     legacy_data_dir,
     load_settings,
 )
@@ -28,7 +30,12 @@ from claudio_maestro.filesearch import FileIndex
 from claudio_maestro.gitmonitor import GitMonitor
 from claudio_maestro.picker import PickFolder
 from claudio_maestro.picker import pick_folder as system_pick_folder
-from claudio_maestro.security import BodySizeLimitMiddleware, HostOriginMiddleware
+from claudio_maestro.security import (
+    BodySizeLimitMiddleware,
+    HostOriginMiddleware,
+    allowed_hosts,
+    allowed_origins,
+)
 from claudio_maestro.sessions import HistoryExists, RenameSession, SessionManager
 
 
@@ -55,6 +62,7 @@ def create_app(
     session_file: SessionFile | None = None,
     plan_sweep: bool | None = None,
     digest_model: DigestModel | None = None,
+    ports: tuple[int, int] | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -65,6 +73,7 @@ def create_app(
     tests with a fake factory keep seeing only the clients of their sessions.
     `plan_sweep` turns on the periodic reread of plan progress (same default).
     `digest_model` defaults to the real SDK; the agent only calls it when enabled or asked.
+    `ports`: (Vite, backend); None reads `MAESTRO_DEV_PORT` and `MAESTRO_PORT`.
     """
 
     @asynccontextmanager
@@ -183,8 +192,13 @@ def create_app(
             await app.state.sessions.shutdown()
 
     app = FastAPI(title="Cláudio Maestro", lifespan=lifespan)
+    app_ports = ports or (dev_port(), backend_port())
     app.add_middleware(BodySizeLimitMiddleware)
-    app.add_middleware(HostOriginMiddleware)
+    app.add_middleware(
+        HostOriginMiddleware,
+        allowed_hosts=allowed_hosts(app_ports),
+        allowed_origins=allowed_origins(app_ports),
+    )
     app.include_router(router)
     return app
 

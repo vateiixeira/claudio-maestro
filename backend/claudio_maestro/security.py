@@ -9,12 +9,26 @@ from starlette.datastructures import Headers
 from starlette.requests import ClientDisconnect
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from claudio_maestro.config import BACKEND_PORT, FRONTEND_PORT, LOCAL_HOSTNAMES
-
-ALLOWED_HOSTS = frozenset(
-    f"{name}:{port}" for name in LOCAL_HOSTNAMES for port in (FRONTEND_PORT, BACKEND_PORT)
+from claudio_maestro.config import (
+    DEFAULT_BACKEND_PORT,
+    DEFAULT_DEV_PORT,
+    LOCAL_HOSTNAMES,
 )
-ALLOWED_ORIGINS = frozenset(f"http://{name}:{FRONTEND_PORT}" for name in LOCAL_HOSTNAMES)
+
+
+def allowed_hosts(ports: Iterable[int]) -> frozenset[str]:
+    """`Host` values of the app: localhost and 127.0.0.1 on each port."""
+    return frozenset(f"{name}:{port}" for name in LOCAL_HOSTNAMES for port in ports)
+
+
+def allowed_origins(ports: Iterable[int]) -> frozenset[str]:
+    """Origins of the app's own pages: the Vite port and, in single-command mode, the backend port."""
+    return frozenset(f"http://{host}" for host in allowed_hosts(ports))
+
+
+DEFAULT_PORTS = (DEFAULT_DEV_PORT, DEFAULT_BACKEND_PORT)
+ALLOWED_HOSTS = allowed_hosts(DEFAULT_PORTS)
+ALLOWED_ORIGINS = allowed_origins(DEFAULT_PORTS)
 CUSTOM_HEADER = "x-maestro"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -26,7 +40,7 @@ WS_POLICY_VIOLATION = 1008
 class HostOriginMiddleware:
     """Pure ASGI middleware that checks Host and Origin on HTTP and WebSocket.
 
-    - Host must be localhost or 127.0.0.1 on the frontend or backend port
+    - Host must be localhost or 127.0.0.1 on the app's ports
       (blocks DNS rebinding). Otherwise: 400, or WebSocket closed before accept.
     - Origin, when present, must be the app's own. It is required on
       state-changing methods and on WebSockets. Otherwise: 403, or WebSocket

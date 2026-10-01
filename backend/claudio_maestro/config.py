@@ -10,8 +10,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-FRONTEND_PORT = 6600
-BACKEND_PORT = 6660
+DEFAULT_BACKEND_PORT = 6660
+DEFAULT_DEV_PORT = 6600
+# Browsers refuse these ports (IRC), so the app could never be opened on them.
+BROWSER_BLOCKED_PORTS = range(6665, 6670)
 LOCAL_HOSTNAMES = ("localhost", "127.0.0.1")
 
 DB_FILENAME = "maestro.db"
@@ -19,6 +21,38 @@ DATA_DIR_NAME = "claudio-maestro"
 # The app was called Vini7 Vibing before going public; its data is moved on first start.
 LEGACY_DATA_DIR_NAME = "vini7-vibing"
 LEGACY_DB_FILENAME = "vibing.db"
+
+
+class PortError(ValueError):
+    """Invalid port setting. The message is for the user."""
+
+
+def validate_port(raw: str | int, source: str) -> int:
+    """`raw` as a port, or `PortError` naming `source` (variable or option)."""
+    try:
+        port = int(raw)
+    except (TypeError, ValueError):
+        raise PortError(f"{source} precisa ser um número de porta, não {raw!r}.") from None
+    if not 1024 <= port <= 65535:
+        raise PortError(f"{source} precisa estar entre 1024 e 65535 (recebido {port}).")
+    if port in BROWSER_BLOCKED_PORTS:
+        raise PortError(f"{source} não pode ser de 6665 a 6669: os navegadores bloqueiam essas portas.")
+    return port
+
+
+def _port_from_env(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    return default if not raw else validate_port(raw, name)
+
+
+def backend_port() -> int:
+    """Port of the backend (and of the app in single-command mode): `MAESTRO_PORT`."""
+    return _port_from_env("MAESTRO_PORT", DEFAULT_BACKEND_PORT)
+
+
+def dev_port() -> int:
+    """Port of the Vite dev server: `MAESTRO_DEV_PORT`."""
+    return _port_from_env("MAESTRO_DEV_PORT", DEFAULT_DEV_PORT)
 
 
 @dataclass(frozen=True)

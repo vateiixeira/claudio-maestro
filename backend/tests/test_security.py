@@ -11,6 +11,8 @@ from claudio_maestro.app import create_app
 from claudio_maestro.security import (
     HostOriginMiddleware,
     PathNotAllowedError,
+    allowed_hosts,
+    allowed_origins,
     is_within,
     resolve_within,
 )
@@ -133,7 +135,7 @@ def test_state_changing_without_origin_rejected(method):
     "origin",
     [
         "http://evil.com",
-        "http://localhost:6660",
+        "http://localhost:6601",
         "http://localhost:3000",
         "https://localhost:6600",
         "null",
@@ -151,6 +153,37 @@ def test_post_with_app_origin_accepted(origin):
     client = TestClient(ws_app(), base_url="http://127.0.0.1:6660")
     response = client.post("/echo", headers={"origin": origin})
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize("origin", ["http://localhost:6660", "http://127.0.0.1:6660"])
+def test_post_with_backend_origin_accepted(origin):
+    # The single-command mode serves the page from the backend port.
+    client = TestClient(ws_app(), base_url="http://127.0.0.1:6660")
+    assert client.post("/echo", headers={"origin": origin}).status_code == 200
+
+
+def test_allowed_hosts_and_origins_follow_ports():
+    assert allowed_hosts([7000, 7100]) == {
+        "localhost:7000", "127.0.0.1:7000", "localhost:7100", "127.0.0.1:7100",
+    }
+    assert allowed_origins([7000]) == {"http://localhost:7000", "http://127.0.0.1:7000"}
+
+
+def test_app_follows_configured_ports(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MAESTRO_PORT", "7000")
+    monkeypatch.setenv("MAESTRO_DEV_PORT", "7100")
+    with TestClient(create_app(), base_url="http://127.0.0.1:7000", headers=MAESTRO) as client:
+        assert client.get("/api/health").status_code == 200
+        response = client.put("/api/state/x", json={}, headers={"origin": "http://localhost:7100"})
+        assert response.status_code != 403
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=MAESTRO) as client:
+        assert client.get("/api/health").status_code == 400
+
+
+def test_explicit_ports_override_environment(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MAESTRO_PORT", "7000")
+    with TestClient(create_app(ports=(7100, 7200)), base_url="http://127.0.0.1:7200", headers=MAESTRO) as client:
+        assert client.get("/api/health").status_code == 200
 
 
 def test_get_without_origin_accepted():
@@ -191,7 +224,7 @@ def test_websocket_without_origin_rejected():
     assert exc_info.value.code == 1008
 
 
-@pytest.mark.parametrize("origin", ["http://evil.com", "http://localhost:6660", "null"])
+@pytest.mark.parametrize("origin", ["http://evil.com", "http://localhost:6601", "null"])
 def test_websocket_with_foreign_origin_rejected(origin):
     client = TestClient(ws_app())
     with pytest.raises(WebSocketDisconnect) as exc_info:
