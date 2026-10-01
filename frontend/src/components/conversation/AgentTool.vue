@@ -3,6 +3,7 @@ import { computed, inject, ref, watch } from 'vue'
 import { agentStatus, SUBAGENT_FOCUS_KEY } from '../../conversation/subagents'
 import { str } from '../../conversation/tool'
 import type { SubagentStatus, ToolItem } from '../../types/conversation'
+import IconChevron from '../icons/IconChevron.vue'
 
 const props = defineProps<{ item: ToolItem; childCount: number; sessionActive?: boolean }>()
 
@@ -79,7 +80,7 @@ const metrics = computed(() => {
         :aria-expanded="open"
         @click="manual = !open"
       >
-        <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
+        <IconChevron :open="open" :size="12" />
         Ações ({{ childCount }})
       </button>
       <div v-show="open" data-test="subagent-children" class="flex flex-col gap-2 border-t border-line px-3 py-2.5">

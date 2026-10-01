@@ -14,7 +14,7 @@ export function waitingReason(session: Session): string | null {
 export type InboxTab = 'pede-voce' | 'nao-lidas' | 'em-execucao' | 'todas'
 
 export const INBOX_TABS: { id: InboxTab; label: string }[] = [
-  { id: 'pede-voce', label: 'Pede você' },
+  { id: 'pede-voce', label: 'Aguardando você' },
   { id: 'nao-lidas', label: 'Não lidas' },
   { id: 'em-execucao', label: 'Em execução' },
   { id: 'todas', label: 'Todas' },

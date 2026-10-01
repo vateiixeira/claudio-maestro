@@ -178,6 +178,10 @@ describe('painel Detalhes', () => {
     await flushPromises()
 
     const expand = wrapper.find('[data-test="diff-expand"]')
+    expect(expand.find('svg').exists()).toBe(true)
+    expect(expand.text()).toBe('')
+    expect(wrapper.find('[data-test="diff-back"]').find('svg').exists()).toBe(true)
+    expect(wrapper.find('[data-test="diff-back"]').text()).toBe('Voltar')
     await expand.trigger('click')
     expect(wrapper.find('[data-test="details-panel"]').attributes('data-wide')).toBe('true')
     await expand.trigger('click')

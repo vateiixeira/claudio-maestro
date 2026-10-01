@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { TextItem } from '../../types/conversation'
+import IconChevron from '../icons/IconChevron.vue'
 
 const props = defineProps<{ item: TextItem }>()
 
@@ -82,7 +83,7 @@ const label = computed(() => {
       :aria-expanded="open"
       @click="toggle"
     >
-      <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
+      <IconChevron :open="open" :size="12" />
       <span :class="{ 'animate-pulse': item.streaming }">{{ label }}</span>
     </button>
     <template v-if="open">

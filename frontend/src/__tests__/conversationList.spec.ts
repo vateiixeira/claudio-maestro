@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dateLabel, groupByDate, inInbox, isInboxTab, waitingReason } from '../conversationList'
+import { dateLabel, groupByDate, inInbox, INBOX_TABS, isInboxTab, waitingReason } from '../conversationList'
 import { makeSession } from '../test/factories'
 
 const at = (y: number, m: number, d: number, hh = 12, mm = 0) => new Date(y, m - 1, d, hh, mm).getTime() / 1000
@@ -32,6 +32,10 @@ describe('abas da Inbox', () => {
   const finishedRead = makeSession({ session_id: 'f', display_state: 'finished' })
   const all = [waiting, plainWait, errored, running, unreadOpen, finishedUnread, finishedRead]
   const ids = (tab: Parameters<typeof inInbox>[1]) => all.filter((s) => inInbox(s, tab)).map((s) => s.session_id)
+
+  it('a aba pede-voce mantém o id e se chama "Aguardando você"', () => {
+    expect(INBOX_TABS[0]).toEqual({ id: 'pede-voce', label: 'Aguardando você' })
+  })
 
   it('separa por aba e nunca mostra finalizadas', () => {
     expect(ids('pede-voce')).toEqual(['w', 'e'])

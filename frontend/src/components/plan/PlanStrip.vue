@@ -3,6 +3,10 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { errorMessage, getSessionPlan, openInEditor } from '../../api/http'
 import type { PlanTask, Session } from '../../types/api'
 import { planPosition, planStopped, planVisible } from './planText'
+import IconCheck from '../icons/IconCheck.vue'
+import IconChevron from '../icons/IconChevron.vue'
+import IconCircle from '../icons/IconCircle.vue'
+import IconCircleDot from '../icons/IconCircleDot.vue'
 
 const props = withDefaults(defineProps<{ session: Session; variant?: 'strip' | 'panel' }>(), { variant: 'strip' })
 const inPanel = computed(() => props.variant === 'panel')
@@ -64,7 +68,6 @@ function statusOf(task: PlanTask, index: number): 'done' | 'current' | 'queued' 
   if (task.done) return 'done'
   return index === currentIndex.value ? 'current' : 'queued'
 }
-const marks = { done: '✓', current: '●', queued: '○' } as const
 
 async function openPlan() {
   if (!plan.value) return
@@ -93,7 +96,7 @@ async function openPlan() {
         class="flex min-w-0 grow items-baseline gap-2 rounded-md py-1 text-left text-sm hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
         @click="toggle"
       >
-        <span aria-hidden="true" class="shrink-0 text-xs text-fg-subtle">{{ open ? '▾' : '▸' }}</span>
+        <IconChevron :open="open" :size="12" class="self-center text-fg-subtle" />
         <span class="shrink-0 truncate text-xs text-fg-subtle" :class="inPanel ? 'max-w-[45%]' : 'max-w-[35%]'">{{ plan.title }}</span>
         <span class="min-w-0 truncate text-fg">{{ planPosition(plan) }}</span>
         <span v-if="stopped" class="shrink-0 text-xs text-fg-subtle">· parado</span>
@@ -133,7 +136,11 @@ async function openPlan() {
           'text-fg': statusOf(task, index) === 'queued',
         }"
       >
-        <span aria-hidden="true" class="w-4 shrink-0 text-center text-xs">{{ marks[statusOf(task, index)] }}</span>
+        <span aria-hidden="true" class="flex w-4 shrink-0 items-center justify-center self-center">
+          <IconCheck v-if="statusOf(task, index) === 'done'" :size="12" />
+          <IconCircleDot v-else-if="statusOf(task, index) === 'current'" :size="12" />
+          <IconCircle v-else :size="12" />
+        </span>
         <span class="shrink-0 font-mono text-xs">{{ task.number }}.</span>
         <span class="min-w-0">{{ task.title }}</span>
         <span class="sr-only">{{ { done: '(concluída)', current: '(atual)', queued: '(na fila)' }[statusOf(task, index)] }}</span>

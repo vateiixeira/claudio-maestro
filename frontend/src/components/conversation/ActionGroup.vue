@@ -4,6 +4,7 @@ import type { TaskEntry } from '../../conversation/tasks'
 import { actionRow, groupChips } from '../../conversation/turns'
 import type { ConversationItem, ToolItem } from '../../types/conversation'
 import ConversationBlock from './ConversationBlock.vue'
+import IconChevron from '../icons/IconChevron.vue'
 
 // Two or more consecutive light actions of a turn, shown as one collapsible block.
 const props = withDefaults(
@@ -45,7 +46,7 @@ function toggleRow(id: string) {
           class="rounded border border-line px-1.5 py-px font-mono text-[11px] text-fg-muted"
         >{{ chip }}</span>
       </span>
-      <span class="shrink-0 text-xs text-fg-subtle">{{ open ? 'Recolher ▾' : 'Ver ▸' }}</span>
+      <span class="flex shrink-0 items-center gap-1 text-xs text-fg-subtle">{{ open ? 'Recolher' : 'Ver' }}<IconChevron :open="open" :size="12" /></span>
     </button>
     <div v-if="open" class="flex flex-col border-t border-line">
       <template v-for="(row, index) in rows" :key="row.item.id">

@@ -6,6 +6,7 @@ import { errorMessage } from '../../api/http'
 import { sessionsOf, sortGroups } from '../../groupList'
 import { useGroupsStore } from '../../stores/groups'
 import { useSessionsStore } from '../../stores/sessions'
+import IconPlus from '../icons/IconPlus.vue'
 
 // `rowTarget` and `activeId` let the project screen open rows beside it, as in its loose list.
 const props = defineProps<{
@@ -48,7 +49,7 @@ async function create() {
   <section data-test="groups" aria-labelledby="groups-title" class="flex flex-col gap-2">
     <div class="flex items-center gap-2">
       <h2 id="groups-title" class="m-0 grow font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Agrupadores</h2>
-      <button type="button" data-test="group-new" class="h-8 rounded-md border border-line-strong px-3 text-xs font-medium text-fg hover:bg-card" @click="startCreate">＋ Agrupador</button>
+      <button type="button" data-test="group-new" class="flex h-8 items-center gap-1 rounded-md border border-line-strong px-3 text-xs font-medium text-fg hover:bg-card" @click="startCreate"><IconPlus :size="12" />Agrupador</button>
     </div>
     <div v-if="creating" class="flex flex-col gap-1">
       <input ref="nameInput" v-model="newName" data-test="group-new-name" aria-label="Nome do agrupador" placeholder="Nome do agrupador" maxlength="80" class="h-9 rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg outline-none focus:border-fg-muted" @keydown.enter.prevent="create" @keydown.esc.prevent="creating = false" />

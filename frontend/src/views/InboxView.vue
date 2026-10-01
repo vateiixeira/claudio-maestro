@@ -83,7 +83,7 @@ async function markAll() {
       </div>
       <p v-if="error" data-test="inbox-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
       <LoadStatus v-if="loadState !== 'ready'" :state="loadState" />
-      <p v-else-if="groups.length === 0" data-test="empty" class="m-0 py-10 text-center text-fg-muted">{{ tab === 'pede-voce' ? 'Nada pedindo você agora.' : 'Nenhuma conversa aqui.' }}</p>
+      <p v-else-if="groups.length === 0" data-test="empty" class="m-0 py-10 text-center text-fg-muted">{{ tab === 'pede-voce' ? 'Nada aguardando você agora.' : 'Nenhuma conversa aqui.' }}</p>
       <template v-else>
         <section v-for="group in groups" :key="group.label" :aria-label="group.label" class="flex flex-col">
           <div class="flex items-center gap-3 py-2">

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { countLines, resultText, safeHttpUrl, str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 import TruncatedText from './TruncatedText.vue'
+import IconChevron from '../icons/IconChevron.vue'
 
 const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
 const open = ref(false)
@@ -27,11 +28,11 @@ const count = computed(() => {
       <button
         v-if="item.result"
         type="button"
-        class="cursor-pointer border-none bg-transparent p-0 text-xs text-fg-subtle"
+        class="inline-flex cursor-pointer items-center border-none bg-transparent p-0 text-xs text-fg-subtle"
         :aria-expanded="open"
         :aria-label="open ? 'Recolher resultado' : 'Expandir resultado'"
         @click="open = !open"
-      >{{ open ? '▾' : '▸' }}</button>
+      ><IconChevron :open="open" :size="12" /></button>
       <span class="cap text-fg">{{ item.name }}</span>
       <a
         v-if="link"

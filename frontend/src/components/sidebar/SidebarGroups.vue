@@ -7,6 +7,8 @@ import { isCollapsed, setCollapsed } from '../../sidebarCollapse'
 import { projectTree } from '../../sidebarTree'
 import { useGroupsStore } from '../../stores/groups'
 import { useSessionsStore } from '../../stores/sessions'
+import IconChevron from '../icons/IconChevron.vue'
+import IconGroup from '../icons/IconGroup.vue'
 
 const props = defineProps<{ projectId: number }>()
 const groups = useGroupsStore()
@@ -29,8 +31,8 @@ const rowClass = 'flex min-h-9 items-center gap-2 rounded-lg px-2 no-underline h
         class="w-full text-left text-fg-muted hover:text-fg"
         @click="setCollapsed('group', item.group.id, !isCollapsed('group', item.group.id))"
       >
-        <span aria-hidden="true" class="inline-block w-3 transition-transform" :class="isCollapsed('group', item.group.id) ? '' : 'rotate-90'">›</span>
-        <span aria-hidden="true">▤</span>
+        <IconChevron :open="!isCollapsed('group', item.group.id)" :size="12" />
+        <IconGroup :size="12" class="shrink-0" />
         <span class="min-w-0 grow truncate text-[13px]">{{ item.group.name }}</span>
         <span v-if="item.waiting" data-test="group-waiting" class="flex items-center gap-1 text-xs text-secondary">
           <DisplayStateIcon display="waiting" :size="11" />{{ item.waiting }}
@@ -59,7 +61,7 @@ const rowClass = 'flex min-h-9 items-center gap-2 rounded-lg px-2 no-underline h
       :class="[rowClass, 'text-fg-subtle hover:text-fg']"
     >
       <span aria-hidden="true" class="w-3" />
-      <span aria-hidden="true">▤</span>
+      <IconGroup :size="12" class="shrink-0" />
       <span class="min-w-0 grow truncate text-[13px]">{{ g.name }}</span>
     </RouterLink>
   </div>

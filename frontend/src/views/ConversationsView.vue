@@ -11,6 +11,7 @@ import { useGroupsStore } from '../stores/groups'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
+import IconPlus from '../components/icons/IconPlus.vue'
 
 const PAGE = 100
 type StateFilter = 'ativas' | 'finalizadas' | 'todas'
@@ -84,7 +85,7 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
   <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-6 py-6">
     <h1 class="m-0 font-mono text-sm tracking-[0.08em] text-fg uppercase">Conversas</h1>
     <div class="flex flex-wrap items-center gap-3">
-      <button type="button" data-test="conversations-new" class="h-9 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card" @click="newConversation.open(projectId ? Number(projectId) : null)">＋ Nova conversa</button>
+      <button type="button" data-test="conversations-new" class="flex h-9 items-center gap-1.5 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card" @click="newConversation.open(projectId ? Number(projectId) : null)"><IconPlus :size="14" />Nova conversa</button>
       <input :value="search" data-test="conversations-search" type="search" placeholder="Buscar conversas…" aria-label="Buscar conversas" class="h-9 w-64 rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg outline-none focus:border-fg-muted" @input="setQuery('busca', ($event.target as HTMLInputElement).value)" />
       <span class="grow" />
       <select :value="projectId" data-test="conversations-project" aria-label="Projeto" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg" @change="setProject(($event.target as HTMLSelectElement).value)">

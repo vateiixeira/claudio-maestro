@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { prettyJson, resultText, toolLabel } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 import TruncatedText from './TruncatedText.vue'
+import IconChevron from '../icons/IconChevron.vue'
 
 const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
 const open = ref(false)
@@ -21,7 +22,7 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
       :aria-expanded="open"
       @click="open = !open"
     >
-      <span aria-hidden="true" class="text-xs text-fg-subtle">{{ open ? '▾' : '▸' }}</span>
+      <IconChevron :open="open" :size="12" class="text-fg-subtle" />
       <span class="cap text-fg">Ferramenta</span>
       <span class="min-w-0 grow truncate font-mono text-xs">{{ toolLabel(item.name) }}</span>
       <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>

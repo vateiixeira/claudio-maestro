@@ -19,6 +19,8 @@ import { useNewConversationStore } from '../stores/newConversation'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import type { Effort, PermissionMode, SessionUpdate } from '../types/api'
+import IconClose from './icons/IconClose.vue'
+import IconExpand from './icons/IconExpand.vue'
 
 const store = useNewConversationStore()
 const projects = useProjectsStore()
@@ -371,8 +373,8 @@ function onKeydown(event: KeyboardEvent) {
     >
       <header class="flex items-center gap-2 border-b border-line px-5 py-3">
         <h2 id="nc-heading" class="m-0 grow text-base font-semibold">Nova conversa</h2>
-        <button type="button" :aria-label="fullscreen ? 'Sair da tela cheia' : 'Tela cheia'" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card" @click="fullscreen = !fullscreen">⤢</button>
-        <button type="button" data-test="nc-close" aria-label="Fechar" :disabled="submitting" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card disabled:opacity-40" @click="close">×</button>
+        <button type="button" :aria-label="fullscreen ? 'Sair da tela cheia' : 'Tela cheia'" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card" @click="fullscreen = !fullscreen"><IconExpand :size="14" /></button>
+        <button type="button" data-test="nc-close" aria-label="Fechar" :disabled="submitting" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card disabled:opacity-40" @click="close"><IconClose :size="14" /></button>
       </header>
 
       <div v-if="available.length === 0" data-test="nc-no-projects" class="flex flex-col gap-3 px-5 py-6">

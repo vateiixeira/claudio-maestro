@@ -19,6 +19,8 @@ import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import type { Session } from '../../types/api'
+import IconChevron from '../icons/IconChevron.vue'
+import IconPlus from '../icons/IconPlus.vue'
 
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
@@ -67,7 +69,7 @@ const itemClass = sidebarItemClass
 
     <div class="flex flex-col gap-0.5">
       <button type="button" data-test="nav-new" :class="itemClass(false)" class="w-full text-left" @click="newConversation.open(currentProjectId, currentGroupId)">
-        <span aria-hidden="true">＋</span><span class="grow">Nova conversa</span><kbd class="font-mono text-[11px] text-fg-subtle">C</kbd>
+        <IconPlus :size="14" /><span class="grow">Nova conversa</span><kbd class="font-mono text-[11px] text-fg-subtle">C</kbd>
       </button>
       <SessionSearch />
       <RouterLink to="/dashboard" data-test="nav-dashboard" :class="itemClass(route.name === 'dashboard')" :aria-current="route.name === 'dashboard' ? 'page' : undefined">Dashboard</RouterLink>
@@ -81,7 +83,7 @@ const itemClass = sidebarItemClass
     <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
       <div class="flex items-center px-3 pt-2 pb-0.5">
         <span class="grow font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Projetos</span>
-        <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-7 items-center justify-center rounded-md text-fg-muted no-underline hover:bg-card hover:text-fg">＋</RouterLink>
+        <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-7 items-center justify-center rounded-md text-fg-muted no-underline hover:bg-card hover:text-fg"><IconPlus :size="14" /></RouterLink>
       </div>
       <p v-if="projects.loadError" class="px-3 py-2 text-xs text-diff-del-fg" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
       <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-3 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
@@ -95,7 +97,7 @@ const itemClass = sidebarItemClass
             :aria-label="`${isCollapsed('project', project.id) ? 'Expandir' : 'Recolher'} ${project.name}`"
             class="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg"
             @click="setCollapsed('project', project.id, !isCollapsed('project', project.id))"
-          ><span aria-hidden="true" class="inline-block transition-transform" :class="isCollapsed('project', project.id) ? '' : 'rotate-90'">›</span></button>
+          ><IconChevron :open="!isCollapsed('project', project.id)" :size="14" /></button>
           <span v-else class="size-6 shrink-0" aria-hidden="true" />
           <RouterLink
             data-test="project"

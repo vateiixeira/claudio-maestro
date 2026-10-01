@@ -49,10 +49,18 @@ const titles = (w: Awaited<ReturnType<typeof mountInbox>>['wrapper']) =>
   w.findAll('[data-test="row-link"]').map((r) => r.text())
 
 describe('Inbox', () => {
-  it('abre na aba Pede você, agrupada por data', async () => {
+  it('abre na aba Aguardando você, agrupada por data', async () => {
     const { wrapper } = await mountInbox()
     expect(titles(wrapper)).toEqual(['Espera 1', 'Espera 2'])
     expect(wrapper.findAll('[data-test="date-group"]').map((g) => g.text())).toEqual(['Hoje', 'Antes'])
+  })
+
+  it('a primeira aba chama-se "Aguardando você" e mantém o slug pede-voce na URL', async () => {
+    const { wrapper } = await mountInbox()
+    const first = wrapper.findAll('[data-test="inbox-tab"]')[0]!
+    expect(first.text()).toContain('Aguardando você')
+    expect(first.text()).not.toContain('Pede')
+    expect(wrapper.text()).not.toContain('Pede você')
   })
 
   it('busca e filtro de projeto têm name e id, para o Chrome não avisar', async () => {
@@ -117,7 +125,7 @@ describe('Inbox', () => {
     useSessionsStore(pinia).setForProject(1, [])
     useSessionsStore(pinia).setForProject(2, [])
     const { wrapper } = await mountInbox()
-    expect(wrapper.find('[data-test="empty"]').text()).toBe('Nada pedindo você agora.')
+    expect(wrapper.find('[data-test="empty"]').text()).toBe('Nada aguardando você agora.')
   })
 
   it('sem projetos mostra os primeiros passos', async () => {

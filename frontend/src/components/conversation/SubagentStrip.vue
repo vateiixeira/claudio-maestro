@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { errorMessage, stopSubagents } from '../../api/http'
 import { summarizeSubagents, type SubagentEntry } from '../../conversation/subagents'
 import type { SubagentStatus } from '../../types/conversation'
+import IconChevron from '../icons/IconChevron.vue'
 
 // Strip above the message field while a subagent runs. Above this many, only a summary.
 const LIST_LIMIT = 3
@@ -60,7 +61,7 @@ async function stopAll() {
       <svg v-if="running" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" class="shrink-0 animate-spin text-primary" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" stroke-linecap="round" /></svg>
       <span class="cap shrink-0 text-fg-subtle">Subagentes</span>
       <span class="min-w-0 grow truncate text-xs text-fg">{{ summary }}</span>
-      <span aria-hidden="true" class="shrink-0 text-xs text-fg-subtle">{{ expanded ? '▾' : '▸' }}</span>
+      <IconChevron :open="expanded" :size="12" class="text-fg-subtle" />
     </button>
     <ul v-if="showList" class="m-0 flex max-h-40 list-none flex-col overflow-y-auto p-0" :class="collapsible ? 'border-t border-line' : ''">
       <li v-for="(entry, index) in entries" :key="entry.id" :class="index > 0 ? 'border-t border-line' : ''">

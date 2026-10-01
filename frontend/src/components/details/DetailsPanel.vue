@@ -29,6 +29,9 @@ import { repoLabel, useGitStore } from '../../stores/git'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import type { ChangedFile, ChangesGroup } from '../../types/api'
+import IconBack from '../icons/IconBack.vue'
+import IconClose from '../icons/IconClose.vue'
+import IconExpand from '../icons/IconExpand.vue'
 
 const props = withDefaults(defineProps<{ sessionId: string; drawer?: boolean }>(), { drawer: false })
 const emit = defineEmits<{ close: [] }>()
@@ -148,9 +151,9 @@ function resetWidth() {
         <button
           type="button"
           data-test="diff-back"
-          class="h-8 rounded-md px-2 text-sm text-fg-muted hover:bg-card hover:text-fg"
+          class="flex h-8 items-center gap-1 rounded-md pr-2 pl-1 text-sm text-fg-muted hover:bg-card hover:text-fg"
           @click="back"
-        >‹ Voltar</button>
+        ><IconBack :size="14" />Voltar</button>
         <span class="grow" />
         <button
           type="button"
@@ -159,7 +162,7 @@ function resetWidth() {
           :aria-pressed="wide"
           class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg"
           @click="wide = !wide"
-        >⤢</button>
+        ><IconExpand :size="14" /></button>
       </template>
       <h2 v-else class="m-0 grow text-sm font-semibold">Detalhes</h2>
       <button
@@ -168,7 +171,7 @@ function resetWidth() {
         aria-label="Fechar detalhes"
         class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg"
         @click="emit('close')"
-      >×</button>
+      ><IconClose :size="14" /></button>
     </header>
 
     <div class="flex min-h-0 grow flex-col gap-5 overflow-y-auto p-4">

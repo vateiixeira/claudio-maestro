@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import FileDiffView from '../details/FileDiffView.vue'
 import { useGitDetailsStore } from '../../stores/gitDetails'
 import type { ChangedFile, ChangesGroup, RepoDetails, RepoFile, RepoFileStatus } from '../../types/api'
+import IconChevron from '../icons/IconChevron.vue'
 
 const props = defineProps<{ projectId: number; repo: RepoDetails }>()
 
@@ -74,7 +75,7 @@ function toggle(file: RepoFile): void {
             class="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-card"
             @click="toggle(file)"
           >
-            <span class="shrink-0 text-fg-subtle" aria-hidden="true">{{ expanded[keyOf(file)] ? '▾' : '▸' }}</span>
+            <IconChevron :open="!!expanded[keyOf(file)]" :size="12" class="text-fg-subtle" />
             <span class="min-w-0 grow truncate font-mono text-xs">{{ file.path }}</span>
             <span v-if="file.added != null" class="shrink-0 font-mono text-xs text-diff-add-fg">+{{ file.added }}</span>
             <span v-if="file.removed != null" class="shrink-0 font-mono text-xs text-diff-del-fg">−{{ file.removed }}</span>
