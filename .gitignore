@@ -27,3 +27,6 @@ CLAUDE.local.md
 
 # Artefatos locais de revisão de design
 .impeccable/
+
+# Documentos de construção, só locais
+docs/
