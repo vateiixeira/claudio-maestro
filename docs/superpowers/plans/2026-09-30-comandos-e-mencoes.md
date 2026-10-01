@@ -2354,7 +2354,7 @@ Item 12 do marco 13. O usuário pediu em 2026-09-30, e o pedido não está na sp
 **Interfaces:**
 - Produz: `new_session_defaults(conn: sqlite3.Connection) -> tuple[str | None, str | None, str | None]` em `sessions.py`, que devolve `(model, effort, mode)` já validados.
 
-- [ ] **Passo 1: testes do backend que falham** em `backend/tests/test_new_session_defaults.py`. Use o `api` com `FakeAgentFactory` de `test_sessions_api.py` como modelo:
+- [x] **Passo 1: testes do backend que falham** em `backend/tests/test_new_session_defaults.py`. Use o `api` com `FakeAgentFactory` de `test_sessions_api.py` como modelo:
 
 ```python
 """Preferences for new sessions: model, effort and mode."""
@@ -2421,9 +2421,9 @@ Confira duas coisas antes de escrever:
 - **`SessionOut`:** se não expõe `model`, `effort` e `permission_mode` com esses nomes, ajuste as asserções ao nome real.
 - **`default_permission_mode`:** se o `SessionManager` recebe esse parâmetro em vez de ler `vibing.sessions.user_default_permission_mode` na hora, faça o monkeypatch no lugar certo. O `__init__` usa `default_permission_mode or user_default_permission_mode`, então o nome do módulo é lido na construção: aplique o monkeypatch **antes** de `create_app`, ou passe pela fixture.
 
-- [ ] **Passo 2: rodar e ver falhar.**
+- [x] **Passo 2: rodar e ver falhar.**
 
-- [ ] **Passo 3: implementar o backend.**
+- [x] **Passo 3: implementar o backend.**
   - Em `app_state.py`, junto das outras validações de `preferences`:
     - `new_session_model`: `None`, ou `str` com `1 <= len <= 100` depois de `strip()`.
     - `new_session_effort`: `None` ou um de `sessions.EFFORTS`.
@@ -2432,7 +2432,7 @@ Confira duas coisas antes de escrever:
   - Em `sessions.py`, `new_session_defaults(conn)`: lê a linha `preferences` de `app_state`, faz `json.loads` protegido e aplica as mesmas regras. Um valor fora da regra vira `None`.
   - Em `create_session`: dentro do `with closing(db.connect(...))`, antes do `INSERT`, chame `new_session_defaults(conn)`. Monte o registro com `model`, `effort` e `permission_mode = mode or self._default_permission_mode()`. Acrescente `model` e `effort` ao `INSERT`, conferindo que as colunas existem em `sessions` (existem: `record.model` e `record.effort` são gravados pelo PATCH). Como o `record` hoje é criado antes do `with`, reorganize para ler as preferências primeiro.
 
-- [ ] **Passo 4: testes do frontend que falham.**
+- [x] **Passo 4: testes do frontend que falham.**
   - **`GeneralPreferences`:** três `OptionMenu` (ou `select`) com `data-test="pref-new-model"`, `pref-new-effort` e `pref-new-mode`.
     - Carregar preenche com o que veio de `getAppState`.
     - Salvar manda as três chaves no `PUT /api/state/preferences` junto das que já existem.
@@ -2441,11 +2441,11 @@ Confira duas coisas antes de escrever:
     - A lista de modelos vem de `useModelsStore` (como no modal).
   - **`NewConversationModalExtras.spec.ts`:** com `GET /api/state` devolvendo `{ preferences: { new_session_model: 'opus', new_session_effort: 'high' } }` e o rascunho vazio, o botão de modelo mostra o `displayName` de `opus` e o de raciocínio mostra "Raciocínio" seguido de `EFFORT_LABELS.high`. Escolher outro modelo no modal mostra o escolhido.
 
-- [ ] **Passo 5: implementar o frontend.** O modal chama `getAppState()` ao abrir (junto com `models.ensure()`), guarda as três preferências num `ref` e usa essas preferências nos textos `modelText`, de raciocínio e de modo quando o rascunho está `null`. O `submit` não muda: o backend já aplica a preferência.
+- [x] **Passo 5: implementar o frontend.** O modal chama `getAppState()` ao abrir (junto com `models.ensure()`), guarda as três preferências num `ref` e usa essas preferências nos textos `modelText`, de raciocínio e de modo quando o rascunho está `null`. O `submit` não muda: o backend já aplica a preferência.
 
-- [ ] **Passo 6: rodar e ver passar.** Rode `uv run pytest -q`, `pnpm --dir frontend test` e `pnpm --dir frontend build`.
+- [x] **Passo 6: rodar e ver passar.** Rode `uv run pytest -q`, `pnpm --dir frontend test` e `pnpm --dir frontend build`.
 
-- [ ] **Passo 7: commit** (sessão principal, depois do `reviewer`). Marque o item 12 no roadmap e registre a decisão na tabela "Decisões": as preferências de sessão nova valem sobre o `defaultMode` do CLI quando há valor salvo.
+- [x] **Passo 7: commit** (sessão principal, depois do `reviewer`). Marque o item 12 no roadmap e registre a decisão na tabela "Decisões": as preferências de sessão nova valem sobre o `defaultMode` do CLI quando há valor salvo.
 
 ```bash
 git add backend/vibing/api/app_state.py backend/vibing/sessions.py backend/tests/test_new_session_defaults.py frontend/src/components/preferences/GeneralPreferences.vue frontend/src/components/NewConversationModal.vue frontend/src/components/preferences/__tests__ frontend/src/components/__tests__/NewConversationModalExtras.spec.ts ROADMAP.md

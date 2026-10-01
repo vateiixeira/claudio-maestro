@@ -4,7 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import MentionMirror from './conversation/MentionMirror.vue'
 import SuggestionMenu from './conversation/SuggestionMenu.vue'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
-import { errorMessage, sendMessage, updateSession } from '../api/http'
+import { errorMessage, getAppState, sendMessage, updateSession } from '../api/http'
 import { type DraftImage, IMAGE_TYPES, attachImages, base64Of, filesFrom, formatSize } from '../conversation/images'
 import { useDictation } from '../conversation/dictation'
 import { useComposerSuggestions } from '../conversation/useComposerSuggestions'
@@ -27,6 +27,21 @@ const models = useModelsStore()
 const groups = useGroupsStore()
 const router = useRouter()
 void models.ensure()
+
+// Defaults saved in the Preferências: they are what a conversation uses when the draft leaves a field on "Padrão".
+// The backend applies them when the session is created; here they only label the buttons.
+const prefModel = ref<string | null>(null)
+const prefEffort = ref<Effort | null>(null)
+const prefMode = ref<PermissionMode | null>(null)
+getAppState()
+  .then((state) => {
+    const prefs = (state as { preferences?: Record<string, unknown> } | null)?.preferences
+    if (!prefs || typeof prefs !== 'object') return
+    prefModel.value = typeof prefs.new_session_model === 'string' && prefs.new_session_model.trim() !== '' ? prefs.new_session_model : null
+    prefEffort.value = ALL_EFFORTS.find((e) => e === prefs.new_session_effort) ?? null
+    prefMode.value = SELECTABLE_MODES.find((m) => m === prefs.new_session_mode) ?? null
+  })
+  .catch(() => {}) // without them the buttons say "Padrão", as before
 
 const available = computed(() => projects.projects.filter((p) => p.available))
 const draft = ref<ConversationDraft>(loadDraft())
@@ -101,7 +116,18 @@ const modelOptions = computed<MenuOption[]>(() => [
   { value: 'default', label: 'Padrão' },
   ...models.models.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
 ])
-const modelText = computed(() => models.models.find((m) => m.value === draft.value.model)?.displayName ?? 'Padrão')
+const modelText = computed(() => {
+  const value = draft.value.model ?? prefModel.value
+  return value == null ? 'Padrão' : (models.models.find((m) => m.value === value)?.displayName ?? (draft.value.model ? 'Padrão' : value))
+})
+const effortText = computed(() => {
+  const value = draft.value.effort ?? prefEffort.value
+  return `Raciocínio ${value ? EFFORT_LABELS[value] : 'padrão'}`
+})
+const modeText = computed(() => {
+  const value = draft.value.permissionMode ?? prefMode.value
+  return value ? MODE_LABELS[value] : 'Modo padrão'
+})
 const effortOptions = computed<MenuOption[]>(() => [
   { value: 'default', label: 'Padrão' },
   ...ALL_EFFORTS.map((e) => ({ value: e, label: EFFORT_LABELS[e] })),
@@ -446,8 +472,8 @@ function onKeydown(event: KeyboardEvent) {
               Ditar
             </button>
             <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)" />
-            <OptionMenu name="Raciocínio" :text="`Raciocínio ${draft.effort ? EFFORT_LABELS[draft.effort] : 'padrão'}`" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
-            <OptionMenu name="Modo" :text="draft.permissionMode ? MODE_LABELS[draft.permissionMode] : 'Modo padrão'" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" @select="(v) => (draft.permissionMode = v === 'default-account' ? null : (v as PermissionMode))" />
+            <OptionMenu name="Raciocínio" :text="effortText" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
+            <OptionMenu name="Modo" :text="modeText" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" @select="(v) => (draft.permissionMode = v === 'default-account' ? null : (v as PermissionMode))" />
           </div>
           <span v-if="dictation.recording.value" data-test="nc-recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
             <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { EFFORT_LABELS, MODE_LABELS } from '../../sessionOptions'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import NewConversationModal from '../NewConversationModal.vue'
@@ -353,5 +354,50 @@ describe('modal de nova conversa: leituras em andamento', () => {
     await chips(wrapper)[0]!.find('button[aria-label="Remover imagem a.png"]').trigger('click')
     await settleReads()
     expect(chips(wrapper).map((c) => c.text())).toEqual([expect.stringContaining('b.png')])
+  })
+})
+
+describe('modal de nova conversa: padrões das preferências', () => {
+  const prefs = { 'GET /api/state': () => jsonResponse({ preferences: { new_session_model: 'opus', new_session_effort: 'high', new_session_mode: 'acceptEdits' } }) }
+  const withModels = { 'GET /api/models': () => jsonResponse([{ value: 'opus', displayName: 'Opus', description: '' }, { value: 'sonnet', displayName: 'Sonnet', description: '' }]) }
+  const button = (w: Wrapper, name: string) => w.find(`button[aria-label="${name}"]`)
+  async function pick(w: Wrapper, name: string, label: string) {
+    await button(w, name).trigger('click')
+    await flushPromises()
+    const items = new DOMWrapper(document.body).findAll('[role="menuitemradio"]')
+    await items.find((i) => i.text().startsWith(label))!.trigger('click')
+    await flushPromises()
+  }
+
+  it('com o rascunho vazio os botões mostram o valor da preferência', async () => {
+    const { wrapper } = await openModal({ ...prefs, ...withModels })
+    expect(button(wrapper, 'Modelo').text()).toBe('Opus')
+    expect(button(wrapper, 'Raciocínio').text()).toBe(`Raciocínio ${EFFORT_LABELS.high}`)
+    expect(button(wrapper, 'Modo').text()).toBe(MODE_LABELS.acceptEdits)
+  })
+
+  it('escolher outro modelo mostra o escolhido, e voltar a "Padrão" mostra a preferência', async () => {
+    const { wrapper } = await openModal({ ...prefs, ...withModels })
+    await pick(wrapper, 'Modelo', 'Sonnet')
+    expect(button(wrapper, 'Modelo').text()).toBe('Sonnet')
+    await pick(wrapper, 'Modelo', 'Padrão')
+    expect(button(wrapper, 'Modelo').text()).toBe('Opus')
+  })
+
+  it('sem preferências, ou se a leitura falha, os botões mostram "Padrão"', async () => {
+    const { wrapper } = await openModal({ 'GET /api/state': () => jsonResponse({ detail: 'falhou' }, 500) })
+    expect(button(wrapper, 'Modelo').text()).toBe('Padrão')
+    expect(button(wrapper, 'Raciocínio').text()).toBe('Raciocínio padrão')
+    expect(button(wrapper, 'Modo').text()).toBe('Modo padrão')
+  })
+
+  it('o envio não manda os valores da preferência: o backend já os aplicou', async () => {
+    const { wrapper, fetch } = await openModal({ ...prefs, ...withModels })
+    await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+    await wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    const calls = fetch.mock.calls.map((c) => `${(c[1] as RequestInit | undefined)?.method ?? 'GET'} ${c[0]}`)
+    expect(calls).toContain('POST /api/projects/2/sessions')
+    expect(calls).not.toContain('PATCH /api/sessions/nova')
   })
 })

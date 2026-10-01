@@ -106,7 +106,7 @@ describe('tela de preferências', () => {
     await w.find('form').trigger('submit')
     await flushPromises()
 
-    expect(saved).toEqual([{ editor_command: ['/opt/meu editor/bin', '--wait'], finished_after_days: 10, tema: 'escuro' }])
+    expect(saved).toEqual([{ editor_command: ['/opt/meu editor/bin', '--wait'], finished_after_days: 10, tema: 'escuro', new_session_model: null, new_session_effort: null, new_session_mode: null }])
     expect(w.find('[data-test="saved"]').text()).toContain('Preferências salvas')
     expect(w.find('[role="alert"]').exists()).toBe(false)
     expect(useLayoutStore(pinia).finishedAfterDays).toBe(10)
@@ -118,7 +118,7 @@ describe('tela de preferências', () => {
     await editor(w).setValue('')
     await w.find('form').trigger('submit')
     await flushPromises()
-    expect(saved).toEqual([{ finished_after_days: 3, outro: 1 }])
+    expect(saved).toEqual([{ finished_after_days: 3, outro: 1, new_session_model: null, new_session_effort: null, new_session_mode: null }])
   })
 
   it('mostra o erro do backend e não confirma nem muda o layout', async () => {
@@ -188,6 +188,6 @@ describe('tela de preferências', () => {
     const w = await mountView()
     await w.find('form').trigger('submit')
     await flushPromises()
-    expect(saved).toEqual([{ finished_after_days: 3, nova: true }])
+    expect(saved).toEqual([{ finished_after_days: 3, nova: true, new_session_model: null, new_session_effort: null, new_session_mode: null }])
   })
 })

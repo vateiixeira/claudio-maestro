@@ -2,7 +2,11 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { errorMessage, getAppState, putAppState } from '../../api/http'
 import { editorCommandProblem, formatEditorCommand, parseEditorCommand } from '../../preferences'
+import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, SELECTABLE_MODES } from '../../sessionOptions'
+import { useModelsStore } from '../../stores/models'
 import { loadEverything } from '../../stores/realtime'
+import type { Effort, PermissionMode } from '../../types/api'
+import OptionMenu, { type MenuOption } from '../session/OptionMenu.vue'
 import { DEFAULT_FINISHED_AFTER_DAYS, useLayoutStore } from '../../stores/layout'
 
 const MIN_DAYS = 1
@@ -10,14 +14,35 @@ const MAX_DAYS = 365
 const DEFAULT_EDITOR = 'code'
 
 const layout = useLayoutStore()
+const models = useModelsStore()
+void models.ensure()
 
 const loading = ref(true)
 const loadError = ref<string | null>(null)
 const editorText = ref('')
 const daysText = ref(String(layout.finishedAfterDays))
+// Defaults for new conversations; `null` is "Padrão" (the CLI decides).
+const newModel = ref<string | null>(null)
+const newEffort = ref<Effort | null>(null)
+const newMode = ref<PermissionMode | null>(null)
 const saving = ref(false)
 const saved = ref(false)
 const error = ref<string | null>(null)
+
+const modelOptions = computed<MenuOption[]>(() => [
+  { value: 'default', label: 'Padrão' },
+  ...models.models.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
+])
+const modelText = computed(() => models.models.find((m) => m.value === newModel.value)?.displayName ?? newModel.value ?? 'Padrão')
+const effortOptions: MenuOption[] = [
+  { value: 'default', label: 'Padrão' },
+  ...ALL_EFFORTS.map((e) => ({ value: e, label: EFFORT_LABELS[e] })),
+]
+// "Sem perguntas" is not offered here: it needs a confirmation in each conversation.
+const modeOptions: MenuOption[] = [
+  { value: 'default', label: 'Padrão da conta' },
+  ...SELECTABLE_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] })),
+]
 
 const ready = computed(() => !loading.value && loadError.value === null)
 
@@ -35,6 +60,9 @@ async function load(): Promise<void> {
     editorText.value = Array.isArray(command) && command.every((p) => typeof p === 'string') ? formatEditorCommand(command) : ''
     const days = prefs.finished_after_days
     daysText.value = String(typeof days === 'number' && Number.isInteger(days) && days > 0 ? days : DEFAULT_FINISHED_AFTER_DAYS)
+    newModel.value = typeof prefs.new_session_model === 'string' && prefs.new_session_model.trim() !== '' ? prefs.new_session_model : null
+    newEffort.value = ALL_EFFORTS.find((e) => e === prefs.new_session_effort) ?? null
+    newMode.value = SELECTABLE_MODES.find((m) => m === prefs.new_session_mode) ?? null
     saved.value = false
     error.value = null
   } catch (e) {
@@ -45,7 +73,7 @@ async function load(): Promise<void> {
 }
 
 // Any edit takes the confirmation away.
-watch([editorText, daysText], () => { saved.value = false })
+watch([editorText, daysText, newModel, newEffort, newMode], () => { saved.value = false })
 
 async function save(): Promise<void> {
   if (!ready.value || saving.value) return
@@ -75,6 +103,9 @@ async function save(): Promise<void> {
     const prefs = preferencesOf(await getAppState())
     const daysChanged = prefs.finished_after_days !== days
     prefs.finished_after_days = days
+    prefs.new_session_model = newModel.value
+    prefs.new_session_effort = newEffort.value
+    prefs.new_session_mode = newMode.value
     if (command.length > 0) prefs.editor_command = command
     else delete prefs.editor_command
     await putAppState('preferences', prefs)
@@ -151,6 +182,43 @@ onMounted(load)
           Sessões paradas há mais dias que isso saem do menu e ficam em Finalizadas, na tela do projeto. De {{ MIN_DAYS }} a {{ MAX_DAYS }}.
         </p>
       </div>
+
+      <fieldset class="m-0 flex min-w-0 flex-col gap-2 border-0 p-0" :disabled="!ready" aria-describedby="pref-new-help">
+        <legend class="mb-2 p-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Conversas novas</legend>
+        <div class="flex flex-wrap items-center gap-2">
+          <OptionMenu
+            data-test="pref-new-model"
+            name="Modelo padrão"
+            :text="modelText"
+            :options="modelOptions"
+            :selected="newModel ?? 'default'"
+            :disabled="!ready"
+            @select="(v) => (newModel = v === 'default' ? null : v)"
+          />
+          <OptionMenu
+            data-test="pref-new-effort"
+            name="Raciocínio padrão"
+            :text="`Raciocínio ${newEffort ? EFFORT_LABELS[newEffort] : 'padrão'}`"
+            :options="effortOptions"
+            :selected="newEffort ?? 'default'"
+            :disabled="!ready"
+            @select="(v) => (newEffort = v === 'default' ? null : (v as Effort))"
+          />
+          <OptionMenu
+            data-test="pref-new-mode"
+            name="Modo padrão"
+            :text="newMode ? MODE_LABELS[newMode] : 'Modo padrão'"
+            :options="modeOptions"
+            :selected="newMode ?? 'default'"
+            :disabled="!ready"
+            @select="(v) => (newMode = v === 'default' ? null : (v as PermissionMode))"
+          />
+        </div>
+        <p id="pref-new-help" class="m-0 text-xs text-fg-muted">
+          Valem para toda conversa nova. "Padrão" deixa a decisão com o Claude: o modelo e o raciocínio dele e o modo do seu
+          <span class="font-mono">settings.json</span>. Dá para mudar na própria conversa. "Sem perguntas" só se ativa dentro da conversa.
+        </p>
+      </fieldset>
     </div>
 
     <p
