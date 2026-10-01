@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -27,6 +28,7 @@ from claudio_maestro.digest.model import DigestModel, SdkDigestModel
 from claudio_maestro.digest.service import AGENT_DIR_NAME, DigestService
 from claudio_maestro.events import EventHub
 from claudio_maestro.filesearch import FileIndex
+from claudio_maestro.frontend_static import mount_frontend
 from claudio_maestro.gitmonitor import GitMonitor
 from claudio_maestro.picker import PickFolder
 from claudio_maestro.picker import pick_folder as system_pick_folder
@@ -63,6 +65,7 @@ def create_app(
     plan_sweep: bool | None = None,
     digest_model: DigestModel | None = None,
     ports: tuple[int, int] | None = None,
+    frontend_dir: Path | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -74,6 +77,7 @@ def create_app(
     `plan_sweep` turns on the periodic reread of plan progress (same default).
     `digest_model` defaults to the real SDK; the agent only calls it when enabled or asked.
     `ports`: (Vite, backend); None reads `MAESTRO_DEV_PORT` and `MAESTRO_PORT`.
+    `frontend_dir`: the built frontend to serve at the root; None (development) serves only the API.
     """
 
     @asynccontextmanager
@@ -200,6 +204,9 @@ def create_app(
         allowed_origins=allowed_origins(app_ports),
     )
     app.include_router(router)
+    if frontend_dir is not None:
+        # Registered after the API so its routes win.
+        mount_frontend(app, frontend_dir)
     return app
 
 
