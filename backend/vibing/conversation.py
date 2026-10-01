@@ -582,6 +582,20 @@ class ConversationBuilder:
         tool.streaming = False
         if block.is_error and tool.subagent is not None and tool.subagent["status"] == "running":
             tool.subagent["status"] = "failed"
+        events = [self._put(tool)]
+        if tool.name == "SendMessage" and not block.is_error:
+            events.extend(self._resume_subagent(details))
+        return events
+
+    def _resume_subagent(self, details: dict[str, Any] | None) -> list[Event]:
+        """SendMessage woke a subagent that had ended: its Agent/Task card runs again."""
+        task_id = details.get("resumedAgentId") if isinstance(details, dict) else None
+        tool_use_id = self._task_tools.get(task_id) if isinstance(task_id, str) else None
+        tool = self._tool_item(tool_use_id) if tool_use_id else None
+        if tool is None or tool_use_id not in self._subagents:
+            return []
+        self._subagents[tool_use_id]["status"] = "running"
+        self._subagent_started[tool_use_id] = time.monotonic()
         return [self._put(tool)]
 
     # System, result, rate limit ------------------------------------------
@@ -589,10 +603,13 @@ class ConversationBuilder:
     def _on_task(self, message: SystemMessage) -> list[Event]:
         """Task* messages update the subagent card of the Agent/Task call."""
         task_id = getattr(message, "task_id", None)
-        tool_use_id = getattr(message, "tool_use_id", None) or self._task_tools.get(task_id)
-        if not tool_use_id:
-            return []
-        tool = self._tool_item(tool_use_id)
+        tool_use_id = getattr(message, "tool_use_id", None)
+        tool = self._tool_item(tool_use_id) if tool_use_id else None
+        if tool is None or tool.name not in SUBAGENT_TOOLS:
+            # After a SendMessage resume the CLI names the SendMessage call, not the
+            # Agent/Task one; the card is still the one that started the task.
+            tool_use_id = self._task_tools.get(task_id)
+            tool = self._tool_item(tool_use_id) if tool_use_id else None
         if tool is None or tool.name not in SUBAGENT_TOOLS:
             return []
         self._task_tools[task_id] = tool_use_id

@@ -272,3 +272,86 @@ def test_subagent_running_for_hours_no_longer_counts():
 
     assert not builder.subagents_running
     assert status_of(builder) == "running"
+
+
+# Subagent resumed with SendMessage --------------------------------------------
+
+
+def send_message(tool_use_id: str = "toolu_send", to: str = "task-1") -> list:
+    return response_messages(
+        SID,
+        [ToolUseBlock(id=tool_use_id, name="SendMessage",
+                      input={"to": to, "summary": "Reconferir", "message": "de novo"})],
+        stop_reason="tool_use",
+    )
+
+
+def resumed(task_id: str = "task-1", tool_use_id: str = "toolu_send"):
+    return tool_result_message(
+        tool_use_id, f'{{"success":true,"resumedAgentId":"{task_id}"}}',
+        tool_use_result={"success": True, "message": f"Resuming agent {task_id}",
+                         "resumedAgentId": task_id})
+
+
+def finished_agent() -> ConversationBuilder:
+    builder = ConversationBuilder()
+    feed(builder, agent_call())
+    feed(builder, [task_started_message(SID, "task-1", "toolu_agent"),
+                   tool_result_message("toolu_agent", "launched"),
+                   task_notification_message(SID, "task-1", "toolu_agent",
+                                             status="completed", summary="Primeira")])
+    assert not builder.subagents_running
+    return builder
+
+
+def test_send_message_resume_reopens_the_subagent():
+    builder = finished_agent()
+    feed(builder, send_message())
+
+    events = feed(builder, [resumed()])
+
+    assert status_of(builder) == "running"
+    assert builder.subagents_running
+    assert any(e.type == "item.upsert" and e.data["tool_use_id"] == "toolu_agent"
+               and e.data["subagent"]["status"] == "running" for e in events)
+
+
+def test_notification_of_the_resume_ends_the_original_card():
+    builder = finished_agent()
+    feed(builder, [*send_message(), resumed()])
+
+    # After a resume the CLI sends the SendMessage id, not the Agent one.
+    [event] = builder.handle(task_notification_message(
+        SID, "task-1", "toolu_send", status="completed", summary="Segunda"))
+
+    assert event.data["tool_use_id"] == "toolu_agent"
+    assert event.data["subagent"]["summary"] == "Segunda"
+    assert status_of(builder) == "completed"
+    assert not builder.subagents_running
+
+
+def test_resume_restarts_the_hours_limit():
+    builder = finished_agent()
+    builder._subagent_started["toolu_agent"] -= 3 * 60 * 60 + 1
+
+    feed(builder, [*send_message(), resumed()])
+
+    assert builder.subagents_running
+
+
+def test_send_message_without_a_known_resume_changes_nothing():
+    builder = finished_agent()
+    feed(builder, send_message("toolu_s1", to="outro"))
+    feed(builder, send_message("toolu_s2"))
+    feed(builder, send_message("toolu_s3"))
+
+    feed(builder, [
+        resumed("outro", "toolu_s1"),
+        tool_result_message("toolu_s2", "sem retomada", tool_use_result={"success": True}),
+        tool_result_message("toolu_s3", "quebrou", is_error=True,
+                            tool_use_result={"resumedAgentId": "task-1"}),
+    ])
+
+    assert status_of(builder) == "completed"
+    assert not builder.subagents_running
+    assert builder.handle(task_started_message(SID, "outro", "toolu_s1")) == []
