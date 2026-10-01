@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, watchEffect } from 'vue'
-import { RouterView, useRoute } from 'vue-router'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 import AppSidebar from './components/sidebar/AppSidebar.vue'
 import { loadEverything } from './stores/realtime'
 import { useLayoutStore } from './stores/layout'
@@ -9,6 +9,8 @@ import { documentTitle } from './documentTitle'
 import { useSessionsStore } from './stores/sessions'
 import NewConversationModal from './components/NewConversationModal.vue'
 import { shouldOpenNewConversation } from './newConversationShortcut'
+import { needsYouQueue } from './nextNeedsYou'
+import { shouldGoToNextNeedsYou } from './nextNeedsYouShortcut'
 import { useNewConversationStore } from './stores/newConversation'
 
 const layout = useLayoutStore()
@@ -19,6 +21,7 @@ watchEffect(() => { document.title = documentTitle(waiting.value) })
 
 const newConversation = useNewConversationStore()
 const route = useRoute()
+const router = useRouter()
 // The project in view: a project page, or the project of the open conversation.
 function currentProjectId(): number | null {
   if (route.name === 'project') return Number(route.params.id)
@@ -32,10 +35,24 @@ function currentGroupId(): number | null | undefined {
   const session = sessions.find(String(route.params.id))
   return session ? (session.group_id ?? null) : undefined
 }
+// The conversation in view, full screen or beside its project (`?sessao=`): the "next" one is never it.
+function currentSessionId(): string | null {
+  if (route.name === 'session') return String(route.params.id)
+  if (route.name === 'project' && typeof route.query.sessao === 'string') return route.query.sessao
+  return null
+}
 function onKey(event: KeyboardEvent) {
-  if (newConversation.isOpen || !shouldOpenNewConversation(event)) return
+  if (newConversation.isOpen) return
+  if (shouldOpenNewConversation(event)) {
+    event.preventDefault()
+    newConversation.open(currentProjectId(), currentGroupId())
+    return
+  }
+  if (!shouldGoToNextNeedsYou(event)) return
+  const next = needsYouQueue(sessions.all, currentSessionId())[0]
+  if (!next) return
   event.preventDefault()
-  newConversation.open(currentProjectId(), currentGroupId())
+  void router.push({ name: 'session', params: { id: next.session_id } })
 }
 onMounted(() => document.addEventListener('keydown', onKey))
 onBeforeUnmount(() => document.removeEventListener('keydown', onKey))

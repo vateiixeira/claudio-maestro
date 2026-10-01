@@ -6,9 +6,6 @@ import { describe, expect, it } from 'vitest'
 // font's metrics, so it blurs, misaligns and cannot follow `currentColor` strokes. Text separators ("·", "−") are fine.
 const GLYPHS = /[▸▾⋯⤢×▤＋›‹✓✕]/
 
-// Files owned by other tasks of milestone 17, still being converted. Remove each entry when its file is done.
-const PENDING = new Set(['views/ConversationView.vue', 'components/conversation/ConversationHeader.vue'])
-
 const root = join(__dirname, '..')
 function vueFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -22,7 +19,6 @@ describe('ícones', () => {
   it('nenhum componente usa caractere de texto como ícone', () => {
     const offenders = vueFiles(root)
       .map((path) => relative(root, path))
-      .filter((path) => !PENDING.has(path))
       .flatMap((path) =>
         readFileSync(join(root, path), 'utf8')
           .split('\n')

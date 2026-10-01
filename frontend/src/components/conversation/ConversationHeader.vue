@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import BranchLabel from '../git/BranchLabel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import NextNeedsYou from './NextNeedsYou.vue'
 import { errorMessage, openInEditor } from '../../api/http'
 import { needsYou } from '../../conversation/needsYou'
 import { useConversationStore } from '../../stores/conversation'
@@ -13,7 +15,9 @@ import { useSessionsStore } from '../../stores/sessions'
 import { displayStateLabel } from '../../sessionState'
 import { worktreeLabel } from '../../worktree'
 
-const props = defineProps<{ id: string }>()
+// `detailsOpen`: the Detalhes panel is showing project, group and branch, so the line below the strip stays out.
+// `showPath: false` (embedded in the project page): no "Conversas > project" path and no "Próxima" button.
+const props = withDefaults(defineProps<{ id: string; detailsOpen?: boolean; showPath?: boolean }>(), { detailsOpen: false, showPath: true })
 
 const sessions = useSessionsStore()
 const conversations = useConversationStore()
@@ -36,9 +40,10 @@ const stateLabel = computed(() => {
   if (!listed.value) return ''
   const state = listed.value.state
   if (state === 'error') return 'Erro'
-  if (state === 'awaiting_decision') return 'Pede sua decisão'
+  if (state === 'awaiting_decision') return 'Aguardando você'
   return displayStateLabel(listed.value)
 })
+const hasMeta = computed(() => (!props.showPath && !!project.value) || !!group.value || !!worktree.value || repos.value.length > 0)
 const isFinished = computed(() => listed.value?.display_state === 'finished')
 
 const error = ref<string | null>(null)
@@ -134,10 +139,20 @@ async function openProject() {
 </script>
 
 <template>
-  <header class="mx-auto flex w-full max-w-[760px] flex-col gap-2 px-4 pt-5 pb-3">
+  <header class="flex w-full flex-col border-b border-line">
     <span data-test="state-live" role="status" aria-live="polite" class="sr-only">{{ stateLabel }}</span>
-    <div class="flex items-start gap-3">
-      <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="!needsYou(listed)" class="mt-2" />
+    <div data-test="header-strip" class="flex min-h-14 items-center gap-3 px-4">
+      <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="!needsYou(listed)" />
+      <nav v-if="showPath" data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 shrink items-center gap-1 text-xs text-fg-muted max-sm:hidden">
+        <RouterLink to="/sessions" class="shrink-0 no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
+        <template v-if="project">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
+          <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="flex min-w-0 items-center gap-1.5 no-underline text-fg-muted hover:text-fg">
+            <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" /><span class="truncate">{{ project.name }}</span>
+          </RouterLink>
+        </template>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
+      </nav>
       <input
         v-if="editing"
         ref="input"
@@ -145,24 +160,26 @@ async function openProject() {
         data-test="title-input"
         aria-label="Título da conversa"
         maxlength="200"
-        class="h-10 min-w-0 grow rounded-md border border-line-strong bg-elevated px-2.5 text-xl font-semibold text-fg outline-none focus:border-fg-muted"
+        class="h-9 min-w-0 grow rounded-md border border-line-strong bg-elevated px-2.5 text-[17px] font-semibold text-fg outline-none focus:border-fg-muted"
         @keydown.enter.prevent="saveRename"
         @keydown.esc.prevent="editing = false"
       />
-      <h1 v-else class="m-0 min-w-0 grow text-2xl font-semibold tracking-tight">
+      <h1 v-else class="m-0 min-w-0 grow text-[17px] leading-snug font-semibold tracking-tight">
         <button
           type="button"
           data-test="conversation-title"
           title="Clique para renomear"
-          class="max-w-full text-left decoration-fg-subtle underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+          class="block min-h-8 max-w-full truncate text-left decoration-fg-subtle underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-primary"
           @click="startRename"
         >{{ title }}</button>
       </h1>
+      <span v-if="copied" role="status" class="shrink-0 text-xs text-primary-soft">ID copiado</span>
+      <NextNeedsYou v-if="showPath" :current-id="id" />
       <button
         v-if="listed"
         type="button"
         data-test="toggle-finished"
-        class="h-9 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium hover:bg-card disabled:opacity-40"
+        class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
         :class="isFinished ? 'text-primary-soft' : 'text-fg'"
         :disabled="toggling"
         @click="toggleFinished"
@@ -173,10 +190,14 @@ async function openProject() {
           type="button"
           data-test="header-menu"
           aria-label="Mais ações"
+          title="Mais ações"
+          aria-haspopup="menu"
           :aria-expanded="menuOpen"
-          class="flex size-9 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg"
+          class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
           @click="menuOpen = !menuOpen"
-        >⋯</button>
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>
+        </button>
         <div
           v-if="menuOpen"
           role="menu"
@@ -186,28 +207,30 @@ async function openProject() {
           <button type="button" role="menuitem" data-test="menu-copy-id" class="px-3 py-2 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted" @click="copyId">Copiar ID da sessão</button>
         </div>
       </div>
+      <slot name="details-toggle" />
     </div>
-    <div class="flex flex-wrap items-center gap-1.5 pl-7">
-      <span v-if="project" class="flex items-center gap-1.5 rounded-full border border-line-strong bg-card px-2.5 py-[3px] text-xs">
+    <div v-if="!detailsOpen && hasMeta" data-test="header-meta" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-2 text-xs text-fg-muted">
+      <span v-if="!showPath && project" class="flex items-center gap-1.5">
         <span class="size-2 rounded-[3px]" :style="{ backgroundColor: project.color }" />{{ project.name }}
       </span>
-      <span v-if="group" data-test="header-group" class="flex items-center gap-1.5 rounded-full border border-line-strong bg-card px-2.5 py-[3px] text-xs"><span aria-hidden="true">▤</span>{{ group.name }}</span>
-      <span v-if="worktree" data-test="header-worktree" class="flex items-center rounded-full border border-line-strong bg-card px-2.5 py-[3px]" :title="listed?.worktree_path ?? undefined">
+      <span v-if="group" data-test="header-group" class="flex items-center gap-1.5">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-subtle" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>{{ group.name }}
+      </span>
+      <span v-if="worktree" data-test="header-worktree" class="flex items-center" :title="listed?.worktree_path ?? undefined">
         <WorktreeLabel :text="worktree" />
       </span>
       <template v-else>
-        <span v-for="repo in repos" :key="repo.path" class="flex items-center rounded-full border border-line-strong bg-card px-2.5 py-[3px]">
+        <span v-for="repo in repos" :key="repo.path" class="flex items-center">
           <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
         </span>
       </template>
-      <span v-if="copied" role="status" class="text-xs text-primary-soft">ID copiado</span>
     </div>
-    <p v-if="error" data-test="header-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
+    <p v-if="error" data-test="header-error" role="alert" class="m-0 px-4 pb-2 text-sm text-diff-del-fg">{{ error }}</p>
     <p
       v-if="conv?.externalActivity"
       data-test="external-activity"
       role="status"
-      class="m-0 rounded-md border border-secondary/40 bg-secondary-tint px-3 py-2 text-xs text-secondary-soft"
+      class="m-0 border-t border-secondary/40 bg-secondary-tint px-4 py-2 text-xs text-secondary-soft"
     >Esta sessão foi modificada fora do app no último minuto. Usar a mesma sessão no CLI e aqui ao mesmo tempo pode embaralhar o histórico.</p>
   </header>
 </template>

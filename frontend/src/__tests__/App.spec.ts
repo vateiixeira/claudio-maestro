@@ -84,4 +84,64 @@ describe('estrutura do app', () => {
     expect(store.isOpen).toBe(true)
     expect(store.presetGroupId).toBeUndefined()
   })
+
+  describe('atalho N', () => {
+    function press(target: HTMLElement = document.body) {
+      const event = new KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true })
+      target.dispatchEvent(event)
+      return event
+    }
+    async function mountAt(path: string) {
+      useSessionsStore(pinia).setForProject(1, [
+        makeSession({ session_id: 'cur', display_state: 'waiting', unread: true, last_activity_at: 30 }),
+        makeSession({ session_id: 'next', display_state: 'waiting', unread: true, last_activity_at: 20 }),
+        makeSession({ session_id: 'later', display_state: 'waiting', pending_kind: 'tool', last_activity_at: 10 }),
+      ])
+      const router = createAppRouter(createMemoryHistory())
+      await router.push(path)
+      mount(App, { global: { plugins: [pinia, router] }, attachTo: document.body })
+      await flushPromises()
+      return router
+    }
+
+    it('vai para a primeira que aguarda você, de qualquer tela', async () => {
+      const router = await mountAt('/preferencias')
+      const event = press()
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe('/sessions/cur')
+      expect(event.defaultPrevented).toBe(true)
+    })
+
+    it('numa conversa, pula a atual', async () => {
+      const router = await mountAt('/sessions/cur')
+      press()
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe('/sessions/next')
+    })
+
+    it('na tela do projeto com conversa embutida, pula a aberta', async () => {
+      const router = await mountAt('/projects/1?sessao=cur')
+      press()
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe('/sessions/next')
+    })
+
+    it('não faz nada em campo de texto, com modificador ou sem outra conversa', async () => {
+      const router = await mountAt('/preferencias')
+      const input = document.createElement('input')
+      document.body.appendChild(input)
+      press(input)
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true }))
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe('/preferencias')
+      input.remove()
+
+      useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'only', display_state: 'waiting', unread: true })])
+      await router.push('/sessions/only')
+      const event = press()
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe('/sessions/only')
+      expect(event.defaultPrevented).toBe(false)
+    })
+  })
 })

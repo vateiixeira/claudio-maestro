@@ -36,6 +36,7 @@ const sidePanel = computed(() => wideScreen.value && !props.embedded)
 const closeProjectId = computed(() => props.projectId ?? project.value?.id)
 const sideOpen = ref(readDetailsOpen())
 const drawerOpen = ref(false)
+const detailsOpen = computed(() => (sidePanel.value ? sideOpen.value : drawerOpen.value))
 function toggleDetails() {
   if (sidePanel.value) {
     sideOpen.value = !sideOpen.value
@@ -83,12 +84,13 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
           ref="toggleButton"
           type="button"
           data-test="toggle-details"
-          :aria-pressed="sidePanel ? sideOpen : drawerOpen"
+          :aria-pressed="detailsOpen"
           aria-label="Mostrar ou esconder detalhes"
+          title="Mostrar ou esconder detalhes"
           class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg"
           @click="toggleDetails"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="15" y1="4" x2="15" y2="20" /></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="15" y1="4" x2="15" y2="20" /></svg>
         </button>
         <RouterLink
           :to="{ name: 'session', params: { id } }"
@@ -110,31 +112,10 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
         </RouterLink>
       </div>
-      <div v-else class="flex min-h-12 items-center gap-2 border-b border-line px-4">
-        <nav data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 grow items-center gap-2 text-sm text-fg-muted">
-          <RouterLink to="/sessions" class="shrink-0 no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
-          <template v-if="project">
-            <span aria-hidden="true">›</span>
-            <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="flex shrink-0 items-center gap-1.5 no-underline text-fg-muted hover:text-fg">
-              <span class="size-2 rounded-[3px]" :style="{ backgroundColor: project.color }" />{{ project.name }}
-            </RouterLink>
-          </template>
-          <span aria-hidden="true">›</span>
-          <span class="truncate text-fg">{{ title }}</span>
-        </nav>
-        <button
-          v-if="!missing"
-          ref="toggleButton"
-          type="button"
-          data-test="toggle-details"
-          :aria-pressed="sidePanel ? sideOpen : drawerOpen"
-          aria-label="Mostrar ou esconder detalhes"
-          class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg"
-          @click="toggleDetails"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="15" y1="4" x2="15" y2="20" /></svg>
-        </button>
-      </div>
+      <!-- Not embedded and gone: no header to carry the path, so a bare one. -->
+      <nav v-else-if="missing" data-test="breadcrumb" aria-label="Trilha" class="flex min-h-14 items-center border-b border-line px-4 text-sm text-fg-muted">
+        <RouterLink to="/sessions" class="no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
+      </nav>
       <div v-if="missing" data-test="conversation-missing" class="flex flex-col items-start gap-3 px-6 py-10">
         <h1 class="m-0 text-xl font-semibold">Conversa não encontrada</h1>
         <p class="m-0 text-fg-muted">Ela pode ter sido apagada fora do app.</p>
@@ -142,7 +123,22 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
       </div>
       <template v-else>
         <!-- Keyed by id: a rename in progress or the scroll position must not carry over to another conversation. -->
-        <ConversationHeader :key="id" :id="id" />
+        <ConversationHeader :key="id" :id="id" :details-open="detailsOpen" :show-path="!embedded">
+          <template v-if="!embedded" #details-toggle>
+            <button
+              ref="toggleButton"
+              type="button"
+              data-test="toggle-details"
+              :aria-pressed="detailsOpen"
+              aria-label="Mostrar ou esconder detalhes"
+              title="Mostrar ou esconder detalhes"
+              class="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+              @click="toggleDetails"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="15" y1="4" x2="15" y2="20" /></svg>
+            </button>
+          </template>
+        </ConversationHeader>
         <ConversationThread :key="id" :id="id" @missing="missing = true" />
       </template>
     </div>

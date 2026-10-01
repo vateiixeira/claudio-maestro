@@ -15,9 +15,10 @@ vi.mock('../../api/socket', () => ({
 
 import ConversationView from '../ConversationView.vue'
 import { createAppRouter } from '../../router'
+import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import { jsonResponse, makeProject, makeSession, makeSnapshot, routeFetch } from '../../test/factories'
+import { jsonResponse, makeGroup, makeProject, makeSession, makeSnapshot, routeFetch } from '../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -89,6 +90,37 @@ describe('página da conversa', () => {
     expect(root.classes()).not.toContain('uppercase')
     expect(wrapper.find('[data-test="conversation-title"]').text()).toBe('Corrigir login')
     expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(true)
+  })
+
+  it('caminho e título ficam numa só faixa, com as ações à direita', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.findAll('[data-test="breadcrumb"]')).toHaveLength(1)
+    const strip = wrapper.get('[data-test="header-strip"]')
+    expect(strip.find('[data-test="breadcrumb"]').exists()).toBe(true)
+    expect(strip.find('[data-test="conversation-title"]').exists()).toBe(true)
+    expect(strip.find('[data-test="toggle-finished"]').exists()).toBe(true)
+    expect(strip.find('[data-test="header-menu"]').exists()).toBe(true)
+    expect(strip.find('[data-test="toggle-details"]').exists()).toBe(true)
+  })
+
+  it('o botão de Detalhes tem nome e title, e um ícone SVG', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    const toggle = wrapper.get('[data-test="toggle-details"]')
+    expect(toggle.attributes('aria-label')).toBe('Mostrar ou esconder detalhes')
+    expect(toggle.attributes('title')).toBe('Mostrar ou esconder detalhes')
+    expect(toggle.find('svg[aria-hidden="true"]').exists()).toBe(true)
+  })
+
+  it('projeto, agrupador e branch só aparecem abaixo da faixa com o painel fechado', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting', group_id: 2 })])
+    useGroupsStore(pinia).groups = [makeGroup({ id: 2, name: 'Checkout' })]
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="header-meta"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="toggle-details"]').trigger('click')
+    expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="header-meta"] [data-test="header-group"]').text()).toContain('Checkout')
   })
 
   it('esconde o painel e lembra a escolha', async () => {
@@ -463,7 +495,7 @@ describe('página da conversa', () => {
 
       sessions.setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting', state: 'awaiting_decision', awaiting_decision: true })])
       await flushPromises()
-      expect(live().text()).toBe('Pede sua decisão')
+      expect(live().text()).toBe('Aguardando você')
 
       sessions.setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting', state: 'error' })])
       await flushPromises()
