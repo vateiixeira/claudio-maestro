@@ -425,7 +425,7 @@ Objetivo: corrigir o que a crítica do `/impeccable` encontrou na tela da conver
 - [x] Arquivo novo e diff longo aparecem recolhidos na conversa (2026-09-30)
 - [x] Aviso de conteúdo novo com botão para ir ao fim da conversa (2026-09-30)
 - [x] Revisão do marco pelo `milestone-reviewer` e nova crítica (2026-09-30)
-- [ ] Listas do markdown com marcadores e números, e realce de sintaxe sem as cores de estado (achados da nova crítica)
+- [x] Listas do markdown com marcadores e números, e realce de sintaxe sem as cores de estado (achados da nova crítica) (2026-09-30)
 
 ## Marco 16. Worktrees no painel e ajustes
 
@@ -513,6 +513,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-28 | Commits por tarefa autorizados neste projeto, no formato de mensagem do usuário. Push só a pedido |
 | 2026-09-30 | Marco 12 concluído: conversa do CLI no meio de um turno conta como "Em execução"; sessões de worktree são indexadas sob o projeto dono e retomadas na worktree só quando a transcrição está na pasta dela; o marco foi numerado 11 porque o main já tem um marco 10 |
 | 2026-09-30 | Marco 14 concluído: opção A de identidade visual em todas as telas; links em azul, verde só para ação e estado, triângulo laranja na barra lateral só com novidade, pedido pendente ou erro; mensagens de erro continuam em laranja até o usuário decidir |
+| 2026-09-30 | Marco 15 concluído: ajustes da crítica do `/impeccable` (nota de 26 para 27 de 40); laranja e a aba "Pede você" só para conversa com pedido pendente, erro ou novidade; erros em vermelho; arquivo novo e diff longo recolhidos; listas com marcadores e realce de sintaxe neutro |
 | 2026-09-30 | Recentes do menu lateral passa a listar todas as conversas não finalizadas, pela última interação, e deixa de ser guardado no navegador. Substitui a decisão de 2026-09-29 e a ordem estável do marco 12 |
 | 2026-09-30 | Comandos (`/`) e menções (`@`) no campo de mensagem viram o marco 13, seguindo o comportamento da extensão do VSCode |
 | 2026-09-30 | Marco 12 concluído de novo, depois de reaberto: subagentes em segundo plano do app e do CLI contam como "Em execução" (no CLI, cada arquivo de subagente vale até o próprio `end_turn` ou 20 min sem escrever), Recentes por última interação e nome do projeto no menu lateral; revisado pelo `milestone-reviewer` |
