@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -242,6 +243,14 @@ async def test_full_app_disconnect_stops_the_git_processes(
         await incoming.put({"type": "http.disconnect"})
         # Well under GIT_TIMEOUT (5 s): the git limit must not be what ends it.
         await asyncio.wait_for(request, 2)
-        # Nothing more is started after the client left, and the started ones are dead.
+        # Nothing more is started after the client left.
         assert [int(p) for p in pids.read_text().split()] == started
+        # The started ones die. What the route guarantees is that every git process was
+        # sent SIGKILL by the time it answers: `asyncio.gather` finishes as soon as the
+        # first child is cancelled, while a sibling may still be waiting for its own
+        # process to be reaped. So wait for the condition with a deadline (far below the
+        # 30 s of the fake git and the 5 s git limit) instead of reading it at once.
+        deadline = time.monotonic() + 3
+        while any(_pid_alive(p) for p in started) and time.monotonic() < deadline:
+            await asyncio.sleep(0.005)
         assert not any(_pid_alive(p) for p in started)

@@ -31,7 +31,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Concluído | 14 de 14 |
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
-| 15. Worktrees no painel e ajustes | Alterações de sessões em worktree, menu `/` só no início e teste instável | Em andamento | 3 de 5 |
+| 15. Worktrees no painel e ajustes | Alterações de sessões em worktree, menu `/` só no início e teste instável | Em andamento | 4 de 5 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido e concluído em 2026-09-30, junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
@@ -421,7 +421,7 @@ Pedido pelo usuário em 2026-09-30, a partir dos "Pontos em aberto". Feito na wo
 - [x] Painel Alterações em sessões de worktree: arquivos editados numa worktree ficam no grupo do repositório certo (a worktree, com o branch dela e o diff real), e worktrees fora da pasta do projeto são aceitas em `/diff` e no editor. Worktree provada pelo ponteiro `.git` de ida e volta e pela lista de worktrees do repositório do projeto; exceção registrada no `CLAUDE.md` (2026-09-30)
 - [x] Menu `/` só abre quando a barra está no início da mensagem, que é onde o CLI executa comandos; o `@` continua em qualquer posição (2026-09-30)
 - [x] Teste de tempo instável `test_continuous_writing_updates_during_and_after_the_burst` em `test_cliwatch.py` estabilizado: o teste media o fim dos passes, que pode encurtar sob carga; passou a medir o início, que o `_drive` garante (2026-09-30)
-- [ ] Teste instável `test_full_app_disconnect_stops_the_git_processes` em `test_fs_repos.py` (falhou 2 vezes em 6 rodadas da suíte completa, passa isolado; achado em 2026-09-30)
+- [x] Teste instável `test_full_app_disconnect_stops_the_git_processes` em `test_fs_repos.py` (falhou 2 vezes em 6 rodadas da suíte completa, passa isolado; achado em 2026-09-30): o processo morto por SIGKILL podia levar alguns ms para ser colhido depois da resposta; o teste passou a esperar a morte com prazo de 3 s, abaixo do limite de 5 s (2026-09-30)
 - [ ] Revisão do marco pelo `milestone-reviewer`
 
 ## Fora do MVP
@@ -456,6 +456,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | `/design` nas conversas do app | Investigado em 2026-09-30 (CLI 2.1.286): o consentimento passa a funcionar depois de rodar `/design-login` uma vez no terminal (não verificado). Um botão "Conectar Claude Design" no app poderia usar o subcomando oculto `claude design-login --json`, com protocolo ainda desconhecido; só vale se o passo no terminal incomodar |
 | Enter com menu `/` ou `@` aberto no meio do texto | Resolvido no marco 15 para o `/`: o menu só abre no início da mensagem. Visto na revisão do marco 13 (2026-09-30): escrever "salve em /tmp" e apertar Enter escolhe um comando que case por subsequência, ou não faz nada até o Esc; o mesmo com `@fulano` no fim. Segue a spec (como a extensão do VS Code). Alternativa a decidir: só abrir o menu `/` no início do texto, que é onde o CLI executa comandos |
 | Tab numa pasta do menu `@` não mostra subpastas | Visto na revisão do marco 13 (2026-09-30): com o termo `backend/vibing/` só aparecem os arquivos diretos, porque as pastas vêm só dos arquivos encontrados. Segue a spec e a extensão |
+| Processos colhidos antes da resposta ao cancelar | Visto no marco 15 (2026-09-30): `project_repos_scan` e `repo_details_scan` usam `gather` sem esperar os irmãos ao cancelar, então a rota responde com o SIGKILL enviado, mas um processo pode ficar zumbi por alguns ms. Sem efeito visível; trocar por `TaskGroup` daria a garantia forte. Baixa prioridade |
 | "Em execução" preso depois de o CLI morrer | Um CLI morto no meio do turno, ou parado pedindo permissão no terminal, conta como "Em execução" por até 20 minutos (`CLI_TURN_STALE_SECONDS`). Desde o marco 12 isso aparece na Inbox, no Dashboard e no menu lateral |
 | Retomada de sessão movida para worktree | Conferido contra o SDK real em 2026-09-30: a transcrição movida é lida com `directory` na worktree, e a retomada com `cwd` na worktree mantém o id e continua gravando no mesmo arquivo |
 
