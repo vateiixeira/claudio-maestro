@@ -104,6 +104,50 @@ describe('preferências gerais: padrões das conversas novas', () => {
     expect(puts[0]).toMatchObject({ new_session_model: null, new_session_effort: null, new_session_mode: null })
   })
 
+  it('"Pede permissão" salva "default", diferente de "Padrão da conta"', async () => {
+    stub({})
+    const w = await mountTab()
+    await choose(w, 'pref-new-mode', 'Pede permissão')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(puts).toHaveLength(1)
+    expect(puts[0]).toMatchObject({ new_session_mode: 'default' })
+    expect(trigger(w, 'pref-new-mode').text()).toBe('Pede permissão')
+  })
+
+  it('com "default" salvo só "Pede permissão" fica marcado; sem valor, só "Padrão da conta"', async () => {
+    const checked = async (w: Tab) => {
+      await trigger(w, 'pref-new-mode').trigger('click')
+      await flushPromises()
+      const items = new DOMWrapper(document.body).findAll('[role="menuitemradio"]')
+      const marked = items.filter((i) => i.attributes('aria-checked') === 'true').map((i) => i.text())
+      await new DOMWrapper(document.body).find('[role="menu"]').trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      return marked
+    }
+    stub({ new_session_mode: 'default' })
+    const saved = await mountTab()
+    expect(await checked(saved)).toEqual(['Pede permissão'])
+    saved.unmount()
+    stub({})
+    const empty = await mountTab()
+    expect(await checked(empty)).toEqual(['Padrão da conta'])
+  })
+
+  it('as opções de cada menu têm valores distintos, mesmo com "default" vindo do SDK', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/state': () => jsonResponse({ preferences: {} }),
+      'GET /api/models': () => jsonResponse([{ value: 'default', displayName: 'Padrão do SDK', description: '' }, ...MODELS]),
+    }))
+    const w = await mountTab()
+    await trigger(w, 'pref-new-model').trigger('click')
+    await flushPromises()
+    const marked = new DOMWrapper(document.body).findAll('[role="menuitemradio"]')
+      .filter((i) => i.attributes('aria-checked') === 'true')
+    expect(marked).toHaveLength(1)
+    expect(marked[0].text().startsWith('Padrão')).toBe(true)
+  })
+
   it('ignora valores salvos de tipo errado', async () => {
     stub({ new_session_model: 5, new_session_effort: 'turbo', new_session_mode: 'bypassPermissions' })
     const w = await mountTab()

@@ -12,6 +12,8 @@ import { DEFAULT_FINISHED_AFTER_DAYS, useLayoutStore } from '../../stores/layout
 const MIN_DAYS = 1
 const MAX_DAYS = 365
 const DEFAULT_EDITOR = 'code'
+// Menu value of "Padrão"; it must not collide with a real option (the "default" mode, the SDK's "default" model).
+const INHERIT = 'inherit-default'
 
 const layout = useLayoutStore()
 const models = useModelsStore()
@@ -30,17 +32,17 @@ const saved = ref(false)
 const error = ref<string | null>(null)
 
 const modelOptions = computed<MenuOption[]>(() => [
-  { value: 'default', label: 'Padrão' },
+  { value: INHERIT, label: 'Padrão' },
   ...models.models.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
 ])
 const modelText = computed(() => models.models.find((m) => m.value === newModel.value)?.displayName ?? newModel.value ?? 'Padrão')
 const effortOptions: MenuOption[] = [
-  { value: 'default', label: 'Padrão' },
+  { value: INHERIT, label: 'Padrão' },
   ...ALL_EFFORTS.map((e) => ({ value: e, label: EFFORT_LABELS[e] })),
 ]
 // "Sem perguntas" is not offered here: it needs a confirmation in each conversation.
 const modeOptions: MenuOption[] = [
-  { value: 'default', label: 'Padrão da conta' },
+  { value: INHERIT, label: 'Padrão da conta' },
   ...SELECTABLE_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] })),
 ]
 
@@ -191,27 +193,27 @@ onMounted(load)
             name="Modelo padrão"
             :text="modelText"
             :options="modelOptions"
-            :selected="newModel ?? 'default'"
+            :selected="newModel ?? INHERIT"
             :disabled="!ready"
-            @select="(v) => (newModel = v === 'default' ? null : v)"
+            @select="(v) => (newModel = v === INHERIT ? null : v)"
           />
           <OptionMenu
             data-test="pref-new-effort"
             name="Raciocínio padrão"
             :text="`Raciocínio ${newEffort ? EFFORT_LABELS[newEffort] : 'padrão'}`"
             :options="effortOptions"
-            :selected="newEffort ?? 'default'"
+            :selected="newEffort ?? INHERIT"
             :disabled="!ready"
-            @select="(v) => (newEffort = v === 'default' ? null : (v as Effort))"
+            @select="(v) => (newEffort = v === INHERIT ? null : (v as Effort))"
           />
           <OptionMenu
             data-test="pref-new-mode"
             name="Modo padrão"
             :text="newMode ? MODE_LABELS[newMode] : 'Modo padrão'"
             :options="modeOptions"
-            :selected="newMode ?? 'default'"
+            :selected="newMode ?? INHERIT"
             :disabled="!ready"
-            @select="(v) => (newMode = v === 'default' ? null : (v as PermissionMode))"
+            @select="(v) => (newMode = v === INHERIT ? null : (v as PermissionMode))"
           />
         </div>
         <p id="pref-new-help" class="m-0 text-xs text-fg-muted">

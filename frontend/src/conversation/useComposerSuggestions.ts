@@ -146,10 +146,11 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
       const list = await listCommands(scope)
       if (key === scopeKey()) {
         commands.value = list
-        status.value = 'ready'
+        // The menu may have moved on to `@` while this was in flight; its status is not ours.
+        if (kind.value === 'command') status.value = 'ready'
       }
     } catch (e) {
-      if (key === scopeKey()) {
+      if (key === scopeKey() && kind.value === 'command') {
         status.value = 'error'
         error.value = errorMessage(e)
       }
@@ -200,7 +201,8 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
 
   function refresh() {
     const el = options.textarea.value
-    const found = el ? findTrigger(options.text.value, el.selectionStart ?? options.text.value.length) : null
+    // Without a source (new-conversation modal with no project) there is nothing to list.
+    const found = el && options.scope() ? findTrigger(options.text.value, el.selectionStart ?? options.text.value.length) : null
     if (!found) {
       cancelSearch()
       trigger.value = null
@@ -232,8 +234,14 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     // every key typed while it is open.
     if (opening) {
       cancelSearch()
-      if (commands.value) status.value = 'ready'
-      else void loadCommands()
+      if (commands.value) {
+        status.value = 'ready'
+      } else {
+        // Also covers coming back from `@` while the request is still in flight.
+        status.value = 'loading'
+        error.value = null
+        void loadCommands()
+      }
     }
   }
 

@@ -26,6 +26,11 @@ WALK_LIMIT = 20_000
 RESULT_LIMIT = 100
 GIT_LIST_TIMEOUT = 10.0
 EXCLUDED_DIRS = frozenset({"node_modules", ".git", "dist", "build", ".next", ".nuxt"})
+# Skipped only by the walk (outside git): caches and tool folders that can be huge.
+WALK_SKIPPED_DIRS = frozenset({
+    "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox",
+    ".cache", "target", "coverage", ".gradle", ".idea",
+})
 EXCLUDED_NAMES = frozenset({".DS_Store", "Thumbs.db", ".env", "yarn-error.log"})
 
 
@@ -81,14 +86,27 @@ async def _ls_files(repo: Path, prefix: str) -> list[str]:
         raise FileSearchError(f"Falha ao listar os arquivos: {exc}") from exc
     if code != 0:
         raise FileSearchError(f"Falha ao listar os arquivos: {err.strip() or code}")
-    return [prefix + p for p in out.split("\0") if p]
+    # A nested repository that is not a submodule comes as `inner/`: not a file.
+    return [prefix + p for p in out.split("\0") if p and not p.endswith("/")]
+
+
+async def _inside_work_tree(folder: Path) -> bool:
+    try:
+        code, out, _ = await run_git(folder, "rev-parse", "--is-inside-work-tree", timeout=GIT_LIST_TIMEOUT)
+    except GitError:
+        return False
+    return code == 0 and out.strip() == "true"
 
 
 def _walk(folder: Path, skip: set[Path]) -> list[str]:
     found: list[str] = []
     for root, dirs, names in os.walk(folder):  # does not follow links
         base = Path(root)
-        dirs[:] = sorted(d for d in dirs if d not in EXCLUDED_DIRS and base / d not in skip)
+        dirs[:] = sorted(
+            d for d in dirs
+            if d not in EXCLUDED_DIRS and d not in WALK_SKIPPED_DIRS
+            and not d.startswith(".") and base / d not in skip
+        )
         for name in sorted(names):
             rel = (base / name).relative_to(folder).as_posix()
             if is_excluded(rel):
@@ -100,7 +118,7 @@ def _walk(folder: Path, skip: set[Path]) -> list[str]:
 
 
 async def _list(folder: Path) -> list[str]:
-    if (folder / ".git").exists():
+    if await _inside_work_tree(folder):
         paths = await _ls_files(folder, "")
     else:
         repos = [r for r in await asyncio.to_thread(discover, folder) if r != folder]
@@ -125,7 +143,7 @@ class FileIndex:
 
     async def search(self, folder: Path, query: str) -> list[FileMatch]:
         paths = await self._listing(folder.resolve())
-        return match_files(paths, query)
+        return await asyncio.to_thread(match_files, paths, query)
 
     async def _listing(self, key: Path) -> list[str]:
         async with self._locks.setdefault(key, asyncio.Lock()):

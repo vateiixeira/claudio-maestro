@@ -197,6 +197,70 @@ describe('menu /', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('sem fonte (modal sem projeto) o menu não abre nem fica em carregando', async () => {
+    const fetch = routeFetch({})
+    vi.stubGlobal('fetch', fetch)
+    const t = harness(ref<SuggestionScope | null>(null))
+    await t.type('/co')
+    expect(t.api.isOpen.value).toBe(false)
+    await t.type('@fs')
+    expect(t.api.isOpen.value).toBe(false)
+    expect(t.api.status.value).not.toBe('loading')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('trocar de / para @ antes dos comandos chegarem não mostra "ready" sem arquivos', async () => {
+    let release!: (r: Response) => void
+    const pending = new Promise<Response>((resolve) => { release = resolve })
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/commands': () => pending,
+      'GET /api/sessions/s1/files?q=a': () => jsonResponse([]),
+    }))
+    const t = harness()
+    await t.type('/')
+    await t.type('@a')
+    expect(t.api.status.value).toBe('loading')
+    release(jsonResponse(COMMANDS))
+    await flushPromises()
+    expect(t.api.kind.value).toBe('mention')
+    expect(t.api.status.value).toBe('loading')
+    expect(t.api.commands.value).toHaveLength(2)
+  })
+
+  it('erro dos comandos com o gatilho já em @ não vira erro do menu de arquivos', async () => {
+    let release!: (r: Response) => void
+    const pending = new Promise<Response>((resolve) => { release = resolve })
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/commands': () => pending,
+      'GET /api/sessions/s1/files?q=a': () => jsonResponse([]),
+    }))
+    const t = harness()
+    await t.type('/')
+    await t.type('@a')
+    release(jsonResponse({ detail: 'Falhou.' }, 502))
+    await flushPromises()
+    expect(t.api.status.value).toBe('loading')
+    expect(t.api.error.value).toBeNull()
+  })
+
+  it('voltar de @ para / com os comandos ainda em voo mostra carregando', async () => {
+    let release!: (r: Response) => void
+    const pending = new Promise<Response>((resolve) => { release = resolve })
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/commands': () => pending,
+      'GET /api/sessions/s1/files?q=a': () => jsonResponse([]),
+    }))
+    const t = harness()
+    await t.type('/')
+    await t.type('@a')
+    await t.type('/')
+    expect(t.api.status.value).toBe('loading')
+    release(jsonResponse(COMMANDS))
+    await flushPromises()
+    expect(t.api.status.value).toBe('ready')
+    expect(t.api.items.value).toHaveLength(2)
+  })
+
   it('perder o foco fecha sem suprimir', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/commands': () => jsonResponse(COMMANDS) }))
     const t = harness()

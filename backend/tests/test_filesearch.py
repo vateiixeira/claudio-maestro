@@ -127,6 +127,40 @@ async def test_folder_with_several_repositories_uses_git_in_each(tmp_path: Path)
 
 
 @pytest.mark.anyio
+async def test_project_inside_a_repository_respects_the_repository_gitignore(tmp_path: Path):
+    repo = make_repo(tmp_path / "repo")
+    (repo / ".gitignore").write_text("segredo.txt\n")
+    touch(repo, "backend/app.py", "backend/segredo.txt", "outro/fora.py")
+    git(repo, "add", ".gitignore")
+    git(repo, "commit", "-q", "-m", "ignore")
+    result = await FileIndex().search(repo / "backend", "")
+    assert [m.path for m in result if m.type == "file"] == ["app.py"]
+
+
+@pytest.mark.anyio
+async def test_walk_skips_cache_and_hidden_folders_so_the_limit_keeps_project_files(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("vibing.filesearch.WALK_LIMIT", 10)
+    touch(tmp_path, *[f".venv/lib/f{i}.py" for i in range(30)])
+    touch(tmp_path, *[f"__pycache__/c{i}.pyc" for i in range(30)])
+    touch(tmp_path, ".mypy_cache/x.json", ".hidden/y.py", "target/z.py", "app/main.py")
+    result = await FileIndex().search(tmp_path, "main")
+    assert [m.path for m in result if m.type == "file"] == ["app/main.py"]
+    everything = [m.path for m in await FileIndex().search(tmp_path, "")]
+    assert everything == ["app/", "app/main.py"]
+
+
+@pytest.mark.anyio
+async def test_nested_repository_does_not_produce_a_nameless_entry(tmp_path: Path):
+    repo = make_repo(tmp_path / "repo")
+    make_repo(repo / "inner")
+    result = await FileIndex().search(repo, "")
+    assert all(m.name for m in result)
+    assert not any(m.path == "inner/" for m in result)
+
+
+@pytest.mark.anyio
 async def test_listing_is_cached_for_30_seconds(tmp_path: Path):
     clock = Clock()
     index = FileIndex(clock=clock)
