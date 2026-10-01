@@ -49,6 +49,7 @@ async function mountControls() {
 const button = (w: ReturnType<typeof mount>, prefix: string) => w.find(`button[aria-label^="${prefix}"]`)
 // The option menus are teleported to <body>, outside the component wrapper.
 const body = () => new DOMWrapper(document.body)
+const labelOf = (item: DOMWrapper<Element>) => item.find('[data-test="option-label"]').text()
 
 describe('seletores da sessão', () => {
   beforeEach(() => setup())
@@ -58,7 +59,7 @@ describe('seletores da sessão', () => {
     expect(button(w, 'Modelo').text()).toBe('Sonnet 5')
     expect(button(w, 'Modelo').attributes('title')).toContain('claude-sonnet-5-20260901')
     expect(button(w, 'Raciocínio').text()).toBe('Raciocínio médio')
-    expect(button(w, 'Modo').text()).toBe('Aceita edições')
+    expect(button(w, 'Permissões').text()).toBe('Permissões: Aceita edições')
   })
 
   it('lista os modelos da API num menu e troca com PATCH', async () => {
@@ -95,19 +96,19 @@ describe('seletores da sessão', () => {
   it('troca o raciocínio com PATCH', async () => {
     const w = await mountControls()
     await button(w, 'Raciocínio').trigger('click')
-    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === 'Máximo')!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => labelOf(i) === 'Máximo')!.trigger('click')
     await flushPromises()
     expect(patches).toEqual([{ effort: 'max' }])
   })
 
   it('menu navega por setas e fecha com Esc', async () => {
     const w = await mountControls()
-    const trigger = button(w, 'Modo')
+    const trigger = button(w, 'Permissões')
     await trigger.trigger('click')
     const items = body().findAll('[role="menuitemradio"]')
     expect(document.activeElement).toBe(items.find((i) => i.attributes('aria-checked') === 'true')!.element)
     await body().find('[role="menu"]').trigger('keydown', { key: 'ArrowDown' })
-    expect(document.activeElement?.textContent?.trim()).toBe('Planejamento')
+    expect(document.activeElement?.textContent?.trim()).toMatch(/^Planejamento/)
     await body().find('[role="menu"]').trigger('keydown', { key: 'Escape' })
     expect(body().find('[role="menu"]').exists()).toBe(false)
     expect(document.activeElement).toBe(trigger.element)
@@ -115,8 +116,8 @@ describe('seletores da sessão', () => {
 
   it('"Sem perguntas" pede confirmação antes do PATCH', async () => {
     const w = await mountControls()
-    await button(w, 'Modo').trigger('click')
-    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
+    await button(w, 'Permissões').trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => labelOf(i) === 'Sem perguntas')!.trigger('click')
     const dialog = w.find('[role="alertdialog"]')
     expect(dialog.exists()).toBe(true)
     expect(dialog.text()).toContain('sem pedir')
@@ -125,8 +126,8 @@ describe('seletores da sessão', () => {
     expect(w.find('[role="alertdialog"]').exists()).toBe(false)
     expect(patches).toEqual([])
 
-    await button(w, 'Modo').trigger('click')
-    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
+    await button(w, 'Permissões').trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => labelOf(i) === 'Sem perguntas')!.trigger('click')
     await w.find('[data-test="bypass-confirm"]').trigger('click')
     await flushPromises()
     expect(patches).toEqual([{ permission_mode: 'bypassPermissions', confirm_bypass: true }])
@@ -135,8 +136,8 @@ describe('seletores da sessão', () => {
   it('"Sem perguntas" ativo fica destacado', async () => {
     setup({ permission_mode: 'bypassPermissions' })
     const w = await mountControls()
-    expect(button(w, 'Modo').text()).toBe('Sem perguntas')
-    expect(button(w, 'Modo').classes()).toContain('text-secondary')
+    expect(button(w, 'Permissões').text()).toBe('Permissões: Sem perguntas')
+    expect(button(w, 'Permissões').classes()).toContain('text-secondary')
   })
 
   it('aplica session.options e mostra o pendente', async () => {
@@ -148,7 +149,7 @@ describe('seletores da sessão', () => {
     await flushPromises()
     expect(button(w, 'Modelo').text()).toBe('Padrão')
     expect(button(w, 'Raciocínio').text()).toBe('Raciocínio alto')
-    expect(button(w, 'Modo').text()).toBe('Planejamento')
+    expect(button(w, 'Permissões').text()).toBe('Permissões: Planejamento')
     expect(w.text()).toContain('vale a partir do próximo turno')
   })
 
@@ -163,10 +164,10 @@ describe('seletores da sessão', () => {
   })
 
   async function openBypass(w: ReturnType<typeof mount>) {
-    const trigger = button(w, 'Modo')
+    const trigger = button(w, 'Permissões')
     ;(trigger.element as HTMLElement).focus()
     await trigger.trigger('click')
-    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === 'Sem perguntas')!.trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => labelOf(i) === 'Sem perguntas')!.trigger('click')
     await flushPromises()
     return trigger
   }
@@ -207,24 +208,84 @@ describe('seletores da sessão', () => {
   }
 })
 
+describe('seletor de modo', () => {
+  const MODE_ORDER = ['Pede permissão', 'Aceita edições', 'Planejamento', 'Sem perguntas', 'Automático', 'Só o pré-aprovado']
+
+  it('mostra o rótulo "Permissões:" em tom suave antes do valor', async () => {
+    setup()
+    const w = await mountControls()
+    const trigger = button(w, 'Permissões')
+    expect(trigger.attributes('aria-label')).toBe('Permissões: aceita edições')
+    const prefix = trigger.find('[data-test="option-prefix"]')
+    expect(prefix.text()).toBe('Permissões:')
+    expect(prefix.classes()).toContain('text-fg-subtle')
+  })
+
+  it('o rótulo de Modelo e Raciocínio não ganha prefixo extra', async () => {
+    setup()
+    const w = await mountControls()
+    expect(button(w, 'Modelo').find('[data-test="option-prefix"]').exists()).toBe(false)
+    expect(button(w, 'Raciocínio').find('[data-test="option-prefix"]').exists()).toBe(false)
+  })
+
+  it('cada modo tem uma descrição curta no menu', async () => {
+    setup()
+    const w = await mountControls()
+    await button(w, 'Permissões').trigger('click')
+    const items = body().findAll('[role="menuitemradio"]')
+    expect(items.map(labelOf)).toEqual(MODE_ORDER)
+    for (const item of items) {
+      const description = item.find('[data-test="option-description"]').text()
+      expect(description.length).toBeGreaterThan(10)
+      expect(description.length).toBeLessThan(110)
+    }
+    const byLabel = (l: string) => items.find((i) => labelOf(i) === l)!.find('[data-test="option-description"]').text()
+    expect(byLabel('Pede permissão')).toMatch(/pergunta/i)
+    expect(byLabel('Aceita edições')).toContain('edições')
+    expect(byLabel('Planejamento')).toContain('plano')
+    expect(byLabel('Sem perguntas')).toContain('sem pedir')
+    expect(byLabel('Só o pré-aprovado')).toContain('pré-aprovado')
+  })
+
+  it('o menu marca o modo atual com o check', async () => {
+    setup()
+    const w = await mountControls()
+    await button(w, 'Permissões').trigger('click')
+    const items = body().findAll('[role="menuitemradio"]')
+    const checks = items.filter((i) => i.find('[data-test="option-check"]').exists())
+    expect(checks).toHaveLength(1)
+    expect(labelOf(checks[0]!)).toBe('Aceita edições')
+    expect(checks[0]!.attributes('aria-checked')).toBe('true')
+    expect(checks[0]!.find('svg').attributes('aria-hidden')).toBe('true')
+  })
+
+  it('"Sem perguntas" segue em laranja e com confirmação', async () => {
+    setup({ permission_mode: 'bypassPermissions' })
+    const w = await mountControls()
+    const trigger = button(w, 'Permissões')
+    expect(trigger.classes()).toContain('text-secondary')
+    expect(trigger.classes()).toContain('bg-secondary-tint')
+  })
+})
+
 describe('modos automático, só o pré-aprovado e desconhecido', () => {
   it('modo auto vindo do init não quebra e mostra o rótulo', async () => {
     setup({ permission_mode: 'auto' })
     const w = await mountControls()
-    expect(button(w, 'Modo').text()).toBe('Automático')
+    expect(button(w, 'Permissões').text()).toBe('Permissões: Automático')
   })
 
   it('modo desconhecido mostra o valor cru', async () => {
     setup({ permission_mode: 'novoModo' })
     const w = await mountControls()
-    expect(button(w, 'Modo').text()).toBe('novoModo')
+    expect(button(w, 'Permissões').text()).toBe('Permissões: novoModo')
   })
 
   it.each([['Automático', 'auto'], ['Só o pré-aprovado', 'dontAsk']])('%s troca sem confirmação', async (label, value) => {
     setup()
     const w = await mountControls()
-    await button(w, 'Modo').trigger('click')
-    await body().findAll('[role="menuitemradio"]').find((i) => i.text() === label)!.trigger('click')
+    await button(w, 'Permissões').trigger('click')
+    await body().findAll('[role="menuitemradio"]').find((i) => labelOf(i) === label)!.trigger('click')
     await flushPromises()
     expect(w.find('[data-test="bypass-overlay"]').exists()).toBe(false)
     expect(patches).toEqual([{ permission_mode: value }])
@@ -248,7 +309,7 @@ describe('resposta do PATCH', () => {
     }, 2))
     release(jsonResponse({ ...makeSession(), model: 'haiku', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false, model_resolved: null }))
     await flushPromises()
-    expect(button(w, 'Modo').text()).toBe('Planejamento')
+    expect(button(w, 'Permissões').text()).toBe('Permissões: Planejamento')
   })
 })
 

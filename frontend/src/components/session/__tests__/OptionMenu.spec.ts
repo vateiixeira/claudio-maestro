@@ -317,4 +317,31 @@ describe('OptionMenu', () => {
     const checked = menuEl()!.querySelectorAll('[role="menuitemradio"][aria-checked="true"]')
     expect(checked).toHaveLength(1)
   })
+
+  it('marks only the selected option with a check icon and keeps aria-checked', async () => {
+    const { trigger } = mountMenu(rect(50, 700))
+    await trigger.trigger('click')
+    const items = Array.from(menuEl()!.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+    expect(items.map((i) => !!i.querySelector('[data-test="option-check"]'))).toEqual([false, true, false])
+    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false'])
+    const check = items[1]!.querySelector('svg')!
+    expect(check.getAttribute('aria-hidden')).toBe('true')
+    expect(check.getAttribute('stroke')).toBe('currentColor')
+    // Every item reserves the same slot so the labels stay aligned.
+    expect(items.every((i) => i.querySelector('[data-test="option-mark"]'))).toBe(true)
+  })
+
+  it('shows the prefix before the text, in a subtle tone', () => {
+    const { trigger } = mountMenu(rect(50, 700), { prefix: 'Permissões:' })
+    expect(trigger.text()).toBe('Permissões: Beta')
+    expect(trigger.find('[data-test="option-prefix"]').classes()).toContain('text-fg-subtle')
+  })
+
+  it('renders the label and the description of an option in separate elements', async () => {
+    const { trigger } = mountMenu(rect(50, 700))
+    await trigger.trigger('click')
+    const beta = menuEl()!.querySelectorAll<HTMLElement>('[role="menuitemradio"]')[1]!
+    expect(beta.querySelector('[data-test="option-label"]')!.textContent).toBe('Beta')
+    expect(beta.querySelector('[data-test="option-description"]')!.textContent).toBe('Segunda')
+  })
 })

@@ -43,7 +43,20 @@ const effortOptions = computed<MenuOption[]>(() =>
 )
 
 const mode = computed<string>(() => options.value?.permission_mode ?? 'default')
-const modeOptions: MenuOption[] = (Object.keys(MODE_LABELS) as PermissionMode[]).map((m) => ({ value: m, label: MODE_LABELS[m] }))
+// One line each, only what the app and the SDK confirm (see the spec, 7.1, and the permission cards).
+const MODE_DESCRIPTIONS: Record<PermissionMode, string> = {
+  default: 'Pergunta antes de editar arquivos ou rodar comandos.',
+  acceptEdits: 'Aplica edições de arquivos sem perguntar; o resto ainda pede.',
+  plan: 'Só planeja: propõe um plano e espera sua aprovação.',
+  bypassPermissions: 'Roda tudo sem pedir permissão. Pede confirmação ao ativar.',
+  auto: 'Modo automático do Claude. Nem todo modelo aceita.',
+  dontAsk: 'Não pergunta: só roda o que já está pré-aprovado.',
+}
+const modeOptions: MenuOption[] = (Object.keys(MODE_LABELS) as PermissionMode[]).map((m) => ({
+  value: m,
+  label: MODE_LABELS[m],
+  description: MODE_DESCRIPTIONS[m],
+}))
 
 // The session summary is refreshed by events; the snapshot only holds what it had at load.
 const sessionsStore = useSessionsStore()
@@ -145,7 +158,8 @@ function onDialogKey(event: KeyboardEvent) {
       @select="(v) => apply({ effort: v as Effort })"
     />
     <OptionMenu
-      :name="`Modo: ${modeLabel(mode).toLowerCase()}`"
+      :name="`Permissões: ${modeLabel(mode).toLowerCase()}`"
+      prefix="Permissões:"
       :text="modeLabel(mode)"
       :options="modeOptions"
       :selected="mode"

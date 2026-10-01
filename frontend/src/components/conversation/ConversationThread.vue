@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, provide, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
 import { SESSION_ID_KEY, useChangesPanelStore } from '../../stores/changesPanel'
 import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
 import { useEventSocket } from '../../api/socket'
@@ -292,6 +292,26 @@ function goToTurn(index: number) {
   anchor.focus({ preventScroll: true })
   currentTurn.value = index
 }
+
+// "[" and "]" step through the turns like the bar's buttons, but only while this
+// conversation is on screen and the key is not typing: no modifier, not in a field.
+function isTypingTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false
+  if (target.closest('input, textarea, select')) return true
+  const editable = target.closest('[contenteditable]')
+  return !!editable && editable.getAttribute('contenteditable') !== 'false'
+}
+function onTurnKey(event: KeyboardEvent) {
+  if (event.key !== '[' && event.key !== ']') return
+  if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
+  if (!props.visible || turns.value.length < 2 || isTypingTarget(event.target)) return
+  const index = currentTurn.value + (event.key === ']' ? 1 : -1)
+  if (index < 0 || index >= turns.value.length) return
+  event.preventDefault()
+  goToTurn(index)
+}
+onMounted(() => document.addEventListener('keydown', onTurnKey))
+onBeforeUnmount(() => document.removeEventListener('keydown', onTurnKey))
 watch(
   () => [conv.value?.seq, conv.value?.items.length, conv.value?.prompts.length],
   async ([, items, prompts], [, itemsBefore, promptsBefore]) => {
@@ -349,6 +369,8 @@ function resolvePrompt(promptId: string) {
             <button
               type="button"
               aria-label="Turno anterior"
+              title="Turno anterior ([)"
+              aria-keyshortcuts="["
               class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-transparent text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
               :disabled="currentTurn === 0"
               @click="goToTurn(currentTurn - 1)"
@@ -358,6 +380,8 @@ function resolvePrompt(promptId: string) {
             <button
               type="button"
               aria-label="Próximo turno"
+              title="Próximo turno (])"
+              aria-keyshortcuts="]"
               class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-transparent text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
               :disabled="currentTurn >= turns.length - 1"
               @click="goToTurn(currentTurn + 1)"

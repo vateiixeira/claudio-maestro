@@ -399,7 +399,7 @@ describe('controles e imagens na conversa', () => {
     }))
     const w = await mountView()
     expect(w.find('button[aria-label="Modelo: Padrão"]').exists()).toBe(true)
-    expect(w.find('button[aria-label="Modo: pede permissão"]').exists()).toBe(true)
+    expect(w.find('button[aria-label="Permissões: pede permissão"]').exists()).toBe(true)
     const file = new File([new Uint8Array([65, 65, 65])], 'col.png', { type: 'image/png' })
     await w.find('[data-test="conversation-scroller"]').trigger('drop', { dataTransfer: { files: [file], types: ['Files'] } })
     await settleReads()

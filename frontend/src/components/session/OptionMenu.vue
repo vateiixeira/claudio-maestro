@@ -11,6 +11,8 @@ const props = defineProps<{
   /** Accessible name of the button, e.g. "Modelo: Sonnet 5". */
   name: string
   text: string
+  /** Short label shown before the text in a subtle tone, e.g. "Permissões:". */
+  prefix?: string
   options: MenuOption[]
   selected: string | null
   title?: string
@@ -179,7 +181,10 @@ function choose(value: string) {
       :class="highlight ? 'border-secondary/60 bg-secondary-tint text-secondary' : 'border-line text-fg-muted hover:text-fg'"
       @click="toggle"
       @keydown="onTriggerKey"
-    >{{ text }}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="text-fg-subtle"><path d="m6 9 6 6 6-6" /></svg></button>
+    >
+      <span v-if="prefix" data-test="option-prefix" :class="highlight ? 'opacity-80' : 'text-fg-subtle'">{{ prefix }}</span> <span>{{ text }}</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="text-fg-subtle"><path d="m6 9 6 6 6-6" /></svg>
+    </button>
     <Teleport to="body">
     <div
       v-if="open"
@@ -197,9 +202,16 @@ function choose(value: string) {
         role="menuitemradio"
         :aria-checked="option.value === selected"
         tabindex="-1"
-        class="flex cursor-pointer flex-col items-start rounded-md px-2.5 py-1.5 text-left text-sm text-fg hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted aria-checked:text-fg aria-checked:font-semibold"
+        class="grid cursor-pointer grid-cols-[0.875rem_auto] justify-items-start gap-x-2 rounded-md px-2.5 py-1.5 text-left text-sm text-fg hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted aria-checked:text-fg aria-checked:font-semibold"
         @click="choose(option.value)"
-      ><span>{{ option.label }}</span><span v-if="option.description" class="text-xs text-fg-subtle">{{ option.description }}</span></button>
+      >
+        <span data-test="option-label" class="col-start-2">{{ option.label }}</span>
+        <span v-if="option.description" data-test="option-description" class="col-start-2 text-xs text-fg-subtle">{{ option.description }}</span>
+        <!-- Last in the DOM, placed in the first column: the label stays the first child. -->
+        <span data-test="option-mark" class="col-start-1 row-start-1 mt-[3px] flex size-3.5 items-center justify-center text-primary">
+          <svg v-if="option.value === selected" data-test="option-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+        </span>
+      </button>
     </div>
     </Teleport>
   </div>
