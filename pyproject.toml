@@ -3,6 +3,8 @@ name = "claudio-maestro"
 version = "0.1.0"
 description = "Cláudio Maestro: app web local para conduzir sessões do Claude em vários projetos numa tela só"
 license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
 authors = [{ name = "Vinicius Alexandre", email = "vateiixeira@gmail.com" }]
 requires-python = ">=3.13"
 keywords = ["claude", "claude-agent-sdk", "agentes", "fastapi", "vue"]
@@ -25,6 +27,9 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/vateiixeira/claudio-maestro"
 Issues = "https://github.com/vateiixeira/claudio-maestro/issues"
+
+[project.scripts]
+claudio-maestro = "claudio_maestro.cli:run"
 
 [dependency-groups]
 dev = [
