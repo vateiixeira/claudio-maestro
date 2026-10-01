@@ -31,6 +31,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Concluído | 14 de 14 |
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
+| 15. Ajustes da crítica de design | Leitura de tabelas e diffs, laranja só para o que precisa de você, erros em vermelho | Em andamento | 0 de 5 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido e concluído em 2026-09-30, junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
@@ -410,6 +411,19 @@ Pedido pelo usuário em 2026-09-30, que escolheu a opção A entre três direç�
 - [x] Barra lateral: triângulo laranja forte só em conversa com novidade ou com pedido pendente (2026-09-30)
 - [x] Demais telas: Inbox, Conversas, Dashboard, projeto, Preferências, modais, sem verde em links e sem cores fixas (2026-09-30)
 - [x] Revisão do marco pelo `milestone-reviewer` e conferência no app (2026-09-30)
+
+## Marco 15. Ajustes da crítica de design
+
+Objetivo: corrigir o que a crítica do `/impeccable` encontrou na tela da conversa depois do marco 14. O usuário pediu os ajustes em 2026-09-30 e deixou as decisões a critério do agente.
+
+- Crítica: `.impeccable/critique/` (nota 26 de 40, quatro problemas P1)
+- Decisões: o laranja marca só a conversa que precisa de você (pedido pendente, erro ou novidade não vista), nos contadores, na Inbox e na barra lateral; mensagens de erro passam a vermelho; o cabeçalho da conversa não muda de layout neste marco.
+
+- [ ] Defeitos de leitura: tabelas do markdown, linha compacta do Dashboard, atalho da busca, foco do diálogo do modo sem perguntas, caminho do plano, botão Enviar desativado, código inline e campos sem nome
+- [ ] Laranja só para o que precisa de você, com forma distinta da espera comum, e erros em vermelho
+- [ ] Arquivo novo e diff longo aparecem recolhidos na conversa
+- [ ] Aviso de conteúdo novo com botão para ir ao fim da conversa
+- [ ] Revisão do marco pelo `milestone-reviewer` e nova crítica
 
 ## Fora do MVP
 
