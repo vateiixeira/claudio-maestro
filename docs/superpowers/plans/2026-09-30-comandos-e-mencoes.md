@@ -2279,7 +2279,7 @@ Item 11 do marco 13. Quem faz é a sessão principal, com o usuário, depois das
 **Arquivos:**
 - Criar: `scripts/commands_smoke.py`
 
-- [ ] **Passo 1: script.** Siga o molde de `scripts/sdk_smoke.py`: remova as variáveis `CLAUDE*` do ambiente com `clean_inherited_env()`.
+- [x] **Passo 1: script.** Siga o molde de `scripts/sdk_smoke.py`: remova as variáveis `CLAUDE*` do ambiente com `clean_inherited_env()`.
 
 ```python
 """Manual check of the command catalog against the real SDK (only connects: no prompt,
@@ -2310,16 +2310,16 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-- [ ] **Passo 2: rodar** `uv run python scripts/commands_smoke.py` na raiz da worktree. Esperado: mais de 50 comandos, com `commit` e `superpowers:brainstorming` marcados como `ok`. Confira que nenhum hook `SessionStart` rodou: nenhum efeito colateral dos hooks do usuário, e nenhum arquivo novo de sessão em `~/.claude/projects/<pasta da worktree>/`, comparando a listagem antes e depois.
+- [x] **Passo 2: rodar** `uv run python scripts/commands_smoke.py` na raiz da worktree. Esperado: mais de 50 comandos, com `commit` e `superpowers:brainstorming` marcados como `ok`. Confira que nenhum hook `SessionStart` rodou: nenhum efeito colateral dos hooks do usuário, e nenhum arquivo novo de sessão em `~/.claude/projects/<pasta da worktree>/`, comparando a listagem antes e depois.
 
-- [ ] **Passo 3: no app** (backend e frontend rodando, projeto de teste numa pasta temporária com `.claude/commands/hello.md`):
+- [x] **Passo 3: no app** (backend e frontend rodando, projeto de teste numa pasta temporária com `.claude/commands/hello.md`):
   - `/hel` + Enter insere `/hello `, com a dica de argumentos se houver. Enviar `/hello Vinicius` roda o comando.
   - Reabrir a conversa mostra o balão `/hello Vinicius`.
   - `@` + termo lista o arquivo. Escolher o arquivo e perguntar sobre ele mostra que o Claude recebeu o conteúdo.
   - O mesmo `/` e `@` no modal de nova conversa.
   - Apague a sessão de teste ao terminar.
 
-- [ ] **Passo 4:** registre o resultado no roadmap (item 11), separando o que rodou do que não deu para conferir. Faça o commit:
+- [x] **Passo 4:** registre o resultado no roadmap (item 11), separando o que rodou do que não deu para conferir. Faça o commit:
 
 ```bash
 git add scripts/commands_smoke.py ROADMAP.md

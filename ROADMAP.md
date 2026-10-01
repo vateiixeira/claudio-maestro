@@ -29,10 +29,10 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
-| 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Em andamento | 13 de 14 |
+| 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Concluído | 14 de 14 |
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
 
-Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido em 2026-09-30 e está em andamento junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
+Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido e concluído em 2026-09-30, junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
 ## Preparação
 
@@ -390,7 +390,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/pendenc
 - [x] Integração no modal de nova conversa (2026-09-30)
 - [x] Realce das menções e dica de argumentos (`MentionMirror`) (2026-09-30)
 - [x] Comando como balão no histórico (2026-09-30)
-- [ ] Verificação manual contra o SDK real e no app
+- [x] Verificação manual contra o SDK real e no app: catálogo pelo script (57 comandos, sem sessão criada), rotas `/commands` e `/files` no backend em execução e, no navegador, `/hello` com balão no histórico, `@` com conteúdo chegando ao Claude, menus no modal e modo padrão "Pede permissão" nas Preferências, conferidos pelo usuário (2026-09-30)
 - [x] Preferências com modelo, raciocínio e modo padrão das novas conversas: o que estiver salvo lá vale para toda sessão nova, no campo da conversa e no modal (pedido do usuário em 2026-09-30, fora da spec de comandos; substitui a decisão de 2026-09-29 de herdar o modo padrão do CLI quando houver valor salvo) (2026-09-30)
 - [x] Botão de copiar em cada bloco de código das respostas do Claude e do plano (pedido do usuário em 2026-09-30, fora da spec de comandos) (2026-09-30)
 - [x] Investigar se dá para fazer o `/design` (Claude Design) funcionar nas conversas do app: hoje `/design consent` falha com 403 e `/design-login` responde que não está disponível neste ambiente (pedido do usuário em 2026-09-30) (2026-09-30). Conclusão: o 403 vem do token do `/login`, que não tem os escopos `user:design:*`; `/design-login` é um painel interativo que o CLI recusa em sessão não interativa (SDK). Rodar `/design-login` uma vez no `claude` do terminal grava `designOauth` em `~/.claude/.credentials.json`, que as sessões do app leem; o `/design` completo (brief, importar, exportar) depende de flags remotas da conta e não se resolve pelo app
@@ -488,3 +488,4 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-30 | Comandos (`/`) e menções (`@`) no campo de mensagem viram o marco 13, seguindo o comportamento da extensão do VSCode |
 | 2026-09-30 | Marco 12 concluído de novo, depois de reaberto: subagentes em segundo plano do app e do CLI contam como "Em execução" (no CLI, cada arquivo de subagente vale até o próprio `end_turn` ou 20 min sem escrever), Recentes por última interação e nome do projeto no menu lateral; revisado pelo `milestone-reviewer` |
 | 2026-09-30 | Preferências guardam modelo, raciocínio e modo das conversas novas; o backend aplica ao criar a sessão. Com modo salvo, ele vale sobre o `defaultMode` do CLI (substitui a decisão de 2026-09-29 nesse caso); "Ignorar permissões" nunca vem das Preferências |
+| 2026-09-30 | Marco 13 concluído: menus `/` e `@` no campo da conversa e no modal, comando como balão no histórico, botão de copiar código, padrões de conversa nova nas Preferências e investigação do `/design`; revisado pelo `milestone-reviewer` e conferido no app pelo usuário |
