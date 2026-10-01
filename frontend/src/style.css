@@ -13,6 +13,7 @@
   --color-fg-muted: #a1a1aa;
   --color-fg-subtle: #94949d;
   --color-code-fg: #e4e4e7;
+  --color-code-string: #c9b8e0;
   --color-primary: #4ade80;
   --color-primary-fg: #052e14;
   --color-primary-soft: #86efac;
@@ -57,6 +58,11 @@ body {
 .markdown > div > :last-child { margin-bottom: 0; }
 .markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0 0 0.75em; }
 .markdown ul, .markdown ol { padding-left: 1.4em; }
+/* The Tailwind reset zeroes list-style; bring the markers back, only inside .markdown. */
+.markdown ul { list-style: disc; }
+.markdown ol { list-style: decimal; }
+.markdown ul ul { list-style: circle; }
+.markdown li::marker { color: var(--color-fg-subtle); }
 .markdown h1, .markdown h2, .markdown h3 { margin: 1.1em 0 0.5em; font-size: 15px; font-weight: 600; }
 .markdown h4 { margin: 1em 0 0.5em; font-size: 1em; font-weight: 600; }
 .markdown a {
@@ -139,10 +145,12 @@ body {
 .markdown th:not(:last-child), .markdown td:not(:last-child) { border-right: 1px solid var(--color-line); }
 .markdown hr { border: none; border-top: 1px solid var(--color-line); }
 
-.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta { color: var(--color-secondary-soft); }
-.hljs-string, .hljs-attr, .hljs-addition, .hljs-regexp { color: var(--color-primary-soft); }
-.hljs-comment, .hljs-quote { color: var(--color-fg-muted); font-style: italic; }
-.hljs-number, .hljs-literal, .hljs-title, .hljs-type { color: var(--color-diff-del-fg); }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta { color: var(--color-fg); font-weight: 600; }
+.hljs-string, .hljs-attr, .hljs-regexp { color: var(--color-code-string); }
+.hljs-comment, .hljs-quote { color: var(--color-fg-subtle); font-style: italic; }
+.hljs-number, .hljs-literal { color: var(--color-code-fg); }
+.hljs-title, .hljs-type { color: var(--color-fg); font-weight: 600; }
+.hljs-addition { color: var(--color-diff-add-fg); }
 .hljs-deletion { color: var(--color-diff-del-fg); }
 
 /* Visible focus ring on every control reached by keyboard. In the base layer so

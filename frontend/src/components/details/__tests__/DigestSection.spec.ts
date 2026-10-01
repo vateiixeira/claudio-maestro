@@ -74,6 +74,20 @@ describe('seção Resumo', () => {
     expect(text.indexOf('Falta')).toBeLessThan(text.indexOf('Feito'))
   })
 
+  it('cada item de "Feito" tem um marcador discreto e "Falta" mantém o círculo vazio', async () => {
+    stub({ ...DIGEST, phases: [{ title: 'Ajustes', kind: 'adjustments', status: 'open', done: ['Feito A', 'Feito B'], pending: ['Falta B'], ref: null }] })
+    const w = await mountSection()
+    const done = w.findAll('[data-test="digest-done-item"]')
+    expect(done).toHaveLength(2)
+    for (const item of done) {
+      const marker = item.find('[data-test="digest-done-marker"]')
+      expect(marker.exists()).toBe(true)
+      expect(marker.attributes('aria-hidden')).toBe('true')
+      expect(marker.classes()).toContain('bg-fg-subtle')
+    }
+    expect(w.findAll('[data-test="digest-pending-marker"]')).toHaveLength(1)
+  })
+
   it('mostra o selo de plano concluído', async () => {
     stub({ ...DIGEST, plan_done: true })
     const w = await mountSection()

@@ -62,14 +62,19 @@ const fileName = (path: string) => path.split('/').pop() ?? path
               <p class="m-0 text-[11.5px] font-semibold text-fg">Falta</p>
               <ul class="m-0 flex list-none flex-col gap-1 p-0 text-[13px] leading-normal font-medium text-fg">
                 <li v-for="(item, j) in phase.pending" :key="j" class="flex items-start gap-2">
-                  <span class="mt-[5px] size-2.5 shrink-0 rounded-full border border-fg-muted" aria-hidden="true" />
+                  <span data-test="digest-pending-marker" class="mt-[5px] size-2.5 shrink-0 rounded-full border border-fg-muted" aria-hidden="true" />
                   <span class="min-w-0">{{ item }}</span>
                 </li>
               </ul>
             </div>
             <div v-if="phase.done.length" class="mt-0.5 flex flex-col gap-1">
               <p class="m-0 text-[11.5px] text-fg-subtle">Feito</p>
-              <ul class="m-0 pl-4 text-[12.5px] leading-normal text-fg-muted"><li v-for="(item, j) in phase.done" :key="j">{{ item }}</li></ul>
+              <ul class="m-0 flex list-none flex-col gap-0.5 p-0 text-[12.5px] leading-normal text-fg-muted">
+                <li v-for="(item, j) in phase.done" :key="j" data-test="digest-done-item" class="flex items-start gap-2">
+                  <span data-test="digest-done-marker" class="mt-[9px] h-px w-2 shrink-0 bg-fg-subtle" aria-hidden="true" />
+                  <span class="min-w-0">{{ item }}</span>
+                </li>
+              </ul>
             </div>
           </li>
         </ol>
