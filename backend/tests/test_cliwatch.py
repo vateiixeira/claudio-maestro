@@ -343,7 +343,18 @@ async def test_continuous_writing_updates_during_and_after_the_burst(env):
     env.fake.add(str(env.folder), info("s1", str(env.folder)))
     await env.index.sync_all()
     times: list[float] = []
+    starts: list[float] = []
     env.watcher._on_processed = lambda sid: times.append(time.monotonic())
+    # The throttle spaces the *starts* of the passes by `interval`. A pass takes a
+    # variable time (more under load), so the gap between two finishes can be shorter
+    # than the interval without any throttling failure: measure starts, not finishes.
+    process = env.watcher._process
+
+    async def recording_process(*args, **kwargs):
+        starts.append(time.monotonic())
+        return await process(*args, **kwargs)
+
+    env.watcher._process = recording_process
     env.start()
 
     last_push = await write_continuously(env, "s1", 0.6)
@@ -354,8 +365,9 @@ async def test_continuous_writing_updates_during_and_after_the_burst(env):
     # First pass after ~first_delay, then at most one per interval while writing.
     assert 3 <= during <= 8
     assert times[-1] > last_push  # final pass after the burst
-    gaps = [b - a for a, b in zip(times, times[1:])]
-    assert min(gaps) >= 0.09
+    gaps = [b - a for a, b in zip(starts, starts[1:])]
+    assert len(gaps) >= 2
+    assert min(gaps) >= 0.1 - 0.002  # `interval`, less the timer resolution
     assert row(env.db_path, "s1")["file_modified_at"] == int(env.mtimes["s1"])
 
 
