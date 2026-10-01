@@ -113,6 +113,17 @@ describe('diff de um arquivo', () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/projects/1/diff?repo=apps%2Fmeu+repo&file=a%C3%A7%C3%A3o+%26+teste.py'])
   })
 
+  it('grupo de worktree fora do projeto manda o caminho absoluto como repo', async () => {
+    const fetchMock = vi.fn(async (_url: string) => jsonResponse({ diff: '', truncated: false }))
+    vi.stubGlobal('fetch', fetchMock)
+    mountView({
+      group: group({ path: '/home/vi/worktrees/feat-x', rel_path: '/home/vi/worktrees/feat-x', branch: 'feat-x', worktree: 'feat-x' }),
+      file: file('a.py', { path: '/home/vi/worktrees/feat-x/a.py' }),
+    })
+    await flushPromises()
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/projects/1/diff?repo=%2Fhome%2Fvi%2Fworktrees%2Ffeat-x&file=a.py'])
+  })
+
   it('grupo fora de repositório explica e não faz requisição', async () => {
     const fetchMock = routeFetch({})
     vi.stubGlobal('fetch', fetchMock)

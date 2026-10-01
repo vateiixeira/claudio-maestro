@@ -262,6 +262,8 @@ export interface ChangesGroup {
   branch: string | null
   detached: boolean
   head: string | null
+  /** Name of the git worktree this group belongs to; absent or null for a regular repository. */
+  worktree?: string | null
   files: ChangedFile[]
 }
 

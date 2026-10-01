@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import BranchLabel from '../git/BranchLabel.vue'
+import WorktreeLabel from '../git/WorktreeLabel.vue'
 import { branchText } from '../../stores/git'
 import type { ChangedFile, ChangesGroup } from '../../types/api'
 
@@ -25,8 +26,13 @@ const emit = defineEmits<{ select: [group: ChangesGroup, file: ChangedFile]; ret
     </div>
     <p v-else-if="!loading && groups.length === 0" class="m-0 text-sm text-fg-muted">Sem alterações</p>
     <div v-for="group in groups" :key="group.path ?? '-'" class="flex flex-col rounded-lg border border-line">
-      <div class="flex items-center gap-2 border-b border-line px-3 py-2">
-        <span class="min-w-0 truncate font-mono text-xs font-semibold">{{ group.rel_path ?? 'Fora de repositório' }}</span>
+      <div
+        data-test="group-header"
+        class="flex items-center gap-2 border-b border-line px-3 py-2"
+        :title="group.worktree ? (group.path ?? undefined) : undefined"
+      >
+        <span v-if="group.worktree" data-test="group-worktree" class="flex min-w-0 font-semibold"><WorktreeLabel :text="group.worktree" /></span>
+        <span v-else class="min-w-0 truncate font-mono text-xs font-semibold">{{ group.rel_path ?? 'Fora de repositório' }}</span>
         <BranchLabel v-if="group.rel_path != null" :text="branchText({ ...group, error: null })" muted />
       </div>
       <button
