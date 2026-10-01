@@ -7,7 +7,13 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from test_sessions_api import api, connect_ws, factory, make_project, receive  # noqa: F401
+from test_sessions_api import (  # noqa: F401
+    api,
+    connect_ws,
+    factory,
+    make_project,
+    receive,
+)
 
 
 def create_group(api: TestClient, project_id: int, name: str = "Checkout") -> dict[str, Any]:

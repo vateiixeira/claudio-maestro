@@ -6,10 +6,16 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from git_helpers import GIT_ENV, git, make_repo
-from test_git_api import add_project, api, build, factory, spawn  # noqa: F401 (fixtures)
+from test_git_api import (  # noqa: F401 (fixtures)
+    add_project,
+    api,
+    build,
+    factory,
+    spawn,
+)
 from test_sessions_api import APP_ORIGIN, BACKEND_URL
+
 from claudio_maestro import gitinfo
 
 

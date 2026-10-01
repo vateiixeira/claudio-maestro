@@ -6,8 +6,8 @@ import stat
 from pathlib import Path
 
 import pytest
-
 from git_helpers import git, make_repo
+
 from claudio_maestro import gitinfo
 
 pytestmark = pytest.mark.anyio

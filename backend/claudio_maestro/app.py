@@ -7,8 +7,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from claudio_maestro import db
-from claudio_maestro import history
+from claudio_maestro import db, history
 from claudio_maestro.activity import ActivityReader, SessionFile
 from claudio_maestro.agent.base import AgentFactory
 from claudio_maestro.agent.sdk_client import clean_inherited_env
@@ -22,7 +21,8 @@ from claudio_maestro.digest.service import AGENT_DIR_NAME, DigestService
 from claudio_maestro.events import EventHub
 from claudio_maestro.filesearch import FileIndex
 from claudio_maestro.gitmonitor import GitMonitor
-from claudio_maestro.picker import PickFolder, pick_folder as system_pick_folder
+from claudio_maestro.picker import PickFolder
+from claudio_maestro.picker import pick_folder as system_pick_folder
 from claudio_maestro.security import BodySizeLimitMiddleware, HostOriginMiddleware
 from claudio_maestro.sessions import HistoryExists, RenameSession, SessionManager
 

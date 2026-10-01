@@ -42,11 +42,27 @@ from claude_agent_sdk import (
 
 from claudio_maestro import db, groups
 from claudio_maestro import history as history_module
-from claudio_maestro.agent.base import AgentClient, AgentError, AgentFactory, AgentOptions
+from claudio_maestro.agent.base import (
+    AgentClient,
+    AgentError,
+    AgentFactory,
+    AgentOptions,
+)
 from claudio_maestro.config import read_user_claude_settings
-from claudio_maestro.conversation import ConversationBuilder, Event, cap_items, rate_limit_text
+from claudio_maestro.conversation import (
+    ConversationBuilder,
+    Event,
+    cap_items,
+    rate_limit_text,
+)
 from claudio_maestro.digest import store as digest_store
-from claudio_maestro.plans import PLAN_TOOLS, PlanCache, is_plan_path, last_plan_ref, looks_like_plan_path
+from claudio_maestro.plans import (
+    PLAN_TOOLS,
+    PlanCache,
+    is_plan_path,
+    last_plan_ref,
+    looks_like_plan_path,
+)
 from claudio_maestro.projects import Project
 from claudio_maestro.projects import project_roots as registered_project_roots
 
@@ -288,7 +304,8 @@ class SessionRecord:
         """Folder the session works in: its worktree while it exists and the transcript
         lives in that worktree's history folder, else `cwd`. Resuming elsewhere than
         where the file is would split the conversation."""
-        from claudio_maestro.cliwatch import history_folder_name  # cliwatch imports this module
+        # cliwatch imports this module, so the import cannot be at the top.
+        from claudio_maestro.cliwatch import history_folder_name
 
         if (
             self.worktree_path

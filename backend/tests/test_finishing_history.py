@@ -13,18 +13,18 @@ from typing import Any
 
 import pytest
 from claude_agent_sdk import AssistantMessage, ToolUseBlock
-from history_fakes import FakeHistory, info
-
 from git_helpers import make_repo
+from history_fakes import FakeHistory, info
 from test_git_api import add_project, api, factory, spawn  # noqa: F401
+
 from claudio_maestro import db, gitinfo, history
 from claudio_maestro.cliwatch import DEFAULT_RELOAD_INTERVAL, CliWatcher
 from claudio_maestro.conversation import ConversationBuilder, cap_items
 from claudio_maestro.history import HistoryIndex, read_edits_file, read_transcript_file
+
 # Taken before the autouse fixture replaces it with a stub.
 from claudio_maestro.history import sdk_folder_signature as real_folder_signature
 from claudio_maestro.history import sdk_read_transcript as real_read_transcript
-
 
 # Transcript files ------------------------------------------------------------
 

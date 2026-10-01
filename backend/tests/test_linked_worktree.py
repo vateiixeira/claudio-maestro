@@ -6,8 +6,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from git_helpers import GIT_ENV, git, make_repo
+
 from claudio_maestro import gitinfo
 from claudio_maestro.worktree import LinkedWorktree, linked_worktree
 

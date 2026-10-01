@@ -17,7 +17,11 @@ from pathlib import Path
 from typing import Any
 
 from claudio_maestro.history import REPO_MAX_COUNT, scan_repositories
-from claudio_maestro.worktree import LinkedWorktree, linked_worktree, parse_worktree_list
+from claudio_maestro.worktree import (
+    LinkedWorktree,
+    linked_worktree,
+    parse_worktree_list,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -3,8 +3,8 @@
 import base64
 
 from claude_agent_sdk import PermissionResultAllow
-
 from test_sessions_api import api, factory, new_session, wait_state  # noqa: F401
+
 from claudio_maestro.agent.fake import PermissionStep, init_message, text_turn
 
 PNG = base64.b64encode(b"\x89PNG" + b"0" * 60).decode()

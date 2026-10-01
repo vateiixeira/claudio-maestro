@@ -4,9 +4,9 @@ import os
 from pathlib import Path
 
 import pytest
-
 from git_helpers import git, make_repo
 from test_git_api import add_project, api, diff, factory, spawn  # noqa: F401
+
 from claudio_maestro import history
 
 ACCENTED = "Área de trabalho"

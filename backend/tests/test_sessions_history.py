@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from history_fakes import FakeHistory, assistant_entry, info, now_ms, user_entry
+from history_fakes import FakeHistory, assistant_entry, now_ms, user_entry
 
 from claudio_maestro import db, projects
 from claudio_maestro.agent.fake import FakeAgentFactory, text_turn

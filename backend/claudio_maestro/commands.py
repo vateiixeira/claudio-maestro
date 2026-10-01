@@ -16,7 +16,12 @@ from typing import Any
 
 from claude_agent_sdk import PermissionResultDeny
 
-from claudio_maestro.agent.base import AgentClient, AgentError, AgentFactory, AgentOptions
+from claudio_maestro.agent.base import (
+    AgentClient,
+    AgentError,
+    AgentFactory,
+    AgentOptions,
+)
 
 logger = logging.getLogger(__name__)
 

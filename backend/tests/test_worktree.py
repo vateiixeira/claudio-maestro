@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 
 from claudio_maestro.worktree import (
-    Worktree, current_worktree, last_cwd, parse_worktree_list, worktree_of,
+    Worktree,
+    current_worktree,
+    last_cwd,
+    parse_worktree_list,
+    worktree_of,
 )
 
 

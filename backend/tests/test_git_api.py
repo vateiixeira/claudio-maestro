@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from git_helpers import git, make_repo
-from test_sessions_api import APP_ORIGIN, BACKEND_URL, WS_URL, receive, wait_state
-from claudio_maestro.agent.fake import FakeAgentFactory, text_turn
+from test_sessions_api import APP_ORIGIN, BACKEND_URL, WS_URL, receive
+
 from claudio_maestro import gitinfo
+from claudio_maestro.agent.fake import FakeAgentFactory, text_turn
 from claudio_maestro.app import create_app
 from claudio_maestro.config import Settings
 
@@ -211,7 +211,7 @@ def test_session_changes_unknown(api):
 
 def test_open_in_editor(api, home, spawn):
     root = home / "proj"
-    project = add_project(api, root)
+    add_project(api, root)
     (root / "a.txt").write_text("a")
     response = api.post("/api/open-in-editor", json={"path": str(root / "a.txt")})
     assert response.status_code == 204

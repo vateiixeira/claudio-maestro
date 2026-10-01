@@ -6,9 +6,9 @@ import time
 from pathlib import Path
 
 import pytest
-
 from conftest import APP_ORIGIN
 from git_helpers import git, make_repo
+
 from claudio_maestro import history
 from claudio_maestro.app import create_app
 from claudio_maestro.config import Settings

@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from test_multisession_api import new_session
 from test_sessions_api import APP_ORIGIN, BACKEND_URL, make_project, receive
+
+from claudio_maestro import db
 from claudio_maestro.activity import ActivityReader, message_days
 from claudio_maestro.agent.fake import FakeAgentFactory
 from claudio_maestro.app import create_app
 from claudio_maestro.config import Settings
-from claudio_maestro import db
 
 
 def local(y, m, d, hh=12, mm=0) -> str:

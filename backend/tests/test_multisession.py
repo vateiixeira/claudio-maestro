@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from test_sessions import (
     Env,
     env_cleanup,  # noqa: F401  (fixture)
@@ -15,8 +14,21 @@ from test_sessions import (
     session_row,
     wait_until,
 )
-from claudio_maestro.agent.fake import FailStep, FakeAgentFactory, PauseStep, text_turn, tool_turn
-from claudio_maestro.sessions import SessionManager, SessionNotFoundError, SessionRecord, describe, display_state
+
+from claudio_maestro.agent.fake import (
+    FailStep,
+    FakeAgentFactory,
+    PauseStep,
+    text_turn,
+    tool_turn,
+)
+from claudio_maestro.sessions import (
+    SessionManager,
+    SessionNotFoundError,
+    SessionRecord,
+    describe,
+    display_state,
+)
 
 DAY = 86_400
 

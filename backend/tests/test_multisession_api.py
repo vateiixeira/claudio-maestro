@@ -2,7 +2,6 @@
 
 import pytest
 from fastapi.testclient import TestClient
-
 from test_sessions_api import (
     APP_ORIGIN,
     BACKEND_URL,
@@ -10,6 +9,7 @@ from test_sessions_api import (
     receive,
     wait_state,
 )
+
 from claudio_maestro.agent.fake import FakeAgentFactory, text_turn, tool_turn
 from claudio_maestro.app import create_app
 from claudio_maestro.config import Settings

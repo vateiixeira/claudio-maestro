@@ -19,9 +19,9 @@ from claude_agent_sdk import (
     ToolUseBlock,
     UserMessage,
 )
+
 from claudio_maestro.agent.fake import text_turn, tool_turn
 from claudio_maestro.conversation import (
-    slim_details,
     ConversationBuilder,
     Event,
     NoticeItem,
@@ -29,6 +29,7 @@ from claudio_maestro.conversation import (
     ThinkingItem,
     ToolItem,
     UserItem,
+    slim_details,
 )
 
 SID = "5e1d9c3a-2b4f-4a6e-8c7d-9e0f1a2b3c4d"

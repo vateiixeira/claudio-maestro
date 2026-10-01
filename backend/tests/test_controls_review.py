@@ -8,9 +8,15 @@ import base64
 
 import pytest
 from claude_agent_sdk import ToolUseBlock
-
 from test_controls import PLAN, connected, options_events, prompt_turn
-from test_sessions import by_session, make_env, env_cleanup, session_row, wait_until  # noqa: F401
+from test_sessions import (  # noqa: F401
+    by_session,
+    env_cleanup,
+    make_env,
+    session_row,
+    wait_until,
+)
+
 from claudio_maestro.agent.base import AgentOptions
 from claudio_maestro.agent.fake import (
     DEFAULT_SERVER_MODELS,
@@ -27,7 +33,6 @@ from claudio_maestro.agent.fake import (
 from claudio_maestro.agent.sdk_client import build_sdk_options
 from claudio_maestro.conversation import SUBAGENT_MAX_SECONDS
 from claudio_maestro.sessions import InvalidDecisionError, InvalidImageError
-
 
 # Modes ---------------------------------------------------------------------
 

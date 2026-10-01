@@ -16,9 +16,9 @@ import logging
 import os
 import sqlite3
 import time
-from dataclasses import dataclass, field, replace
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import closing
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -444,7 +444,10 @@ def sdk_get_session_info(session_id: str, directory: str) -> Any | None:
 def _history_folder(directory: str) -> Path | None:
     """The CLI history folder of a directory, resolved like the SDK does."""
     try:
-        from claude_agent_sdk._internal.sessions import _canonicalize_path, _find_project_dir
+        from claude_agent_sdk._internal.sessions import (
+            _canonicalize_path,
+            _find_project_dir,
+        )
     except ImportError:
         return None
     return _find_project_dir(_canonicalize_path(directory))

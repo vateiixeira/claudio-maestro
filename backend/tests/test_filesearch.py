@@ -3,8 +3,8 @@
 from pathlib import Path
 
 import pytest
-
 from git_helpers import git, make_repo
+
 from claudio_maestro.filesearch import FileIndex, FileMatch, is_excluded, match_files
 
 

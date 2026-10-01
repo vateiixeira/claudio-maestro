@@ -22,9 +22,9 @@ from claude_agent_sdk import (
     TextBlock,
 )
 from history_fakes import FakeHistory, user_entry
-
 from test_controls_review import with_background_agent
 from test_sessions import env_cleanup, make_env, session_row, wait_until  # noqa: F401
+
 from claudio_maestro import db
 from claudio_maestro.agent.fake import (
     FailStep,

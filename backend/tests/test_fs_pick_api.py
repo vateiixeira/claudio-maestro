@@ -7,9 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import APP_ORIGIN, BACKEND_URL
 from fastapi.testclient import TestClient
 
-from conftest import APP_ORIGIN, BACKEND_URL
 from claudio_maestro import picker
 from claudio_maestro.app import create_app
 from claudio_maestro.config import Settings

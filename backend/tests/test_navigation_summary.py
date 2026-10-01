@@ -4,12 +4,17 @@ from contextlib import closing
 
 import pytest
 from claude_agent_sdk import ToolUseBlock
+from test_sessions import (  # noqa: F401
+    by_session,
+    env_cleanup,
+    make_env,
+    session_row,
+    wait_until,
+)
 
-from test_sessions import by_session, env_cleanup, make_env, session_row, wait_until  # noqa: F401
 from claudio_maestro import db
 from claudio_maestro.agent.fake import response_messages, text_turn, tool_turn
 from claudio_maestro.sessions import last_action_text
-
 
 # last_action_text -----------------------------------------------------------
 
