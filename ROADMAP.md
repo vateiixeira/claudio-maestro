@@ -28,7 +28,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
-| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
+| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 25 de 25 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Concluído | 14 de 14 |
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
 | 15. Ajustes da crítica de design | Leitura de tabelas e diffs, laranja só para o que precisa de você, erros em vermelho | Concluído | 6 de 6 |
@@ -373,6 +373,8 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 - [x] Apagar do navegador a chave antiga de Recentes, que ficou órfã com a remoção de `recentConversations.ts` (achado da revisão do marco em 2026-09-30) (2026-09-30)
 - [x] Spec e plano do marco anotam a troca da sigla pelo nome do projeto e a largura nova do menu lateral (achado da revisão do marco em 2026-09-30) (2026-09-30)
 - [x] Nova revisão do marco pelo `milestone-reviewer`, depois dos itens reabertos (2026-09-30)
+- [x] Subagente retomado com `SendMessage` volta a contar como rodando: o resultado traz `resumedAgentId`, o cartão do `Agent` original volta a "rodando" e a notificação de término, que chega com o id do `SendMessage`, encerra esse cartão (bug relatado pelo usuário em 2026-09-30) (2026-09-30)
+- [x] Retomada com `SendMessage` de um agente lançado antes de o backend reiniciar também conta como rodando: o `agentId` do resultado do `Agent`/`Task` liga a tarefa ao cartão, ao vivo e no histórico, e a retomada grava o `task_id` para "Parar subagentes" (achado da revisão do marco em 2026-09-30) (2026-09-30)
 
 ## Marco 13. Comandos e menções
 
@@ -504,6 +506,8 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
 | Janela depois do fim de um subagente do app | 3 s (`SUBAGENT_END_GRACE_SECONDS`) sem medição contra o CLI real. Se o turno autônomo demorar mais, o "Aguardando você" volta a piscar; ajustar o valor se isso aparecer no uso |
 | Troca de raciocínio durante subagente | Visto na revisão do marco 12 (2026-09-30): se o raciocínio muda enquanto um subagente roda e o CLI não abre turno depois que ele termina, a reconexão com o valor novo só acontece no próximo turno. Comportamento anterior ao marco |
+| Resultado do `SendMessage` depois do término do agente retomado | Visto na revisão do marco 12 (2026-09-30): o cartão reabriria e ficaria "rodando" até um `background_tasks_changed` vazio ou 3 h. O CLI já omite `resumedAgentId` quando o agente termina antes da resposta, então sobra uma janela pequena. Proteção possível: não reabrir se o id do próprio `SendMessage` já encerrou a tarefa |
+| Retomada de agente fora do histórico cortado | Visto na revisão do marco 12 (2026-09-30): se o `history_limit` cortou o trecho com o `Agent` original, o cartão não existe e a retomada desse agente não conta como "Em execução". Raro; aceito |
 | `/design` nas conversas do app | Investigado em 2026-09-30 (CLI 2.1.286): o consentimento passa a funcionar depois de rodar `/design-login` uma vez no terminal (não verificado). Um botão "Conectar Claude Design" no app poderia usar o subcomando oculto `claude design-login --json`, com protocolo ainda desconhecido; só vale se o passo no terminal incomodar |
 | Enter com menu `/` ou `@` aberto no meio do texto | Resolvido no marco 16 para o `/`: o menu só abre no início da mensagem. Para o `@` continua como na extensão do VS Code: Enter com o menu aberto escolhe o arquivo |
 | Tab numa pasta do menu `@` não mostra subpastas | Visto na revisão do marco 13 (2026-09-30): com o termo `backend/vibing/` só aparecem os arquivos diretos, porque as pastas vêm só dos arquivos encontrados. Segue a spec e a extensão |
@@ -554,6 +558,7 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | 2026-09-30 | Recentes do menu lateral passa a listar todas as conversas não finalizadas, pela última interação, e deixa de ser guardado no navegador. Substitui a decisão de 2026-09-29 e a ordem estável do marco 12 |
 | 2026-09-30 | Comandos (`/`) e menções (`@`) no campo de mensagem viram o marco 13, seguindo o comportamento da extensão do VSCode |
 | 2026-09-30 | Marco 12 concluído de novo, depois de reaberto: subagentes em segundo plano do app e do CLI contam como "Em execução" (no CLI, cada arquivo de subagente vale até o próprio `end_turn` ou 20 min sem escrever), Recentes por última interação e nome do projeto no menu lateral; revisado pelo `milestone-reviewer` |
+| 2026-09-30 | Marco 12 reaberto e concluído outra vez: subagente retomado com `SendMessage` conta como "Em execução", inclusive depois de o backend reiniciar; revisado pelo `milestone-reviewer` |
 | 2026-09-30 | Preferências guardam modelo, raciocínio e modo das conversas novas; o backend aplica ao criar a sessão. Com modo salvo, ele vale sobre o `defaultMode` do CLI (substitui a decisão de 2026-09-29 nesse caso); "Ignorar permissões" nunca vem das Preferências |
 | 2026-09-30 | Marco 13 concluído: menus `/` e `@` no campo da conversa e no modal, comando como balão no histórico, botão de copiar código, padrões de conversa nova nas Preferências e investigação do `/design`; revisado pelo `milestone-reviewer` e conferido no app pelo usuário |
 | 2026-09-30 | Marco 16 concluído: painel Alterações agrupa e abre arquivos de worktrees (dentro e fora do projeto) com a exceção de segurança para worktree comprovada; menu `/` só no início da mensagem; dois testes instáveis estabilizados; revisado pelo `milestone-reviewer` |

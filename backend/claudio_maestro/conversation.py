@@ -283,6 +283,7 @@ class ConversationBuilder:
                 continue
             raw = tool_results.get(item.tool_use_id)
             if raw is not None:
+                self._note_agent_id(item, raw.get("details"))
                 if item.result is None:
                     item.result = {
                         "content": cap_content(omit_images(raw.get("content"))),
@@ -582,6 +583,30 @@ class ConversationBuilder:
         tool.streaming = False
         if block.is_error and tool.subagent is not None and tool.subagent["status"] == "running":
             tool.subagent["status"] = "failed"
+        self._note_agent_id(tool, details)
+        events = [self._put(tool)]
+        if tool.name == "SendMessage" and not block.is_error:
+            events.extend(self._resume_subagent(details))
+        return events
+
+    def _note_agent_id(self, tool: ToolItem, details: Any) -> None:
+        """The Agent/Task result names the task (`agentId`): a later SendMessage
+        resume finds the card by it even without any Task* message."""
+        agent_id = details.get("agentId") if isinstance(details, dict) else None
+        if tool.name in SUBAGENT_TOOLS and isinstance(agent_id, str) and agent_id:
+            self._task_tools.setdefault(agent_id, tool.tool_use_id)
+
+    def _resume_subagent(self, details: dict[str, Any] | None) -> list[Event]:
+        """SendMessage woke a subagent that had ended: its Agent/Task card runs again."""
+        task_id = details.get("resumedAgentId") if isinstance(details, dict) else None
+        tool_use_id = self._task_tools.get(task_id) if isinstance(task_id, str) else None
+        tool = self._tool_item(tool_use_id) if tool_use_id else None
+        if tool is None or tool_use_id not in self._subagents:
+            return []
+        # A card loaded from history has no task_id; stopping it needs one.
+        self._subagents[tool_use_id]["task_id"] = task_id
+        self._subagents[tool_use_id]["status"] = "running"
+        self._subagent_started[tool_use_id] = time.monotonic()
         return [self._put(tool)]
 
     # System, result, rate limit ------------------------------------------
@@ -589,10 +614,13 @@ class ConversationBuilder:
     def _on_task(self, message: SystemMessage) -> list[Event]:
         """Task* messages update the subagent card of the Agent/Task call."""
         task_id = getattr(message, "task_id", None)
-        tool_use_id = getattr(message, "tool_use_id", None) or self._task_tools.get(task_id)
-        if not tool_use_id:
-            return []
-        tool = self._tool_item(tool_use_id)
+        tool_use_id = getattr(message, "tool_use_id", None)
+        tool = self._tool_item(tool_use_id) if tool_use_id else None
+        if tool is None or tool.name not in SUBAGENT_TOOLS:
+            # After a SendMessage resume the CLI names the SendMessage call, not the
+            # Agent/Task one; the card is still the one that started the task.
+            tool_use_id = self._task_tools.get(task_id)
+            tool = self._tool_item(tool_use_id) if tool_use_id else None
         if tool is None or tool.name not in SUBAGENT_TOOLS:
             return []
         self._task_tools[task_id] = tool_use_id

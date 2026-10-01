@@ -29,6 +29,7 @@ from claudio_maestro.agent.fake import (
     task_notification_message,
     task_started_message,
     text_turn,
+    tool_result_message,
 )
 from claudio_maestro.agent.sdk_client import build_sdk_options
 from claudio_maestro.conversation import SUBAGENT_MAX_SECONDS
@@ -387,6 +388,40 @@ async def test_expired_subagent_is_announced_by_the_idle_sweep(make_env, env_cle
     assert later[0]["display_state"] == "waiting"
     assert later[0]["subagents_running"] is False
     assert session.client is not None  # the sweep only announced; idle timeout not reached
+
+
+@pytest.mark.anyio
+async def test_subagent_resumed_by_send_message_shows_as_running(
+    make_env, env_cleanup, monkeypatch
+):
+    monkeypatch.setattr("claudio_maestro.sessions.SUBAGENT_END_GRACE_SECONDS", 0.05)
+    env, session = await with_background_agent(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    sid = session.session_id
+    client.push([task_notification_message(sid, "task-1", "toolu_agent")])
+    await wait_until(lambda: env.manager.summary(sid)["display_state"] == "waiting")
+
+    client.push([
+        init_message(sid),
+        *response_messages(
+            sid,
+            [ToolUseBlock(id="toolu_send", name="SendMessage",
+                          input={"to": "task-1", "message": "reconfira"})],
+            stop_reason="tool_use",
+        ),
+        tool_result_message("toolu_send", "ok", tool_use_result={"resumedAgentId": "task-1"}),
+        result_message(sid),
+    ])
+    await wait_until(lambda: session.state == "idle" and session.subagents_running)
+    await asyncio.sleep(0.02)
+
+    assert env.manager.summary(sid)["display_state"] == "running"
+    assert _updates(env, sid)[-1]["subagents_running"] is True
+
+    client.push([task_notification_message(sid, "task-1", "toolu_send")])
+    await wait_until(lambda: env.manager.summary(sid)["display_state"] == "waiting")
+    await asyncio.sleep(0.02)
+    assert _updates(env, sid)[-1]["subagents_running"] is False
 
 
 # Models --------------------------------------------------------------------

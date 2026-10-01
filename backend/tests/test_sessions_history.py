@@ -7,10 +7,19 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from claude_agent_sdk import ToolUseBlock
 from history_fakes import FakeHistory, assistant_entry, now_ms, user_entry
 
 from claudio_maestro import db, projects
-from claudio_maestro.agent.fake import FakeAgentFactory, text_turn
+from claudio_maestro.agent.fake import (
+    FakeAgentFactory,
+    init_message,
+    response_messages,
+    result_message,
+    task_notification_message,
+    text_turn,
+    tool_result_message,
+)
 from claudio_maestro.sessions import SessionManager
 
 WAIT = 2
@@ -548,3 +557,50 @@ async def test_client_falls_back_to_cwd_when_worktree_is_gone(make_env, tmp_path
     await wait_until(lambda: env.manager.get(sid).state == "idle")
 
     assert env.factory.clients[0].options.cwd == Path(env.folder)
+
+
+@pytest.mark.anyio
+async def test_resume_of_an_agent_launched_before_the_restart_shows_as_running(
+    make_env, monkeypatch
+):
+    monkeypatch.setattr("claudio_maestro.sessions.SUBAGENT_END_GRACE_SECONDS", 0.05)
+    sessions: list[str] = []
+
+    def resume_turn(content):
+        sid = sessions[0]
+        return [
+            init_message(sid),
+            *response_messages(
+                sid,
+                [ToolUseBlock(id="toolu_send", name="SendMessage",
+                              input={"to": "agent-1", "message": "reconfira"})],
+                stop_reason="tool_use",
+            ),
+            tool_result_message("toolu_send", "ok",
+                                tool_use_result={"resumedAgentId": "agent-1"}),
+            result_message(sid),
+        ]
+
+    env = make_env(script=resume_turn)
+    sid = env.add_old_session()
+    sessions.append(sid)
+    env.fake.messages[sid] += [
+        assistant_entry({"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                         "input": {"description": "Rever", "subagent_type": "reviewer"}},
+                        "m2", sid),
+        user_entry([{"type": "tool_result", "tool_use_id": "toolu_agent",
+                     "content": "launched"}], sid, uuid="u2"),
+    ]
+    env.fake.raw_results[sid] = {"toolu_agent": {
+        "content": "launched",
+        "details": {"isAsync": True, "status": "async_launched", "agentId": "agent-1"},
+    }}
+
+    await env.manager.send(sid, "reconfira com o revisor")
+    session = env.manager.get(sid)
+    await wait_until(lambda: session.state == "idle" and session.subagents_running)
+    assert env.manager.summary(sid)["display_state"] == "running"
+
+    env.factory.clients[0].push([task_notification_message(sid, "agent-1", "toolu_send")])
+    await wait_until(lambda: env.manager.summary(sid)["display_state"] != "running")
+    assert not session.subagents_running
