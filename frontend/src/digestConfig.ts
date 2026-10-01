@@ -11,7 +11,7 @@ export const DIGEST_LIMITS = {
 
 type NumberField = keyof typeof DIGEST_LIMITS
 
-// Same texts as backend/vibing/digest/config.py MESSAGES.
+// Same texts as backend/claudio_maestro/digest/config.py MESSAGES.
 export const DIGEST_MESSAGES: Record<NumberField | 'model' | 'extra_instructions', string> = {
   model: 'Escolha um modelo da lista.',
   extra_instructions: 'As instruções extras podem ter até 4.000 caracteres.',

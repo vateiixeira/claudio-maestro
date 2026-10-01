@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from vibing import plans as plans_module
-from vibing.plans import MAX_PLAN_BYTES, PlanCache, is_plan_path, parse_plan
+from claudio_maestro import plans as plans_module
+from claudio_maestro.plans import MAX_PLAN_BYTES, PlanCache, is_plan_path, parse_plan
 
 FENCE = "`" * 3  # built at runtime so this plan file has no nested code fence
 

@@ -18,14 +18,14 @@ from test_cliwatch import wait_until as wait_until_real
 from test_plan_sessions import PLAN_DONE_TEXT, expected_plan, plan_of, write_plan
 from watchfiles import Change
 
-from vibing.agent.fake import FakeAgentFactory
-from vibing.app import create_app
-from vibing.config import Settings
-from vibing.plans import read_new_lines, scan_plan_refs
-from vibing.sessions import SessionManager
+from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.app import create_app
+from claudio_maestro.config import Settings
+from claudio_maestro.plans import read_new_lines, scan_plan_refs
+from claudio_maestro.sessions import SessionManager
 
 BACKEND_URL = "http://127.0.0.1:6660"
-HEADERS = {"origin": "http://localhost:6600", "x-vibing": "1"}
+HEADERS = {"origin": "http://localhost:6600", "x-maestro": "1"}
 
 
 def tool_line(name: str, path: str, *, sidechain: bool = False, block_type: str = "tool_use") -> str:
@@ -201,7 +201,7 @@ async def test_cli_second_change_reads_only_the_new_lines(cli, monkeypatch):
         calls.append(offset)
         return real(file, offset, **kwargs)
 
-    monkeypatch.setattr("vibing.cliwatch.read_new_lines", spy)
+    monkeypatch.setattr("claudio_maestro.cliwatch.read_new_lines", spy)
     cli.start()
     await process(cli, "s1", 1_700_000_500)
     first_size = path.stat().st_size
@@ -267,7 +267,7 @@ async def test_cli_plan_failure_does_not_break_the_pass(cli, monkeypatch):
     def boom(*args: Any, **kwargs: Any):
         raise RuntimeError("falha")
 
-    monkeypatch.setattr("vibing.cliwatch.scan_plan_refs", boom)
+    monkeypatch.setattr("claudio_maestro.cliwatch.scan_plan_refs", boom)
     cli.start()
 
     await process(cli, "s1", 1_700_000_500)

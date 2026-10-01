@@ -2,7 +2,6 @@
 
 import pytest
 from fastapi.testclient import TestClient
-
 from test_sessions_api import (
     APP_ORIGIN,
     BACKEND_URL,
@@ -10,9 +9,10 @@ from test_sessions_api import (
     receive,
     wait_state,
 )
-from vibing.agent.fake import FakeAgentFactory, text_turn, tool_turn
-from vibing.app import create_app
-from vibing.config import Settings
+
+from claudio_maestro.agent.fake import FakeAgentFactory, text_turn, tool_turn
+from claudio_maestro.app import create_app
+from claudio_maestro.config import Settings
 
 
 class RenameSpy:
@@ -44,7 +44,7 @@ def api(factory, rename, home, data_dir):
         history_exists=history_exists,
         rename_session=rename,
     )
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as c:
         yield c
 
 
@@ -124,7 +124,7 @@ def test_list_all_sessions_with_filters(api, home):
 def test_patch_finish_emits_session_updated(api, home):
     project = make_project(api, home)
     sid = new_session(api, project)["session_id"]
-    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
+    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as ws:
         response = api.patch(f"/api/sessions/{sid}", json={"finished": True})
         event = receive(ws)
 
@@ -203,11 +203,11 @@ def test_app_state_rejects_unknown_key(api):
 def test_app_state_layout_key_is_gone(api, data_dir):
     from contextlib import closing
 
-    from vibing import db
+    from claudio_maestro import db
 
     assert api.put("/api/state/layout", json={"columns": []}).status_code == 404
     # An old layout row left in the database is ignored.
-    with closing(db.connect(data_dir / "vibing.db")) as conn:
+    with closing(db.connect(data_dir / "maestro.db")) as conn:
         conn.execute("INSERT INTO app_state (key, value) VALUES ('layout', '{\"columns\": []}')")
     assert api.get("/api/state").json() == {}
 
@@ -229,12 +229,12 @@ def test_preferences_change_finished_after_days(api, home, data_dir):
     import time
     from contextlib import closing
 
-    from vibing import db
+    from claudio_maestro import db
 
     project = make_project(api, home)
     sid = new_session(api, project)["session_id"]
     two_days_ago = int(time.time()) - 2 * 86_400
-    with closing(db.connect(data_dir / "vibing.db")) as conn:
+    with closing(db.connect(data_dir / "maestro.db")) as conn:
         conn.execute(
             "UPDATE sessions SET last_activity_at = ?, last_seen_at = ? WHERE session_id = ?",
             (two_days_ago, two_days_ago, sid),
@@ -259,7 +259,7 @@ def test_lifespan_sweep_closes_idle_session(factory, home, data_dir):
     )
     factory.script = lambda content: text_turn("x", "ok")
     app = create_app(settings=settings, agent_factory=factory, history_exists=lambda s, c: False)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as api:
         project = make_project(api, home)
         sid = new_session(api, project)["session_id"]
         api.post(f"/api/sessions/{sid}/messages", json={"text": "oi"})

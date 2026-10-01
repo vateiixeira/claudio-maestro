@@ -7,7 +7,13 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from test_sessions_api import api, connect_ws, factory, make_project, receive  # noqa: F401
+from test_sessions_api import (  # noqa: F401
+    api,
+    connect_ws,
+    factory,
+    make_project,
+    receive,
+)
 
 
 def create_group(api: TestClient, project_id: int, name: str = "Checkout") -> dict[str, Any]:
@@ -72,8 +78,8 @@ def test_group_routes_refuse_a_request_without_the_app_header(api, home: Path, i
     group = create_group(api, project["id"], "Checkout")
     method, url, body = group_requests(project["id"], group["id"])[index]
 
-    with without_header(api, "x-vibing"):
-        assert "x-vibing" not in api.headers
+    with without_header(api, "x-maestro"):
+        assert "x-maestro" not in api.headers
         response = api.request(method, url, json=body)
     assert response.status_code == 403
     assert response.json()["detail"] == "Cabeçalho do app ausente."
@@ -109,10 +115,10 @@ def test_errors(api, home: Path):
     assert api.delete("/api/groups/999").status_code == 404
 
 
-def test_group_routes_need_the_vibing_header(api, home: Path):
+def test_group_routes_need_the_maestro_header(api, home: Path):
     project = make_project(api, home)
     response = api.post(
-        f"/api/projects/{project['id']}/groups", json={"name": "x"}, headers={"x-vibing": ""}
+        f"/api/projects/{project['id']}/groups", json={"name": "x"}, headers={"x-maestro": ""}
     )
     assert response.status_code in (400, 403)
 

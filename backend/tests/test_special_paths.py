@@ -4,10 +4,10 @@ import os
 from pathlib import Path
 
 import pytest
-
 from git_helpers import git, make_repo
 from test_git_api import add_project, api, diff, factory, spawn  # noqa: F401
-from vibing import history
+
+from claudio_maestro import history
 
 ACCENTED = "Área de trabalho"
 REPO_NAME = "repositório ção"
@@ -158,7 +158,7 @@ def test_project_git_unreadable_folder_is_not_the_limit(api, home, monkeypatch):
             raise PermissionError("no")
         return real(path)
 
-    monkeypatch.setattr("vibing.history.os.scandir", failing)
+    monkeypatch.setattr("claudio_maestro.history.os.scandir", failing)
     body = api.get(f"/api/projects/{project['id']}/git").json()
     assert body["limit_reached"] is False
 

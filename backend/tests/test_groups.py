@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from vibing import db, groups
-from vibing.projects import ProjectNotFoundError
+from claudio_maestro import db, groups
+from claudio_maestro.projects import ProjectNotFoundError
 
 
 @pytest.fixture

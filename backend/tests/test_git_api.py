@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from git_helpers import git, make_repo
-from test_sessions_api import APP_ORIGIN, BACKEND_URL, WS_URL, receive, wait_state
-from vibing.agent.fake import FakeAgentFactory, text_turn
-from vibing import gitinfo
-from vibing.app import create_app
-from vibing.config import Settings
+from test_sessions_api import APP_ORIGIN, BACKEND_URL, WS_URL, receive
+
+from claudio_maestro import gitinfo
+from claudio_maestro.agent.fake import FakeAgentFactory, text_turn
+from claudio_maestro.app import create_app
+from claudio_maestro.config import Settings
 
 
 class SpawnSpy:
@@ -49,7 +49,7 @@ def build(factory, spawn, home, data_dir, **settings):
 def api(factory, spawn, home, data_dir):
     with TestClient(
         build(factory, spawn, home, data_dir), base_url=BACKEND_URL,
-        headers={"origin": APP_ORIGIN, "x-vibing": "1"},
+        headers={"origin": APP_ORIGIN, "x-maestro": "1"},
     ) as c:
         yield c
 
@@ -211,7 +211,7 @@ def test_session_changes_unknown(api):
 
 def test_open_in_editor(api, home, spawn):
     root = home / "proj"
-    project = add_project(api, root)
+    add_project(api, root)
     (root / "a.txt").write_text("a")
     response = api.post("/api/open-in-editor", json={"path": str(root / "a.txt")})
     assert response.status_code == 204
@@ -231,14 +231,14 @@ def test_open_in_editor_outside_rejected(api, home, spawn, tmp_path):
 
 
 def test_open_in_editor_missing_command(factory, home, data_dir):
-    from vibing.api.editor import spawn_detached
+    from claudio_maestro.api.editor import spawn_detached
 
     app = build(factory, spawn_detached, home, data_dir)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as api:
         root = home / "proj"
         add_project(api, root)
         api.put("/api/state/preferences",
-                json={"editor_command": ["comando-que-nao-existe-vibing"]})
+                json={"editor_command": ["comando-que-nao-existe-claudio_maestro"]})
         response = api.post("/api/open-in-editor", json={"path": str(root)})
         assert response.status_code == 400
         assert "não encontrado" in response.json()["detail"]
@@ -247,7 +247,7 @@ def test_open_in_editor_missing_command(factory, home, data_dir):
 def test_open_in_editor_invalid_command(api, home):
     root = home / "proj"
     add_project(api, root)
-    from vibing import db as dbmod
+    from claudio_maestro import db as dbmod
 
     with closing(dbmod.connect(api.app.state.settings.db_path)) as conn:
         conn.execute(
@@ -276,7 +276,7 @@ def test_project_git_event_after_turn(api, home, factory):
     project = add_project(api, root)
     sid = api.post(f"/api/projects/{project['id']}/sessions").json()["session_id"]
     factory.script = lambda content: text_turn(sid, "ok")
-    with api.websocket_connect(WS_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
+    with api.websocket_connect(WS_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as ws:
         api.post(f"/api/sessions/{sid}/messages", json={"text": "oi"})
         (event,) = git_events(ws, 1)
         assert event["data"]["project_id"] == project["id"]
@@ -287,7 +287,7 @@ def test_project_git_event_after_turn(api, home, factory):
 def test_project_git_event_limit_reached(factory, spawn, home, data_dir, monkeypatch):
     monkeypatch.setattr(gitinfo, "REPO_MAX_COUNT", 2)
     app = build(factory, spawn, home, data_dir)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as api:
         root = home / "proj"
         for index in range(3):
             make_repo(root / f"r{index}")
@@ -302,7 +302,7 @@ def test_project_git_event_limit_reached(factory, spawn, home, data_dir, monkeyp
 
 def test_project_git_not_repeated(factory, spawn, home, data_dir):
     app = build(factory, spawn, home, data_dir)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as api:
         root = make_repo(home / "proj")
         project = add_project(api, root)
         monitor = app.state.git_monitor
@@ -323,10 +323,10 @@ def test_project_git_not_repeated(factory, spawn, home, data_dir):
 
 def test_project_git_periodic(factory, spawn, home, data_dir):
     app = build(factory, spawn, home, data_dir, git_refresh_interval_seconds=0.05)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as api:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as api:
         root = make_repo(home / "proj")
         project = add_project(api, root)
-        with api.websocket_connect(WS_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
+        with api.websocket_connect(WS_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as ws:
             (first,) = git_events(ws, 1)
             assert first["data"]["project_id"] == project["id"]
             (root / "y").write_text("y")
@@ -360,7 +360,7 @@ def test_diff_pathspec_literal(api, home):
 def test_editor_corrupted_preferences(api, home):
     root = home / "proj"
     add_project(api, root)
-    from vibing import db as dbmod
+    from claudio_maestro import db as dbmod
 
     with closing(dbmod.connect(api.app.state.settings.db_path)) as conn:
         conn.execute(

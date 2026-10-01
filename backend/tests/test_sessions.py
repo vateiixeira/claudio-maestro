@@ -19,9 +19,9 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
-from vibing import db
-from vibing.agent.base import AgentError
-from vibing.agent.fake import (
+from claudio_maestro import db
+from claudio_maestro.agent.base import AgentError
+from claudio_maestro.agent.fake import (
     DEFAULT_FAILURE,
     FailStep,
     FakeAgentClient,
@@ -33,8 +33,8 @@ from vibing.agent.fake import (
     text_turn,
     tool_turn,
 )
-from vibing.projects import Project
-from vibing.sessions import (
+from claudio_maestro.projects import Project
+from claudio_maestro.sessions import (
     DEFAULT_TITLE,
     AlwaysNotAvailableError,
     EmptyMessageError,
@@ -109,7 +109,7 @@ def session_row(db_path: Path, session_id: str) -> dict[str, Any]:
 
 class Env:
     def __init__(self, tmp_path: Path, factory, history_exists=None) -> None:
-        self.db_path = tmp_path / "data" / "vibing.db"
+        self.db_path = tmp_path / "data" / "maestro.db"
         db.init_db(self.db_path)
         self.project = make_project(self.db_path, tmp_path / "home" / "app")
         self.factory = factory

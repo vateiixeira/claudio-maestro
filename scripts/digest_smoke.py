@@ -17,11 +17,11 @@ from pathlib import Path
 for name in [n for n in os.environ if n.startswith("CLAUDE")]:
     del os.environ[name]
 
-from vibing.config import claude_projects_dir  # noqa: E402
-from vibing.digest.merge import merge_digest  # noqa: E402
-from vibing.digest.model import DigestRequest, SdkDigestModel  # noqa: E402
-from vibing.digest.prompt import build_prompt, system_prompt  # noqa: E402
-from vibing.digest.store import Digest  # noqa: E402
+from claudio_maestro.config import claude_projects_dir  # noqa: E402
+from claudio_maestro.digest.merge import merge_digest  # noqa: E402
+from claudio_maestro.digest.model import DigestRequest, SdkDigestModel  # noqa: E402
+from claudio_maestro.digest.prompt import build_prompt, system_prompt  # noqa: E402
+from claudio_maestro.digest.store import Digest  # noqa: E402
 
 
 def show_init(data: dict) -> None:
@@ -29,7 +29,7 @@ def show_init(data: dict) -> None:
 
 
 async def main() -> None:
-    with tempfile.TemporaryDirectory(prefix="vibing-digest-smoke-") as folder:
+    with tempfile.TemporaryDirectory(prefix="maestro-digest-smoke-") as folder:
         before = set(claude_projects_dir().rglob("*.jsonl"))
         model = SdkDigestModel(Path(folder), on_init=show_init)
 

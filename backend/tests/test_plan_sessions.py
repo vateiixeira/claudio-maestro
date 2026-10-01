@@ -12,8 +12,8 @@ import pytest
 from claude_agent_sdk import ToolUseBlock
 from test_sessions import Recorder, by_session, fake_history, session_row, wait_until
 
-from vibing import db
-from vibing.agent.fake import (
+from claudio_maestro import db
+from claudio_maestro.agent.fake import (
     PauseStep,
     init_message,
     response_messages,
@@ -23,8 +23,8 @@ from vibing.agent.fake import (
     tool_result_message,
     tool_turn,
 )
-from vibing.plans import PLAN_TOOLS, PlanCache, looks_like_plan_path
-from vibing.sessions import SessionManager
+from claudio_maestro.plans import PLAN_TOOLS, PlanCache, looks_like_plan_path
+from claudio_maestro.sessions import SessionManager
 
 PLAN_TEXT = "# P\n\n### Tarefa 1: A\n- [x] a\n\n### Tarefa 2: B\n- [ ] b\n"
 PLAN_DONE_TEXT = "# P\n\n### Tarefa 1: A\n- [x] a\n\n### Tarefa 2: B\n- [x] b\n"
@@ -34,7 +34,7 @@ PLAN_DONE_TEXT = "# P\n\n### Tarefa 1: A\n- [x] a\n\n### Tarefa 2: B\n- [x] b\n"
 def make_env(tmp_path: Path):
     from test_sessions import Env
 
-    from vibing.agent.fake import FakeAgentFactory
+    from claudio_maestro.agent.fake import FakeAgentFactory
 
     def build(script=None) -> Env:
         return Env(tmp_path, FakeAgentFactory(script=script))
@@ -81,7 +81,7 @@ def use_turn(sid: str, name: str, path: Path | str, **kwargs):
 
 
 def test_new_database_has_plan_columns(tmp_path):
-    path = tmp_path / "data" / "vibing.db"
+    path = tmp_path / "data" / "maestro.db"
     db.init_db(path)
     with closing(db.connect(path)) as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
@@ -543,14 +543,14 @@ def test_session_out_carries_the_plan_progress(home, data_dir):
     from test_sessions_api import APP_ORIGIN, BACKEND_URL
     from test_sessions_api import make_project as api_project
 
-    from vibing.agent.fake import FakeAgentFactory
-    from vibing.app import create_app
-    from vibing.config import Settings
+    from claudio_maestro.agent.fake import FakeAgentFactory
+    from claudio_maestro.app import create_app
+    from claudio_maestro.config import Settings
 
     app = create_app(
         settings=Settings(home_dir=home, data_dir=data_dir), agent_factory=FakeAgentFactory()
     )
-    headers = {"origin": APP_ORIGIN, "x-vibing": "1"}
+    headers = {"origin": APP_ORIGIN, "x-maestro": "1"}
     with TestClient(app, base_url=BACKEND_URL, headers=headers) as api:
         project = api_project(api, home)
         session = api.post(f"/api/projects/{project['id']}/sessions").json()

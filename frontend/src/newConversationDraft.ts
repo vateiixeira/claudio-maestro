@@ -1,8 +1,8 @@
 import { ALL_EFFORTS, SELECTABLE_MODES } from './sessionOptions'
 import type { Effort, PermissionMode } from './types/api'
 
-const KEY = 'vibing:new-conversation'
-const LAST_PROJECT_KEY = 'vibing:new-conversation-last-project'
+const KEY = 'maestro:new-conversation'
+const LAST_PROJECT_KEY = 'maestro:new-conversation-last-project'
 
 export interface ConversationDraft {
   projectId: number | null

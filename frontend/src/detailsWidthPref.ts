@@ -1,4 +1,4 @@
-const KEY = 'vibing:details-width'
+const KEY = 'maestro:details-width'
 export const DETAILS_DEFAULT_WIDTH = 360
 export const DETAILS_MIN_WIDTH = 300
 export const DETAILS_KEY_STEP = 16

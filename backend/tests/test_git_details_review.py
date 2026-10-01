@@ -5,12 +5,18 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from git_helpers import git, make_repo
-from test_git_api import add_project, api, build, factory, spawn  # noqa: F401 (fixtures)
+from test_git_api import (  # noqa: F401 (fixtures)
+    add_project,
+    api,
+    build,
+    factory,
+    spawn,
+)
 from test_git_details import commit_file, make_clone
 from test_sessions_api import APP_ORIGIN, BACKEND_URL
-from vibing import gitinfo
+
+from claudio_maestro import gitinfo
 
 
 def git_events_of(events: list[dict]) -> list[dict]:
@@ -22,7 +28,7 @@ def git_events_of(events: list[dict]) -> list[dict]:
 
 def test_turn_end_publishes_without_summary_change(factory, spawn, home, data_dir):  # noqa: F811
     app = build(factory, spawn, home, data_dir)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as client:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as client:
         root = make_repo(home / "proj")
         (root / "README.md").write_text("linha 1\nmudou\n")  # already modified
         project = add_project(client, root)
@@ -45,7 +51,7 @@ def test_turn_end_publishes_without_summary_change(factory, spawn, home, data_di
 
 def test_refresh_without_force_does_not_repeat(factory, spawn, home, data_dir):  # noqa: F811
     app = build(factory, spawn, home, data_dir)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as client:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as client:
         root = make_repo(home / "proj")
         project = add_project(client, root)
         monitor = app.state.git_monitor

@@ -7,12 +7,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import APP_ORIGIN, BACKEND_URL
 from fastapi.testclient import TestClient
 
-from conftest import APP_ORIGIN, BACKEND_URL
-from vibing import picker
-from vibing.app import create_app
-from vibing.config import Settings
+from claudio_maestro import picker
+from claudio_maestro.app import create_app
+from claudio_maestro.config import Settings
 
 
 class Picker:
@@ -30,7 +30,7 @@ class Picker:
 
 def make_client(home: Path, data_dir: Path, pick, base_url: str = BACKEND_URL) -> TestClient:
     app = create_app(settings=Settings(home_dir=home, data_dir=data_dir), pick_folder=pick)
-    return TestClient(app, base_url=base_url, headers={"origin": APP_ORIGIN, "x-vibing": "1"})
+    return TestClient(app, base_url=base_url, headers={"origin": APP_ORIGIN, "x-maestro": "1"})
 
 
 def test_returns_chosen_path_resolved(home: Path, data_dir: Path):
@@ -128,10 +128,10 @@ def test_lock_released_after_error(home: Path, data_dir: Path):
 @pytest.mark.parametrize(
     ("base_url", "headers", "status"),
     [
-        (BACKEND_URL, {"origin": APP_ORIGIN}, 403),  # no X-Vibing
-        (BACKEND_URL, {"x-vibing": "1"}, 403),  # no Origin
-        (BACKEND_URL, {"origin": "http://evil.com", "x-vibing": "1"}, 403),  # foreign Origin
-        ("http://evil.com:6660", {"origin": APP_ORIGIN, "x-vibing": "1"}, 400),  # foreign Host
+        (BACKEND_URL, {"origin": APP_ORIGIN}, 403),  # no X-Maestro
+        (BACKEND_URL, {"x-maestro": "1"}, 403),  # no Origin
+        (BACKEND_URL, {"origin": "http://evil.com", "x-maestro": "1"}, 403),  # foreign Origin
+        ("http://evil.com:6660", {"origin": APP_ORIGIN, "x-maestro": "1"}, 400),  # foreign Host
     ],
 )
 def test_pick_is_protected(home: Path, data_dir: Path, base_url, headers, status):
@@ -181,7 +181,7 @@ class HangingProcess:
 
 @pytest.mark.anyio
 async def test_disconnect_kills_picker_and_frees_lock(home: Path, data_dir: Path, monkeypatch):
-    from vibing.api import fs as fs_api
+    from claudio_maestro.api import fs as fs_api
 
     monkeypatch.setattr(fs_api, "DISCONNECT_POLL", 0.01)
     processes: list[HangingProcess] = []
@@ -218,7 +218,7 @@ async def test_full_app_detects_disconnect_after_empty_body(
 ):
     """Whole ASGI app (all security middlewares): an empty `http.request` followed by
     `http.disconnect` cancels the hanging picker and frees the lock."""
-    from vibing.api import fs as fs_api
+    from claudio_maestro.api import fs as fs_api
 
     monkeypatch.setattr(fs_api, "DISCONNECT_POLL", 0.02)
     cancelled = asyncio.Event()
@@ -234,7 +234,7 @@ async def test_full_app_detects_disconnect_after_empty_body(
     headers = [
         (b"host", b"localhost:6660"),
         (b"origin", APP_ORIGIN.encode()),
-        (b"x-vibing", b"1"),
+        (b"x-maestro", b"1"),
     ]
     if content_length:
         headers.append((b"content-length", b"0"))

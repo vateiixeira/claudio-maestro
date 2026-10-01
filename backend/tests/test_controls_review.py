@@ -8,11 +8,17 @@ import base64
 
 import pytest
 from claude_agent_sdk import ToolUseBlock
-
 from test_controls import PLAN, connected, options_events, prompt_turn
-from test_sessions import by_session, make_env, env_cleanup, session_row, wait_until  # noqa: F401
-from vibing.agent.base import AgentOptions
-from vibing.agent.fake import (
+from test_sessions import (  # noqa: F401
+    by_session,
+    env_cleanup,
+    make_env,
+    session_row,
+    wait_until,
+)
+
+from claudio_maestro.agent.base import AgentOptions
+from claudio_maestro.agent.fake import (
     DEFAULT_SERVER_MODELS,
     FakeAgentFactory,
     PauseStep,
@@ -25,10 +31,9 @@ from vibing.agent.fake import (
     text_turn,
     tool_result_message,
 )
-from vibing.agent.sdk_client import build_sdk_options
-from vibing.conversation import SUBAGENT_MAX_SECONDS
-from vibing.sessions import InvalidDecisionError, InvalidImageError
-
+from claudio_maestro.agent.sdk_client import build_sdk_options
+from claudio_maestro.conversation import SUBAGENT_MAX_SECONDS
+from claudio_maestro.sessions import InvalidDecisionError, InvalidImageError
 
 # Modes ---------------------------------------------------------------------
 
@@ -300,7 +305,7 @@ async def test_subagent_end_before_autonomous_turn_does_not_flash_waiting(make_e
 async def test_subagent_end_without_autonomous_turn_settles_to_waiting(
     make_env, env_cleanup, monkeypatch
 ):
-    monkeypatch.setattr("vibing.sessions.SUBAGENT_END_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr("claudio_maestro.sessions.SUBAGENT_END_GRACE_SECONDS", 0.05)
     env, session = await with_background_agent(make_env, env_cleanup)
     client = env.factory.clients[0]
     sid = session.session_id
@@ -389,7 +394,7 @@ async def test_expired_subagent_is_announced_by_the_idle_sweep(make_env, env_cle
 async def test_subagent_resumed_by_send_message_shows_as_running(
     make_env, env_cleanup, monkeypatch
 ):
-    monkeypatch.setattr("vibing.sessions.SUBAGENT_END_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr("claudio_maestro.sessions.SUBAGENT_END_GRACE_SECONDS", 0.05)
     env, session = await with_background_agent(make_env, env_cleanup)
     client = env.factory.clients[0]
     sid = session.session_id

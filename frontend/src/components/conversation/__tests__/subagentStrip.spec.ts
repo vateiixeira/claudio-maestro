@@ -117,7 +117,7 @@ describe('faixa de subagentes', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/sessions/s1/subagents/stop',
-        expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'X-Vibing': '1' }) }),
+        expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'X-Maestro': '1' }) }),
       )
       expect(stop(w).attributes('disabled')).toBeDefined()
       await stop(w).trigger('click')

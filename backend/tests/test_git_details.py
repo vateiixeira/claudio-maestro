@@ -6,11 +6,17 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from git_helpers import GIT_ENV, git, make_repo
-from test_git_api import add_project, api, build, factory, spawn  # noqa: F401 (fixtures)
+from test_git_api import (  # noqa: F401 (fixtures)
+    add_project,
+    api,
+    build,
+    factory,
+    spawn,
+)
 from test_sessions_api import APP_ORIGIN, BACKEND_URL
-from vibing import gitinfo
+
+from claudio_maestro import gitinfo
 
 
 def init_bare(path: Path) -> None:
@@ -372,7 +378,7 @@ def test_details_route_unknown_project(api):  # noqa: F811
 def test_details_route_requires_header(api, home):  # noqa: F811
     project = add_project(api, make_repo(home / "proj"))
     response = api.get(
-        f"/api/projects/{project['id']}/git/details", headers={"x-vibing": ""}
+        f"/api/projects/{project['id']}/git/details", headers={"x-maestro": ""}
     )
     assert response.status_code in (400, 403)
     assert api.get(f"/api/projects/{project['id']}/git/details").status_code == 200
@@ -453,7 +459,7 @@ def test_diff_route_untracked_truncated(api, home, monkeypatch):  # noqa: F811
 
 def test_monitor_publishes_when_only_behind_changes(factory, spawn, home, data_dir):  # noqa: F811
     app = build(factory, spawn, home, data_dir)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as client:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as client:
         remote = home / "remote.git"
         init_bare(remote)
         root = make_repo(home / "proj")

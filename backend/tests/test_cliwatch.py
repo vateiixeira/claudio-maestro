@@ -12,13 +12,13 @@ from fastapi.testclient import TestClient
 from history_fakes import FakeHistory, assistant_entry, info, now_ms, user_entry
 from watchfiles import Change
 
-from vibing import db
-from vibing.agent.fake import FakeAgentFactory
-from vibing.app import create_app, publish_synced
-from vibing.cliwatch import CliWatcher, history_folder_name
-from vibing.config import Settings
-from vibing.history import HistoryIndex
-from vibing.sessions import SessionManager
+from claudio_maestro import db
+from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.app import create_app, publish_synced
+from claudio_maestro.cliwatch import CliWatcher, history_folder_name
+from claudio_maestro.config import Settings
+from claudio_maestro.history import HistoryIndex
+from claudio_maestro.sessions import SessionManager
 
 WAIT = 3
 
@@ -50,7 +50,7 @@ class FakeWatch:
 
 class Env:
     def __init__(self, tmp_path: Path) -> None:
-        self.db_path = tmp_path / "data" / "vibing.db"
+        self.db_path = tmp_path / "data" / "maestro.db"
         db.init_db(self.db_path)
         self.folder = tmp_path / "home" / "app"
         self.folder.mkdir(parents=True)
@@ -578,7 +578,7 @@ def test_app_starts_and_stops_with_missing_claude_folder(home: Path, data_dir: P
     app = create_app(settings=settings, agent_factory=FakeAgentFactory(),
                      list_sessions=fake.list_sessions)
     with TestClient(app, base_url="http://127.0.0.1:6660",
-                    headers={"x-vibing": "1"}) as client:
+                    headers={"x-maestro": "1"}) as client:
         assert client.get("/api/health").status_code == 200
         watcher_task = app.state.cli_watch_task
     assert watcher_task.done()
@@ -598,7 +598,7 @@ def test_app_watcher_is_cancelled_on_shutdown(home: Path, data_dir: Path, tmp_pa
 
 
 def test_settings_claude_projects_dir_follows_env(monkeypatch, tmp_path):
-    from vibing.config import load_settings
+    from claudio_maestro.config import load_settings
 
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
     assert load_settings().claude_projects_dir == tmp_path / "cfg" / "projects"

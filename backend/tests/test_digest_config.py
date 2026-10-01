@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from vibing import db
-from vibing.digest.config import (
+from claudio_maestro import db
+from claudio_maestro.digest.config import (
     MESSAGES,
     ConfigError,
     DigestConfig,

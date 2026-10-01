@@ -4,12 +4,12 @@ import time
 
 from fastapi.testclient import TestClient
 
-from vibing.agent.fake import DEFAULT_SERVER_MODELS, FakeAgentFactory
-from vibing.app import create_app
-from vibing.config import Settings
+from claudio_maestro.agent.fake import DEFAULT_SERVER_MODELS, FakeAgentFactory
+from claudio_maestro.app import create_app
+from claudio_maestro.config import Settings
 
 BACKEND_URL = "http://127.0.0.1:6660"
-HEADERS = {"origin": "http://localhost:6600", "x-vibing": "1"}
+HEADERS = {"origin": "http://localhost:6600", "x-maestro": "1"}
 
 
 def test_startup_refresh_stores_list_and_hides_it_from_state(home, data_dir):

@@ -18,15 +18,15 @@ describe('preferência da divisória da tela do projeto', () => {
 
   it('valor inválido volta para 50', () => {
     for (const bad of ['abc', '', 'NaN', 'Infinity', '{}']) {
-      localStorage.setItem('vibing:project-split', bad)
+      localStorage.setItem('maestro:project-split', bad)
       expect(readSplitPercent()).toBe(50)
     }
   })
 
   it('valor fora de 30 a 70 é limitado', () => {
-    localStorage.setItem('vibing:project-split', '10')
+    localStorage.setItem('maestro:project-split', '10')
     expect(readSplitPercent()).toBe(30)
-    localStorage.setItem('vibing:project-split', '95')
+    localStorage.setItem('maestro:project-split', '95')
     expect(readSplitPercent()).toBe(70)
   })
 

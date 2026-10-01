@@ -173,7 +173,7 @@ describe('divisória da tela do projeto', () => {
   })
 
   it('usa o valor salvo', async () => {
-    localStorage.setItem('vibing:project-split', '35')
+    localStorage.setItem('maestro:project-split', '35')
     const wrapper = await mountView(true, 'a')
 
     expect(wrapper.get('[role="separator"]').attributes('aria-valuenow')).toBe('35')
@@ -181,7 +181,7 @@ describe('divisória da tela do projeto', () => {
   })
 
   it('preferência inválida vira 50', async () => {
-    localStorage.setItem('vibing:project-split', 'lixo')
+    localStorage.setItem('maestro:project-split', 'lixo')
     const wrapper = await mountView(true, 'a')
 
     expect(wrapper.get('[role="separator"]').attributes('aria-valuenow')).toBe('50')
@@ -192,7 +192,7 @@ describe('divisória da tela do projeto', () => {
 
     await divider.trigger('keydown', { key: 'ArrowRight' })
     expect(divider.attributes('aria-valuenow')).toBe('55')
-    expect(localStorage.getItem('vibing:project-split')).toBe('55')
+    expect(localStorage.getItem('maestro:project-split')).toBe('55')
     expect(wrapper.get('[data-test="project-pane"]').attributes('style')).toContain('width: 55%')
 
     await divider.trigger('keydown', { key: 'ArrowLeft' })
@@ -201,7 +201,7 @@ describe('divisória da tela do projeto', () => {
 
     for (let i = 0; i < 10; i++) await divider.trigger('keydown', { key: 'ArrowLeft' })
     expect(divider.attributes('aria-valuenow')).toBe('30')
-    expect(localStorage.getItem('vibing:project-split')).toBe('30')
+    expect(localStorage.getItem('maestro:project-split')).toBe('30')
 
     for (let i = 0; i < 12; i++) await divider.trigger('keydown', { key: 'ArrowRight' })
     expect(divider.attributes('aria-valuenow')).toBe('70')
@@ -226,7 +226,7 @@ describe('divisória da tela do projeto', () => {
     expect(divider.attributes('aria-valuenow')).toBe('70')
 
     await pointer(divider, 'pointerup', { clientX: 1090, pointerId: 7 })
-    expect(localStorage.getItem('vibing:project-split')).toBe('70')
+    expect(localStorage.getItem('maestro:project-split')).toBe('70')
     expect(document.body.style.userSelect).toBe('')
 
     await pointer(divider, 'pointermove', { clientX: 300, pointerId: 7 })
@@ -251,6 +251,6 @@ describe('divisória da tela do projeto', () => {
     await pointer(divider, 'pointermove', { clientX: 400 })
     wrapper.unmount()
     expect(document.body.style.userSelect).toBe('')
-    expect(localStorage.getItem('vibing:project-split')).toBe('30')
+    expect(localStorage.getItem('maestro:project-split')).toBe('30')
   })
 })

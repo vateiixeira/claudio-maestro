@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from claude_agent_sdk import TextBlock, ToolUseBlock
 
-from vibing.agent.fake import (
+from claudio_maestro.agent.fake import (
     background_tasks_changed_message,
     local_command_message,
     response_messages,
@@ -15,7 +15,7 @@ from vibing.agent.fake import (
     task_updated_message,
     tool_result_message,
 )
-from vibing.conversation import ConversationBuilder
+from claudio_maestro.conversation import ConversationBuilder
 
 SID = "s-1"
 

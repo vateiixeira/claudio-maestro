@@ -45,7 +45,7 @@ describe('estrutura do app', () => {
     await router.push('/preferencias')
     mount(App, { global: { plugins: [pinia, router] } })
     await flushPromises()
-    expect(document.title).toBe('(2) Vini7 Vibing')
+    expect(document.title).toBe('(2) Cláudio Maestro')
   })
 
   it('o atalho C numa conversa abre o modal no projeto e no agrupador dela', async () => {

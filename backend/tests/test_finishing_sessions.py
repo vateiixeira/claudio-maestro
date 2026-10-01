@@ -22,11 +22,11 @@ from claude_agent_sdk import (
     TextBlock,
 )
 from history_fakes import FakeHistory, user_entry
-
 from test_controls_review import with_background_agent
 from test_sessions import env_cleanup, make_env, session_row, wait_until  # noqa: F401
-from vibing import db
-from vibing.agent.fake import (
+
+from claudio_maestro import db
+from claudio_maestro.agent.fake import (
     FailStep,
     FakeAgentFactory,
     PauseStep,
@@ -35,8 +35,8 @@ from vibing.agent.fake import (
     result_message,
     text_turn,
 )
-from vibing.history import Transcript
-from vibing.sessions import SessionManager, user_default_permission_mode
+from claudio_maestro.history import Transcript
+from claudio_maestro.sessions import SessionManager, user_default_permission_mode
 
 WAIT = 2
 
@@ -76,7 +76,7 @@ class HistoryEnv:
     """Manager over fake history functions and a fake file mtime."""
 
     def __init__(self, tmp_path: Path, script=None, **manager_kwargs: Any) -> None:
-        self.db_path = tmp_path / "data" / "vibing.db"
+        self.db_path = tmp_path / "data" / "maestro.db"
         db.init_db(self.db_path)
         self.folder = tmp_path / "home" / "app"
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -402,7 +402,7 @@ async def test_history_load_is_retried_after_failure(history_env):
 
 @pytest.mark.anyio
 async def test_snapshot_is_capped_dropping_oldest_items(history_env, monkeypatch):
-    monkeypatch.setattr("vibing.sessions.SNAPSHOT_MAX_BYTES", 3_000)
+    monkeypatch.setattr("claudio_maestro.sessions.SNAPSHOT_MAX_BYTES", 3_000)
     env = history_env()
     sid = env.add_old_session()
     env.fake.messages[sid] = [user_entry(f"m{n} " + "x" * 200, sid) for n in range(40)]
@@ -532,7 +532,7 @@ async def test_rejected_rate_limit_puts_session_in_error_with_release_time(
 async def test_sdk_client_forwards_stop_task(tmp_path):
     from test_agent_sdk_client import StubSdkClient, make_options
 
-    from vibing.agent.sdk_client import SdkAgentClient
+    from claudio_maestro.agent.sdk_client import SdkAgentClient
 
     stub = StubSdkClient()
     stopped: list[str] = []
@@ -555,8 +555,8 @@ async def test_expired_login_on_connect_is_readable(tmp_path, stderr):
     from claude_agent_sdk import ProcessError
     from test_agent_sdk_client import StubSdkClient, make_options
 
-    from vibing.agent.base import AgentError
-    from vibing.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
+    from claudio_maestro.agent.base import AgentError
+    from claudio_maestro.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
 
     stub = StubSdkClient(connect_error=ProcessError("Command failed", exit_code=1))
     client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
@@ -577,8 +577,8 @@ async def test_specific_cli_login_phrases_are_recognised(tmp_path, stderr):
     from claude_agent_sdk import ProcessError
     from test_agent_sdk_client import StubSdkClient, make_options
 
-    from vibing.agent.base import AgentError
-    from vibing.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
+    from claudio_maestro.agent.base import AgentError
+    from claudio_maestro.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
 
     stub = StubSdkClient(connect_error=ProcessError("Command failed", exit_code=1))
     client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
@@ -595,8 +595,8 @@ async def test_stray_login_mention_does_not_turn_process_death_into_expired_logi
     from claude_agent_sdk import ProcessError
     from test_agent_sdk_client import StubSdkClient, make_options
 
-    from vibing.agent.base import AgentError
-    from vibing.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
+    from claudio_maestro.agent.base import AgentError
+    from claudio_maestro.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
 
     stub = StubSdkClient(receive_error=ProcessError("Command failed", exit_code=137))
     client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
@@ -617,8 +617,8 @@ async def test_stray_login_mention_on_connect_is_not_expired_login(tmp_path):
     from claude_agent_sdk import ProcessError
     from test_agent_sdk_client import StubSdkClient, make_options
 
-    from vibing.agent.base import AgentError
-    from vibing.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
+    from claudio_maestro.agent.base import AgentError
+    from claudio_maestro.agent.sdk_client import LOGIN_MESSAGE, SdkAgentClient
 
     stub = StubSdkClient(connect_error=ProcessError("Command failed", exit_code=1))
     client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
@@ -633,7 +633,7 @@ async def test_stray_login_mention_on_connect_is_not_expired_login(tmp_path):
 def test_cli_not_found_message_is_readable():
     from claude_agent_sdk import CLINotFoundError
 
-    from vibing.agent.sdk_client import to_agent_error
+    from claudio_maestro.agent.sdk_client import to_agent_error
 
     assert to_agent_error(CLINotFoundError()).message_pt == (
         "O comando `claude` não foi encontrado nesta máquina."
@@ -645,7 +645,7 @@ def test_cli_not_found_message_is_readable():
 
 @pytest.mark.anyio
 async def test_stop_task_failure_is_logged_and_others_still_stop(make_env, env_cleanup, caplog):
-    from vibing.agent.base import AgentError
+    from claudio_maestro.agent.base import AgentError
 
     env, session = await with_background_agent(make_env, env_cleanup)
     client = env.factory.clients[0]
@@ -671,7 +671,7 @@ async def test_stop_task_failure_is_logged_and_others_still_stop(make_env, env_c
 async def test_close_project_waits_for_sessions_in_parallel_under_one_deadline(
     make_env, env_cleanup, monkeypatch
 ):
-    monkeypatch.setattr("vibing.sessions.PROJECT_CLOSE_WAIT", 0.3)
+    monkeypatch.setattr("claudio_maestro.sessions.PROJECT_CLOSE_WAIT", 0.3)
     factory = SlowConnectFactory()
     env = make_env(factory=factory)
     env_cleanup.append(env.manager)

@@ -18,8 +18,9 @@ from claude_agent_sdk import (
     ToolUseBlock,
     UserMessage,
 )
-from vibing.agent.base import AgentClient, AgentError, AgentOptions
-from vibing.agent.fake import (
+
+from claudio_maestro.agent.base import AgentClient, AgentError, AgentOptions
+from claudio_maestro.agent.fake import (
     INTERRUPTED_FOR_TOOL_USE,
     FailStep,
     FakeAgentClient,
@@ -31,7 +32,7 @@ from vibing.agent.fake import (
     text_turn,
     tool_turn,
 )
-from vibing.conversation import ConversationBuilder
+from claudio_maestro.conversation import ConversationBuilder
 
 SESSION_ID = "0b6f2d1c-7e4a-4c3b-9d8e-1f2a3b4c5d6e"
 

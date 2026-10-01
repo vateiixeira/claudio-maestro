@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from vibing import db
-from vibing.agent.fake import FakeAgentFactory
-from vibing.app import create_app
+from claudio_maestro import db
+from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.app import create_app
 
 APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
@@ -18,9 +18,9 @@ BACKEND_URL = "http://127.0.0.1:6660"
 def client(monkeypatch: pytest.MonkeyPatch, cli_mode: str | None):
     # `SessionManager.__init__` reads `user_default_permission_mode` at construction,
     # so the patch has to come before `create_app`.
-    monkeypatch.setattr("vibing.sessions.user_default_permission_mode", lambda: cli_mode)
+    monkeypatch.setattr("claudio_maestro.sessions.user_default_permission_mode", lambda: cli_mode)
     app = create_app(agent_factory=FakeAgentFactory(), history_exists=lambda sid, cwd: False)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as c:
         yield c
 
 

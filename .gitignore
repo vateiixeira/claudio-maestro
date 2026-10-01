@@ -21,3 +21,9 @@ frontend/dist/
 
 # Registro de execução de planos com subagentes
 .superpowers/
+
+# Regras pessoais do Claude Code
+CLAUDE.local.md
+
+# Artefatos locais de revisão de design
+.impeccable/

@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-const KEY = 'vibing:sidebar-collapsed'
+const KEY = 'maestro:sidebar-collapsed'
 
 type Kind = 'project' | 'group'
 type State = Record<Kind, number[]>

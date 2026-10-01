@@ -223,9 +223,9 @@ def test_unavailable_project_can_still_be_renamed_and_deleted(client, home: Path
 def test_projects_persist_across_restarts(home: Path):
     from fastapi.testclient import TestClient
 
-    from vibing.app import create_app
+    from claudio_maestro.app import create_app
 
-    headers = {"origin": "http://localhost:6600", "x-vibing": "1"}
+    headers = {"origin": "http://localhost:6600", "x-maestro": "1"}
     folder = make_dir(home, "app")
     with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=headers) as c:
         create(c, folder)
@@ -236,24 +236,24 @@ def test_projects_persist_across_restarts(home: Path):
 def test_create_without_origin_rejected(home: Path):
     from fastapi.testclient import TestClient
 
-    from vibing.app import create_app
+    from claudio_maestro.app import create_app
 
     folder = make_dir(home, "app")
-    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers={"x-vibing": "1"}) as c:
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers={"x-maestro": "1"}) as c:
         response = create(c, folder)
         assert response.status_code == 403
         assert c.get("/api/projects").json() == []
 
 
 def test_project_roots_feed_path_validation(client, home: Path, data_dir: Path):
-    from vibing import db
-    from vibing.projects import project_roots
-    from vibing.security import PathNotAllowedError, resolve_within
+    from claudio_maestro import db
+    from claudio_maestro.projects import project_roots
+    from claudio_maestro.security import PathNotAllowedError, resolve_within
 
     folder = make_dir(home, "app")
     make_dir(home, "other")
     create(client, folder)
-    conn = db.connect(data_dir / "vibing.db")
+    conn = db.connect(data_dir / "maestro.db")
     try:
         roots = project_roots(conn)
     finally:

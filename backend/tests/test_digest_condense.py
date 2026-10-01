@@ -3,14 +3,14 @@
 
 from types import SimpleNamespace
 
-from vibing.conversation import COMPACT_SUMMARY_PREFIX
-from vibing.digest.condense import (
+from claudio_maestro.conversation import COMPACT_SUMMARY_PREFIX
+from claudio_maestro.digest.condense import (
     Condensed,
     condense,
     entries_after,
     tool_line,
 )
-from vibing.history import Transcript
+from claudio_maestro.history import Transcript
 
 CWD = "/home/vi/dev/app"
 

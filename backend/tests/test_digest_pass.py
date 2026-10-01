@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from digest_fakes import NOW, World, claude, exchange, user
 
-from vibing import db
-from vibing.digest.config import DigestConfig, save_config
-from vibing.digest.model import DigestModelError, FakeDigestModel
-from vibing.digest.service import pre_eligible
-from vibing.digest.store import Digest
+from claudio_maestro import db
+from claudio_maestro.digest.config import DigestConfig, save_config
+from claudio_maestro.digest.model import DigestModelError, FakeDigestModel
+from claudio_maestro.digest.service import pre_eligible
+from claudio_maestro.digest.store import Digest
 
 CFG = DigestConfig(enabled=True)
 

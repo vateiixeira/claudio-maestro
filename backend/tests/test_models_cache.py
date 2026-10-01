@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from vibing import db
-from vibing.agent.fake import DEFAULT_SERVER_MODELS, FakeAgentFactory
-from vibing.sessions import FALLBACK_MODELS, MODELS_MAX_AGE, SessionManager
+from claudio_maestro import db
+from claudio_maestro.agent.fake import DEFAULT_SERVER_MODELS, FakeAgentFactory
+from claudio_maestro.sessions import FALLBACK_MODELS, MODELS_MAX_AGE, SessionManager
 
 HOUR = 3600
 NEW_INFO = {"models": [{"value": "opus-x", "displayName": "Opus X"}]}
@@ -23,7 +23,7 @@ class Clock:
 
 class Env:
     def __init__(self, tmp_path: Path, info=None, clock=None) -> None:
-        self.db_path = tmp_path / "vibing.db"
+        self.db_path = tmp_path / "maestro.db"
         db.init_db(self.db_path)
         self.clock = clock or Clock()
         self.events: list[dict] = []

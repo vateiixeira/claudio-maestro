@@ -8,12 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 from test_sessions_api import APP_ORIGIN, BACKEND_URL, make_project
 
-from vibing import db
-from vibing.agent.fake import FakeAgentFactory
-from vibing.app import create_app
-from vibing.digest import store
-from vibing.digest.model import FakeDigestModel
-from vibing.digest.store import Digest
+from claudio_maestro import db
+from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.app import create_app
+from claudio_maestro.digest import store
+from claudio_maestro.digest.model import FakeDigestModel
+from claudio_maestro.digest.store import Digest
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def model() -> FakeDigestModel:
 def api(model: FakeDigestModel):
     app = create_app(agent_factory=FakeAgentFactory(), digest_model=model)
     with TestClient(app, base_url=BACKEND_URL,
-                    headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as client:
+                    headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as client:
         yield client
 
 
@@ -80,7 +80,7 @@ def test_session_digest_routes(api: TestClient, home: Path) -> None:
 
 
 def test_routes_need_the_app_header(api: TestClient) -> None:
-    response = api.get("/api/digest/config", headers={"x-vibing": ""})
+    response = api.get("/api/digest/config", headers={"x-maestro": ""})
     assert response.status_code == 403
 
 

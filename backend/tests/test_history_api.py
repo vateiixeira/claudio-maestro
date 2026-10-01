@@ -9,10 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 from history_fakes import FakeHistory, assistant_entry, info, user_entry
 
-from vibing import db
-from vibing.agent.fake import FakeAgentFactory
-from vibing.app import create_app
-from vibing.config import Settings
+from claudio_maestro import db
+from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.app import create_app
+from claudio_maestro.config import Settings
 
 APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
@@ -35,7 +35,7 @@ def api(fake: FakeHistory, home: Path, data_dir: Path):
         get_session_messages=fake.get_session_messages,
         read_tool_results=fake.read_tool_results,
     )
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as c:
         yield c
 
 
@@ -54,7 +54,7 @@ def test_creating_project_syncs_its_history(api, fake, home):
     folder.mkdir()
     fake.add(str(folder), info("s1", str(folder), summary="Do CLI"))
 
-    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
+    with api.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as ws:
         project = make_project(api, home)
         event = ws.receive_json()
         while event["type"] != "project.synced":
@@ -80,8 +80,8 @@ def test_sync_route(api, fake, home):
 def test_sync_runs_at_startup(fake, home, data_dir):
     folder = home / "app"
     folder.mkdir()
-    db.init_db(data_dir / "vibing.db")
-    with closing(db.connect(data_dir / "vibing.db")) as conn:
+    db.init_db(data_dir / "maestro.db")
+    with closing(db.connect(data_dir / "maestro.db")) as conn:
         conn.execute(
             "INSERT INTO projects (name, path, color, position, created_at)"
             " VALUES ('app', ?, '#ff8800', 0, 0)",
@@ -91,7 +91,7 @@ def test_sync_runs_at_startup(fake, home, data_dir):
     settings = Settings(home_dir=home, data_dir=data_dir, history_sync_interval_seconds=3600)
     app = create_app(settings=settings, list_sessions=fake.list_sessions,
                      get_session_messages=fake.get_session_messages)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as c:
         deadline = time.monotonic() + 2
         while not c.get("/api/sessions").json():
             assert time.monotonic() < deadline
@@ -126,7 +126,7 @@ def test_search_ignores_case_and_accents(api, fake, home):
         info("s3", path, summary="Nada a ver"),
     )
     api.post(f"/api/projects/{project['id']}/sync")
-    with closing(db.connect(home.parent / "data" / "vibing.db")) as conn:
+    with closing(db.connect(home.parent / "data" / "maestro.db")) as conn:
         conn.execute("UPDATE sessions SET finished = 1 WHERE session_id = 's1'")
 
     found = api.get("/api/sessions/search", params={"q": "CONFIGURACAO"}).json()
@@ -162,8 +162,8 @@ def test_projects_count_hidden_sessions(api, fake, home):
 def test_periodic_sync_indexes_new_session_and_emits_event(fake, home, data_dir):
     folder = home / "app"
     folder.mkdir()
-    db.init_db(data_dir / "vibing.db")
-    with closing(db.connect(data_dir / "vibing.db")) as conn:
+    db.init_db(data_dir / "maestro.db")
+    with closing(db.connect(data_dir / "maestro.db")) as conn:
         project_id = conn.execute(
             "INSERT INTO projects (name, path, color, position, created_at)"
             " VALUES ('app', ?, '#ff8800', 0, 0)",
@@ -172,8 +172,8 @@ def test_periodic_sync_indexes_new_session_and_emits_event(fake, home, data_dir)
     settings = Settings(home_dir=home, data_dir=data_dir, history_sync_interval_seconds=0.05)
     app = create_app(settings=settings, list_sessions=fake.list_sessions,
                      get_session_messages=fake.get_session_messages)
-    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as c:
-        with c.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-vibing": "1"}) as ws:
+    with TestClient(app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as c:
+        with c.websocket_connect("ws://127.0.0.1:6660/ws", headers={"origin": APP_ORIGIN, "x-maestro": "1"}) as ws:
             fake.add(str(folder), info("s1", str(folder), summary="nova"))
             event = ws.receive_json()
             while event["type"] != "project.synced":

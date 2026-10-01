@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 from claude_agent_sdk import ToolUseBlock
-from history_fakes import FakeHistory, assistant_entry, info, now_ms, user_entry
+from history_fakes import FakeHistory, assistant_entry, now_ms, user_entry
 
-from vibing import db, projects
-from vibing.agent.fake import (
+from claudio_maestro import db, projects
+from claudio_maestro.agent.fake import (
     FakeAgentFactory,
     init_message,
     response_messages,
@@ -20,7 +20,7 @@ from vibing.agent.fake import (
     text_turn,
     tool_result_message,
 )
-from vibing.sessions import SessionManager
+from claudio_maestro.sessions import SessionManager
 
 WAIT = 2
 
@@ -35,7 +35,7 @@ async def wait_until(predicate) -> None:
 
 class Env:
     def __init__(self, tmp_path: Path, script=None, history_limit: int = 500) -> None:
-        self.db_path = tmp_path / "data" / "vibing.db"
+        self.db_path = tmp_path / "data" / "maestro.db"
         db.init_db(self.db_path)
         self.folder = tmp_path / "home" / "app"
         self.folder.mkdir(parents=True)
@@ -563,7 +563,7 @@ async def test_client_falls_back_to_cwd_when_worktree_is_gone(make_env, tmp_path
 async def test_resume_of_an_agent_launched_before_the_restart_shows_as_running(
     make_env, monkeypatch
 ):
-    monkeypatch.setattr("vibing.sessions.SUBAGENT_END_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr("claudio_maestro.sessions.SUBAGENT_END_GRACE_SECONDS", 0.05)
     sessions: list[str] = []
 
     def resume_turn(content):

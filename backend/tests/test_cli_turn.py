@@ -22,8 +22,8 @@ from test_plan_sync import Rounds, append_line, index_session, process, tool_lin
 from test_sessions_api import api, factory, make_project  # noqa: F401  (fixtures)
 from watchfiles import Change
 
-from vibing.cliwatch import turn_open, was_interrupted
-from vibing.sessions import CLI_TURN_STALE_SECONDS, SessionRecord, describe
+from claudio_maestro.cliwatch import turn_open, was_interrupted
+from claudio_maestro.sessions import CLI_TURN_STALE_SECONDS, SessionRecord, describe
 
 T0 = 1_700_000_500  # epoch seconds of the first modification
 
@@ -626,7 +626,7 @@ async def test_a_plan_touched_by_a_subagent_links_the_parent_session(cli):
 
 @pytest.mark.anyio
 async def test_subagent_lines_are_read_only_from_the_changed_files_and_only_once(cli, monkeypatch):
-    from vibing import cliwatch
+    from claudio_maestro import cliwatch
 
     path = await index_session(cli)
     path.write_text(prompt_line() + "\n", encoding="utf-8")
@@ -680,7 +680,7 @@ async def test_a_failing_turn_read_does_not_break_the_pass(cli, monkeypatch):
     def boom(*args: Any, **kwargs: Any):
         raise RuntimeError("falha")
 
-    monkeypatch.setattr("vibing.cliwatch.turn_open", boom)
+    monkeypatch.setattr("claudio_maestro.cliwatch.turn_open", boom)
     cli.start()
 
     await process(cli, "s1", T0)

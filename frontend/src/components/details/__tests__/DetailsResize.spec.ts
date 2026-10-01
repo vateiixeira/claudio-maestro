@@ -53,7 +53,7 @@ async function pointer(handle: ReturnType<VueWrapper['find']>, type: string, cli
 
 describe('largura do painel Detalhes', () => {
   it('começa com a largura salva', async () => {
-    localStorage.setItem('vibing:details-width', '480')
+    localStorage.setItem('maestro:details-width', '480')
     const w = await mountPanel()
     expect(width(w)).toBe('480px')
   })
@@ -64,9 +64,9 @@ describe('largura do painel Detalhes', () => {
     await pointer(handle, 'pointerdown', 1000)
     await pointer(handle, 'pointermove', 900)
     expect(width(w)).toBe('460px')
-    expect(localStorage.getItem('vibing:details-width')).toBeNull()
+    expect(localStorage.getItem('maestro:details-width')).toBeNull()
     await pointer(handle, 'pointerup', 900)
-    expect(localStorage.getItem('vibing:details-width')).toBe('460')
+    expect(localStorage.getItem('maestro:details-width')).toBe('460')
   })
 
   it('teclado: seta esquerda alarga, direita estreita, e respeita o mínimo', async () => {
@@ -77,26 +77,26 @@ describe('largura do painel Detalhes', () => {
     for (let i = 0; i < 10; i++) await handle.trigger('keydown', { key: 'ArrowRight' })
     expect(width(w)).toBe('300px')
     expect(handle.attributes('aria-valuenow')).toBe('300')
-    expect(localStorage.getItem('vibing:details-width')).toBe('300')
+    expect(localStorage.getItem('maestro:details-width')).toBe('300')
   })
 
   it('duplo clique volta ao padrão', async () => {
-    localStorage.setItem('vibing:details-width', '600')
+    localStorage.setItem('maestro:details-width', '600')
     const w = await mountPanel()
     await w.find('[data-test="details-resize"]').trigger('dblclick')
     expect(width(w)).toBe('360px')
-    expect(localStorage.getItem('vibing:details-width')).toBe('360')
+    expect(localStorage.getItem('maestro:details-width')).toBe('360')
   })
 
   it('ajusta largura salva acima do máximo', async () => {
-    localStorage.setItem('vibing:details-width', '3000')
+    localStorage.setItem('maestro:details-width', '3000')
     const w = await mountPanel()
     expect(width(w)).toBe('892px') // min(0.7 × 1600, 1600 − 400 − 308)
   })
 
   it('na gaveta (janela estreita) mantém uma largura salva de 600px', async () => {
     Object.defineProperty(window, 'innerWidth', { value: 900, configurable: true })
-    localStorage.setItem('vibing:details-width', '600')
+    localStorage.setItem('maestro:details-width', '600')
     const w = await mountPanel(true)
     expect(width(w)).toBe('600px')
     expect(w.find('[data-test="details-resize"]').attributes('aria-valuemax')).toBe('630')
@@ -104,7 +104,7 @@ describe('largura do painel Detalhes', () => {
 
   it('fora da gaveta, a mesma janela estreita limita a 300px', async () => {
     Object.defineProperty(window, 'innerWidth', { value: 900, configurable: true })
-    localStorage.setItem('vibing:details-width', '600')
+    localStorage.setItem('maestro:details-width', '600')
     const w = await mountPanel(false)
     expect(width(w)).toBe('300px')
   })

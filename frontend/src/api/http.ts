@@ -76,7 +76,7 @@ async function readDetail(response: Response): Promise<string | null> {
 
 async function request<T>(method: Method, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   // Custom header required by the backend on every /api request (blocks cross-site reads).
-  const headers: Record<string, string> = { 'X-Vibing': '1' }
+  const headers: Record<string, string> = { 'X-Maestro': '1' }
   const init: RequestInit = { method, headers }
   if (signal) init.signal = signal
   if (body !== undefined) {

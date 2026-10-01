@@ -39,14 +39,14 @@ describe('cliente REST', () => {
     expect(init?.method).toBe('POST')
     expect(JSON.parse(init?.body as string)).toEqual({ name: 'a', path: '/home/vi/a', color: '#4FD1C5' })
     expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json')
-    expect(new Headers(init?.headers).get('X-Vibing')).toBe('1')
+    expect(new Headers(init?.headers).get('X-Maestro')).toBe('1')
   })
 
-  it('envia o cabeçalho X-Vibing também no GET', async () => {
+  it('envia o cabeçalho X-Maestro também no GET', async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse([]))
     vi.stubGlobal('fetch', fetchMock)
     await listProjects()
-    expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get('X-Vibing')).toBe('1')
+    expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get('X-Maestro')).toBe('1')
   })
 
   it('codifica o caminho ao listar pastas', async () => {

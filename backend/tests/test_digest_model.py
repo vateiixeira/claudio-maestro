@@ -14,14 +14,14 @@ from claude_agent_sdk import (
 )
 from claude_agent_sdk.types import RateLimitEvent, RateLimitInfo
 
-from vibing.digest.model import (
+from claudio_maestro.digest.model import (
     DigestModelError,
     DigestRequest,
     FakeDigestModel,
     SdkDigestModel,
     build_digest_options,
 )
-from vibing.digest.prompt import DIGEST_SCHEMA
+from claudio_maestro.digest.prompt import DIGEST_SCHEMA
 
 REQUEST = DigestRequest(system_prompt="regras", prompt="trecho", model="sonnet", effort="medium")
 OUTPUT = {"short": "x", "phases": [], "plan_completed": False, "plan_evidence": None}
