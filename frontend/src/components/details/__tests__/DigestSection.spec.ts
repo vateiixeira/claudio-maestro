@@ -65,6 +65,15 @@ describe('seção Resumo', () => {
     expect(w.find('[data-test="digest-plan-done"]').exists()).toBe(false)
   })
 
+  it('mostra o que falta antes do que foi feito', async () => {
+    stub({ ...DIGEST, phases: [{ title: 'Ajustes', kind: 'adjustments', status: 'open', done: ['Feito A'], pending: ['Falta B'], ref: null }] })
+    const w = await mountSection()
+    const text = w.find('[data-test="digest-phase"]').text()
+    expect(text.indexOf('Falta')).toBeGreaterThan(-1)
+    expect(text.indexOf('Falta B')).toBeLessThan(text.indexOf('Feito A'))
+    expect(text.indexOf('Falta')).toBeLessThan(text.indexOf('Feito'))
+  })
+
   it('mostra o selo de plano concluído', async () => {
     stub({ ...DIGEST, plan_done: true })
     const w = await mountSection()

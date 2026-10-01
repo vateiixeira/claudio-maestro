@@ -24,9 +24,9 @@ const fileName = (path: string) => path.split('/').pop() ?? path
 
 <template>
   <section data-test="details-digest" aria-labelledby="digest-title" class="flex flex-col gap-3">
-    <h3 id="digest-title" class="m-0 flex items-center gap-2 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">
+    <h3 id="digest-title" class="m-0 flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-[0.08em] text-fg-subtle uppercase">
       Resumo
-      <span v-if="digest?.plan_done" data-test="digest-plan-done" class="rounded border border-primary/40 px-1.5 font-sans text-[11px] tracking-normal normal-case text-primary-soft">Plano concluído</span>
+      <span v-if="digest?.plan_done" data-test="digest-plan-done" class="rounded border border-primary/40 px-1.5 font-sans text-[11px] font-normal tracking-normal normal-case text-primary-soft">Plano concluído</span>
     </h3>
 
     <div v-if="!loaded" class="flex items-center justify-between gap-2 text-sm">
@@ -36,29 +36,40 @@ const fileName = (path: string) => path.split('/').pop() ?? path
     <template v-else>
       <p v-if="!hasSummary" data-test="digest-empty" class="m-0 text-sm text-fg-muted">Ainda não resumida</p>
       <template v-else>
-        <p v-if="digest?.short" data-test="digest-short" class="m-0 text-sm font-medium text-fg">{{ digest.short }}</p>
+        <p v-if="digest?.short" data-test="digest-short" class="m-0 text-sm leading-normal text-fg">{{ digest.short }}</p>
         <ol class="m-0 flex list-none flex-col gap-3 p-0">
           <li
             v-for="(phase, i) in digest?.phases ?? []"
             :key="i"
             data-test="digest-phase"
-            class="flex flex-col gap-1.5 rounded-lg border border-line p-3"
-            :class="phase.status === 'done' ? 'bg-bg' : 'bg-card'"
+            class="flex flex-col gap-1.5 rounded-lg border p-3"
+            :class="phase.status === 'done' ? 'border-line bg-bg' : 'border-line-strong bg-card'"
           >
-            <div class="flex items-center gap-2 text-xs text-fg-muted">
-              <span class="font-mono uppercase">{{ PHASE_KIND_LABELS[phase.kind] }}</span>
-              <span aria-hidden="true">·</span>
-              <span :class="phase.status === 'open' ? 'text-primary-soft' : ''">{{ phase.status === 'open' ? 'Aberta' : 'Concluída' }}</span>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[10.5px] font-semibold tracking-[0.08em] text-fg-subtle uppercase">{{ PHASE_KIND_LABELS[phase.kind] }}</span>
+              <span
+                data-test="digest-phase-status"
+                class="ml-auto flex items-center gap-1 rounded-full border border-line-strong px-2 py-px text-[11.5px] font-medium"
+                :class="phase.status === 'open' ? 'bg-elevated text-fg' : 'text-fg-muted'"
+              >
+                <svg v-if="phase.status !== 'open'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                {{ phase.status === 'open' ? 'Aberta' : 'Concluída' }}
+              </span>
             </div>
-            <p class="m-0 text-sm text-fg">{{ phase.title }}</p>
-            <p v-if="phase.ref" class="m-0 truncate font-mono text-xs text-fg-muted" :title="phase.ref">{{ fileName(phase.ref) }}</p>
-            <div v-if="phase.done.length" class="text-xs">
-              <p class="m-0 text-fg-muted">Feito</p>
-              <ul class="m-0 pl-4 text-fg"><li v-for="(item, j) in phase.done" :key="j">{{ item }}</li></ul>
+            <p class="m-0 text-sm leading-snug" :class="phase.status === 'done' ? 'text-fg-muted' : 'text-fg'">{{ phase.title }}</p>
+            <p v-if="phase.ref" class="m-0 truncate font-mono text-[11.5px] text-fg-subtle" :title="phase.ref">{{ fileName(phase.ref) }}</p>
+            <div v-if="phase.pending.length" class="mt-0.5 flex flex-col gap-1">
+              <p class="m-0 text-[11.5px] font-semibold text-fg">Falta</p>
+              <ul class="m-0 flex list-none flex-col gap-1 p-0 text-[13px] leading-normal font-medium text-fg">
+                <li v-for="(item, j) in phase.pending" :key="j" class="flex items-start gap-2">
+                  <span class="mt-[5px] size-2.5 shrink-0 rounded-full border border-fg-muted" aria-hidden="true" />
+                  <span class="min-w-0">{{ item }}</span>
+                </li>
+              </ul>
             </div>
-            <div v-if="phase.pending.length" class="text-xs">
-              <p class="m-0 text-fg-muted">Falta</p>
-              <ul class="m-0 pl-4 text-fg"><li v-for="(item, j) in phase.pending" :key="j">{{ item }}</li></ul>
+            <div v-if="phase.done.length" class="mt-0.5 flex flex-col gap-1">
+              <p class="m-0 text-[11.5px] text-fg-subtle">Feito</p>
+              <ul class="m-0 pl-4 text-[12.5px] leading-normal text-fg-muted"><li v-for="(item, j) in phase.done" :key="j">{{ item }}</li></ul>
             </div>
           </li>
         </ol>

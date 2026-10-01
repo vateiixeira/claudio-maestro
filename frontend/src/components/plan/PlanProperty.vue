@@ -206,7 +206,7 @@ function shortPath(path: string): string {
         :disabled="busy"
         :title="item.path"
         class="flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-fg hover:bg-card focus:bg-card focus:outline-none disabled:cursor-default disabled:opacity-60"
-        :class="item.path === state?.path ? 'text-primary-soft' : ''"
+        :class="item.path === state?.path ? 'text-fg font-semibold' : ''"
         @click="choose(item.path)"
       >
         <span class="min-w-0 truncate">{{ item.title }}</span>
