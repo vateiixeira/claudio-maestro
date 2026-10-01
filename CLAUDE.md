@@ -94,7 +94,7 @@ O app executa comandos na máquina, então qualquer site aberto no navegador é 
 - Não libere CORS.
 - Toda requisição a `/api/` precisa do cabeçalho `X-Vibing: 1`, que o cliente do frontend envia. Isso impede outros sites de dispararem leituras por `<img>`, formulário ou `fetch`.
 - Todo `git` passa por `run_git` em `backend/vibing/gitinfo.py`, que neutraliza fsmonitor, pager, hooks, diff externo, textconv, filtros e submódulos. Não chame `git` por outro caminho.
-- Todo caminho recebido precisa estar, depois de resolvido, dentro da pasta de um projeto registrado.
+- Todo caminho recebido precisa estar, depois de resolvido, dentro da pasta de um projeto registrado. A única exceção é uma worktree git ligada a um repositório que está dentro de um projeto, comprovada pelo ponteiro `.git` de ida e volta (com `realpath`) e pela saída de `git worktree list` desse repositório (decisão do usuário em 2026-09-30, marco 15).
 - Execute git e o editor com argumentos em lista, sem shell.
 
 ## Testes contra o SDK real
