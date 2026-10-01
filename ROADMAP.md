@@ -33,6 +33,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
 | 15. Ajustes da crítica de design | Leitura de tabelas e diffs, laranja só para o que precisa de você, erros em vermelho | Em andamento | 5 de 6 |
 | 16. Worktrees no painel e ajustes | Alterações de sessões em worktree, menu `/` só no início e teste instável | Concluído | 5 de 5 |
+| 17. Melhorias médias da crítica | Cabeçalho compacto, próxima conversa que pede você, nomes de estado, seletor de modo e ícones | Em andamento | 0 de 6 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido e concluído em 2026-09-30, junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
@@ -438,6 +439,20 @@ Pedido pelo usuário em 2026-09-30, a partir dos "Pontos em aberto". Feito na wo
 - [x] Teste de tempo instável `test_continuous_writing_updates_during_and_after_the_burst` em `test_cliwatch.py` estabilizado: o teste media o fim dos passes, que pode encurtar sob carga; passou a medir o início, que o `_drive` garante (2026-09-30)
 - [x] Teste instável `test_full_app_disconnect_stops_the_git_processes` em `test_fs_repos.py` (falhou 2 vezes em 6 rodadas da suíte completa, passa isolado; achado em 2026-09-30): o processo morto por SIGKILL podia levar alguns ms para ser colhido depois da resposta; o teste passou a esperar a morte com prazo de 3 s, abaixo do limite de 5 s (2026-09-30)
 - [x] Revisão do marco pelo `milestone-reviewer` (2026-09-30)
+
+## Marco 17. Melhorias médias da crítica
+
+Objetivo: aplicar as cinco melhorias de prioridade média da segunda crítica do `/impeccable` na tela da conversa. Pedido pelo usuário em 2026-09-30.
+
+- Crítica: `.impeccable/critique/2026-10-01T01-22-12Z__frontend-src-views-conversationview-vue.md`
+- Vocabulário decidido: "Aguardando você" para a conversa que precisa do usuário (pedido pendente, erro ou novidade) e "Sua vez" para a espera comum.
+
+- [ ] Cabeçalho da conversa numa linha só, com caminho, título e ações, sem repetir projeto e branch quando o Detalhes está aberto
+- [ ] Botão e atalho para a próxima conversa que aguarda você
+- [ ] Um nome por estado de espera em toda a interface
+- [ ] Seletor de modo com rótulo, descrição de cada modo e marca no selecionado, e atalhos `[` e `]` para trocar de turno
+- [ ] Ícones em SVG no lugar de caracteres de texto
+- [ ] Revisão do marco pelo `milestone-reviewer`
 
 ## Fora do MVP
 
