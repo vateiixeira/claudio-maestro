@@ -268,7 +268,7 @@ async function interrupt() {
       <button
         type="button"
         data-test="send"
-        class="h-11 cursor-pointer rounded-lg border-none bg-primary px-4 text-sm font-semibold text-primary-fg disabled:cursor-default disabled:opacity-50"
+        class="h-11 cursor-pointer rounded-lg border-none bg-primary px-4 text-sm font-semibold text-primary-fg disabled:cursor-default disabled:bg-elevated disabled:text-fg-subtle"
         :disabled="!canSend"
         :title="blockedReason || undefined"
         :aria-describedby="blockedReason ? `blocked-${sessionId}` : undefined"

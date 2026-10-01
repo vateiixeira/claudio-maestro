@@ -74,14 +74,14 @@ async function markAll() {
           >{{ t.label }}</button>
         </div>
         <span class="grow" />
-        <input v-model="search" data-test="inbox-search" type="search" placeholder="Buscar na Inbox…" aria-label="Buscar na Inbox" class="h-9 w-56 rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg outline-none focus:border-fg-muted" />
-        <select v-model="projectFilter" data-test="inbox-project" aria-label="Projeto" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg">
+        <input id="inbox-search" v-model="search" name="inbox-search" data-test="inbox-search" type="search" placeholder="Buscar na Inbox…" aria-label="Buscar na Inbox" class="h-9 w-56 rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg outline-none focus:border-fg-muted" />
+        <select id="inbox-project" v-model="projectFilter" name="inbox-project" data-test="inbox-project" aria-label="Projeto" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg">
           <option value="">Todos os projetos</option>
           <option v-for="p in projects.projects" :key="p.id" :value="String(p.id)">{{ p.name }}</option>
         </select>
         <button type="button" data-test="mark-all-read" class="h-9 rounded-md border border-line-strong px-3 text-sm text-fg hover:bg-card disabled:opacity-40" :disabled="marking" @click="markAll">Marcar todas como lidas</button>
       </div>
-      <p v-if="error" data-test="inbox-error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
+      <p v-if="error" data-test="inbox-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
       <LoadStatus v-if="loadState !== 'ready'" :state="loadState" />
       <p v-else-if="groups.length === 0" data-test="empty" class="m-0 py-10 text-center text-fg-muted">{{ tab === 'pede-voce' ? 'Nada pedindo você agora.' : 'Nenhuma conversa aqui.' }}</p>
       <template v-else>

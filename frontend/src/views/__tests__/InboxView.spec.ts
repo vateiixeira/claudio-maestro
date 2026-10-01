@@ -55,6 +55,16 @@ describe('Inbox', () => {
     expect(wrapper.findAll('[data-test="date-group"]').map((g) => g.text())).toEqual(['Hoje', 'Antes'])
   })
 
+  it('busca e filtro de projeto têm name e id, para o Chrome não avisar', async () => {
+    const { wrapper } = await mountInbox()
+    const search = wrapper.find('[data-test="inbox-search"]')
+    const project = wrapper.find('[data-test="inbox-project"]')
+    expect(search.attributes('name')).toBe('inbox-search')
+    expect(search.attributes('id')).toBe('inbox-search')
+    expect(project.attributes('name')).toBe('inbox-project')
+    expect(project.attributes('id')).toBe('inbox-project')
+  })
+
   it('troca de aba pela URL', async () => {
     const { wrapper, router } = await mountInbox()
     await wrapper.findAll('[data-test="inbox-tab"]')[2]!.trigger('click')
@@ -99,6 +109,7 @@ describe('Inbox', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="inbox-error"]').text()).toContain('Falhou.')
+    expect(wrapper.find('[data-test="inbox-error"]').classes()).toContain('text-diff-del-fg')
     expect(titles(wrapper)).toEqual(['Roda 1', 'Espera 2'])
   })
 

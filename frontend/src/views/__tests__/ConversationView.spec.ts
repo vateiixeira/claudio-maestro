@@ -82,6 +82,11 @@ describe('página da conversa', () => {
 
     expect(wrapper.find('[data-test="breadcrumb"]').text()).toContain('Conversas')
     expect(wrapper.find('[data-test="breadcrumb"]').text()).toContain('loja-online')
+    // Every crumb shares the sans style: no mono / uppercase on the root.
+    const root = wrapper.find('[data-test="breadcrumb"] a')
+    expect(root.text()).toBe('Conversas')
+    expect(root.classes()).not.toContain('font-mono')
+    expect(root.classes()).not.toContain('uppercase')
     expect(wrapper.find('[data-test="conversation-title"]').text()).toBe('Corrigir login')
     expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(true)
   })

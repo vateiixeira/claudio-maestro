@@ -79,6 +79,21 @@ describe('propriedade Plano', () => {
     expect(buttonByText(wrapper, 'Desligar')).toBeTruthy()
   })
 
+  it('Plano indisponível é neutro e o caminho quebra depois das barras, não no meio das palavras', async () => {
+    const { wrapper } = await mountProperty({
+      'GET /api/sessions/s1/plan': () => jsonResponse(state({ plan: null, link: 'manual' })),
+    })
+
+    const label = wrapper.findAll('[data-test="prop-plan"] span').find((s) => s.text() === 'Plano indisponível')!
+    expect(label.classes()).toContain('text-fg-muted')
+    expect(label.classes()).not.toContain('text-secondary')
+    const path = wrapper.find('[title$="carrinho.md"]')
+    expect(path.classes()).not.toContain('break-all')
+    expect(path.classes()).toContain('break-words')
+    expect(path.findAll('wbr').length).toBeGreaterThanOrEqual(3)
+    expect(path.text()).toBe('docs/superpowers/plans/2026-09-29-carrinho.md')
+  })
+
   it('com o plano em 100% mostra Concluído', async () => {
     const { wrapper } = await mountProperty({
       'GET /api/sessions/s1/plan': () => jsonResponse(state({ plan: summary({ done: 12, current: null }) })),
@@ -190,6 +205,8 @@ describe('propriedade Plano', () => {
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').text()).toContain('Não foi possível desligar o plano.')
+    expect(wrapper.find('[role="alert"]').classes()).toContain('text-diff-del-fg')
+    expect(wrapper.find('[role="alert"]').classes()).not.toContain('text-secondary')
     expect(buttonByText(wrapper, 'Desligar')!.attributes('disabled')).toBeUndefined()
     expect(buttonByText(wrapper, 'Trocar plano…')!.attributes('disabled')).toBeUndefined()
   })

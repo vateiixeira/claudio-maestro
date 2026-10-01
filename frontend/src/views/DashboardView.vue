@@ -87,14 +87,15 @@ function scrollToProjects() {
 
     <section class="rounded-lg border border-line bg-panel p-4">
       <div v-if="activityError" class="flex flex-col items-start gap-2">
-        <p data-test="activity-error" role="alert" class="m-0 text-sm text-secondary-soft">Não foi possível carregar a atividade.</p>
+        <p data-test="activity-error" role="alert" class="m-0 text-sm text-diff-del-fg">Não foi possível carregar a atividade.</p>
         <button type="button" data-test="activity-retry" class="h-8 rounded-md border border-line-strong px-2.5 text-xs text-fg hover:bg-card" @click="loadActivity">Tentar de novo</button>
       </div>
       <p v-else-if="activityLoading && activity.length === 0" class="m-0 text-sm text-fg-muted">Carregando…</p>
       <ActivityChart v-else :data="activity" :projects="projects.projects" :days="14" :today="new Date()" />
     </section>
 
-    <div v-if="loadState === 'ready'" class="grid gap-6 lg:grid-cols-2">
+    <!-- One column: the compact row reserves fixed widths for project, branch and time, so a half column leaves no room for the title. -->
+    <div v-if="loadState === 'ready'" class="flex flex-col gap-6">
       <section data-test="recent-list" aria-labelledby="recent-title" class="flex flex-col gap-2 rounded-lg border border-line bg-panel p-3">
         <h2 id="recent-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Conversas recentes</h2>
         <ConversationRow v-for="s in recent" :key="s.session_id" :session="s" variant="compact" />

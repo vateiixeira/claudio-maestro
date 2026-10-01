@@ -83,10 +83,19 @@ describe('Dashboard', () => {
     const { wrapper } = await mountDashboard(() => (++calls === 1 ? jsonResponse({ detail: 'x' }, 500) : jsonResponse([])))
 
     expect(wrapper.find('[data-test="activity-error"]').text()).toContain('Não foi possível carregar a atividade')
+    expect(wrapper.find('[data-test="activity-error"]').classes()).toContain('text-diff-del-fg')
     expect(wrapper.findAll('[data-test="now-card"]')).toHaveLength(2)
     await wrapper.find('[data-test="activity-retry"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="activity-empty"]').exists()).toBe(true)
+  })
+
+  it('Conversas recentes ocupa a largura toda, sem dividir a linha com Projetos', async () => {
+    const { wrapper } = await mountDashboard()
+    const recent = wrapper.find('[data-test="recent-list"]').element.parentElement!
+    const projects = wrapper.find('[data-test="projects-list"]').element.parentElement!
+    expect(recent).toBe(projects)
+    expect(recent.className).not.toMatch(/grid-cols-2/)
   })
 
   it('lista conversas recentes e projetos', async () => {

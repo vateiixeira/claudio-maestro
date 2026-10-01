@@ -88,6 +88,24 @@ describe('busca no menu lateral', () => {
     expect(w.text()).toContain('Nenhuma sessão encontrada')
   })
 
+  it('o atalho Ctrl K não quebra em duas linhas', () => {
+    const w = mountSidebar()
+    const kbd = w.findAll('kbd').find((k) => k.text() === 'Ctrl K')!
+    expect(kbd).toBeTruthy()
+    expect(kbd.classes()).toEqual(expect.arrayContaining(['whitespace-nowrap', 'shrink-0']))
+  })
+
+  it('o erro da busca usa a cor de erro', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: 'Busca fora do ar.' }, 500)))
+    const w = mountSidebar()
+    await type(w, 'x')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    const alert = w.find('[role="alert"]')
+    expect(alert.text()).toContain('Busca fora do ar.')
+    expect(alert.classes()).toContain('text-diff-del-fg')
+  })
+
   it('Ctrl+K e Cmd+K focam o campo', async () => {
     const w = mountSidebar()
     const input = w.find('[data-test="search-input"]').element as HTMLInputElement
