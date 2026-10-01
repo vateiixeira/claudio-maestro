@@ -31,7 +31,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 23 de 23 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Concluído | 14 de 14 |
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
-| 15. Ajustes da crítica de design | Leitura de tabelas e diffs, laranja só para o que precisa de você, erros em vermelho | Em andamento | 4 de 5 |
+| 15. Ajustes da crítica de design | Leitura de tabelas e diffs, laranja só para o que precisa de você, erros em vermelho | Em andamento | 5 de 6 |
 
 Os marcos 0 a 6 formam o MVP, concluído em 2026-09-29. O marco 7 foi pedido pelo usuário em 2026-09-29. O marco 9 foi concluído em 2026-09-29 e o marco 8 em 2026-09-30, ambos a pedido do usuário. Os marcos 11 e 12 começaram e foram concluídos em 2026-09-30, a pedido do usuário, em paralelo ao marco 8. O marco 12 nasceu como um segundo marco 11 numa worktree e foi renumerado ao entrar na main. Ele foi reaberto no mesmo dia por um bug de subagentes e por ajustes no menu lateral. O marco 13 foi pedido e concluído em 2026-09-30, junto com o fim do marco 12. O marco 14 foi pedido e concluído em 2026-09-30, na main, em paralelo ao marco 13.
 
@@ -423,7 +423,8 @@ Objetivo: corrigir o que a crítica do `/impeccable` encontrou na tela da conver
 - [x] Laranja só para o que precisa de você, com forma distinta da espera comum, e erros em vermelho (2026-09-30)
 - [x] Arquivo novo e diff longo aparecem recolhidos na conversa (2026-09-30)
 - [x] Aviso de conteúdo novo com botão para ir ao fim da conversa (2026-09-30)
-- [ ] Revisão do marco pelo `milestone-reviewer` e nova crítica
+- [x] Revisão do marco pelo `milestone-reviewer` e nova crítica (2026-09-30)
+- [ ] Listas do markdown com marcadores e números, e realce de sintaxe sem as cores de estado (achados da nova crítica)
 
 ## Fora do MVP
 
