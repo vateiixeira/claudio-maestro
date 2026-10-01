@@ -15,7 +15,12 @@ from claudio_maestro.api import router
 from claudio_maestro.api.editor import SpawnEditor, spawn_detached
 from claudio_maestro.cliwatch import CliWatcher
 from claudio_maestro.commands import CommandCatalog
-from claudio_maestro.config import Settings, claude_projects_dir, load_settings
+from claudio_maestro.config import (
+    Settings,
+    claude_projects_dir,
+    legacy_data_dir,
+    load_settings,
+)
 from claudio_maestro.digest.model import DigestModel, SdkDigestModel
 from claudio_maestro.digest.service import AGENT_DIR_NAME, DigestService
 from claudio_maestro.events import EventHub
@@ -100,6 +105,10 @@ def create_app(
         app.state.files = FileIndex()
         app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
         agent_dir = (app.state.settings.data_dir / AGENT_DIR_NAME).resolve()
+        # Sessions of the digest agent made before the rename live under the old folder.
+        legacy_agent_dir = (
+            legacy_data_dir(app.state.settings.home_dir) / AGENT_DIR_NAME
+        ).resolve()
         app.state.digest = DigestService(
             app.state.settings.db_path,
             app.state.sessions,
@@ -112,7 +121,7 @@ def create_app(
             on_change=app.state.sessions.refresh_records,
             on_projects_changed=lambda ids: publish_synced(app.state.hub.publish, ids),
             is_in_use=app.state.sessions.in_use,
-            ignored_dirs=[agent_dir],
+            ignored_dirs=[agent_dir, legacy_agent_dir],
         )
         tasks = [
             asyncio.create_task(

@@ -1,16 +1,24 @@
 """Settings and data paths, read from the environment."""
 
 import json
+import logging
 import os
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 FRONTEND_PORT = 6600
 BACKEND_PORT = 6660
 LOCAL_HOSTNAMES = ("localhost", "127.0.0.1")
 
 DB_FILENAME = "maestro.db"
+DATA_DIR_NAME = "claudio-maestro"
+# The app was called Vini7 Vibing before going public; its data is moved on first start.
+LEGACY_DATA_DIR_NAME = "vini7-vibing"
+LEGACY_DB_FILENAME = "vibing.db"
 
 
 @dataclass(frozen=True)
@@ -39,18 +47,102 @@ class Settings:
         return self.data_dir / DB_FILENAME
 
 
+def default_data_dir(home: Path) -> Path:
+    return home / ".local" / "share" / DATA_DIR_NAME
+
+
+def legacy_data_dir(home: Path) -> Path:
+    return home / ".local" / "share" / LEGACY_DATA_DIR_NAME
+
+
+class DataMigrationError(RuntimeError):
+    """The old data could not be migrated safely. The message is for the user."""
+
+
+def _prepare_legacy_database(folder: Path) -> None:
+    """Make `vibing.db` a single self-contained file named `maestro.db`.
+
+    Does nothing when there is no `vibing.db` or `maestro.db` already exists. Otherwise:
+    1. Checkpoint the WAL into the main file, so no data lives only in `-wal`.
+    2. If `-wal`/`-shm` survive the close, another process still has the database open
+       (the old app running); renaming under it would lose writes, so abort.
+    3. Rename just `vibing.db`: a single rename, so there is no half-done state.
+    Raises `DataMigrationError` and leaves the files as they were on any failure.
+    """
+    source = folder / LEGACY_DB_FILENAME
+    if (folder / DB_FILENAME).exists() or not source.exists():
+        return
+    try:
+        conn = sqlite3.connect(source, timeout=1)
+        try:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise DataMigrationError(
+            f"Não foi possível ler o banco antigo em {source} ({exc}). "
+            "Os dados não foram alterados."
+        ) from exc
+    if any((folder / f"{LEGACY_DB_FILENAME}{suffix}").exists() for suffix in ("-wal", "-shm")):
+        raise DataMigrationError(
+            f"O banco em {source} está aberto por outro processo (a versão antiga do app "
+            "ainda está rodando?). Feche-o e inicie de novo."
+        )
+    try:
+        os.rename(source, folder / DB_FILENAME)
+    except OSError as exc:
+        raise DataMigrationError(
+            f"Não foi possível renomear o banco antigo em {source} ({exc}). "
+            "Os dados não foram alterados."
+        ) from exc
+
+
+def migrate_legacy_data_dir(home: Path) -> Path:
+    """Move the old name's data folder to the new one; return the folder to use.
+
+    - No old folder: the new folder (not created here).
+    - Both exist: the new one; nothing is touched.
+    - The old database cannot be prepared (unreadable, open in another process, rename
+      fails): `DataMigrationError`, nothing changed, so the app never starts on an empty
+      database while real data sits in the old folder.
+    - Moving the folder fails: the old folder keeps being used, so the data never
+      disappears. The database is renamed to `maestro.db` before the move, so the app
+      finds it there too.
+    """
+    new = default_data_dir(home)
+    old = legacy_data_dir(home)
+    if not old.is_dir():
+        return new
+    if new.exists():
+        logger.warning(
+            "Há dados do nome antigo em %s e do novo em %s. Usando %s; a pasta antiga não foi tocada.",
+            old, new, new,
+        )
+        return new
+    _prepare_legacy_database(old)
+    try:
+        os.rename(old, new)
+    except OSError as exc:
+        logger.error("Não foi possível mover %s para %s (%s). Usando a pasta antiga.", old, new, exc)
+        return old
+    logger.info("Dados movidos de %s para %s.", old, new)
+    return new
+
+
 def load_settings() -> Settings:
     """Read settings from the environment.
 
     `MAESTRO_HOME` overrides the user's home folder (the folder browser limit).
-    `MAESTRO_DATA_DIR` overrides where the database lives.
+    `MAESTRO_DATA_DIR` overrides where the database lives. Without it, data left by the
+    old name (`vini7-vibing`) is moved to the new folder first (see `migrate_legacy_data_dir`);
+    `DataMigrationError` propagates when that cannot be done safely.
     """
     home_env = os.environ.get("MAESTRO_HOME")
     home = Path(home_env) if home_env else Path.home()
     home = home.resolve()
 
     data_env = os.environ.get("MAESTRO_DATA_DIR")
-    data_dir = Path(data_env).resolve() if data_env else home / ".local" / "share" / "claudio-maestro"
+    data_dir = Path(data_env).resolve() if data_env else migrate_legacy_data_dir(home)
 
     return Settings(
         home_dir=home, data_dir=data_dir, claude_projects_dir=claude_projects_dir()
