@@ -111,7 +111,7 @@ def test_cli_tags_become_notices_or_are_dropped():
     ])
     items = builder.snapshot()
     assert [(i["type"], i["text"]) for i in items] == [
-        ("notice", "Comando /commit"),
+        ("user", "/commit"),
         ("notice", "saída do comando"),
         ("notice", "Subagente em segundo plano terminou"),
         ("notice", "Interrompido."),
@@ -119,6 +119,28 @@ def test_cli_tags_become_notices_or_are_dropped():
         ("user", "pergunta normal"),
     ]
     assert all(i["level"] == "info" for i in items if i["type"] == "notice")
+
+
+def test_command_with_arguments_becomes_the_user_bubble():
+    builder = ConversationBuilder()
+    builder.load_history([
+        user_entry("<command-message>hello</command-message>\n<command-name>/hello</command-name>"
+                   "\n<command-args>Vinicius</command-args>"),
+    ])
+    assert [(i["type"], i["text"]) for i in builder.snapshot()] == [("user", "/hello Vinicius")]
+
+
+def test_builtin_command_output_is_still_a_notice():
+    builder = ConversationBuilder()
+    builder.load_history([
+        user_entry("<command-name>/model</command-name>\n<command-message>model</command-message>"
+                   "\n<command-args></command-args>"),
+        user_entry("<local-command-stdout>Set model to haiku</local-command-stdout>"),
+    ])
+    assert [(i["type"], i["text"]) for i in builder.snapshot()] == [
+        ("user", "/model"),
+        ("notice", "Set model to haiku"),
+    ]
 
 
 def test_user_images_and_documents_become_light_markers():

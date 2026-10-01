@@ -2213,7 +2213,7 @@ Item 10 do marco 13. É independente das tarefas de frontend e pode rodar em qua
 **Interfaces:**
 - Produz: `_classify_user_text("<command-name>/hello</command-name>…<command-args>Vinicius</command-args>")` devolve `("/hello Vinicius", None)`. Sem argumentos, devolve `("/hello", None)`. `<local-command-stdout>` continua virando aviso.
 
-- [ ] **Passo 1: testes que falham.** Em `test_conversation_history.py`, troque a expectativa de `test_cli_tags_become_notices_or_are_dropped` (primeira linha: `("user", "/commit")` em vez de `("notice", "Comando /commit")`) e acrescente:
+- [x] **Passo 1: testes que falham.** Em `test_conversation_history.py`, troque a expectativa de `test_cli_tags_become_notices_or_are_dropped` (primeira linha: `("user", "/commit")` em vez de `("notice", "Comando /commit")`) e acrescente:
 
 ```python
 def test_command_with_arguments_becomes_the_user_bubble():
@@ -2240,9 +2240,9 @@ def test_builtin_command_output_is_still_a_notice():
 
 Em `test_digest_condense.py`, `test_condense_formats_each_kind` passa a esperar `"[Você] /model"` entre `[Bash] pytest (falhou)` e `[Você] Agora ajuste o menu`, e `out.count == 6`. Confira em `condense` como o `count` é calculado antes de mudar o número.
 
-- [ ] **Passo 2: rodar e ver falhar.** Rode `uv run pytest backend/tests/test_conversation_history.py backend/tests/test_digest_condense.py -q`.
+- [x] **Passo 2: rodar e ver falhar.** Rode `uv run pytest backend/tests/test_conversation_history.py backend/tests/test_digest_condense.py -q`.
 
-- [ ] **Passo 3: implementar.** Em `conversation.py`:
+- [x] **Passo 3: implementar.** Em `conversation.py`:
 
 ```python
 _COMMAND_ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
@@ -2261,9 +2261,9 @@ E em `_classify_user_text`, troque o bloco de `_COMMAND_NAME`:
 
 Se `name` vier vazio, o texto também fica vazio e nada aparece. Isso é aceitável, porque o CLI sempre grava o nome.
 
-- [ ] **Passo 4: rodar e ver passar.** Rode `uv run pytest -q`. Procure com `grep -rn "Comando /" backend frontend/src` outros testes ou textos que esperavam o aviso antigo e ajuste os que forem só expectativa de teste.
+- [x] **Passo 4: rodar e ver passar.** Rode `uv run pytest -q`. Procure com `grep -rn "Comando /" backend frontend/src` outros testes ou textos que esperavam o aviso antigo e ajuste os que forem só expectativa de teste.
 
-- [ ] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 10 no roadmap.
+- [x] **Passo 5: commit** (sessão principal, depois do `reviewer`). Marque o item 10 no roadmap.
 
 ```bash
 git add backend/vibing/conversation.py backend/tests/test_conversation_history.py backend/tests/test_digest_condense.py ROADMAP.md

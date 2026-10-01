@@ -106,9 +106,10 @@ def test_condense_formats_each_kind() -> None:
         "[Claude] Vou começar.",
         "[Edit] a.py",
         "[Bash] pytest (falhou)",
+        "[Você] /model",
         "[Você] Agora ajuste o menu",
     ]
-    assert out.count == 5
+    assert out.count == 6
     assert out.paths == [f"{CWD}/a.py"]
 
 

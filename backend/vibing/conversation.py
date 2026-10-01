@@ -760,6 +760,7 @@ def cap_items(items: list[dict[str, Any]], max_bytes: int) -> tuple[list[dict[st
 
 _SYSTEM_REMINDER = re.compile(r"<system-reminder>.*?(</system-reminder>|$)", re.DOTALL)
 _COMMAND_NAME = re.compile(r"<command-name>(.*?)</command-name>", re.DOTALL)
+_COMMAND_ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
 _STDOUT = re.compile(r"</?local-command-std(out|err)>")
 INTERRUPTED_TEXT = "Interrompido."
 COMPACTED_TEXT = "Conversa compactada"
@@ -775,7 +776,9 @@ def _classify_user_text(text: str) -> tuple[str, str | None]:
     match = _COMMAND_NAME.search(text)
     if match:
         name = match.group(1).strip()
-        return "", f"Comando {name}" if name else "Comando"
+        args = _COMMAND_ARGS.search(text)
+        arguments = args.group(1).strip() if args else ""
+        return (f"{name} {arguments}" if arguments else name), None
     if "<local-command-stdout>" in text or "<local-command-stderr>" in text:
         output = _STDOUT.sub("", text).strip()
         return "", output or None
