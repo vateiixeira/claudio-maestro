@@ -53,7 +53,7 @@ describe('tela do projeto', () => {
     const rows = wrapper.findAll('[data-test="conversation-row"]')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('Cupom expirado')
-    expect(rows[0]!.text()).toContain('Aguardando você')
+    expect(rows[0]!.text()).toContain('Sua vez')
     expect(rows[0]!.find('[data-test="row-link"]').attributes('href')).toBe('/sessions/a')
   })
 

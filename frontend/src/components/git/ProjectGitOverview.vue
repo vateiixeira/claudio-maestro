@@ -105,17 +105,17 @@ function isCollapsed(repo: RepoDetails): boolean {
             class="flex items-center gap-2 text-xs"
           >
             <span v-if="syncOf(repo).kind === 'none'" class="text-fg-subtle">sem upstream</span>
-            <span v-else-if="syncOf(repo).kind === 'unavailable'" class="text-secondary-soft">upstream indisponível</span>
+            <span v-else-if="syncOf(repo).kind === 'unavailable'" class="text-fg-muted">upstream indisponível</span>
             <span v-else-if="syncOf(repo).kind === 'synced'" class="text-fg-subtle">em dia com {{ repo.upstream }}</span>
             <template v-else>
-              <span v-if="syncOf(repo).ahead > 0" class="text-secondary-soft"><span aria-hidden="true">↑</span>{{ syncOf(repo).ahead }} para subir</span>
+              <span v-if="syncOf(repo).ahead > 0" class="text-fg-muted"><span aria-hidden="true">↑</span>{{ syncOf(repo).ahead }} para subir</span>
               <span v-if="syncOf(repo).behind > 0" class="text-info"><span aria-hidden="true">↓</span>{{ syncOf(repo).behind }} para baixar</span>
             </template>
           </span>
           <span
             data-test="repo-state"
             class="text-xs"
-            :class="uncommitted(repo) > 0 ? 'text-secondary-soft' : 'text-fg-subtle'"
+            :class="uncommitted(repo) > 0 ? 'text-fg-muted' : 'text-fg-subtle'"
           >{{ stateText(repo) }}</span>
         </template>
         <button

@@ -5,7 +5,7 @@ import DisplayStateIcon from '../DisplayStateIcon.vue'
 import { needsYou } from '../../conversation/needsYou'
 import { errorMessage, searchSessions } from '../../api/http'
 import { formatActivity } from '../../format'
-import { displayStateLabels } from '../../sessionState'
+import { displayStateLabel } from '../../sessionState'
 import { useProjectsStore } from '../../stores/projects'
 import type { Session } from '../../types/api'
 
@@ -129,8 +129,8 @@ onBeforeUnmount(() => {
           />
           <span class="min-w-0 truncate">{{ projects.byId(session.project_id)?.name ?? 'Projeto removido' }}</span>
           <span aria-hidden="true">·</span>
-          <DisplayStateIcon :display="session.display_state" :size="8" :quiet="!needsYou(session)" />
-          <span class="shrink-0">{{ displayStateLabels[session.display_state] }}</span>
+          <DisplayStateIcon :display="session.display_state" :size="11" :quiet="!needsYou(session)" />
+          <span class="shrink-0">{{ displayStateLabel(session) }}</span>
           <span class="grow" />
           <span class="shrink-0 font-mono">{{ formatActivity(session.last_activity_at) }}</span>
         </span>

@@ -225,14 +225,21 @@ const resultParts = computed(() => {
 // Follows the end of the conversation only while the user is already there.
 const scroller = ref<HTMLElement | null>(null)
 const atBottom = ref(true)
+// Set when the user sends a message from the composer: the user item that follows is their own, not news.
+const OWN_SEND_WINDOW_MS = 5000
+let ownSendAt = 0
+const PROMPT_CARD = '[data-prompt-card]'
 const jumpLabel = computed(() => (unseen.value === 'prompt' && (conv.value?.prompts.length ?? 0) > 0 ? 'Pedido abaixo' : 'Novidades abaixo'))
 function jumpToEnd() {
   const el = scroller.value
   if (!el) return
+  const toPrompt = jumpLabel.value === 'Pedido abaixo'
   unseen.value = null
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   if (el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
   else el.scrollTop = el.scrollHeight
+  // Whoever jumped for a request is sent to it: keyboard and screen reader users land on the card.
+  if (toPrompt) el.querySelector<HTMLElement>(PROMPT_CARD)?.focus({ preventScroll: true })
 }
 function onScroll() {
   const el = scroller.value
@@ -288,6 +295,14 @@ function goToTurn(index: number) {
 watch(
   () => [conv.value?.seq, conv.value?.items.length, conv.value?.prompts.length],
   async ([, items, prompts], [, itemsBefore, promptsBefore]) => {
+    const own = (items ?? 0) > (itemsBefore ?? 0)
+      && Date.now() - ownSendAt < OWN_SEND_WINDOW_MS
+      && conv.value?.items[conv.value.items.length - 1]?.type === 'user'
+    if (own) {
+      ownSendAt = 0
+      atBottom.value = true
+      unseen.value = null
+    }
     if (!atBottom.value) {
       if ((prompts ?? 0) > (promptsBefore ?? 0)) unseen.value = 'prompt'
       else if ((items ?? 0) > (itemsBefore ?? 0) && unseen.value === null) unseen.value = 'news'
@@ -413,18 +428,27 @@ function resolvePrompt(promptId: string) {
           </template>
           <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
             <QuestionCard
+              data-prompt-card
+              tabindex="-1"
+              class="focus-visible:outline-2 focus-visible:outline-primary"
               v-if="prompt.kind === 'question'"
               :session-id="conv.sessionId"
               :prompt="prompt"
               @resolved="resolvePrompt(prompt.prompt_id)"
             />
             <PlanCard
+              data-prompt-card
+              tabindex="-1"
+              class="focus-visible:outline-2 focus-visible:outline-primary"
               v-else-if="prompt.kind === 'plan'"
               :session-id="conv.sessionId"
               :prompt="prompt"
               @resolved="resolvePrompt(prompt.prompt_id)"
             />
             <PermissionCard
+              data-prompt-card
+              tabindex="-1"
+              class="focus-visible:outline-2 focus-visible:outline-primary"
               v-else
               :session-id="conv.sessionId"
               :prompt="prompt"
@@ -460,7 +484,7 @@ function resolvePrompt(promptId: string) {
           </p>
           <p v-if="loadError" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg">{{ loadError }}</p>
           <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
-          <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason">
+          <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
             <template #controls><SessionControls :session-id="conv.sessionId" /></template>
           </MessageComposer>
         </div>

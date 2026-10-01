@@ -14,8 +14,15 @@ const NEW_FILE_PREVIEW = 12
 const lines = computed(() => toolDiff(props.item.name, props.item.input, props.item.result?.details ?? null))
 const counts = computed(() => diffCounts(lines.value))
 const label = computed(() => (props.item.name === 'Write' ? 'Escrita' : 'Edição'))
-// A Write with no previous content is all additions: shown as plain text, not as a diff.
-const isNewFile = computed(() => props.item.name === 'Write' && lines.value.length > 0 && lines.value.every((l) => l.kind === 'add'))
+const isError = computed(() => props.item.result?.is_error === true)
+// A Write that created the file: shown as plain text, not as a diff. The backend says so with `details.type`;
+// only when it does not, a Write that is all additions counts as new. A Write that failed never does.
+const isNewFile = computed(() => {
+  if (props.item.name !== 'Write' || isError.value) return false
+  const kind = props.item.result?.details?.type
+  if (typeof kind === 'string') return kind === 'create'
+  return lines.value.length > 0 && lines.value.every((l) => l.kind === 'add')
+})
 // Long output starts as a preview; expanded it still stops at LIMIT until the user asks for all.
 const expanded = ref(false)
 const showAll = ref(false)
@@ -33,7 +40,6 @@ function collapse() {
   showAll.value = false
 }
 const button = 'min-h-8 cursor-pointer rounded-md border border-line-strong bg-transparent px-2.5 py-1 text-xs text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary'
-const isError = computed(() => props.item.result?.is_error === true)
 const sessionId = inject(SESSION_ID_KEY, null)
 // Only columns provide the session id; outside them there is no panel to open.
 const panel = sessionId ? useChangesPanelStore() : null
@@ -67,7 +73,7 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
     </div>
     <DiffLines v-else :lines="shown" />
     <div class="flex flex-wrap items-center gap-2 px-3 py-2" :class="{ 'border-t border-line': isNewFile }" v-if="isNewFile || hasMore">
-      <span v-if="isNewFile" data-test="new-file-footer" class="mr-auto text-xs text-fg-muted">Novo arquivo · {{ lines.length }} linhas</span>
+      <span v-if="isNewFile" data-test="new-file-footer" class="mr-auto text-xs text-fg-muted">Novo arquivo · {{ lines.length === 1 ? '1 linha' : `${lines.length} linhas` }}</span>
       <span v-if="truncated" class="text-xs text-fg-muted">Mostrando {{ LIMIT }} de {{ lines.length }} linhas.</span>
       <button v-if="previewing" type="button" data-test="show-lines" :class="button" @click="expanded = true">
         {{ isNewFile ? 'Ver tudo' : `Ver as ${lines.length} linhas` }}

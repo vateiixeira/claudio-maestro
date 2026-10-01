@@ -6,14 +6,14 @@ import { needsYou } from '../../conversation/needsYou'
 import { usePendingDecision } from '../../conversation/pendingDecision'
 import { waitingReason } from '../../conversationList'
 import { formatActivity } from '../../format'
-import { displayStateLabels } from '../../sessionState'
+import { displayStateLabel } from '../../sessionState'
 import type { Project, Session } from '../../types/api'
 
 // One "Agora" card; Allow/Deny when a tool permission is pending.
 const props = defineProps<{ session: Session; project?: Project }>()
 
 const decision = usePendingDecision(() => props.session)
-const reason = computed(() => waitingReason(props.session) ?? displayStateLabels[props.session.display_state])
+const reason = computed(() => waitingReason(props.session) ?? displayStateLabel(props.session))
 </script>
 
 <template>

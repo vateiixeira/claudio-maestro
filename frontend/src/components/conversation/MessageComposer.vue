@@ -13,6 +13,8 @@ import SuggestionMenu from './SuggestionMenu.vue'
 
 // `blockedReason`: why sending is not possible now (e.g. the project folder is gone).
 const props = defineProps<{ sessionId: string; state: SessionState; blockedReason?: string | null }>()
+// `sending`: the user just sent a message from here, so the conversation can follow it to the end.
+const emit = defineEmits<{ sending: [] }>()
 
 const pendingDraft = takePendingDraft(props.sessionId)
 const text = ref(pendingDraft?.text ?? '')
@@ -136,6 +138,7 @@ async function send() {
   if (dictation.recording.value) dictation.stop()
   sending.value = true
   error.value = null
+  emit('sending')
   // Registered before the request: the user item may arrive over the socket first.
   const forget = attached.length ? rememberSentImages(props.sessionId, attached.map((i) => ({ url: i.url, mediaType: i.mediaType, size: i.size }))) : () => {}
   try {

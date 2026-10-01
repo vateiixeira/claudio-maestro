@@ -11,7 +11,7 @@ import { waitingReason } from '../../conversationList'
 import { needsYou } from '../../conversation/needsYou'
 import { formatActivity } from '../../format'
 import { planPosition, planVisible } from '../plan/planText'
-import { displayStateLabels } from '../../sessionState'
+import { displayStateLabel } from '../../sessionState'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
@@ -38,8 +38,13 @@ const finished = computed(() => props.session.display_state === 'finished')
 const reason = computed(() => waitingReason(props.session))
 const wantsYou = computed(() => needsYou(props.session))
 const compact = computed(() => props.variant === 'compact')
+// The compact row hides the visible reason, so screen readers still get it.
+const srState = computed(() => {
+  const label = displayStateLabel(props.session)
+  return compact.value && reason.value && reason.value !== label ? `${label}: ${reason.value}` : label
+})
 // The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it here.
-const planTitle = computed(() => (planVisible(props.session) ? planPosition(props.session.plan!) : undefined))
+const planTitle = computed(() => (!compact.value && planVisible(props.session) ? planPosition(props.session.plan!) : undefined))
 const busy = ref(false)
 
 async function run(action: () => Promise<unknown>) {
@@ -70,29 +75,29 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     </span>
     <DisplayStateIcon :display="session.display_state" :quiet="!wantsYou" />
     <!-- Not positioned, so the link's stretched ::after still covers the whole row. -->
-    <div data-test="row-title" class="flex grow items-center gap-2" :class="compact ? 'min-w-24' : 'min-w-0'">
+    <div data-test="row-title" class="flex grow items-center gap-2" :class="compact ? 'min-w-24 overflow-hidden' : 'min-w-0'">
       <RouterLink
         data-test="row-link"
         :to="target"
         :aria-current="active ? 'true' : undefined"
         :title="planTitle"
         class="min-w-0 truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
-        :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal', session.digest_short ? 'max-w-[55%] shrink-0' : '']"
+        :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal', session.digest_short && !compact ? 'max-w-[55%] shrink-0' : '']"
       >{{ session.title }}</RouterLink>
-      <PlanBadge :session="session" />
-      <GroupTag :group-id="session.group_id" />
+      <PlanBadge v-if="!compact" :session="session" />
+      <GroupTag v-if="!compact" :group-id="session.group_id" />
       <span
-        v-if="session.plan_done"
+        v-if="session.plan_done && !compact"
         data-test="row-plan-done"
         class="shrink-0 rounded border border-primary/40 px-1.5 font-mono text-[11px] text-primary-soft"
       >Plano concluído</span>
       <span
-        v-if="session.digest_short"
+        v-if="session.digest_short && !compact"
         data-test="row-digest"
         class="min-w-0 truncate text-xs text-fg-muted"
       >{{ session.digest_short }}</span>
     </div>
-    <span class="sr-only">{{ displayStateLabels[session.display_state] }}{{ session.unread ? ', com novidade' : '' }}</span>
+    <span class="sr-only">{{ srState }}{{ session.unread ? ', com novidade' : '' }}</span>
     <span v-if="reason && !compact" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs" :class="wantsYou ? 'text-secondary-soft' : 'text-fg-muted'">{{ reason }}</span>
     <!-- Fixed widths, kept even when empty, so the columns line up from row to row. The actions float over the right end instead of taking room from them. -->
     <span data-test="row-project" class="hidden items-center gap-1.5 text-xs text-fg-subtle md:flex" :class="compact ? 'w-28 min-w-0 shrink' : 'w-36 shrink-0'">

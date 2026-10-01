@@ -1,4 +1,5 @@
-import type { DisplayState, SessionState } from './types/api'
+import { needsYou } from './conversation/needsYou'
+import type { DisplayState, Session, SessionState } from './types/api'
 
 export const sessionStateLabels: Record<SessionState, string> = {
   closed: 'Fechada',
@@ -22,6 +23,12 @@ export const displayStateLabels: Record<DisplayState, string> = {
   running: 'Em execução',
   waiting: 'Aguardando você',
   finished: 'Finalizada',
+}
+
+/** Spoken/written label of a session's display state: a plain wait is "Sua vez", one that needs the user "Aguardando você". */
+export function displayStateLabel(session: Pick<Session, 'display_state' | 'unread' | 'state'> & { pending_kind?: string | null }): string {
+  if (session.display_state === 'waiting' && !needsYou(session)) return 'Sua vez'
+  return displayStateLabels[session.display_state]
 }
 
 /**

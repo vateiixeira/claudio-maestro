@@ -106,4 +106,37 @@ describe('Edit com diff grande', () => {
     const w = mountTool(big(3))
     expect(w.find('[data-test="diff-line"]').element.parentElement!.className).toContain('overflow-x-auto')
   })
+
+  it('usa o tipo do backend: "create" é arquivo novo mesmo com detalhes completos', () => {
+    const w = mountTool(tool('Write', { file_path: '/p/novo.md', content: 'a\nb' }, {
+      type: 'create',
+      structuredPatch: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: 2, lines: ['+a', '+b'] }],
+    }))
+    expect(w.find('[data-test="new-file-preview"]').exists()).toBe(true)
+  })
+
+  it('tipo "update" continua como diff mesmo quando todas as linhas são adições', () => {
+    const w = mountTool(tool('Write', { file_path: '/p/a.md', content: 'a\nb' }, {
+      type: 'update',
+      structuredPatch: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: 2, lines: ['+a', '+b'] }],
+    }))
+    expect(w.find('[data-test="new-file-preview"]').exists()).toBe(false)
+    expect(w.findAll('[data-test="diff-line"]')).toHaveLength(2)
+  })
+
+  it('Write que terminou em erro nunca é tratado como arquivo novo', () => {
+    const item = tool('Write', { file_path: '/p/novo.md', content: numbered(5) }, { type: 'create' })
+    item.result!.is_error = true
+    const w = mountTool(item)
+    expect(w.find('[data-test="new-file-preview"]').exists()).toBe(false)
+    expect(w.find('[data-test="new-file-footer"]').exists()).toBe(false)
+    const bare = tool('Write', { file_path: '/p/novo.md', content: numbered(5) })
+    bare.result!.is_error = true
+    expect(mountTool(bare).find('[data-test="new-file-preview"]').exists()).toBe(false)
+  })
+
+  it('rodapé usa o singular com uma linha só', () => {
+    const w = mountTool(tool('Write', { file_path: '/p/novo.md', content: 'unica' }))
+    expect(w.find('[data-test="new-file-footer"]').text()).toBe('Novo arquivo · 1 linha')
+  })
 })

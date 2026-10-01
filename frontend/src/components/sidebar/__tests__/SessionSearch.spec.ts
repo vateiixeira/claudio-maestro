@@ -72,6 +72,21 @@ describe('busca no menu lateral', () => {
     expect(shapes).toEqual(['triangle-quiet', 'triangle'])
   })
 
+  it('o ícone de estado tem 11 px e o rótulo diferencia espera comum de espera que pede você', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Calma', display_state: 'waiting', state: 'idle', unread: false }),
+      makeSession({ session_id: 'b', title: 'Pede', display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'plan' }),
+    ])))
+    const w = mountSidebar()
+    await type(w, 'x')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    const results = w.findAll('[data-test="search-result"]')
+    expect(results[0]!.find('svg').attributes('width')).toBe('11')
+    expect(results[0]!.text()).toContain('Sua vez')
+    expect(results[1]!.text()).toContain('Aguardando você')
+  })
+
   it('descarta respostas antigas', async () => {
     const pending: Record<string, (r: Response) => void> = {}
     vi.stubGlobal('fetch', vi.fn((url: string) => new Promise<Response>((resolve) => {

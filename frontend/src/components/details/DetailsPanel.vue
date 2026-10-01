@@ -22,7 +22,7 @@ import {
   DETAILS_DEFAULT_WIDTH, DETAILS_KEY_STEP, DETAILS_MIN_WIDTH,
   clampDetailsWidth, detailsMaxWidth, readDetailsWidth, writeDetailsWidth,
 } from '../../detailsWidthPref'
-import { displayStateLabels } from '../../sessionState'
+import { displayStateLabel } from '../../sessionState'
 import { useChangesPanelStore } from '../../stores/changesPanel'
 import { useConversationStore } from '../../stores/conversation'
 import { repoLabel, useGitStore } from '../../stores/git'
@@ -49,7 +49,7 @@ const turns = computed(() => (conv.value?.items ?? []).filter((i) => i.type === 
 const stateText = computed(() => {
   const s = session.value
   if (!s) return ''
-  return waitingReason(s) ?? displayStateLabels[s.display_state]
+  return waitingReason(s) ?? displayStateLabel(s)
 })
 
 const changes = useSessionChanges(() => props.sessionId)

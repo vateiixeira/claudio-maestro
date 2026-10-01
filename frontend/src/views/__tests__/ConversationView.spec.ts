@@ -454,7 +454,7 @@ describe('página da conversa', () => {
       expect(live().attributes('role')).toBe('status')
       expect(live().attributes('aria-live')).toBe('polite')
       expect(live().classes()).toContain('sr-only')
-      expect(live().text()).toBe('Aguardando você')
+      expect(live().text()).toBe('Sua vez')
 
       const sessions = useSessionsStore(pinia)
       sessions.setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'running', state: 'running' })])

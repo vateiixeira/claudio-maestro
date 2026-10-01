@@ -16,6 +16,10 @@ describe('needsYou', () => {
     expect(needsYou(makeSession({ state: 'error' }))).toBe(true)
   })
 
+  it('a sessão bloqueada numa decisão pede você mesmo antes de pending_kind chegar', () => {
+    expect(needsYou(makeSession({ state: 'awaiting_decision', pending_kind: null, unread: false }))).toBe(true)
+  })
+
   it('isQuietSession is its negation', () => {
     for (const s of [makeSession(), makeSession({ unread: true }), makeSession({ state: 'error' }), makeSession({ pending_kind: 'plan' })]) {
       expect(isQuietSession(s)).toBe(!needsYou(s))

@@ -1,3 +1,4 @@
+import { needsYou } from './conversation/needsYou'
 import type { Session } from './types/api'
 
 /** Why a session waits for the user, or null when it does not wait. */
@@ -28,7 +29,7 @@ export function inInbox(session: Session, tab: InboxTab): boolean {
   const waiting = session.display_state === 'waiting'
   const running = session.display_state === 'running'
   const unread = session.unread && session.display_state !== 'finished'
-  if (tab === 'pede-voce') return waiting
+  if (tab === 'pede-voce') return waiting && needsYou(session)
   if (tab === 'nao-lidas') return unread
   if (tab === 'em-execucao') return running
   return waiting || running || unread

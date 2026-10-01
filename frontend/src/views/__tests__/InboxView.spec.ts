@@ -24,7 +24,7 @@ beforeEach(() => {
   projects.loaded = true
   useSessionsStore(pinia).loaded = true
   useSessionsStore(pinia).setForProject(1, [
-    makeSession({ session_id: 'w1', title: 'Espera 1', display_state: 'waiting', last_activity_at: now }),
+    makeSession({ session_id: 'w1', title: 'Espera 1', display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question', last_activity_at: now }),
     makeSession({ session_id: 'r1', title: 'Roda 1', display_state: 'running', unread: true, last_activity_at: now }),
   ])
   useSessionsStore(pinia).setForProject(2, [

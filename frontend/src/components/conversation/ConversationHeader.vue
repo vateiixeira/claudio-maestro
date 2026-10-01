@@ -10,7 +10,7 @@ import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import { displayStateLabels } from '../../sessionState'
+import { displayStateLabel } from '../../sessionState'
 import { worktreeLabel } from '../../worktree'
 
 const props = defineProps<{ id: string }>()
@@ -37,7 +37,7 @@ const stateLabel = computed(() => {
   const state = listed.value.state
   if (state === 'error') return 'Erro'
   if (state === 'awaiting_decision') return 'Pede sua decisão'
-  return displayStateLabels[listed.value.display_state]
+  return displayStateLabel(listed.value)
 })
 const isFinished = computed(() => listed.value?.display_state === 'finished')
 

@@ -34,10 +34,12 @@ const text = (id: string) => ({ type: 'text', id, text: `texto ${id}`, streaming
 const emit = (type: string, data: unknown, seq: number) => fake.session.get('s1')!(makeEvent(type, data, seq))
 
 async function mountScrolled() {
-  vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, state: 'idle', items: [text('a')] as never })) }))
+  vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, state: 'idle', items: [text('a')] as never })),
+    'POST /api/sessions/s1/messages': () => jsonResponse({}),
+  }))
   const router = createAppRouter(createMemoryHistory())
   await router.push('/sessions/s1')
-  const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] } })
+  const w = mount(ConversationThread, { props: { id: 's1', visible: true }, attachTo: document.body, global: { plugins: [pinia, router] } })
   await flushPromises()
   const scroller = w.find('[data-test="conversation-scroller"]')
   Object.defineProperty(scroller.element, 'scrollHeight', { configurable: true, value: 2000 })
@@ -104,6 +106,37 @@ describe('Ir para o fim', () => {
     await jump(w).trigger('click')
     expect((scroller.element as HTMLElement).scrollTop).toBe(2000)
     expect(jump(w).exists()).toBe(false)
+  })
+
+  it('mensagem enviada pelo próprio usuário rola até o fim em vez de mostrar "Novidades abaixo"', async () => {
+    const { w, scroller } = await mountScrolled()
+    await scrollTo(scroller, 0)
+    await w.find('textarea').setValue('olá')
+    await w.find('[data-test="send"]').trigger('click')
+    emit('item.upsert', { type: 'user', id: 'u1', text: 'olá' }, 2)
+    await flushPromises()
+    expect((scroller.element as HTMLElement).scrollTop).toBe(2000)
+    expect(jump(w).exists()).toBe(false)
+  })
+
+  it('mensagem de usuário que não foi enviada aqui continua só avisando', async () => {
+    const { w, scroller } = await mountScrolled()
+    await scrollTo(scroller, 0)
+    emit('item.upsert', { type: 'user', id: 'u1', text: 'veio do terminal' }, 2)
+    await flushPromises()
+    expect(jump(w).text()).toContain('Novidades abaixo')
+  })
+
+  it('"Pedido abaixo": depois de rolar, o foco vai para o cartão do pedido', async () => {
+    const { w, scroller } = await mountScrolled()
+    await scrollTo(scroller, 0)
+    emit('prompt.request', { prompt_id: 'p1', tool_name: 'Bash', input: { command: 'ls' }, can_always: false }, 2)
+    await flushPromises()
+    await jump(w).trigger('click')
+    await flushPromises()
+    const card = w.find('[data-test="permission-card"]')
+    expect(card.attributes('tabindex')).toBe('-1')
+    expect(document.activeElement).toBe(card.element)
   })
 
   it('some sozinho quando o usuário chega ao fim', async () => {
