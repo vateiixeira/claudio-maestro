@@ -39,6 +39,7 @@ O que ele não é, de propósito: IDE, terminal embutido, editor de código ou �
 - [Python 3.13](https://www.python.org/) e [uv](https://docs.astral.sh/uv/)
 - [Node 22.12 ou mais novo](https://nodejs.org/) e [pnpm](https://pnpm.io/installation)
 - git
+- No Linux, o `zenity` (opcional) abre o seletor de pastas nativo. Sem ele, o app usa o navegador de pastas próprio
 - [Claude Code](https://code.claude.com/docs) instalado e autenticado na máquina
 
 ## Instalação e uso
@@ -67,8 +68,8 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 |---|---|---|
 | `MAESTRO_PORT` | Porta do app (e do backend, no desenvolvimento) | `6660` |
 | `MAESTRO_DEV_PORT` | Porta do Vite, no desenvolvimento | `6600` |
-| `MAESTRO_HOME` | Limite do navegador de pastas | sua pasta pessoal |
-| `MAESTRO_DATA_DIR` | Onde fica o banco SQLite (só metadados) | `~/.local/share/claudio-maestro` |
+| `MAESTRO_HOME` | Limite do navegador de pastas; também muda a pasta de dados padrão (`$MAESTRO_HOME/.local/share/claudio-maestro`) | sua pasta pessoal |
+| `MAESTRO_DATA_DIR` | Onde fica o banco SQLite (só metadados); vale mais que o `MAESTRO_HOME` | `~/.local/share/claudio-maestro` |
 | `CLAUDE_CONFIG_DIR` | Pasta de configuração do Claude Code | `~/.claude` |
 
 As portas precisam estar entre 1024 e 65535, fora de 6665 a 6669 (os navegadores bloqueiam essas). O app escuta só em `127.0.0.1`, sempre.

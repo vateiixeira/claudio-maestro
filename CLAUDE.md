@@ -53,7 +53,7 @@ uv run python scripts/sdk_smoke.py                                              
 - Textos da interface e documentação em português brasileiro. Código e identificadores em inglês.
 - Não use a marca "Claude Code" na interface.
 - As conversas ficam em `~/.claude/projects`, compatíveis com o CLI. O SQLite guarda só metadados.
-- Commits: `[Tipo] Título` em português, verbo no infinitivo, até 72 caracteres, sem ponto final. Tipos: Feat, Bugfix, Refactor, UI, Docs, Test, Chore. Um commit por unidade lógica.
+- Commits: `[Tipo] Título` em português, verbo no infinitivo, até 72 caracteres, sem ponto final. Tipos: Feat, Bugfix, Refactor, UI, Docs, Test, Chore, Release. Um commit por unidade lógica.
 - Mudanças que o usuário percebe entram no `CHANGELOG.md`, em "Não lançado".
 - Ao relatar, separe o que você rodou e viu passar do que só escreveu.
 

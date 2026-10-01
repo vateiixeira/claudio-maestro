@@ -60,6 +60,7 @@ Formato: `[Tipo] Título`, em português, verbo no infinitivo, até 72 caractere
 | `[Docs]` | Documentação |
 | `[Test]` | Testes |
 | `[Chore]` | Configuração, dependências, CI |
+| `[Release]` | Versão pronta para lançar |
 
 Exemplo: `[Feat] Mostrar a branch de cada worktree no menu lateral`.
 
