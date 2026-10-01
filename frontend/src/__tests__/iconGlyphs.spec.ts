@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 // Characters that used to stand in for icons. Icons are inline SVG (components/icons); a glyph here renders with the
 // font's metrics, so it blurs, misaligns and cannot follow `currentColor` strokes. Text separators ("·", "−") are fine.
-const GLYPHS = /[▸▾⋯⤢×▤＋›‹✓✕]/
+const GLYPHS = /[▸▾⋯⤢×▤＋›‹✓✕○◐●↑↓]/
 
 const root = join(__dirname, '..')
 function vueFiles(dir: string): string[] {

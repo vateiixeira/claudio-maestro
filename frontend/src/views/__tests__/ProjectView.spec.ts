@@ -333,7 +333,7 @@ describe('tela do projeto', () => {
     const wrapper = await mountView()
     const repo = wrapper.find('[data-test="repos"] [data-test="repo"]')
     expect(repo.text()).toContain('loja-online')
-    expect(repo.text()).toContain('↑1 para subir')
+    expect(repo.text()).toContain('1 para subir')
     expect(repo.text()).toContain('1 não commitados')
     expect(repo.text()).toContain('src/a.py')
     expect(repo.text()).toContain('Ajustar o carrinho')

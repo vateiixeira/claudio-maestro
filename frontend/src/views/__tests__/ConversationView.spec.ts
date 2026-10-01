@@ -425,6 +425,17 @@ describe('página da conversa', () => {
       expect(document.activeElement).toBe(toggle.element)
     })
 
+    it('fechar pelo X da gaveta devolve o foco ao botão Detalhes, como o Esc', async () => {
+      const wrapper = await mountNarrow()
+      const toggle = wrapper.find('[data-test="toggle-details"]')
+      await toggle.trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-test="details-drawer"] [aria-label="Fechar detalhes"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(toggle.element)
+    })
+
     it('Esc com o menu "⋯" aberto fecha só o menu, e o Esc seguinte fecha a gaveta', async () => {
       const wrapper = await mountNarrow()
       await wrapper.find('[data-test="toggle-details"]').trigger('click')

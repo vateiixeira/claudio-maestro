@@ -318,6 +318,17 @@ describe('OptionMenu', () => {
     expect(checked).toHaveLength(1)
   })
 
+  it('bolds only the label of the selected option, not its description', async () => {
+    const { trigger } = mountMenu(rect(50, 700))
+    await trigger.trigger('click')
+    for (const item of Array.from(menuEl()!.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))) {
+      expect(item.className).not.toContain('aria-checked:font-semibold')
+      expect(item.querySelector('[data-test="option-label"]')!.className).toContain('group-aria-checked:font-semibold')
+      expect(item.className).toMatch(/(^|\s)group(\s|$)/)
+      expect(item.querySelector('[data-test="option-description"]')?.className ?? '').not.toContain('font-semibold')
+    }
+  })
+
   it('marks only the selected option with a check icon and keeps aria-checked', async () => {
     const { trigger } = mountMenu(rect(50, 700))
     await trigger.trigger('click')

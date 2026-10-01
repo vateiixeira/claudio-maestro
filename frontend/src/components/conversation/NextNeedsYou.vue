@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { needsYouQueue } from '../../nextNeedsYou'
+import { needsYouQueue, nextNeedsYou } from '../../nextNeedsYou'
 import { useSessionsStore } from '../../stores/sessions'
 
 const props = defineProps<{ currentId: string }>()
@@ -9,11 +9,11 @@ const props = defineProps<{ currentId: string }>()
 const sessions = useSessionsStore()
 const router = useRouter()
 
-// The same queue as the Inbox's "Aguardando você" tab, without the open conversation.
+// The same queue as the Inbox's "Aguardando você" tab, without the open conversation; the click walks it in order.
 const queue = computed(() => needsYouQueue(sessions.all, props.currentId))
 
 function goNext() {
-  const next = queue.value[0]
+  const next = nextNeedsYou(sessions.all, props.currentId)
   if (next) void router.push({ name: 'session', params: { id: next.session_id } })
 }
 </script>
@@ -23,7 +23,9 @@ function goNext() {
     v-if="queue.length > 0"
     type="button"
     data-test="next-needs-you"
-    title="Abrir a próxima conversa que aguarda você (N)"
+    :title="`Abrir a próxima conversa que aguarda você, sem contar esta (n). Outras aguardando: ${queue.length}`"
+    :aria-label="`Próxima conversa que aguarda você, ${queue.length} ${queue.length === 1 ? 'outra' : 'outras'}`"
+    aria-keyshortcuts="n"
     class="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary"
     @click="goNext"
   >

@@ -1,5 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import IconArrowDown from '../IconArrowDown.vue'
+import IconArrowUp from '../IconArrowUp.vue'
 import IconBack from '../IconBack.vue'
 import IconCheck from '../IconCheck.vue'
 import IconChevron from '../IconChevron.vue'
@@ -10,7 +12,7 @@ import IconExpand from '../IconExpand.vue'
 import IconGroup from '../IconGroup.vue'
 import IconPlus from '../IconPlus.vue'
 
-const all = { IconBack, IconCheck, IconChevron, IconCircle, IconCircleDot, IconClose, IconExpand, IconGroup, IconPlus }
+const all = { IconArrowDown, IconArrowUp, IconBack, IconCheck, IconChevron, IconCircle, IconCircleDot, IconClose, IconExpand, IconGroup, IconPlus }
 
 describe('ícones em SVG', () => {
   it.each(Object.entries(all))('%s é um SVG em traço, decorativo e do tamanho pedido', (_name, component) => {

@@ -25,7 +25,10 @@ export function isBareShortcut(event: KeyboardEvent, key: string): boolean {
   if (!target) return true
   const tag = target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false
-  if (target.getAttribute?.('role') === 'textbox') return false
+  // The focus may sit on a child of the editable element (inherited editing), so look up the tree.
+  if (target.closest?.('[role="textbox"]')) return false
+  const editable = target.closest?.('[contenteditable]')
+  if (editable && editable.getAttribute('contenteditable') !== 'false') return false
   // jsdom has no `isContentEditable`, so the property and the attribute are checked too.
-  return !target.isContentEditable && target.contentEditable !== 'true' && target.getAttribute?.('contenteditable') !== 'true'
+  return !target.isContentEditable && target.contentEditable !== 'true'
 }

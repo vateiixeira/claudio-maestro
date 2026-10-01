@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import BranchLabel from './BranchLabel.vue'
 import RepoCommitList from './RepoCommitList.vue'
 import RepoFileList from './RepoFileList.vue'
+import IconArrowDown from '../icons/IconArrowDown.vue'
+import IconArrowUp from '../icons/IconArrowUp.vue'
 import { branchText, changedCount } from '../../stores/git'
 import { useGitDetailsStore } from '../../stores/gitDetails'
 import { useProjectsStore } from '../../stores/projects'
@@ -108,8 +110,8 @@ function isCollapsed(repo: RepoDetails): boolean {
             <span v-else-if="syncOf(repo).kind === 'unavailable'" class="text-fg-muted">upstream indisponível</span>
             <span v-else-if="syncOf(repo).kind === 'synced'" class="text-fg-subtle">em dia com {{ repo.upstream }}</span>
             <template v-else>
-              <span v-if="syncOf(repo).ahead > 0" class="text-fg-muted"><span aria-hidden="true">↑</span>{{ syncOf(repo).ahead }} para subir</span>
-              <span v-if="syncOf(repo).behind > 0" class="text-info"><span aria-hidden="true">↓</span>{{ syncOf(repo).behind }} para baixar</span>
+              <span v-if="syncOf(repo).ahead > 0" data-test="repo-ahead" class="inline-flex items-center gap-0.5 text-fg-muted"><IconArrowUp />{{ syncOf(repo).ahead }} para subir</span>
+              <span v-if="syncOf(repo).behind > 0" data-test="repo-behind" class="inline-flex items-center gap-0.5 text-info"><IconArrowDown />{{ syncOf(repo).behind }} para baixar</span>
             </template>
           </span>
           <span

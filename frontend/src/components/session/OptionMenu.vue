@@ -202,10 +202,10 @@ function choose(value: string) {
         role="menuitemradio"
         :aria-checked="option.value === selected"
         tabindex="-1"
-        class="grid cursor-pointer grid-cols-[0.875rem_auto] justify-items-start gap-x-2 rounded-md px-2.5 py-1.5 text-left text-sm text-fg hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted aria-checked:text-fg aria-checked:font-semibold"
+        class="group grid cursor-pointer grid-cols-[0.875rem_auto] justify-items-start gap-x-2 rounded-md px-2.5 py-1.5 text-left text-sm text-fg hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted aria-checked:text-fg"
         @click="choose(option.value)"
       >
-        <span data-test="option-label" class="col-start-2">{{ option.label }}</span>
+        <span data-test="option-label" class="col-start-2 group-aria-checked:font-semibold">{{ option.label }}</span>
         <span v-if="option.description" data-test="option-description" class="col-start-2 text-xs text-fg-subtle">{{ option.description }}</span>
         <!-- Last in the DOM, placed in the first column: the label stays the first child. -->
         <span data-test="option-mark" class="col-start-1 row-start-1 mt-[3px] flex size-3.5 items-center justify-center text-primary">

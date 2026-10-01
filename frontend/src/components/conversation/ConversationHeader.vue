@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import BranchLabel from '../git/BranchLabel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import IconGroup from '../icons/IconGroup.vue'
 import NextNeedsYou from './NextNeedsYou.vue'
 import { errorMessage, openInEditor } from '../../api/http'
 import { needsYou } from '../../conversation/needsYou'
@@ -43,7 +44,9 @@ const stateLabel = computed(() => {
   if (state === 'awaiting_decision') return 'Aguardando você'
   return displayStateLabel(listed.value)
 })
-const hasMeta = computed(() => (!props.showPath && !!project.value) || !!group.value || !!worktree.value || repos.value.length > 0)
+// Branch, worktree and group; the project joins them in the line below the strip when the breadcrumb does not show it.
+const hasDetails = computed(() => !!group.value || !!worktree.value || repos.value.length > 0)
+const hasMeta = computed(() => !!project.value || hasDetails.value)
 const isFinished = computed(() => listed.value?.display_state === 'finished')
 
 const error = ref<string | null>(null)
@@ -144,10 +147,10 @@ async function openProject() {
     <div data-test="header-strip" class="flex min-h-14 items-center gap-3 px-4">
       <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="!needsYou(listed)" />
       <nav v-if="showPath" data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 shrink items-center gap-1 text-xs text-fg-muted max-sm:hidden">
-        <RouterLink to="/sessions" class="shrink-0 no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
+        <RouterLink to="/sessions" class="inline-flex min-h-8 shrink-0 items-center no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
         <template v-if="project">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
-          <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="flex min-w-0 items-center gap-1.5 no-underline text-fg-muted hover:text-fg">
+          <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="inline-flex min-h-8 min-w-0 items-center gap-1.5 no-underline text-fg-muted hover:text-fg">
             <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" /><span class="truncate">{{ project.name }}</span>
           </RouterLink>
         </template>
@@ -209,12 +212,18 @@ async function openProject() {
       </div>
       <slot name="details-toggle" />
     </div>
-    <div v-if="!detailsOpen && hasMeta" data-test="header-meta" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-2 text-xs text-fg-muted">
-      <span v-if="!showPath && project" class="flex items-center gap-1.5">
+    <div
+      v-if="!detailsOpen && hasMeta"
+      data-test="header-meta"
+      class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-2 text-xs text-fg-muted"
+      :class="{ 'sm:hidden': showPath && !hasDetails }"
+    >
+      <!-- With the breadcrumb (from 640px up) the project is already in the strip; below that the breadcrumb is hidden. -->
+      <span v-if="project" data-test="header-project" class="flex items-center gap-1.5" :class="{ 'sm:hidden': showPath }">
         <span class="size-2 rounded-[3px]" :style="{ backgroundColor: project.color }" />{{ project.name }}
       </span>
       <span v-if="group" data-test="header-group" class="flex items-center gap-1.5">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-subtle" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>{{ group.name }}
+        <IconGroup :size="12" class="shrink-0 text-fg-subtle" />{{ group.name }}
       </span>
       <span v-if="worktree" data-test="header-worktree" class="flex items-center" :title="listed?.worktree_path ?? undefined">
         <WorktreeLabel :text="worktree" />

@@ -51,11 +51,14 @@ function toggleDetails() {
 // topmost layer closes. Layers that consume Esc must call `preventDefault()`.
 const toggleButton = ref<HTMLButtonElement | null>(null)
 const drawer = ref<HTMLElement | null>(null)
+function closeDrawer() {
+  drawerOpen.value = false
+  toggleButton.value?.focus()
+}
 function onDrawerKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape' || event.defaultPrevented) return
   event.preventDefault()
-  drawerOpen.value = false
-  toggleButton.value?.focus()
+  closeDrawer()
 }
 watch(drawerOpen, async (open) => {
   window.removeEventListener('keydown', onDrawerKeydown)
@@ -144,7 +147,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
     </div>
     <DetailsPanel v-if="!missing && sidePanel && sideOpen" :session-id="id" />
     <div v-if="!missing && !sidePanel && drawerOpen" ref="drawer" data-test="details-drawer" class="absolute inset-y-0 right-0 z-30 flex max-w-full shadow-2xl">
-      <DetailsPanel :session-id="id" drawer @close="drawerOpen = false" />
+      <DetailsPanel :session-id="id" drawer @close="closeDrawer" />
     </div>
   </div>
 </template>

@@ -173,6 +173,10 @@ describe('lista de tarefas', () => {
     expect(rows[0]!.text()).toContain('Concluída')
     expect(rows[1]!.text()).toContain('Em andamento')
     expect(last.text()).toContain('Escrever testes')
+    // Status marks are SVG icons: a check for done, a dotted circle for in progress.
+    expect(rows[0]!.find('svg path').exists()).toBe(true)
+    expect(rows[1]!.findAll('svg circle')).toHaveLength(2)
+    expect(rows.map((r) => r.text()).join('')).not.toMatch(/[○◐●]/)
   })
 })
 

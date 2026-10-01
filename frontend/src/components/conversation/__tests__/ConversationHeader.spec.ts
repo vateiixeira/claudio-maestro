@@ -3,6 +3,7 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import ConversationHeader from '../ConversationHeader.vue'
+import IconGroup from '../../icons/IconGroup.vue'
 import { createAppRouter } from '../../../router'
 import { useGitStore } from '../../../stores/git'
 import { useGroupsStore } from '../../../stores/groups'
@@ -43,6 +44,13 @@ describe('chip do agrupador no cabeçalho', () => {
     expect(chip.text()).toBe('Checkout')
   })
 
+  it('reaproveita o ícone IconGroup da barra lateral', () => {
+    const chip = mountHeader(2).find('[data-test="header-group"]')
+    const reference = mount(IconGroup).find('svg path').attributes('d')
+    expect(chip.find('svg path').attributes('d')).toBe(reference)
+    expect(chip.find('svg polygon').exists()).toBe(false)
+  })
+
   it('não mostra nada sem agrupador ou com agrupador desconhecido', () => {
     expect(mountHeader(null).find('[data-test="header-group"]').exists()).toBe(false)
     expect(mountHeader(99).find('[data-test="header-group"]').exists()).toBe(false)
@@ -70,6 +78,14 @@ describe('faixa compacta', () => {
     expect(strip.find('[data-test="conversation-title"]').exists()).toBe(true)
     expect(strip.get('[data-test="toggle-finished"]').text()).toBe('Finalizar')
     expect(strip.find('[data-test="header-menu"]').exists()).toBe(true)
+  })
+
+  it('os links da trilha têm alvo de pelo menos 32px de altura', () => {
+    const links = mountHeader(null).get('[data-test="breadcrumb"]').findAll('a')
+    expect(links).toHaveLength(2)
+    for (const link of links) {
+      expect(link.classes()).toEqual(expect.arrayContaining(['inline-flex', 'min-h-8', 'items-center']))
+    }
   })
 
   it('sem o caminho (embutida) mostra só o título', () => {
@@ -119,6 +135,23 @@ describe('linha de projeto, agrupador, branch e worktree', () => {
     const wrapper = mountWithGit({ detailsOpen: true })
     expect(wrapper.find('[data-test="header-meta"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="header-group"]').exists()).toBe(false)
+  })
+
+  it('com a trilha escondida (largura estreita) o projeto aparece na linha de metadados', () => {
+    const wrapper = mountWithGit({ detailsOpen: false })
+    const project = wrapper.get('[data-test="header-meta"] [data-test="header-project"]')
+    expect(project.text()).toContain('loja-online')
+    // Visible only where the breadcrumb is hidden (max-sm).
+    expect(project.classes()).toContain('sm:hidden')
+  })
+
+  it('só com o projeto, a linha existe apenas onde a trilha está escondida', () => {
+    useGitStore(pinia).set(1, [])
+    const wrapper = mountHeader(null)
+    const meta = wrapper.get('[data-test="header-meta"]')
+    expect(meta.classes()).toContain('sm:hidden')
+    useGitStore(pinia).set(1, [repo])
+    expect(mountHeader(null).get('[data-test="header-meta"]').classes()).not.toContain('sm:hidden')
   })
 
   it('no modo embutido mostra também o projeto, que o caminho não mostra', () => {

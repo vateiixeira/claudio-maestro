@@ -119,6 +119,13 @@ describe('estrutura do app', () => {
       expect(router.currentRoute.value.fullPath).toBe('/sessions/next')
     })
 
+    it.each([['cur', 'next'], ['next', 'later'], ['later', 'cur']])('numa conversa, segue a fila em ordem: %s vai para %s', async (from, to) => {
+      const router = await mountAt(`/sessions/${from}`)
+      press()
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe(`/sessions/${to}`)
+    })
+
     it('na tela do projeto com conversa embutida, pula a aberta', async () => {
       const router = await mountAt('/projects/1?sessao=cur')
       press()

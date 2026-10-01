@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, type Component } from 'vue'
+import IconCheck from '../icons/IconCheck.vue'
+import IconCircle from '../icons/IconCircle.vue'
+import IconCircleDot from '../icons/IconCircleDot.vue'
 import { TASK_STATUS_LABEL, createdTaskId, taskStatus, type TaskEntry, type TaskStatus } from '../../conversation/tasks'
 import { str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 
 const props = defineProps<{ item: ToolItem; tasks?: TaskEntry[] | null }>()
 
-const MARK: Record<TaskStatus, string> = { pending: '○', in_progress: '◐', completed: '●' }
+// Status marks: an empty circle, a dotted one and a check.
+const MARK: Record<TaskStatus, Component> = { pending: IconCircle, in_progress: IconCircleDot, completed: IconCheck }
 
 const input = computed(() => props.item.input ?? {})
 const heading = computed(() => {
@@ -38,7 +42,7 @@ const summary = computed(() => {
     </div>
     <ul v-if="tasks && tasks.length" data-test="task-list" class="m-0 flex list-none flex-col gap-1 border-t border-line p-0 pt-1.5">
       <li v-for="task in tasks" :key="task.id" data-test="task-row" class="flex items-center gap-2 text-sm">
-        <span aria-hidden="true" :class="task.status === 'completed' ? 'text-primary' : task.status === 'in_progress' ? 'text-primary' : 'text-fg-subtle'">{{ MARK[task.status] }}</span>
+        <span class="flex shrink-0" :class="task.status === 'pending' ? 'text-fg-subtle' : 'text-primary'"><component :is="MARK[task.status]" :size="14" /></span>
         <span class="min-w-0 grow" :class="task.status === 'completed' ? 'text-fg-muted line-through' : 'text-fg'">{{ task.subject }}</span>
         <span class="text-xs text-fg-subtle">{{ TASK_STATUS_LABEL[task.status] }}</span>
       </li>

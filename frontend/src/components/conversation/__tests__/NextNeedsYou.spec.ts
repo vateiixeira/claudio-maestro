@@ -47,7 +47,10 @@ describe('botão "Próxima"', () => {
     const { wrapper } = await mountButton()
     const button = wrapper.get('[data-test="next-needs-you"]')
     expect(button.text()).toContain('Próxima (2)')
-    expect(button.attributes('title')).toContain('N')
+    expect(button.attributes('title')).toContain('(n)')
+    expect(button.attributes('title')).toContain('sem contar esta')
+    expect(button.attributes('aria-keyshortcuts')).toBe('n')
+    expect(button.attributes('aria-label')).toBe('Próxima conversa que aguarda você, 2 outras')
     expect(button.find('svg[aria-hidden="true"]').exists()).toBe(true)
   })
 
@@ -61,6 +64,22 @@ describe('botão "Próxima"', () => {
     await wrapper.get('[data-test="next-needs-you"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/sessions/s2')
+  })
+
+  it('segue a ordem da fila em vez de alternar entre as duas primeiras', async () => {
+    const all = [
+      makeSession({ session_id: 's1', display_state: 'waiting', unread: true, last_activity_at: 9 }),
+      makeSession({ session_id: 's2', display_state: 'waiting', unread: true, last_activity_at: 8 }),
+      makeSession({ session_id: 's3', display_state: 'waiting', unread: true, last_activity_at: 7 }),
+    ]
+    for (const [from, to] of [['s1', 's2'], ['s2', 's3'], ['s3', 's1']]) {
+      seed(...all)
+      const { wrapper, router } = await mountButton(from)
+      await wrapper.get('[data-test="next-needs-you"]').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe(`/sessions/${to}`)
+      wrapper.unmount()
+    }
   })
 
   it('acompanha a fila quando ela muda', async () => {

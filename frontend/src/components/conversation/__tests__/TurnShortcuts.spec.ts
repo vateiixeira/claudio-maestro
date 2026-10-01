@@ -102,6 +102,33 @@ describe('atalhos [ e ] entre turnos', () => {
     expect(scroll).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['um diálogo de alerta aberto', { role: 'alertdialog' }],
+    ['um diálogo aberto (Nova conversa)', { role: 'dialog', 'aria-modal': 'true' }],
+    ['um menu aberto', { role: 'menu' }],
+  ])('é ignorado com %s', async (_name, attrs) => {
+    const w = await mountThread(THREE)
+    const overlay = document.createElement('div')
+    Object.entries(attrs).forEach(([k, v]) => overlay.setAttribute(k, v))
+    document.body.appendChild(overlay)
+    press(']')
+    press('[')
+    expect(scroll).not.toHaveBeenCalled()
+    expect(w.find('[data-test="turn-bar"]').text()).toContain('Turno 2 de 3')
+    overlay.remove()
+    press(']')
+    expect(scroll).toHaveBeenCalledTimes(1)
+  })
+
+  it('é ignorado dentro de um role="textbox"', async () => {
+    await mountThread(THREE)
+    const box = document.createElement('div')
+    box.setAttribute('role', 'textbox')
+    document.body.appendChild(box)
+    press(']', {}, box)
+    expect(scroll).not.toHaveBeenCalled()
+  })
+
   it.each([['ctrlKey'], ['metaKey'], ['altKey']])('é ignorado com %s', async (modifier) => {
     await mountThread(THREE)
     press(']', { [modifier]: true })

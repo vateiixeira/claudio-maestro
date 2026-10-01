@@ -18,6 +18,7 @@ import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
 import type { ConversationItem } from '../../types/conversation'
+import { isBareShortcut } from '../../keyboardShortcutGuard'
 
 const props = withDefaults(defineProps<{ id: string; visible?: boolean }>(), { visible: true })
 const emit = defineEmits<{ missing: [] }>()
@@ -294,17 +295,10 @@ function goToTurn(index: number) {
 }
 
 // "[" and "]" step through the turns like the bar's buttons, but only while this
-// conversation is on screen and the key is not typing: no modifier, not in a field.
-function isTypingTarget(target: EventTarget | null) {
-  if (!(target instanceof Element)) return false
-  if (target.closest('input, textarea, select')) return true
-  const editable = target.closest('[contenteditable]')
-  return !!editable && editable.getAttribute('contenteditable') !== 'false'
-}
+// conversation is on screen; the shared guard keeps them out of dialogs, menus and text fields.
 function onTurnKey(event: KeyboardEvent) {
-  if (event.key !== '[' && event.key !== ']') return
-  if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
-  if (!props.visible || turns.value.length < 2 || isTypingTarget(event.target)) return
+  if (!isBareShortcut(event, '[') && !isBareShortcut(event, ']')) return
+  if (!props.visible || turns.value.length < 2) return
   const index = currentTurn.value + (event.key === ']' ? 1 : -1)
   if (index < 0 || index >= turns.value.length) return
   event.preventDefault()

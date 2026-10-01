@@ -9,7 +9,7 @@ import { documentTitle } from './documentTitle'
 import { useSessionsStore } from './stores/sessions'
 import NewConversationModal from './components/NewConversationModal.vue'
 import { shouldOpenNewConversation } from './newConversationShortcut'
-import { needsYouQueue } from './nextNeedsYou'
+import { nextNeedsYou } from './nextNeedsYou'
 import { shouldGoToNextNeedsYou } from './nextNeedsYouShortcut'
 import { useNewConversationStore } from './stores/newConversation'
 
@@ -49,7 +49,7 @@ function onKey(event: KeyboardEvent) {
     return
   }
   if (!shouldGoToNextNeedsYou(event)) return
-  const next = needsYouQueue(sessions.all, currentSessionId())[0]
+  const next = nextNeedsYou(sessions.all, currentSessionId())
   if (!next) return
   event.preventDefault()
   void router.push({ name: 'session', params: { id: next.session_id } })
