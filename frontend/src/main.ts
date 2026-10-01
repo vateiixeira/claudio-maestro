@@ -5,9 +5,9 @@ import App from './App.vue'
 import { createAppRouter } from './router'
 import { useEventSocket } from './api/socket'
 import { bindRealtime } from './stores/realtime'
-import { removeLegacyStorage } from './legacyStorage'
+import { migrateLegacyStorage } from './legacyStorage'
 
-removeLegacyStorage()
+migrateLegacyStorage()
 const app = createApp(App).use(createPinia()).use(createAppRouter())
 
 const socket = useEventSocket()
