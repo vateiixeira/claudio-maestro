@@ -105,7 +105,9 @@ def main(
     parser.add_argument("--port", help="porta do app (padrão: MAESTRO_PORT ou 6660)")
     args = parser.parse_args(argv)
     try:
-        port = validate_port(args.port, "--port") if args.port is not None else backend_port()
+        # Also checked with --port: serving imports the app, which reads MAESTRO_PORT again.
+        env_port = backend_port()
+        port = validate_port(args.port, "--port") if args.port is not None else env_port
         ports = (dev_port(), port)
         if not (frontend / "package.json").is_file():
             raise CliError(

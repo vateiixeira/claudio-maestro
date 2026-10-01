@@ -54,6 +54,19 @@ def test_moves_legacy_folder_and_renames_database(tmp_path: Path):
     assert (data / "digest-agent").is_dir()
 
 
+def test_move_is_announced_as_a_warning_with_both_paths(tmp_path: Path, caplog):
+    home = tmp_path / "h"
+    old = make_legacy(home)
+
+    with caplog.at_level(logging.WARNING):
+        config.migrate_legacy_data_dir(home)
+
+    records = [r for r in caplog.records if "Dados movidos" in r.getMessage()]
+    assert [r.levelno for r in records] == [logging.WARNING]
+    assert str(old) in records[0].getMessage()
+    assert str(home / NEW) in records[0].getMessage()
+
+
 def test_wal_content_is_checkpointed_into_the_database(tmp_path: Path):
     home = tmp_path / "h"
     old = home / OLD

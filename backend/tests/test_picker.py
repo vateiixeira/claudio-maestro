@@ -9,6 +9,12 @@ import pytest
 from claudio_maestro import picker
 
 
+@pytest.fixture(autouse=True)
+def linux_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The zenity tests behave the same on any machine; macOS tests pass `platform="darwin"`."""
+    monkeypatch.setattr(picker.sys, "platform", "linux")
+
+
 class FakeProcess:
     def __init__(self, code: int = 0, out: bytes = b"", err: bytes = b"", hang: bool = False):
         self.returncode: int | None = None if hang else code

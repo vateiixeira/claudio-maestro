@@ -13,13 +13,15 @@ def test_settings_follow_environment(tmp_path: Path, home: Path, data_dir: Path)
     assert settings.db_path == data_dir.resolve() / "maestro.db"
 
 
-def test_settings_default_to_user_folders(monkeypatch):
+def test_settings_default_to_user_folders(tmp_path: Path, monkeypatch):
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
     monkeypatch.delenv("MAESTRO_HOME")
     monkeypatch.delenv("MAESTRO_DATA_DIR")
-    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    monkeypatch.setenv("HOME", str(fake_home))
     settings = load_settings()
-    assert settings.home_dir == Path("/tmp/fake-home").resolve()
-    assert settings.data_dir == Path("/tmp/fake-home").resolve() / ".local/share/claudio-maestro"
+    assert settings.home_dir == fake_home.resolve()
+    assert settings.data_dir == fake_home.resolve() / ".local/share/claudio-maestro"
 
 
 def test_ports_default(monkeypatch: pytest.MonkeyPatch):

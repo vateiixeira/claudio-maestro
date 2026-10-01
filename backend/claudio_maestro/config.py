@@ -159,7 +159,7 @@ def migrate_legacy_data_dir(home: Path) -> Path:
     except OSError as exc:
         logger.error("Não foi possível mover %s para %s (%s). Usando a pasta antiga.", old, new, exc)
         return old
-    logger.info("Dados movidos de %s para %s.", old, new)
+    logger.warning("Dados movidos de %s para %s.", old, new)
     return new
 
 

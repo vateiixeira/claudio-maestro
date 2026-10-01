@@ -88,6 +88,9 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home.mkdir()
     monkeypatch.setenv("MAESTRO_HOME", str(home))
     monkeypatch.setenv("MAESTRO_DATA_DIR", str(data))
+    # Ports from the developer's shell must not leak into tests that expect the defaults.
+    monkeypatch.delenv("MAESTRO_PORT", raising=False)
+    monkeypatch.delenv("MAESTRO_DEV_PORT", raising=False)
     # The CLI history watcher never looks at the real ~/.claude.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
 

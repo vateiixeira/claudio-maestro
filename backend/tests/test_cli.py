@@ -193,6 +193,8 @@ def test_environment_port_is_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     (["--port", "abc"], None, "--port"),
     (["--port", "6667"], None, "6665 a 6669"),
     ([], "80", "MAESTRO_PORT"),
+    # serve_app imports the app, which reads MAESTRO_PORT too: a bad value must stop here.
+    (["--port", "7200"], "abc", "MAESTRO_PORT"),
 ])
 def test_bad_port_is_a_message_not_a_traceback(tmp_path, monkeypatch, capsys, argv, env, fragment):
     if env is None:
