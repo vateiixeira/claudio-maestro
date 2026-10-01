@@ -63,7 +63,7 @@ function isCollapsed(repo: RepoDetails): boolean {
 <template>
   <div v-if="!loaded && !error" data-test="git-loading" class="text-sm text-fg-muted">Carregando…</div>
   <div v-else-if="!loaded" data-test="git-error" class="flex flex-col items-start gap-2">
-    <p role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
+    <p role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <button
       type="button"
       data-test="git-retry"
@@ -73,7 +73,7 @@ function isCollapsed(repo: RepoDetails): boolean {
   </div>
   <div v-else-if="repos.length > 0" class="flex flex-col gap-3">
     <div class="flex items-center gap-3">
-      <p v-if="error" role="alert" class="m-0 min-w-0 text-xs text-secondary-soft">Não foi possível atualizar: {{ error }}</p>
+      <p v-if="error" role="alert" class="m-0 min-w-0 text-xs text-diff-del-fg">Não foi possível atualizar: {{ error }}</p>
       <!-- Edits made outside the app only show up here or on the periodic check. -->
       <button
         type="button"
@@ -105,17 +105,17 @@ function isCollapsed(repo: RepoDetails): boolean {
             class="flex items-center gap-2 text-xs"
           >
             <span v-if="syncOf(repo).kind === 'none'" class="text-fg-subtle">sem upstream</span>
-            <span v-else-if="syncOf(repo).kind === 'unavailable'" class="text-secondary-soft">upstream indisponível</span>
+            <span v-else-if="syncOf(repo).kind === 'unavailable'" class="text-fg-muted">upstream indisponível</span>
             <span v-else-if="syncOf(repo).kind === 'synced'" class="text-fg-subtle">em dia com {{ repo.upstream }}</span>
             <template v-else>
-              <span v-if="syncOf(repo).ahead > 0" class="text-secondary-soft"><span aria-hidden="true">↑</span>{{ syncOf(repo).ahead }} para subir</span>
+              <span v-if="syncOf(repo).ahead > 0" class="text-fg-muted"><span aria-hidden="true">↑</span>{{ syncOf(repo).ahead }} para subir</span>
               <span v-if="syncOf(repo).behind > 0" class="text-info"><span aria-hidden="true">↓</span>{{ syncOf(repo).behind }} para baixar</span>
             </template>
           </span>
           <span
             data-test="repo-state"
             class="text-xs"
-            :class="uncommitted(repo) > 0 ? 'text-secondary-soft' : 'text-fg-subtle'"
+            :class="uncommitted(repo) > 0 ? 'text-fg-muted' : 'text-fg-subtle'"
           >{{ stateText(repo) }}</span>
         </template>
         <button
@@ -128,7 +128,7 @@ function isCollapsed(repo: RepoDetails): boolean {
         >{{ isCollapsed(repo) ? 'mostrar commits' : 'ocultar commits' }}</button>
       </header>
 
-      <p v-if="repo.error" data-test="repo-error" role="alert" class="m-0 text-sm text-secondary-soft">{{ repo.error }}</p>
+      <p v-if="repo.error" data-test="repo-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ repo.error }}</p>
       <template v-else-if="!isCollapsed(repo)">
         <RepoFileList v-if="repo.files.length > 0" :project-id="projectId" :repo="repo" />
         <RepoCommitList :commits="repo.commits" />

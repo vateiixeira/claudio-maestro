@@ -147,6 +147,12 @@ function shortPath(path: string): string {
   const i = path.indexOf('/docs/')
   return i >= 0 ? path.slice(i + 1) : path
 }
+
+// Pieces of the short path, each (but the last) ending with the "/" it is followed by.
+function pathParts(path: string): string[] {
+  return shortPath(path).split(/(?<=\/)/)
+}
+const unavailableParts = computed(() => (state.value?.path ? pathParts(state.value.path) : []))
 </script>
 
 <template>
@@ -157,8 +163,9 @@ function shortPath(path: string): string {
       <span class="text-fg-muted">{{ plan.current ? `${plan.current.number} de ${plan.total}` : 'Concluído' }}</span>
     </template>
     <template v-else-if="unavailable && state?.path">
-      <span class="text-secondary">Plano indisponível</span>
-      <span class="break-all font-mono text-xs text-fg-muted" :title="state.path">{{ shortPath(state.path) }}</span>
+      <span class="text-fg-muted">Plano indisponível</span>
+      <!-- A <wbr> after each "/" gives the browser a place to break that is not in the middle of a word. -->
+      <span class="break-words font-mono text-xs text-info-soft" :title="state.path"><template v-for="(part, i) in unavailableParts" :key="i">{{ part }}<wbr v-if="i < unavailableParts.length - 1" /></template></span>
     </template>
     <span v-else class="text-fg-muted">{{ state ? 'Nenhum' : '…' }}</span>
 
@@ -214,7 +221,7 @@ function shortPath(path: string): string {
       </button>
     </div>
 
-    <p v-if="error" role="alert" class="m-0 text-xs text-secondary">{{ error }}</p>
+    <p v-if="error" role="alert" class="m-0 text-xs text-diff-del-fg">{{ error }}</p>
     <button
       v-if="!state && error"
       type="button"

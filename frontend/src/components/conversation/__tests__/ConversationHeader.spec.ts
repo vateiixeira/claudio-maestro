@@ -45,3 +45,15 @@ describe('chip do agrupador no cabeçalho', () => {
     expect(mountHeader(99).find('[data-test="header-group"]').exists()).toBe(false)
   })
 })
+
+describe('ícone de estado no cabeçalho', () => {
+  it('é discreto numa espera comum e laranja quando precisa de você', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'waiting', unread: false })])
+    const calm = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia] } })
+    expect(calm.find('[data-shape]').attributes('data-shape')).toBe('triangle-quiet')
+
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'waiting', unread: true })])
+    const loud = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia] } })
+    expect(loud.find('[data-shape]').attributes('data-shape')).toBe('triangle')
+  })
+})

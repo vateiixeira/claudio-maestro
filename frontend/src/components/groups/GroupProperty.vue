@@ -70,6 +70,8 @@ async function createAndMove() {
   <dd class="m-0 flex min-w-0 flex-col gap-1">
     <select
       ref="select"
+      :id="`prop-group-${sessionId}`"
+      name="group"
       data-test="prop-group"
       aria-label="Agrupador"
       :value="current"
@@ -85,6 +87,8 @@ async function createAndMove() {
       v-if="creating"
       ref="nameInput"
       v-model="newName"
+      :id="`prop-group-new-${sessionId}`"
+      name="group-name"
       data-test="prop-group-new"
       aria-label="Nome do novo agrupador"
       placeholder="Nome do agrupador"
@@ -94,6 +98,6 @@ async function createAndMove() {
       @keydown.enter.prevent="createAndMove"
       @keydown.esc.prevent="creating = false"
     />
-    <p v-if="error" role="alert" class="m-0 text-xs text-secondary-soft">{{ error }}</p>
+    <p v-if="error" role="alert" class="m-0 text-xs text-diff-del-fg">{{ error }}</p>
   </dd>
 </template>

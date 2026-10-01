@@ -13,6 +13,8 @@ import SuggestionMenu from './SuggestionMenu.vue'
 
 // `blockedReason`: why sending is not possible now (e.g. the project folder is gone).
 const props = defineProps<{ sessionId: string; state: SessionState; blockedReason?: string | null }>()
+// `sending`: the user just sent a message from here, so the conversation can follow it to the end.
+const emit = defineEmits<{ sending: [] }>()
 
 const pendingDraft = takePendingDraft(props.sessionId)
 const text = ref(pendingDraft?.text ?? '')
@@ -136,6 +138,7 @@ async function send() {
   if (dictation.recording.value) dictation.stop()
   sending.value = true
   error.value = null
+  emit('sending')
   // Registered before the request: the user item may arrive over the socket first.
   const forget = attached.length ? rememberSentImages(props.sessionId, attached.map((i) => ({ url: i.url, mediaType: i.mediaType, size: i.size }))) : () => {}
   try {
@@ -268,7 +271,7 @@ async function interrupt() {
       <button
         type="button"
         data-test="send"
-        class="h-11 cursor-pointer rounded-lg border-none bg-primary px-4 text-sm font-semibold text-primary-fg disabled:cursor-default disabled:opacity-50"
+        class="h-11 cursor-pointer rounded-lg border-none bg-primary px-4 text-sm font-semibold text-primary-fg disabled:cursor-default disabled:bg-elevated disabled:text-fg-subtle"
         :disabled="!canSend"
         :title="blockedReason || undefined"
         :aria-describedby="blockedReason ? `blocked-${sessionId}` : undefined"

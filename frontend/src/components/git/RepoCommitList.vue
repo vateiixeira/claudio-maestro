@@ -27,7 +27,7 @@ function commitTime(date: string): string {
           v-if="commit.pushed === false"
           data-test="commit-unpushed"
           title="Este commit ainda não subiu para o upstream"
-          class="shrink-0 font-mono text-xs text-secondary-soft"
+          class="shrink-0 font-mono text-xs text-fg-muted"
         ><span aria-hidden="true">↑</span><span class="sr-only">não subiu</span></span>
         <span class="shrink-0 truncate text-xs text-fg-subtle">{{ commit.author }}</span>
         <span class="w-16 shrink-0 text-right font-mono text-xs text-fg-subtle">{{ commitTime(commit.date) }}</span>

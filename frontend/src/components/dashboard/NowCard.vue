@@ -2,17 +2,18 @@
 import { computed } from 'vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import { planPosition, planVisible } from '../plan/planText'
+import { needsYou } from '../../conversation/needsYou'
 import { usePendingDecision } from '../../conversation/pendingDecision'
 import { waitingReason } from '../../conversationList'
 import { formatActivity } from '../../format'
-import { displayStateLabels } from '../../sessionState'
+import { displayStateLabel } from '../../sessionState'
 import type { Project, Session } from '../../types/api'
 
 // One "Agora" card; Allow/Deny when a tool permission is pending.
 const props = defineProps<{ session: Session; project?: Project }>()
 
 const decision = usePendingDecision(() => props.session)
-const reason = computed(() => waitingReason(props.session) ?? displayStateLabels[props.session.display_state])
+const reason = computed(() => waitingReason(props.session) ?? displayStateLabel(props.session))
 </script>
 
 <template>
@@ -26,8 +27,8 @@ const reason = computed(() => waitingReason(props.session) ?? displayStateLabels
     <RouterLink :to="{ name: 'session', params: { id: session.session_id } }" class="truncate font-semibold text-fg no-underline hover:underline">{{ session.title }}</RouterLink>
     <p v-if="session.plan && planVisible(session)" data-test="now-plan" class="m-0 truncate text-xs text-fg-muted">{{ planPosition(session.plan) }}</p>
     <div class="flex items-center gap-1.5 text-xs">
-      <DisplayStateIcon :display="session.display_state" :size="11" />
-      <span :class="session.display_state === 'waiting' ? 'text-secondary-soft' : 'text-primary-soft'">{{ reason }}</span>
+      <DisplayStateIcon :display="session.display_state" :size="11" :quiet="!needsYou(session)" />
+      <span :class="session.display_state === 'waiting' ? (needsYou(session) ? 'text-secondary-soft' : 'text-fg-muted') : 'text-primary-soft'">{{ reason }}</span>
     </div>
     <p v-if="session.last_action" class="m-0 truncate font-mono text-xs text-fg-subtle">{{ session.last_action }}</p>
     <div v-if="decision.pending.value && !decision.answered.value" class="flex gap-2 pt-1">

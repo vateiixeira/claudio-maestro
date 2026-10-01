@@ -46,17 +46,29 @@ describe('menu lateral', () => {
   it('conta na Inbox as conversas que aguardam você', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     useSessionsStore(pinia).setForProject(1, [
-      makeSession({ session_id: 'a', display_state: 'waiting' }),
-      makeSession({ session_id: 'b', display_state: 'waiting' }),
+      makeSession({ session_id: 'a', display_state: 'waiting', unread: true }),
+      makeSession({ session_id: 'b', display_state: 'waiting', pending_kind: 'question' }),
       makeSession({ session_id: 'c', display_state: 'running' }),
+      makeSession({ session_id: 'd', display_state: 'waiting', unread: false }),
     ])
     expect(mountSidebar().find('[data-test="inbox-count"]').text()).toBe('2')
+  })
+
+  it('não conta na Inbox nem no projeto a espera comum, sem novidade', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', display_state: 'waiting', unread: false }),
+      makeSession({ session_id: 'b', display_state: 'waiting', unread: false }),
+    ])
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="inbox-count"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="project-waiting"]').exists()).toBe(false)
   })
 
   it('lista projetos com cor, branch e aguardando, sem conversas aninhadas', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online', color: '#B28CFF' })]
     useGitStore(pinia).set(1, [makeGitRepo({ branch: 'develop' })])
-    useSessionsStore(pinia).setForProject(1, [makeSession({ display_state: 'waiting' })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ display_state: 'waiting', unread: true })])
 
     const project = mountSidebar().find('[data-test="project"]')
     expect(project.attributes('href')).toBe('/projects/1')

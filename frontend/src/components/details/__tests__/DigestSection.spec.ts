@@ -61,7 +61,7 @@ describe('seção Resumo', () => {
     expect(phases[0].text()).toContain('agrupador.md')
     expect(phases[1].text()).toContain('Aberta')
     expect(phases[1].text()).toContain('Ordenar por nome')
-    expect(w.find('[data-test="digest-read-at"]').text()).toBe('Lido há 2 min')
+    expect(w.find('[data-test="digest-read-at"]').text()).toBe('Resumido há 2 min')
     expect(w.find('[data-test="digest-plan-done"]').exists()).toBe(false)
   })
 

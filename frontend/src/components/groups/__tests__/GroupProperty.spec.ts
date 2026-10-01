@@ -87,6 +87,17 @@ describe('propriedade Agrupador', () => {
     expect(wrapper.find('[data-test="prop-group-new"]').exists()).toBe(false)
   })
 
+  it('o select e o campo de nome têm name e id únicos por sessão', async () => {
+    const { wrapper } = mountProperty()
+    const select = wrapper.find('[data-test="prop-group"]')
+    expect(select.attributes('name')).toBe('group')
+    expect(select.attributes('id')).toBe('prop-group-s1')
+    await select.setValue('__new__')
+    const input = wrapper.find('[data-test="prop-group-new"]')
+    expect(input.attributes('name')).toBe('group-name')
+    expect(input.attributes('id')).toBe('prop-group-new-s1')
+  })
+
   it('mostra o erro da criação, mantém o campo aberto e não move', async () => {
     const { wrapper, fetchMock } = mountProperty({
       'POST /api/projects/1/groups': () => jsonResponse({ detail: 'Já existe um agrupador com esse nome neste projeto.' }, 409),
@@ -97,6 +108,7 @@ describe('propriedade Agrupador', () => {
     await input.trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(wrapper.find('[role="alert"]').text()).toBe('Já existe um agrupador com esse nome neste projeto.')
+    expect(wrapper.find('[role="alert"]').classes()).toContain('text-diff-del-fg')
     expect(wrapper.find('[data-test="prop-group-new"]').exists()).toBe(true)
     expect(bodies(fetchMock, 'PATCH /api/sessions/s1')).toEqual([])
   })

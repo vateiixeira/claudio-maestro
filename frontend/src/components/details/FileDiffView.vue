@@ -82,8 +82,8 @@ onBeforeUnmount(() => {
         @click="openFile"
       >Abrir no editor</button>
     </div>
-    <p v-if="editorError" role="alert" class="m-0 text-sm text-secondary-soft">{{ editorError }}</p>
-    <p v-if="error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
+    <p v-if="editorError" role="alert" class="m-0 text-sm text-diff-del-fg">{{ editorError }}</p>
+    <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <p v-else-if="group.rel_path == null" class="m-0 text-sm text-fg-muted">Fora de um repositório git, não há diff contra o último commit.</p>
     <p v-else-if="!loaded" data-test="diff-loading" class="m-0 text-sm text-fg-muted">Carregando…</p>
     <div v-else class="overflow-hidden rounded-lg border border-line bg-panel">

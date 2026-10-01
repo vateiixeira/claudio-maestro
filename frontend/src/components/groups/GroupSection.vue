@@ -102,7 +102,7 @@ async function remove() {
       <button type="button" data-test="group-rename" class="h-8 rounded-md px-2 text-xs text-fg-muted hover:bg-card hover:text-fg" @click="startRename">Renomear</button>
       <button ref="removeButton" type="button" data-test="group-remove" class="h-8 rounded-md px-2 text-xs text-fg-muted hover:bg-card hover:text-fg" @click="askRemove">Remover</button>
     </div>
-    <p v-if="renameError" role="alert" class="m-0 px-4 pb-2 text-sm text-secondary-soft">{{ renameError }}</p>
+    <p v-if="renameError" role="alert" class="m-0 px-4 pb-2 text-sm text-diff-del-fg">{{ renameError }}</p>
     <div
       v-if="confirming"
       data-test="group-confirm-remove"

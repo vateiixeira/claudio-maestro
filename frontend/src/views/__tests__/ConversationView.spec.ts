@@ -82,6 +82,11 @@ describe('página da conversa', () => {
 
     expect(wrapper.find('[data-test="breadcrumb"]').text()).toContain('Conversas')
     expect(wrapper.find('[data-test="breadcrumb"]').text()).toContain('loja-online')
+    // Every crumb shares the sans style: no mono / uppercase on the root.
+    const root = wrapper.find('[data-test="breadcrumb"] a')
+    expect(root.text()).toBe('Conversas')
+    expect(root.classes()).not.toContain('font-mono')
+    expect(root.classes()).not.toContain('uppercase')
     expect(wrapper.find('[data-test="conversation-title"]').text()).toBe('Corrigir login')
     expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(true)
   })
@@ -449,7 +454,7 @@ describe('página da conversa', () => {
       expect(live().attributes('role')).toBe('status')
       expect(live().attributes('aria-live')).toBe('polite')
       expect(live().classes()).toContain('sr-only')
-      expect(live().text()).toBe('Aguardando você')
+      expect(live().text()).toBe('Sua vez')
 
       const sessions = useSessionsStore(pinia)
       sessions.setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'running', state: 'running' })])

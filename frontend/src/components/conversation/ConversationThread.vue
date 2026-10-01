@@ -28,6 +28,8 @@ const projects = useProjectsStore()
 const socket = useEventSocket()
 
 const loadError = ref<string | null>(null)
+// Something arrived while the user was reading above: 'prompt' (needs them) outranks 'news'.
+const unseen = ref<'news' | 'prompt' | null>(null)
 const conv = computed(() => conversations.get(props.id))
 const project = computed(() => (conv.value?.projectId != null ? projects.byId(conv.value.projectId) : undefined))
 // The project's folder was deleted or moved: nothing that runs in it can work.
@@ -117,6 +119,7 @@ watch(
       socket.onOpen(() => void reload()),
     ]
     loadError.value = null
+    unseen.value = null
     void reload()
   },
   { immediate: true },
@@ -222,10 +225,27 @@ const resultParts = computed(() => {
 // Follows the end of the conversation only while the user is already there.
 const scroller = ref<HTMLElement | null>(null)
 const atBottom = ref(true)
+// Set when the user sends a message from the composer: the user item that follows is their own, not news.
+const OWN_SEND_WINDOW_MS = 5000
+let ownSendAt = 0
+const PROMPT_CARD = '[data-prompt-card]'
+const jumpLabel = computed(() => (unseen.value === 'prompt' && (conv.value?.prompts.length ?? 0) > 0 ? 'Pedido abaixo' : 'Novidades abaixo'))
+function jumpToEnd() {
+  const el = scroller.value
+  if (!el) return
+  const toPrompt = jumpLabel.value === 'Pedido abaixo'
+  unseen.value = null
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  if (el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
+  else el.scrollTop = el.scrollHeight
+  // Whoever jumped for a request is sent to it: keyboard and screen reader users land on the card.
+  if (toPrompt) el.querySelector<HTMLElement>(PROMPT_CARD)?.focus({ preventScroll: true })
+}
 function onScroll() {
   const el = scroller.value
   if (!el) return
   atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+  if (atBottom.value) unseen.value = null
   scheduleTurnUpdate()
 }
 
@@ -274,8 +294,20 @@ function goToTurn(index: number) {
 }
 watch(
   () => [conv.value?.seq, conv.value?.items.length, conv.value?.prompts.length],
-  async () => {
-    if (!atBottom.value) return
+  async ([, items, prompts], [, itemsBefore, promptsBefore]) => {
+    const own = (items ?? 0) > (itemsBefore ?? 0)
+      && Date.now() - ownSendAt < OWN_SEND_WINDOW_MS
+      && conv.value?.items[conv.value.items.length - 1]?.type === 'user'
+    if (own) {
+      ownSendAt = 0
+      atBottom.value = true
+      unseen.value = null
+    }
+    if (!atBottom.value) {
+      if ((prompts ?? 0) > (promptsBefore ?? 0)) unseen.value = 'prompt'
+      else if ((items ?? 0) > (itemsBefore ?? 0) && unseen.value === null) unseen.value = 'news'
+      return
+    }
     await nextTick()
     const el = scroller.value
     if (el) el.scrollTop = el.scrollHeight
@@ -304,6 +336,7 @@ function resolvePrompt(promptId: string) {
     <template v-if="conv">
       <!-- Screen readers hear finished replies only, never each streamed character. -->
       <div data-test="conversation-live" aria-live="polite" class="sr-only">{{ announcement }}</div>
+      <div class="relative flex min-h-0 grow flex-col">
       <div ref="scroller" data-test="conversation-scroller" class="relative min-h-0 grow overflow-y-auto" @scroll="onScroll">
         <div
           v-if="turns.length >= 2"
@@ -395,18 +428,27 @@ function resolvePrompt(promptId: string) {
           </template>
           <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
             <QuestionCard
+              data-prompt-card
+              tabindex="-1"
+              class="focus-visible:outline-2 focus-visible:outline-primary"
               v-if="prompt.kind === 'question'"
               :session-id="conv.sessionId"
               :prompt="prompt"
               @resolved="resolvePrompt(prompt.prompt_id)"
             />
             <PlanCard
+              data-prompt-card
+              tabindex="-1"
+              class="focus-visible:outline-2 focus-visible:outline-primary"
               v-else-if="prompt.kind === 'plan'"
               :session-id="conv.sessionId"
               :prompt="prompt"
               @resolved="resolvePrompt(prompt.prompt_id)"
             />
             <PermissionCard
+              data-prompt-card
+              tabindex="-1"
+              class="focus-visible:outline-2 focus-visible:outline-primary"
               v-else
               :session-id="conv.sessionId"
               :prompt="prompt"
@@ -414,6 +456,20 @@ function resolvePrompt(promptId: string) {
             />
           </template>
         </div>
+      </div>
+      <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-150" leave-to-class="opacity-0">
+        <button
+          v-if="unseen"
+          type="button"
+          data-test="jump-to-end"
+          class="absolute bottom-3 left-1/2 z-20 flex min-h-8 -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[13px] font-medium shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          :class="jumpLabel === 'Pedido abaixo' ? 'border-secondary bg-secondary text-secondary-fg hover:bg-secondary-soft' : 'border-line-strong bg-card text-fg hover:bg-elevated'"
+          @click="jumpToEnd"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></svg>
+          {{ jumpLabel }}
+        </button>
+      </Transition>
       </div>
 
       <div class="border-t border-line">
@@ -426,16 +482,16 @@ function resolvePrompt(promptId: string) {
           >
             {{ conv.error || 'A sessão parou com erro.' }} Você pode enviar de novo.
           </p>
-          <p v-if="loadError" role="alert" class="m-0 text-sm text-secondary-soft">{{ loadError }}</p>
+          <p v-if="loadError" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg">{{ loadError }}</p>
           <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
-          <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason">
+          <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
             <template #controls><SessionControls :session-id="conv.sessionId" /></template>
           </MessageComposer>
         </div>
       </div>
     </template>
     <div v-else class="flex flex-col items-start gap-3 px-6 py-8">
-      <p v-if="loadError" role="alert" class="m-0 text-fg-muted">{{ loadError }}</p>
+      <p v-if="loadError" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-diff-del-fg">{{ loadError }}</p>
       <div v-if="loadError" class="flex flex-wrap gap-2">
         <button
           type="button"

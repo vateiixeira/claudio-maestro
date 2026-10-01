@@ -23,19 +23,21 @@ describe('motivo da espera', () => {
 })
 
 describe('abas da Inbox', () => {
-  const waiting = makeSession({ session_id: 'w', display_state: 'waiting' })
+  const waiting = makeSession({ session_id: 'w', display_state: 'waiting', pending_kind: 'plan' })
+  const plainWait = makeSession({ session_id: 'pw', display_state: 'waiting', state: 'idle' })
+  const errored = makeSession({ session_id: 'e', display_state: 'waiting', state: 'error' })
   const running = makeSession({ session_id: 'r', display_state: 'running' })
   const unreadOpen = makeSession({ session_id: 'u', display_state: 'running', unread: true })
   const finishedUnread = makeSession({ session_id: 'fu', display_state: 'finished', unread: true })
   const finishedRead = makeSession({ session_id: 'f', display_state: 'finished' })
-  const all = [waiting, running, unreadOpen, finishedUnread, finishedRead]
+  const all = [waiting, plainWait, errored, running, unreadOpen, finishedUnread, finishedRead]
   const ids = (tab: Parameters<typeof inInbox>[1]) => all.filter((s) => inInbox(s, tab)).map((s) => s.session_id)
 
   it('separa por aba e nunca mostra finalizadas', () => {
-    expect(ids('pede-voce')).toEqual(['w'])
+    expect(ids('pede-voce')).toEqual(['w', 'e'])
     expect(ids('nao-lidas')).toEqual(['u'])
     expect(ids('em-execucao')).toEqual(['r', 'u'])
-    expect(ids('todas')).toEqual(['w', 'r', 'u'])
+    expect(ids('todas')).toEqual(['w', 'pw', 'e', 'r', 'u'])
   })
 
   it('reconhece as abas válidas', () => {

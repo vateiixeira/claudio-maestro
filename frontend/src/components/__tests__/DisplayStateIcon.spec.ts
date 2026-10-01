@@ -48,6 +48,19 @@ describe('DisplayStateIcon', () => {
     expect(svg.classes()).not.toContain('stroke-secondary')
   })
 
+  it('draws the quiet wait as an outline triangle without the exclamation mark', () => {
+    const quiet = mount(DisplayStateIcon, { props: { display: 'waiting', quiet: true } })
+    expect(quiet.attributes('data-shape')).toBe('triangle-quiet')
+    expect(quiet.findAll('path')).toHaveLength(1)
+    expect(quiet.findAll('line')).toHaveLength(0)
+  })
+
+  it('keeps the exclamation mark when the wait needs you', () => {
+    const loud = mount(DisplayStateIcon, { props: { display: 'waiting' } })
+    expect(loud.attributes('data-shape')).toBe('triangle')
+    expect(loud.findAll('line')).toHaveLength(2)
+  })
+
   it('ignores quiet for running and finished', () => {
     const running = mount(DisplayStateIcon, { props: { display: 'running', quiet: true } }).find('svg')
     expect(running.classes()).toContain('stroke-primary')

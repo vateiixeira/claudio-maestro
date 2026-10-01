@@ -112,7 +112,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
       </div>
       <div v-else class="flex min-h-12 items-center gap-2 border-b border-line px-4">
         <nav data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 grow items-center gap-2 text-sm text-fg-muted">
-          <RouterLink to="/sessions" class="shrink-0 font-mono text-xs tracking-[0.08em] uppercase no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
+          <RouterLink to="/sessions" class="shrink-0 no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
           <template v-if="project">
             <span aria-hidden="true">›</span>
             <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="flex shrink-0 items-center gap-1.5 no-underline text-fg-muted hover:text-fg">

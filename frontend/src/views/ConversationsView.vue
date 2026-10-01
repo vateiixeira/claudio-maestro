@@ -102,7 +102,7 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
         <option value="finalizadas">Finalizadas</option>
       </select>
     </div>
-    <p v-if="error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
+    <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <LoadStatus v-if="loadState !== 'ready'" :state="loadState" />
     <p v-else-if="dateGroups.length === 0" data-test="empty" class="m-0 py-10 text-center text-fg-muted">Nenhuma conversa aqui.</p>
     <template v-else>

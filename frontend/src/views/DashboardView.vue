@@ -8,6 +8,7 @@ import ConversationRow from '../components/conversation/ConversationRow.vue'
 import DisplayStateIcon from '../components/DisplayStateIcon.vue'
 import BranchLabel from '../components/git/BranchLabel.vue'
 import { getActivity } from '../api/http'
+import { needsYou } from '../conversation/needsYou'
 import { useLoadState } from '../loadState'
 import { changedCount, repoLabel, useGitStore } from '../stores/git'
 import { useProjectsStore } from '../stores/projects'
@@ -29,12 +30,14 @@ const nowCards = computed(() =>
     .slice(0, NOW_LIMIT),
 )
 const running = computed(() => active.value.filter((s) => s.display_state === 'running').length)
-const waiting = computed(() => active.value.filter((s) => s.display_state === 'waiting').length)
+// Only the waits that need you count, the same rule as the sidebar.
+const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s)
+const waiting = computed(() => active.value.filter(isWaitingOnYou).length)
 const startOfToday = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000 }
 const finishedToday = computed(() => sessions.all.filter((s) => s.finished && (s.finished_at ?? 0) >= startOfToday()).length)
 const changedFiles = (projectId: number) => git.reposFor(projectId).reduce((sum, r) => sum + changedCount(r), 0)
 const projectsWithChanges = computed(() => projects.projects.filter((p) => changedFiles(p.id) > 0).length)
-const waitingIn = (projectId: number) => sessions.forProject(projectId).filter((s) => s.display_state === 'waiting').length
+const waitingIn = (projectId: number) => sessions.forProject(projectId).filter(isWaitingOnYou).length
 const recent = computed(() => sessions.all.slice(0, 8))
 
 const activity = ref<ActivityDay[]>([])
@@ -87,14 +90,15 @@ function scrollToProjects() {
 
     <section class="rounded-lg border border-line bg-panel p-4">
       <div v-if="activityError" class="flex flex-col items-start gap-2">
-        <p data-test="activity-error" role="alert" class="m-0 text-sm text-secondary-soft">Não foi possível carregar a atividade.</p>
+        <p data-test="activity-error" role="alert" class="m-0 text-sm text-diff-del-fg">Não foi possível carregar a atividade.</p>
         <button type="button" data-test="activity-retry" class="h-8 rounded-md border border-line-strong px-2.5 text-xs text-fg hover:bg-card" @click="loadActivity">Tentar de novo</button>
       </div>
       <p v-else-if="activityLoading && activity.length === 0" class="m-0 text-sm text-fg-muted">Carregando…</p>
       <ActivityChart v-else :data="activity" :projects="projects.projects" :days="14" :today="new Date()" />
     </section>
 
-    <div v-if="loadState === 'ready'" class="grid gap-6 lg:grid-cols-2">
+    <!-- Two columns on wide screens: the compact row drops branch and reason, so a half column still fits the title. -->
+    <div v-if="loadState === 'ready'" class="grid items-start gap-6 lg:grid-cols-2">
       <section data-test="recent-list" aria-labelledby="recent-title" class="flex flex-col gap-2 rounded-lg border border-line bg-panel p-3">
         <h2 id="recent-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Conversas recentes</h2>
         <ConversationRow v-for="s in recent" :key="s.session_id" :session="s" variant="compact" />
@@ -106,7 +110,7 @@ function scrollToProjects() {
           <span class="min-w-0 grow truncate">{{ p.name }}</span>
           <BranchLabel v-if="git.reposFor(p.id)[0]" :text="repoLabel(git.reposFor(p.id)[0]!)" muted />
           <span class="text-xs text-fg-subtle">{{ changedFiles(p.id) }} {{ changedFiles(p.id) === 1 ? 'arquivo' : 'arquivos' }}</span>
-          <span v-if="waitingIn(p.id)" class="flex items-center gap-1 text-xs text-secondary"><DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(p.id) }}</span>
+          <span v-if="waitingIn(p.id)" data-test="project-waiting" class="flex items-center gap-1 text-xs text-secondary"><DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(p.id) }}</span>
         </RouterLink>
       </section>
     </div>

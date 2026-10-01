@@ -479,7 +479,7 @@ function onKeydown(event: KeyboardEvent) {
             <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
           </span>
           <p v-else-if="dictation.error.value" role="alert" class="m-0 text-sm text-diff-del-fg">{{ dictation.error.value }}</p>
-          <p v-if="error" data-test="nc-error" role="alert" class="m-0 text-sm text-secondary-soft">{{ error }}</p>
+          <p v-if="error" data-test="nc-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
         </div>
         <footer class="flex items-center gap-3 border-t border-line px-5 py-3">
           <button type="button" data-test="nc-discard" :disabled="submitting" class="h-10 rounded-md px-3 text-sm text-fg-muted hover:text-fg disabled:opacity-40" @click="discard">Descartar rascunho</button>

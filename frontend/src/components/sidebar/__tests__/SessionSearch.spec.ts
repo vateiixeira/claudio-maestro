@@ -59,6 +59,34 @@ describe('busca no menu lateral', () => {
     expect(result.text()).toContain('Finalizada')
   })
 
+  it('resultados em espera comum têm o triângulo discreto, e o que precisa de você o laranja', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Calma', display_state: 'waiting', unread: false }),
+      makeSession({ session_id: 'b', title: 'Pede', display_state: 'waiting', unread: true }),
+    ])))
+    const w = mountSidebar()
+    await type(w, 'x')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    const shapes = w.findAll('[data-test="search-result"]').map((r) => r.find('[data-shape]').attributes('data-shape'))
+    expect(shapes).toEqual(['triangle-quiet', 'triangle'])
+  })
+
+  it('o ícone de estado tem 11 px e o rótulo diferencia espera comum de espera que pede você', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Calma', display_state: 'waiting', state: 'idle', unread: false }),
+      makeSession({ session_id: 'b', title: 'Pede', display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'plan' }),
+    ])))
+    const w = mountSidebar()
+    await type(w, 'x')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    const results = w.findAll('[data-test="search-result"]')
+    expect(results[0]!.find('svg').attributes('width')).toBe('11')
+    expect(results[0]!.text()).toContain('Sua vez')
+    expect(results[1]!.text()).toContain('Aguardando você')
+  })
+
   it('descarta respostas antigas', async () => {
     const pending: Record<string, (r: Response) => void> = {}
     vi.stubGlobal('fetch', vi.fn((url: string) => new Promise<Response>((resolve) => {
@@ -86,6 +114,24 @@ describe('busca no menu lateral', () => {
     await vi.advanceTimersByTimeAsync(300)
     await flushPromises()
     expect(w.text()).toContain('Nenhuma sessão encontrada')
+  })
+
+  it('o atalho Ctrl K não quebra em duas linhas', () => {
+    const w = mountSidebar()
+    const kbd = w.findAll('kbd').find((k) => k.text() === 'Ctrl K')!
+    expect(kbd).toBeTruthy()
+    expect(kbd.classes()).toEqual(expect.arrayContaining(['whitespace-nowrap', 'shrink-0']))
+  })
+
+  it('o erro da busca usa a cor de erro', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: 'Busca fora do ar.' }, 500)))
+    const w = mountSidebar()
+    await type(w, 'x')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    const alert = w.find('[role="alert"]')
+    expect(alert.text()).toContain('Busca fora do ar.')
+    expect(alert.classes()).toContain('text-diff-del-fg')
   })
 
   it('Ctrl+K e Cmd+K focam o campo', async () => {

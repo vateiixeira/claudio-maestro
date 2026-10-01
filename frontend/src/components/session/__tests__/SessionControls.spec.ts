@@ -159,6 +159,7 @@ describe('seletores da sessão', () => {
     await body().findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
     await flushPromises()
     expect(w.find('[role="alert"]').text()).toContain('Não deu.')
+    expect(w.find('[role="alert"]').classes()).toContain('text-diff-del-fg')
   })
 
   async function openBypass(w: ReturnType<typeof mount>) {
@@ -175,11 +176,17 @@ describe('seletores da sessão', () => {
     await openBypass(w)
     const cancel = w.find('[data-test="bypass-cancel"]').element
     const confirm = w.find('[data-test="bypass-confirm"]').element
-    expect(document.activeElement).toBe(confirm)
-    await w.find('[role="alertdialog"]').trigger('keydown', { key: 'Tab' })
     expect(document.activeElement).toBe(cancel)
-    await w.find('[role="alertdialog"]').trigger('keydown', { key: 'Tab', shiftKey: true })
+    await w.find('[role="alertdialog"]').trigger('keydown', { key: 'Tab' })
     expect(document.activeElement).toBe(confirm)
+    await w.find('[role="alertdialog"]').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(cancel)
+  })
+
+  it('o foco inicial do diálogo vai para Cancelar, não para o botão perigoso', async () => {
+    const w = await mountControls()
+    await openBypass(w)
+    expect(document.activeElement).toBe(w.find('[data-test="bypass-cancel"]').element)
   })
 
   for (const [how, act] of [

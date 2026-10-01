@@ -131,7 +131,7 @@ onMounted(load)
 <template>
   <form class="flex flex-col" aria-label="Preferências gerais" @submit.prevent="save">
     <div v-if="loadError" class="flex flex-col items-start gap-3 px-7 py-6">
-      <p role="alert" class="m-0 w-full rounded-lg border border-secondary/40 bg-card px-3.5 py-2.5 text-sm text-secondary-soft">
+      <p role="alert" class="m-0 w-full rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-3.5 py-2.5 text-sm text-diff-del-fg">
         Não foi possível ler as preferências. {{ loadError }}
       </p>
       <button
@@ -226,7 +226,7 @@ onMounted(load)
     <p
       v-if="error"
       role="alert"
-      class="mx-7 mb-4 rounded-lg border border-secondary/40 bg-card px-3.5 py-2.5 text-sm text-secondary-soft"
+      class="mx-7 mb-4 rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-3.5 py-2.5 text-sm text-diff-del-fg"
     >
       {{ error }}
     </p>

@@ -24,7 +24,7 @@ beforeEach(() => {
   projects.loaded = true
   useSessionsStore(pinia).loaded = true
   useSessionsStore(pinia).setForProject(1, [
-    makeSession({ session_id: 'w1', title: 'Espera 1', display_state: 'waiting', last_activity_at: now }),
+    makeSession({ session_id: 'w1', title: 'Espera 1', display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question', last_activity_at: now }),
     makeSession({ session_id: 'r1', title: 'Roda 1', display_state: 'running', unread: true, last_activity_at: now }),
   ])
   useSessionsStore(pinia).setForProject(2, [
@@ -53,6 +53,16 @@ describe('Inbox', () => {
     const { wrapper } = await mountInbox()
     expect(titles(wrapper)).toEqual(['Espera 1', 'Espera 2'])
     expect(wrapper.findAll('[data-test="date-group"]').map((g) => g.text())).toEqual(['Hoje', 'Antes'])
+  })
+
+  it('busca e filtro de projeto têm name e id, para o Chrome não avisar', async () => {
+    const { wrapper } = await mountInbox()
+    const search = wrapper.find('[data-test="inbox-search"]')
+    const project = wrapper.find('[data-test="inbox-project"]')
+    expect(search.attributes('name')).toBe('inbox-search')
+    expect(search.attributes('id')).toBe('inbox-search')
+    expect(project.attributes('name')).toBe('inbox-project')
+    expect(project.attributes('id')).toBe('inbox-project')
   })
 
   it('troca de aba pela URL', async () => {
@@ -99,6 +109,7 @@ describe('Inbox', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="inbox-error"]').text()).toContain('Falhou.')
+    expect(wrapper.find('[data-test="inbox-error"]').classes()).toContain('text-diff-del-fg')
     expect(titles(wrapper)).toEqual(['Roda 1', 'Espera 2'])
   })
 

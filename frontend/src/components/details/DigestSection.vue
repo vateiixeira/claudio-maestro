@@ -30,7 +30,7 @@ const fileName = (path: string) => path.split('/').pop() ?? path
     </h3>
 
     <div v-if="!loaded" class="flex items-center justify-between gap-2 text-sm">
-      <span :class="requestError ? 'text-secondary-soft' : 'text-fg-muted'" :role="requestError ? 'alert' : undefined">{{ requestError ?? 'Carregando…' }}</span>
+      <span :class="requestError ? 'text-diff-del-fg' : 'text-fg-muted'" :role="requestError ? 'alert' : undefined">{{ requestError ?? 'Carregando…' }}</span>
       <button v-if="requestError" type="button" class="h-8 rounded-md px-2 text-xs text-fg-muted hover:bg-card hover:text-fg" @click="store.load(sessionId)">Tentar de novo</button>
     </div>
     <template v-else>
@@ -75,10 +75,10 @@ const fileName = (path: string) => path.split('/').pop() ?? path
         </ol>
       </template>
 
-      <p v-if="digest?.error || requestError" data-test="digest-error" role="alert" class="m-0 text-xs text-secondary-soft">{{ requestError ?? digest?.error }}</p>
+      <p v-if="digest?.error || requestError" data-test="digest-error" role="alert" class="m-0 text-xs text-diff-del-fg">{{ requestError ?? digest?.error }}</p>
 
       <div class="flex items-center justify-between gap-2">
-        <span v-if="digest?.read_at" data-test="digest-read-at" class="text-xs text-fg-muted">Lido {{ formatActivity(digest.read_at) }}</span>
+        <span v-if="digest?.read_at" data-test="digest-read-at" class="text-xs text-fg-muted">Resumido {{ formatActivity(digest.read_at) }}</span>
         <span v-else />
         <button
           type="button"

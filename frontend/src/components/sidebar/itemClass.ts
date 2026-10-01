@@ -1,3 +1,5 @@
+import { needsYou, type NeedsYouFields } from '../../conversation/needsYou'
+
 /** Classes of a sidebar entry; `active` marks the page being shown. */
 export function sidebarItemClass(active: boolean): string[] {
   return [
@@ -6,7 +8,7 @@ export function sidebarItemClass(active: boolean): string[] {
   ]
 }
 
-/** A waiting session is quiet (grey triangle) only when it has nothing new, no prompt waiting and no error. */
-export function isQuietSession(s: { unread: boolean; pending_kind?: string | null; state: string }): boolean {
-  return !s.unread && !s.pending_kind && s.state !== 'error'
+/** A waiting session is quiet (outline triangle, no orange) when `needsYou` is false. */
+export function isQuietSession(s: NeedsYouFields): boolean {
+  return !needsYou(s)
 }

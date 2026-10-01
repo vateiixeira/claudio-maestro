@@ -71,7 +71,6 @@ body {
   font-size: 12.5px;
   color: var(--color-code-fg);
   background: var(--color-elevated);
-  border: 1px solid var(--color-line);
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -123,7 +122,11 @@ body {
   border-collapse: separate;
   border-spacing: 0;
 }
-.markdown th, .markdown td { padding: 4px 8px; }
+/* The cells inherit `overflow-wrap: anywhere` from .markdown, which breaks short columns letter by letter. Undo it:
+   cells break between words and the table scrolls sideways when the words do not fit.
+   Without a floor the auto layout still squeezes an id like "P1-7" into "P1-" / "7" (a hyphen is a break point),
+   so every column keeps room for about ten characters. */
+.markdown th, .markdown td { padding: 4px 8px; overflow-wrap: normal; word-break: normal; min-width: 10ch; }
 .markdown th {
   background: var(--color-panel);
   color: var(--color-fg);

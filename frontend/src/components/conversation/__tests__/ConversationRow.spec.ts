@@ -69,6 +69,69 @@ describe('linha de conversa', () => {
     expect(wrapper.find('[data-test="waiting-reason"]').text()).toBe('Fez uma pergunta')
   })
 
+  it('espera comum, sem novidade: triângulo discreto e motivo neutro', () => {
+    const wrapper = mountRow(makeSession({ display_state: 'waiting', state: 'idle', unread: false }))
+
+    expect(wrapper.find('svg').classes()).toContain('stroke-fg-subtle')
+    expect(wrapper.find('[data-test="waiting-reason"]').text()).toBe('Sua vez')
+    expect(wrapper.find('[data-test="waiting-reason"]').classes()).toContain('text-fg-muted')
+    expect(wrapper.find('[data-test="waiting-reason"]').classes()).not.toContain('text-secondary-soft')
+  })
+
+  it.each([
+    ['não lida', { unread: true }],
+    ['com plano pendente', { pending_kind: 'plan' as const }],
+    ['com erro', { state: 'error' as const }],
+  ])('espera que precisa de você (%s): triângulo e motivo laranja', (_, extra) => {
+    const wrapper = mountRow(makeSession({ display_state: 'waiting', state: 'idle', unread: false, ...extra }))
+
+    expect(wrapper.find('svg').classes()).toContain('stroke-secondary')
+    expect(wrapper.find('[data-test="waiting-reason"]').classes()).toContain('text-secondary-soft')
+  })
+
+  it('linha compacta esconde branch e motivo e deixa o título com largura mínima', () => {
+    const wrapper = mountRow(makeSession({ display_state: 'waiting', unread: true }), 'compact')
+
+    expect(wrapper.find('[data-test="row-branch"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="waiting-reason"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="row-title"]').classes()).toContain('grow')
+    expect(wrapper.find('[data-test="row-title"]').classes()).toContain('min-w-24')
+    expect(wrapper.find('[data-test="row-link"]').classes()).toContain('min-w-0')
+    expect(wrapper.find('[data-test="row-link"]').classes()).toContain('truncate')
+  })
+
+  it('linha compacta não renderiza selo de plano, agrupador, plano concluído nem resumo, só o título', () => {
+    useGroupsStore(pinia).groups = [makeGroup({ id: 2, name: 'Checkout' })]
+    const plan = { path: 'docs/plan.md', title: 'Plano', total: 12, done: 3, current: { number: 4, title: 'Criar o selo' } }
+    const wrapper = mountRow(
+      makeSession({ title: 'Corrigir login', display_state: 'running', plan, group_id: 2, plan_done: true, digest_short: 'Resumo curto' }),
+      'compact',
+    )
+
+    expect(wrapper.find('[data-test="row-link"]').text()).toBe('Corrigir login')
+    for (const id of ['plan-badge', 'group-tag', 'row-plan-done', 'row-digest']) {
+      expect(wrapper.find(`[data-test="${id}"]`).exists()).toBe(false)
+    }
+    expect(wrapper.find('[data-test="row-title"]').classes()).toContain('overflow-hidden')
+    expect(wrapper.find('[data-test="row-link"]').classes()).not.toContain('max-w-[55%]')
+  })
+
+  it('leitor de tela: espera comum é "Sua vez" e a que pede você é "Aguardando você"', () => {
+    const sr = (w: ReturnType<typeof mountRow>) => w.find('.sr-only').text()
+    expect(sr(mountRow(makeSession({ display_state: 'waiting', state: 'idle' })))).toBe('Sua vez')
+    expect(sr(mountRow(makeSession({ display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question' })))).toBe('Aguardando você')
+    expect(sr(mountRow(makeSession({ display_state: 'running', state: 'running' })))).toBe('Em execução')
+  })
+
+  it('leitor de tela na compacta mantém o motivo da espera', () => {
+    const w = mountRow(makeSession({
+      display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'tool',
+      pending_permission: { prompt_id: 'p', tool_name: 'Bash', summary: 'ls', can_allow_always: false },
+    }), 'compact')
+    expect(w.find('.sr-only').text()).toContain('Aguardando você')
+    expect(w.find('.sr-only').text()).toContain('Pede permissão: Bash')
+  })
+
   it('apaga o texto de finalizadas e oferece Reabrir', () => {
     const wrapper = mountRow(makeSession({ display_state: 'finished', finished: true }))
 
@@ -121,7 +184,7 @@ describe('linha de conversa', () => {
   describe('selo do plano', () => {
     const plan = { path: 'docs/plan.md', title: 'Plano', total: 12, done: 3, current: { number: 4, title: 'Criar o selo' } }
 
-    it.each(['inbox', 'list', 'compact'] as const)('aparece depois do título na variante %s', (variant) => {
+    it.each(['inbox', 'list'] as const)('aparece depois do título na variante %s', (variant) => {
       const wrapper = mountRow(makeSession({ display_state: 'running', plan }), variant)
       const badge = wrapper.find('[data-test="plan-badge"]')
 

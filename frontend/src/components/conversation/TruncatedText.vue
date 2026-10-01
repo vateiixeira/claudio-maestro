@@ -66,7 +66,7 @@ const button = 'cursor-pointer rounded-md border border-line-strong bg-transpare
       </button>
       <button v-if="hasMore && expanded" type="button" data-test="collapse" :class="button" @click="collapse">Recolher</button>
       <button type="button" data-test="copy" :class="button" @click="copy">{{ copyState === 'done' ? 'Copiado' : 'Copiar' }}</button>
-      <span v-if="copyState === 'failed'" aria-hidden="true" class="text-xs text-secondary-soft">Não foi possível copiar</span>
+      <span v-if="copyState === 'failed'" aria-hidden="true" class="text-xs text-diff-del-fg">Não foi possível copiar</span>
       <span role="status" class="sr-only">{{ statusText }}</span>
     </div>
   </div>

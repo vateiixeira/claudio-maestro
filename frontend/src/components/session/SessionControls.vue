@@ -89,7 +89,8 @@ async function selectMode(value: string) {
     returnFocusTo = document.activeElement as HTMLElement | null
     confirming.value = true
     await nextTick()
-    confirmButton.value?.focus()
+    // The dangerous button is never the default: Enter right after opening must not activate it.
+    cancelButton.value?.focus()
     return
   }
   void apply({ permission_mode: value as PermissionMode })
