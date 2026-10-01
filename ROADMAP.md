@@ -28,7 +28,7 @@ Acompanha a construção completa do app. É a fonte única do que está feito e
 | 9. Progresso de planos | Etapa atual de cada plano em execução, fixa na tela | Concluído | 11 de 11 |
 | 10. Agente de resumos | Resumo em fases de cada conversa em andamento, feito por um agente do app | Concluído | 10 de 10 |
 | 11. Tela do projeto e ajustes | Git do projeto, conversa lado a lado, ícone de execução e menus fora do modal | Concluído | 5 de 5 |
-| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Concluído | 24 de 24 |
+| 12. Ajustes de sessões e menu lateral | Em execução no menu, worktree da sessão, Detalhes ajustável e ditado no modal | Em andamento | 25 de 25 |
 | 13. Comandos e menções | Sugestões de `/` e `@` no campo de mensagem, como na extensão do VSCode, padrões de modelo, raciocínio e modo nas Preferências e copiar blocos de código | Concluído | 14 de 14 |
 | 14. Identidade visual | Camadas, contraste e uso de cor da opção A em todas as telas | Concluído | 6 de 6 |
 | 15. Ajustes da crítica de design | Leitura de tabelas e diffs, laranja só para o que precisa de você, erros em vermelho | Concluído | 6 de 6 |
@@ -374,6 +374,7 @@ Pedido pelo usuário em 2026-09-30. Feito na worktree `.claude/worktrees/melhori
 - [x] Spec e plano do marco anotam a troca da sigla pelo nome do projeto e a largura nova do menu lateral (achado da revisão do marco em 2026-09-30) (2026-09-30)
 - [x] Nova revisão do marco pelo `milestone-reviewer`, depois dos itens reabertos (2026-09-30)
 - [x] Subagente retomado com `SendMessage` volta a contar como rodando: o resultado traz `resumedAgentId`, o cartão do `Agent` original volta a "rodando" e a notificação de término, que chega com o id do `SendMessage`, encerra esse cartão (bug relatado pelo usuário em 2026-09-30) (2026-09-30)
+- [x] Retomada com `SendMessage` de um agente lançado antes de o backend reiniciar também conta como rodando: o `agentId` do resultado do `Agent`/`Task` liga a tarefa ao cartão, ao vivo e no histórico, e a retomada grava o `task_id` para "Parar subagentes" (achado da revisão do marco em 2026-09-30) (2026-09-30)
 
 ## Marco 13. Comandos e menções
 
@@ -505,7 +506,6 @@ Ideias registradas para depois. Não entram sem decisão do usuário.
 | Contagem de turnos em casos raros | Se o CLI juntar duas mensagens num turno só, ou mandar um `init` por outro motivo logo depois de um turno autônomo, a conversa fica em "rodando" até o próximo turno. Nunca observado |
 | Janela depois do fim de um subagente do app | 3 s (`SUBAGENT_END_GRACE_SECONDS`) sem medição contra o CLI real. Se o turno autônomo demorar mais, o "Aguardando você" volta a piscar; ajustar o valor se isso aparecer no uso |
 | Troca de raciocínio durante subagente | Visto na revisão do marco 12 (2026-09-30): se o raciocínio muda enquanto um subagente roda e o CLI não abre turno depois que ele termina, a reconexão com o valor novo só acontece no próximo turno. Comportamento anterior ao marco |
-| Subagente retomado depois de recriar o construtor | Visto na revisão do marco 12 (2026-09-30): `_task_tools` só se preenche com mensagens `Task*` ao vivo. Depois de reiniciar o backend (o `--reload` reinicia a cada mudança em `backend/`) ou de `forget_closed`, um `SendMessage` que retoma um agente antigo não volta a contar como "Em execução". Correção sugerida: registrar o `agentId` do resultado de `Agent`/`Task`, ao vivo e no `load_history`, e gravar o `task_id` na retomada |
 | Resultado do `SendMessage` depois do término do agente retomado | Visto na revisão do marco 12 (2026-09-30): o cartão reabriria e ficaria "rodando" até um `background_tasks_changed` vazio ou 3 h. O CLI já omite `resumedAgentId` quando o agente termina antes da resposta, então sobra uma janela pequena. Proteção possível: não reabrir se o id do próprio `SendMessage` já encerrou a tarefa |
 | `/design` nas conversas do app | Investigado em 2026-09-30 (CLI 2.1.286): o consentimento passa a funcionar depois de rodar `/design-login` uma vez no terminal (não verificado). Um botão "Conectar Claude Design" no app poderia usar o subcomando oculto `claude design-login --json`, com protocolo ainda desconhecido; só vale se o passo no terminal incomodar |
 | Enter com menu `/` ou `@` aberto no meio do texto | Resolvido no marco 16 para o `/`: o menu só abre no início da mensagem. Para o `@` continua como na extensão do VS Code: Enter com o menu aberto escolhe o arquivo |

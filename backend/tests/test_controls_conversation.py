@@ -355,3 +355,76 @@ def test_send_message_without_a_known_resume_changes_nothing():
     assert status_of(builder) == "completed"
     assert not builder.subagents_running
     assert builder.handle(task_started_message(SID, "outro", "toolu_s1")) == []
+
+
+# Resume of an agent the builder only knows from history ---------------------------
+
+
+LAUNCHED = {"isAsync": True, "status": "async_launched", "agentId": "task-1",
+            "description": "Rever"}
+
+
+def history_with_agent(extra_entries=(), extra_results=None) -> ConversationBuilder:
+    builder = ConversationBuilder()
+    builder.load_history(
+        [
+            entry("assistant", {"id": "m1", "content": [
+                {"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                 "input": {"description": "Rever", "subagent_type": "reviewer"}},
+            ]}),
+            entry("user", {"content": [
+                {"type": "tool_result", "tool_use_id": "toolu_agent", "content": "launched"},
+            ]}),
+            *extra_entries,
+        ],
+        tool_results={"toolu_agent": {"content": "launched", "details": LAUNCHED},
+                      **(extra_results or {})},
+    )
+    return builder
+
+
+def test_resume_of_an_agent_from_history_reopens_its_card():
+    builder = history_with_agent()
+    assert status_of(builder) == "completed"
+
+    feed(builder, [*send_message(), resumed()])
+
+    assert status_of(builder) == "running"
+    assert builder.subagents_running
+    assert builder.running_task_ids() == ["task-1"]
+
+    builder.handle(task_notification_message(SID, "task-1", "toolu_send", status="completed"))
+    assert status_of(builder) == "completed"
+    assert not builder.subagents_running
+
+
+def test_resume_already_in_history_is_not_reopened():
+    builder = history_with_agent(
+        extra_entries=[
+            entry("assistant", {"id": "m2", "content": [
+                {"type": "tool_use", "id": "toolu_send", "name": "SendMessage",
+                 "input": {"to": "task-1", "message": "de novo"}},
+            ]}),
+            entry("user", {"content": [
+                {"type": "tool_result", "tool_use_id": "toolu_send", "content": "ok"},
+            ]}),
+        ],
+        extra_results={"toolu_send": {"content": "ok",
+                                      "details": {"resumedAgentId": "task-1"}}},
+    )
+
+    assert status_of(builder) == "completed"
+    assert not builder.subagents_running
+
+
+def test_live_agent_result_maps_its_agent_id():
+    builder = ConversationBuilder()
+    feed(builder, agent_call())
+    # No Task* message at all: the id only comes in the Agent result.
+    feed(builder, [tool_result_message("toolu_agent", "launched", tool_use_result=LAUNCHED)])
+    builder._subagents["toolu_agent"]["status"] = "completed"
+
+    feed(builder, [*send_message(), resumed()])
+
+    assert status_of(builder) == "running"
+    assert builder.running_task_ids() == ["task-1"]
