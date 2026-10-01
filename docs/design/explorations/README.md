@@ -10,7 +10,7 @@ Canvas publicado: https://claude.ai/artifact/P6VMGDraFb22rLUi31Rf86
 | `B-tingido.dc.html` | B, neutros frios tingidos e cor semântica por área |
 | `C-hierarquia.dc.html` | C, neutros quentes e hierarquia forte com acentos |
 
-Nada disto está no app. Escolha uma direção (ou peças de mais de uma) antes de implementar.
+O usuário escolheu a opção A em 2026-09-30. Ela foi aplicada no app inteiro no marco 14 do roadmap.
 
 ## O que vale para as três
 
@@ -18,7 +18,7 @@ Nada disto está no app. Escolha uma direção (ou peças de mais de uma) antes 
 - **Links e caminhos saem do verde.** Passam para azul (`info-soft`). Código inline fica neutro, com fundo próprio.
 - **Comando e saída têm fundos diferentes.** O comando fica no fundo mais escuro e a saída um degrau acima, com borda entre os dois.
 - **Tabela com cabeçalho preenchido** e cantos arredondados.
-- **"Falta" vem antes de "Feito"** na fase aberta, com texto mais forte. "Feito" fica menor e apagado.
+- **"Falta" vem antes de "Feito"** na fase aberta, com texto mais forte. "Feito" fica menor e apagado. Na opção A, "Falta" e "Aberta" se destacam pelo peso e pela cor `fg`, não pelo laranja.
 - **Um terceiro tom de texto, `subtle`,** para metadados e rótulos, abaixo de `fg-muted`. Todos os tons de texto passam AA (4,5:1) sobre a superfície mais clara de cada opção.
 - **Laranja na barra lateral só no contador do projeto e na linha da conversa que espera você.** Linhas paradas ou concluídas perdem o triângulo.
 
