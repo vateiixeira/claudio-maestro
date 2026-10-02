@@ -62,6 +62,7 @@ async def test_list_uses_a_throwaway_client_without_hooks_in_the_folder(tmp_path
     assert options.settings == NO_HOOKS
     assert json.loads(NO_HOOKS) == {"disableAllHooks": True}
     assert options.setting_sources is None
+    assert options.entrypoint is None
     assert client.connected and client.closed
 
 

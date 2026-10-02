@@ -55,6 +55,9 @@ class AgentOptions:
     # JSON with settings that override the loaded ones (e.g. '{"disableAllHooks": true}'
     # for throwaway clients that must not run hooks). None: nothing extra.
     settings: str | None = None
+    # Value of CLAUDE_CODE_ENTRYPOINT for the agent process, written to the transcript.
+    # None keeps the SDK default (`sdk-py`), which the editor extension hides from its list.
+    entrypoint: str | None = None
 
 
 @runtime_checkable

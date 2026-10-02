@@ -223,3 +223,10 @@ def test_models_cache_lives_in_app_state(tmp_path):
         assert conn.execute(
             "SELECT 1 FROM app_state WHERE key = 'models_cache'"
         ).fetchone() is None
+
+
+@pytest.mark.anyio
+async def test_models_refresh_client_keeps_the_sdk_entrypoint(tmp_path):
+    env = Env(tmp_path)
+    await env.manager().refresh_models_if_stale()
+    assert [c.options.entrypoint for c in env.factory.clients] == [None]
