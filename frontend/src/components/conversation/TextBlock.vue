@@ -4,7 +4,9 @@ import { onCodeCopyClick } from '../../conversation/codeCopy'
 import { renderMarkdown } from '../../conversation/markdown'
 import type { TextItem } from '../../types/conversation'
 
-const props = defineProps<{ item: TextItem }>()
+// `bubble`: a reply at the top of the turn, shown as a message on the left. Nested text
+// (inside a subagent or tool) stays plain, so there is no box inside a box.
+const props = defineProps<{ item: TextItem; bubble?: boolean }>()
 
 // Safe: markdown-it runs with `html: false`, so raw HTML in the text is escaped.
 const html = computed(() => renderMarkdown(props.item.text))
@@ -27,7 +29,11 @@ onBeforeUnmount(() => clearTimeout(timer))
 
 <template>
   <div class="group/text">
-    <div class="markdown max-w-[68ch]">
+    <div
+      class="markdown max-w-[68ch]"
+      :data-test="bubble ? 'assistant-bubble' : undefined"
+      :class="bubble ? 'w-fit rounded-2xl rounded-tl-md border border-line bg-card px-4 py-2.5' : ''"
+    >
       <div @click="onCodeCopyClick" v-html="html" />
       <span
         v-if="item.streaming"
@@ -36,7 +42,7 @@ onBeforeUnmount(() => clearTimeout(timer))
         aria-label="Escrevendo"
       />
     </div>
-    <div v-if="!item.streaming" class="mt-1 flex items-center gap-2 text-[11px]">
+    <div v-if="!item.streaming" class="mt-1 flex items-center gap-2 text-[11px]" :class="bubble ? 'pl-1' : ''">
       <button
         type="button"
         data-test="copy"

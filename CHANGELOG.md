@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Alterado
+
+- A conversa ficou com cara de mensageiro: o que você manda aparece em balão à direita e as respostas do modelo, em balão à esquerda.
+
 ### Corrigido
 
 - As sessões abertas pelo Maestro passam a aparecer na lista de sessões da extensão do Claude no VSCode e no Cursor. As anteriores continuam fora dela.
