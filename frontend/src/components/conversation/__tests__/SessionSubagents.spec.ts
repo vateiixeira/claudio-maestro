@@ -126,6 +126,19 @@ describe('faixa de subagentes na conversa', () => {
     expect(card.attributes('data-highlighted')).toBe('true')
   })
 
+  it('cartão de subagente rodando começa fechado e abre ao clicar na faixa', async () => {
+    const w = await mountWith({
+      state: 'running',
+      items: [user('u1'), agent('a', 'completed'), agent('b', 'running'), child('r', 'tu-b')],
+    })
+    const card = w.find('[data-subagent-id="b"]')
+    expect(card.find('[data-test="subagent-children"]').isVisible()).toBe(false)
+    ;(card.element as HTMLElement).scrollIntoView = vi.fn()
+    await w.findAll('[data-test="subagent-row"]')[1]!.trigger('click')
+    await flushPromises()
+    expect(card.find('[data-test="subagent-children"]').isVisible()).toBe(true)
+  })
+
   it('cartão de subagente aninhado abre também o de fora', async () => {
     const w = await mountWith({
       state: 'running',

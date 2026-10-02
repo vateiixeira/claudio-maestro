@@ -41,26 +41,39 @@ describe('subagente', () => {
     expect(running.text()).toContain('Lendo app.py')
   })
 
-  it('filhos dentro do cartão, abertos enquanto roda e em tempo real', async () => {
+  it('filhos dentro do cartão, fechados por padrão e atualizados em tempo real', async () => {
     const children = [child('a', 'Read')]
-    const w = mount(ConversationBlock, { props: { item: tool('Agent', {}, { subagent: sub() }), childrenOf: (id: string) => (id === 'tu1' ? children : []) } })
+    const w = mount(ConversationBlock, { props: { item: tool('Agent', {}, { subagent: sub() }), childrenOf: (id: string) => (id === 'tu1' ? children : []) }, attachTo: document.body })
     expect(w.findAll('[data-test="subagent-children"] > *')).toHaveLength(1)
+    expect(w.find('[data-test="subagent-children"]').isVisible()).toBe(false)
     children.push(child('b', 'Grep'))
     await w.setProps({ childrenOf: (id: string) => (id === 'tu1' ? [...children] : []) })
     expect(w.findAll('[data-test="subagent-children"] > *')).toHaveLength(2)
+    expect(w.find('[data-test="subagent-children"]').isVisible()).toBe(false)
   })
 
-  it('recolhe ao concluir e respeita a escolha manual', async () => {
+  it('fica fechado rodando e ao concluir, e respeita a escolha manual', async () => {
     const children = (id: string) => (id === 'tu1' ? [child('a', 'Read')] : [])
     const w = mount(ConversationBlock, { props: { item: tool('Agent', {}, { subagent: sub() }), childrenOf: children }, attachTo: document.body })
     const visible = () => w.find('[data-test="subagent-children"]').isVisible()
+    const toggle = () => w.find('[data-test="subagent-toggle"]')
+    expect(visible()).toBe(false)
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    await toggle().trigger('click')
     expect(visible()).toBe(true)
     await w.setProps({ item: tool('Agent', {}, { subagent: sub({ status: 'completed' }) }) })
+    expect(visible()).toBe(true)
+    await toggle().trigger('click')
     expect(visible()).toBe(false)
-    await w.find('[data-test="subagent-toggle"]').trigger('click')
-    expect(visible()).toBe(true)
     await w.setProps({ item: tool('Agent', {}, { subagent: sub({ status: 'completed', summary: 'fim' }) }) })
-    expect(visible()).toBe(true)
+    expect(visible()).toBe(false)
+  })
+
+  it('o cartão usa o fundo de cartão, diferente do painel dos outros blocos', () => {
+    const w = mount(ConversationBlock, { props: { item: tool('Agent', {}, { subagent: sub() }) } })
+    const card = w.find('[data-test="subagent-card"]')
+    expect(card.classes()).toContain('bg-card')
+    expect(card.classes()).not.toContain('bg-panel')
   })
 })
 
