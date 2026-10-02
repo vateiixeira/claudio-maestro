@@ -158,6 +158,11 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         )
         """,
     ],
+    [
+        # Sessions that survive backend restarts: a turn was running when the app
+        # last stopped (kept live; read at startup to show "Interrompida").
+        "ALTER TABLE sessions ADD COLUMN turn_open INTEGER NOT NULL DEFAULT 0",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

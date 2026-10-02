@@ -176,6 +176,7 @@ DEFAULT_HISTORY_LIMIT = 500  # messages loaded when opening an old session
 EXTERNAL_ACTIVITY_WINDOW = 60  # seconds
 HISTORY_LOAD_FAILED = "Não foi possível carregar a conversa salva desta sessão."
 HISTORY_LINES_SKIPPED = "Parte do histórico não pôde ser lida."
+INTERRUPTED_TEXT = "Interrompido: o app reiniciou enquanto o turno rodava."
 # Size of the items of a snapshot (JSON); older items beyond it are left out.
 SNAPSHOT_MAX_BYTES = 2 * 1024 * 1024
 # A file written this long after the app's own last write still counts as the app's.
@@ -298,6 +299,8 @@ class SessionRecord:
     worktree_path: str | None = None
     # Newest branch recorded in the transcript.
     git_branch: str | None = None
+    # A turn was running when the app last left this session (see INTERRUPTED_TEXT).
+    turn_open: bool = False
 
     @property
     def history_directory(self) -> str:
@@ -338,14 +341,14 @@ _COLUMNS = (
     _INSERT_COLUMNS
     + ", summary, first_prompt, title_custom, rename_pending, file_modified_at, app_modified_at"
     + ", model, effort, permission_mode, finished_at, plan_path, plan_link, group_id"
-    + ", history_dir, worktree_name, worktree_path, git_branch"
+    + ", history_dir, worktree_name, worktree_path, git_branch, turn_open"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
     "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
-    "plan_path", "plan_link", "history_dir",
+    "plan_path", "plan_link", "history_dir", "turn_open",
 )
-_BOOL_FIELDS = ("finished", "title_custom", "rename_pending")
+_BOOL_FIELDS = ("finished", "title_custom", "rename_pending", "turn_open")
 
 
 def _record(row: sqlite3.Row) -> SessionRecord:
@@ -493,6 +496,7 @@ def describe(
         "subagents_running": subagents_running,
         "digest_short": digest_short,
         "plan_done": plan_done,
+        "interrupted": bool(record.turn_open) and state in ("closed", "error"),
     }
 
 
@@ -912,6 +916,12 @@ class ActiveSession:
         return self._lock.locked()
 
     def _refresh_state(self) -> None:
+        turn_open = self.pending_turns > 0 or self._autonomous_turn
+        if not self._final and turn_open != self.record.turn_open:
+            try:
+                self.save(turn_open=turn_open)
+            except Exception:
+                logger.exception("Falha ao gravar o turno da sessão %s", self.session_id)
         if self.state == "idle":
             if self.idle_since is None:
                 self.idle_since = time.monotonic()
@@ -1064,6 +1074,8 @@ class ActiveSession:
                 self.history_truncated = True
                 entries = entries[-self._history_limit:]
             self.builder.load_history(entries, tool_results, compact)
+            if self.record.turn_open and not self.active:
+                self.builder.add_notice("warning", INTERRUPTED_TEXT)
             if skipped:
                 self.builder.add_notice("warning", HISTORY_LINES_SKIPPED)
             self._history_loaded = True
