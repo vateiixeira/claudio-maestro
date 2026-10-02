@@ -50,9 +50,15 @@ describe('Bash em background', () => {
     expect(none.find('[data-test="bash-background-summary"]').exists()).toBe(false)
   })
 
-  it('antes do resultado continua "rodando…"; sem selo duplicado no cabeçalho', () => {
+  it('antes do resultado a bolinha pulsa e o "rodando…" fica só para leitor de tela', () => {
     const w = mount(BashTool, { props: { item: bash({ result: null, background: null }), sessionActive: true } })
-    expect(w.find('[data-test="bash-header"]').text()).toContain('rodando')
+    expect(w.find('[data-test="bash-header"] .sr-only').text()).toBe('rodando…')
+    expect(w.find('[data-test="bash-status-dot"]').classes()).toContain('animate-pulse')
+  })
+
+  it('falha em background deixa a bolinha vermelha', () => {
+    const w = mount(BashTool, { props: { item: bash({ background: live('failed') }), sessionActive: true } })
+    expect(w.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('error')
   })
 
   it('o selo é o único estado no cabeçalho depois do resultado', () => {

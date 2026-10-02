@@ -59,7 +59,7 @@ describe('blocos da conversa', () => {
 
   it('Bash rodando, com saída e com erro', async () => {
     const running = mountItem(tool('Bash', { command: 'pytest' }))
-    expect(running.text()).toContain('$ pytest')
+    expect(running.find('[data-test="bash-command"]').text()).toContain('pytest')
     expect(running.text()).toContain('rodando')
 
     const ok = mountItem(tool('Bash', { command: 'ls' }, { content: 'a.txt\nb.txt', is_error: false, details: null }))

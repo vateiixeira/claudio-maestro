@@ -164,7 +164,7 @@ describe('grupo de ações', () => {
     expect(group(w).find('[data-test="tool-output"]').exists()).toBe(false)
     await rows[1]!.trigger('click')
     expect(rows[1]!.attributes('aria-expanded')).toBe('true')
-    expect(group(w).text()).toContain('$ ls -la')
+    expect(group(w).find('[data-test="bash-command"]').text()).toContain('ls -la')
   })
 })
 

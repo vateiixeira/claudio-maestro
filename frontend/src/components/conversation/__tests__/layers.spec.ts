@@ -39,22 +39,24 @@ function bash(result: { content: string; is_error: boolean } | null): Conversati
 }
 
 describe('camadas visuais do chat (opção A)', () => {
-  it('Bash separa cabeçalho, comando e saída em três fundos', () => {
+  it('Bash: cabeçalho solto e uma caixa só, com IN e OUT separados por uma linha', () => {
     const w = mount(ConversationBlock, { props: { item: bash({ content: 'saida', is_error: false }), sessionActive: false } })
-    expect(w.find('[data-test="bash-header"]').classes()).toContain('bg-panel')
-    const cmd = w.find('[data-test="bash-command"]')
-    expect(cmd.classes()).toContain('bg-bg')
-    expect(cmd.find('[data-test="bash-prompt"]').classes()).toContain('text-fg-subtle')
-    expect(cmd.text()).toBe('$ ls -la')
-    const out = w.find('[data-test="bash-output"]')
-    expect(out.classes()).toEqual(expect.arrayContaining(['bg-panel', 'border-t', 'border-line', 'text-fg-muted']))
+    expect(w.find('[data-test="bash-header"]').classes()).not.toContain('bg-panel')
+    const box = w.find('[data-test="bash-box"]')
+    expect(box.classes()).toEqual(expect.arrayContaining(['bg-panel', 'border', 'border-line']))
+    const cmd = box.find('[data-test="bash-command"]')
+    expect(cmd.text()).toContain('IN')
+    expect(cmd.text()).toContain('ls -la')
+    const out = box.find('[data-test="bash-output"]')
+    expect(out.classes()).toEqual(expect.arrayContaining(['border-t', 'border-line']))
+    expect(out.text()).toContain('OUT')
     expect(out.text()).toContain('saida')
   })
 
   it('Bash com erro mantém a saída em vermelho', () => {
     const w = mount(ConversationBlock, { props: { item: bash({ content: 'boom', is_error: true }), sessionActive: false } })
-    expect(w.find('[data-test="tool-error"] [data-test="output-box"]').classes()).toContain('bg-diff-del-bg')
-    expect(w.text()).toContain('falhou')
+    expect(w.find('[data-test="tool-error"] [data-test="pane-toggle"]').classes()).toContain('text-diff-del-fg')
+    expect(w.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('error')
   })
 
   it('TextBlock limita a largura de leitura a 68ch', () => {
