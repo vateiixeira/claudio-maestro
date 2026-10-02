@@ -22,6 +22,17 @@ Acesse **http://localhost:6600**. O Vite repassa `/api` e `/ws` para o backend. 
 
 Para não misturar com os seus dados de uso, aponte `MAESTRO_DATA_DIR` para outra pasta enquanto desenvolve.
 
+### Ver uma worktree ao lado do app
+
+Para conferir uma mudança de frontend sem mexer no app que você está usando, suba um segundo Vite a partir da worktree, apontando para o mesmo backend. Ligue `MAESTRO_PREVIEW_PORT` no backend (ele passa a aceitar essa porta como do próprio app) e rode o Vite da worktree nela:
+
+```bash
+MAESTRO_PREVIEW_PORT=6610 uv run uvicorn claudio_maestro.app:app --host 127.0.0.1 --port 6660   # backend, uma vez
+MAESTRO_DEV_PORT=6610 pnpm --dir <worktree>/frontend dev                                        # preview da worktree
+```
+
+Acesse **http://localhost:6610**. O preview usa os dados reais do backend: o que você fizer nele vale de verdade. Mudanças de backend da worktree não aparecem aqui; para elas, suba outra instância com `MAESTRO_DATA_DIR` próprio.
+
 ## Testes e verificações
 
 ```bash

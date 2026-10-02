@@ -38,6 +38,24 @@ def test_ports_from_environment(monkeypatch: pytest.MonkeyPatch):
     assert config.dev_port() == 7100
 
 
+def test_preview_port_is_off_by_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("MAESTRO_PREVIEW_PORT", raising=False)
+    assert config.preview_port() is None
+    monkeypatch.setenv("MAESTRO_PREVIEW_PORT", "")
+    assert config.preview_port() is None
+
+
+def test_preview_port_from_environment(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MAESTRO_PREVIEW_PORT", "6610")
+    assert config.preview_port() == 6610
+
+
+def test_preview_port_is_validated(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MAESTRO_PREVIEW_PORT", "6667")
+    with pytest.raises(config.PortError, match="MAESTRO_PREVIEW_PORT"):
+        config.preview_port()
+
+
 def test_empty_port_uses_default(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("MAESTRO_PORT", "")
     assert config.backend_port() == 6660

@@ -7,7 +7,7 @@ O Cláudio Maestro executa comandos na sua máquina por meio do Claude. Ele é u
 Defesas:
 
 - **Só local.** O servidor escuta apenas em `127.0.0.1`, sem opção de mudar.
-- **`Host`.** Requisições com `Host` diferente de `localhost` ou `127.0.0.1` nas portas do app são recusadas (bloqueia DNS rebinding).
+- **`Host`.** Requisições com `Host` diferente de `localhost` ou `127.0.0.1` nas portas do app são recusadas (bloqueia DNS rebinding). As portas do app são a do backend, a do Vite e, só quando `MAESTRO_PREVIEW_PORT` está definida, a do preview.
 - **`Origin`.** WebSockets e requisições que alteram estado precisam vir da origem do próprio app.
 - **Sem CORS.** Nenhuma origem externa é liberada.
 - **Cabeçalho próprio.** Toda chamada a `/api/` exige `X-Maestro: 1`. Navegadores só enviam cabeçalhos próprios entre sites depois de uma checagem de CORS, que o app recusa, então outros sites não conseguem ler a API por `<img>`, formulário ou `fetch`.

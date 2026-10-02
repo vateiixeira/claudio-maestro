@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- `MAESTRO_PREVIEW_PORT`: porta opcional para ver o frontend de uma worktree ao lado do app, usando o mesmo backend.
+
 ### Alterado
 
 - A conversa ficou com cara de mensageiro: o que você manda aparece em balão à direita e as respostas do modelo, em balão à esquerda.

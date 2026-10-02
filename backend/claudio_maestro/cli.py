@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from claudio_maestro.config import PortError, backend_port, dev_port, validate_port
+from claudio_maestro.config import PortError, app_ports, backend_port, validate_port
 
 HOST = "127.0.0.1"
 # backend/claudio_maestro/cli.py -> repository root.
@@ -22,7 +22,7 @@ BUILD_INPUTS = (
 
 Run = Callable[..., subprocess.CompletedProcess]
 Which = Callable[[str], str | None]
-Serve = Callable[[Path, int, tuple[int, int]], None]
+Serve = Callable[[Path, int, tuple[int, ...]], None]
 
 
 class CliError(Exception):
@@ -81,7 +81,7 @@ def port_available(port: int) -> bool:
     return True
 
 
-def serve_app(dist: Path, port: int, ports: tuple[int, int]) -> None:
+def serve_app(dist: Path, port: int, ports: tuple[int, ...]) -> None:
     import uvicorn
 
     from claudio_maestro.app import create_app
@@ -108,7 +108,7 @@ def main(
         # Also checked with --port: serving imports the app, which reads MAESTRO_PORT again.
         env_port = backend_port()
         port = validate_port(args.port, "--port") if args.port is not None else env_port
-        ports = (dev_port(), port)
+        ports = app_ports(port)
         if not (frontend / "package.json").is_file():
             raise CliError(
                 f"Não encontrei o frontend em {frontend}. "
