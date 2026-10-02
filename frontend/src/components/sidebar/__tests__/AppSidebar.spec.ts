@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import type { ConnectionStatus } from '../../../types/events'
 
 const socketStatus = vi.hoisted(() => ({ current: null as unknown as { value: ConnectionStatus } }))
@@ -18,6 +18,7 @@ import { useNewConversationStore } from '../../../stores/newConversation'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 import { setCollapsed } from '../../../sidebarCollapse'
+import { sidebarWidth } from '../../../sidebarWidthPref'
 import { makeGitRepo, makeGroup, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
@@ -25,8 +26,16 @@ let pinia: Pinia
 beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
+  localStorage.removeItem('maestro:sidebar-width')
+  sidebarWidth.value = 288
   socketStatus.current = ref<ConnectionStatus>('connected')
 })
+
+// jsdom has no PointerEvent, so trigger() cannot set clientX: dispatch a MouseEvent with the pointer event name.
+async function pointer(handle: { element: Element }, type: string, clientX: number) {
+  handle.element.dispatchEvent(new MouseEvent(type, { clientX, bubbles: true, cancelable: true }))
+  await nextTick()
+}
 
 function mountSidebar() {
   const router = createAppRouter(createMemoryHistory())
@@ -108,9 +117,51 @@ describe('menu lateral', () => {
     expect(w.find('[data-test="recent"]').exists()).toBe(false)
   })
 
-  it('a barra lateral tem 288px de largura', () => {
+  it('a barra lateral começa com 288px', () => {
+    expect(mountSidebar().find('nav').attributes('style')).toContain('width: 288px')
+  })
+
+  it('usa a largura salva', () => {
+    sidebarWidth.value = 360
+    expect(mountSidebar().find('nav').attributes('style')).toContain('width: 360px')
+  })
+
+  it('alça na borda direita redimensiona por arrasto e salva ao soltar', async () => {
     const w = mountSidebar()
-    expect(w.find('nav').classes()).toContain('w-[288px]')
+    const handle = w.find('[data-test="sidebar-resize"]')
+    expect(handle.attributes('role')).toBe('separator')
+    expect(handle.attributes('aria-label')).toBe('Redimensionar menu lateral')
+    await pointer(handle, 'pointerdown', 288)
+    await pointer(handle, 'pointermove', 340)
+    expect(w.find('nav').attributes('style')).toContain('width: 340px')
+    expect(localStorage.getItem('maestro:sidebar-width')).toBeNull()
+    await pointer(handle, 'pointerup', 340)
+    expect(localStorage.getItem('maestro:sidebar-width')).toBe('340')
+  })
+
+  it('respeita os limites ao arrastar', async () => {
+    const w = mountSidebar()
+    const handle = w.find('[data-test="sidebar-resize"]')
+    await pointer(handle, 'pointerdown', 288)
+    await pointer(handle, 'pointermove', 2000)
+    expect(w.find('nav').attributes('style')).toContain('width: 480px')
+    await pointer(handle, 'pointermove', 0)
+    expect(w.find('nav').attributes('style')).toContain('width: 240px')
+  })
+
+  it('setas do teclado ajustam de 16 em 16 e salvam; duplo clique volta ao padrão', async () => {
+    const w = mountSidebar()
+    const handle = w.find('[data-test="sidebar-resize"]')
+    await handle.trigger('keydown', { key: 'ArrowRight' })
+    expect(w.find('nav').attributes('style')).toContain('width: 304px')
+    expect(localStorage.getItem('maestro:sidebar-width')).toBe('304')
+    expect(handle.attributes('aria-valuenow')).toBe('304')
+    await handle.trigger('keydown', { key: 'ArrowLeft' })
+    await handle.trigger('keydown', { key: 'ArrowLeft' })
+    expect(w.find('nav').attributes('style')).toContain('width: 272px')
+    await handle.trigger('dblclick')
+    expect(w.find('nav').attributes('style')).toContain('width: 288px')
+    expect(localStorage.getItem('maestro:sidebar-width')).toBe('288')
   })
 
   it('Inbox, Dashboard, Conversas e Preferências têm ícone', () => {

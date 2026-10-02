@@ -13,6 +13,7 @@ import { sidebarItemClass } from './itemClass'
 import { needsYou } from '../../conversation/needsYou'
 import { useEventSocket } from '../../api/socket'
 import { isCollapsed, setCollapsed } from '../../sidebarCollapse'
+import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_KEY_STEP, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, clampSidebarWidth, sidebarWidth, writeSidebarWidth } from '../../sidebarWidthPref'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
@@ -33,6 +34,34 @@ const groups = useGroupsStore()
 const newConversation = useNewConversationStore()
 const route = useRoute()
 const socket = useEventSocket()
+
+// The handle sits on the right edge: moving the pointer right makes the sidebar wider.
+let drag: { startX: number; startWidth: number } | null = null
+function startResize(event: PointerEvent) {
+  event.preventDefault()
+  ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
+  drag = { startX: event.clientX, startWidth: sidebarWidth.value }
+}
+function moveResize(event: PointerEvent) {
+  if (!drag) return
+  sidebarWidth.value = clampSidebarWidth(drag.startWidth + (event.clientX - drag.startX))
+}
+function endResize() {
+  if (!drag) return
+  drag = null
+  writeSidebarWidth(sidebarWidth.value)
+}
+function onResizeKey(event: KeyboardEvent) {
+  const delta = event.key === 'ArrowRight' ? SIDEBAR_KEY_STEP : event.key === 'ArrowLeft' ? -SIDEBAR_KEY_STEP : 0
+  if (!delta) return
+  event.preventDefault()
+  sidebarWidth.value = clampSidebarWidth(sidebarWidth.value + delta)
+  writeSidebarWidth(sidebarWidth.value)
+}
+function resetResize() {
+  sidebarWidth.value = SIDEBAR_DEFAULT_WIDTH
+  writeSidebarWidth(sidebarWidth.value)
+}
 
 // Only the waits that need you count; an ordinary wait with nothing new is not a reason to look.
 const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s)
@@ -77,7 +106,25 @@ const itemClass = sidebarItemClass
 </script>
 
 <template>
-  <nav aria-label="Navegação" class="flex h-full w-[288px] shrink-0 flex-col border-r border-line bg-bg text-[13.5px]">
+  <nav aria-label="Navegação" :style="{ width: `${sidebarWidth}px` }" class="relative flex h-full shrink-0 flex-col border-r border-line bg-bg text-[13.5px]">
+    <div
+      data-test="sidebar-resize"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Redimensionar menu lateral"
+      tabindex="0"
+      :aria-valuenow="sidebarWidth"
+      :aria-valuemin="SIDEBAR_MIN_WIDTH"
+      :aria-valuemax="SIDEBAR_MAX_WIDTH"
+      title="Arraste para redimensionar · duplo clique volta ao padrão"
+      class="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize touch-none hover:bg-line-strong focus-visible:bg-fg-muted/40 focus-visible:outline-none"
+      @pointerdown="startResize"
+      @pointermove="moveResize"
+      @pointerup="endResize"
+      @pointercancel="endResize"
+      @dblclick="resetResize"
+      @keydown="onResizeKey"
+    />
     <RouterLink to="/inbox" class="flex min-h-11 items-center gap-2 px-4 pt-3 pb-1.5 text-fg no-underline">
       <BrandMark />
       <span class="text-[15px] font-semibold tracking-tight">Cláudio Maestro</span>
