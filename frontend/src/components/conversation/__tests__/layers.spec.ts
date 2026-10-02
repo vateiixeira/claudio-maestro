@@ -68,9 +68,20 @@ describe('camadas visuais do chat (opção A)', () => {
     const w = mount(ConversationBlock, { props: { item: { type: 'user', id: 'u', text: 'oi', images: [] } } })
     expect(w.find('[data-test="user-message-row"]').classes()).toContain('justify-end')
     const card = w.find('[data-test="user-message-card"]')
-    expect(card.classes()).toEqual(expect.arrayContaining(['bg-elevated', 'rounded-br-md']))
+    expect(card.classes()).toEqual(expect.arrayContaining(['bg-primary-tint', 'border-primary/25', 'rounded-br-md']))
+    expect(card.classes()).not.toContain('bg-elevated')
+    expect(w.find('[data-test="user-message"]').classes()).toContain('text-fg')
     // A posição diz quem falou; o leitor de tela ouve o nome.
     expect(card.find('.sr-only').text()).toBe('Você:')
+  })
+
+  it('anexos da mensagem do usuário acompanham o tom verde', () => {
+    const item = { type: 'user', id: 'u', text: 'oi', images: [{ type: 'image', media_type: 'image/png', size: 2048 }] }
+    const w = mount(ConversationBlock, { props: { item: item as never } })
+    const chip = w.find('[data-test="attachment"]')
+    expect(chip.text()).toContain('Imagem')
+    expect(chip.classes()).toEqual(expect.arrayContaining(['border-primary/25', 'text-fg-muted']))
+    expect(chip.classes()).not.toContain('bg-panel')
   })
 
   it('resposta do modelo vira balão à esquerda só no nível de cima', () => {

@@ -31,7 +31,7 @@ function label(attachment: Attachment): string {
   <div data-test="user-message-row" class="flex w-full justify-end pl-10">
     <div
       data-test="user-message-card"
-      class="flex max-w-[72ch] min-w-0 flex-col items-end gap-2 rounded-2xl rounded-br-md border border-line-strong bg-elevated px-3.5 py-2.5"
+      class="flex max-w-[72ch] min-w-0 flex-col items-end gap-2 rounded-2xl rounded-br-md border border-primary/25 bg-primary-tint px-3.5 py-2.5"
     >
       <span class="sr-only">Você:</span>
       <div
@@ -46,7 +46,7 @@ function label(attachment: Attachment): string {
           :src="url"
           :alt="`Imagem enviada ${index + 1}`"
           data-test="attachment-thumb"
-          class="max-h-32 max-w-48 rounded-lg border border-line-strong object-cover"
+          class="max-h-32 max-w-48 rounded-lg border border-primary/25 object-cover"
         />
       </div>
       <div v-if="item.images?.length && !previews?.length" class="flex flex-wrap justify-end gap-1">
@@ -54,7 +54,7 @@ function label(attachment: Attachment): string {
           v-for="(attachment, index) in item.images"
           :key="index"
           data-test="attachment"
-          class="rounded-md border border-line bg-panel px-2 py-0.5 font-mono text-xs text-fg-subtle"
+          class="rounded-md border border-primary/25 bg-surface/50 px-2 py-0.5 font-mono text-xs text-fg-muted"
         >{{ label(attachment) }}</span>
       </div>
     </div>
