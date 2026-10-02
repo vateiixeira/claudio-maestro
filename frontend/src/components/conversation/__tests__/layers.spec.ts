@@ -59,9 +59,9 @@ describe('camadas visuais do chat (opção A)', () => {
     expect(w.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('error')
   })
 
-  it('TextBlock limita a largura de leitura a 68ch', () => {
+  it('TextBlock limita a largura de leitura a 90ch', () => {
     const w = mount(ConversationBlock, { props: { item: { type: 'text', id: 'x', text: 'oi', streaming: false, parent_tool_use_id: null } } })
-    expect(w.find('.markdown').classes()).toContain('max-w-[68ch]')
+    expect(w.find('.markdown').classes()).toContain('max-w-[90ch]')
   })
 
   it('mensagem do usuário é um balão à direita', () => {

@@ -30,7 +30,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 <template>
   <div class="group/text">
     <div
-      class="markdown max-w-[68ch]"
+      class="markdown max-w-[90ch]"
       :data-test="bubble ? 'assistant-bubble' : undefined"
       :class="bubble ? 'w-fit rounded-2xl rounded-tl-md border border-line bg-card px-4 py-2.5' : ''"
     >

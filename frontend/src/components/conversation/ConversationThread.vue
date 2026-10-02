@@ -360,7 +360,7 @@ function resolvePrompt(promptId: string) {
           data-test="turn-bar"
           class="sticky top-0 z-10 border-b border-line bg-panel"
         >
-          <div class="mx-auto flex h-11 w-full max-w-[760px] items-center gap-2.5 px-4">
+          <div data-test="chat-bar-column" class="mx-auto flex h-11 w-full max-w-(--chat-width) items-center gap-2.5 px-4">
             <span class="cap shrink-0 text-fg-subtle">Turno {{ currentTurn + 1 }} de {{ turns.length }}</span>
             <span class="min-w-0 grow truncate text-[0.8125rem] text-fg">{{ currentTurnText }}</span>
             <button
@@ -387,7 +387,7 @@ function resolvePrompt(promptId: string) {
             </button>
           </div>
         </div>
-        <div class="mx-auto flex w-full max-w-[760px] flex-col gap-[18px] px-4 pt-5 pb-6">
+        <div data-test="chat-body-column" class="mx-auto flex w-full max-w-(--chat-width) flex-col gap-[18px] px-4 pt-5 pb-6">
           <p
             v-if="conv.historyTruncated"
             data-test="history-truncated"
@@ -495,7 +495,7 @@ function resolvePrompt(promptId: string) {
       </div>
 
       <div class="border-t border-line">
-        <div class="mx-auto flex w-full max-w-[760px] flex-col gap-2.5 px-4 pt-3 pb-3.5">
+        <div data-test="chat-composer-column" class="mx-auto flex w-full max-w-(--chat-width) flex-col gap-2.5 px-4 pt-3 pb-3.5">
           <p
             v-if="conv.state === 'error'"
             data-test="session-error"

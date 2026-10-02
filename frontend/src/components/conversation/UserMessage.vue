@@ -31,7 +31,7 @@ function label(attachment: Attachment): string {
   <div data-test="user-message-row" class="flex w-full justify-end pl-10">
     <div
       data-test="user-message-card"
-      class="flex max-w-[62ch] min-w-0 flex-col items-end gap-2 rounded-2xl rounded-br-md border border-line-strong bg-elevated px-3.5 py-2.5"
+      class="flex max-w-[72ch] min-w-0 flex-col items-end gap-2 rounded-2xl rounded-br-md border border-line-strong bg-elevated px-3.5 py-2.5"
     >
       <span class="sr-only">Você:</span>
       <div

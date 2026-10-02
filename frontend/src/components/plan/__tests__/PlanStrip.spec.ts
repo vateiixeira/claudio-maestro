@@ -108,7 +108,7 @@ describe('faixa do plano', () => {
     await flushPromises()
     expect(toggle(w).attributes('aria-expanded')).toBe('true')
     expect(w.findAll('[data-test="plan-task"]')).toHaveLength(5)
-    expect(w.find('[data-test="plan-strip"]').classes()).not.toContain('max-w-[760px]')
+    expect(w.find('[data-test="plan-strip"]').classes()).not.toContain('max-w-(--chat-width)')
   })
 
   it('no painel, o botão recolhe a lista', async () => {
@@ -123,7 +123,7 @@ describe('faixa do plano', () => {
   it('na faixa, a lista continua fechada e com largura máxima', () => {
     const w = mount(PlanStrip, { props: { session: session() } })
     expect(toggle(w).attributes('aria-expanded')).toBe('false')
-    expect(w.find('[data-test="plan-strip"]').classes()).toContain('max-w-[760px]')
+    expect(w.find('[data-test="plan-strip"]').classes()).toContain('max-w-(--chat-width)')
   })
 
   it('no painel, trocar de conversa reabre a lista da nova', async () => {
