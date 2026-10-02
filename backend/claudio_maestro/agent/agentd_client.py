@@ -7,7 +7,8 @@ import logging
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 START_WAIT = 3.0
 HELLO_TIMEOUT = 2.0
 STREAM_LIMIT = 256 * 1024 * 1024
+START_COOLDOWN = 60.0  # after a failed start, new attempts wait this long (seconds)
+GONE_WAIT = 13.0  # a killed child may take stdin grace + SIGTERM grace + SIGKILL (seconds)
+GONE_POLL = 0.1
 
 
 class AgentdUnavailable(Exception):
@@ -35,15 +39,25 @@ class AgentdChild:
     ack: int
     exit_code: int | None
     init: dict[str, Any] | None
+    stderr: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_reply(cls, data: dict[str, Any]) -> "AgentdChild":
+        """Ignore fields this version does not know (a newer agentd may send more)."""
+        known = {f.name for f in fields(cls)}
+        return cls(**{key: value for key, value in data.items() if key in known})
 
 
 class AgentdClient:
     def __init__(self, data_dir: Path, *, spawn_allowed: bool = True,
-                 idle_exit: float = 600, orphan_timeout: float = 1800) -> None:
+                 idle_exit: float = 600, orphan_timeout: float = 1800,
+                 start_cooldown: float = START_COOLDOWN) -> None:
         self.data_dir = data_dir
         self.spawn_allowed = spawn_allowed
         self._idle_exit = idle_exit
         self._orphan_timeout = orphan_timeout
+        self._start_cooldown = start_cooldown
+        self._start_failed_at: float | None = None
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._read_task: asyncio.Task[None] | None = None
@@ -59,21 +73,29 @@ class AgentdClient:
     def connected(self) -> bool:
         return self._writer is not None and not self._writer.is_closing()
 
-    async def ensure_running(self) -> None:
+    async def ensure_running(self, *, start: bool = True) -> None:
+        """Connect to the agentd, starting one when none runs (unless `start` is False).
+        After a failed start no new one is tried for a while, so every new session does
+        not wait for the start timeout again."""
         self._reap_launchers()
         async with self._connect_lock:
             if self.connected:
                 return
             if await self._try_connect():
                 return
-            if not self.spawn_allowed:
+            if not start or not self.spawn_allowed:
                 raise AgentdUnavailable("agentd não está rodando")
+            if self._start_failed_at is not None and \
+                    time.monotonic() - self._start_failed_at < self._start_cooldown:
+                raise AgentdUnavailable("agentd não subiu há pouco; sem nova tentativa por ora")
             self._start_server()
             deadline = asyncio.get_running_loop().time() + START_WAIT
             while asyncio.get_running_loop().time() < deadline:
                 await asyncio.sleep(0.05)
                 if await self._try_connect():
+                    self._start_failed_at = None
                     return
+            self._start_failed_at = time.monotonic()
             raise AgentdUnavailable("agentd não respondeu a tempo")
 
     def _reap_launchers(self) -> None:
@@ -219,12 +241,32 @@ class AgentdClient:
     async def list(self) -> list[AgentdChild]:
         await self.ensure_running()
         reply = await self._call("list")
-        return [AgentdChild(**child) for child in reply["children"]]
+        return [AgentdChild.from_reply(child) for child in reply["children"]]
 
     async def kill(self, child_id: str) -> None:
+        """Ask the agentd to stop the child (it returns before the process is gone; see
+        `wait_gone`). A lost connection is re-made first, but no agentd is started."""
         self._subscriptions.pop(child_id, None)
         with contextlib.suppress(AgentdUnavailable):
+            await self.ensure_running(start=False)
             await self._call("kill", id=child_id)
+
+    async def wait_gone(self, child_id: str, timeout: float = GONE_WAIT) -> bool:
+        """Wait until the agentd no longer holds the child (its process has exited).
+        True also when the agentd cannot be asked: there is nothing left to wait for."""
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            try:
+                await self.ensure_running(start=False)
+                reply = await self._call("list")
+            except AgentdUnavailable:
+                return True
+            if not any(child.get("id") == child_id for child in reply["children"]):
+                return True
+            if asyncio.get_running_loop().time() >= deadline:
+                logger.warning("O processo da sessão %s não saiu a tempo", child_id)
+                return False
+            await asyncio.sleep(GONE_POLL)
 
     async def aclose(self) -> None:
         await self._close_connection()

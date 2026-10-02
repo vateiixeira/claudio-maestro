@@ -2,6 +2,7 @@
 real agentd, with the fake CLI standing in for `claude`."""
 
 import asyncio
+import json
 import os
 import signal
 import sys
@@ -17,7 +18,7 @@ from claudio_maestro.agent.agentd_client import AgentdClient
 from claudio_maestro.agent.fake import FakeAgentFactory
 from claudio_maestro.agent.sdk_client import SdkAgentClient
 from claudio_maestro.agent.spawn import SpawnSpec
-from claudio_maestro.sessions import SessionManager
+from claudio_maestro.sessions import INTERRUPTED_TEXT, SessionManager
 
 FAKE_CLI = [sys.executable, str(Path(__file__).with_name("fake_cli.py"))]
 WAIT = 10  # seconds
@@ -65,6 +66,13 @@ class RestartEnv:
         while await self.agentd.list():
             if time.monotonic() > deadline:
                 raise AssertionError("the agentd still holds children")
+            await asyncio.sleep(0.05)
+
+    async def _wait_no_children_but(self, keep: str) -> None:
+        deadline = time.monotonic() + WAIT
+        while [c.id for c in await self.agentd.list()] != [keep]:
+            if time.monotonic() > deadline:
+                raise AssertionError("the agentd still holds the other children")
             await asyncio.sleep(0.05)
 
     def turn_open(self, session_id: str) -> int:
@@ -283,3 +291,99 @@ async def test_shutdown_while_connecting_leaves_no_untracked_child(env):
     assert session.client is None
     # Whatever the connect started is either gone or the one child still tracked.
     assert len(await env.agentd.list()) <= 1
+
+
+@pytest.mark.anyio
+async def test_answered_permission_is_not_asked_again_after_restart(env):
+    manager = env.manager()
+    await manager.send(env.session_id, "askslow")
+    await env.wait_state(manager, "awaiting_decision")
+    session = manager.get(env.session_id)
+    session.resolve_prompt(next(iter(session.prompts)), "allow_once")
+    await env.wait_state(manager, "running")
+    await asyncio.sleep(0.5)  # the answer reached the CLI, which is now "running the tool"
+    await manager.shutdown()
+    manager2 = env.manager()
+    await manager2.reattach_all()
+    session2 = manager2.get(env.session_id)
+    assert session2.state == "running"
+    assert not session2.prompts
+    await env.wait_state(manager2, "idle")
+    assert not session2.prompts
+    texts = [i.text for i in session2.builder.items if type(i).__name__ == "TextItem"]
+    assert texts == ["permitido"]
+    assert env.turn_open(env.session_id) == 0
+
+
+def user_line(text: str) -> str:
+    return json.dumps({"type": "user", "message": {"role": "user", "content": text},
+                       "parent_tool_use_id": None, "session_id": "s"}) + "\n"
+
+
+def notices(session) -> list[str]:
+    return [i.text for i in session.builder.items if type(i).__name__ == "NoticeItem"]
+
+
+@pytest.mark.anyio
+async def test_child_that_exited_while_the_backend_was_down_shows_why(env):
+    await start_streaming_and_detach(env)
+    child = (await env.agentd.list())[0]
+    # The CLI dies with a message on stderr while nobody is attached.
+    await env.agentd.write(child.id, user_line("exit:3"))
+    for _ in range(100):
+        if (await env.agentd.list())[0].exit_code is not None:
+            break
+        await asyncio.sleep(0.05)
+    manager2 = env.manager()
+    await manager2.reattach_all()
+    await env._wait_no_children()
+    await manager2.open(env.session_id)
+    texts = notices(manager2.get(env.session_id))
+    assert INTERRUPTED_TEXT in texts
+    assert "O agente encerrou enquanto o app reiniciava: fake failure" in texts
+
+
+@pytest.mark.anyio
+async def test_two_children_of_one_session_keep_only_the_newest(env):
+    older = await env.agentd.spawn(env.session_id, env.fake_spec())
+    newer = await env.agentd.spawn(env.session_id, env.fake_spec())
+    queue = await env.agentd.subscribe(newer, 0)
+    await env.agentd.write(newer, user_line("oi"))
+    while json.loads((await asyncio.wait_for(queue.get(), 5)).get("line", "{}")).get(
+            "type") != "result":
+        pass
+    manager = env.manager()
+    await manager.reattach_all()
+    session = manager.get(env.session_id)
+    assert session.client is not None
+    await env._wait_no_children_but(newer)
+    assert [c.id for c in await env.agentd.list()] == [newer]
+    assert older not in [c.id for c in await env.agentd.list()]
+
+
+@pytest.mark.anyio
+async def test_reattach_refuses_a_session_that_already_has_a_client(env):
+    await start_streaming_and_detach(env)
+    manager2 = env.manager()
+    await manager2.reattach_all()
+    session = manager2.get(env.session_id)
+    client = session.client
+    assert client is not None
+    child = (await env.agentd.list())[0]
+    assert await session.reattach(child) is False
+    assert session.client is client
+
+
+@pytest.mark.anyio
+async def test_error_reading_the_session_row_kills_the_child_instead_of_orphaning_it(
+    env, monkeypatch
+):
+    await start_streaming_and_detach(env)
+    manager2 = env.manager()
+
+    def boom(session_id):
+        raise RuntimeError("db is down")
+
+    monkeypatch.setattr(manager2, "_read_row", boom)
+    await manager2.reattach_all()
+    await env._wait_no_children()

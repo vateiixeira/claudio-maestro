@@ -133,3 +133,14 @@ async def test_detach_without_agentd_returns_false(tmp_path):
     client = SdkAgentClient(AgentOptions(cwd=tmp_path, session_id="x", resume=False,
                                          can_use_tool=allow), sdk_client=object())
     assert await client.detach() is False
+
+
+@pytest.mark.anyio
+async def test_close_returns_only_after_the_process_is_gone(tmp_path, agentd):
+    client = SdkAgentClient(options(tmp_path, agentd))
+    await client.connect()
+    pid = (await agentd.list())[0].pid
+    await client.close()
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+    assert await agentd.list() == []

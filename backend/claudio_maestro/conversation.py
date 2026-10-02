@@ -180,6 +180,9 @@ _THINKING_BLOCKS = {"thinking", "redacted_thinking"}
 _TOOL_BLOCKS = {"tool_use", "server_tool_use", "mcp_tool_use"}
 
 
+_BLOCK_EVENTS = {"content_block_start", "content_block_delta", "content_block_stop"}
+
+
 @dataclass
 class _Stream:
     """Streaming state of one response, per parent_tool_use_id."""
@@ -212,6 +215,8 @@ class ConversationBuilder:
         self._history_message_ids: set[str] = set()
         # Stream of a message already on disk, by parent: ignored until the next message_start.
         self._skipped_streams: set[str | None] = set()
+        # Set by `load_history(live=True)`: a replay may start in the middle of a message.
+        self._live = False
         self.init: SessionInit | None = None
         self.last_result: TurnResult | None = None
         self.rate_limit: RateLimit | None = None
@@ -280,6 +285,7 @@ class ConversationBuilder:
         """
         tool_results = tool_results or {}
         compact_uuids = compact_uuids or set()
+        self._live = self._live or live
         for entry in entries:
             if live:
                 if getattr(entry, "uuid", None):
@@ -461,6 +467,12 @@ class ConversationBuilder:
             self._streams[parent] = _Stream(message_id=message_id)
             return []
         if parent in self._skipped_streams:
+            return []
+        if self._live and parent not in self._streams and kind in _BLOCK_EVENTS:
+            # The replay began after this message's `message_start` (an earlier block was
+            # already acked): its message id is unknown, so inventing one would show the
+            # reply twice. Skip the stream; the complete message still creates the item.
+            self._skipped_streams.add(parent)
             return []
         if kind == "content_block_start":
             return self._on_block_start(parent, event)

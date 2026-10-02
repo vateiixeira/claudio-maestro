@@ -347,7 +347,8 @@ async def test_exit_does_not_wait_for_a_grandchild_holding_the_pipes(agentd, tmp
 
 
 @pytest.mark.anyio
-async def test_stop_finishes_with_a_grandchild_holding_the_pipes(tmp_path):
+async def test_stop_finishes_with_a_grandchild_holding_the_pipes(tmp_path, monkeypatch):
+    monkeypatch.setattr("claudio_maestro.agentd.server.KILL_GRACE", 0.5)
     pidfile = tmp_path / "grandchild.pid"
     server = Agentd(tmp_path, idle_exit=60, orphan_timeout=60)
     task = asyncio.create_task(server.serve())
@@ -399,4 +400,94 @@ async def test_subscribe_requires_an_integer_from(agentd, tmp_path):
     assert (await conn.call("subscribe", id=child))["ok"] is False
     assert (await conn.call("subscribe", id=child, **{"from": "0"}))["ok"] is False
     assert (await conn.call("subscribe", id=child, **{"from": 0}))["ok"] is True
+    await conn.close()
+
+
+@pytest.mark.anyio
+async def test_replay_skips_control_requests_already_answered(agentd, tmp_path):
+    conn = await Conn.open(socket_path(tmp_path))
+    child = await spawn(conn, tmp_path)
+    await conn.call("subscribe", id=child, **{"from": 0})
+    await conn.call("write", id=child, data=user("ask"))
+    seen = await lines_until(conn, lambda m: m["type"] == "control_request")
+    request = seen[-1]
+    # Not answered yet: a late subscriber still gets the request.
+    other = await Conn.open(socket_path(tmp_path))
+    await other.call("subscribe", id=child, **{"from": 0})
+    replay = await lines_until(other, lambda m: m["type"] == "control_request")
+    assert replay[-1]["request_id"] == request["request_id"]
+    await other.close()
+    response = {"type": "control_response", "response": {
+        "subtype": "success", "request_id": request["request_id"],
+        "response": {"behavior": "allow", "updatedInput": {"command": "echo hi"}}}}
+    await conn.call("write", id=child, data=json.dumps(response) + "\n")
+    await lines_until(conn, lambda m: m["type"] == "result")
+    # Answered: the replay keeps the other lines in order but not the request.
+    late = await Conn.open(socket_path(tmp_path))
+    await late.call("subscribe", id=child, **{"from": 0})
+    replay = await lines_until(late, lambda m: m["type"] == "result")
+    assert [m["type"] for m in replay] == ["system", "assistant", "assistant", "result"]
+    assert [m["pos"] for m in replay] == [0, 1, 3, 4]
+    await conn.close()
+    await late.close()
+
+
+async def spawn_cmd(conn: Conn, tmp_path: Path, cmd: list[str]) -> str:
+    reply = await conn.call("spawn", session_id="s1", cmd=cmd, cwd=str(tmp_path),
+                            env=dict(os.environ))
+    assert reply["ok"], reply
+    return reply["id"]
+
+
+@pytest.mark.anyio
+async def test_kill_closes_stdin_first_so_the_cli_exits_without_a_signal(agentd, tmp_path):
+    conn = await Conn.open(socket_path(tmp_path))
+    child = await spawn(conn, tmp_path)
+    await conn.call("subscribe", id=child, **{"from": 0})
+    assert (await conn.call("kill", id=child))["ok"]
+    ev = await wait_for_exit(conn)
+    assert ev["code"] == 0  # a SIGTERM would have given -15
+    await conn.close()
+
+
+@pytest.mark.anyio
+async def test_kill_sends_sigterm_when_stdin_eof_is_not_enough(agentd, tmp_path, monkeypatch):
+    monkeypatch.setattr("claudio_maestro.agentd.server.KILL_GRACE", 0.3)
+    conn = await Conn.open(socket_path(tmp_path))
+    child = await spawn_cmd(conn, tmp_path, ["sh", "-c", "exec sleep 30"])
+    await conn.call("subscribe", id=child, **{"from": 0})
+    await conn.call("kill", id=child)
+    assert (await wait_for_exit(conn))["code"] == -signal.SIGTERM
+    await conn.close()
+
+
+@pytest.mark.anyio
+async def test_kill_escalates_to_sigkill_for_a_child_ignoring_sigterm_and_eof(
+    agentd, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("claudio_maestro.agentd.server.KILL_GRACE", 0.3)
+    code = ("import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "print('ready', flush=True); time.sleep(60)")
+    conn = await Conn.open(socket_path(tmp_path))
+    child = await spawn_cmd(conn, tmp_path, [sys.executable, "-c", code])
+    await conn.call("subscribe", id=child, **{"from": 0})
+    while (await conn.event())["ev"] != "line":  # the handler is installed
+        pass
+    await conn.call("kill", id=child)
+    assert (await wait_for_exit(conn))["code"] == -signal.SIGKILL
+    for _ in range(100):
+        if not (await conn.call("list"))["children"]:
+            break
+        await asyncio.sleep(0.05)
+    assert (await conn.call("list"))["children"] == []
+    await conn.close()
+
+
+@pytest.mark.anyio
+async def test_kill_twice_is_harmless(agentd, tmp_path):
+    conn = await Conn.open(socket_path(tmp_path))
+    child = await spawn(conn, tmp_path)
+    assert (await conn.call("kill", id=child))["ok"]
+    reply = await conn.call("kill", id=child)
+    assert reply["ok"] or reply["error"] == "unknown child"
     await conn.close()

@@ -9,7 +9,11 @@ import pytest
 from claude_agent_sdk import CLIConnectionError, ProcessError
 from claude_agent_sdk.types import StreamEvent
 
-from claudio_maestro.agent.agentd_client import AgentdClient, AgentdUnavailable
+from claudio_maestro.agent.agentd_client import (
+    AgentdChild,
+    AgentdClient,
+    AgentdUnavailable,
+)
 from claudio_maestro.agent.agentd_transport import AgentdConnectError, AgentdTransport
 from claudio_maestro.agent.spawn import SpawnSpec
 from claudio_maestro.agentd.paths import socket_path
@@ -327,3 +331,84 @@ async def test_finished_agentd_launchers_are_reaped(tmp_path):
     await client.ensure_running()
     assert done not in client._procs and done.returncode is not None
     await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_transport_kill_returns_only_after_the_process_is_gone(agentd, tmp_path):
+    # Takes a second to wind down after its stdin closes, and ignores SIGTERM meanwhile.
+    code = ("import signal, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "sys.stdin.read(); time.sleep(1)")
+    slow = SpawnSpec(cmd=[sys.executable, "-c", code], cwd=str(tmp_path), env=dict(os.environ))
+    t = AgentdTransport(agentd, session_id="s", spawn=lambda: slow)
+    await t.connect()
+    pid = (await agentd.list())[0].pid
+    await t.kill()
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+    assert await agentd.list() == []
+
+
+@pytest.mark.anyio
+async def test_kill_after_a_lost_connection_reconnects_and_kills(agentd, tmp_path):
+    t = AgentdTransport(agentd, session_id="s", spawn=lambda: spec(tmp_path))
+    await t.connect()
+    child_id = t.child_id
+    await agentd._close_connection()  # the connection is lost; the agentd is still there
+    assert not agentd.connected
+    await agentd.kill(child_id)
+    assert agentd.connected
+    await agentd.wait_gone(child_id)
+    assert await agentd.list() == []
+
+
+@pytest.mark.anyio
+async def test_kill_does_not_start_an_agentd_that_is_not_running(tmp_path):
+    client = AgentdClient(tmp_path, idle_exit=5)
+    await client.kill("nothing")
+    assert not socket_path(tmp_path).exists()
+    assert client._procs == []
+
+
+def test_agentd_child_ignores_unknown_fields_and_defaults_stderr():
+    child = AgentdChild.from_reply({
+        "id": "c", "session_id": "s", "pid": 1, "next_pos": 2, "ack": 1, "exit_code": None,
+        "init": None, "added_by_a_newer_agentd": True})
+    assert child.id == "c" and child.stderr == []
+    exited = AgentdChild.from_reply({
+        "id": "c", "session_id": "s", "pid": 1, "next_pos": 2, "ack": 1, "exit_code": 1,
+        "init": None, "stderr": ["boom"]})
+    assert exited.stderr == ["boom"]
+
+
+@pytest.mark.anyio
+async def test_list_carries_the_stderr_tail_of_an_exited_child(agentd, tmp_path):
+    t = AgentdTransport(agentd, session_id="s", spawn=lambda: spec(tmp_path))
+    await t.connect()
+    await agentd.write(t.child_id, user("exit:3"))
+    for _ in range(100):
+        children = await agentd.list()
+        if children and children[0].exit_code is not None:
+            break
+        await asyncio.sleep(0.05)
+    assert children[0].exit_code == 3 and children[0].stderr == ["fake failure"]
+    await t.kill()
+
+
+@pytest.mark.anyio
+async def test_failed_start_is_not_retried_during_the_cooldown(tmp_path, monkeypatch):
+    monkeypatch.setattr("claudio_maestro.agent.agentd_client.START_WAIT", 0.2)
+    client = AgentdClient(tmp_path, start_cooldown=0.6)
+    starts = []
+    monkeypatch.setattr(client, "_start_server", lambda: starts.append(True))  # never comes up
+    with pytest.raises(AgentdUnavailable):
+        await client.ensure_running()
+    assert len(starts) == 1
+    loop = asyncio.get_running_loop()
+    began = loop.time()
+    with pytest.raises(AgentdUnavailable):
+        await client.ensure_running()
+    assert loop.time() - began < 0.1 and len(starts) == 1  # no wait, no new start
+    await asyncio.sleep(0.6)
+    with pytest.raises(AgentdUnavailable):
+        await client.ensure_running()
+    assert len(starts) == 2

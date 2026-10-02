@@ -26,7 +26,8 @@ logger = logging.getLogger("claudio_maestro.agentd")
 
 LOG_LIMIT_BYTES = 64 * 1024 * 1024
 STDERR_LINES = 50
-KILL_GRACE = 5.0
+KILL_GRACE = 5.0  # as the SDK: close stdin and wait, then SIGTERM and wait, then SIGKILL
+KILL_FORCE_WAIT = 2.0  # time the process gets to disappear after SIGKILL
 STREAM_LIMIT = 256 * 1024 * 1024  # one JSON line can carry many images
 WATCH_INTERVAL = 0.1
 EXIT_POLL = 0.1
@@ -53,13 +54,14 @@ class Child:
     init: Any = None
     stderr: deque[str] = field(default_factory=lambda: deque(maxlen=STDERR_LINES))
     exit_code: int | None = None
+    terminating: bool = False
     subscribers: set["Client"] = field(default_factory=set)
     done: asyncio.Event = field(default_factory=asyncio.Event)
 
     def info(self) -> dict[str, Any]:
         return {"id": self.id, "session_id": self.session_id, "pid": self.proc.pid,
                 "next_pos": self.next_pos, "ack": self.ack, "exit_code": self.exit_code,
-                "init": self.init}
+                "init": self.init, "stderr": list(self.stderr)}
 
 
 class Client:
@@ -188,7 +190,8 @@ class Agentd:
         waits = [c.done.wait() for c in self.children.values()]
         if waits:
             try:
-                await asyncio.wait_for(asyncio.gather(*waits), KILL_GRACE * 2)
+                await asyncio.wait_for(asyncio.gather(*waits),
+                                       KILL_GRACE * 2 + KILL_FORCE_WAIT + DRAIN_GRACE)
             except TimeoutError:
                 logger.warning("Alguns processos não encerraram a tempo")
 
@@ -284,7 +287,8 @@ class Agentd:
 
     async def _write(self, child: Child, data: str) -> None:
         stdin = child.proc.stdin
-        if stdin is None or child.exit_code is not None or child.proc.returncode is not None:
+        if (stdin is None or child.terminating or child.exit_code is not None
+                or child.proc.returncode is not None):
             raise RuntimeError("process has exited")
         stdin.write(data.encode())
         await stdin.drain()
@@ -312,10 +316,21 @@ class Agentd:
             client.send({"ev": "gap", "id": child.id, "from": first})
         for pos, text, _size in child.lines:
             if pos >= start:
+                if self._answered_request(child, text):
+                    continue
                 client.send({"ev": "line", "id": child.id, "pos": pos, "line": text})
         if child.exit_code is not None:
             client.send({"ev": "exit", "id": child.id, "code": child.exit_code,
                          "stderr": list(child.stderr)})
+
+    @staticmethod
+    def _answered_request(child: Child, text: str) -> bool:
+        """A logged control request the CLI no longer waits on (answered or cancelled).
+        Replaying it would ask the user again about something already decided; the
+        requests still waiting are in `child.pending` and are replayed."""
+        message = _peek(text)
+        return (message is not None and message.get("type") == "control_request"
+                and str(message.get("request_id")) not in child.pending)
 
     async def _pump_stdout(self, child: Child) -> None:
         stdout = child.proc.stdout
@@ -394,20 +409,36 @@ class Agentd:
             child.stderr.append(raw.decode(errors="replace").rstrip("\n"))
 
     def _terminate(self, child: Child) -> None:
-        if child.exit_code is None and child.proc.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                child.proc.send_signal(signal.SIGTERM)
+        """Stop the process without blocking the caller. Like the SDK's own close: stdin
+        first, so the CLI finishes writing its transcript (a SIGTERM without that grace can
+        lose the last assistant message), then SIGTERM, then SIGKILL."""
+        if child.terminating:
+            return
+        child.terminating = True
         self._background(self._reap(child))
 
-    async def _reap(self, child: Child) -> None:
+    async def _wait_exit(self, child: Child, timeout: float) -> bool:
         try:
-            await asyncio.wait_for(child.done.wait(), KILL_GRACE)
+            await asyncio.wait_for(child.proc.wait(), timeout)
         except TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
-                child.proc.kill()
-            try:
-                await asyncio.wait_for(child.done.wait(), KILL_GRACE)
-            except TimeoutError:
-                logger.warning("Sessão %s: processo %s não saiu nem com SIGKILL",
-                               child.session_id, child.proc.pid)
+            return False
+        return True
+
+    async def _reap(self, child: Child) -> None:
+        if child.exit_code is None and child.proc.returncode is None:
+            stdin = child.proc.stdin
+            if stdin is not None:
+                with contextlib.suppress(Exception):
+                    stdin.close()
+            if not await self._wait_exit(child, KILL_GRACE):
+                with contextlib.suppress(ProcessLookupError):
+                    child.proc.send_signal(signal.SIGTERM)
+                if not await self._wait_exit(child, KILL_GRACE):
+                    with contextlib.suppress(ProcessLookupError):
+                        child.proc.kill()
+                    if not await self._wait_exit(child, KILL_FORCE_WAIT):
+                        logger.warning("Sessão %s: processo %s não saiu nem com SIGKILL",
+                                       child.session_id, child.proc.pid)
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(child.done.wait(), DRAIN_GRACE * 3)
         self.children.pop(child.id, None)

@@ -186,5 +186,8 @@ class AgentdTransport(Transport):
             self._queue.put_nowait({"ev": "wake"})
 
     async def kill(self) -> None:
+        """Stop the process and return once it is gone: a new process for the same session
+        must not start while this one still writes the transcript."""
         if self.child_id is not None:
             await self._agentd.kill(self.child_id)
+            await self._agentd.wait_gone(self.child_id)

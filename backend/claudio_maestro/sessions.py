@@ -179,6 +179,8 @@ EXTERNAL_ACTIVITY_WINDOW = 60  # seconds
 HISTORY_LOAD_FAILED = "Não foi possível carregar a conversa salva desta sessão."
 HISTORY_LINES_SKIPPED = "Parte do histórico não pôde ser lida."
 INTERRUPTED_TEXT = "Interrompido: o app reiniciou enquanto o turno rodava."
+CHILD_EXITED_TEXT = "O agente encerrou enquanto o app reiniciava: {detail}"
+EXIT_DETAIL_LIMIT = 300  # characters of the last stderr line shown
 # Size of the items of a snapshot (JSON); older items beyond it are left out.
 SNAPSHOT_MAX_BYTES = 2 * 1024 * 1024
 # A file written this long after the app's own last write still counts as the app's.
@@ -785,6 +787,9 @@ class ActiveSession:
         self._plan_edits: dict[str, str] = {}
         # The last load failed: the next open tries again.
         self._history_failed = False
+        # Why the process kept by the agentd died while the app was down (its last stderr
+        # line), shown with the interrupted-turn notice.
+        self._exit_note: str | None = None
         self._on_turn_end = on_turn_end
         # Awaited after each successful connect (the manager caches the models).
         self._on_connected = on_connected
@@ -929,6 +934,8 @@ class ActiveSession:
 
     def _refresh_state(self) -> None:
         turn_open = self.pending_turns > 0 or self._autonomous_turn
+        if turn_open:
+            self._exit_note = None  # a new turn: the old death is history
         if not self._final and turn_open != self.record.turn_open:
             try:
                 self.save(turn_open=turn_open)
@@ -1089,6 +1096,8 @@ class ActiveSession:
             self.builder.load_history(entries, tool_results, compact, live=live)
             if self.record.turn_open and not self.active and not live:
                 self.builder.add_notice("warning", INTERRUPTED_TEXT)
+                if self._exit_note:
+                    self.builder.add_notice("warning", self._exit_note)
             if skipped:
                 self.builder.add_notice("warning", HISTORY_LINES_SKIPPED)
             self._history_loaded = True
@@ -2004,12 +2013,26 @@ class ActiveSession:
         self._generation += 1
         self.client = None
 
+    def note_child_exit(self, stderr: list[str]) -> None:
+        """The process the agentd kept for this session died while the app was down:
+        remember the last line it wrote, so the cause (login expired, crash) is not lost."""
+        detail = next((line.strip() for line in reversed(stderr) if line.strip()), "")
+        if not detail:
+            return
+        if len(detail) > EXIT_DETAIL_LIMIT:
+            detail = detail[:EXIT_DETAIL_LIMIT] + "…"
+        self._exit_note = CHILD_EXITED_TEXT.format(detail=detail)
+        if self._history_loaded and self.record.turn_open and not self.active:
+            self._emit_events(self.builder.add_notice("warning", self._exit_note))
+
     async def reattach(self, child: Any) -> bool:
         """Attach to a process the agentd kept across a backend restart.
 
         Returns False when it could not (the session is then failed or closed and the
         caller kills the child); a cancellation disposes the client and propagates."""
         async with self._lock:
+            if self.client is not None:
+                return False  # already attached: never replace a client that is in use
             await self.ensure_history(live=True)
             was_open = self.record.turn_open
             client = self._new_client(
@@ -3276,11 +3299,31 @@ class SessionManager:
                 logger.warning("Falha ao encerrar o processo da sessão %s: %r",
                                child.session_id, error)
 
+        # Two live children for one session (a leftover of a failed kill): keep the one
+        # that has produced the most, kill the rest. Attaching both would replace a client.
+        newest: dict[str, Any] = {}
+        for child in children:
+            if child.exit_code is None:
+                best = newest.get(child.session_id)
+                if best is None or child.next_pos >= best.next_pos:
+                    newest[child.session_id] = child
+        extra = {c.id for c in children if c.exit_code is None
+                 and newest[c.session_id].id != c.id}
+
         async def one(child: Any) -> None:
-            if child.exit_code is not None or self._read_row(child.session_id) is None:
+            try:
+                known = self._read_row(child.session_id) is not None
+                session = self.get(child.session_id) if known else None
+            except Exception as error:
+                # Leaving it alone would keep an unattached process for the session.
+                logger.warning("Falha ao ler a sessão %s: %r", child.session_id, error)
                 await kill(child)
                 return
-            session = self.get(child.session_id)
+            if session is None or child.exit_code is not None or child.id in extra:
+                if session is not None and child.exit_code is not None:
+                    session.note_child_exit(child.stderr)
+                await kill(child)
+                return
             try:
                 attached = await asyncio.wait_for(session.reattach(child), REATTACH_TIMEOUT)
             except Exception as error:  # includes TimeoutError

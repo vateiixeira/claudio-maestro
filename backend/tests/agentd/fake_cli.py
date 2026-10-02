@@ -4,6 +4,7 @@
 User message text drives it:
   "ask"        -> asks permission for Bash over a control_request, then answers
                   "permitido" or "negado" and ends the turn.
+  "askslow"    -> like "ask", but keeps "running the tool" for 3 s after the answer.
   "stream:N"   -> N text deltas (50 ms apart) of one message, then the full message.
   "exit:C"     -> writes "fake failure" to stderr and exits with code C.
   anything else -> "eco: <text>".
@@ -58,7 +59,7 @@ def stream_event(event: dict) -> None:
 def turn(text: str) -> None:
     emit({"type": "system", "subtype": "init", "uuid": str(uuid.uuid4()),
           "session_id": SESSION, "model": "fake", "permissionMode": "default"})
-    if text == "ask":
+    if text in ("ask", "askslow"):
         request_id = f"perm-{uuid.uuid4().hex[:8]}"
         tool_use_id = f"toolu_{uuid.uuid4().hex[:8]}"
         emit({"type": "assistant", "uuid": str(uuid.uuid4()), "session_id": SESSION,
@@ -76,6 +77,8 @@ def turn(text: str) -> None:
                 _answered.wait()
             answer = _responses.pop(request_id)
         allowed = (answer.get("response") or {}).get("behavior") == "allow"
+        if text == "askslow":
+            time.sleep(3)
         assistant("permitido" if allowed else "negado")
     elif text.startswith("stream:"):
         count = int(text.split(":", 1)[1])
