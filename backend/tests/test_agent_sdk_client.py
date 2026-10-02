@@ -115,6 +115,16 @@ def test_build_options_passes_settings_json(tmp_path):
     assert sdk.settings == '{"disableAllHooks": true}'
 
 
+def test_build_options_does_not_set_env_by_default(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path))
+    assert sdk.env == {}
+
+
+def test_build_options_passes_entrypoint_in_env(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, entrypoint="claudio-maestro"))
+    assert sdk.env == {"CLAUDE_CODE_ENTRYPOINT": "claudio-maestro"}
+
+
 # clean_inherited_env -------------------------------------------------------
 
 

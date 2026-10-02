@@ -96,6 +96,9 @@ def build_sdk_options(
         kwargs["setting_sources"] = options.setting_sources
     if options.settings is not None:
         kwargs["settings"] = options.settings
+    if options.entrypoint is not None:
+        # The SDK applies `env` over the inherited environment and its own default.
+        kwargs["env"] = {"CLAUDE_CODE_ENTRYPOINT": options.entrypoint}
     return ClaudeAgentOptions(**kwargs)
 
 

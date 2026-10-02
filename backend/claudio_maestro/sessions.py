@@ -118,6 +118,10 @@ PERMISSION_MODES: tuple[str, ...] = (
 # Model ids and aliases, e.g. "opus", "claude-opus-5-5", "opus[1m]".
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._\[\]-]{1,100}$")
 DEFAULT_MODEL_VALUE = "default"
+# Entrypoint written to the transcripts of the app's sessions. The editor extension
+# hides `sdk-cli`, `sdk-ts` and `sdk-py`, and the CLI turns `cli` into `sdk-cli`
+# when not interactive, so the app uses its own value.
+SESSION_ENTRYPOINT = "claudio-maestro"
 MODE_AUTO_UNAVAILABLE = "O modo Automático não está disponível para este modelo."
 MODEL_FIELDS = ("value", "displayName", "description", "supportsEffort", "supportedEffortLevels")
 # The stored models list is asked again after this long (3 times a day).
@@ -1387,6 +1391,7 @@ class ActiveSession:
                 model=None if model == DEFAULT_MODEL_VALUE else model,
                 effort=self.record.effort,
                 permission_mode=self.record.permission_mode,
+                entrypoint=SESSION_ENTRYPOINT,
             )
         )
 
