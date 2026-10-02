@@ -8,9 +8,11 @@ import { loadEverything } from '../../stores/realtime'
 import type { Effort, PermissionMode } from '../../types/api'
 import OptionMenu, { type MenuOption } from '../session/OptionMenu.vue'
 import { DEFAULT_FINISHED_AFTER_DAYS, useLayoutStore } from '../../stores/layout'
+import { UI_SCALES, setUiScale, uiScale } from '../../uiScale'
 
 const MIN_DAYS = 1
 const MAX_DAYS = 365
+const scaleLabel = (scale: number) => `${Math.floor(scale)}%`
 const DEFAULT_EDITOR = 'code'
 // Menu value of "Padrão"; it must not collide with a real option (the "default" mode, the SDK's "default" model).
 const INHERIT = 'inherit-default'
@@ -145,6 +147,32 @@ onMounted(load)
     </div>
 
     <div class="flex flex-col gap-7 px-7 py-6" :aria-busy="loading">
+      <fieldset class="m-0 flex min-w-0 flex-col gap-2 border-0 p-0" aria-describedby="pref-ui-scale-help">
+        <legend class="mb-2 p-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Tamanho do texto</legend>
+        <div class="flex flex-wrap gap-1.5">
+          <label
+            v-for="scale in UI_SCALES"
+            :key="scale"
+            data-test="ui-scale-option"
+            class="flex h-11 min-w-16 cursor-pointer items-center justify-center rounded-lg border px-3.5 text-sm font-medium has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-fg-muted"
+            :class="uiScale === scale ? 'border-line-strong bg-card text-fg' : 'border-line text-fg-muted hover:bg-card hover:text-fg'"
+          >
+            <input
+              type="radio"
+              name="ui-scale"
+              :value="scale"
+              :checked="uiScale === scale"
+              class="sr-only"
+              @change="setUiScale(scale)"
+            />
+            {{ scaleLabel(scale) }}
+          </label>
+        </div>
+        <p id="pref-ui-scale-help" class="m-0 text-xs text-fg-muted">
+          Vale só neste navegador e muda na hora. Útil em telas 4K.
+        </p>
+      </fieldset>
+
       <div class="flex flex-col gap-2">
         <label for="pref-editor" class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Comando do editor</label>
         <input

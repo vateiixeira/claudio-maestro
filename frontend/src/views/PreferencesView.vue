@@ -33,7 +33,7 @@ function onKey(event: KeyboardEvent) {
     <div class="flex w-full max-w-[720px] flex-col rounded-xl border border-line-strong bg-panel">
       <header class="flex flex-col gap-4 border-b border-line px-7 pt-6">
         <div class="flex flex-col gap-1">
-          <h1 id="preferences-title" class="m-0 text-[22px] font-semibold tracking-tight">Preferências</h1>
+          <h1 id="preferences-title" class="m-0 text-[1.375rem] font-semibold tracking-tight">Preferências</h1>
           <p class="m-0 text-fg-muted">Ajustes do app neste computador.</p>
         </div>
         <div role="tablist" aria-labelledby="preferences-title" class="-mb-px flex gap-1" @keydown="onKey">

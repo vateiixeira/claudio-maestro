@@ -186,9 +186,9 @@ function resetWidth() {
       </template>
       <template v-else>
         <section data-test="details-properties" aria-labelledby="props-title" class="flex flex-col gap-2.5">
-          <h3 id="props-title" class="m-0 font-mono text-[10.5px] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Propriedades</h3>
+          <h3 id="props-title" class="m-0 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Propriedades</h3>
           <div class="overflow-hidden rounded-lg border border-line bg-panel">
-            <dl data-test="props-session" class="m-0 grid grid-cols-[7.2rem_1fr] gap-x-3 gap-y-2 px-3 py-2.5 text-[13px]">
+            <dl data-test="props-session" class="m-0 grid grid-cols-[7.2rem_1fr] gap-x-3 gap-y-2 px-3 py-2.5 text-[0.8125rem]">
               <dt class="text-fg-muted">Estado</dt>
               <dd data-test="prop-state" class="m-0 flex items-center gap-1.5" :class="session?.display_state === 'waiting' ? (needsYou(session) ? 'font-medium text-secondary-soft' : 'text-fg-muted') : ''">
                 <DisplayStateIcon v-if="session" :display="session.display_state" :quiet="!needsYou(session)" />{{ stateText }}
@@ -200,7 +200,7 @@ function resetWidth() {
               <dt class="text-fg-muted">Última atividade</dt>
               <dd data-test="prop-activity" class="m-0">{{ session ? formatActivity(session.last_activity_at) : '' }}</dd>
             </dl>
-            <dl data-test="props-environment" class="m-0 grid grid-cols-[7.2rem_1fr] gap-x-3 gap-y-2 border-t border-line px-3 py-2.5 text-[13px]">
+            <dl data-test="props-environment" class="m-0 grid grid-cols-[7.2rem_1fr] gap-x-3 gap-y-2 border-t border-line px-3 py-2.5 text-[0.8125rem]">
               <dt class="text-fg-muted">Projeto</dt>
               <dd data-test="prop-project" class="m-0 min-w-0">
                 <RouterLink v-if="project" :to="{ name: 'project', params: { id: project.id } }" class="flex items-center gap-1.5 text-fg no-underline hover:text-fg hover:underline">
@@ -241,14 +241,14 @@ function resetWidth() {
           </div>
         </section>
         <section v-if="session && planVisible(session)" data-test="details-plan" aria-labelledby="plan-title" class="flex flex-col gap-2">
-          <h3 id="plan-title" class="m-0 font-mono text-[10.5px] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Plano</h3>
+          <h3 id="plan-title" class="m-0 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Plano</h3>
           <PlanStrip :key="sessionId" :session="session" variant="panel" />
         </section>
         <DigestSection :session-id="sessionId" />
         <section data-test="details-changes" aria-labelledby="changes-title" class="flex flex-col gap-2">
-          <h3 id="changes-title" class="m-0 flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-[0.08em] text-fg-subtle uppercase">
+          <h3 id="changes-title" class="m-0 flex items-center gap-2 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">
             Alterações
-            <span class="ml-auto text-[11.5px] font-normal normal-case tracking-normal"><span class="text-diff-add-fg">+{{ changes.total.value.added }}</span> <span class="text-diff-del-fg">−{{ changes.total.value.removed }}</span></span>
+            <span class="ml-auto text-[0.71875rem] font-normal normal-case tracking-normal"><span class="text-diff-add-fg">+{{ changes.total.value.added }}</span> <span class="text-diff-del-fg">−{{ changes.total.value.removed }}</span></span>
           </h3>
           <ChangesList
             :groups="changes.groups.value"

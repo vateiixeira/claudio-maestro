@@ -16,7 +16,7 @@ const percent = computed(() => (plan.value && plan.value.total > 0 ? Math.round(
     v-if="plan"
     data-test="plan-badge"
     role="img"
-    class="inline-flex shrink-0 items-center gap-1.5 font-mono text-[11px] text-fg-subtle"
+    class="inline-flex shrink-0 items-center gap-1.5 font-mono text-[0.6875rem] text-fg-subtle"
     :title="planPosition(plan)"
     :aria-label="planPosition(plan)"
   >

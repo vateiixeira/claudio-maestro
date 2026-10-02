@@ -177,7 +177,7 @@ function choose(value: string) {
       aria-haspopup="menu"
       :aria-expanded="open"
       :disabled="disabled"
-      class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
+      class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-2.5 text-[0.8125rem] focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
       :class="highlight ? 'border-secondary/60 bg-secondary-tint text-secondary' : 'border-line text-fg-muted hover:text-fg'"
       @click="toggle"
       @keydown="onTriggerKey"

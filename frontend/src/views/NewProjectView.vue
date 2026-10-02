@@ -144,7 +144,7 @@ function cancel(): void {
       @submit.prevent="submit"
     >
       <header class="flex flex-col gap-1 border-b border-line px-7 pt-6 pb-5">
-        <h1 id="new-project-title" class="m-0 text-[22px] font-semibold tracking-tight">Novo projeto</h1>
+        <h1 id="new-project-title" class="m-0 text-[1.375rem] font-semibold tracking-tight">Novo projeto</h1>
         <p class="m-0 text-fg-muted">
           Um projeto aponta para uma pasta. As sessões rodam nela e enxergam tudo o que estiver dentro.
         </p>

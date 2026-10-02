@@ -65,7 +65,7 @@ function toggle(file: RepoFile): void {
       data-test="file-group"
       class="flex flex-col gap-1"
     >
-      <h4 data-test="file-group-title" class="m-0 font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</h4>
+      <h4 data-test="file-group-title" class="m-0 font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</h4>
       <ul class="m-0 flex list-none flex-col p-0">
         <li v-for="file in group.files" :key="keyOf(file)" data-test="file-row" class="flex flex-col">
           <button

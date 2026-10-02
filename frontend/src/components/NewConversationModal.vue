@@ -444,7 +444,7 @@ function onKeydown(event: KeyboardEvent) {
             <div v-for="image in images" :key="image.id" data-test="attachment-draft" class="flex items-center gap-2.5 rounded-lg border border-line-strong bg-card p-1.5">
               <img :src="image.url" alt="" class="size-11 rounded-md bg-line object-cover" />
               <div class="flex min-w-0 flex-col">
-                <span class="max-w-40 truncate text-[13px] font-medium">{{ image.name }}</span>
+                <span class="max-w-40 truncate text-[0.8125rem] font-medium">{{ image.name }}</span>
                 <span class="text-xs text-fg-muted">{{ formatSize(image.size) }}</span>
               </div>
               <button type="button" :aria-label="`Remover imagem ${image.name}`" class="flex size-11 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-fg-muted hover:bg-elevated hover:text-fg" @click="removeImage(image.id)">

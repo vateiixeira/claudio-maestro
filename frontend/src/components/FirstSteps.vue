@@ -5,7 +5,7 @@ import { RouterLink } from 'vue-router'
 <template>
   <div data-test="first-steps" class="flex max-w-md flex-col gap-5">
     <div class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Primeiros passos</div>
-    <h2 class="m-0 text-[28px] font-semibold tracking-tight">Nenhum projeto ainda</h2>
+    <h2 class="m-0 text-[1.75rem] font-semibold tracking-tight">Nenhum projeto ainda</h2>
     <ol class="m-0 flex list-none flex-col gap-3 p-0 text-fg-muted">
       <li class="flex gap-3">
         <span class="font-mono text-fg-subtle">1</span>

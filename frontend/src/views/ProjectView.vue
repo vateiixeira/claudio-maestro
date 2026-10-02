@@ -226,9 +226,9 @@ async function remove(): Promise<void> {
           </form>
           <div v-else class="flex min-w-0 items-center gap-3">
             <span class="size-3.5 shrink-0 rounded-[4px]" :style="{ backgroundColor: project.color }" />
-            <h1 class="m-0 truncate text-[28px] font-semibold tracking-tight">{{ project.name }}</h1>
+            <h1 class="m-0 truncate text-[1.75rem] font-semibold tracking-tight">{{ project.name }}</h1>
           </div>
-          <div class="font-mono text-[13px] break-all text-fg-subtle">{{ project.path }}</div>
+          <div class="font-mono text-[0.8125rem] break-all text-fg-subtle">{{ project.path }}</div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -366,7 +366,7 @@ async function remove(): Promise<void> {
         <h2 v-if="hasGroups && ungrouped.length" id="ungrouped-title" data-test="ungrouped-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Sem agrupador</h2>
         <section v-for="group in dateGroups" :key="group.label" :aria-label="group.label" class="flex flex-col">
           <div class="flex items-center gap-3 py-2">
-            <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
+            <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
           </div>
           <ConversationRow
             v-for="s in group.sessions"

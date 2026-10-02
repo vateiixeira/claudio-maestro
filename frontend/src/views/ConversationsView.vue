@@ -109,7 +109,7 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
     <template v-else>
       <section v-for="group in dateGroups" :key="group.label" :aria-label="group.label" class="flex flex-col">
         <div class="flex items-center gap-3 py-2">
-          <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
+          <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
         </div>
         <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" @error="error = $event" />
       </section>

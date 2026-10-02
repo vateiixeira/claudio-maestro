@@ -359,7 +359,7 @@ function resolvePrompt(promptId: string) {
         >
           <div class="mx-auto flex h-11 w-full max-w-[760px] items-center gap-2.5 px-4">
             <span class="cap shrink-0 text-fg-subtle">Turno {{ currentTurn + 1 }} de {{ turns.length }}</span>
-            <span class="min-w-0 grow truncate text-[13px] text-fg">{{ currentTurnText }}</span>
+            <span class="min-w-0 grow truncate text-[0.8125rem] text-fg">{{ currentTurnText }}</span>
             <button
               type="button"
               aria-label="Turno anterior"
@@ -441,7 +441,7 @@ function resolvePrompt(promptId: string) {
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-primary" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
                 <span class="cap text-primary-soft">Turno concluído</span>
-                <span class="font-mono text-[11px] text-fg-muted">{{ summary }}</span>
+                <span class="font-mono text-[0.6875rem] text-fg-muted">{{ summary }}</span>
               </div>
             </div>
           </template>
@@ -481,7 +481,7 @@ function resolvePrompt(promptId: string) {
           v-if="unseen"
           type="button"
           data-test="jump-to-end"
-          class="absolute bottom-3 left-1/2 z-20 flex min-h-8 -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[13px] font-medium shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          class="absolute bottom-3 left-1/2 z-20 flex min-h-8 -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[0.8125rem] font-medium shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           :class="jumpLabel === 'Pedido abaixo' ? 'border-secondary bg-secondary text-secondary-fg hover:bg-secondary-soft' : 'border-line-strong bg-card text-fg hover:bg-elevated'"
           @click="jumpToEnd"
         >

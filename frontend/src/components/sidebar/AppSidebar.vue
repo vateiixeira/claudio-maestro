@@ -106,7 +106,7 @@ const itemClass = sidebarItemClass
 </script>
 
 <template>
-  <nav aria-label="Navegação" :style="{ width: `${sidebarWidth}px` }" class="relative flex h-full shrink-0 flex-col border-r border-line bg-bg text-[13.5px]">
+  <nav aria-label="Navegação" :style="{ width: `${sidebarWidth}px` }" class="relative flex h-full shrink-0 flex-col border-r border-line bg-bg text-[0.84375rem]">
     <div
       data-test="sidebar-resize"
       role="separator"
@@ -127,7 +127,7 @@ const itemClass = sidebarItemClass
     />
     <RouterLink to="/inbox" class="flex min-h-11 items-center gap-2 px-4 pt-3 pb-1.5 text-fg no-underline">
       <BrandMark />
-      <span class="text-[15px] font-semibold tracking-tight">Cláudio Maestro</span>
+      <span class="text-[0.9375rem] font-semibold tracking-tight">Cláudio Maestro</span>
     </RouterLink>
 
     <div class="flex flex-col gap-1.5 px-2.5 pb-2.5">
@@ -139,7 +139,7 @@ const itemClass = sidebarItemClass
       >
         <span class="text-primary"><IconPlus :size="15" /></span>
         <span class="grow">Nova conversa</span>
-        <kbd class="rounded border border-line-strong px-1.5 font-mono text-[11px] text-fg-subtle">C</kbd>
+        <kbd class="rounded border border-line-strong px-1.5 font-mono text-[0.6875rem] text-fg-subtle">C</kbd>
       </button>
       <SessionSearch />
     </div>
@@ -162,7 +162,7 @@ const itemClass = sidebarItemClass
 
     <div class="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto border-t border-line px-2.5 pt-1.5 pb-2">
       <div class="flex h-[30px] items-center pr-1 pl-2.5">
-        <span class="grow font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase">Projetos</span>
+        <span class="grow font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase">Projetos</span>
         <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-[26px] items-center justify-center rounded-md text-fg-subtle no-underline hover:bg-card hover:text-fg"><IconPlus :size="13" /></RouterLink>
       </div>
       <p v-if="projects.loadError" class="px-2.5 py-2 text-xs text-diff-del-fg" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
@@ -184,7 +184,7 @@ const itemClass = sidebarItemClass
                   v-if="showsBranch(project)"
                   data-test="project-branch"
                   :title="repoLabel(git.reposFor(project.id)[0]!)"
-                  class="min-w-0 truncate font-mono text-[11px] text-fg-subtle"
+                  class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
                 >{{ repoLabel(git.reposFor(project.id)[0]!) }}</span>
               </span>
               <span v-if="!project.available" class="text-xs text-fg-subtle">pasta indisponível</span>

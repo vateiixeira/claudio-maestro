@@ -163,11 +163,11 @@ async function openProject() {
         data-test="title-input"
         aria-label="Título da conversa"
         maxlength="200"
-        class="h-9 min-w-0 grow rounded-md border border-line-strong bg-elevated px-2.5 text-[17px] font-semibold text-fg outline-none focus:border-fg-muted"
+        class="h-9 min-w-0 grow rounded-md border border-line-strong bg-elevated px-2.5 text-[1.0625rem] font-semibold text-fg outline-none focus:border-fg-muted"
         @keydown.enter.prevent="saveRename"
         @keydown.esc.prevent="editing = false"
       />
-      <h1 v-else class="m-0 min-w-0 grow text-[17px] leading-snug font-semibold tracking-tight">
+      <h1 v-else class="m-0 min-w-0 grow text-[1.0625rem] leading-snug font-semibold tracking-tight">
         <button
           type="button"
           data-test="conversation-title"

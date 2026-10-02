@@ -77,7 +77,7 @@ onMounted(() => load())
   <div class="flex min-w-0 flex-col gap-2.5">
     <div class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Escolha a pasta</div>
 
-    <div class="flex min-w-0 items-center gap-1 font-mono text-[13px]">
+    <div class="flex min-w-0 items-center gap-1 font-mono text-[0.8125rem]">
       <button
         type="button"
         data-test="dir-up"

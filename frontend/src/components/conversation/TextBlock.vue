@@ -42,7 +42,7 @@ onBeforeUnmount(() => clearTimeout(timer))
         aria-label="Escrevendo"
       />
     </div>
-    <div v-if="!item.streaming" class="mt-1 flex items-center gap-2 text-[11px]" :class="bubble ? 'pl-1' : ''">
+    <div v-if="!item.streaming" class="mt-1 flex items-center gap-2 text-[0.6875rem]" :class="bubble ? 'pl-1' : ''">
       <button
         type="button"
         data-test="copy"

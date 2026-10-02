@@ -43,7 +43,7 @@ function toggleRow(id: string) {
           v-for="chip in chips"
           :key="chip"
           data-test="group-chip"
-          class="rounded border border-line px-1.5 py-px font-mono text-[11px] text-fg-muted"
+          class="rounded border border-line px-1.5 py-px font-mono text-[0.6875rem] text-fg-muted"
         >{{ chip }}</span>
       </span>
       <span class="flex shrink-0 items-center gap-1 text-xs text-fg-subtle">{{ open ? 'Recolher' : 'Ver' }}<IconChevron :open="open" :size="12" /></span>
@@ -68,7 +68,7 @@ function toggleRow(id: string) {
           <span class="min-w-0 grow truncate font-mono text-xs text-fg">{{ row.target }}</span>
           <span
             v-if="row.meta"
-            class="max-w-[45%] shrink-0 truncate font-mono text-[11px]"
+            class="max-w-[45%] shrink-0 truncate font-mono text-[0.6875rem]"
             :class="row.meta === 'rodando…' ? 'animate-pulse text-primary-soft' : 'text-fg-subtle'"
           >{{ row.meta }}</span>
         </button>

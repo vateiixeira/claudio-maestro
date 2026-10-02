@@ -187,7 +187,7 @@ async function interrupt() {
       >
         <img :src="image.url" alt="" class="size-11 rounded-md bg-line object-cover" />
         <div class="flex min-w-0 flex-col">
-          <span class="max-w-40 truncate text-[13px] font-medium">{{ image.name }}</span>
+          <span class="max-w-40 truncate text-[0.8125rem] font-medium">{{ image.name }}</span>
           <span class="text-xs text-fg-subtle">{{ formatSize(image.size) }}</span>
         </div>
         <button

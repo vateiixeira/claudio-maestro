@@ -3,6 +3,7 @@ import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-u
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import GeneralPreferences from '../GeneralPreferences.vue'
 import { jsonResponse, routeFetch } from '../../../test/factories'
+import { setUiScale, uiScale } from '../../../uiScale'
 
 enableAutoUnmount(afterEach)
 
@@ -18,6 +19,9 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   puts = []
+  setUiScale(100)
+  localStorage.clear()
+  document.documentElement.style.fontSize = ''
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -154,5 +158,62 @@ describe('preferências gerais: padrões das conversas novas', () => {
     expect(trigger(w, 'pref-new-model').text()).toBe('Padrão')
     expect(trigger(w, 'pref-new-effort').text()).toBe('Raciocínio padrão')
     expect(trigger(w, 'pref-new-mode').text()).toBe('Modo padrão')
+  })
+})
+
+describe('preferências gerais: tamanho do texto', () => {
+  const options = (w: Tab) => w.findAll('[data-test="ui-scale-option"]')
+  const radio = (w: Tab, label: string) => {
+    const opt = options(w).find((o) => o.text() === label)
+    expect(opt, `opção ${label}`).toBeDefined()
+    return opt!.find('input[type="radio"]')
+  }
+
+  it('mostra as seis opções, com 100% marcado por padrão', async () => {
+    stub({})
+    const w = await mountTab()
+    expect(options(w).map((o) => o.text())).toEqual(['90%', '100%', '112%', '125%', '137%', '150%'])
+    expect(w.findAll('input[type="radio"][name="ui-scale"]')).toHaveLength(6)
+    const checked = w.findAll('input[name="ui-scale"]').filter((i) => (i.element as HTMLInputElement).checked)
+    expect(checked).toHaveLength(1)
+    expect((radio(w, '100%').element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('marca o tamanho atual', async () => {
+    setUiScale(137.5)
+    stub({})
+    const w = await mountTab()
+    expect((radio(w, '137%').element as HTMLInputElement).checked).toBe(true)
+    expect((radio(w, '100%').element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('escolher 125% aplica e guarda na hora, sem chamar a API de salvar', async () => {
+    stub({})
+    const w = await mountTab()
+    await radio(w, '125%').setValue(true)
+    expect(uiScale.value).toBe(125)
+    expect(document.documentElement.style.fontSize).toBe('125%')
+    expect(localStorage.getItem('maestro:ui-scale')).toBe('125')
+    expect(puts).toEqual([])
+    expect((radio(w, '125%').element as HTMLInputElement).checked).toBe(true)
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(puts[0]).not.toHaveProperty('ui_scale')
+  })
+
+  it('funciona mesmo quando as preferências do servidor não carregaram', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/state': () => jsonResponse({ detail: 'Banco indisponível.' }, 500),
+      'GET /api/models': () => jsonResponse(MODELS),
+    }))
+    const w = await mountTab()
+    expect(w.find('[role="alert"]').exists()).toBe(true)
+    expect(w.find('[data-test="save"]').attributes('disabled')).toBeDefined()
+    const input = radio(w, '150%')
+    expect(input.attributes('disabled')).toBeUndefined()
+    expect(w.find('fieldset[disabled] input[name="ui-scale"]').exists()).toBe(false)
+    await input.setValue(true)
+    expect(document.documentElement.style.fontSize).toBe('150%')
+    expect(localStorage.getItem('maestro:ui-scale')).toBe('150')
   })
 })

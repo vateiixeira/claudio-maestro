@@ -13,7 +13,7 @@ function commitTime(date: string): string {
 
 <template>
   <section class="flex flex-col gap-1.5" aria-label="Últimos commits">
-    <h4 class="m-0 font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase">Últimos commits</h4>
+    <h4 class="m-0 font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase">Últimos commits</h4>
     <p v-if="commits.length === 0" class="m-0 text-sm text-fg-muted">Sem commits</p>
     <ul v-else class="m-0 flex list-none flex-col p-0">
       <li

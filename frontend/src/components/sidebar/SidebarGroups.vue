@@ -36,7 +36,7 @@ const rowClass = 'flex min-h-[30px] items-center gap-2 rounded-lg px-2 no-underl
       >
         <IconChevron :open="!isCollapsed('group', item.group.id)" :size="12" />
         <IconGroup :size="12" class="shrink-0" />
-        <span class="min-w-0 grow truncate text-[13px]">{{ item.group.name }}</span>
+        <span class="min-w-0 grow truncate text-[0.8125rem]">{{ item.group.name }}</span>
         <span v-if="item.waiting" data-test="group-waiting" class="flex items-center gap-1 text-xs text-secondary">
           <DisplayStateIcon display="waiting" :size="11" />{{ item.waiting }}
         </span>
@@ -51,12 +51,12 @@ const rowClass = 'flex min-h-[30px] items-center gap-2 rounded-lg px-2 no-underl
           :class="[rowClass, 'pl-7', isCurrent(s.session_id) ? 'bg-card text-fg' : 'text-fg-muted hover:text-fg']"
         >
           <DisplayStateIcon :display="s.display_state" :size="11" :quiet="isQuietSession(s)" />
-          <span class="min-w-0 grow truncate text-[13px]">{{ s.title }}</span>
+          <span class="min-w-0 grow truncate text-[0.8125rem]">{{ s.title }}</span>
           <span
             v-if="s.display_state === 'waiting'"
             data-test="row-age"
             :title="`Última interação ${formatActivity(s.last_activity_at)}`"
-            class="shrink-0 font-mono text-[11px] text-fg-subtle tabular-nums"
+            class="shrink-0 font-mono text-[0.6875rem] text-fg-subtle tabular-nums"
           >{{ formatElapsedShort(s.last_activity_at, now) }}</span>
         </RouterLink>
       </template>
@@ -71,7 +71,7 @@ const rowClass = 'flex min-h-[30px] items-center gap-2 rounded-lg px-2 no-underl
     >
       <span aria-hidden="true" class="w-3" />
       <IconGroup :size="12" class="shrink-0" />
-      <span class="min-w-0 grow truncate text-[13px]">{{ g.name }}</span>
+      <span class="min-w-0 grow truncate text-[0.8125rem]">{{ g.name }}</span>
     </RouterLink>
   </div>
 </template>

@@ -101,7 +101,7 @@ onBeforeUnmount(() => {
         type="search"
         placeholder="Procurar sessões"
         autocomplete="off"
-        class="h-8 min-w-0 grow border-none bg-transparent text-[13.5px] text-fg outline-none placeholder:text-fg-muted"
+        class="h-8 min-w-0 grow border-none bg-transparent text-[0.84375rem] text-fg outline-none placeholder:text-fg-muted"
         @keydown.enter.prevent="onEnter"
         @keydown.esc.prevent="clear"
       />
@@ -120,7 +120,7 @@ onBeforeUnmount(() => {
         class="flex min-h-11 w-full cursor-pointer flex-col gap-0.5 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
         @click="open(session)"
       >
-        <span class="w-full truncate text-[13px] font-medium">{{ session.title }}</span>
+        <span class="w-full truncate text-[0.8125rem] font-medium">{{ session.title }}</span>
         <span class="flex w-full items-center gap-1.5 text-xs text-fg-muted">
           <span
             class="size-2 shrink-0 rounded-[2px]"

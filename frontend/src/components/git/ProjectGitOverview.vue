@@ -98,7 +98,7 @@ function isCollapsed(repo: RepoDetails): boolean {
       class="flex flex-col gap-3 rounded-lg border border-line bg-panel px-4 py-3"
     >
       <header class="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span data-test="repo-name" class="min-w-0 font-mono text-[13px] font-semibold">{{ repoName(repo) }}</span>
+        <span data-test="repo-name" class="min-w-0 font-mono text-[0.8125rem] font-semibold">{{ repoName(repo) }}</span>
         <BranchLabel :text="branchText(repo)" :muted="!!repo.error" />
         <template v-if="!repo.error">
           <span

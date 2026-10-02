@@ -20,7 +20,7 @@ const collapsed = computed(() => isSectionCollapsed('open'))
       type="button"
       data-test="open-toggle"
       :aria-expanded="!collapsed"
-      class="mt-2.5 flex h-[30px] w-full items-center gap-1.5 rounded-md border-none bg-transparent px-2.5 text-left font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+      class="mt-2.5 flex h-[30px] w-full items-center gap-1.5 rounded-md border-none bg-transparent px-2.5 text-left font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
       @click="setSectionCollapsed('open', !collapsed)"
     >
       <IconChevron :open="!collapsed" :size="12" />

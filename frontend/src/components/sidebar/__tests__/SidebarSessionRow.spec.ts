@@ -112,7 +112,7 @@ describe('linha de conversa do menu', () => {
     const quiet = await mountRow({ session_id: 'q', display_state: 'waiting', unread: false }, '/inbox', { nested: true })
     expect(quiet.classes()).toContain('min-h-7')
     expect(quiet.classes()).toContain('text-fg-subtle')
-    expect(quiet.find('[data-test="row-title"]').classes()).toContain('text-[12.5px]')
+    expect(quiet.find('[data-test="row-title"]').classes()).toContain('text-[0.78125rem]')
   })
 
   it('aninhada: fica mais clara quando pede você ou está rodando', async () => {

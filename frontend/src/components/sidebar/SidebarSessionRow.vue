@@ -28,12 +28,12 @@ const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.va
     :aria-current="active ? 'page' : undefined"
   >
     <DisplayStateIcon :display="session.display_state" :size="nested ? 10 : 11" :quiet="isQuietSession(session)" />
-    <span data-test="row-title" :class="['min-w-0 grow truncate', nested ? 'text-[12.5px]' : 'text-[13px]']">{{ session.title }}</span>
+    <span data-test="row-title" :class="['min-w-0 grow truncate', nested ? 'text-[0.78125rem]' : 'text-[0.8125rem]']">{{ session.title }}</span>
     <span
       v-if="age"
       data-test="row-age"
       :title="`Última interação ${formatActivity(session.last_activity_at)}`"
-      class="shrink-0 font-mono text-[11px] text-fg-subtle tabular-nums"
+      class="shrink-0 font-mono text-[0.6875rem] text-fg-subtle tabular-nums"
     >{{ age }}</span>
     <span
       v-if="project && !hideProject"
