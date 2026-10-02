@@ -67,6 +67,14 @@ describe('nodeKind', () => {
     expect(nodeKind(tool('a', 'Agent', {}, { subagent: { ...sub, status: 'running' } }), true)).toBe('running')
     expect(nodeKind(tool('a', 'Agent', {}, { subagent: { ...sub, status: 'failed' } }), false)).toBe('error')
   })
+
+  it('Bash em background segue o status da tarefa, não o resultado do lançamento', () => {
+    const result = { content: 'Command running in background with ID: b1.', is_error: false, details: null }
+    const bg = (status: 'running' | 'completed' | 'failed' | 'stopped') => ({ task_id: 'b1', status, summary: null })
+    expect(nodeKind(tool('b', 'Bash', {}, { result, background: bg('running') }), false)).toBe('running')
+    expect(nodeKind(tool('b', 'Bash', {}, { result, background: bg('completed') }), true)).toBe('bash')
+    expect(nodeKind(tool('b', 'Bash', {}, { result, background: bg('failed') }), false)).toBe('error')
+  })
 })
 
 describe('grupos de ações', () => {

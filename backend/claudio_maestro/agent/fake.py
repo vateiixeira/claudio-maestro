@@ -668,3 +668,81 @@ def task_notification_message(
         session_id=session_id, tool_use_id=tool_use_id,
         usage=usage,  # type: ignore[arg-type]
     )
+
+
+# Bash in the background ----------------------------------------------------
+
+
+def bash_task_started_message(
+    session_id: str,
+    task_id: str,
+    tool_use_id: str,
+    *,
+    description: str = "sleep 8; echo done",
+    is_backgrounded: bool = True,
+) -> TaskStartedMessage:
+    """`task_started` the CLI sends for a Bash call run with `run_in_background`."""
+    data = {
+        "type": "system", "subtype": "task_started", "session_id": session_id,
+        "task_id": task_id, "tool_use_id": tool_use_id, "description": description,
+        "is_backgrounded": is_backgrounded, "task_type": "local_bash",
+    }
+    return TaskStartedMessage(
+        subtype="task_started", data=data, task_id=task_id, description=description,
+        uuid=str(uuid.uuid4()), session_id=session_id, tool_use_id=tool_use_id,
+        task_type="local_bash",
+    )
+
+
+def bash_task_notification_message(
+    session_id: str,
+    task_id: str,
+    tool_use_id: str,
+    *,
+    status: str = "completed",
+    summary: str = 'Background command "sleep 8; echo done" completed (exit code 0)',
+) -> TaskNotificationMessage:
+    """`task_notification` of a background Bash: no usage, an output file."""
+    output_file = f"/tmp/tasks/{task_id}.output"
+    data = {
+        "type": "system", "subtype": "task_notification", "session_id": session_id,
+        "task_id": task_id, "tool_use_id": tool_use_id, "status": status,
+        "summary": summary, "output_file": output_file,
+    }
+    return TaskNotificationMessage(
+        subtype="task_notification", data=data, task_id=task_id,
+        status=status,  # type: ignore[arg-type]
+        output_file=output_file, summary=summary, uuid=str(uuid.uuid4()),
+        session_id=session_id, tool_use_id=tool_use_id,
+    )
+
+
+def background_bash_turn(
+    session_id: str,
+    *,
+    tool_use_id: str = "toolu_bash",
+    task_id: str = "bg-1",
+    command: str = "sleep 8; echo done",
+) -> list[Message]:
+    """The messages of a turn that starts a Bash command in the background and
+    ends while it still runs (the order the SDK 0.2.161 was seen to use)."""
+    return [
+        init_message(session_id),
+        *response_messages(
+            session_id,
+            [ToolUseBlock(id=tool_use_id, name="Bash",
+                          input={"command": command, "run_in_background": True})],
+            stop_reason="tool_use",
+        ),
+        background_tasks_changed_message(
+            session_id,
+            [{"task_id": task_id, "task_type": "local_bash", "description": command}],
+        ),
+        bash_task_started_message(session_id, task_id, tool_use_id, description=command),
+        tool_result_message(
+            tool_use_id,
+            f"Command running in background with ID: {task_id}. "
+            f"Output is being written to: /tmp/tasks/{task_id}.output",
+        ),
+        result_message(session_id),
+    ]
