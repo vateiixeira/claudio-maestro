@@ -32,7 +32,7 @@ const collapsed = computed(() => isSectionCollapsed('open'))
       <RouterLink
         v-if="open.length > OPEN_MAX"
         data-test="open-all"
-        to="/sessions"
+        to="/sessions?estado=ativas"
         class="px-2.5 py-1 text-xs text-fg-subtle no-underline hover:text-fg"
       >Ver todas</RouterLink>
     </template>

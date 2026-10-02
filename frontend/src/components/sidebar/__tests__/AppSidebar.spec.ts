@@ -51,7 +51,9 @@ describe('menu lateral', () => {
       makeSession({ session_id: 'c', display_state: 'running' }),
       makeSession({ session_id: 'd', display_state: 'waiting', unread: false }),
     ])
-    expect(mountSidebar().find('[data-test="inbox-count"]').text()).toBe('2')
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="inbox-count"]').text()).toBe('2')
+    expect(wrapper.find('[data-test="nav-inbox"] .sr-only').text()).toContain('aguardando você')
   })
 
   it('não conta na Inbox nem no projeto a espera comum, sem novidade', () => {
@@ -75,6 +77,23 @@ describe('menu lateral', () => {
     expect(project.find('[data-test="project-name"]').text()).toBe('loja-online')
     expect(project.find('[data-test="project-branch"]').text()).toContain('develop')
     expect(project.find('[data-test="project-waiting"]').text()).toContain('1')
+    expect(project.find('[data-test="project-waiting"] .sr-only').text()).toContain('aguardando você')
+  })
+
+  it('o nome só é limitado a 60% quando a branch aparece ao lado', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'sem-git' }), makeProject({ id: 2, name: 'com-git' })]
+    useGitStore(pinia).set(1, [])
+    useGitStore(pinia).set(2, [makeGitRepo({ branch: 'develop' })])
+    const [plain, withBranch] = mountSidebar().findAll('[data-test="project"]')
+    const plainName = plain!.find('[data-test="project-name"]')
+    expect(plain!.find('[data-test="project-branch"]').exists()).toBe(false)
+    expect(plainName.classes()).toContain('truncate')
+    expect(plainName.classes()).not.toContain('max-w-[60%]')
+    expect(plainName.classes()).not.toContain('shrink-0')
+    const branchName = withBranch!.find('[data-test="project-name"]')
+    expect(withBranch!.find('[data-test="project-branch"]').exists()).toBe(true)
+    expect(branchName.classes()).toContain('max-w-[60%]')
+    expect(branchName.classes()).toContain('shrink-0')
   })
 
   it('mostra as conversas abertas numa lista só, sem repetir', () => {
@@ -200,6 +219,15 @@ describe('menu lateral em árvore', () => {
     expect(mountSidebar().find('[data-test="project-toggle"]').exists()).toBe(false)
   })
 
+  it('a seta tem alvo de 24px e o projeto sem filhos reserva o mesmo espaço', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 }), makeProject({ id: 2, name: 'blog' })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    const w = mountSidebar()
+    expect(w.find('[data-test="project-toggle"]').classes()).toContain('size-6')
+    const spacer = w.findAll('[data-test="project"]')[1]!.element.previousElementSibling!
+    expect(spacer.classList.contains('w-6')).toBe(true)
+  })
+
   it('mostra as conversas abertas do projeto logo abaixo dele, recuadas, na ordem de Abertas', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' }), makeProject({ id: 2, name: 'blog' })]
     const sessions = useSessionsStore(pinia)
@@ -214,7 +242,7 @@ describe('menu lateral em árvore', () => {
     const blocks = w.findAll('[data-test="project-sessions"]')
     expect(blocks).toHaveLength(2)
     expect(blocks[0]!.findAll('[data-test="project-session"]').map((r) => r.find('[data-test="row-title"]').text())).toEqual(['Pede', 'Roda', 'Quieta'])
-    expect(blocks[0]!.classes()).toContain('pl-5')
+    expect(blocks[0]!.classes()).toContain('pl-6')
     expect(blocks[0]!.find('[data-test="row-project"]').exists()).toBe(false)
     expect(blocks[1]!.find('[data-test="row-title"]').text()).toBe('Do blog')
     const projects = w.findAll('[data-test="project"]')

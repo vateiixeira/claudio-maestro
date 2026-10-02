@@ -18,7 +18,7 @@ import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import type { Session } from '../../types/api'
+import type { Project, Session } from '../../types/api'
 import IconChat from '../icons/IconChat.vue'
 import IconChevron from '../icons/IconChevron.vue'
 import IconDashboard from '../icons/IconDashboard.vue'
@@ -43,12 +43,21 @@ function waitingIn(projectId: number): number {
 function runningIn(projectId: number): boolean {
   return sessions.forProject(projectId).some((s) => s.display_state === 'running')
 }
-// Open conversations of the project outside its groups, in "Abertas" order; grouped ones show under their group.
-function looseIn(projectId: number): Session[] {
-  return looseOpenSessions(sessions.all, projectId, new Set(groups.forProject(projectId).map((g) => g.id)))
-}
+// Open conversations of each project outside its groups, in "Abertas" order; grouped ones show under their group.
+// Built once per change so the template reads it instead of recomputing per project.
+const looseByProject = computed(() => {
+  const map = new Map<number, Session[]>()
+  for (const p of projects.projects) {
+    map.set(p.id, looseOpenSessions(sessions.all, p.id, new Set(groups.forProject(p.id).map((g) => g.id))))
+  }
+  return map
+})
 function hasChildren(projectId: number): boolean {
-  return groups.forProject(projectId).length > 0 || looseIn(projectId).length > 0
+  return groups.forProject(projectId).length > 0 || (looseByProject.value.get(projectId)?.length ?? 0) > 0
+}
+// The branch label only renders for an available project inside a git repository.
+function showsBranch(project: Project): boolean {
+  return project.available && Boolean(git.reposFor(project.id)[0])
 }
 // The project being looked at, directly or through one of its conversations.
 const activeProjectId = computed<number | null>(() => {
@@ -93,7 +102,7 @@ const itemClass = sidebarItemClass
         <IconInbox />
         <span class="grow">Inbox</span>
         <span v-if="waitingCount" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-secondary">
-          <DisplayStateIcon display="waiting" :size="11" /><span data-test="inbox-count">{{ waitingCount }}</span>
+          <DisplayStateIcon display="waiting" :size="11" /><span data-test="inbox-count">{{ waitingCount }}</span><span class="sr-only"> aguardando você</span>
         </span>
       </RouterLink>
       <RouterLink to="/dashboard" data-test="nav-dashboard" :class="itemClass(route.name === 'dashboard')" :aria-current="route.name === 'dashboard' ? 'page' : undefined">
@@ -119,10 +128,10 @@ const itemClass = sidebarItemClass
             data-test="project-toggle"
             :aria-expanded="!isCollapsed('project', project.id)"
             :aria-label="`${isCollapsed('project', project.id) ? 'Expandir' : 'Recolher'} ${project.name}`"
-            class="flex size-5 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-card hover:text-fg"
+            class="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-card hover:text-fg"
             @click="setCollapsed('project', project.id, !isCollapsed('project', project.id))"
           ><IconChevron :open="!isCollapsed('project', project.id)" :size="12" /></button>
-          <span v-else class="w-5 shrink-0" aria-hidden="true" />
+          <span v-else class="w-6 shrink-0" aria-hidden="true" />
           <RouterLink
             data-test="project"
             :data-available="String(project.available)"
@@ -133,9 +142,9 @@ const itemClass = sidebarItemClass
             <span data-test="project-color" class="size-[9px] shrink-0 rounded-[3px]" :class="{ 'opacity-40': !project.available }" :style="{ backgroundColor: project.color }" />
             <span class="flex min-w-0 grow flex-col">
               <span class="flex min-w-0 items-baseline gap-2">
-                <span data-test="project-name" class="max-w-[60%] shrink-0 truncate font-medium" :class="project.available ? 'text-fg' : 'text-fg-subtle'">{{ project.name }}</span>
+                <span data-test="project-name" class="truncate font-medium" :class="[showsBranch(project) ? 'max-w-[60%] shrink-0' : '', project.available ? 'text-fg' : 'text-fg-subtle']">{{ project.name }}</span>
                 <span
-                  v-if="project.available && git.reposFor(project.id)[0]"
+                  v-if="showsBranch(project)"
                   data-test="project-branch"
                   :title="repoLabel(git.reposFor(project.id)[0]!)"
                   class="min-w-0 truncate font-mono text-[11px] text-fg-subtle"
@@ -148,13 +157,13 @@ const itemClass = sidebarItemClass
               <DisplayStateIcon display="running" :size="11" /><span class="sr-only">em execução</span>
             </span>
             <span v-if="waitingIn(project.id)" data-test="project-waiting" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-secondary">
-              <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}
+              <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}<span class="sr-only"> aguardando você</span>
             </span>
           </RouterLink>
         </div>
         <template v-if="!isCollapsed('project', project.id)">
-          <div v-if="looseIn(project.id).length" data-test="project-sessions" class="flex flex-col gap-px pl-5">
-            <SidebarSessionRow v-for="s in looseIn(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project />
+          <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="flex flex-col gap-px pl-6">
+            <SidebarSessionRow v-for="s in looseByProject.get(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project />
           </div>
           <SidebarGroups v-if="groups.forProject(project.id).length" :project-id="project.id" />
         </template>

@@ -96,7 +96,7 @@ describe('seção Abertas do menu', () => {
     expect(w.find('[data-test="open-count"]').text()).toBe('10')
     const all = w.find('[data-test="open-all"]')
     expect(all.text()).toBe('Ver todas')
-    expect(all.attributes('href')).toBe('/sessions')
+    expect(all.attributes('href')).toBe('/sessions?estado=ativas')
   })
 
   it('até 8, não mostra Ver todas', async () => {
