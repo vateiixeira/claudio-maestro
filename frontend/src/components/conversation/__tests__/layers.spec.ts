@@ -62,10 +62,23 @@ describe('camadas visuais do chat (opção A)', () => {
     expect(w.find('.markdown').classes()).toContain('max-w-[68ch]')
   })
 
-  it('mensagem do usuário usa card com borda forte', () => {
+  it('mensagem do usuário é um balão à direita', () => {
     const w = mount(ConversationBlock, { props: { item: { type: 'user', id: 'u', text: 'oi', images: [] } } })
+    expect(w.find('[data-test="user-message-row"]').classes()).toContain('justify-end')
     const card = w.find('[data-test="user-message-card"]')
-    expect(card.classes()).toEqual(expect.arrayContaining(['bg-card', 'border-line-strong']))
+    expect(card.classes()).toEqual(expect.arrayContaining(['bg-elevated', 'rounded-br-md']))
+    // A posição diz quem falou; o leitor de tela ouve o nome.
+    expect(card.find('.sr-only').text()).toBe('Você:')
+  })
+
+  it('resposta do modelo vira balão à esquerda só no nível de cima', () => {
+    const item: ConversationItem = { type: 'text', id: 'x', text: 'oi', streaming: false, parent_tool_use_id: null }
+    const top = mount(ConversationBlock, { props: { item, bubble: true } })
+    const bubble = top.find('[data-test="assistant-bubble"]')
+    expect(bubble.classes()).toEqual(expect.arrayContaining(['bg-card', 'rounded-tl-md', 'w-fit']))
+    // Dentro de subagente ou ferramenta continua texto solto, sem caixa dentro de caixa.
+    const nested = mount(ConversationBlock, { props: { item } })
+    expect(nested.find('[data-test="assistant-bubble"]').exists()).toBe(false)
   })
 
   it('turno concluído, trilho e superfície do chat', async () => {
@@ -88,5 +101,7 @@ describe('camadas visuais do chat (opção A)', () => {
     expect(end.find('.text-primary-soft').exists()).toBe(true)
     expect(end.find('.text-fg-muted').exists()).toBe(true)
     expect(w.html()).toContain('bg-line-strong')
+    // As respostas do turno aparecem em balão.
+    expect(w.findAll('[data-test="assistant-bubble"]')).toHaveLength(1)
   })
 })

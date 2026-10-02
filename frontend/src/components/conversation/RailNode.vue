@@ -8,7 +8,7 @@ const SQUARE = new Set<NodeKind>(['read', 'search', 'bash', 'edit', 'task', 'too
 </script>
 
 <template>
-  <div data-test="rail-node" :data-kind="kind" aria-hidden="true" class="flex w-7 shrink-0 justify-center" :class="{ 'pt-1.5': kind === 'text' || kind === 'info', 'pt-px': kind === 'thinking' }">
+  <div data-test="rail-node" :data-kind="kind" aria-hidden="true" class="flex w-7 shrink-0 justify-center" :class="{ 'pt-[18px]': kind === 'text', 'pt-1.5': kind === 'info', 'pt-px': kind === 'thinking' }">
     <span v-if="kind === 'text'" class="size-2 rounded-full bg-fg shadow-[0_0_0_4px_var(--color-surface)]" />
     <span v-else-if="kind === 'info'" class="size-2 rounded-full bg-fg-muted shadow-[0_0_0_4px_var(--color-surface)]" />
     <span v-else-if="kind === 'thinking'" class="box-border size-3.5 rounded-full border-[1.5px] border-dashed border-fg-muted bg-surface" />
