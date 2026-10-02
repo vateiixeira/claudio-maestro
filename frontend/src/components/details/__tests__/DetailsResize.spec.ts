@@ -91,7 +91,7 @@ describe('largura do painel Detalhes', () => {
   it('ajusta largura salva acima do máximo', async () => {
     localStorage.setItem('maestro:details-width', '3000')
     const w = await mountPanel()
-    expect(width(w)).toBe('892px') // min(0.7 × 1600, 1600 − 400 − 308)
+    expect(width(w)).toBe('912px') // min(0.7 × 1600, 1600 − 400 − 288)
   })
 
   it('na gaveta (janela estreita) mantém uma largura salva de 600px', async () => {

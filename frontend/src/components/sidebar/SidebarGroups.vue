@@ -17,7 +17,7 @@ const route = useRoute()
 
 const tree = computed(() => projectTree(groups.forProject(props.projectId), sessions.forProject(props.projectId)))
 const isCurrent = (id: string) => route.name === 'session' && route.params.id === id
-const rowClass = 'flex min-h-9 items-center gap-2 rounded-lg px-2 no-underline hover:bg-card'
+const rowClass = 'flex min-h-[30px] items-center gap-2 rounded-lg px-2 no-underline hover:bg-card'
 </script>
 
 <template>

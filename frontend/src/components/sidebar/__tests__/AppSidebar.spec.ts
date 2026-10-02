@@ -90,9 +90,59 @@ describe('menu lateral', () => {
     expect(w.find('[data-test="recent"]').exists()).toBe(false)
   })
 
-  it('a barra lateral tem 308px de largura', () => {
+  it('a barra lateral tem 288px de largura', () => {
     const w = mountSidebar()
-    expect(w.find('nav').classes()).toContain('w-[308px]')
+    expect(w.find('nav').classes()).toContain('w-[288px]')
+  })
+
+  it('Inbox, Dashboard, Conversas e Preferências têm ícone', () => {
+    const w = mountSidebar()
+    for (const id of ['nav-inbox', 'nav-dashboard', 'nav-conversations', 'preferences']) {
+      expect(w.find(`[data-test="${id}"] svg`).exists(), id).toBe(true)
+    }
+  })
+
+  it('projeto numa linha só: branch ao lado do nome', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
+    useGitStore(pinia).set(1, [makeGitRepo({ branch: 'develop' })])
+    const project = mountSidebar().find('[data-test="project"]')
+    const name = project.find('[data-test="project-name"]')
+    const branch = project.find('[data-test="project-branch"]')
+    expect(branch.text()).toContain('develop')
+    expect(branch.element.parentElement).toBe(name.element.parentElement)
+    expect(branch.classes()).toContain('truncate')
+  })
+
+  it('mostra o círculo de execução no projeto que tem conversa rodando', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 }), makeProject({ id: 2, name: 'parado' })]
+    const sessions = useSessionsStore(pinia)
+    sessions.setForProject(1, [makeSession({ session_id: 'a', project_id: 1, display_state: 'running' })])
+    sessions.setForProject(2, [makeSession({ session_id: 'b', project_id: 2 })])
+    const [running, idle] = mountSidebar().findAll('[data-test="project"]')
+    expect(running!.find('[data-test="project-running"]').exists()).toBe(true)
+    expect(running!.find('[data-test="project-running"]').text()).toContain('em execução')
+    expect(idle!.find('[data-test="project-running"]').exists()).toBe(false)
+  })
+
+  it('contadores do projeto não encolhem com nome e branch longos', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'um-nome-de-projeto-bem-comprido-mesmo' })]
+    useGitStore(pinia).set(1, [makeGitRepo({ branch: 'feat/uma-branch-com-nome-muito-longo' })])
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', project_id: 1, display_state: 'running' }),
+      makeSession({ session_id: 'b', project_id: 1, display_state: 'waiting', unread: true }),
+    ])
+    const project = mountSidebar().find('[data-test="project"]')
+    expect(project.find('[data-test="project-name"]').classes()).toContain('truncate')
+    expect(project.find('[data-test="project-waiting"]').classes()).toContain('shrink-0')
+    expect(project.find('[data-test="project-running"]').classes()).toContain('shrink-0')
+  })
+
+  it('mostra "Conectado" no rodapé só com conexão', async () => {
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="connection-ok"]').text()).toBe('Conectado')
+    socketStatus.current.value = 'reconnecting'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="connection-ok"]').exists()).toBe(false)
   })
 
   it('"Nova conversa" abre o modal', async () => {

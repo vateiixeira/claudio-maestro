@@ -11,6 +11,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 ### Alterado
 
 - A conversa ficou com cara de mensageiro: o que você manda aparece em balão à direita e as respostas do modelo, em balão à esquerda.
+- O menu lateral ficou mais compacto: ícones na navegação, cada projeto numa linha com a branch ao lado e um círculo quando há conversa rodando, e "Em execução" e "Recentes" viraram uma lista só, "Abertas" (primeiro o que espera você), que dá para recolher.
 
 ### Corrigido
 

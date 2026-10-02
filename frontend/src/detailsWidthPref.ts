@@ -3,8 +3,8 @@ export const DETAILS_DEFAULT_WIDTH = 360
 export const DETAILS_MIN_WIDTH = 300
 export const DETAILS_KEY_STEP = 16
 
-/** Width of the app sidebar; matches its `w-[308px]`. */
-export const SIDEBAR_WIDTH = 308
+/** Width of the app sidebar; matches its `w-[288px]`. */
+export const SIDEBAR_WIDTH = 288
 
 /**
  * Widest the panel may be: 70% of the window, leaving at least 400px for the

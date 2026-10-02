@@ -14,8 +14,8 @@ describe('largura do Detalhes', () => {
     expect(readDetailsWidth()).toBe(360)
   })
   it('máximo é o menor entre 70% e janela menos 400 menos a barra lateral', () => {
-    expect(detailsMaxWidth(2000)).toBe(1292)
-    expect(detailsMaxWidth(1200)).toBe(492)
+    expect(detailsMaxWidth(2000)).toBe(1312)
+    expect(detailsMaxWidth(1200)).toBe(512)
     expect(detailsMaxWidth(600)).toBe(300) // never below the minimum
   })
   it('na gaveta o máximo é 70% da janela, sem descontar conversa nem barra lateral', () => {
@@ -26,7 +26,7 @@ describe('largura do Detalhes', () => {
   })
   it('ajusta aos limites', () => {
     expect(clampDetailsWidth(100, 2000)).toBe(300)
-    expect(clampDetailsWidth(5000, 1200)).toBe(492)
+    expect(clampDetailsWidth(5000, 1200)).toBe(512)
     expect(clampDetailsWidth(420.6, 2000)).toBe(421)
   })
 })
