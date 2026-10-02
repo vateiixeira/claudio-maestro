@@ -270,13 +270,25 @@ describe('menu lateral em árvore', () => {
     expect(mountSidebar().find('[data-test="project-toggle"]').exists()).toBe(false)
   })
 
-  it('a seta tem alvo de 24px e o projeto sem filhos reserva o mesmo espaço', () => {
+  it('a seta tem alvo de 24px e fica depois do link do projeto, no fim da linha', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    const w = mountSidebar()
+    const toggle = w.find('[data-test="project-toggle"]')
+    expect(toggle.classes()).toContain('size-6')
+    const link = w.find('[data-test="project"]').element
+    expect(Boolean(link.compareDocumentPosition(toggle.element) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+    expect(link.parentElement!.lastElementChild).toBe(toggle.element)
+  })
+
+  it('projeto sem filhos não tem seta nem espaçador: o link é o primeiro elemento da linha', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 }), makeProject({ id: 2, name: 'blog' })]
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
     const w = mountSidebar()
-    expect(w.find('[data-test="project-toggle"]').classes()).toContain('size-6')
-    const spacer = w.findAll('[data-test="project"]')[1]!.element.previousElementSibling!
-    expect(spacer.classList.contains('w-6')).toBe(true)
+    const row = w.findAll('[data-test="project"]')[1]!.element.parentElement!
+    expect(row.firstElementChild).toBe(w.findAll('[data-test="project"]')[1]!.element)
+    expect(row.querySelector('[data-test="project-toggle"]')).toBeNull()
+    expect(row.children).toHaveLength(1)
   })
 
   it('mostra as conversas abertas do projeto logo abaixo dele, recuadas, na ordem de Abertas', () => {
@@ -294,7 +306,7 @@ describe('menu lateral em árvore', () => {
     expect(blocks).toHaveLength(2)
     expect(blocks[0]!.findAll('[data-test="project-session"]').map((r) => r.find('[data-test="row-title"]').text())).toEqual(['Pede', 'Roda', 'Quieta'])
     expect(blocks[0]!.classes()).toContain('border-l')
-    expect(blocks[0]!.classes()).toContain('ml-3')
+    expect(blocks[0]!.classes()).toContain('ml-[14px]')
     expect(blocks[0]!.findAll('[data-test="project-session"]').every((r) => r.classes().includes('min-h-7'))).toBe(true)
     const wrappers = w.findAll('[data-test="project"]').map((p) => p.element.parentElement!)
     expect(wrappers[0]!.classList.contains('mt-1.5')).toBe(false)

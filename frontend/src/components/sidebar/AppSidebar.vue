@@ -169,16 +169,6 @@ const itemClass = sidebarItemClass
       <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-2.5 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
       <template v-for="(project, index) in projects.projects" :key="project.id">
         <div class="flex items-center" :class="{ 'mt-1.5': index > 0 }">
-          <button
-            v-if="hasChildren(project.id)"
-            type="button"
-            data-test="project-toggle"
-            :aria-expanded="!isCollapsed('project', project.id)"
-            :aria-label="`${isCollapsed('project', project.id) ? 'Expandir' : 'Recolher'} ${project.name}`"
-            class="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-card hover:text-fg"
-            @click="setCollapsed('project', project.id, !isCollapsed('project', project.id))"
-          ><IconChevron :open="!isCollapsed('project', project.id)" :size="12" /></button>
-          <span v-else class="w-6 shrink-0" aria-hidden="true" />
           <RouterLink
             data-test="project"
             :data-available="String(project.available)"
@@ -207,9 +197,18 @@ const itemClass = sidebarItemClass
               <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}<span class="sr-only"> aguardando você</span>
             </span>
           </RouterLink>
+          <button
+            v-if="hasChildren(project.id)"
+            type="button"
+            data-test="project-toggle"
+            :aria-expanded="!isCollapsed('project', project.id)"
+            :aria-label="`${isCollapsed('project', project.id) ? 'Expandir' : 'Recolher'} ${project.name}`"
+            class="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-card hover:text-fg"
+            @click="setCollapsed('project', project.id, !isCollapsed('project', project.id))"
+          ><IconChevron :open="!isCollapsed('project', project.id)" :size="12" /></button>
         </div>
         <template v-if="!isCollapsed('project', project.id)">
-          <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="ml-3 flex flex-col gap-px border-l border-line pl-2">
+          <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="ml-[14px] flex flex-col gap-px border-l border-line pl-2">
             <SidebarSessionRow v-for="s in looseByProject.get(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project nested />
           </div>
           <SidebarGroups v-if="groups.forProject(project.id).length" :project-id="project.id" />
