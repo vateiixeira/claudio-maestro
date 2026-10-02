@@ -167,8 +167,8 @@ const itemClass = sidebarItemClass
       </div>
       <p v-if="projects.loadError" class="px-2.5 py-2 text-xs text-diff-del-fg" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
       <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-2.5 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
-      <template v-for="project in projects.projects" :key="project.id">
-        <div class="flex items-center">
+      <template v-for="(project, index) in projects.projects" :key="project.id">
+        <div class="flex items-center" :class="{ 'mt-1.5': index > 0 }">
           <button
             v-if="hasChildren(project.id)"
             type="button"
@@ -209,8 +209,8 @@ const itemClass = sidebarItemClass
           </RouterLink>
         </div>
         <template v-if="!isCollapsed('project', project.id)">
-          <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="flex flex-col gap-px pl-6">
-            <SidebarSessionRow v-for="s in looseByProject.get(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project />
+          <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="ml-3 flex flex-col gap-px border-l border-line pl-2">
+            <SidebarSessionRow v-for="s in looseByProject.get(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project nested />
           </div>
           <SidebarGroups v-if="groups.forProject(project.id).length" :project-id="project.id" />
         </template>

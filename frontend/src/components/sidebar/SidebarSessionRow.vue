@@ -2,27 +2,29 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
-import { isQuietSession, sidebarItemClass } from './itemClass'
+import { isQuietSession, sidebarItemClass, sidebarNestedItemClass } from './itemClass'
 import { useProjectsStore } from '../../stores/projects'
 import { worktreeLabel } from '../../worktree'
 import type { Session } from '../../types/api'
 
-const props = withDefaults(defineProps<{ session: Session; hideProject?: boolean }>(), { hideProject: false })
+const props = withDefaults(defineProps<{ session: Session; hideProject?: boolean; nested?: boolean }>(), { hideProject: false, nested: false })
 const route = useRoute()
 const projects = useProjectsStore()
 const project = computed(() => projects.byId(props.session.project_id))
 const worktree = computed(() => worktreeLabel(props.session))
 const active = computed(() => route.name === 'session' && route.params.id === props.session.session_id)
+const prominent = computed(() => props.session.display_state === 'running' || (props.session.display_state === 'waiting' && !isQuietSession(props.session)))
+const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.value, prominent.value) : sidebarItemClass(active.value)))
 </script>
 
 <template>
   <RouterLink
     :to="{ name: 'session', params: { id: session.session_id } }"
-    :class="sidebarItemClass(active)"
+    :class="rowClass"
     :aria-current="active ? 'page' : undefined"
   >
-    <DisplayStateIcon :display="session.display_state" :size="11" :quiet="isQuietSession(session)" />
-    <span data-test="row-title" class="min-w-0 grow truncate text-[13px]">{{ session.title }}</span>
+    <DisplayStateIcon :display="session.display_state" :size="nested ? 10 : 11" :quiet="isQuietSession(session)" />
+    <span data-test="row-title" :class="['min-w-0 grow truncate', nested ? 'text-[12.5px]' : 'text-[13px]']">{{ session.title }}</span>
     <span
       v-if="project && !hideProject"
       data-test="row-project"

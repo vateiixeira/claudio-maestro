@@ -74,4 +74,29 @@ describe('linha de conversa do menu', () => {
     const html = wrapper.html()
     expect(html.indexOf('row-title')).toBeLessThan(html.indexOf('row-project'))
   })
+
+  it('aninhada: linha compacta e apagada quando não pede nada', async () => {
+    const quiet = await mountRow({ session_id: 'q', display_state: 'waiting', unread: false }, '/inbox', { nested: true })
+    expect(quiet.classes()).toContain('min-h-7')
+    expect(quiet.classes()).toContain('text-fg-subtle')
+    expect(quiet.find('[data-test="row-title"]').classes()).toContain('text-[12.5px]')
+  })
+
+  it('aninhada: fica mais clara quando pede você ou está rodando', async () => {
+    const asks = await mountRow({ session_id: 'a', display_state: 'waiting', unread: true }, '/inbox', { nested: true })
+    expect(asks.classes()).toContain('text-fg-muted')
+    const runs = await mountRow({ session_id: 'r', display_state: 'running' }, '/inbox', { nested: true })
+    expect(runs.classes()).toContain('text-fg-muted')
+  })
+
+  it('aninhada e atual: fundo card e texto forte', async () => {
+    const current = await mountRow({ session_id: 'x1' }, '/sessions/x1', { nested: true })
+    expect(current.classes()).toContain('bg-card')
+    expect(current.classes()).toContain('text-fg')
+  })
+
+  it('sem nested continua com 34px', async () => {
+    const row = await mountRow({ session_id: 'n' })
+    expect(row.classes()).toContain('min-h-[34px]')
+  })
 })
