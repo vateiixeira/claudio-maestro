@@ -13,7 +13,7 @@ import { railAlign } from '../../conversation/railAlign'
 import SubagentStrip from './SubagentStrip.vue'
 import UserMessage from './UserMessage.vue'
 import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, type SubagentFocus } from '../../conversation/subagents'
-import { buildTurns, groupNodeKind, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
+import { buildTurns, groupNodeKind, nodeKind, summaryText, tidyThinking, turnSummary } from '../../conversation/turns'
 import ActionGroup from './ActionGroup.vue'
 import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
@@ -145,6 +145,8 @@ const tree = computed(() => {
       children.set(parent, list)
     } else top.push(item)
   }
+  // Inside a subagent the thinking is tidied the same way as in the turns.
+  for (const [parent, list] of children) children.set(parent, tidyThinking(list))
   return { top, childrenOf: (toolUseId: string) => children.get(toolUseId) ?? [] }
 })
 const rows = computed(() => tree.value.top)
