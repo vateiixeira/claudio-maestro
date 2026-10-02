@@ -8,6 +8,11 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    # TypeScript 7 removeu `typescript/lib/tsc` e o `vue-tsc` 3.3.11 quebra com
+    # ERR_PACKAGE_PATH_NOT_EXPORTED. Remover quando o `vue-tsc` suportar o TS 7.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

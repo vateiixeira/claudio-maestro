@@ -250,8 +250,10 @@ async def test_context_hanging_response_does_not_hold_the_turn(make_env, env_cle
     await wait_until(lambda: session.state == "idle")
 
     # The turn ended (state and update) while the read still hangs, and the SDK
-    # call was not cancelled from our side.
+    # call was not cancelled from our side. The read runs in a background task, so
+    # wait for the call to be scheduled before checking the counters.
     assert session.error is None
+    await wait_until(lambda: stats["calls"] == 1)
     assert stats == {"calls": 1, "cancelled": 0}
     updates = env.recorder.of(session.session_id, "session.updated")
     assert len(updates) > before
@@ -275,6 +277,8 @@ async def test_context_reads_one_at_a_time_and_again_after_a_turn_meanwhile(
     await session.send("três")
     await wait_until(lambda: turn_results(env, session) == 3)
     await wait_until(lambda: session.state == "idle")
+    await wait_until(lambda: stats["calls"] == 1)  # the read starts in a background task
+    await asyncio.sleep(0.02)  # give a wrong second call the chance to happen
     assert stats["calls"] == 1  # not one call per turn while the first one hangs
 
     release.set()
@@ -970,11 +974,10 @@ def test_api_context_after_turn(api, home, factory):
     factory.script = lambda content: text_turn(sid, "oi")
     api.post(f"/api/sessions/{sid}/messages", json={"text": "olá"})
     wait_api_state(api, sid, "idle")
+    expected = {"used_tokens": 50_000, "max_tokens": 200_000, "percent": 25.0}
+    # The SDK read runs in a background task after the turn: wait for its value,
+    # not just for any context (the turn result may show one first).
     deadline = time.monotonic() + 2
-    while api.get("/api/sessions").json()[0]["context"] is None:
+    while api.get("/api/sessions").json()[0]["context"] != expected:
         assert time.monotonic() < deadline
         time.sleep(0.005)
-
-    [listed] = api.get("/api/sessions").json()
-
-    assert listed["context"] == {"used_tokens": 50_000, "max_tokens": 200_000, "percent": 25.0}
