@@ -264,6 +264,9 @@ class FakeAgentClient:
         if self.set_permission_mode_error is not None:
             raise self.set_permission_mode_error
 
+    async def detach(self) -> bool:
+        return False
+
     async def close(self) -> None:
         if self.close_pause is not None:
             self.close_pause.reached.set()

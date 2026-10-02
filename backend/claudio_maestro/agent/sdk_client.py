@@ -3,6 +3,7 @@
 Nothing here starts the `claude` process until `connect()` is called.
 """
 
+import logging
 import os
 from collections import deque
 from collections.abc import AsyncIterator, Callable
@@ -19,7 +20,11 @@ from claude_agent_sdk import (
     ProcessError,
 )
 
+from claudio_maestro.agent.agentd_transport import AgentdConnectError, AgentdTransport
 from claudio_maestro.agent.base import AgentError, AgentOptions
+from claudio_maestro.agent.spawn import build_cli_spawn
+
+logger = logging.getLogger(__name__)
 
 # Variables that mark the process as a child of a Claude Code session. When the
 # backend is started from inside one, the spawned `claude` misbehaves unless
@@ -143,11 +148,31 @@ class SdkAgentClient:
         self.options = options
         self.stderr_lines: deque[str] = deque(maxlen=STDERR_LINES_KEPT)
         self.sdk_options = build_sdk_options(options, stderr=self.stderr_lines.append)
+        self._transport: AgentdTransport | None = None
+        if sdk_client is None and options.agentd is not None:
+            attach = options.attach
+            self._transport = AgentdTransport(
+                options.agentd,
+                session_id=options.session_id,
+                spawn=None if attach else (lambda: build_cli_spawn(self.sdk_options)),
+                attach_id=attach.agentd_id if attach else None,
+                attach_from=attach.from_pos if attach else 0,
+                attach_init=attach.init_response if attach else None,
+                on_stderr=self.stderr_lines.append,
+            )
+            sdk_client = ClaudeSDKClient(self.sdk_options, transport=self._transport)
         self._client = sdk_client or ClaudeSDKClient(self.sdk_options)
 
     async def connect(self) -> None:
         try:
             await self._client.connect()
+        except AgentdConnectError:
+            if self.options.attach is not None:
+                raise AgentError("O processo que guardava a sessão não está mais rodando.")
+            logger.warning("agentd indisponível; abrindo o agente direto (sem sobreviver ao reinício)")
+            self._transport = None
+            self._client = ClaudeSDKClient(self.sdk_options)
+            await self.connect()
         except Exception as error:
             agent_error = to_agent_error(error)
             texts = [*self.stderr_lines, str(error), getattr(error, "stderr", None) or ""]
@@ -176,6 +201,9 @@ class SdkAgentClient:
         try:
             async for message in self._client.receive_messages():
                 yield message
+                # Back here only after the session handled it: confirm it to the agentd.
+                if self._transport is not None:
+                    self._transport.processed(message)
         except Exception as error:
             texts = [*self.stderr_lines, getattr(error, "stderr", None) or ""]
             if not isinstance(error, AgentError) and self._login_failed(texts):
@@ -218,11 +246,24 @@ class SdkAgentClient:
         except Exception as error:
             raise to_agent_error(error) from error
 
+    async def detach(self) -> bool:
+        if self._transport is None:
+            return False
+        self._transport.detach()
+        try:
+            await self._client.disconnect()
+        except Exception as error:
+            raise to_agent_error(error) from error
+        return True
+
     async def close(self) -> None:
         try:
             await self._client.disconnect()
         except Exception as error:
             raise to_agent_error(error) from error
+        finally:
+            if self._transport is not None:
+                await self._transport.kill()
 
 
 async def _single_user_message(
