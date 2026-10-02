@@ -37,12 +37,12 @@ const summary = computed(() => {
       <span class="font-semibold text-fg-subtle">{{ heading }}</span>
       <template v-if="summary">
         <span class="min-w-0 grow truncate text-fg">{{ summary.subject }}</span>
-        <span :class="summary.status === 'completed' ? 'text-primary-soft' : summary.status === 'in_progress' ? 'text-primary-soft' : 'text-fg-subtle'">{{ TASK_STATUS_LABEL[summary.status] }}</span>
+        <span :class="summary.status === 'completed' ? 'text-primary-soft' : summary.status === 'in_progress' ? 'text-secondary-soft' : 'text-fg-subtle'">{{ TASK_STATUS_LABEL[summary.status] }}</span>
       </template>
     </div>
     <ul v-if="tasks && tasks.length" data-test="task-list" class="m-0 flex list-none flex-col gap-1 border-t border-line p-0 pt-1.5">
       <li v-for="task in tasks" :key="task.id" data-test="task-row" class="flex items-center gap-2 text-sm">
-        <span class="flex shrink-0" :class="task.status === 'pending' ? 'text-fg-subtle' : 'text-primary'"><component :is="MARK[task.status]" :size="14" /></span>
+        <span class="flex shrink-0" :class="task.status === 'pending' ? 'text-fg-subtle' : task.status === 'in_progress' ? 'text-secondary' : 'text-primary'"><component :is="MARK[task.status]" :size="14" /></span>
         <span class="min-w-0 grow" :class="task.status === 'completed' ? 'text-fg-muted line-through' : 'text-fg'">{{ task.subject }}</span>
         <span class="text-xs text-fg-subtle">{{ TASK_STATUS_LABEL[task.status] }}</span>
       </li>

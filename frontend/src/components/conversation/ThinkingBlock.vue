@@ -5,6 +5,8 @@ import IconChevron from '../icons/IconChevron.vue'
 
 const props = defineProps<{ item: TextItem }>()
 
+const hasText = computed(() => props.item.text.trim() !== '')
+
 // Open while the model thinks, closed when it ends, unless the user chose otherwise.
 const manual = ref<boolean | null>(null)
 const open = computed(() => manual.value ?? props.item.streaming)
@@ -42,25 +44,32 @@ function toggleFull() {
   }
 }
 
-// Elapsed time, only known when this tab saw the thinking stream.
-const startedAt = ref<number | null>(null)
+// Elapsed time, only known when this tab saw the thinking stream. It adds up the stretches
+// spent thinking: a merged block streams again when another thought arrives, and the wait
+// between the two does not count.
+const seen = ref(false)
 const elapsed = ref(0)
+let accumulated = 0
+let segmentStart: number | null = null
 let timer: ReturnType<typeof setInterval> | null = null
 function stopTimer() {
   if (timer) clearInterval(timer)
   timer = null
 }
 const tick = () => {
-  if (startedAt.value !== null) elapsed.value = Math.floor((Date.now() - startedAt.value) / 1000)
+  if (segmentStart !== null) elapsed.value = Math.floor((accumulated + Date.now() - segmentStart) / 1000)
 }
 watch(
   () => props.item.streaming,
   (streaming) => {
-    if (streaming && startedAt.value === null) {
-      startedAt.value = Date.now()
+    if (streaming && segmentStart === null) {
+      seen.value = true
+      segmentStart = Date.now()
       timer = setInterval(tick, 1000)
-    } else if (!streaming) {
+    } else if (!streaming && segmentStart !== null) {
       tick()
+      accumulated += Date.now() - segmentStart
+      segmentStart = null
       stopTimer()
     }
   },
@@ -70,23 +79,26 @@ onBeforeUnmount(stopTimer)
 
 const label = computed(() => {
   if (props.item.streaming) return `Pensando… ${elapsed.value}s`
-  if (startedAt.value !== null) return `Pensou por ${elapsed.value}s`
+  if (seen.value) return `Pensou por ${elapsed.value}s`
   return 'Raciocínio'
 })
 </script>
 
 <template>
-  <div class="text-sm text-fg-muted">
+  <!-- A finished thought with nothing in it has nothing to show. -->
+  <div v-if="hasText || item.streaming" class="text-sm text-fg-muted">
     <button
+      v-if="hasText"
       type="button"
-      class="flex cursor-pointer items-center gap-1.5 border-none bg-transparent p-0 text-xs font-semibold text-fg-muted hover:text-fg"
+      class="group flex cursor-pointer items-center gap-1 border-none bg-transparent p-0 text-xs font-normal text-fg-subtle hover:text-fg-muted focus-visible:outline-2 focus-visible:outline-primary"
       :aria-expanded="open"
       @click="toggle"
     >
-      <IconChevron :open="open" :size="12" />
-      <span :class="{ 'animate-pulse': item.streaming }">{{ label }}</span>
+      <IconChevron :open="open" :size="10" class="opacity-60 group-hover:opacity-100" />
+      <span :class="{ 'animate-pulse motion-reduce:animate-none': item.streaming }">{{ label }}</span>
     </button>
-    <template v-if="open">
+    <span v-else class="text-xs font-normal text-fg-subtle animate-pulse motion-reduce:animate-none">{{ label }}</span>
+    <template v-if="open && hasText">
       <p
         ref="textEl"
         data-test="thinking-text"

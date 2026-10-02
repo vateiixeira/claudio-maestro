@@ -11,11 +11,15 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - Comandos que o Claude roda em background mostram no cartão se continuam rodando, concluíram, falharam ou foram parados. Enquanto rodam, a sessão aparece como rodando na barra lateral e não é fechada por inatividade.
 - A largura do menu lateral pode ser ajustada arrastando a borda direita dele (ou com as setas do teclado), e fica guardada no navegador. Duplo clique volta ao padrão.
 - No menu lateral, as conversas em "Sua vez" mostram há quanto tempo foi a última interação ("3 min", "1 h", "2 dias").
+- Quando o turno termina mas ainda há comando ou subagente rodando em background, o fim da conversa mostra "Aguardando…" em âmbar, e a faixa acima da caixa de mensagem lista também os comandos em background, com o botão para pará-los.
 
 ### Alterado
 
 - A conversa ficou com cara de mensageiro: o que você manda aparece em balão à direita e as respostas do modelo, em balão à esquerda.
 - O menu lateral ficou mais compacto: ícones na navegação, cada projeto numa linha com a branch ao lado, um círculo quando há conversa rodando e as conversas abertas logo abaixo dele, e "Em execução" e "Recentes" viraram uma lista só, "Abertas" (primeiro o que espera você), que dá para recolher.
+- O chat ficou mais compacto e mais largo: comandos numa caixa só com entrada e saída recolhidas (um clique abre), pensamentos seguidos viram um só e os vazios somem, a trilha usa bolinhas de estado e o rodapé de cada turno virou uma linha discreta.
+- As ações de um subagente começam recolhidas, e o cartão dele tem fundo cinza para se distinguir.
+- Suas mensagens ganharam fundo verde suave, e no chat âmbar passou a indicar o que está rodando ou esperando (verde é concluído).
 
 ### Corrigido
 

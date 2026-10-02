@@ -89,19 +89,21 @@ describe('BashTool com prévia', () => {
   const bash = (result: unknown): ConversationItem =>
     ({ type: 'tool', id: 't', tool_use_id: 'tu', name: 'Bash', input: { command: 'ls' }, result, streaming: false, parent_tool_use_id: null }) as ConversationItem
 
-  it('mostra a prévia sem clique e sem botão de saída', () => {
+  it('mostra a prévia de 4 linhas sem botão de saída; o clique na caixa abre tudo', async () => {
     const w = mount(ConversationBlock, { props: { item: bash({ content: lines(12), is_error: false, details: null }), sessionActive: false } })
-    expect(w.text()).toContain('$ ls')
-    expect(w.find('[data-test="tool-output"]').text()).toContain('linha 8')
-    expect(w.text()).not.toContain('linha 9')
+    expect(w.find('[data-test="bash-command"]').text()).toContain('ls')
+    expect(w.find('[data-test="tool-output"]').text()).toContain('linha 4')
+    expect(w.text()).not.toContain('linha 5')
     expect(w.find('[data-test="toggle-output"]').exists()).toBe(false)
-    expect(w.text()).toContain('Ver as 12 linhas')
+    expect(w.find('[data-test="show-lines"]').exists()).toBe(false)
+    await w.find('[data-test="tool-output"] [data-test="pane-toggle"]').trigger('click')
+    expect(w.text()).toContain('linha 12')
   })
 
-  it('erro também aparece em prévia', () => {
+  it('erro também aparece em prévia, em vermelho', () => {
     const w = mount(ConversationBlock, { props: { item: bash({ content: 'falhou', is_error: true, details: null }), sessionActive: false } })
     expect(w.find('[data-test="tool-error"]').text()).toContain('falhou')
-    expect(w.find('[data-test="tool-error"] [data-test="output-box"]').classes()).toContain('bg-diff-del-bg')
+    expect(w.find('[data-test="tool-error"] [data-test="pane-toggle"]').classes()).toContain('text-diff-del-fg')
   })
 
   it('rodando não tem prévia', () => {

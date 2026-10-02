@@ -1,6 +1,8 @@
 @import './fonts.css';
 @import 'tailwindcss';
 
+:root { --chat-width: 1120px; }
+
 @theme {
   --color-bg: #0b0b0c;
   --color-surface: #131315;

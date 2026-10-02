@@ -121,6 +121,81 @@ describe('raciocínio durante o streaming: janela de 4 linhas', () => {
   })
 })
 
+describe('raciocínio: rótulo leve', () => {
+  it('rótulo em peso normal, cinza discreto e pequeno', () => {
+    const w = mount(ThinkingBlock, { props: { item: item(false) } })
+    const cls = w.find('button').classes()
+    expect(cls).not.toContain('font-semibold')
+    expect(cls).toContain('text-xs')
+    expect(cls).toContain('text-fg-subtle')
+  })
+
+  it('chevron menor que o antigo', () => {
+    const w = mount(ThinkingBlock, { props: { item: item(false) } })
+    expect(w.find('svg').attributes('width')).toBe('10')
+  })
+
+  it('sem texto (em andamento), mostra "Pensando…" sem chevron e sem abrir nada', () => {
+    const w = mount(ThinkingBlock, { props: { item: { ...item(true), text: '' } } })
+    expect(w.text()).toContain('Pensando… 0s')
+    expect(w.find('svg').exists()).toBe(false)
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
+  })
+
+  it('o rótulo continua um botão quando há texto, e não quando não há', () => {
+    expect(mount(ThinkingBlock, { props: { item: item(false) } }).find('button').exists()).toBe(true)
+    const empty = mount(ThinkingBlock, { props: { item: { ...item(true), text: '  ' } } })
+    expect(empty.find('button').exists()).toBe(false)
+  })
+
+  it('o texto chega depois: ganha chevron e abre', async () => {
+    const w = mount(ThinkingBlock, { props: { item: { ...item(true), text: '' } } })
+    await w.setProps({ item: item(true) })
+    expect(w.find('svg').exists()).toBe(true)
+    expect(w.find('[data-test="thinking-text"]').text()).toBe('pensando fundo')
+  })
+
+  it('retoma a contagem sem zerar quando um segundo pensamento chega depois do primeiro terminar', async () => {
+    vi.useFakeTimers()
+    try {
+      const w = mount(ThinkingBlock, { props: { item: item(true) } })
+      await vi.advanceTimersByTimeAsync(3000)
+      await w.setProps({ item: item(false) })
+      expect(w.text()).toContain('Pensou por 3s')
+      // Time between the two thoughts does not count.
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(w.text()).toContain('Pensou por 3s')
+      await w.setProps({ item: { ...item(true), text: 'pensando fundo\n\noutro' } })
+      expect(w.text()).toContain('Pensando… 3s')
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(w.text()).toContain('Pensando… 5s')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(w.text()).toContain('Pensando… 6s')
+      await w.setProps({ item: { ...item(false), text: 'pensando fundo\n\noutro' } })
+      expect(w.text()).toContain('Pensou por 6s')
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(w.text()).toContain('Pensou por 6s')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('o bloco unido não recria a instância: o cronômetro segue quando o segundo pensamento chega', async () => {
+    vi.useFakeTimers()
+    try {
+      const w = mount(ThinkingBlock, { props: { item: item(true) } })
+      await vi.advanceTimersByTimeAsync(2000)
+      await w.setProps({ item: { ...item(true), text: 'pensando fundo\n\noutro' } })
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(w.text()).toContain('Pensando… 3s')
+      await w.setProps({ item: { ...item(false), text: 'pensando fundo\n\noutro' } })
+      expect(w.text()).toContain('Pensou por 3s')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('imagens na mensagem do usuário', () => {
   afterEach(resetLocalImages)
   const user = { type: 'user' as const, id: 'u1', text: 'veja', images: [{ type: 'image' as const, media_type: 'image/png', size: 122880 }] }

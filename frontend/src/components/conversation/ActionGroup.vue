@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, inject, reactive, ref, watch } from 'vue'
 import type { TaskEntry } from '../../conversation/tasks'
+import { SUBAGENT_FOCUS_KEY } from '../../conversation/subagents'
 import { actionRow, groupChips } from '../../conversation/turns'
 import type { ConversationItem, ToolItem } from '../../types/conversation'
 import ConversationBlock from './ConversationBlock.vue'
@@ -26,6 +27,14 @@ function toggleRow(id: string) {
   if (expanded.has(id)) expanded.delete(id)
   else expanded.add(id)
 }
+
+// The subagent strip or the turn footer asks to reach a command inside the group: open the group and the row.
+const focus = inject(SUBAGENT_FOCUS_KEY, ref(null))
+watch(focus, (target) => {
+  if (!target || !props.items.some((item) => item.id === target.id)) return
+  expanded.add(target.id)
+  if (!props.open) emit('toggle')
+})
 </script>
 
 <template>
@@ -69,7 +78,7 @@ function toggleRow(id: string) {
           <span
             v-if="row.meta"
             class="max-w-[45%] shrink-0 truncate font-mono text-[0.6875rem]"
-            :class="row.meta === 'rodando…' ? 'animate-pulse text-primary-soft' : 'text-fg-subtle'"
+            :class="row.meta === 'rodando…' ? 'animate-pulse text-secondary-soft' : 'text-fg-subtle'"
           >{{ row.meta }}</span>
         </button>
         <div v-if="expanded.has(row.item.id)" data-test="action-row-card" class="border-t border-line p-2">

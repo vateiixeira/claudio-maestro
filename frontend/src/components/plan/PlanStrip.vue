@@ -86,7 +86,7 @@ async function openPlan() {
     data-test="plan-strip"
     aria-label="Plano"
     class="flex w-full flex-col gap-1.5"
-    :class="inPanel ? '' : 'mx-auto max-w-[760px] px-4 pb-3'"
+    :class="inPanel ? '' : 'mx-auto max-w-(--chat-width) px-4 pb-3'"
   >
     <div class="flex items-center gap-2">
       <button

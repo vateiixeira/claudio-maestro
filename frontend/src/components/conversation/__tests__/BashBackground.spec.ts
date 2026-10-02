@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { ref } from 'vue'
+import { SUBAGENT_FOCUS_KEY, type SubagentFocus } from '../../../conversation/subagents'
 import BashTool from '../BashTool.vue'
 import type { ToolItem } from '../../../types/conversation'
 
@@ -25,12 +27,17 @@ describe('Bash em background', () => {
     const el = badge(bash({ background: live('running') }))
     expect(el.attributes('data-status')).toBe('running')
     expect(el.text()).toContain('Em background')
+    expect(el.classes()).toContain('text-secondary-soft')
+    expect(el.classes()).not.toContain('text-primary-soft')
+    expect(el.find('[data-test="bash-background-dot"]').classes()).toContain('bg-secondary')
+    expect(el.find('[data-test="bash-background-dot"]').classes()).not.toContain('bg-primary')
     expect(el.find('[data-test="bash-background-dot"]').classes()).toContain('animate-pulse')
     expect(el.find('[data-test="bash-background-dot"]').classes()).toContain('motion-reduce:animate-none')
   })
 
   it('concluído, falhou e parado', () => {
     expect(badge(bash({ background: live('completed') })).text()).toContain('Concluído')
+    expect(badge(bash({ background: live('completed') })).classes()).toContain('text-primary-soft')
     expect(badge(bash({ background: live('failed') })).text()).toContain('Falhou')
     expect(badge(bash({ background: live('stopped') })).text()).toContain('Parado')
     expect(badge(bash({ background: live('completed') })).find('[data-test="bash-background-dot"]').exists()).toBe(false)
@@ -50,9 +57,15 @@ describe('Bash em background', () => {
     expect(none.find('[data-test="bash-background-summary"]').exists()).toBe(false)
   })
 
-  it('antes do resultado continua "rodando…"; sem selo duplicado no cabeçalho', () => {
+  it('antes do resultado a bolinha pulsa e o "rodando…" fica só para leitor de tela', () => {
     const w = mount(BashTool, { props: { item: bash({ result: null, background: null }), sessionActive: true } })
-    expect(w.find('[data-test="bash-header"]').text()).toContain('rodando')
+    expect(w.find('[data-test="bash-header"] .sr-only').text()).toBe('rodando…')
+    expect(w.find('[data-test="bash-status-dot"]').classes()).toContain('animate-pulse')
+  })
+
+  it('falha em background deixa a bolinha vermelha', () => {
+    const w = mount(BashTool, { props: { item: bash({ background: live('failed') }), sessionActive: true } })
+    expect(w.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('error')
   })
 
   it('o selo é o único estado no cabeçalho depois do resultado', () => {
@@ -61,5 +74,25 @@ describe('Bash em background', () => {
     expect(header).toContain('Em background')
     expect(header).not.toContain('rodando')
     expect(header).not.toContain('sem resultado')
+  })
+})
+
+describe('Bash em background como destino da faixa e do rodapé', () => {
+  const mountFocused = (item: ToolItem, focus: SubagentFocus | null) =>
+    mount(BashTool, { props: { item, sessionActive: true }, global: { provide: { [SUBAGENT_FOCUS_KEY as symbol]: ref(focus) } } })
+
+  it('o cartão se identifica e recebe foco programático só quando é de background', () => {
+    const bgCard = mountFocused(bash({ background: live('running') }), null).find('[data-subagent-id="t"]')
+    expect(bgCard.exists()).toBe(true)
+    expect(bgCard.attributes('tabindex')).toBe('-1')
+    const plain = mountFocused(bash({ input: { command: 'ls' }, background: null }), null)
+    expect(plain.find('[data-subagent-id]').exists()).toBe(false)
+  })
+
+  it('destaca o cartão enquanto é o alvo', () => {
+    const target = mountFocused(bash({ background: live('running') }), { id: 't', path: ['t'] }).find('[data-subagent-id="t"]')
+    expect(target.attributes('data-highlighted')).toBe('true')
+    const other = mountFocused(bash({ background: live('running') }), { id: 'x', path: ['x'] }).find('[data-subagent-id="t"]')
+    expect(other.attributes('data-highlighted')).toBeUndefined()
   })
 })

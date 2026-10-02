@@ -61,7 +61,7 @@ describe('chat em turnos', () => {
     expect(seps[0]!.text()).toBe('Turno 2')
     const ends = w.findAll('[data-test="turn-end"]')
     expect(ends).toHaveLength(1)
-    expect(ends[0]!.text()).toContain('Turno concluído')
+    expect(ends[0]!.text()).toContain('Concluído')
     expect(ends[0]!.text()).toContain('2 ações · 1 arquivo alterado')
   })
 
@@ -164,7 +164,7 @@ describe('grupo de ações', () => {
     expect(group(w).find('[data-test="tool-output"]').exists()).toBe(false)
     await rows[1]!.trigger('click')
     expect(rows[1]!.attributes('aria-expanded')).toBe('true')
-    expect(group(w).text()).toContain('$ ls -la')
+    expect(group(w).find('[data-test="bash-command"]').text()).toContain('ls -la')
   })
 })
 

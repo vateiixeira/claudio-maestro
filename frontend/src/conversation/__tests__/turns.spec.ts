@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actionRow, buildTurns, groupChips, groupNodeKind, nodeKind, turnSummary } from '../turns'
+import { actionRow, buildTurns, groupChips, groupNodeKind, nodeKind, tidyThinking, turnSummary } from '../turns'
 import type { ConversationItem, ToolItem } from '../../types/conversation'
 
 const user = (id: string): ConversationItem => ({ type: 'user', id, text: id })
@@ -27,6 +27,70 @@ describe('buildTurns', () => {
 
   it('sem itens, sem turnos', () => {
     expect(buildTurns([])).toEqual([])
+  })
+})
+
+const thought = (id: string, body: string, streaming = false): ConversationItem => ({ type: 'thinking', id, text: body, streaming, parent_tool_use_id: null })
+const ids = (turn: ReturnType<typeof buildTurns>[number]) => turn.entries.map((e) => (e.kind === 'item' ? e.item.id : e.id))
+
+describe('pensamentos nos turnos', () => {
+  it('pensamentos seguidos viram um só: texto unido, id do primeiro, streaming do último', () => {
+    const [turn] = buildTurns([user('u'), thought('t1', 'primeiro', false), thought('t2', 'segundo', true)])
+    expect(turn!.entries).toHaveLength(1)
+    const entry = turn!.entries[0]!
+    expect(entry.kind).toBe('item')
+    if (entry.kind !== 'item') return
+    expect(entry.item).toMatchObject({ type: 'thinking', id: 't1', text: 'primeiro\n\nsegundo', streaming: true })
+  })
+
+  it('une três ou mais e não une pensamentos separados por outro item', () => {
+    const [turn] = buildTurns([user('u'), thought('a', '1'), thought('b', '2'), thought('c', '3'), text('x'), thought('d', '4')])
+    expect(ids(turn!)).toEqual(['a', 'x', 'd'])
+    const first = turn!.entries[0]!
+    expect(first.kind === 'item' && first.item.type === 'thinking' && first.item.text).toBe('1\n\n2\n\n3')
+  })
+
+  it('não une pensamentos de rodadas diferentes (separados por mensagem do usuário)', () => {
+    const turns = buildTurns([user('u1'), thought('a', '1'), user('u2'), thought('b', '2')])
+    expect(turns.map(ids)).toEqual([['a'], ['b']])
+  })
+
+  it('pensamento terminado e vazio ou só com espaços some', () => {
+    const [turn] = buildTurns([user('u'), thought('e1', ''), thought('e2', ' \n '), text('x')])
+    expect(ids(turn!)).toEqual(['x'])
+  })
+
+  it('pensamento vazio em andamento continua aparecendo', () => {
+    const [turn] = buildTurns([user('u'), thought('e', '', true)])
+    expect(ids(turn!)).toEqual(['e'])
+  })
+
+  it('pensamento vazio no meio não atrapalha a junção dos vizinhos', () => {
+    const [turn] = buildTurns([user('u'), thought('a', 'um'), thought('v', ''), thought('b', 'dois')])
+    expect(ids(turn!)).toEqual(['a'])
+    const entry = turn!.entries[0]!
+    expect(entry.kind === 'item' && entry.item.type === 'thinking' && entry.item.text).toBe('um\n\ndois')
+  })
+
+  it('terminado seguido de um em andamento vazio fica em andamento com o texto do primeiro', () => {
+    const [turn] = buildTurns([user('u'), thought('a', 'um'), thought('b', '', true)])
+    const entry = turn!.entries[0]!
+    expect(entry.kind === 'item' && entry.item).toMatchObject({ id: 'a', text: 'um', streaming: true })
+  })
+
+  it('não altera os itens recebidos', () => {
+    const a = thought('a', 'um')
+    const b = thought('b', 'dois', true)
+    buildTurns([user('u'), a, b])
+    expect(a).toMatchObject({ text: 'um', streaming: false })
+  })
+})
+
+describe('tidyThinking (filhos de subagentes)', () => {
+  it('aplica a mesma regra a uma lista solta', () => {
+    const out = tidyThinking([thought('a', 'um'), thought('v', ''), thought('b', 'dois'), tool('r', 'Read'), thought('z', '  ')])
+    expect(out.map((i) => i.id)).toEqual(['a', 'r'])
+    expect(out[0]).toMatchObject({ text: 'um\n\ndois' })
   })
 })
 
@@ -92,9 +156,14 @@ describe('grupos de ações', () => {
       user('u'), tool('r1', 'Read'), tool('r2', 'Read'), tool('e', 'Edit'), tool('r3', 'Read'), tool('r4', 'Read'),
       tool('a', 'Agent'), tool('r5', 'Read'), err, tool('r6', 'Read'), tool('t', 'TodoWrite'), tool('r7', 'Read'),
       { type: 'notice', id: 'n', level: 'warning', text: '' }, tool('r8', 'Read'),
-      { type: 'thinking', id: 'th', text: '', streaming: false, parent_tool_use_id: null }, tool('r9', 'Read'),
+      { type: 'thinking', id: 'th', text: 'hmm', streaming: false, parent_tool_use_id: null }, tool('r9', 'Read'),
     ])[0]!
     expect(ids(t)).toEqual(['G(r1,r2)', 'e', 'G(r3,r4)', 'a', 'r5', 'bx', 'r6', 't', 'r7', 'n', 'r8', 'th', 'r9'])
+  })
+
+  it('um pensamento vazio, que não aparece, não quebra o grupo', () => {
+    const empty: ConversationItem = { type: 'thinking', id: 'th', text: '', streaming: false, parent_tool_use_id: null }
+    expect(ids(buildTurns([user('u'), tool('r1', 'Read'), empty, tool('r2', 'Read')])[0]!)).toEqual(['G(r1,r2)'])
   })
 
   it('o id do grupo é o do primeiro item e não muda ao crescer', () => {

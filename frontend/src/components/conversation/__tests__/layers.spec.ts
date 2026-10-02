@@ -39,36 +39,49 @@ function bash(result: { content: string; is_error: boolean } | null): Conversati
 }
 
 describe('camadas visuais do chat (opção A)', () => {
-  it('Bash separa cabeçalho, comando e saída em três fundos', () => {
+  it('Bash: cabeçalho solto e uma caixa só, com IN e OUT separados por uma linha', () => {
     const w = mount(ConversationBlock, { props: { item: bash({ content: 'saida', is_error: false }), sessionActive: false } })
-    expect(w.find('[data-test="bash-header"]').classes()).toContain('bg-panel')
-    const cmd = w.find('[data-test="bash-command"]')
-    expect(cmd.classes()).toContain('bg-bg')
-    expect(cmd.find('[data-test="bash-prompt"]').classes()).toContain('text-fg-subtle')
-    expect(cmd.text()).toBe('$ ls -la')
-    const out = w.find('[data-test="bash-output"]')
-    expect(out.classes()).toEqual(expect.arrayContaining(['bg-panel', 'border-t', 'border-line', 'text-fg-muted']))
+    expect(w.find('[data-test="bash-header"]').classes()).not.toContain('bg-panel')
+    const box = w.find('[data-test="bash-box"]')
+    expect(box.classes()).toEqual(expect.arrayContaining(['bg-panel', 'border', 'border-line']))
+    const cmd = box.find('[data-test="bash-command"]')
+    expect(cmd.text()).toContain('IN')
+    expect(cmd.text()).toContain('ls -la')
+    const out = box.find('[data-test="bash-output"]')
+    expect(out.classes()).toEqual(expect.arrayContaining(['border-t', 'border-line']))
+    expect(out.text()).toContain('OUT')
     expect(out.text()).toContain('saida')
   })
 
   it('Bash com erro mantém a saída em vermelho', () => {
     const w = mount(ConversationBlock, { props: { item: bash({ content: 'boom', is_error: true }), sessionActive: false } })
-    expect(w.find('[data-test="tool-error"] [data-test="output-box"]').classes()).toContain('bg-diff-del-bg')
-    expect(w.text()).toContain('falhou')
+    expect(w.find('[data-test="tool-error"] [data-test="pane-toggle"]').classes()).toContain('text-diff-del-fg')
+    expect(w.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('error')
   })
 
-  it('TextBlock limita a largura de leitura a 68ch', () => {
+  it('TextBlock limita a largura de leitura a 90ch', () => {
     const w = mount(ConversationBlock, { props: { item: { type: 'text', id: 'x', text: 'oi', streaming: false, parent_tool_use_id: null } } })
-    expect(w.find('.markdown').classes()).toContain('max-w-[68ch]')
+    expect(w.find('.markdown').classes()).toContain('max-w-[90ch]')
   })
 
   it('mensagem do usuário é um balão à direita', () => {
     const w = mount(ConversationBlock, { props: { item: { type: 'user', id: 'u', text: 'oi', images: [] } } })
     expect(w.find('[data-test="user-message-row"]').classes()).toContain('justify-end')
     const card = w.find('[data-test="user-message-card"]')
-    expect(card.classes()).toEqual(expect.arrayContaining(['bg-elevated', 'rounded-br-md']))
+    expect(card.classes()).toEqual(expect.arrayContaining(['bg-primary-tint', 'border-primary/25', 'rounded-br-md']))
+    expect(card.classes()).not.toContain('bg-elevated')
+    expect(w.find('[data-test="user-message"]').classes()).toContain('text-fg')
     // A posição diz quem falou; o leitor de tela ouve o nome.
     expect(card.find('.sr-only').text()).toBe('Você:')
+  })
+
+  it('anexos da mensagem do usuário acompanham o tom verde', () => {
+    const item = { type: 'user', id: 'u', text: 'oi', images: [{ type: 'image', media_type: 'image/png', size: 2048 }] }
+    const w = mount(ConversationBlock, { props: { item: item as never } })
+    const chip = w.find('[data-test="attachment"]')
+    expect(chip.text()).toContain('Imagem')
+    expect(chip.classes()).toEqual(expect.arrayContaining(['border-primary/25', 'text-fg-muted']))
+    expect(chip.classes()).not.toContain('bg-panel')
   })
 
   it('resposta do modelo vira balão à esquerda só no nível de cima', () => {
@@ -81,7 +94,7 @@ describe('camadas visuais do chat (opção A)', () => {
     expect(nested.find('[data-test="assistant-bubble"]').exists()).toBe(false)
   })
 
-  it('turno concluído, trilho e superfície do chat', async () => {
+  it('rodapé do turno, trilho e superfície do chat', async () => {
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({
         seq: 1, state: 'running',
@@ -97,9 +110,10 @@ describe('camadas visuais do chat (opção A)', () => {
     const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] } })
     await flushPromises()
     const end = w.find('[data-test="turn-end"]')
-    expect(end.classes()).toEqual(expect.arrayContaining(['bg-panel', 'border-primary/35']))
-    expect(end.find('.text-primary-soft').exists()).toBe(true)
-    expect(end.find('.text-fg-muted').exists()).toBe(true)
+    // Rodapé do turno: linha discreta, sem caixa; nos turnos antigos tudo em cinza.
+    expect(end.classes()).not.toEqual(expect.arrayContaining(['bg-panel']))
+    expect(end.find('[data-test="turn-end-label"]').classes()).toContain('text-fg-subtle')
+    expect(end.find('.text-primary-soft').exists()).toBe(false)
     expect(w.html()).toContain('bg-line-strong')
     // As respostas do turno aparecem em balão.
     expect(w.findAll('[data-test="assistant-bubble"]')).toHaveLength(1)

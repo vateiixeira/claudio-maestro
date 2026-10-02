@@ -20,7 +20,30 @@ function groupable(item: ConversationItem): item is ToolItem {
   return !EDIT_TOOLS.has(item.name) && !AGENT_TOOLS.has(item.name) && !TASK_TOOLS.has(item.name)
 }
 
+/**
+ * Tidies the thinking in a list of items: a finished thought with no text is dropped,
+ * and consecutive thoughts become one (texts joined by a blank line, the first one's id
+ * so the block keeps its state, `streaming` of the last). Never mutates the input.
+ */
+export function tidyThinking(items: ConversationItem[]): ConversationItem[] {
+  const out: ConversationItem[] = []
+  for (const item of items) {
+    if (item.type !== 'thinking') {
+      out.push(item)
+      continue
+    }
+    if (!item.streaming && !item.text.trim()) continue
+    const prev = out[out.length - 1]
+    if (prev?.type === 'thinking') {
+      const text = [prev.text, item.text].filter((t) => t.trim()).join('\n\n')
+      out[out.length - 1] = { ...prev, text, streaming: item.streaming }
+    } else out.push(item)
+  }
+  return out
+}
+
 function groupEntries(items: ConversationItem[]): TurnEntry[] {
+  items = tidyThinking(items)
   const entries: TurnEntry[] = []
   let run: ToolItem[] = []
   const flush = () => {

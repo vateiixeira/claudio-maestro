@@ -44,7 +44,7 @@ const count = computed(() => {
       <span v-else class="min-w-0 grow truncate font-mono text-xs text-fg">{{ subject }}</span>
       <span v-if="path" class="truncate font-mono text-xs text-fg-subtle">em {{ path }}</span>
       <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>
-      <span v-else-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
+      <span v-else-if="running" class="animate-pulse text-xs text-secondary-soft">rodando…</span>
       <span v-else-if="isError" class="text-xs text-diff-del-fg">erro</span>
       <span v-else-if="count" class="text-xs text-fg-subtle">{{ count }}</span>
       <span v-else-if="!item.result" class="text-xs text-fg-subtle">sem resultado</span>
