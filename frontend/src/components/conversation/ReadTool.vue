@@ -25,7 +25,7 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
       <span class="cap text-fg">Leitura</span>
       <span class="min-w-0 grow truncate font-mono text-xs text-info-soft">{{ str(item.input.file_path) }}</span>
       <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>
-      <span v-else-if="running" class="text-xs text-primary-soft">lendo…</span>
+      <span v-else-if="running" class="text-xs text-secondary-soft">lendo…</span>
       <span v-else-if="!item.result" class="text-xs text-fg-subtle">sem resultado</span>
       <span v-else-if="item.result.is_error" class="text-xs text-diff-del-fg">erro</span>
       <span v-else class="text-xs text-fg-subtle">{{ lineCount }} {{ lineCount === 1 ? 'linha' : 'linhas' }}</span>

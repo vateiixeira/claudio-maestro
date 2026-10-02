@@ -26,7 +26,7 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
       <span class="cap text-fg">Ferramenta</span>
       <span class="min-w-0 grow truncate font-mono text-xs">{{ toolLabel(item.name) }}</span>
       <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>
-      <span v-else-if="running" class="animate-pulse text-xs text-primary-soft">rodando…</span>
+      <span v-else-if="running" class="animate-pulse text-xs text-secondary-soft">rodando…</span>
       <span v-else-if="isError" class="text-xs text-diff-del-fg">erro</span>
       <span v-else-if="!item.result" class="text-xs text-fg-subtle">sem resultado</span>
     </button>

@@ -25,9 +25,9 @@ describe('RailNode', () => {
     expect(w.find('svg').exists()).toBe(false)
   })
 
-  it('running: primária e pulsando, respeitando motion-reduce', () => {
+  it('running: âmbar e pulsando, respeitando motion-reduce', () => {
     const cls = mountKind('running').dots[0]!.classes()
-    expect(cls).toContain('bg-primary')
+    expect(cls).toContain('bg-secondary')
     expect(cls).toContain('animate-pulse')
     expect(cls).toContain('motion-reduce:animate-none')
   })

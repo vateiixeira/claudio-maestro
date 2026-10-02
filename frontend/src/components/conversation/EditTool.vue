@@ -56,7 +56,7 @@ const running = computed(() => props.item.streaming || (!props.item.result && !p
       <span class="cap text-fg">{{ label }}</span>
       <span class="min-w-0 grow truncate font-mono text-xs text-info-soft">{{ str(item.input.file_path) }}</span>
       <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>
-      <span v-else-if="running" class="text-xs text-primary-soft">aplicando…</span>
+      <span v-else-if="running" class="text-xs text-secondary-soft">aplicando…</span>
       <span class="font-mono text-xs text-diff-add-fg">+{{ counts.added }}</span>
       <span class="font-mono text-xs text-diff-del-fg">−{{ counts.removed }}</span>
       <button

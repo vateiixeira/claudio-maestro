@@ -78,7 +78,7 @@ watch(focus, (target) => {
           <span
             v-if="row.meta"
             class="max-w-[45%] shrink-0 truncate font-mono text-[0.6875rem]"
-            :class="row.meta === 'rodando…' ? 'animate-pulse text-primary-soft' : 'text-fg-subtle'"
+            :class="row.meta === 'rodando…' ? 'animate-pulse text-secondary-soft' : 'text-fg-subtle'"
           >{{ row.meta }}</span>
         </button>
         <div v-if="expanded.has(row.item.id)" data-test="action-row-card" class="border-t border-line p-2">

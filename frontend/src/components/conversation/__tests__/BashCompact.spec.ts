@@ -41,7 +41,7 @@ describe('Bash compacto: cabeçalho', () => {
     const w = mountBash(bash('sleep 5', null), true)
     const dot = w.find('[data-test="bash-status-dot"]')
     expect(dot.attributes('data-state')).toBe('running')
-    expect(dot.classes()).toEqual(expect.arrayContaining(['bg-primary', 'animate-pulse', 'motion-reduce:animate-none']))
+    expect(dot.classes()).toEqual(expect.arrayContaining(['bg-secondary', 'animate-pulse', 'motion-reduce:animate-none']))
     const sr = w.find('[data-test="bash-header"] .sr-only')
     expect(sr.text()).toBe('rodando…')
     expect(w.find('[data-test="bash-header"]').findAll('span').filter((s) => s.text() === 'rodando…' && !s.classes().includes('sr-only'))).toHaveLength(0)

@@ -22,7 +22,7 @@ const offset = computed(() => OFFSET[props.align ?? 'card'])
 
 const color = computed(() => {
   switch (props.kind) {
-    case 'running': return 'bg-primary animate-pulse motion-reduce:animate-none'
+    case 'running': return 'bg-secondary animate-pulse motion-reduce:animate-none'
     case 'error': return 'bg-diff-del-fg'
     case 'warning': return 'bg-secondary'
     case 'text': return 'bg-fg'

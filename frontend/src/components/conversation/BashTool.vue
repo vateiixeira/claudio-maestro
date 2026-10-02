@@ -42,7 +42,7 @@ const dot = computed(() => {
         :data-state="dot"
         class="h-2 w-2 shrink-0 rounded-full"
         :class="[
-          dot === 'running' ? 'animate-pulse bg-primary motion-reduce:animate-none' : dot === 'error' ? 'bg-diff-del-fg' : dot === 'ok' ? 'bg-primary' : 'bg-fg-subtle',
+          dot === 'running' ? 'animate-pulse bg-secondary motion-reduce:animate-none' : dot === 'error' ? 'bg-diff-del-fg' : dot === 'ok' ? 'bg-primary' : 'bg-fg-subtle',
         ]"
         aria-hidden="true"
       />
