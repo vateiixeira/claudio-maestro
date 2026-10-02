@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import { isQuietSession, sidebarItemClass, sidebarNestedItemClass } from './itemClass'
+import { formatActivity, formatElapsedShort } from '../../format'
+import { useMinuteClock } from '../../minuteClock'
 import { useProjectsStore } from '../../stores/projects'
 import { worktreeLabel } from '../../worktree'
 import type { Session } from '../../types/api'
@@ -14,6 +16,8 @@ const project = computed(() => projects.byId(props.session.project_id))
 const worktree = computed(() => worktreeLabel(props.session))
 const active = computed(() => route.name === 'session' && route.params.id === props.session.session_id)
 const prominent = computed(() => props.session.display_state === 'running' || (props.session.display_state === 'waiting' && !isQuietSession(props.session)))
+const now = useMinuteClock()
+const age = computed(() => (props.session.display_state === 'waiting' ? formatElapsedShort(props.session.last_activity_at, now.value) : null))
 const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.value, prominent.value) : sidebarItemClass(active.value)))
 </script>
 
@@ -25,6 +29,12 @@ const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.va
   >
     <DisplayStateIcon :display="session.display_state" :size="nested ? 10 : 11" :quiet="isQuietSession(session)" />
     <span data-test="row-title" :class="['min-w-0 grow truncate', nested ? 'text-[12.5px]' : 'text-[13px]']">{{ session.title }}</span>
+    <span
+      v-if="age"
+      data-test="row-age"
+      :title="`Última interação ${formatActivity(session.last_activity_at)}`"
+      class="shrink-0 font-mono text-[11px] text-fg-subtle tabular-nums"
+    >{{ age }}</span>
     <span
       v-if="project && !hideProject"
       data-test="row-project"

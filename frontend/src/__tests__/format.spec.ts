@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatActivity, tildePath } from '../format'
+import { formatActivity, formatElapsedShort, tildePath } from '../format'
 
 describe('tildePath', () => {
   it('troca a pasta pessoal por ~', () => {
@@ -24,5 +24,21 @@ describe('formatActivity', () => {
     expect(formatActivity(at(new Date(2026, 8, 27, 23, 0, 0)), now)).toBe('ontem')
     expect(formatActivity(at(new Date(2026, 8, 26, 10, 0, 0)), now)).toBe('26 set')
     expect(formatActivity(at(new Date(2025, 11, 3, 10, 0, 0)), now)).toBe('3 dez 2025')
+  })
+})
+
+describe('formatElapsedShort', () => {
+  const now = Date.UTC(2026, 9, 2, 12, 0, 0)
+  const ago = (s: number) => Math.floor(now / 1000) - s
+  it('curto, arredondando para baixo', () => {
+    expect(formatElapsedShort(ago(10), now)).toBe('agora')
+    expect(formatElapsedShort(ago(-30), now)).toBe('agora')
+    expect(formatElapsedShort(ago(60), now)).toBe('1 min')
+    expect(formatElapsedShort(ago(3 * 60 + 59), now)).toBe('3 min')
+    expect(formatElapsedShort(ago(3599), now)).toBe('59 min')
+    expect(formatElapsedShort(ago(3600), now)).toBe('1 h')
+    expect(formatElapsedShort(ago(5 * 3600 + 10), now)).toBe('5 h')
+    expect(formatElapsedShort(ago(86400), now)).toBe('1 dia')
+    expect(formatElapsedShort(ago(3 * 86400 + 5), now)).toBe('3 dias')
   })
 })

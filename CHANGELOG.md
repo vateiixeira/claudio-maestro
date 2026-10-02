@@ -8,6 +8,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - `MAESTRO_PREVIEW_PORT`: porta opcional para ver o frontend de uma worktree ao lado do app, usando o mesmo backend.
 - A largura do menu lateral pode ser ajustada arrastando a borda direita dele (ou com as setas do teclado), e fica guardada no navegador. Duplo clique volta ao padrão.
+- No menu lateral, as conversas em "Sua vez" mostram há quanto tempo foi a última interação ("3 min", "1 h", "2 dias").
 
 ### Alterado
 

@@ -39,3 +39,13 @@ export function formatActivity(seconds: number, now: Date = new Date()): string 
   const label = `${date.getDate()} ${MONTHS[date.getMonth()]}`
   return date.getFullYear() === now.getFullYear() ? label : `${label} ${date.getFullYear()}`
 }
+
+/** Compact time since `seconds` (Unix), for tight spots like the sidebar: "agora", "3 min", "1 h", "1 dia", "4 dias". */
+export function formatElapsedShort(seconds: number, nowMs: number = Date.now()): string {
+  const elapsed = Math.floor(nowMs / 1000 - seconds)
+  if (elapsed < 60) return 'agora'
+  if (elapsed < 3600) return `${Math.floor(elapsed / 60)} min`
+  if (elapsed < 86400) return `${Math.floor(elapsed / 3600)} h`
+  const days = Math.floor(elapsed / 86400)
+  return days === 1 ? '1 dia' : `${days} dias`
+}

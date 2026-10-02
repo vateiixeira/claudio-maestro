@@ -1,13 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import SidebarSessionRow from '../SidebarSessionRow.vue'
 import { createAppRouter } from '../../../router'
 import { useProjectsStore } from '../../../stores/projects'
+import { clockNow } from '../../../minuteClock'
 import { makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
+afterEach(() => vi.useRealTimers())
 let pinia: Pinia
 beforeEach(() => {
   pinia = createPinia()
@@ -24,6 +26,37 @@ async function mountRow(overrides: Parameters<typeof makeSession>[0], path = '/i
 }
 
 describe('linha de conversa do menu', () => {
+  it('em "Sua vez" mostra há quanto tempo foi a última interação', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-02T12:00:00Z'))
+    clockNow.value = Date.now()
+    const at = Math.floor(Date.now() / 1000) - 3 * 60
+    const row = await mountRow({ display_state: 'waiting', last_activity_at: at })
+    const age = row.find('[data-test="row-age"]')
+    expect(age.text()).toBe('3 min')
+    expect(age.attributes('title')).toContain('Última interação')
+  })
+
+  it('em execução não mostra o tempo', async () => {
+    const row = await mountRow({ display_state: 'running' })
+    expect(row.find('[data-test="row-age"]').exists()).toBe(false)
+  })
+
+  it('o tempo avança sozinho com o relógio', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-02T12:00:00Z'))
+    clockNow.value = Date.now()
+    const at = Math.floor(Date.now() / 1000) - 59 * 60
+    const row = await mountRow({ display_state: 'waiting', last_activity_at: at })
+    expect(row.find('[data-test="row-age"]').text()).toBe('59 min')
+    // the shared interval may have been armed under an earlier test's fake timers, so tick the clock by hand
+    // (the 30 s interval itself is covered in minuteClock.spec.ts)
+    vi.setSystemTime(Date.now() + 60_000)
+    clockNow.value = Date.now()
+    await row.vm.$nextTick()
+    expect(row.find('[data-test="row-age"]').text()).toBe('1 h')
+  })
+
   it('esconde o quadradinho do projeto com hideProject', async () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
     const wrapper = await mountRow({ project_id: 1 }, '/inbox', { hideProject: true })

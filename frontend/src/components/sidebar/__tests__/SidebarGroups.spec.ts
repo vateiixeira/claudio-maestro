@@ -1,16 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 
 import SidebarGroups from '../SidebarGroups.vue'
 import { createAppRouter } from '../../../router'
+import { clockNow } from '../../../minuteClock'
 import { isCollapsed, setCollapsed } from '../../../sidebarCollapse'
 import { useGroupsStore } from '../../../stores/groups'
 import { useSessionsStore } from '../../../stores/sessions'
 import { makeGroup, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
+afterEach(() => vi.useRealTimers())
 let pinia: Pinia
 beforeEach(() => {
   pinia = createPinia()
@@ -108,5 +110,21 @@ describe('agrupadores no menu', () => {
     for (const row of wrapper.findAll('[data-test="sidebar-session"]')) {
       expect(row.find('svg').classes()).toContain('stroke-secondary')
     }
+  })
+
+  it('em "Sua vez" mostra o tempo desde a última interação; em execução não', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-02T12:00:00Z'))
+    clockNow.value = Date.now()
+    const now = Math.floor(Date.now() / 1000)
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'w1', group_id: 1, title: 'Aguarda', display_state: 'waiting', last_activity_at: now - 3 * 60 }),
+      makeSession({ session_id: 'r1', group_id: 1, title: 'Roda', display_state: 'running', last_activity_at: now - 3 * 60 }),
+    ])
+    const wrapper = await mountGroups()
+    const [waiting, running] = wrapper.findAll('[data-test="sidebar-session"]')
+    expect(waiting!.find('[data-test="row-age"]').text()).toBe('3 min')
+    expect(waiting!.find('[data-test="row-age"]').attributes('title')).toContain('Última interação')
+    expect(running!.find('[data-test="row-age"]').exists()).toBe(false)
   })
 })

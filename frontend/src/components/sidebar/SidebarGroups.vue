@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import { isQuietSession } from './itemClass'
+import { formatActivity, formatElapsedShort } from '../../format'
+import { useMinuteClock } from '../../minuteClock'
 import { isCollapsed, setCollapsed } from '../../sidebarCollapse'
 import { projectTree } from '../../sidebarTree'
 import { useGroupsStore } from '../../stores/groups'
@@ -14,6 +16,7 @@ const props = defineProps<{ projectId: number }>()
 const groups = useGroupsStore()
 const sessions = useSessionsStore()
 const route = useRoute()
+const now = useMinuteClock()
 
 const tree = computed(() => projectTree(groups.forProject(props.projectId), sessions.forProject(props.projectId)))
 const isCurrent = (id: string) => route.name === 'session' && route.params.id === id
@@ -49,6 +52,12 @@ const rowClass = 'flex min-h-[30px] items-center gap-2 rounded-lg px-2 no-underl
         >
           <DisplayStateIcon :display="s.display_state" :size="11" :quiet="isQuietSession(s)" />
           <span class="min-w-0 grow truncate text-[13px]">{{ s.title }}</span>
+          <span
+            v-if="s.display_state === 'waiting'"
+            data-test="row-age"
+            :title="`Última interação ${formatActivity(s.last_activity_at)}`"
+            class="shrink-0 font-mono text-[11px] text-fg-subtle tabular-nums"
+          >{{ formatElapsedShort(s.last_activity_at, now) }}</span>
         </RouterLink>
       </template>
     </div>
