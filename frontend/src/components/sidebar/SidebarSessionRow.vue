@@ -7,7 +7,7 @@ import { useProjectsStore } from '../../stores/projects'
 import { worktreeLabel } from '../../worktree'
 import type { Session } from '../../types/api'
 
-const props = defineProps<{ session: Session }>()
+const props = withDefaults(defineProps<{ session: Session; hideProject?: boolean }>(), { hideProject: false })
 const route = useRoute()
 const projects = useProjectsStore()
 const project = computed(() => projects.byId(props.session.project_id))
@@ -24,7 +24,7 @@ const active = computed(() => route.name === 'session' && route.params.id === pr
     <DisplayStateIcon :display="session.display_state" :size="11" :quiet="isQuietSession(session)" />
     <span data-test="row-title" class="min-w-0 grow truncate text-[13px]">{{ session.title }}</span>
     <span
-      v-if="project"
+      v-if="project && !hideProject"
       data-test="row-project"
       :title="project.name"
       class="size-2 shrink-0 rounded-[2px]"

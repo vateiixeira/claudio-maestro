@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OPEN_MAX, openSessions } from '../openList'
+import { OPEN_MAX, looseOpenSessions, openSessions } from '../openList'
 import { makeSession } from '../../../test/factories'
 
 const ids = (list: { session_id: string }[]) => list.map((s) => s.session_id)
@@ -47,5 +47,25 @@ describe('lista Abertas', () => {
     const all = [makeSession({ session_id: 'a', display_state: 'running' }), makeSession({ session_id: 'b', display_state: 'waiting', unread: true })]
     openSessions(all)
     expect(ids(all)).toEqual(['a', 'b'])
+  })
+})
+
+describe('abertas de um projeto fora dos agrupadores', () => {
+  it('só do projeto, sem finalizadas, sem as de agrupador conhecido, na ordem de Abertas', () => {
+    const all = [
+      makeSession({ session_id: 'quieta', project_id: 1 }),
+      makeSession({ session_id: 'roda', project_id: 1, display_state: 'running' }),
+      makeSession({ session_id: 'outro', project_id: 2, display_state: 'waiting', unread: true }),
+      makeSession({ session_id: 'fim', project_id: 1, display_state: 'finished', finished: true }),
+      makeSession({ session_id: 'agrupada', project_id: 1, group_id: 7, display_state: 'waiting', unread: true }),
+      makeSession({ session_id: 'orfa', project_id: 1, group_id: 99 }),
+      makeSession({ session_id: 'pede', project_id: 1, display_state: 'waiting', unread: true }),
+    ]
+    expect(ids(looseOpenSessions(all, 1, new Set([7])))).toEqual(['pede', 'roda', 'quieta', 'orfa'])
+  })
+
+  it('sem agrupadores, traz todas as abertas do projeto', () => {
+    const all = [makeSession({ session_id: 'a', project_id: 3, group_id: 5 }), makeSession({ session_id: 'b', project_id: 3 })]
+    expect(ids(looseOpenSessions(all, 3, new Set()))).toEqual(['a', 'b'])
   })
 })

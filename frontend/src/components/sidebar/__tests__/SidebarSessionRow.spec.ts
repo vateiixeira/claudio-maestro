@@ -14,16 +14,23 @@ beforeEach(() => {
   setActivePinia(pinia)
 })
 
-async function mountRow(overrides: Parameters<typeof makeSession>[0], path = '/inbox') {
+async function mountRow(overrides: Parameters<typeof makeSession>[0], path = '/inbox', extraProps: Record<string, unknown> = {}) {
   const router = createAppRouter(createMemoryHistory())
   await router.push(path)
   await router.isReady()
-  const wrapper = mount(SidebarSessionRow, { props: { session: makeSession(overrides) }, global: { plugins: [pinia, router] } })
+  const wrapper = mount(SidebarSessionRow, { props: { session: makeSession(overrides), ...extraProps }, global: { plugins: [pinia, router] } })
   await flushPromises()
   return wrapper
 }
 
 describe('linha de conversa do menu', () => {
+  it('esconde o quadradinho do projeto com hideProject', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
+    const wrapper = await mountRow({ project_id: 1 }, '/inbox', { hideProject: true })
+    expect(wrapper.find('[data-test="row-project"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="row-title"]').exists()).toBe(true)
+  })
+
   it('mostra o triângulo discreto quando a conversa aguarda sem novidade', async () => {
     const wrapper = await mountRow({ display_state: 'waiting', unread: false })
     expect(wrapper.find('svg').classes()).toContain('stroke-fg-subtle')

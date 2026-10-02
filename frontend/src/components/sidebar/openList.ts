@@ -17,3 +17,11 @@ function band(s: Session): number {
 export function openSessions(all: Session[]): Session[] {
   return all.filter((s) => s.display_state !== 'finished').sort((a, b) => band(a) - band(b))
 }
+
+/**
+ * Open conversations of one project that sit outside its groups (those show under their group),
+ * in "Abertas" order. A session whose group no longer exists counts as loose.
+ */
+export function looseOpenSessions(all: Session[], projectId: number, groupIds: ReadonlySet<number>): Session[] {
+  return openSessions(all.filter((s) => s.project_id === projectId && (s.group_id == null || !groupIds.has(s.group_id))))
+}

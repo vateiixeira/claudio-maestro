@@ -7,6 +7,8 @@ import DisplayStateIcon from '../DisplayStateIcon.vue'
 import SessionSearch from './SessionSearch.vue'
 import SidebarGroups from './SidebarGroups.vue'
 import SidebarOpen from './SidebarOpen.vue'
+import SidebarSessionRow from './SidebarSessionRow.vue'
+import { looseOpenSessions } from './openList'
 import { sidebarItemClass } from './itemClass'
 import { needsYou } from '../../conversation/needsYou'
 import { useEventSocket } from '../../api/socket'
@@ -40,6 +42,13 @@ function waitingIn(projectId: number): number {
 }
 function runningIn(projectId: number): boolean {
   return sessions.forProject(projectId).some((s) => s.display_state === 'running')
+}
+// Open conversations of the project outside its groups, in "Abertas" order; grouped ones show under their group.
+function looseIn(projectId: number): Session[] {
+  return looseOpenSessions(sessions.all, projectId, new Set(groups.forProject(projectId).map((g) => g.id)))
+}
+function hasChildren(projectId: number): boolean {
+  return groups.forProject(projectId).length > 0 || looseIn(projectId).length > 0
 }
 // The project being looked at, directly or through one of its conversations.
 const activeProjectId = computed<number | null>(() => {
@@ -105,7 +114,7 @@ const itemClass = sidebarItemClass
       <template v-for="project in projects.projects" :key="project.id">
         <div class="flex items-center">
           <button
-            v-if="groups.forProject(project.id).length"
+            v-if="hasChildren(project.id)"
             type="button"
             data-test="project-toggle"
             :aria-expanded="!isCollapsed('project', project.id)"
@@ -143,7 +152,12 @@ const itemClass = sidebarItemClass
             </span>
           </RouterLink>
         </div>
-        <SidebarGroups v-if="groups.forProject(project.id).length && !isCollapsed('project', project.id)" :project-id="project.id" />
+        <template v-if="!isCollapsed('project', project.id)">
+          <div v-if="looseIn(project.id).length" data-test="project-sessions" class="flex flex-col gap-px pl-5">
+            <SidebarSessionRow v-for="s in looseIn(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project />
+          </div>
+          <SidebarGroups v-if="groups.forProject(project.id).length" :project-id="project.id" />
+        </template>
       </template>
 
       <SidebarOpen />

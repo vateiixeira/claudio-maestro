@@ -65,7 +65,7 @@ describe('menu lateral', () => {
     expect(wrapper.find('[data-test="project-waiting"]').exists()).toBe(false)
   })
 
-  it('lista projetos com cor, branch e aguardando, sem conversas aninhadas', () => {
+  it('lista projetos com cor, branch e aguardando', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online', color: '#B28CFF' })]
     useGitStore(pinia).set(1, [makeGitRepo({ branch: 'develop' })])
     useSessionsStore(pinia).setForProject(1, [makeSession({ display_state: 'waiting', unread: true })])
@@ -75,7 +75,6 @@ describe('menu lateral', () => {
     expect(project.find('[data-test="project-name"]').text()).toBe('loja-online')
     expect(project.find('[data-test="project-branch"]').text()).toContain('develop')
     expect(project.find('[data-test="project-waiting"]').text()).toContain('1')
-    expect(mountSidebar().find('[data-test="session"]').exists()).toBe(false)
   })
 
   it('mostra as conversas abertas numa lista só, sem repetir', () => {
@@ -194,11 +193,85 @@ describe('menu lateral', () => {
 })
 
 describe('menu lateral em árvore', () => {
-  beforeEach(() => { setCollapsed('project', 1, false) })
+  beforeEach(() => { setCollapsed('project', 1, false); setCollapsed('project', 2, false) })
 
   it('não mostra a seta do projeto sem agrupadores', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     expect(mountSidebar().find('[data-test="project-toggle"]').exists()).toBe(false)
+  })
+
+  it('mostra as conversas abertas do projeto logo abaixo dele, recuadas, na ordem de Abertas', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' }), makeProject({ id: 2, name: 'blog' })]
+    const sessions = useSessionsStore(pinia)
+    sessions.setForProject(1, [
+      makeSession({ session_id: 'q', project_id: 1, title: 'Quieta', last_activity_at: 300 }),
+      makeSession({ session_id: 'r', project_id: 1, title: 'Roda', display_state: 'running', last_activity_at: 200 }),
+      makeSession({ session_id: 'p', project_id: 1, title: 'Pede', unread: true, last_activity_at: 100 }),
+      makeSession({ session_id: 'f', project_id: 1, title: 'Fim', display_state: 'finished', finished: true }),
+    ])
+    sessions.setForProject(2, [makeSession({ session_id: 'b', project_id: 2, title: 'Do blog' })])
+    const w = mountSidebar()
+    const blocks = w.findAll('[data-test="project-sessions"]')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]!.findAll('[data-test="project-session"]').map((r) => r.find('[data-test="row-title"]').text())).toEqual(['Pede', 'Roda', 'Quieta'])
+    expect(blocks[0]!.classes()).toContain('pl-5')
+    expect(blocks[0]!.find('[data-test="row-project"]').exists()).toBe(false)
+    expect(blocks[1]!.find('[data-test="row-title"]').text()).toBe('Do blog')
+    const projects = w.findAll('[data-test="project"]')
+    const after = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(after(projects[0]!.element, blocks[0]!.element)).toBe(true)
+    expect(after(blocks[0]!.element, projects[1]!.element)).toBe(true)
+  })
+
+  it('a lista geral Abertas continua com as mesmas conversas', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    const w = mountSidebar()
+    expect(w.findAll('[data-test="project-session"]')).toHaveLength(1)
+    expect(w.findAll('[data-test="open"]')).toHaveLength(1)
+  })
+
+  it('projeto só com conversas ganha a seta, e recolher esconde as conversas', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    const w = mountSidebar()
+    const toggle = w.find('[data-test="project-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    await toggle.trigger('click')
+    expect(w.find('[data-test="project-sessions"]').exists()).toBe(false)
+    expect(w.findAll('[data-test="open"]')).toHaveLength(1)
+    await toggle.trigger('click')
+    expect(w.find('[data-test="project-sessions"]').exists()).toBe(true)
+  })
+
+  it('conversa de agrupador aparece só dentro do agrupador, não solta sob o projeto', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useGroupsStore(pinia).groups = [makeGroup({ id: 1, project_id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'g', project_id: 1, group_id: 1, title: 'No grupo' }),
+      makeSession({ session_id: 's', project_id: 1, group_id: null, title: 'Solta' }),
+    ])
+    const w = mountSidebar()
+    expect(w.findAll('[data-test="project-session"]').map((r) => r.find('[data-test="row-title"]').text())).toEqual(['Solta'])
+    expect(w.find('[data-test="sidebar-group"]').text()).toContain('No grupo')
+    const block = w.find('[data-test="project-sessions"]').element
+    const group = w.find('[data-test="sidebar-group"]').element
+    expect(Boolean(block.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+  })
+
+  it('conversa que passa a esperar você sobe dentro do projeto', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    const sessions = useSessionsStore(pinia)
+    sessions.setForProject(1, [
+      makeSession({ session_id: 'r', project_id: 1, title: 'Roda', display_state: 'running', last_activity_at: 200 }),
+      makeSession({ session_id: 'c', project_id: 1, title: 'Cli', display_state: 'running', last_activity_at: 100 }),
+    ])
+    const w = mountSidebar()
+    const c = sessions.find('c')!
+    c.display_state = 'waiting'
+    c.unread = true
+    await flushPromises()
+    expect(w.findAll('[data-test="project-session"]').map((r) => r.find('[data-test="row-title"]').text())).toEqual(['Cli', 'Roda'])
   })
 
   it('mostra os agrupadores do projeto e recolhe pela seta', async () => {
