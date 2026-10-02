@@ -7,6 +7,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 ### Adicionado
 
 - `MAESTRO_PREVIEW_PORT`: porta opcional para ver o frontend de uma worktree ao lado do app, usando o mesmo backend.
+- Comandos que o Claude roda em background mostram no cartão se continuam rodando, concluíram, falharam ou foram parados. Enquanto rodam, a sessão aparece como rodando na barra lateral e não é fechada por inatividade.
 
 ### Alterado
 

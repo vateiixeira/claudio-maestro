@@ -112,7 +112,7 @@ class SessionOut(BaseModel):
     # a turn (last main-chain entry left it open and something was written in the last
     # 20 minutes). Always False for sessions the app is connected to.
     cli_running: bool = False
-    # True for a session with a client whose subagent (in the background) has not
+    # True for a session with a client whose subagent or background Bash has not
     # finished after the main turn ended; it then shows as running.
     subagents_running: bool = False
     # Group of related sessions in the project; None when loose.

@@ -94,6 +94,8 @@ export type NodeKind =
 
 function toolRunning(item: ToolItem, sessionActive: boolean): boolean {
   if (item.subagent) return item.subagent.status === 'running'
+  // A background command ran at launch; what matters is the task, not the launch result.
+  if (item.background) return item.background.status === 'running'
   return item.streaming || (!item.result && !item.result_missing && sessionActive)
 }
 
@@ -109,7 +111,7 @@ export function nodeKind(item: ConversationItem, sessionActive: boolean): NodeKi
     case 'user':
       return 'text'
   }
-  if (item.result?.is_error || item.subagent?.status === 'failed') return 'error'
+  if (item.result?.is_error || item.subagent?.status === 'failed' || item.background?.status === 'failed') return 'error'
   if (toolRunning(item, sessionActive)) return 'running'
   if (AGENT_TOOLS.has(item.name)) return 'agent'
   if (item.name === 'Read') return 'read'
