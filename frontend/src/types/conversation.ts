@@ -43,6 +43,14 @@ export interface ToolItem {
   result_missing?: boolean
   /** Present on `Agent`/`Task` calls. */
   subagent?: Subagent | null
+  /** Present on `Bash` calls the CLI started in the background; absent in history. */
+  background?: BackgroundTask | null
+}
+
+export interface BackgroundTask {
+  task_id: string
+  status: SubagentStatus
+  summary: string | null
 }
 
 export type SubagentStatus = 'running' | 'completed' | 'failed' | 'stopped'

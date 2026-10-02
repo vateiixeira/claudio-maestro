@@ -161,11 +161,11 @@ def test_agent_tool_gets_subagent_before_task_started():
 def test_task_messages_for_other_tools_are_ignored():
     builder = ConversationBuilder()
     feed(builder, response_messages(
-        SID, [ToolUseBlock(id="toolu_bash", name="Bash", input={"command": "sleep 9"})],
+        SID, [ToolUseBlock(id="toolu_read", name="Read", input={"file_path": "a.txt"})],
         stop_reason="tool_use"))
 
-    assert builder.handle(task_started_message(SID, "task-9", "toolu_bash")) == []
-    assert tool_item(builder, "toolu_bash")["subagent"] is None
+    assert builder.handle(task_started_message(SID, "task-9", "toolu_read")) == []
+    assert tool_item(builder, "toolu_read")["subagent"] is None
 
 
 def test_other_tools_have_no_subagent():

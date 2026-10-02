@@ -14,7 +14,7 @@ import json
 import re
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -84,6 +84,9 @@ class ToolItem:
     # Agent/Task only: {task_id, subagent_type, description, status, last_activity,
     # usage, summary}, updated by the SDK task messages.
     subagent: dict[str, Any] | None = None
+    # Bash started with run_in_background only: {task_id, status, summary}, updated by
+    # the SDK task messages. Absent (None) in history: no live status exists there.
+    background: dict[str, Any] | None = None
     type: Literal["tool"] = field(default="tool", init=False)
 
 
@@ -157,9 +160,11 @@ INTERRUPTED_REASONS = {"aborted_streaming", "aborted_tools"}
 ECHO_PREFIXES = ("Set model to ",)
 
 SUBAGENT_TOOLS = {"Agent", "Task"}
-# SDK task status -> status shown ("running" | "completed" | "failed" | "stopped").
-# A subagent running longer than this is assumed lost (never blocks closing).
+BACKGROUND_TOOLS = {"Bash"}
+# A subagent or background command running longer than this is assumed lost
+# (never blocks closing).
 SUBAGENT_MAX_SECONDS = 3 * 60 * 60
+# SDK task status -> status shown ("running" | "completed" | "failed" | "stopped").
 _SUBAGENT_STATUS = {
     "pending": "running",
     "running": "running",
@@ -195,7 +200,9 @@ class ConversationBuilder:
         # Subagent state by tool_use_id of the Agent/Task call, and task_id -> tool_use_id.
         self._subagents: dict[str, dict[str, Any]] = {}
         self._task_tools: dict[str, str] = {}
-        # Monotonic time each subagent was first seen, by tool_use_id.
+        # Background Bash state by tool_use_id; its task_id maps in `_task_tools` too.
+        self._backgrounds: dict[str, dict[str, Any]] = {}
+        # Monotonic time each subagent or background Bash was first seen, by tool_use_id.
         self._subagent_started: dict[str, float] = {}
         # Echoes still expected from live changes by the app, counted by prefix.
         self._expected_echoes: dict[str, int] = {}
@@ -371,6 +378,8 @@ class ConversationBuilder:
             self._tools[item.tool_use_id] = item.id
             if item.name in SUBAGENT_TOOLS:
                 item.subagent = self._subagent_for(item)
+            # The block is sent again by the final assistant message: keep the state.
+            item.background = self._backgrounds.get(item.tool_use_id)
         return Event("item.upsert", asdict(item))
 
     def _subagent_for(self, item: ToolItem) -> dict[str, Any]:
@@ -612,18 +621,24 @@ class ConversationBuilder:
     # System, result, rate limit ------------------------------------------
 
     def _on_task(self, message: SystemMessage) -> list[Event]:
-        """Task* messages update the subagent card of the Agent/Task call."""
+        """Task* messages update the subagent card of the Agent/Task call, or the
+        background state of a Bash call."""
         task_id = getattr(message, "task_id", None)
         tool_use_id = getattr(message, "tool_use_id", None)
         tool = self._tool_item(tool_use_id) if tool_use_id else None
-        if tool is None or tool.name not in SUBAGENT_TOOLS:
+        if tool is None or tool.name not in SUBAGENT_TOOLS | BACKGROUND_TOOLS:
             # After a SendMessage resume the CLI names the SendMessage call, not the
             # Agent/Task one; the card is still the one that started the task.
+            # `task_updated` carries no tool_use_id at all.
             tool_use_id = self._task_tools.get(task_id)
             tool = self._tool_item(tool_use_id) if tool_use_id else None
-        if tool is None or tool.name not in SUBAGENT_TOOLS:
+        if tool is None:
             return []
-        self._task_tools[task_id] = tool_use_id
+        if tool.name in BACKGROUND_TOOLS:
+            return self._on_background_bash_task(message, tool)
+        if tool.name not in SUBAGENT_TOOLS:
+            return []
+        self._task_tools[task_id] = tool.tool_use_id
         sub = self._subagent_for(tool)
         sub["task_id"] = task_id
         if isinstance(message, TaskStartedMessage):
@@ -644,6 +659,34 @@ class ConversationBuilder:
                 sub["usage"] = dict(message.usage)
         return [self._put(tool)]
 
+    def _on_background_bash_task(self, message: SystemMessage, tool: ToolItem) -> list[Event]:
+        """A Bash call only becomes a background task when the CLI says so: a
+        `task_started` of a backgrounded call. Anything else about a Bash that was
+        never started that way (e.g. a foreground command) is ignored."""
+        task_id = message.task_id  # type: ignore[attr-defined]
+        state = self._backgrounds.get(tool.tool_use_id)
+        if state is None:
+            if not isinstance(message, TaskStartedMessage):
+                return []
+            if not (
+                message.data.get("is_backgrounded") is True
+                or tool.input.get("run_in_background") is True
+            ):
+                return []
+            state = {"task_id": task_id, "status": "running", "summary": None}
+            self._backgrounds[tool.tool_use_id] = state
+            self._subagent_started[tool.tool_use_id] = time.monotonic()
+            self._task_tools[task_id] = tool.tool_use_id
+        elif isinstance(message, TaskUpdatedMessage):
+            status = message.status or message.patch.get("status")
+            state["status"] = _SUBAGENT_STATUS.get(str(status), state["status"])
+        elif isinstance(message, TaskNotificationMessage):
+            state["status"] = _SUBAGENT_STATUS.get(message.status, state["status"])
+            state["summary"] = message.summary or state["summary"]
+        else:
+            return []
+        return [self._put(tool)]
+
     def _on_system(self, message: SystemMessage) -> list[Event]:
         if isinstance(
             message,
@@ -662,46 +705,53 @@ class ConversationBuilder:
         )
         return [Event("session.init", asdict(self.init))]
 
+    def _running_states(self) -> Iterator[tuple[str, dict[str, Any]]]:
+        """(tool_use_id, state) of every subagent and background Bash."""
+        yield from self._subagents.items()
+        yield from self._backgrounds.items()
+
     @property
     def subagents_running(self) -> bool:
-        """Some subagent (usually in the background) has not finished yet.
+        """Some subagent or background Bash (usually run in the background) has not
+        finished yet.
 
         Last resort: one running for longer than SUBAGENT_MAX_SECONDS no longer counts.
         """
         now = time.monotonic()
         return any(
-            sub["status"] == "running"
+            state["status"] == "running"
             and now - self._subagent_started.get(tool_use_id, now) <= SUBAGENT_MAX_SECONDS
-            for tool_use_id, sub in self._subagents.items()
+            for tool_use_id, state in self._running_states()
         )
 
     def _end_subagents(self, status_for: Callable[[str, ToolItem], str | None]) -> list[Event]:
-        """Give running subagents the status `status_for` returns (None keeps them)."""
+        """Give running subagents and background Bash the status `status_for` returns
+        (None keeps them)."""
         events: list[Event] = []
-        for tool_use_id, sub in self._subagents.items():
+        for tool_use_id, state in list(self._running_states()):
             tool = self._tool_item(tool_use_id)
-            if sub["status"] != "running" or tool is None:
+            if state["status"] != "running" or tool is None:
                 continue
             status = status_for(tool_use_id, tool)
             if status is not None:
-                sub["status"] = status
+                state["status"] = status
                 events.append(self._put(tool))
         return events
 
     def running_task_ids(self) -> list[str]:
-        """Task ids of subagents still running (those the CLI already announced)."""
+        """Task ids still running (those the CLI already announced)."""
         return [
-            sub["task_id"] for sub in self._subagents.values()
-            if sub["status"] == "running" and sub["task_id"]
+            state["task_id"] for _id, state in self._running_states()
+            if state["status"] == "running" and state["task_id"]
         ]
 
     def stop_running_subagents(self) -> list[Event]:
-        """The client went away: subagents still running died with it."""
+        """The client went away: subagents and background commands still running died with it."""
         return self._end_subagents(lambda _id, _tool: "stopped")
 
     def _on_background_tasks(self, data: Any) -> list[Event]:
-        """No background task left: every subagent still running has ended.
-        Any other shape of `tasks` is ignored."""
+        """No background task left: every subagent and background Bash still running
+        has ended. Any other shape of `tasks` is ignored."""
         tasks = data.get("tasks") if isinstance(data, dict) else None
         if not isinstance(tasks, list) or tasks:
             return []
@@ -721,10 +771,14 @@ class ConversationBuilder:
 
     def _on_result(self, message: ResultMessage) -> list[Event]:
         events = self.close_open_items()
-        # A subagent that never got a task_id did not survive the turn.
+        # A subagent that never got a task_id did not survive the turn (a background
+        # Bash only exists once it has one).
         events.extend(self._end_subagents(
             lambda tool_use_id, _tool: (
-                "stopped" if self._subagents[tool_use_id]["task_id"] is None else None
+                "stopped"
+                if tool_use_id in self._subagents
+                and self._subagents[tool_use_id]["task_id"] is None
+                else None
             )
         ))
 

@@ -843,6 +843,9 @@ class ActiveSession:
         # SUBAGENT_END_GRACE_SECONDS); while it is set, the session still counts as
         # having a subagent running. Only ever set while idle.
         self._subagent_hold: asyncio.TimerHandle | None = None
+        # The app asked the client to stop its tasks and has not seen them end yet:
+        # their end is not one the CLI follows with a turn of its own.
+        self._stop_requested = False
 
     @property
     def session_id(self) -> str:
@@ -882,8 +885,8 @@ class ActiveSession:
 
     @property
     def subagents_running(self) -> bool:
-        """A subagent (usually in the background) is still running in the client,
-        or the last one just ended and the turn the CLI opens for it has not started."""
+        """A subagent or a Bash command (usually in the background) is still running in
+        the client, or the last one just ended and the turn the CLI opens for it has not started."""
         return self.builder.subagents_running or (
             self._subagent_hold is not None and self.client is not None
         )
@@ -1410,6 +1413,7 @@ class ActiveSession:
                 if self._starts_turn(message):
                     # The turn the hold waited for (or another one) has begun.
                     self._release_subagent_hold(announce=False)
+                    self._stop_requested = False
                     if self.pending_turns == 0:
                         # The CLI opened a turn by itself (a background subagent finished).
                         self._autonomous_turn = True
@@ -1430,7 +1434,7 @@ class ActiveSession:
                 self._emit_events(self.builder.handle(message))
                 if (
                     had_subagents
-                    and isinstance(message, TaskNotificationMessage)
+                    and self._announces_task_end(message)
                     and not self.builder.subagents_running
                     and self.state == "idle"
                 ):
@@ -1583,6 +1587,22 @@ class ActiveSession:
         for call in list(self._context_calls):
             call.cancel()
         self._context_calls.clear()
+
+    def _announces_task_end(self, message: Any) -> bool:
+        """The message tells that the last background task ended, and the CLI then
+        opens a turn to tell the model: a `task_notification`, or the empty
+        `background_tasks_changed` a background Bash sends before its notification
+        (unless the app itself stopped the tasks)."""
+        if isinstance(message, TaskNotificationMessage):
+            return True
+        if (
+            isinstance(message, SystemMessage)
+            and message.subtype == "background_tasks_changed"
+            and message.data.get("tasks") == []
+        ):
+            stopped, self._stop_requested = self._stop_requested, False
+            return not stopped
+        return False
 
     @staticmethod
     def _starts_turn(message: Any) -> bool:
@@ -1843,6 +1863,7 @@ class ActiveSession:
         # A task that cannot be stopped (e.g. it just ended) must not end the
         # session: logged, and the others are still stopped.
         for task_id in self.builder.running_task_ids():
+            self._stop_requested = True
             try:
                 await client.stop_task(task_id)
             except Exception:
