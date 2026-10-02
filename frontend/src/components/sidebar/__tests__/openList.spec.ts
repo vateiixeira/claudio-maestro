@@ -11,7 +11,7 @@ describe('lista Abertas', () => {
       makeSession({ session_id: 'roda1', display_state: 'running' }),
       makeSession({ session_id: 'pede1', display_state: 'waiting', unread: true }),
       makeSession({ session_id: 'roda2', display_state: 'running' }),
-      makeSession({ session_id: 'pede2', display_state: 'waiting', pending_kind: 'permission' }),
+      makeSession({ session_id: 'pede2', display_state: 'waiting', pending_kind: 'tool' }),
     ]
     expect(ids(openSessions(all))).toEqual(['pede1', 'pede2', 'roda1', 'roda2', 'quieta'])
   })

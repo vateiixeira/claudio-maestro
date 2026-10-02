@@ -78,111 +78,16 @@ describe('menu lateral', () => {
     expect(mountSidebar().find('[data-test="session"]').exists()).toBe(false)
   })
 
-  const titles = (w: ReturnType<typeof mountSidebar>) =>
-    w.findAll('[data-test="recent"]').map((r) => r.find('[data-test="row-title"]').text())
-
-  it('Recentes lista todas as conversas não finalizadas pela última interação, sem depender de terem sido abertas', () => {
-    useProjectsStore(pinia).projects = [makeProject({ id: 1 }), makeProject({ id: 2 })]
-    const sessions = useSessionsStore(pinia)
-    sessions.setForProject(1, [
-      makeSession({ session_id: 'a', project_id: 1, title: 'A', last_activity_at: 100 }),
-      makeSession({ session_id: 'c', project_id: 1, title: 'C', last_activity_at: 300 }),
-    ])
-    sessions.setForProject(2, [makeSession({ session_id: 'b', project_id: 2, title: 'B', last_activity_at: 200 })])
-
-    const recent = mountSidebar().findAll('[data-test="recent"]')
-    expect(recent.map((r) => r.find('[data-test="row-title"]').text())).toEqual(['C', 'B', 'A'])
-    expect(recent[0]!.attributes('href')).toBe('/sessions/c')
-  })
-
-  it('Recentes não tem teto: mais de 5 conversas aparecem', () => {
-    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
-    useSessionsStore(pinia).setForProject(1, Array.from({ length: 8 }, (_, i) =>
-      makeSession({ session_id: `s${i}`, title: `T${i}`, last_activity_at: 1000 + i }),
-    ))
-    expect(titles(mountSidebar())).toEqual(['T7', 'T6', 'T5', 'T4', 'T3', 'T2', 'T1', 'T0'])
-  })
-
-  it('marca com aria-current só o link da conversa aberta em Recentes', async () => {
-    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
-    useSessionsStore(pinia).setForProject(1, [
-      makeSession({ session_id: 's1', title: 'A', last_activity_at: 200 }),
-      makeSession({ session_id: 's2', title: 'B', last_activity_at: 100 }),
-    ])
-    const router = createAppRouter(createMemoryHistory())
-    await router.push('/sessions/s2')
-    const wrapper = mount(AppSidebar, { global: { plugins: [pinia, router] } })
-
-    const links = wrapper.findAll('[data-test="recent"]')
-    expect(links.map((l) => l.attributes('aria-current'))).toEqual([undefined, 'page'])
-  })
-
-  it('Recentes não repete o que está em execução', async () => {
+  it('mostra as conversas abertas numa lista só, sem repetir', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 'a', project_id: 1, display_state: 'running' }),
       makeSession({ session_id: 'b', project_id: 1 }),
     ])
     const w = mountSidebar()
-    await flushPromises()
-    expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toEqual(['/sessions/b'])
-    expect(w.findAll('[data-test="running"]').length).toBe(1)
-  })
-
-  it('conversa que para de rodar passa de "Em execução" para Recentes', async () => {
-    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
-    const sessions = useSessionsStore(pinia)
-    sessions.setForProject(1, [makeSession({ session_id: 'cli', project_id: 1, display_state: 'running', cli_running: true })])
-    const w = mountSidebar()
-    expect(w.find('[data-test="recent"]').exists()).toBe(false)
-    sessions.find('cli')!.display_state = 'waiting'
-    await flushPromises()
-    expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toEqual(['/sessions/cli'])
+    expect(w.findAll('[data-test="open"]').map((r) => r.attributes('href'))).toEqual(['/sessions/a', '/sessions/b'])
     expect(w.find('[data-test="running"]').exists()).toBe(false)
-  })
-
-  it('linhas de Recentes mostram o nome do projeto depois do título, sem badge', async () => {
-    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
-    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'b', project_id: 1 })])
-    const w = mountSidebar()
-    const row = w.find('[data-test="recent"]')
-    expect(row.find('[data-test="row-project"]').text()).toBe('loja-online')
-    expect(row.find('[data-test="row-project"]').attributes('title')).toBe('loja-online')
-    expect(row.find('[data-test="project-badge"]').exists()).toBe(false)
-  })
-
-  it('Recentes não mostra conversa finalizada e ela volta ao ser reaberta', async () => {
-    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
-    const sessions = useSessionsStore(pinia)
-    sessions.setForProject(1, [
-      makeSession({ session_id: 'a', project_id: 1, last_activity_at: 100 }),
-      makeSession({ session_id: 'b', project_id: 1, last_activity_at: 200, display_state: 'finished', finished: true }),
-    ])
-    const w = mountSidebar()
-    await flushPromises()
-    expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toEqual(['/sessions/a'])
-    sessions.find('b')!.display_state = 'waiting'
-    await flushPromises()
-    expect(w.findAll('[data-test="recent"]').map((r) => r.attributes('href'))).toEqual(['/sessions/b', '/sessions/a'])
-  })
-
-  it('conversa com nova interação sobe para o topo de Recentes', async () => {
-    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
-    const sessions = useSessionsStore(pinia)
-    sessions.setForProject(1, [
-      makeSession({ session_id: 'a', project_id: 1, title: 'A', last_activity_at: 300 }),
-      makeSession({ session_id: 'b', project_id: 1, title: 'B', last_activity_at: 200 }),
-      makeSession({ session_id: 'c', project_id: 1, title: 'C', last_activity_at: 100 }),
-    ])
-    const w = mountSidebar()
-    expect(titles(w)).toEqual(['A', 'B', 'C'])
-
-    sessions.applyEvent({
-      type: 'session.updated', session_id: 'c', seq: 1,
-      data: makeSession({ session_id: 'c', project_id: 1, title: 'C', last_activity_at: 400 }),
-    } as never)
-    await flushPromises()
-    expect(titles(w)).toEqual(['C', 'A', 'B'])
+    expect(w.find('[data-test="recent"]').exists()).toBe(false)
   })
 
   it('a barra lateral tem 308px de largura', () => {

@@ -4,7 +4,8 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import SidebarSessionRow from '../SidebarSessionRow.vue'
 import { createAppRouter } from '../../../router'
-import { makeSession } from '../../../test/factories'
+import { useProjectsStore } from '../../../stores/projects'
+import { makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -54,5 +55,16 @@ describe('linha de conversa do menu', () => {
     const other = await mountRow({ session_id: 'x2' }, '/sessions/x1')
     expect(other.classes()).toContain('text-fg-muted')
     expect(other.classes()).not.toContain('bg-card')
+  })
+
+  it('mostra o projeto como quadradinho colorido, com o nome na dica e para leitor de tela', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online', color: '#B28CFF' })]
+    const wrapper = await mountRow({ project_id: 1 })
+    const project = wrapper.find('[data-test="row-project"]')
+    expect(project.attributes('title')).toBe('loja-online')
+    expect(project.attributes('style')).toContain('background-color')
+    expect(project.find('.sr-only').text()).toBe('loja-online')
+    const html = wrapper.html()
+    expect(html.indexOf('row-title')).toBeLessThan(html.indexOf('row-project'))
   })
 })

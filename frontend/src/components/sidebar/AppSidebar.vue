@@ -6,8 +6,7 @@ import ConnectionIndicator from '../ConnectionIndicator.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import SessionSearch from './SessionSearch.vue'
 import SidebarGroups from './SidebarGroups.vue'
-import SidebarRunning from './SidebarRunning.vue'
-import SidebarSessionRow from './SidebarSessionRow.vue'
+import SidebarOpen from './SidebarOpen.vue'
 import { sidebarItemClass } from './itemClass'
 import { needsYou } from '../../conversation/needsYou'
 import BranchLabel from '../git/BranchLabel.vue'
@@ -36,13 +35,6 @@ const waitingCount = computed(() => sessions.all.filter(isWaitingOnYou).length)
 function waitingIn(projectId: number): number {
   return sessions.forProject(projectId).filter(isWaitingOnYou).length
 }
-const runningIds = computed(() => new Set(sessions.all.filter((s) => s.display_state === 'running').map((s) => s.session_id)))
-// "Recentes" = every open conversation, i.e. not finished. The running ones stay only in
-// "Em execução". `sessions.all` is already sorted by `last_activity_at` (latest first), which
-// moves on any interaction, from the operator or from the agent, so no limit and no reordering here.
-const recent = computed(() =>
-  sessions.all.filter((s) => s.display_state !== 'finished' && !runningIds.value.has(s.session_id)),
-)
 // The project being looked at, directly or through one of its conversations.
 const activeProjectId = computed<number | null>(() => {
   if (route.name === 'project') return Number(route.params.id)
@@ -121,11 +113,7 @@ const itemClass = sidebarItemClass
         <SidebarGroups v-if="groups.forProject(project.id).length && !isCollapsed('project', project.id)" :project-id="project.id" />
       </template>
 
-      <SidebarRunning />
-      <template v-if="recent.length">
-        <div class="px-3 pt-4 pb-0.5 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Recentes</div>
-        <SidebarSessionRow v-for="session in recent" :key="session.session_id" data-test="recent" :session="session" />
-      </template>
+      <SidebarOpen />
     </div>
 
     <RouterLink to="/preferencias" data-test="preferences" :class="itemClass(route.name === 'preferences')" :aria-current="route.name === 'preferences' ? 'page' : undefined">Preferências</RouterLink>
