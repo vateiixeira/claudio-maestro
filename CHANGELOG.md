@@ -12,6 +12,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - A largura do menu lateral pode ser ajustada arrastando a borda direita dele (ou com as setas do teclado), e fica guardada no navegador. Duplo clique volta ao padrão.
 - No menu lateral, as conversas em "Sua vez" mostram há quanto tempo foi a última interação ("3 min", "1 h", "2 dias").
 - Quando o turno termina mas ainda há comando ou subagente rodando em background, o fim da conversa mostra "Aguardando…" em âmbar, e a faixa acima da caixa de mensagem lista também os comandos em background, com o botão para pará-los.
+- Sessões continuam rodando quando o backend reinicia, inclusive perguntas pendentes e subagentes. Uma sessão que não sobreviveu aparece como Interrompida. `MAESTRO_AGENTD=0` desliga isso.
 
 ### Alterado
 

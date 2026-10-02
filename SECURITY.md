@@ -14,6 +14,7 @@ Defesas:
 - **Caminhos.** Todo caminho recebido é resolvido, seguindo links simbólicos, e precisa estar dentro da pasta de um projeto cadastrado. A única exceção é uma worktree git comprovadamente ligada a um repositório de um projeto.
 - **git.** Toda chamada passa por `run_git`, que neutraliza fsmonitor, pager, hooks, diff externo, textconv, filtros e submódulos.
 - **Processos.** git, o editor e o seletor de pastas rodam com argumentos em lista, nunca por shell.
+- **agentd.** O processo auxiliar que guarda os processos do agente escuta só num socket Unix com permissão 0600, numa pasta 0700, e confere o uid de quem conecta. Não abre porta de rede. Quem consegue falar com o socket já roda código como o seu usuário. O conteúdo das conversas fica só em memória, nunca em disco.
 - **Tamanho.** Corpos acima de 60 MB são recusados.
 
 Fora do modelo: alguém com acesso à sua conta no sistema operacional, e expor o app na rede (não faça isso).

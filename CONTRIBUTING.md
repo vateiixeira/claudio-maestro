@@ -44,6 +44,16 @@ pnpm --dir frontend build      # compilação e checagem de tipos
 
 A CI roda tudo isso em cada pull request, no Linux e no macOS.
 
+## agentd
+
+O agentd é o processo auxiliar que mantém os processos do agente vivos quando o backend reinicia. O código fica em `backend/claudio_maestro/agentd/`, só usa a biblioteca padrão do Python, e o protocolo tem versão (`PROTOCOL`).
+
+- Um agentd já em execução continua com o código antigo. Quem muda o agentd precisa encerrá-lo para testar (`kill $(cat <data_dir>/agentd-v1.lock)`) ou subir o `PROTOCOL`.
+- O log fica em `<data_dir>/agentd.log`.
+- O teste de contrato `backend/tests/test_agent_spawn.py` quebra quando o SDK muda a montagem do comando que inicia o agente.
+- `MAESTRO_AGENTD=0` desliga o agentd; os testes automatizados já rodam assim.
+- Para conferir contra o SDK real: `uv run python scripts/agentd_smoke.py` (consome a assinatura).
+
 ## Regras do projeto
 
 - **Testes antes do código.** Escreva o teste, veja falhar, implemente, veja passar.
@@ -56,7 +66,7 @@ A CI roda tudo isso em cada pull request, no Linux e no macOS.
 
 ## Testes manuais contra o SDK real
 
-Os scripts em `scripts/` falam com o SDK de verdade e **consomem a sua assinatura ou os seus créditos de API**. Use com moderação: poucas chamadas, prompts mínimos, modelo `haiku`, pasta temporária e `setting_sources=[]`. Dentro de uma sessão do Claude Code, remova do ambiente as variáveis que começam com `CLAUDE` antes de rodar.
+Os scripts em `scripts/` (`sdk_smoke.py`, `agentd_smoke.py` e outros) falam com o SDK de verdade e **consomem a sua assinatura ou os seus créditos de API**. Use com moderação: poucas chamadas, prompts mínimos, modelo `haiku`, pasta temporária e `setting_sources=[]`. Dentro de uma sessão do Claude Code, remova do ambiente as variáveis que começam com `CLAUDE` antes de rodar.
 
 ## Commits
 
