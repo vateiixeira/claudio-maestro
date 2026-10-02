@@ -9,6 +9,7 @@ import PermissionCard from './PermissionCard.vue'
 import PlanCard from './PlanCard.vue'
 import QuestionCard from './QuestionCard.vue'
 import RailNode from './RailNode.vue'
+import { railAlign } from '../../conversation/railAlign'
 import SubagentStrip from './SubagentStrip.vue'
 import UserMessage from './UserMessage.vue'
 import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, type SubagentFocus } from '../../conversation/subagents'
@@ -409,7 +410,7 @@ function resolvePrompt(promptId: string) {
                 <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line-strong" />
                 <div v-for="entry in turn.entries" :key="entry.kind === 'group' ? `group-${entry.id}` : entry.item.id" class="relative flex items-start gap-3">
                   <template v-if="entry.kind === 'group'">
-                    <RailNode :kind="groupNodeKind(entry.items, sessionActive)" />
+                    <RailNode :kind="groupNodeKind(entry.items, sessionActive)" align="group" />
                     <ActionGroup
                       class="min-w-0 grow"
                       :items="entry.items"
@@ -421,7 +422,7 @@ function resolvePrompt(promptId: string) {
                     />
                   </template>
                   <template v-else>
-                    <RailNode :kind="nodeKind(entry.item, sessionActive)" />
+                    <RailNode :kind="nodeKind(entry.item, sessionActive)" :align="railAlign(entry.item)" />
                     <div class="flex min-w-0 grow flex-col">
                       <ConversationBlock
                         :item="entry.item"
