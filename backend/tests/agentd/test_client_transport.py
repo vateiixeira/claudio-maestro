@@ -127,6 +127,39 @@ async def test_reattach_answers_initialize_locally_and_redelivers_pending(agentd
 
 
 @pytest.mark.anyio
+async def test_reattach_delivers_a_pending_request_once_even_if_the_log_replays_it(agentd, tmp_path):
+    first = AgentdTransport(agentd, session_id="s", spawn=lambda: spec(tmp_path))
+    await first.connect()
+    await first.write(initialize("req_a"))
+    await first.write(user("ask"))
+    seen = await read_until(first, "control_request")
+    request_id = seen[-1]["request_id"]
+    first.detach()
+    await first.close()
+
+    child = (await agentd.list())[0]
+    # Nothing was acked: the request is both pending and in the log from `ack`.
+    second = AgentdTransport(agentd, session_id="s", attach_id=child.id,
+                             attach_from=child.ack, attach_init=child.init)
+    await second.connect()
+    await second.write(initialize("req_b"))
+    collected = []
+    answered = False
+    async for message in second.read_messages():
+        collected.append(message)
+        if message["type"] == "control_request" and not answered:
+            answered = True
+            await second.write(json.dumps({"type": "control_response", "response": {
+                "subtype": "success", "request_id": request_id,
+                "response": {"behavior": "allow", "updatedInput": {}}}}) + "\n")
+        if message["type"] == "result":
+            break
+    requests = [m for m in collected if m["type"] == "control_request"]
+    assert [m["request_id"] for m in requests] == [request_id]
+    await second.kill()
+
+
+@pytest.mark.anyio
 async def test_foreign_control_responses_are_filtered(agentd, tmp_path):
     first = AgentdTransport(agentd, session_id="s", spawn=lambda: spec(tmp_path))
     await first.connect()
@@ -161,9 +194,9 @@ async def test_processed_acks_complete_messages_only(agentd, tmp_path):
             break
     await asyncio.sleep(0.2)  # ack is sent in the background
     child = (await agentd.list())[0]
-    # stream:3 -> 0 system, 1 message_start, 2 block_start, 3-5 deltas, 6 block_stop,
-    # 7 assistant: processing the assistant confirms up to 8.
-    assert child.ack == 8
+    # stream:3 -> 0 system, 1 message_start, 2 block_start, 3-5 deltas, 6 assistant,
+    # 7 block_stop: processing the assistant confirms up to 7.
+    assert child.ack == 7
     await t.kill()
 
 

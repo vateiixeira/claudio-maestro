@@ -89,8 +89,9 @@ def turn(text: str) -> None:
             stream_event({"type": "content_block_delta", "index": 0,
                           "delta": {"type": "text_delta", "text": f"w{i} "}})
             time.sleep(0.05)
-        stream_event({"type": "content_block_stop", "index": 0})
+        # As the real CLI: the complete message comes before the block's stop event.
         assistant(" ".join(words) + " ", message_id)
+        stream_event({"type": "content_block_stop", "index": 0})
     elif text.startswith("exit:"):
         sys.stderr.write("fake failure\n")
         sys.stderr.flush()

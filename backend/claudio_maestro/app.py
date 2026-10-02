@@ -1,6 +1,7 @@
 """Application assembly: settings, database, middleware and routes."""
 
 import asyncio
+import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -10,6 +11,7 @@ from fastapi import FastAPI
 
 from claudio_maestro import db, history
 from claudio_maestro.activity import ActivityReader, SessionFile
+from claudio_maestro.agent.agentd_client import AgentdClient
 from claudio_maestro.agent.base import AgentFactory
 from claudio_maestro.agent.sdk_client import clean_inherited_env
 from claudio_maestro.api import router
@@ -66,6 +68,7 @@ def create_app(
     digest_model: DigestModel | None = None,
     ports: tuple[int, ...] | None = None,
     frontend_dir: Path | None = None,
+    agentd: bool | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -78,6 +81,8 @@ def create_app(
     `digest_model` defaults to the real SDK; the agent only calls it when enabled or asked.
     `ports`: (Vite, backend[, preview]); None reads `MAESTRO_DEV_PORT`, `MAESTRO_PORT` and `MAESTRO_PREVIEW_PORT`.
     `frontend_dir`: the built frontend to serve at the root; None (development) serves only the API.
+    `agentd`: keep sessions across restarts. None turns it on only with the real agent and
+    when `MAESTRO_AGENTD` is not `0`.
     """
 
     @asynccontextmanager
@@ -101,6 +106,12 @@ def create_app(
             app.state.background.add(task)
             task.add_done_callback(app.state.background.discard)
 
+        use_agentd = agentd if agentd is not None else agent_factory is None
+        new_through_agentd = os.environ.get("MAESTRO_AGENTD", "1") != "0"
+        app.state.agentd = (
+            AgentdClient(app.state.settings.data_dir, spawn_allowed=new_through_agentd)
+            if use_agentd else None
+        )
         app.state.sessions = SessionManager(
             app.state.settings.db_path,
             app.state.hub.publish,
@@ -113,7 +124,10 @@ def create_app(
             get_session_messages=get_session_messages,
             read_tool_results=read_tool_results,
             on_turn_end=refresh_git,
+            agentd=app.state.agentd,
+            agentd_new_sessions=new_through_agentd,
         )
+        await app.state.sessions.reattach_all()
         app.state.commands = CommandCatalog(app.state.sessions.agent_factory)
         app.state.files = FileIndex()
         app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
@@ -194,6 +208,8 @@ def create_app(
                 with suppress(asyncio.CancelledError):
                     await task
             await app.state.sessions.shutdown()
+            if app.state.agentd is not None:
+                await app.state.agentd.aclose()
 
     app = FastAPI(title="Cláudio Maestro", lifespan=lifespan)
     ports = ports or app_ports(backend_port())

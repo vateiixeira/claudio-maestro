@@ -42,11 +42,13 @@ from claude_agent_sdk import (
 
 from claudio_maestro import db, groups
 from claudio_maestro import history as history_module
+from claudio_maestro.agent.agentd_client import AgentdUnavailable
 from claudio_maestro.agent.base import (
     AgentClient,
     AgentError,
     AgentFactory,
     AgentOptions,
+    AttachInfo,
 )
 from claudio_maestro.config import read_user_claude_settings
 from claudio_maestro.conversation import (
@@ -200,6 +202,10 @@ PLAN_EDITS_MAX = 64  # edit calls on plans waiting for their result, per session
 # A CLI turn signal older than this (since the last write of the session file or of a
 # subagent file) is dropped: the CLI probably died in the middle of the turn.
 CLI_TURN_STALE_SECONDS = 20 * 60
+# A session kept by the agentd must attach within this long at startup (seconds).
+REATTACH_TIMEOUT = 5.0
+REATTACH_TOTAL_TIMEOUT = 10.0
+KILL_TIMEOUT = 2.0  # one `kill` to the agentd while reattaching (seconds)
 # read_context(session_id, directory): {used_tokens, model} of the last assistant message.
 ReadContext = Callable[[str, str], dict[str, Any] | None]
 
@@ -761,8 +767,14 @@ class ActiveSession:
         read_transcript: history_module.ReadTranscript | None = None,
         link_plan: Callable[[str, str], bool] | None = None,
         refresh_plan: Callable[[str], Awaitable[bool]] | None = None,
+        agentd: Any | None = None,
+        agentd_any: Any | None = None,
     ) -> None:
         self.record = record
+        # AgentdClient for new processes (None: children of this process) and the one
+        # used to attach to processes the agentd kept (whenever the manager has one).
+        self._agentd = agentd
+        self._agentd_any = agentd_any
         self._read_transcript = read_transcript
         # The manager links a plan the conversation touches and rereads its progress.
         self._link_plan = link_plan
@@ -1036,12 +1048,13 @@ class ActiveSession:
             self._emit("conversation.reset", {})
         await self.ensure_history()
 
-    async def ensure_history(self) -> None:
+    async def ensure_history(self, *, live: bool = False) -> None:
         """Load the saved conversation once, before anything else is shown or sent.
 
         Only the last `history_limit` messages are kept (`history_truncated`).
         No client is created. A failed load leaves a warning and is tried again
-        on the next call.
+        on the next call. With `live`, a process still runs the open turn (reattach):
+        the unanswered tool calls stay open and there is no "interrupted" notice.
         """
         if self._history_loaded:
             return
@@ -1073,8 +1086,8 @@ class ActiveSession:
             if len(entries) > self._history_limit:
                 self.history_truncated = True
                 entries = entries[-self._history_limit:]
-            self.builder.load_history(entries, tool_results, compact)
-            if self.record.turn_open and not self.active:
+            self.builder.load_history(entries, tool_results, compact, live=live)
+            if self.record.turn_open and not self.active and not live:
                 self.builder.add_notice("warning", INTERRUPTED_TEXT)
             if skipped:
                 self.builder.add_notice("warning", HISTORY_LINES_SKIPPED)
@@ -1395,7 +1408,7 @@ class ActiveSession:
         self._emit_events(self.builder.add_notice("warning", text))
         self._emit_options()
 
-    def _new_client(self, resume: bool) -> AgentClient:
+    def _new_client(self, resume: bool, attach: AttachInfo | None = None) -> AgentClient:
         model = self.record.model
         return self._agent_factory(
             AgentOptions(
@@ -1407,6 +1420,10 @@ class ActiveSession:
                 effort=self.record.effort,
                 permission_mode=self.record.permission_mode,
                 entrypoint=SESSION_ENTRYPOINT,
+                # New processes go through the agentd only when the manager allows it;
+                # attaching always uses it (MAESTRO_AGENTD=0 still reattaches).
+                agentd=self._agentd if attach is None else self._agentd_any,
+                attach=attach,
             )
         )
 
@@ -1946,6 +1963,104 @@ class ActiveSession:
         if client is not None:
             await self._record_app_mtime()
 
+    async def detach(self) -> None:
+        """Backend shutdown: let the agentd keep the process running. Without an agentd
+        (or a client that cannot detach) this is close(final=True)."""
+        self._final = True
+        # A connect or reattach still running notices it through `_generation` and
+        # discards what it created; waiting for the lock leaves no untracked child.
+        self._generation += 1
+        effort_task = self._effort_task
+        if (
+            effort_task is not None and not effort_task.done()
+            and effort_task is not asyncio.current_task()
+        ):
+            effort_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await effort_task
+        await self.wait_settled()
+        self._clear_followup()
+        self._release_subagent_hold(announce=False)
+        self._cancel_context_read()
+        self._cancel_plan_tasks()
+        client = self.client
+        if client is None:
+            return
+        # The reader goes first: once the client lets go, its stream ends and the reader
+        # would take that for the process dying and kill it through `_fail`.
+        reader, self._reader = self._reader, None
+        if reader is not None and not reader.done():
+            reader.cancel()
+            with suppress(asyncio.CancelledError):
+                await reader
+        try:
+            detached = await client.detach()
+        except Exception:
+            logger.exception("Falha ao soltar a sessão %s", self.session_id)
+            detached = False
+        if not detached:
+            await self.close(final=True)
+            return
+        self._generation += 1
+        self.client = None
+
+    async def reattach(self, child: Any) -> bool:
+        """Attach to a process the agentd kept across a backend restart.
+
+        Returns False when it could not (the session is then failed or closed and the
+        caller kills the child); a cancellation disposes the client and propagates."""
+        async with self._lock:
+            await self.ensure_history(live=True)
+            was_open = self.record.turn_open
+            client = self._new_client(
+                resume=True,
+                attach=AttachInfo(agentd_id=child.id, from_pos=child.ack,
+                                  init_response=child.init),
+            )
+            generation = self._generation
+            # Before connect: a pending permission delivered during connect refreshes
+            # the state, and turn_open must not flip to 0 meanwhile.
+            self._autonomous_turn = bool(was_open)
+            try:
+                await client.connect()
+            except asyncio.CancelledError:
+                self._autonomous_turn = False
+                with suppress(asyncio.CancelledError):
+                    await self._dispose(client, None)
+                self._mark_interrupted(was_open)
+                self._refresh_state()
+                raise
+            except Exception as error:  # AgentError or anything unexpected
+                if isinstance(error, AgentError):
+                    message = error.message_pt
+                else:
+                    logger.exception("Falha ao religar a sessão %s", self.session_id)
+                    message = f"Falha inesperada ao religar o agente: {error}"
+                await self._fail(message, client)
+                self._mark_interrupted(was_open)
+                return False
+            if generation != self._generation:
+                if self._final:
+                    # The backend is shutting down: the process keeps running.
+                    with suppress(Exception):
+                        await client.detach()
+                    return True
+                self._autonomous_turn = False
+                await self._dispose(client, None)
+                self._refresh_state()
+                return False
+            self.client = client
+            self._has_connected = True
+            self._reader = asyncio.create_task(self._read(client))
+            self._refresh_state()
+            self.emit_updated()
+            return True
+
+    def _mark_interrupted(self, was_open: bool) -> None:
+        """The turn that was open when the backend went away has no process to finish it."""
+        if was_open:
+            self._emit_events(self.builder.add_notice("warning", INTERRUPTED_TEXT))
+
     async def wait_settled(self) -> None:
         """Wait for a send or connect still holding the lock and for any disposal."""
         async with self._lock:
@@ -2112,7 +2227,12 @@ class SessionManager:
         read_edits: history_module.ReadEdits | None = None,
         clock: Callable[[], float] = time.time,
         read_context: ReadContext | None = None,
+        agentd: Any | None = None,
+        agentd_new_sessions: bool = True,
     ) -> None:
+        # Keeps `claude` processes across restarts; None runs them as children of this process.
+        self._agentd = agentd
+        self._agentd_new_sessions = agentd_new_sessions
         self._clock = clock
         # Context usage of sessions without a client, from the last assistant message.
         self._read_context = read_context or history_module.sdk_read_context
@@ -2351,6 +2471,8 @@ class SessionManager:
             read_transcript=self._read_transcript,
             link_plan=lambda sid, path: self.link_plan(sid, path, source="auto"),
             refresh_plan=self.refresh_plan,
+            agentd=self._agentd if self._agentd_new_sessions else None,
+            agentd_any=self._agentd,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:
@@ -3131,4 +3253,52 @@ class SessionManager:
 
     async def shutdown(self) -> None:
         for session in list(self._sessions.values()):
-            await session.close(final=True)
+            await session.detach()
+
+    async def reattach_all(self) -> None:
+        """Startup: attach to every session the agentd kept running. Never raises: a
+        child that does not attach in time is killed and its session closed."""
+        if self._agentd is None:
+            return
+        try:
+            children = await asyncio.wait_for(self._agentd.list(), REATTACH_TOTAL_TIMEOUT)
+        except AgentdUnavailable:
+            logger.info("Nenhum agentd rodando; nada a religar")
+            return
+        except Exception as error:  # includes TimeoutError
+            logger.warning("Não foi possível listar as sessões do agentd: %r", error)
+            return
+
+        async def kill(child: Any) -> None:
+            try:
+                await asyncio.wait_for(self._agentd.kill(child.id), KILL_TIMEOUT)
+            except Exception as error:
+                logger.warning("Falha ao encerrar o processo da sessão %s: %r",
+                               child.session_id, error)
+
+        async def one(child: Any) -> None:
+            if child.exit_code is not None or self._read_row(child.session_id) is None:
+                await kill(child)
+                return
+            session = self.get(child.session_id)
+            try:
+                attached = await asyncio.wait_for(session.reattach(child), REATTACH_TIMEOUT)
+            except Exception as error:  # includes TimeoutError
+                logger.warning("Falha ao religar a sessão %s: %r", child.session_id, error)
+                attached = False
+            if not attached:
+                await kill(child)
+
+        tasks = {asyncio.create_task(one(child)): child for child in children}
+        _done, pending = await asyncio.wait(tasks, timeout=REATTACH_TOTAL_TIMEOUT)
+        for task in pending:
+            task.cancel()  # the session disposes its half-made client
+        if pending:
+            await asyncio.wait(pending)
+            logger.warning("Tempo esgotado ao religar %d sessão(ões)", len(pending))
+            for task in pending:
+                await kill(tasks[task])
+        for task, child in tasks.items():
+            if task not in pending and not task.cancelled() and task.exception() is not None:
+                logger.warning("Falha ao religar a sessão %s: %r", child.session_id,
+                               task.exception())

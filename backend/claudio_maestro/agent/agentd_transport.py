@@ -51,6 +51,8 @@ class AgentdTransport(Transport):
         self._local: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._queue: asyncio.Queue[dict[str, Any]] | None = None
         self._own_requests: set[str] = set()
+        # Requests delivered from `pending` that the log replay may deliver again.
+        self._redelivered: set[str] = set()
         self._uuid_pos: dict[str, int] = {}
         self._acked = attach_from
         self._detached = False
@@ -67,7 +69,9 @@ class AgentdTransport(Transport):
             else:
                 assert self.child_id is not None
                 for line in await self._agentd.pending(self.child_id):
-                    self._local.put_nowait(json.loads(line))
+                    message = json.loads(line)
+                    self._redelivered.add(str(message.get("request_id")))
+                    self._local.put_nowait(message)
             try:
                 self._queue = await self._agentd.subscribe(self.child_id, self._start)
             except AgentdUnavailable:
@@ -112,6 +116,11 @@ class AgentdTransport(Transport):
                     message = json.loads(event["line"])
                 except ValueError as error:
                     raise CLIConnectionError("O agentd enviou uma linha inválida.") from error
+                if message.get("type") == "control_request" and \
+                        str(message.get("request_id")) in self._redelivered:
+                    # Already delivered from `pending`: the log (from the ack) has it too.
+                    self._redelivered.discard(str(message.get("request_id")))
+                    continue
                 if message.get("type") == "control_response":
                     request_id = (message.get("response") or {}).get("request_id")
                     if request_id not in self._own_requests:
