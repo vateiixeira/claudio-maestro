@@ -12,7 +12,7 @@ describe('migração antes dos demais módulos', () => {
     await import('../migrateStorage')
     const { collapsed } = await import('../sidebarCollapse')
 
-    expect(collapsed.value).toEqual({ project: [3], group: [5] })
+    expect(collapsed.value).toEqual({ project: [3], group: [5], section: [] })
     expect(localStorage.getItem('vibing:sidebar-collapsed')).toBeNull()
   })
 
@@ -21,7 +21,7 @@ describe('migração antes dos demais módulos', () => {
 
     const { collapsed } = await import('../sidebarCollapse')
 
-    expect(collapsed.value).toEqual({ project: [], group: [] })
+    expect(collapsed.value).toEqual({ project: [], group: [], section: [] })
   })
 
   it('o main.ts importa a migração antes de qualquer outro módulo', () => {
