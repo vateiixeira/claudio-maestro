@@ -180,6 +180,36 @@ def test_app_follows_configured_ports(monkeypatch: pytest.MonkeyPatch):
         assert client.get("/api/health").status_code == 400
 
 
+def test_preview_port_is_one_of_the_app_ports(monkeypatch: pytest.MonkeyPatch):
+    """The Vite of a worktree, on MAESTRO_PREVIEW_PORT, talks to the same backend."""
+    monkeypatch.setenv("MAESTRO_PREVIEW_PORT", "6610")
+    with TestClient(create_app(), base_url="http://127.0.0.1:6610", headers=MAESTRO) as client:
+        assert client.get("/api/health").status_code == 200
+        response = client.put("/api/state/x", json={}, headers={"origin": "http://localhost:6610"})
+        assert response.status_code != 403
+
+
+def test_preview_port_refused_when_not_configured():
+    with TestClient(create_app(), base_url="http://127.0.0.1:6610", headers=MAESTRO) as client:
+        assert client.get("/api/health").status_code == 400
+    with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=MAESTRO) as client:
+        response = client.put("/api/state/x", json={}, headers={"origin": "http://localhost:6610"})
+        assert response.status_code == 403
+
+
+def test_preview_websocket_follows_preview_port(monkeypatch: pytest.MonkeyPatch):
+    preview = {"origin": "http://localhost:6610"}
+    with TestClient(create_app()) as client:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect("ws://127.0.0.1:6660/ws", headers=preview) as ws:
+                ws.receive_text()
+        assert exc_info.value.code == 1008
+    monkeypatch.setenv("MAESTRO_PREVIEW_PORT", "6610")
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("ws://127.0.0.1:6610/ws", headers=preview):
+            pass
+
+
 def test_explicit_ports_override_environment(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("MAESTRO_PORT", "7000")
     with TestClient(create_app(ports=(7100, 7200)), base_url="http://127.0.0.1:7200", headers=MAESTRO) as client:

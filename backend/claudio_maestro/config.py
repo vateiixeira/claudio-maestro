@@ -55,6 +55,21 @@ def dev_port() -> int:
     return _port_from_env("MAESTRO_DEV_PORT", DEFAULT_DEV_PORT)
 
 
+def preview_port() -> int | None:
+    """Port of a second Vite, serving a worktree under development: `MAESTRO_PREVIEW_PORT`.
+
+    Off unless set. When set, its pages count as the app's own (Host and Origin).
+    """
+    raw = os.environ.get("MAESTRO_PREVIEW_PORT")
+    return validate_port(raw, "MAESTRO_PREVIEW_PORT") if raw else None
+
+
+def app_ports(backend: int) -> tuple[int, ...]:
+    """Ports whose pages are the app's own: Vite, the backend and, if set, the preview."""
+    preview = preview_port()
+    return (dev_port(), backend) if preview is None else (dev_port(), backend, preview)
+
+
 @dataclass(frozen=True)
 class Settings:
     home_dir: Path

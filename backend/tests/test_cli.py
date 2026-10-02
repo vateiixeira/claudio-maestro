@@ -165,6 +165,16 @@ def test_main_builds_then_serves(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert "http://localhost:6660" in capsys.readouterr().out
 
 
+def test_main_accepts_preview_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MAESTRO_PREVIEW_PORT", "6610")
+    frontend = make_frontend(tmp_path)
+    age_all(frontend, 1000)
+    mark_built(frontend, 2000)
+    code, server = run_main(frontend, [])
+    assert code == 0
+    assert server.calls == [(frontend / "dist", 6660, (6600, 6660, 6610))]
+
+
 def test_main_skips_build_when_up_to_date(tmp_path: Path):
     frontend = make_frontend(tmp_path)
     age_all(frontend, 1000)

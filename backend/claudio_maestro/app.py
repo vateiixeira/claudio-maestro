@@ -18,9 +18,9 @@ from claudio_maestro.cliwatch import CliWatcher
 from claudio_maestro.commands import CommandCatalog
 from claudio_maestro.config import (
     Settings,
+    app_ports,
     backend_port,
     claude_projects_dir,
-    dev_port,
     legacy_data_dir,
     load_settings,
 )
@@ -64,7 +64,7 @@ def create_app(
     session_file: SessionFile | None = None,
     plan_sweep: bool | None = None,
     digest_model: DigestModel | None = None,
-    ports: tuple[int, int] | None = None,
+    ports: tuple[int, ...] | None = None,
     frontend_dir: Path | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
@@ -76,7 +76,7 @@ def create_app(
     tests with a fake factory keep seeing only the clients of their sessions.
     `plan_sweep` turns on the periodic reread of plan progress (same default).
     `digest_model` defaults to the real SDK; the agent only calls it when enabled or asked.
-    `ports`: (Vite, backend); None reads `MAESTRO_DEV_PORT` and `MAESTRO_PORT`.
+    `ports`: (Vite, backend[, preview]); None reads `MAESTRO_DEV_PORT`, `MAESTRO_PORT` and `MAESTRO_PREVIEW_PORT`.
     `frontend_dir`: the built frontend to serve at the root; None (development) serves only the API.
     """
 
@@ -196,12 +196,12 @@ def create_app(
             await app.state.sessions.shutdown()
 
     app = FastAPI(title="Cláudio Maestro", lifespan=lifespan)
-    app_ports = ports or (dev_port(), backend_port())
+    ports = ports or app_ports(backend_port())
     app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(
         HostOriginMiddleware,
-        allowed_hosts=allowed_hosts(app_ports),
-        allowed_origins=allowed_origins(app_ports),
+        allowed_hosts=allowed_hosts(ports),
+        allowed_origins=allowed_origins(ports),
     )
     app.include_router(router)
     if frontend_dir is not None:

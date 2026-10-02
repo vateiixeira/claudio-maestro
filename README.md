@@ -68,6 +68,7 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 |---|---|---|
 | `MAESTRO_PORT` | Porta do app (e do backend, no desenvolvimento) | `6660` |
 | `MAESTRO_DEV_PORT` | Porta do Vite, no desenvolvimento | `6600` |
+| `MAESTRO_PREVIEW_PORT` | Porta de um segundo Vite, para ver uma worktree em desenvolvimento usando o mesmo backend (veja o `CONTRIBUTING.md`) | desligada |
 | `MAESTRO_HOME` | Limite do navegador de pastas; também muda a pasta de dados padrão (`$MAESTRO_HOME/.local/share/claudio-maestro`) | sua pasta pessoal |
 | `MAESTRO_DATA_DIR` | Onde fica o banco SQLite (só metadados); vale mais que o `MAESTRO_HOME` | `~/.local/share/claudio-maestro` |
 | `CLAUDE_CONFIG_DIR` | Pasta de configuração do Claude Code | `~/.claude` |

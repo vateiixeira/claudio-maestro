@@ -29,7 +29,7 @@ Resolve dois problemas: a extensão do VSCode é pesada e ruim para multiprojeto
 | Desenvolvimento, backend | uvicorn com `--reload` | `127.0.0.1:6660` |
 | Desenvolvimento, frontend | Vite, com proxy de `/api` e `/ws` para o backend | `http://localhost:6600` |
 
-Portas: `MAESTRO_PORT` (backend e modo de uso) e `MAESTRO_DEV_PORT` (Vite). Ficam entre 1024 e 65535; não use 6665 a 6669, que os navegadores bloqueiam.
+Portas: `MAESTRO_PORT` (backend e modo de uso), `MAESTRO_DEV_PORT` (Vite) e `MAESTRO_PREVIEW_PORT` (Vite de uma worktree, desligada por padrão; veja o `CONTRIBUTING.md`). Ficam entre 1024 e 65535; não use 6665 a 6669, que os navegadores bloqueiam.
 
 ### Comandos
 
