@@ -1,5 +1,6 @@
 import type { InjectionKey, Ref } from 'vue'
 import type { ConversationItem, SubagentStatus, ToolItem } from '../types/conversation'
+import { backgroundState } from './background'
 import { AGENT_TOOLS } from './turns'
 import { str, toolLabel } from './tool'
 
@@ -13,6 +14,8 @@ export const SUBAGENT_FOCUS_KEY: InjectionKey<Ref<SubagentFocus | null>> = Symbo
 export interface SubagentEntry {
   /** Id of the conversation item (the card). */
   id: string
+  /** A subagent, or a Bash command run in the background. */
+  type: 'agent' | 'command'
   kind: string
   description: string
   status: SubagentStatus
@@ -45,8 +48,9 @@ function describeAction(item: ToolItem): string {
 }
 
 /**
- * The subagents of the current set: those of the turn in progress (after the last user
- * message) plus any earlier one still running, such as a background subagent.
+ * The subagents and background commands of the current set: those of the turn in progress
+ * (after the last user message) plus any earlier one still running. A command with no live
+ * status (history) is left out: nothing says whether it runs, and nothing could stop it.
  */
 export function deriveSubagents(items: ConversationItem[], sessionActive: boolean): SubagentEntry[] {
   let turnStart = 0
@@ -76,16 +80,31 @@ export function deriveSubagents(items: ConversationItem[], sessionActive: boolea
 
   const entries: SubagentEntry[] = []
   items.forEach((item, index) => {
-    if (item.type !== 'tool' || !AGENT_TOOLS.has(item.name)) return
-    const status = agentStatus(item, sessionActive)
-    if (index < turnStart && status !== 'running') return
-    const action = latest(item.tool_use_id)
+    if (item.type !== 'tool') return
+    if (AGENT_TOOLS.has(item.name)) {
+      const status = agentStatus(item, sessionActive)
+      if (index < turnStart && status !== 'running') return
+      const action = latest(item.tool_use_id)
+      entries.push({
+        id: item.id,
+        type: 'agent',
+        kind: item.subagent?.subagent_type || str(item.input.subagent_type),
+        description: item.subagent?.description || str(item.input.description),
+        status,
+        lastAction: action ? describeAction(action) : item.subagent?.last_activity ?? '',
+      })
+      return
+    }
+    const background = backgroundState(item)
+    if (background === null || background === 'unknown') return
+    if (index < turnStart && background !== 'running') return
     entries.push({
       id: item.id,
-      kind: item.subagent?.subagent_type || str(item.input.subagent_type),
-      description: item.subagent?.description || str(item.input.description),
-      status,
-      lastAction: action ? describeAction(action) : item.subagent?.last_activity ?? '',
+      type: 'command',
+      kind: 'Comando',
+      description: str(item.input.description) || clip(str(item.input.command)),
+      status: background,
+      lastAction: '',
     })
   })
   return entries
@@ -110,4 +129,18 @@ export function summarizeSubagents(entries: SubagentEntry[]): string {
     .filter(([, count]) => count > 0)
     .map(([status, count]) => `${count} ${COUNT_WORDS[status][count === 1 ? 0 : 1]}`)
     .join(', ')
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** "Aguardando 2 comandos em background": what keeps the session from being really done. */
+export function waitingText(running: SubagentEntry[]): string {
+  const commands = running.filter((e) => e.type === 'command').length
+  const agents = running.length - commands
+  const what = agents === 0
+    ? plural(commands, 'comando', 'comandos')
+    : commands === 0
+      ? plural(agents, 'subagente', 'subagentes')
+      : plural(running.length, 'tarefa', 'tarefas')
+  return `Aguardando ${what} em background`
 }

@@ -5,7 +5,7 @@ import SubagentStrip from '../SubagentStrip.vue'
 import type { SubagentEntry } from '../../../conversation/subagents'
 
 const entry = (id: string, status: SubagentEntry['status'], extra: Partial<SubagentEntry> = {}): SubagentEntry => ({
-  id, kind: 'reviewer', description: `desc ${id}`, status, lastAction: `Read ${id}.py`, ...extra,
+  id, type: 'agent', kind: 'reviewer', description: `desc ${id}`, status, lastAction: `Read ${id}.py`, ...extra,
 })
 const rows = (w: ReturnType<typeof mount>) => w.findAll('[data-test="subagent-row"]')
 
@@ -71,6 +71,64 @@ describe('faixa de subagentes', () => {
   it('sem última ação não deixa linha vazia', () => {
     const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { lastAction: '' })] } })
     expect(w.find('[data-test="subagent-last-action"]').exists()).toBe(false)
+  })
+
+  describe('comandos em background', () => {
+    const command = (id: string, status: SubagentEntry['status']) => entry(id, status, { type: 'command', kind: 'Comando', lastAction: '' })
+
+    it('a linha mostra "Comando", a descrição e o estado do comando', async () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [command('a', 'running'), command('b', 'completed'), command('c', 'failed'), command('d', 'stopped')] } })
+      await w.find('[data-test="subagent-summary"]').trigger('click')
+      const first = rows(w)[0]!
+      expect(first.text()).toContain('Comando')
+      expect(first.text()).toContain('desc a')
+      expect(first.text()).toContain('Em background')
+      expect(first.find('[data-status="running"]').attributes('aria-label')).toBe('Em background')
+      expect(rows(w)[1]!.text()).toContain('Concluído')
+      expect(rows(w)[2]!.text()).toContain('Falhou')
+      expect(rows(w)[3]!.text()).toContain('Parado')
+      expect(first.find('[data-test="subagent-last-action"]').exists()).toBe(false)
+    })
+
+    it('rodando em âmbar (espera), concluído continua verde', () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [command('a', 'running'), entry('b', 'running'), entry('c', 'completed')] } })
+      for (const row of [rows(w)[0]!, rows(w)[1]!]) {
+        expect(row.find('[data-status="running"] svg').classes()).toContain('text-secondary')
+        expect(row.find('[data-status="running"] svg').classes()).not.toContain('text-primary')
+        expect(row.find('.text-secondary-soft').exists()).toBe(true)
+      }
+      expect(rows(w)[2]!.find('[data-status="completed"] svg').classes()).toContain('text-primary')
+    })
+
+    it('o indicador do resumo recolhido também é âmbar', () => {
+      const entries = [command('a', 'running'), command('b', 'running'), command('c', 'running'), command('d', 'completed')]
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries } })
+      expect(w.find('[data-test="subagent-summary"] svg').classes()).toContain('text-secondary')
+    })
+
+    it('clicar na linha de um comando pede para ir ao cartão', async () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [command('a', 'running')] } })
+      await rows(w)[0]!.trigger('click')
+      expect(w.emitted('select')).toEqual([['a']])
+    })
+
+    it('o botão deixa de falar só em subagentes', () => {
+      const stop = (entries: SubagentEntry[]) => mount(SubagentStrip, { props: { sessionId: 's1', entries } }).find('[data-test="subagent-stop"]').text()
+      expect(stop([command('a', 'running')])).toBe('Parar comando')
+      expect(stop([command('a', 'running'), command('b', 'running')])).toBe('Parar comandos')
+      expect(stop([command('a', 'running'), entry('b', 'running')])).toBe('Parar tarefas')
+      expect(stop([command('a', 'running'), entry('b', 'completed')])).toBe('Parar comando')
+      expect(stop([command('a', 'completed'), entry('b', 'running')])).toBe('Parar subagente')
+    })
+
+    it('a região e o resumo recolhido falam em tarefas em background quando há comandos', () => {
+      const only = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running')] } })
+      expect(only.find('[data-test="subagent-strip"]').attributes('aria-label')).toBe('Subagentes')
+      const mixed = mount(SubagentStrip, { props: { sessionId: 's1', entries: [command('a', 'running'), entry('b', 'running'), entry('c', 'running'), entry('d', 'completed')] } })
+      expect(mixed.find('[data-test="subagent-strip"]').attributes('aria-label')).toBe('Tarefas em background')
+      expect(mixed.find('[data-test="subagent-summary"]').text()).toContain('Tarefas em background')
+      expect(mixed.find('[data-test="subagent-summary"]').text()).toContain('3 rodando, 1 concluído')
+    })
   })
 
   describe('parar subagentes', () => {

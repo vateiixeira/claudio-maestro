@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentStatus, deriveSubagents, stripSubagents, summarizeSubagents } from '../subagents'
+import { agentStatus, deriveSubagents, stripSubagents, summarizeSubagents, waitingText } from '../subagents'
 import type { ConversationItem, Subagent, ToolItem } from '../../types/conversation'
 
 const sub = (status: Subagent['status'], extra: Partial<Subagent> = {}): Subagent => ({
@@ -101,5 +101,68 @@ describe('summarizeSubagents', () => {
     ]
     expect(summarizeSubagents(deriveSubagents(items, true))).toBe('3 rodando, 2 concluídos, 1 com erro, 1 parado')
     expect(summarizeSubagents(deriveSubagents([user('u'), agent('a', 'running'), agent('d', 'completed')], true))).toBe('1 rodando, 1 concluído')
+  })
+})
+
+const bg = (id: string, status: 'running' | 'completed' | 'failed' | 'stopped' | null, input: Record<string, unknown> = {}, extra: Partial<ToolItem> = {}): ToolItem => ({
+  type: 'tool', id, tool_use_id: `tu-${id}`, name: 'Bash',
+  input: { command: `sleep ${id}`, run_in_background: true, ...input },
+  result: null, streaming: false, parent_tool_use_id: null,
+  background: status ? { task_id: `b-${id}`, status, summary: null } : null, ...extra,
+})
+
+describe('comandos Bash em background na lista', () => {
+  it('entram com o rótulo "Comando", a descrição (ou o comando cortado) e o estado', () => {
+    const entries = deriveSubagents([
+      user('u'),
+      bg('a', 'running', { description: 'Subir o servidor' }),
+      bg('b', 'completed', { command: 'x'.repeat(200) }),
+    ], true)
+    expect(entries[0]).toMatchObject({ id: 'a', type: 'command', kind: 'Comando', description: 'Subir o servidor', status: 'running', lastAction: '' })
+    expect(entries[1]!.status).toBe('completed')
+    expect(entries[1]!.description.length).toBeLessThanOrEqual(60)
+    expect(entries[1]!.description.endsWith('…')).toBe(true)
+  })
+
+  it('subagentes continuam com type "agent" e a ordem do histórico se mantém', () => {
+    const entries = deriveSubagents([user('u'), agent('a', 'running'), bg('b', 'running'), agent('c', 'completed')], true)
+    expect(entries.map((e) => [e.id, e.type])).toEqual([['a', 'agent'], ['b', 'command'], ['c', 'agent']])
+  })
+
+  it('mesma regra do conjunto atual: turno corrente e turnos anteriores só se ainda rodam', () => {
+    const items = [
+      user('u1'), bg('old-done', 'completed'), bg('old-run', 'running'), bg('old-failed', 'failed'),
+      user('u2'), bg('new-done', 'completed'), bg('new-run', 'running'),
+    ]
+    expect(deriveSubagents(items, false).map((e) => e.id)).toEqual(['old-run', 'new-done', 'new-run'])
+  })
+
+  it('sem status ao vivo (histórico) e Bash comum não entram', () => {
+    const items = [user('u'), bg('hist', null), bg('plain', null, { run_in_background: false }), bg('live', 'running')]
+    expect(deriveSubagents(items, true).map((e) => e.id)).toEqual(['live'])
+  })
+
+  it('a faixa aparece enquanto um comando roda, e só ele basta', () => {
+    expect(stripSubagents(deriveSubagents([user('u'), bg('a', 'running')], false)).map((e) => e.id)).toEqual(['a'])
+    expect(stripSubagents(deriveSubagents([user('u'), bg('a', 'completed')], false))).toEqual([])
+  })
+
+  it('o resumo conta comandos e subagentes juntos', () => {
+    expect(summarizeSubagents(deriveSubagents([user('u'), agent('a', 'running'), bg('b', 'running'), bg('c', 'completed')], true))).toBe('2 rodando, 1 concluído')
+  })
+})
+
+describe('waitingText', () => {
+  const run = (type: 'agent' | 'command') => ({ id: 'x', type, kind: '', description: '', status: 'running' as const, lastAction: '' })
+  it('só comandos: singular e plural', () => {
+    expect(waitingText([run('command')])).toBe('Aguardando 1 comando em background')
+    expect(waitingText([run('command'), run('command')])).toBe('Aguardando 2 comandos em background')
+  })
+  it('só subagentes: singular e plural', () => {
+    expect(waitingText([run('agent')])).toBe('Aguardando 1 subagente em background')
+    expect(waitingText([run('agent'), run('agent'), run('agent')])).toBe('Aguardando 3 subagentes em background')
+  })
+  it('misturados viram "tarefas"', () => {
+    expect(waitingText([run('agent'), run('command')])).toBe('Aguardando 2 tarefas em background')
   })
 })

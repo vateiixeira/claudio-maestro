@@ -12,7 +12,7 @@ import RailNode from './RailNode.vue'
 import { railAlign } from '../../conversation/railAlign'
 import SubagentStrip from './SubagentStrip.vue'
 import UserMessage from './UserMessage.vue'
-import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, type SubagentFocus } from '../../conversation/subagents'
+import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
 import { buildTurns, groupNodeKind, nodeKind, summaryText, tidyThinking, turnSummary } from '../../conversation/turns'
 import ActionGroup from './ActionGroup.vue'
 import SessionControls from '../session/SessionControls.vue'
@@ -151,6 +151,12 @@ const tree = computed(() => {
 })
 const rows = computed(() => tree.value.top)
 const sessionActive = computed(() => conv.value?.state === 'running' || conv.value?.state === 'awaiting_decision')
+// Subagents and background commands still running, in conversation order. When the main turn
+// is over, these are what the session is still waiting for.
+const backgroundRunning = computed(() =>
+  deriveSubagents(conv.value?.items ?? [], sessionActive.value).filter((entry) => entry.status === 'running'),
+)
+const waitingLabel = computed(() => waitingText(backgroundRunning.value))
 const turns = computed(() => {
   const list = buildTurns(rows.value)
   // A pending decision or a connecting session is still inside the turn.
@@ -158,9 +164,11 @@ const turns = computed(() => {
   return list.map((turn, index) => {
     const last = index === list.length - 1
     const done = !last || !running
-    let summary = done ? summaryText(turnSummary(turn, tree.value.childrenOf)) : ''
-    if (done && last && resultParts.value.length) summary = [summary, ...resultParts.value].join(' · ')
-    return { turn, done, summary }
+    // Over for the main turn, but not for the background work it started.
+    const waiting = done && last && backgroundRunning.value.length > 0
+    let summary = done && !waiting ? summaryText(turnSummary(turn, tree.value.childrenOf)) : ''
+    if (done && !waiting && last && resultParts.value.length) summary = [summary, ...resultParts.value].join(' · ')
+    return { turn, done, last, waiting, summary, failed: done && !waiting && last && resultFailed.value }
   })
 })
 // Last finished reply of the assistant, for the polite live region.
@@ -211,7 +219,7 @@ async function goToSubagent(id: string) {
 // Open/closed chosen by the user per action group (by id); unset follows the turn.
 const groupChoice = reactive(new Map<string, boolean>())
 
-// Duration, cost and error of the last turn, shown in its end line.
+// Duration and cost of the last turn, shown in its end line; its error is shown apart, in red.
 const resultParts = computed(() => {
   const result = conv.value?.lastResult
   if (!result) return []
@@ -222,9 +230,9 @@ const resultParts = computed(() => {
   if (result.total_cost_usd != null) {
     parts.push(`US$ ${result.total_cost_usd.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`)
   }
-  if (result.is_error) parts.push('terminou com erro')
   return parts
 })
+const resultFailed = computed(() => conv.value?.lastResult?.is_error === true)
 
 // Follows the end of the conversation only while the user is already there.
 const scroller = ref<HTMLElement | null>(null)
@@ -396,7 +404,7 @@ function resolvePrompt(promptId: string) {
           <p v-if="rows.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
-          <template v-for="({ turn, done, summary }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
+          <template v-for="({ turn, done, last, waiting, summary, failed }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
             <div v-if="index > 0" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-11 focus-visible:outline-2 focus-visible:outline-primary items-center gap-2.5">
               <span class="cap text-fg-subtle">Turno {{ turn.number }}</span>
               <span aria-hidden="true" class="h-px grow bg-line" />
@@ -437,14 +445,27 @@ function resolvePrompt(promptId: string) {
                   </template>
                 </div>
               </div>
-              <div
-                v-if="done"
-                data-test="turn-end"
-                class="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-primary/35 bg-panel px-3 py-2.5"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-primary" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-                <span class="cap text-primary-soft">Turno concluído</span>
-                <span class="font-mono text-[0.6875rem] text-fg-muted">{{ summary }}</span>
+              <div v-if="done" data-test="turn-end" class="flex flex-wrap items-center gap-y-0.5 text-xs text-fg-subtle">
+                <button
+                  v-if="waiting"
+                  type="button"
+                  data-test="turn-waiting"
+                  class="flex min-h-6 cursor-pointer items-center gap-2 rounded border-none bg-transparent p-0 text-left text-xs text-fg-muted hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  title="Ir ao cartão"
+                  @click="goToSubagent(backgroundRunning[0]!.id)"
+                >
+                  <span data-test="turn-waiting-dot" class="size-2 shrink-0 animate-pulse rounded-full bg-secondary motion-reduce:animate-none" aria-hidden="true" />
+                  {{ waitingLabel }}
+                </button>
+                <template v-else>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 shrink-0" :class="last ? 'text-primary' : 'text-fg-subtle'" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                  <span data-test="turn-end-label" class="font-medium" :class="last ? 'text-primary-soft' : 'text-fg-subtle'">Concluído</span>
+                  <span v-if="summary" data-test="turn-end-summary" class="text-fg-subtle">{{ ` · ${summary}` }}</span>
+                  <template v-if="failed">
+                    <span class="text-fg-subtle">{{ ' · ' }}</span>
+                    <span data-test="turn-end-error" class="text-diff-del-fg">terminou com erro</span>
+                  </template>
+                </template>
               </div>
             </div>
           </template>

@@ -94,7 +94,7 @@ describe('camadas visuais do chat (opção A)', () => {
     expect(nested.find('[data-test="assistant-bubble"]').exists()).toBe(false)
   })
 
-  it('turno concluído, trilho e superfície do chat', async () => {
+  it('rodapé do turno, trilho e superfície do chat', async () => {
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({
         seq: 1, state: 'running',
@@ -110,9 +110,10 @@ describe('camadas visuais do chat (opção A)', () => {
     const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] } })
     await flushPromises()
     const end = w.find('[data-test="turn-end"]')
-    expect(end.classes()).toEqual(expect.arrayContaining(['bg-panel', 'border-primary/35']))
-    expect(end.find('.text-primary-soft').exists()).toBe(true)
-    expect(end.find('.text-fg-muted').exists()).toBe(true)
+    // Rodapé do turno: linha discreta, sem caixa; nos turnos antigos tudo em cinza.
+    expect(end.classes()).not.toEqual(expect.arrayContaining(['bg-panel']))
+    expect(end.find('[data-test="turn-end-label"]').classes()).toContain('text-fg-subtle')
+    expect(end.find('.text-primary-soft').exists()).toBe(false)
     expect(w.html()).toContain('bg-line-strong')
     // As respostas do turno aparecem em balão.
     expect(w.findAll('[data-test="assistant-bubble"]')).toHaveLength(1)
