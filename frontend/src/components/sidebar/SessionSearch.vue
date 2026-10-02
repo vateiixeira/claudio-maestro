@@ -87,8 +87,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col gap-2">
-    <div class="flex h-11 items-center gap-2 rounded-lg border border-line bg-panel px-3 focus-within:border-fg-muted">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-muted" aria-hidden="true">
+    <div class="flex h-9 items-center gap-2 rounded-lg border border-line bg-panel px-2.5 focus-within:border-fg-muted">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-muted" aria-hidden="true">
         <circle cx="11" cy="11" r="7" />
         <line x1="21" y1="21" x2="16.5" y2="16.5" />
       </svg>
@@ -101,7 +101,7 @@ onBeforeUnmount(() => {
         type="search"
         placeholder="Procurar sessões"
         autocomplete="off"
-        class="h-10 min-w-0 grow border-none bg-transparent text-sm text-fg outline-none placeholder:text-fg-muted"
+        class="h-8 min-w-0 grow border-none bg-transparent text-[13.5px] text-fg outline-none placeholder:text-fg-muted"
         @keydown.enter.prevent="onEnter"
         @keydown.esc.prevent="clear"
       />

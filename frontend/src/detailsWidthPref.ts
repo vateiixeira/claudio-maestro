@@ -1,10 +1,9 @@
+import { sidebarWidth } from './sidebarWidthPref'
+
 const KEY = 'maestro:details-width'
 export const DETAILS_DEFAULT_WIDTH = 360
 export const DETAILS_MIN_WIDTH = 300
 export const DETAILS_KEY_STEP = 16
-
-/** Width of the app sidebar; matches its `w-[308px]`. */
-export const SIDEBAR_WIDTH = 308
 
 /**
  * Widest the panel may be: 70% of the window, leaving at least 400px for the
@@ -13,7 +12,7 @@ export const SIDEBAR_WIDTH = 308
  */
 export function detailsMaxWidth(viewport: number, drawer = false): number {
   const share = Math.floor(viewport * 0.7)
-  return Math.max(DETAILS_MIN_WIDTH, drawer ? share : Math.min(share, viewport - 400 - SIDEBAR_WIDTH))
+  return Math.max(DETAILS_MIN_WIDTH, drawer ? share : Math.min(share, viewport - 400 - sidebarWidth.value))
 }
 
 export function clampDetailsWidth(width: number, viewport: number, drawer = false): number {
