@@ -30,6 +30,11 @@
   --color-info-soft: #93c5fd;
   --color-primary-tint: rgb(74 222 128 / 0.10);
   --color-secondary-tint: rgb(251 146 60 / 0.12);
+  /* Type tones of conversation actions: icon, `cap` label, rail ring and a 9% header fill only. Never for state or body text. */
+  --color-type-command: #95c3eb;
+  --color-type-file: #8bd6c1;
+  --color-type-agent: #cbafed;
+  --color-type-think: #dfc48b;
   --font-sans: 'Rubik', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --radius-DEFAULT: 8px;

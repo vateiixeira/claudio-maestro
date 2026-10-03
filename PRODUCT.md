@@ -30,7 +30,7 @@ Leve, claro, calmo. Ferramenta que some na tarefa: neutra, com pouca cor e cada 
 ## Design Principles
 
 - **Leitura antes de tudo.** Diffs, saídas, tabelas e respostas longas precisam ser fáceis de ler; o resto serve a isso.
-- **Cor é sinal.** Verde para ação principal, execução e sucesso; laranja para o que espera o usuário; azul para links e caminhos; vermelho para erro. Todo o resto é neutro.
+- **Cor é sinal.** Verde para ação principal, execução e sucesso; laranja para o que espera o usuário; azul para links e caminhos; vermelho para erro. Todo o resto é neutro. Exceção: as ações da conversa levam um tom discreto por tipo (comando, arquivo, subagente, raciocínio) só no ícone, no rótulo e num fundo de 9%. Esse tom nunca indica estado.
 - **Estado de relance.** Cada estado tem forma própria além da cor (círculo rodando, triângulo esperando, visto finalizada), e o que pede o usuário salta sem virar ruído.
 - **Leve, não IDE.** Na dúvida entre duas soluções, a que mantém o app leve e a leitura clara.
 - **Camadas, não caixas.** As áreas se separam por degraus de superfície e bordas finas, não por contêineres empilhados.
