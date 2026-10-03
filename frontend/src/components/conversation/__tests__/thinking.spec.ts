@@ -14,12 +14,14 @@ describe('raciocínio durante o streaming', () => {
     const w = mount(ThinkingBlock, { props: { item: item(true) } })
     expect(w.text()).toContain('pensando fundo')
     expect(w.find('button').attributes('aria-expanded')).toBe('true')
-    expect(w.text()).toContain('Pensando… 0s')
+    expect(w.text()).toContain('Pensando…')
+    expect(w.text()).toContain('· 0 s')
     await vi.advanceTimersByTimeAsync(3000)
-    expect(w.text()).toContain('Pensando… 3s')
+    expect(w.text()).toContain('· 3 s')
     await w.setProps({ item: item(false) })
-    expect(w.text()).not.toContain('pensando fundo')
-    expect(w.text()).toContain('Pensou por 3s')
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
+    expect(w.text()).toContain('Raciocínio')
+    expect(w.text()).toContain('· 3 s')
     await w.find('button').trigger('click')
     expect(w.text()).toContain('pensando fundo')
   })
@@ -27,7 +29,7 @@ describe('raciocínio durante o streaming', () => {
   it('respeita quem fechou durante o streaming', async () => {
     const w = mount(ThinkingBlock, { props: { item: item(true) } })
     await w.find('button').trigger('click')
-    expect(w.text()).not.toContain('pensando fundo')
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
     await w.setProps({ item: { ...item(true), text: 'mais' } })
     expect(w.find('button').attributes('aria-expanded')).toBe('false')
   })
@@ -43,7 +45,8 @@ describe('raciocínio durante o streaming', () => {
   it('do histórico fica recolhido, sem tempo', () => {
     const w = mount(ThinkingBlock, { props: { item: item(false) } })
     expect(w.text()).toContain('Raciocínio')
-    expect(w.text()).not.toContain('pensando fundo')
+    expect(w.text()).not.toMatch(/· \d+ s/)
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
   })
 })
 
@@ -121,25 +124,84 @@ describe('raciocínio durante o streaming: janela de 4 linhas', () => {
   })
 })
 
-describe('raciocínio: rótulo leve', () => {
-  it('rótulo em peso normal, cinza discreto e pequeno', () => {
-    const w = mount(ThinkingBlock, { props: { item: item(false) } })
-    const cls = w.find('button').classes()
-    expect(cls).not.toContain('font-semibold')
-    expect(cls).toContain('text-xs')
-    expect(cls).toContain('text-fg-subtle')
+describe('raciocínio: bloco de uma linha', () => {
+  it('bloco com fundo de 9% do tom de raciocínio e cantos médios', () => {
+    const cls = mount(ThinkingBlock, { props: { item: item(false) } }).classes()
+    expect(cls).toContain('rounded-md')
+    expect(cls).toContain('px-2.5')
+    expect(cls).toContain('py-1.5')
+    expect(cls.join(' ')).toContain('color-mix(in_oklab,var(--color-type-think)_9%,transparent)')
   })
 
-  it('chevron menor que o antigo', () => {
+  it('cabeçalho com lâmpada de 13px e rótulo em peso 500 no tom de raciocínio', () => {
     const w = mount(ThinkingBlock, { props: { item: item(false) } })
-    expect(w.find('svg').attributes('width')).toBe('10')
+    const bulb = w.find('[data-test="thinking-icon"]')
+    expect(bulb.attributes('width')).toBe('13')
+    expect(bulb.classes()).toContain('text-type-think')
+    const label = w.find('[data-test="thinking-label"]')
+    expect(label.text()).toBe('Raciocínio')
+    expect(label.classes()).toContain('font-medium')
+    expect(label.classes()).toContain('text-type-think')
+  })
+
+  it('tempo em mono e fg-subtle, separado por ponto', async () => {
+    vi.useFakeTimers()
+    try {
+      const w = mount(ThinkingBlock, { props: { item: item(true) } })
+      await vi.advanceTimersByTimeAsync(12000)
+      const time = w.find('[data-test="thinking-time"]')
+      expect(time.text()).toBe('· 12 s')
+      expect(time.classes()).toContain('font-mono')
+      expect(time.classes()).toContain('text-fg-subtle')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('fechado: uma linha de prévia em itálico fg-subtle, truncada, com a primeira linha do texto', () => {
+    const w = mount(ThinkingBlock, { props: { item: { ...item(false), text: 'primeira ideia\nsegunda ideia' } } })
+    const preview = w.find('[data-test="thinking-preview"]')
+    expect(preview.text()).toBe('primeira ideia')
+    expect(preview.classes()).toEqual(expect.arrayContaining(['truncate', 'italic', 'text-fg-subtle']))
+  })
+
+  it('a prévia pula linhas vazias e some quando aberto', async () => {
+    const w = mount(ThinkingBlock, { props: { item: { ...item(false), text: '\n\n  achado  \noutra' } } })
+    expect(w.find('[data-test="thinking-preview"]').text()).toBe('achado')
+    await w.find('button').trigger('click')
+    expect(w.find('[data-test="thinking-preview"]').exists()).toBe(false)
+  })
+
+  it('aberto: texto em itálico fg-muted com filete à esquerda a 45% do tom de raciocínio', async () => {
+    const w = mount(ThinkingBlock, { props: { item: item(false) } })
+    await w.find('button').trigger('click')
+    const cls = w.find('[data-test="thinking-text"]').classes()
+    expect(cls).toEqual(expect.arrayContaining(['italic', 'text-fg-muted', 'border-l-2']))
+    expect(cls.join(' ')).toContain('color-mix(in_oklab,var(--color-type-think)_45%,transparent)')
+  })
+
+  it('transmitindo: "Pensando…" pulsa, e sem animação com movimento reduzido', () => {
+    const label = mount(ThinkingBlock, { props: { item: item(true) } }).find('[data-test="thinking-label"]')
+    expect(label.text()).toBe('Pensando…')
+    expect(label.classes()).toContain('animate-pulse')
+    expect(label.classes()).toContain('motion-reduce:animate-none')
+    const done = mount(ThinkingBlock, { props: { item: item(false) } }).find('[data-test="thinking-label"]')
+    expect(done.classes()).not.toContain('animate-pulse')
+  })
+
+  it('o cabeçalho é um botão com aria-expanded e o chevron acompanha', () => {
+    const w = mount(ThinkingBlock, { props: { item: item(false) } })
+    expect(w.find('button').attributes('aria-expanded')).toBe('false')
+    expect(w.find('[data-test="thinking-chevron"]').exists()).toBe(true)
   })
 
   it('sem texto (em andamento), mostra "Pensando…" sem chevron e sem abrir nada', () => {
     const w = mount(ThinkingBlock, { props: { item: { ...item(true), text: '' } } })
-    expect(w.text()).toContain('Pensando… 0s')
-    expect(w.find('svg').exists()).toBe(false)
+    expect(w.text()).toContain('Pensando…')
+    expect(w.text()).toContain('· 0 s')
+    expect(w.find('[data-test="thinking-chevron"]').exists()).toBe(false)
     expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
+    expect(w.find('[data-test="thinking-preview"]').exists()).toBe(false)
   })
 
   it('o rótulo continua um botão quando há texto, e não quando não há', () => {
@@ -151,8 +213,13 @@ describe('raciocínio: rótulo leve', () => {
   it('o texto chega depois: ganha chevron e abre', async () => {
     const w = mount(ThinkingBlock, { props: { item: { ...item(true), text: '' } } })
     await w.setProps({ item: item(true) })
-    expect(w.find('svg').exists()).toBe(true)
+    expect(w.find('[data-test="thinking-chevron"]').exists()).toBe(true)
     expect(w.find('[data-test="thinking-text"]').text()).toBe('pensando fundo')
+  })
+
+  it('pensamento vazio e terminado não desenha bloco nenhum', () => {
+    const w = mount(ThinkingBlock, { props: { item: { ...item(false), text: '' } } })
+    expect(w.find('[data-test="thinking-label"]').exists()).toBe(false)
   })
 
   it('retoma a contagem sem zerar quando um segundo pensamento chega depois do primeiro terminar', async () => {
@@ -161,20 +228,20 @@ describe('raciocínio: rótulo leve', () => {
       const w = mount(ThinkingBlock, { props: { item: item(true) } })
       await vi.advanceTimersByTimeAsync(3000)
       await w.setProps({ item: item(false) })
-      expect(w.text()).toContain('Pensou por 3s')
+      expect(w.text()).toContain('· 3 s')
       // Time between the two thoughts does not count.
       await vi.advanceTimersByTimeAsync(10000)
-      expect(w.text()).toContain('Pensou por 3s')
+      expect(w.text()).toContain('· 3 s')
       await w.setProps({ item: { ...item(true), text: 'pensando fundo\n\noutro' } })
-      expect(w.text()).toContain('Pensando… 3s')
+      expect(w.text()).toContain('· 3 s')
       await vi.advanceTimersByTimeAsync(2000)
-      expect(w.text()).toContain('Pensando… 5s')
+      expect(w.text()).toContain('· 5 s')
       await vi.advanceTimersByTimeAsync(1000)
-      expect(w.text()).toContain('Pensando… 6s')
+      expect(w.text()).toContain('· 6 s')
       await w.setProps({ item: { ...item(false), text: 'pensando fundo\n\noutro' } })
-      expect(w.text()).toContain('Pensou por 6s')
+      expect(w.text()).toContain('· 6 s')
       await vi.advanceTimersByTimeAsync(5000)
-      expect(w.text()).toContain('Pensou por 6s')
+      expect(w.text()).toContain('· 6 s')
     } finally {
       vi.useRealTimers()
     }
@@ -187,9 +254,10 @@ describe('raciocínio: rótulo leve', () => {
       await vi.advanceTimersByTimeAsync(2000)
       await w.setProps({ item: { ...item(true), text: 'pensando fundo\n\noutro' } })
       await vi.advanceTimersByTimeAsync(1000)
-      expect(w.text()).toContain('Pensando… 3s')
+      expect(w.text()).toContain('· 3 s')
       await w.setProps({ item: { ...item(false), text: 'pensando fundo\n\noutro' } })
-      expect(w.text()).toContain('Pensou por 3s')
+      expect(w.text()).toContain('Raciocínio')
+      expect(w.text()).toContain('· 3 s')
     } finally {
       vi.useRealTimers()
     }

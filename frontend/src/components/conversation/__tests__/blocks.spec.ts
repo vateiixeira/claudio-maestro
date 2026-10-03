@@ -24,9 +24,10 @@ describe('blocos da conversa', () => {
 
   it('raciocínio fica recolhido e expande', async () => {
     const w = mountItem({ type: 'thinking', id: 'x', text: 'pensando fundo', streaming: false, parent_tool_use_id: null })
-    expect(w.text()).not.toContain('pensando fundo')
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
+    expect(w.find('[data-test="thinking-preview"]').text()).toBe('pensando fundo')
     await w.find('button').trigger('click')
-    expect(w.text()).toContain('pensando fundo')
+    expect(w.find('[data-test="thinking-text"]').text()).toBe('pensando fundo')
   })
 
   it('Read mostra arquivo e linhas e expande o conteúdo', async () => {
