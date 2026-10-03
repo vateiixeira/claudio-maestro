@@ -49,3 +49,13 @@ def test_agentd_may_spawn_when_not_disabled(data_dir, monkeypatch):
     with TestClient(app, base_url=BACKEND_URL, headers=HEADERS):
         assert app.state.agentd.spawn_allowed is True
     assert not socket_path(data_dir).exists()
+
+
+def test_a_failing_reattach_does_not_stop_the_backend_from_starting(data_dir, monkeypatch):
+    async def broken_reattach(self):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("claudio_maestro.sessions.SessionManager.reattach_all", broken_reattach)
+    app = create_app(agent_factory=FakeAgentFactory(), agentd=True)
+    with TestClient(app, base_url=BACKEND_URL, headers=HEADERS) as client:
+        assert client.get("/api/health").status_code == 200
