@@ -174,7 +174,7 @@ function resetWidth() {
       ><IconClose :size="14" /></button>
     </header>
 
-    <div class="flex min-h-0 grow flex-col gap-5 overflow-y-auto p-4">
+    <div data-test="details-body" class="relative flex min-h-0 grow flex-col gap-5 overflow-y-auto p-4">
       <template v-if="showingDiff">
         <section v-if="editOpen && panel.edit" data-test="details-diff" class="overflow-hidden rounded-lg border border-line bg-panel">
           <div class="truncate border-b border-line px-3 py-2 font-mono text-xs text-fg-muted">{{ str(panel.edit.input.file_path) }}</div>

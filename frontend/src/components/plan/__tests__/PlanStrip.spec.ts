@@ -120,6 +120,20 @@ describe('faixa do plano', () => {
     expect(w.findAll('[data-test="plan-task"]')).toHaveLength(0)
   })
 
+  // The "(na fila)" labels are sr-only (position: absolute). Without a positioned list they
+  // escape the scroll container and stretch the page below the window.
+  it.each([['na faixa', undefined], ['no painel', 'panel']] as const)('%s, a lista contém os textos só para leitor de tela', async (_label, variant) => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())) }))
+    const w = mount(PlanStrip, { props: { session: session(), variant } })
+    await flushPromises()
+    if (variant === undefined) {
+      await toggle(w).trigger('click')
+      await flushPromises()
+    }
+    expect(w.find('[data-test="plan-task"]').find('.sr-only').exists()).toBe(true)
+    expect(w.find('[data-test="plan-task"]').element.parentElement!.classList).toContain('relative')
+  })
+
   it('na faixa, a lista continua fechada e com largura máxima', () => {
     const w = mount(PlanStrip, { props: { session: session() } })
     expect(toggle(w).attributes('aria-expanded')).toBe('false')
