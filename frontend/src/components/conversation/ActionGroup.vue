@@ -52,7 +52,7 @@ watch(focus, (target) => {
           v-for="chip in chips"
           :key="chip"
           data-test="group-chip"
-          class="rounded border border-line px-1.5 py-px font-mono text-[0.6875rem] text-fg-muted"
+          class="rounded-full border border-line px-2 py-px font-mono text-[0.6875rem] text-fg-muted"
         >{{ chip }}</span>
       </span>
       <span class="flex shrink-0 items-center gap-1 text-xs text-fg-subtle">{{ open ? 'Recolher' : 'Ver' }}<IconChevron :open="open" :size="12" /></span>

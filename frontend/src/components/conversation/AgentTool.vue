@@ -64,7 +64,7 @@ const metrics = computed(() => {
           <svg v-else width="14" height="14" viewBox="0 0 24 24" class="text-fg-subtle" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" /></svg>
         </span>
         <span class="cap text-fg">Subagente</span>
-        <span v-if="kind" class="rounded border border-line-strong bg-elevated px-1.5 py-0.5 font-mono text-xs text-fg-muted">{{ kind }}</span>
+        <span v-if="kind" class="rounded-full border border-line-strong bg-elevated px-2 py-0.5 font-mono text-xs text-fg-muted">{{ kind }}</span>
         <span class="min-w-0 grow truncate text-sm text-fg">{{ description }}</span>
       </div>
       <p v-if="status === 'running' && sub?.last_activity" class="m-0 truncate font-mono text-xs text-secondary-soft">{{ sub.last_activity }}</p>

@@ -100,7 +100,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       <span
         v-if="session.plan_done && !compact"
         data-test="row-plan-done"
-        class="shrink-0 rounded border border-primary/40 px-1.5 font-mono text-[0.6875rem] text-primary-soft"
+        class="shrink-0 rounded-full border border-primary/40 px-1.5 font-mono text-[0.6875rem] text-primary-soft"
       >Plano concluído</span>
       <span
         v-if="session.digest_short && !compact"

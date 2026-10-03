@@ -202,13 +202,13 @@ async function interrupt() {
     </div>
     <div class="flex items-end gap-2">
       <label :for="`msg-${sessionId}`" class="sr-only">Mensagem para a sessão</label>
-      <div class="relative min-w-0 grow rounded-lg bg-elevated">
+      <div class="relative min-w-0 grow rounded-xl bg-elevated">
         <MentionMirror
           :text="text"
           :mentions="suggestions.mentions.value"
           :hint="suggestions.argumentHint.value"
           :scroll-top="scrollTop"
-          class="rounded-lg border border-transparent px-3.5 py-[11px] font-sans text-sm leading-normal"
+          class="rounded-xl border border-transparent px-3.5 py-[11px] font-sans text-sm leading-normal"
         />
         <textarea
           :id="`msg-${sessionId}`"
@@ -221,7 +221,7 @@ async function interrupt() {
           :aria-expanded="suggestions.isOpen.value"
           :aria-controls="suggestions.menuId"
           :aria-activedescendant="suggestions.isOpen.value && suggestions.items.value.length ? suggestions.optionId(suggestions.active.value) : undefined"
-          class="relative block min-h-11 w-full resize-none overflow-hidden rounded-lg border border-line-strong bg-transparent px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
+          class="relative block min-h-11 w-full resize-none overflow-hidden rounded-xl border border-line-strong bg-transparent px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
           @input="onInput"
           @scroll="onScroll"
           @keydown="onKeydown"

@@ -30,9 +30,15 @@
   --color-info-soft: #93c5fd;
   --color-primary-tint: rgb(74 222 128 / 0.10);
   --color-secondary-tint: rgb(251 146 60 / 0.12);
-  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Rubik', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --radius-DEFAULT: 8px;
+  /* Rounder scale (medium): every rounded-* class follows it. Code blocks stay at 8px below. */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
 }
 
 /* Every font size is in rem. The root size comes from the "Tamanho do texto" preference (uiScale.ts). */
@@ -81,7 +87,7 @@ body {
   font-size: 0.78125rem;
   color: var(--color-code-fg);
   background: var(--color-elevated);
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 1px 5px;
 }
 .markdown pre {
@@ -101,7 +107,7 @@ body {
   right: 6px;
   padding: 2px 8px;
   border: 1px solid var(--color-line-strong);
-  border-radius: 6px;
+  border-radius: 10px;
   background: var(--color-panel);
   color: var(--color-fg-muted);
   font: inherit;
@@ -128,7 +134,7 @@ body {
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--color-line);
-  border-radius: 8px;
+  border-radius: 12px;
   border-collapse: separate;
   border-spacing: 0;
 }

@@ -26,7 +26,7 @@ const fileName = (path: string) => path.split('/').pop() ?? path
   <section data-test="details-digest" aria-labelledby="digest-title" class="flex flex-col gap-3">
     <h3 id="digest-title" class="m-0 flex items-center gap-2 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">
       Resumo
-      <span v-if="digest?.plan_done" data-test="digest-plan-done" class="rounded border border-primary/40 px-1.5 font-sans text-[0.6875rem] font-normal tracking-normal normal-case text-primary-soft">Plano concluído</span>
+      <span v-if="digest?.plan_done" data-test="digest-plan-done" class="rounded-full border border-primary/40 px-2 font-sans text-[0.6875rem] font-normal tracking-normal normal-case text-primary-soft">Plano concluído</span>
     </h3>
 
     <div v-if="!loaded" class="flex items-center justify-between gap-2 text-sm">
