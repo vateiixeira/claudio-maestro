@@ -172,6 +172,11 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         "ALTER TABLE sessions ADD COLUMN mark_until INTEGER",
         "ALTER TABLE sessions ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
     ],
+    [
+        # When the backend let go of the session's process (shutdown with the agentd
+        # keeping it): the next reattach judges writes by other processes from then on.
+        "ALTER TABLE sessions ADD COLUMN detached_at REAL",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

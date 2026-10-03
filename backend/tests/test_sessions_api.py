@@ -13,6 +13,11 @@ from fastapi.testclient import TestClient
 
 from claudio_maestro.agent.fake import FakeAgentFactory, text_turn, tool_turn
 from claudio_maestro.app import create_app
+from claudio_maestro.sessions import (
+    CONTINUED_ELSEWHERE_TEXT,
+    ContinuedElsewhereError,
+    SessionManager,
+)
 
 APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
@@ -411,3 +416,16 @@ def test_stop_subagents_route_needs_the_maestro_header(api, home):
         f"/api/sessions/{session['session_id']}/subagents/stop", headers={"x-maestro": ""}
     )
     assert response.status_code in (400, 403)
+
+
+def test_continued_elsewhere_error_is_a_conflict_with_its_text(api, home, monkeypatch):
+    session = new_session(api, home)
+
+    async def refuse(self, session_id, text, images=None):
+        raise ContinuedElsewhereError(CONTINUED_ELSEWHERE_TEXT)
+
+    monkeypatch.setattr(SessionManager, "send", refuse)
+    response = api.post(f"/api/sessions/{session['session_id']}/messages", json={"text": "oi"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == CONTINUED_ELSEWHERE_TEXT

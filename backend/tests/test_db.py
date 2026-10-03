@@ -45,7 +45,11 @@ def test_sessions_have_mark_columns(tmp_path: Path):
 def test_mark_migration_keeps_existing_sessions_unmarked(tmp_path: Path):
     # A database from before the marks, with a session in it.
     with open_db(tmp_path / "old.db") as conn:
-        before = len(db.MIGRATIONS) - 1
+        # The migration that adds the marks (later ones may follow it).
+        before = next(
+            index for index, statements in enumerate(db.MIGRATIONS)
+            if any("mark_until" in str(statement) for statement in statements)
+        )
         for statements in db.MIGRATIONS[:before]:
             for statement in statements:
                 if callable(statement):
@@ -68,6 +72,7 @@ def test_mark_migration_keeps_existing_sessions_unmarked(tmp_path: Path):
         row = conn.execute("SELECT * FROM sessions WHERE session_id = 'old'").fetchone()
     assert row["mark"] is None and row["mark_note"] is None and row["mark_until"] is None
     assert row["priority"] == 0
+    assert row["detached_at"] is None
 
 
 def test_migrate_twice_is_harmless(tmp_path: Path):

@@ -19,13 +19,14 @@ def _timestamp(value: object) -> float | None:
         return None
 
 
-def has_foreign_reply(
+def foreign_reply_uuids(
     lines: Iterable[str], own_uuids: Collection[str], since: float | None
-) -> bool:
-    """Whether the lines hold an assistant entry of the main chain written after `since`
-    (the current client's start) whose uuid the app's stream did not deliver."""
+) -> set[str]:
+    """Uuids of the assistant entries of the main chain written after `since` (the
+    current client's start) that the app's stream did not deliver."""
+    found: set[str] = set()
     if since is None:
-        return False
+        return found
     for line in lines:
         try:
             entry = json.loads(line)
@@ -40,5 +41,12 @@ def has_foreign_reply(
         if not isinstance(uuid, str) or written is None:
             continue
         if written > since and uuid not in own_uuids:
-            return True
-    return False
+            found.add(uuid)
+    return found
+
+
+def has_foreign_reply(
+    lines: Iterable[str], own_uuids: Collection[str], since: float | None
+) -> bool:
+    """Whether the lines hold a reply written by another process (see above)."""
+    return bool(foreign_reply_uuids(lines, own_uuids, since))

@@ -58,7 +58,7 @@ from claudio_maestro.conversation import (
     rate_limit_text,
 )
 from claudio_maestro.digest import store as digest_store
-from claudio_maestro.foreign import has_foreign_reply
+from claudio_maestro.foreign import foreign_reply_uuids
 from claudio_maestro.plans import (
     PLAN_TOOLS,
     PlanCache,
@@ -272,6 +272,16 @@ class InvalidMarkError(SessionError):
     pass
 
 
+CONTINUED_ELSEWHERE_TEXT = (
+    "Esta conversa continuou em outro processo enquanto uma tarefa em segundo plano "
+    "rodava aqui. Pare as tarefas em segundo plano para o app retomar a conversa do disco."
+)
+
+
+class ContinuedElsewhereError(SessionError):
+    pass
+
+
 # Records -------------------------------------------------------------------
 
 
@@ -326,6 +336,9 @@ class SessionRecord:
     mark_until: int | None = None
     # Pinned above the others.
     priority: bool = False
+    # When the backend let go of this session's process on shutdown (the agentd kept
+    # it); cleared once reattached. Where writes by other processes are judged from.
+    detached_at: float | None = None
 
     @property
     def history_directory(self) -> str:
@@ -367,12 +380,12 @@ _COLUMNS = (
     + ", summary, first_prompt, title_custom, rename_pending, file_modified_at, app_modified_at"
     + ", model, effort, permission_mode, finished_at, plan_path, plan_link, group_id"
     + ", history_dir, worktree_name, worktree_path, git_branch, turn_open"
-    + ", mark, mark_note, mark_until, priority"
+    + ", mark, mark_note, mark_until, priority, detached_at"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
     "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
-    "plan_path", "plan_link", "history_dir", "turn_open",
+    "plan_path", "plan_link", "history_dir", "turn_open", "detached_at",
 )
 _BOOL_FIELDS = ("finished", "title_custom", "rename_pending", "turn_open", "priority")
 
@@ -881,6 +894,11 @@ class ActiveSession:
         # when that client started (wall clock): what tells the app's own writes apart.
         self.own_uuids: set[str] = set()
         self.client_since: float | None = None
+        # Uuids of replies written by another process while the app held a client that
+        # was not idle (the client is released as soon as it is, or by the next send).
+        # Kept apart from `own_uuids`: the app's own reply can reach the file before
+        # the stream, and stops counting once the stream delivers it.
+        self.foreign_candidates: set[str] = set()
         self.error: str | None = None
         self.seq = 0
 
@@ -997,6 +1015,11 @@ class ActiveSession:
         return self._lock.locked()
 
     @property
+    def foreign_pending(self) -> bool:
+        """Another process continued the conversation (candidates the stream did not deliver)."""
+        return bool(self.foreign_candidates - self.own_uuids)
+
+    @property
     def idle_client_only(self) -> bool:
         """The app holds a client but is doing nothing with it: the condition under
         which it would also close it for idleness, and no follow-up turn is owed."""
@@ -1013,7 +1036,9 @@ class ActiveSession:
         if not self.idle_client_only:
             return False
         logger.info("Sessão %s alterada por outro processo; cliente solto", self.session_id)
-        await self.close()
+        # The file's mtime now includes the other process's write: keep it out of
+        # `app_modified_at`, so the "modificada fora do app" notice stays.
+        await self.close(record_mtime=False)
         return True
 
     def _refresh_state(self) -> None:
@@ -1530,12 +1555,20 @@ class ActiveSession:
             logger.exception("Falha ao consultar o histórico da sessão %s", self.session_id)
             return False
 
-    def _start_reader(self, client: AgentClient) -> None:
-        """Adopt a connected client: a new stream, so new own uuids and start time."""
+    def _start_reader(self, client: AgentClient, since: float | None = None) -> None:
+        """Adopt a connected client: a new stream, so new own uuids and start time
+        (`since`, when the stream really began earlier than now)."""
         self.client = client
         self._has_connected = True
         self.own_uuids = set()
-        self.client_since = time.time()
+        self.client_since = time.time() if since is None else since
+        self.foreign_candidates = set()
+        if self.record.detached_at is not None:
+            # Whatever shutdown left it is history now: never reused by a later reattach.
+            try:
+                self.save(detached_at=None)
+            except Exception:
+                logger.exception("Falha ao limpar o desligamento da sessão %s", self.session_id)
         self._reader = asyncio.create_task(self._read(client))
 
     async def _read(self, client: AgentClient) -> None:
@@ -2034,11 +2067,12 @@ class ActiveSession:
         if client is not None:
             await self._record_app_mtime()
 
-    async def close(self, *, final: bool = False) -> None:
+    async def close(self, *, final: bool = False, record_mtime: bool = True) -> None:
         """Close the client, if any. The session goes back to `closed`.
 
         An in-flight send or connect notices it through `_generation` and stops
         without touching the discarded client. With `final`, later sends are refused.
+        With `record_mtime` false the file's mtime is not saved as the app's own.
         """
         if final:
             self._final = True
@@ -2058,6 +2092,9 @@ class ActiveSession:
         self._generation += 1
         self.client = None
         self._reader = None
+        self.own_uuids = set()
+        self.client_since = None
+        self.foreign_candidates = set()
         self.pending_turns = 0
         self._autonomous_turn = False
         self._clear_followup()
@@ -2069,7 +2106,7 @@ class ActiveSession:
         self._refresh_state()
         self.sync_subagents()
         await self._dispose(client, reader)
-        if client is not None:
+        if client is not None and record_mtime:
             await self._record_app_mtime()
 
     async def detach(self) -> None:
@@ -2110,6 +2147,11 @@ class ActiveSession:
         if not detached:
             await self.close(final=True)
             return
+        try:
+            # Where the next reattach starts judging writes by other processes from.
+            self.save(detached_at=time.time())
+        except Exception:
+            logger.exception("Falha ao gravar o desligamento da sessão %s", self.session_id)
         self._generation += 1
         self.client = None
 
@@ -2172,7 +2214,9 @@ class ActiveSession:
                 await self._dispose(client, None)
                 self._refresh_state()
                 return False
-            self._start_reader(client)
+            # What other processes wrote while the backend was away counts too.
+            detached_at = self.record.detached_at
+            self._start_reader(client, since=detached_at)  # which clears it
             self._refresh_state()
             self.emit_updated()
             return True
@@ -2637,6 +2681,12 @@ class SessionManager:
         session = self.get(session_id)
         session.users += 1
         try:
+            if session.foreign_pending and session.client is not None:
+                # Another process continued the conversation while the app was busy:
+                # this client's view is stale and a send would fork the history.
+                if session.subagents_running:
+                    raise ContinuedElsewhereError(CONTINUED_ELSEWHERE_TEXT)
+                await session.release_for_external()
             external = False
             if not session.active:
                 await session.reload_if_modified()
@@ -3232,6 +3282,9 @@ class SessionManager:
             # A subagent that outlived its limit stops counting without any event:
             # tell the clients, so the session stops showing as running.
             session.sync_subagents()
+            if session.foreign_pending and session.idle_client_only:
+                await session.release_for_external()
+                continue
             if (
                 session.state == "idle"
                 and not session.busy
@@ -3262,11 +3315,22 @@ class SessionManager:
 
     async def release_if_foreign(self, session_id: str, lines: list[str]) -> bool:
         """`lines` (new lines of the session's file) hold a reply written by another
-        process while the app only holds an idle client: release the client."""
+        process: with only an idle client the app releases it. With a client that is
+        busy (a turn, a prompt, background work) the reply is remembered in
+        `foreign_pending`, to release the client once it can."""
         session = self._sessions.get(session_id)
-        if session is None or not session.idle_client_only:
+        if session is None or session.client is None:
             return False
-        if not has_foreign_reply(lines, session.own_uuids, session.client_since):
+        found = foreign_reply_uuids(lines, session.own_uuids, session.client_since)
+        if not found:
+            return False
+        if not session.idle_client_only:
+            if found - session.foreign_candidates:
+                logger.info(
+                    "Sessão %s alterada por outro processo com o app ocupado; soltura adiada",
+                    session_id,
+                )
+            session.foreign_candidates |= found
             return False
         return await session.release_for_external()
 

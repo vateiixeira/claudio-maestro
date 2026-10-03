@@ -187,6 +187,7 @@ _STATUS = {
     sessions.RejectMessageRequiredError: status.HTTP_400_BAD_REQUEST,
     sessions.InvalidImageError: status.HTTP_400_BAD_REQUEST,
     sessions.InvalidMarkError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    sessions.ContinuedElsewhereError: status.HTTP_409_CONFLICT,
     sessions.SessionClosedError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 

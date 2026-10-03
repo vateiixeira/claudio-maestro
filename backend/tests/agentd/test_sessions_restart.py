@@ -398,12 +398,41 @@ async def test_error_reading_the_session_row_kills_the_child_instead_of_orphanin
     await env._wait_no_children()
 
 
+def detached_at(env, session_id: str):
+    with closing(db.connect(env.db_path)) as conn:
+        row = conn.execute(
+            "SELECT detached_at FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+    return row["detached_at"]
+
+
 @pytest.mark.anyio
-async def test_reattach_sets_a_new_client_start(env):
+async def test_reattach_keeps_the_detach_time_as_the_client_start(env):
+    manager = env.manager()
+    await manager.send(env.session_id, "stream:5")
+    await env.wait_state(manager, "idle")
+    before = time.time()
+    await manager.shutdown()
+    after = time.time()
+    stamp = detached_at(env, env.session_id)
+    assert stamp is not None and before <= stamp <= after
+
+    manager2 = env.manager()
+    await manager2.reattach_all()
+    session = manager2.get(env.session_id)
+    assert session.client is not None
+    assert session.client_since == stamp
+    assert detached_at(env, env.session_id) is None
+
+
+@pytest.mark.anyio
+async def test_reattach_without_a_detach_time_starts_the_client_now(env):
     manager = env.manager()
     await manager.send(env.session_id, "stream:5")
     await env.wait_state(manager, "idle")
     await manager.shutdown()
+    with closing(db.connect(env.db_path)) as conn:
+        conn.execute("UPDATE sessions SET detached_at = NULL")
     before = time.time()
     manager2 = env.manager()
     await manager2.reattach_all()

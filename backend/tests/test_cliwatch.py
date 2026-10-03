@@ -708,3 +708,19 @@ async def test_failing_foreign_check_is_logged_and_the_pass_skips_as_before(env,
     await asyncio.sleep(0.2)
     assert session.client is not None
     assert "escrita de outro processo" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_foreign_reply_with_background_work_is_remembered_not_released(env, monkeypatch):
+    session = await idle_app_session(env)
+    monkeypatch.setattr(type(session), "subagents_running", property(lambda self: True))
+    env.file("s1").write_text(jsonl(reply("a-fora")))
+    env.events.clear()
+    env.start()
+    env.watch.push((Change.modified, env.file("s1")))
+
+    await asyncio.sleep(0.3)
+    assert session.client is not None
+    assert session.foreign_pending is True
+    assert "conversation.reset" not in env.types("s1")
+    monkeypatch.undo()

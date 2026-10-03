@@ -259,6 +259,7 @@ def test_new_columns_exist_after_migration(tmp_path):
     with closing(db.connect(path)) as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
     assert "app_modified_at" in columns
+    assert "detached_at" in columns
 
 
 # 12. CLI watcher ----------------------------------------------------------------
