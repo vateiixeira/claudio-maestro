@@ -6,6 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Ao pedir mudanças num plano, dá para comentar passos específicos.
 - O pedido de permissão para editar mostra o diff, e "Permitir sempre" diz a regra que vai ser gravada e onde ela vale.
 - Marcações de sessão: Em espera (com data para voltar sozinha), Bloqueada (com nota), Para revisar e Prioridade. Pelo botão "Marcar" no cabeçalho ou pelo clique direito numa conversa. A barra lateral ganha as faixas "Para revisar" e "Depois", a Inbox ganha as abas de mesmo nome e o painel um card "Para revisar". Sessões marcadas não finalizam por inatividade, e enviar uma mensagem tira a marcação.
 - Tamanho do texto ajustável nas Preferências (de 90% a 150%), guardado no navegador. Todos os tamanhos de fonte crescem juntos.

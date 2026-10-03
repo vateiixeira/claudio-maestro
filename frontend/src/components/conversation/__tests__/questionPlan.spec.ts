@@ -136,3 +136,100 @@ describe('cartão de plano', () => {
     expect(body(fetchMock)).toEqual({ decision: 'reject', message: 'Use migrations' })
   })
 })
+
+const STEPS_PLAN = '# Plano\n\n### Tarefa 1: Criar tabela\n- [ ] a\n\n### Tarefa 2: Expor rota\n- [ ] b\n\n### Tarefa 3: Testar\n- [ ] c\n'
+
+describe('cartão de plano com passos', () => {
+  const mountSteps = () => mount(PlanCard, { props: { sessionId: 's1', prompt: planPrompt(STEPS_PLAN) } })
+  const openChanges = async (w: ReturnType<typeof mountSteps>) => w.find('[data-test="request-changes"]').trigger('click')
+
+  it('sem pedir mudanças não mostra a lista de passos', () => {
+    expect(mountSteps().find('[data-test="plan-steps"]').exists()).toBe(false)
+  })
+
+  it('ao pedir mudanças lista os passos numerados e esconde o campo único', async () => {
+    const w = mountSteps()
+    await openChanges(w)
+    const steps = w.findAll('[data-test="plan-step"]')
+    expect(steps).toHaveLength(3)
+    expect(steps[0]!.text()).toContain('1')
+    expect(steps[0]!.text()).toContain('Criar tabela')
+    expect(steps[2]!.text()).toContain('Testar')
+    expect(w.find('[data-test="reject-message"]').exists()).toBe(false)
+    expect(w.find('[data-test="general-comment"]').exists()).toBe(true)
+    expect(w.find('[data-test="send-reject"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('clicar num passo abre o campo de uma linha, e a nota fica abaixo dele', async () => {
+    const w = mountSteps()
+    await openChanges(w)
+    expect(w.find('[data-test="step-note"]').exists()).toBe(false)
+    await w.findAll('[data-test="plan-step"]')[1]!.trigger('click')
+    const input = w.find('[data-test="step-note"]')
+    expect(input.attributes('placeholder')).toBe('O que mudar neste passo')
+    await input.setValue('Usar PATCH')
+    await input.trigger('keydown.enter')
+    expect(w.find('[data-test="step-note"]').exists()).toBe(false)
+    const note = w.find('[data-test="step-note-text"]')
+    expect(note.text()).toBe('Usar PATCH')
+    expect(w.findAll('[data-test="plan-step"]')[1]!.find('[data-test="step-number"]').classes()).toContain('text-secondary-soft')
+    expect(w.findAll('[data-test="plan-step"]')[0]!.find('[data-test="step-number"]').classes()).not.toContain('text-secondary-soft')
+  })
+
+  it('clicar num passo leva o foco ao campo que abre', async () => {
+    const w = mount(PlanCard, { props: { sessionId: 's1', prompt: planPrompt(STEPS_PLAN) }, attachTo: document.body })
+    await openChanges(w)
+    await w.findAll('[data-test="plan-step"]')[1]!.trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(w.find('[data-test="step-note"]').element)
+    w.unmount()
+  })
+
+  it('qualquer anotação habilita o envio e o pedido junta os passos e o comentário geral', async () => {
+    const fetchMock = routeFetch({ [URL]: () => jsonResponse({}) })
+    vi.stubGlobal('fetch', fetchMock)
+    const w = mountSteps()
+    await openChanges(w)
+    const send = w.find('[data-test="send-reject"]')
+    await w.findAll('[data-test="plan-step"]')[2]!.trigger('click')
+    await w.find('[data-test="step-note"]').setValue('Cobrir o erro 409')
+    expect(send.attributes('disabled')).toBeUndefined()
+    await w.findAll('[data-test="plan-step"]')[0]!.trigger('click')
+    await w.find('[data-test="step-note"]').setValue('  Usar migration  ')
+    await w.find('[data-test="general-comment"]').setValue('Sem mexer no front')
+    await send.trigger('click')
+    await flushPromises()
+    expect(body(fetchMock)).toEqual({
+      decision: 'reject',
+      message: 'Passo 1: Usar migration\nPasso 3: Cobrir o erro 409\nSem mexer no front',
+    })
+    expect(w.emitted('resolved')).toHaveLength(1)
+  })
+
+  it('só o comentário geral já habilita o envio', async () => {
+    const fetchMock = routeFetch({ [URL]: () => jsonResponse({}) })
+    vi.stubGlobal('fetch', fetchMock)
+    const w = mountSteps()
+    await openChanges(w)
+    await w.find('[data-test="general-comment"]').setValue('Muito longo')
+    await w.find('[data-test="send-reject"]').trigger('click')
+    await flushPromises()
+    expect(body(fetchMock)).toEqual({ decision: 'reject', message: 'Muito longo' })
+  })
+
+  it('nota apagada ou só com espaços não conta como anotação', async () => {
+    const w = mountSteps()
+    await openChanges(w)
+    await w.findAll('[data-test="plan-step"]')[0]!.trigger('click')
+    await w.find('[data-test="step-note"]').setValue('   ')
+    expect(w.find('[data-test="send-reject"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('plano sem passos reconhecidos mantém o campo único de hoje', async () => {
+    const w = mount(PlanCard, { props: { sessionId: 's1', prompt: planPrompt() } })
+    await w.find('[data-test="request-changes"]').trigger('click')
+    expect(w.find('[data-test="plan-step"]').exists()).toBe(false)
+    expect(w.find('[data-test="general-comment"]').exists()).toBe(false)
+    expect(w.find('[data-test="reject-message"]').exists()).toBe(true)
+  })
+})
