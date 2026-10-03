@@ -10,7 +10,7 @@ const props = defineProps<{ kind: NodeKind; align?: RailAlign }>()
 // Pushes the dot down to the middle of the first line of the card next to it. It depends on the
 // card, not on the state: running and error fit any card.
 const OFFSET: Record<RailAlign, string> = {
-  text: 'pt-[18px]', // bubble padding + first text line
+  text: 'pt-2', // middle of the first line of running text (15px, leading 1.65)
   group: 'pt-[18px]', // 44px header
   agent: 'pt-[17px]', // card with a py-2.5 header
   notice: 'pt-[15px]', // border + py-2 + 20px line

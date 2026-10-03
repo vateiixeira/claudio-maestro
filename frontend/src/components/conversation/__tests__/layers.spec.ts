@@ -59,9 +59,12 @@ describe('camadas visuais do chat (opção A)', () => {
     expect(w.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('error')
   })
 
-  it('TextBlock limita a largura de leitura a 90ch', () => {
+  it('TextBlock limita a largura de leitura a 72ch, com corpo de 15px', () => {
     const w = mount(ConversationBlock, { props: { item: { type: 'text', id: 'x', text: 'oi', streaming: false, parent_tool_use_id: null } } })
-    expect(w.find('.markdown').classes()).toContain('max-w-[90ch]')
+    expect(w.find('.markdown').classes()).toEqual(
+      expect.arrayContaining(['max-w-[72ch]', 'text-[0.9375rem]', 'leading-[1.65]']),
+    )
+    expect(w.find('.markdown').classes()).not.toContain('max-w-[90ch]')
   })
 
   it('mensagem do usuário é um balão à direita', () => {
@@ -84,14 +87,14 @@ describe('camadas visuais do chat (opção A)', () => {
     expect(chip.classes()).not.toContain('bg-panel')
   })
 
-  it('resposta do modelo vira balão à esquerda só no nível de cima', () => {
+  it('resposta do modelo é texto corrido, sem balão, em qualquer nível', () => {
     const item: ConversationItem = { type: 'text', id: 'x', text: 'oi', streaming: false, parent_tool_use_id: null }
-    const top = mount(ConversationBlock, { props: { item, bubble: true } })
-    const bubble = top.find('[data-test="assistant-bubble"]')
-    expect(bubble.classes()).toEqual(expect.arrayContaining(['bg-card', 'rounded-tl-md', 'w-fit']))
-    // Dentro de subagente ou ferramenta continua texto solto, sem caixa dentro de caixa.
-    const nested = mount(ConversationBlock, { props: { item } })
-    expect(nested.find('[data-test="assistant-bubble"]').exists()).toBe(false)
+    const w = mount(ConversationBlock, { props: { item } })
+    const body = w.find('.markdown')
+    expect(body.classes()).toContain('max-w-[72ch]')
+    expect(body.classes()).not.toEqual(expect.arrayContaining(['bg-card']))
+    expect(body.classes().some((c) => c.startsWith('rounded') || c.startsWith('border') || c.startsWith('px-'))).toBe(false)
+    expect(w.find('[data-test="assistant-bubble"]').exists()).toBe(false)
   })
 
   it('rodapé do turno, trilho e superfície do chat', async () => {
@@ -115,7 +118,8 @@ describe('camadas visuais do chat (opção A)', () => {
     expect(end.find('[data-test="turn-end-label"]').classes()).toContain('text-fg-subtle')
     expect(end.find('.text-primary-soft').exists()).toBe(false)
     expect(w.html()).toContain('bg-line-strong')
-    // As respostas do turno aparecem em balão.
-    expect(w.findAll('[data-test="assistant-bubble"]')).toHaveLength(1)
+    // As respostas do turno aparecem como texto corrido, sem balão.
+    expect(w.findAll('[data-test="assistant-bubble"]')).toHaveLength(0)
+    expect(w.find('.markdown').classes()).toContain('max-w-[72ch]')
   })
 })

@@ -56,7 +56,7 @@ describe('RailNode', () => {
       const w = mount(RailNode, { props: { kind, align } })
       return w.find('[data-test="rail-node"]').classes().find((c) => c.startsWith('pt-'))
     }
-    expect(pt('text', 'text')).toBe('pt-[18px]')
+    expect(pt('text', 'text')).toBe('pt-2')
     expect(pt('running', 'group')).toBe('pt-[18px]')
     expect(pt('group', 'group')).toBe('pt-[18px]')
     expect(pt('thinking', 'thinking')).toBe('pt-1')

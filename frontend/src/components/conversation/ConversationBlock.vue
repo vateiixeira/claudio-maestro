@@ -26,10 +26,8 @@ const props = withDefaults(
     tasks?: TaskEntry[] | null
     /** The session's task list; shown in the block that last changed it, at any depth. */
     taskList?: { tasks: TaskEntry[]; lastItemId: string | null } | null
-    /** Shows a reply as a message bubble (top level of a turn only). */
-    bubble?: boolean
   }>(),
-  { sessionActive: false, childrenOf: () => [], tasks: null, taskList: null, bubble: false },
+  { sessionActive: false, childrenOf: () => [], tasks: null, taskList: null },
 )
 
 
@@ -41,7 +39,7 @@ const children = computed(() => (props.item.type === 'tool' ? props.childrenOf(p
 
 <template>
   <UserMessage v-if="item.type === 'user'" :item="item" />
-  <TextBlock v-else-if="item.type === 'text'" :item="item" :bubble="bubble" />
+  <TextBlock v-else-if="item.type === 'text'" :item="item" />
   <ThinkingBlock v-else-if="item.type === 'thinking'" :item="item" />
   <NoticeBlock v-else-if="item.type === 'notice'" :item="item" />
   <template v-else-if="item.type === 'tool'">

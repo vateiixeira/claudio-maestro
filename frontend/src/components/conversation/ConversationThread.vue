@@ -436,7 +436,6 @@ function resolvePrompt(promptId: string) {
                     <div class="flex min-w-0 grow flex-col">
                       <ConversationBlock
                         :item="entry.item"
-                        bubble
                         :session-active="sessionActive"
                         :children-of="tree.childrenOf"
                         :task-list="taskList"

@@ -56,7 +56,7 @@ describe('largura da coluna do chat', () => {
 
   it('texto do assistente e mensagem do usuário têm largura de leitura própria', () => {
     const text = mount(ConversationBlock, { props: { item: { type: 'text', id: 'x', text: 'oi', streaming: false, parent_tool_use_id: null } } })
-    expect(text.find('.markdown').classes()).toContain('max-w-[90ch]')
+    expect(text.find('.markdown').classes()).toContain('max-w-[72ch]')
     const userMsg = mount(ConversationBlock, { props: { item: { type: 'user', id: 'u', text: 'oi', images: [] } } })
     expect(userMsg.find('[data-test="user-message-card"]').classes()).toContain('max-w-[72ch]')
   })
