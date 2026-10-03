@@ -1,7 +1,36 @@
 @import './fonts.css';
 @import 'tailwindcss';
 
-:root { --chat-width: 1120px; }
+:root {
+  --chat-width: 1120px;
+  /* Motion: two durations and one curve. Movement only shows what arrived or changed, then stops. */
+  --motion-state: 160ms;
+  --motion-enter: 200ms;
+  --ease-maestro: cubic-bezier(.2, .8, .2, 1);
+}
+
+@keyframes maestro-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes maestro-pop {
+  from { opacity: 0; transform: scale(.6); }
+  to { opacity: 1; transform: none; }
+}
+/* Once, never looped: a decision request catches the eye when it arrives live. */
+@keyframes maestro-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-secondary) 0%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-secondary) 28%, transparent); }
+}
+.animate-enter {
+  animation: maestro-enter var(--motion-enter) var(--ease-maestro) both;
+}
+.animate-pop {
+  animation: maestro-pop var(--motion-enter) var(--ease-maestro) both;
+}
+.animate-decision {
+  animation: maestro-enter var(--motion-enter) var(--ease-maestro) both, maestro-glow 700ms var(--ease-maestro) var(--motion-enter) 1;
+}
 
 @theme {
   --color-bg: #0b0b0c;
