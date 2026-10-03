@@ -161,6 +161,15 @@ async def test_reattach_twice(env):
 
 
 @pytest.mark.anyio
+async def test_reattach_with_a_running_agentd_and_no_children_does_not_raise(env):
+    # The first restart after installing the agentd: it runs, but keeps no session yet.
+    await env.agentd.ensure_running()
+    assert await env.agentd.list() == []
+    manager = env.manager()
+    await manager.reattach_all()
+
+
+@pytest.mark.anyio
 async def test_unknown_child_is_killed(env):
     await env.agentd.spawn("no-such-session", env.fake_spec())
     manager = env.manager()
