@@ -199,6 +199,9 @@ class CliWatcher:
         self._last_reload: dict[str, float] = {}
         # session id -> offset in its file up to which plan references were searched
         self._plan_offsets: dict[str, int] = {}
+        # Own offset for the foreign-write check: advanced on every pass, so only lines
+        # written while the app is idle are judged.
+        self._foreign_offsets: dict[str, int] = {}
         # session id -> {subagent file: offset up to which it was read}
         self._subagent_offsets: dict[str, dict[Path, int]] = {}
         # session id -> whether its last main-chain lines left the turn open
@@ -299,7 +302,8 @@ class CliWatcher:
 
     async def _process(self, session_id: str, path: Path, burst: _Burst) -> bool:
         """One pass. False when skipped because the app is writing the session."""
-        if self._sessions.app_writing(session_id):
+        released = await self._release_if_foreign(session_id, path)
+        if not released and self._sessions.app_writing(session_id):
             burst.reload_owed = False
             burst.subagents.clear()
             self._forget_turn(session_id)
@@ -317,6 +321,7 @@ class CliWatcher:
             burst.reload_owed = False
             burst.subagents.clear()
             self._plan_offsets.pop(session_id, None)
+            self._foreign_offsets.pop(session_id, None)
             self._subagent_offsets.pop(session_id, None)
             self._forget_turn(session_id)
             await self._history.sync_project(project_id)
@@ -345,6 +350,25 @@ class CliWatcher:
         if await self._sessions.apply_external_change(session_id, reload=reload):
             self._last_reload[session_id] = now
         return True
+
+    async def _release_if_foreign(self, session_id: str, path: Path) -> bool:
+        """Read the new lines and, if another process replied while the app only holds
+        an idle client, release it. Never fails the pass."""
+        try:
+            lines, offset = await asyncio.to_thread(
+                read_new_lines, path, self._foreign_offsets.get(session_id)
+            )
+        except OSError:
+            self._foreign_offsets.pop(session_id, None)
+            return False
+        self._foreign_offsets[session_id] = offset
+        try:
+            return await self._sessions.release_if_foreign(session_id, lines)
+        except Exception:
+            logger.exception(
+                "Falha ao checar escrita de outro processo na sessão %s", session_id
+            )
+            return False
 
     def _forget_turn(self, session_id: str) -> None:
         self._turn_open.pop(session_id, None)

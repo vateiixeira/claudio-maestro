@@ -209,7 +209,8 @@ async def test_cli_second_change_reads_only_the_new_lines(cli, monkeypatch):
     append_line(path, json.dumps({"type": "user", "message": {"content": "oi"}}))
     await process(cli, "s1", 1_700_000_600)
 
-    assert calls == [None, first_size]
+    # Each pass reads twice: the foreign-write check and the plan scan, each with its own offset.
+    assert calls == [None, None, first_size, first_size]
     assert cli.manager.get("s1").record.plan_path == str(plan)
 
 

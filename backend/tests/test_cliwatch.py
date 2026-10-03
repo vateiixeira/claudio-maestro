@@ -1,9 +1,11 @@
 """Real-time CLI sessions: watching the Claude projects folder."""
 
 import asyncio
+import json
 import os
 import time
 from contextlib import closing
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +15,7 @@ from history_fakes import FakeHistory, assistant_entry, info, now_ms, user_entry
 from watchfiles import Change
 
 from claudio_maestro import db
-from claudio_maestro.agent.fake import FakeAgentFactory
+from claudio_maestro.agent.fake import FakeAgentFactory, scripted, text_turn
 from claudio_maestro.app import create_app, publish_synced
 from claudio_maestro.cliwatch import CliWatcher, history_folder_name
 from claudio_maestro.config import Settings
@@ -66,10 +68,11 @@ class Env:
         self.fake = FakeHistory()
         self.events: list[dict[str, Any]] = []
         self.mtimes: dict[str, float] = {}
+        self.factory = FakeAgentFactory()
         self.manager = SessionManager(
             self.db_path,
             self.events.append,
-            agent_factory=FakeAgentFactory(),
+            agent_factory=self.factory,
             history_exists=lambda sid, cwd: sid in self.fake.messages,
             rename_session=self.fake.rename_session,
             list_sessions=self.fake.list_sessions,
@@ -602,3 +605,106 @@ def test_settings_claude_projects_dir_follows_env(monkeypatch, tmp_path):
 
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
     assert load_settings().claude_projects_dir == tmp_path / "cfg" / "projects"
+
+
+def jsonl(*entries: dict[str, Any]) -> str:
+    return "".join(json.dumps(e) + "\n" for e in entries)
+
+
+def reply(uuid: str, ts: float | None = None) -> dict[str, Any]:
+    stamp = datetime.fromtimestamp(ts or time.time(), UTC).isoformat().replace("+00:00", "Z")
+    return {"type": "assistant", "uuid": uuid, "timestamp": stamp, "isSidechain": False,
+            "message": {"role": "assistant", "stop_reason": "end_turn",
+                        "content": [{"type": "text", "text": "x"}]}}
+
+
+def prompt(uuid: str) -> dict[str, Any]:
+    stamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    return {"type": "user", "uuid": uuid, "timestamp": stamp, "isSidechain": False,
+            "message": {"role": "user", "content": "gostei aprovado"}}
+
+
+async def idle_app_session(env, sid: str = "s1"):
+    env.fake.add(str(env.folder), info(sid, str(env.folder), modified_ms=1_700_000_000_000))
+    await env.index.sync_all()
+    env.fake.messages[sid] = [user_entry("oi", sid)]
+    env.factory.script = scripted(text_turn(sid, "olá"))
+    session = env.manager.get(sid)
+    await session.send("oi")
+    await wait_until(lambda: session.state == "idle")
+    return session
+
+
+@pytest.mark.anyio
+async def test_reply_from_another_process_releases_the_idle_client_and_reloads(env):
+    session = await idle_app_session(env)
+    own = sorted(session.own_uuids)
+    env.file("s1").write_text(jsonl(*(reply(u) for u in own), prompt("u-fora"), reply("a-fora")))
+    env.events.clear()
+    env.start()
+    env.watch.push((Change.modified, env.file("s1")))
+
+    await wait_until(lambda: env.processed == ["s1"])
+    assert session.client is None and session.state == "closed"
+    assert env.factory.clients[-1].closed is True
+    assert "session.updated" in env.types("s1")
+
+
+@pytest.mark.anyio
+async def test_own_replies_keep_the_client_and_emit_nothing(env):
+    session = await idle_app_session(env)
+    own = sorted(session.own_uuids)
+    env.file("s1").write_text(jsonl(*(reply(u) for u in own), prompt("u-fora")))
+    env.events.clear()
+    env.start()
+    env.watch.push((Change.modified, env.file("s1")))
+
+    await asyncio.sleep(0.2)
+    assert session.client is not None
+    assert env.events == []
+
+
+@pytest.mark.anyio
+async def test_lines_written_while_the_app_works_are_not_judged_later(env):
+    session = await idle_app_session(env)
+    env.start()
+    session.pending_turns = 1  # the app is in a turn
+    env.file("s1").write_text(jsonl(reply("parece-de-fora")))
+    env.watch.push((Change.modified, env.file("s1")))
+    await asyncio.sleep(0.2)
+    session.pending_turns = 0  # back to idle; only a prompt arrives now
+    with env.file("s1").open("a") as handle:
+        handle.write(jsonl(prompt("u2")))
+    env.watch.push((Change.modified, env.file("s1")))
+
+    await asyncio.sleep(0.2)
+    assert session.client is not None
+
+
+@pytest.mark.anyio
+async def test_old_replies_read_after_a_restart_do_not_release(env):
+    session = await idle_app_session(env)
+    old = time.time() - 3600  # written before this client started
+    env.file("s1").write_text(jsonl(reply("antiga", old)))
+    env.start()
+    env.watch.push((Change.modified, env.file("s1")))
+
+    await asyncio.sleep(0.2)
+    assert session.client is not None
+
+
+@pytest.mark.anyio
+async def test_failing_foreign_check_is_logged_and_the_pass_skips_as_before(env, caplog):
+    session = await idle_app_session(env)
+
+    async def boom(session_id, lines):
+        raise RuntimeError("falhou")
+
+    env.manager.release_if_foreign = boom
+    env.file("s1").write_text(jsonl(reply("a-fora")))
+    env.start()
+    env.watch.push((Change.modified, env.file("s1")))
+
+    await asyncio.sleep(0.2)
+    assert session.client is not None
+    assert "escrita de outro processo" in caplog.text
