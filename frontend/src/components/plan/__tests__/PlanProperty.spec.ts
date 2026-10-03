@@ -41,13 +41,14 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-async function mountProperty(handlers: Handlers, options: { attachTo?: HTMLElement } = {}) {
+async function mountProperty(handlers: Handlers, options: { attachTo?: HTMLElement; summary?: boolean } = {}) {
   const fetchMock = routeFetch(handlers)
   vi.stubGlobal('fetch', fetchMock)
+  const { summary, ...mountOptions } = options
   const wrapper = mount(PlanProperty, {
-    props: { sessionId: 's1', projectId: 1 },
+    props: { sessionId: 's1', projectId: 1, ...(summary === undefined ? {} : { summary }) },
     global: { plugins: [pinia] },
-    ...options,
+    ...mountOptions,
   })
   await flushPromises()
   return { wrapper, fetchMock }
@@ -63,10 +64,43 @@ describe('propriedade Plano', () => {
   it('sem vínculo mostra Nenhum e o botão de escolher', async () => {
     const { wrapper } = await mountProperty({ 'GET /api/sessions/s1/plan': () => jsonResponse(none) })
 
-    expect(wrapper.text()).toContain('Plano')
     expect(wrapper.find('[data-test="prop-plan"]').text()).toContain('Nenhum')
     expect(buttonByText(wrapper, 'Escolher plano…')).toBeTruthy()
     expect(buttonByText(wrapper, 'Desligar')).toBeUndefined()
+  })
+
+  it('não é mais uma linha de propriedade: sem rótulo "Plano" nem dt/dd', async () => {
+    const { wrapper } = await mountProperty({ 'GET /api/sessions/s1/plan': () => jsonResponse(state()) })
+
+    expect(wrapper.find('dt').exists()).toBe(false)
+    expect(wrapper.find('dd').exists()).toBe(false)
+    expect(wrapper.find('[data-test="prop-plan"]').exists()).toBe(true)
+  })
+
+  it('sem o resumo (o painel já mostra o plano), mantém Trocar plano… e Desligar e esconde o nome e a posição', async () => {
+    const { wrapper } = await mountProperty({ 'GET /api/sessions/s1/plan': () => jsonResponse(state()) }, { summary: false })
+
+    const value = wrapper.find('[data-test="prop-plan"]').text()
+    expect(value).not.toContain('Carrinho de compras')
+    expect(value).not.toContain('4 de 12')
+    expect(buttonByText(wrapper, 'Trocar plano…')).toBeTruthy()
+    expect(buttonByText(wrapper, 'Desligar')).toBeTruthy()
+  })
+
+  it('sem o resumo, a lista de planos abre e vincula o escolhido', async () => {
+    const { wrapper, fetchMock } = await mountProperty({
+      'GET /api/sessions/s1/plan': () => jsonResponse(state()),
+      'GET /api/projects/1/plans': () => jsonResponse(plans),
+      'PUT /api/sessions/s1/plan': () => jsonResponse(state({ path: plans[1]!.path })),
+    }, { summary: false })
+
+    await buttonByText(wrapper, 'Trocar plano…')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('[role="menuitem"]')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(calls(fetchMock, 'PUT /api/sessions/s1/plan')).toHaveLength(1)
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
   })
 
   it('com plano mostra o nome e a posição', async () => {

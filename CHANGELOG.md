@@ -20,6 +20,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- Nos Detalhes, o plano aparece de forma compacta: as tarefas concluídas ficam recolhidas, a atual vem em destaque com as duas próximas, e "Trocar plano…" e "Desligar" foram para o rodapé da seção Plano.
 - O raciocínio aparece numa linha, com a lâmpada, o tempo e uma prévia do texto; um clique abre o texto completo.
 - Visual mais arredondado: a fonte da interface agora é a Rubik, e botões, cards, campos e menus ganharam cantos mais redondos (blocos de código continuam com 8px). Etiquetas pequenas viraram pílulas.
 - A conversa ficou com cara de mensageiro: o que você manda aparece em balão à direita. As respostas do Claude aparecem como texto corrido, sem balão; só o trabalho fica em caixas.

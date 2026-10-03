@@ -63,14 +63,14 @@ describe('painel Detalhes', () => {
     expect(classes).not.toContain('border-line')
   })
 
-  it('mostra as propriedades Plano e Agrupador depois das outras propriedades', async () => {
+  it('a linha Plano saiu das propriedades: ficam Agrupador por último e os botões do plano na seção Plano', async () => {
     const wrapper = await mountPanel()
 
     const props = wrapper.find('[data-test="details-properties"]')
-    expect(props.find('[data-test="prop-plan"]').text()).toContain('Nenhum')
-    expect(props.find('[data-test="prop-plan"]').text()).toContain('Escolher plano…')
+    expect(props.find('[data-test="prop-plan"]').exists()).toBe(false)
     const labels = props.findAll('dt').map((dt) => dt.text())
-    expect(labels.slice(-2)).toEqual(['Plano', 'Agrupador'])
+    expect(labels).not.toContain('Plano')
+    expect(labels.slice(-1)).toEqual(['Agrupador'])
     expect(props.find('[data-test="prop-group"]').exists()).toBe(true)
   })
 
@@ -80,9 +80,8 @@ describe('painel Detalhes', () => {
     const groups = wrapper.find('[data-test="details-properties"]').findAll('dl')
     expect(groups).toHaveLength(2)
     expect(groups[0].findAll('dt').map((dt) => dt.text())).toEqual(['Estado', 'Turnos', 'Início', 'Última atividade'])
-    expect(groups[1].findAll('dt').map((dt) => dt.text())).toEqual(['Projeto', 'Branch', 'Contexto', 'Plano', 'Agrupador'])
+    expect(groups[1].findAll('dt').map((dt) => dt.text())).toEqual(['Projeto', 'Branch', 'Contexto', 'Agrupador'])
     expect(groups[0].find('[data-test="prop-state"]').exists()).toBe(true)
-    expect(groups[1].find('[data-test="prop-plan"]').exists()).toBe(true)
     expect(groups[1].find('[data-test="prop-group"]').exists()).toBe(true)
   })
 
@@ -97,20 +96,26 @@ describe('painel Detalhes', () => {
     expect(groups[1].findAll('dt').map((dt) => dt.text()).slice(0, 4)).toEqual(['Projeto', 'Branch', 'Worktree', 'Contexto'])
   })
 
-  it('mostra a seção Plano, com a faixa aberta, quando a sessão tem plano visível', async () => {
+  it('mostra a seção Plano compacta quando a sessão tem plano visível, com Abrir plano, Trocar plano… e Desligar no rodapé', async () => {
     const plan = { path: '/p/plan.md', title: 'Plano X', total: 8, done: 3, current: { number: 4, title: 'Quarta' } }
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'running', plan })])
     const wrapper = await mountPanel({
       'GET /api/sessions/s1/plan': () => jsonResponse({
         link: 'auto', path: plan.path, plan,
-        tasks: [{ number: 1, title: 'Primeira', done: true }, { number: 4, title: 'Quarta', done: false }],
+        tasks: [{ number: 1, title: 'Primeira', done: true }, { number: 4, title: 'Quarta', done: false }, { number: 5, title: 'Quinta', done: false }],
       }),
     })
     const section = wrapper.find('[data-test="details-plan"]')
     expect(section.exists()).toBe(true)
     expect(section.find('h3').text()).toBe('Plano')
-    expect(section.find('[data-test="plan-strip"]').text()).toContain('Tarefa 4 de 8')
-    expect(section.findAll('[data-test="plan-task"]')).toHaveLength(2)
+    expect(section.find('[data-test="plan-strip"]').text()).toContain('4 de 8')
+    expect(section.find('[data-test="plan-done-toggle"]').text()).toContain('1 concluída')
+    expect(section.findAll('[data-test="plan-task"]').map((t) => t.attributes('data-status'))).toEqual(['current', 'queued'])
+    const footer = section.find('[data-test="plan-footer"]')
+    const labels = footer.findAll('button').map((b) => b.text())
+    expect(labels).toEqual(expect.arrayContaining(['Abrir plano', 'Trocar plano…', 'Desligar']))
+    expect(wrapper.findAll('[data-test="prop-plan"]')).toHaveLength(1)
+    expect(footer.find('[data-test="prop-plan"]').text()).not.toContain('Plano X')
     const order = wrapper.findAll('[data-test="details-properties"], [data-test="details-plan"], [data-test="details-changes"]').map((e) => e.attributes('data-test'))
     expect(order).toEqual(['details-properties', 'details-plan', 'details-changes'])
   })
@@ -124,9 +129,13 @@ describe('painel Detalhes', () => {
     expect(body.classes()).toEqual(expect.arrayContaining(['overflow-y-auto', 'relative']))
   })
 
-  it('sem plano, não há seção Plano', async () => {
+  it('sem plano visível, a seção Plano continua com o estado e o botão de escolher', async () => {
     const wrapper = await mountPanel()
-    expect(wrapper.find('[data-test="details-plan"]').exists()).toBe(false)
+    const section = wrapper.find('[data-test="details-plan"]')
+    expect(section.exists()).toBe(true)
+    expect(section.find('[data-test="plan-strip"]').exists()).toBe(false)
+    expect(section.find('[data-test="prop-plan"]').text()).toContain('Nenhum')
+    expect(section.text()).toContain('Escolher plano…')
   })
 
   it('mostra as propriedades da conversa', async () => {

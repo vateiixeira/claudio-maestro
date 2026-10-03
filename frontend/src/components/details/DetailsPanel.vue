@@ -235,14 +235,16 @@ function resetWidth() {
                 </template>
                 <span v-else class="text-fg-muted">Desconhecido</span>
               </dd>
-              <PlanProperty v-if="projectId != null" :session-id="sessionId" :project-id="projectId" />
               <GroupProperty v-if="projectId != null" :session-id="sessionId" :project-id="projectId" />
             </dl>
           </div>
         </section>
-        <section v-if="session && planVisible(session)" data-test="details-plan" aria-labelledby="plan-title" class="flex flex-col gap-2">
+        <section v-if="session && projectId != null" data-test="details-plan" aria-labelledby="plan-title" class="flex flex-col gap-2">
           <h3 id="plan-title" class="m-0 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Plano</h3>
-          <PlanStrip :key="sessionId" :session="session" variant="panel" />
+          <PlanStrip v-if="planVisible(session)" :key="sessionId" :session="session" variant="panel">
+            <template #actions><PlanProperty :session-id="sessionId" :project-id="projectId" :summary="false" /></template>
+          </PlanStrip>
+          <PlanProperty v-else :session-id="sessionId" :project-id="projectId" />
         </section>
         <DigestSection :session-id="sessionId" />
         <section data-test="details-changes" aria-labelledby="changes-title" class="flex flex-col gap-2">

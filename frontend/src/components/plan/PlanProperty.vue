@@ -4,7 +4,8 @@ import { errorMessage, getSessionPlan, linkSessionPlan, listProjectPlans, unlink
 import { useSessionsStore } from '../../stores/sessions'
 import type { PlanState, ProjectPlan } from '../../types/api'
 
-const props = defineProps<{ sessionId: string; projectId: number }>()
+// `summary` off: the panel already shows the plan, so only the buttons (and their menu) stay.
+const props = withDefaults(defineProps<{ sessionId: string; projectId: number; summary?: boolean }>(), { summary: true })
 
 const sessions = useSessionsStore()
 
@@ -156,9 +157,10 @@ const unavailableParts = computed(() => (state.value?.path ? pathParts(state.val
 </script>
 
 <template>
-  <dt class="text-fg-muted">Plano</dt>
-  <dd ref="root" data-test="prop-plan" class="m-0 flex min-w-0 flex-col gap-1.5" @keydown="onRootKey">
-    <template v-if="plan">
+  <!-- Without the summary the root takes no box of its own: the buttons join the row of the footer around it. -->
+  <div ref="root" data-test="prop-plan" :class="summary ? 'flex min-w-0 flex-col gap-1.5' : 'contents'" @keydown="onRootKey">
+    <template v-if="!summary" />
+    <template v-else-if="plan">
       <span class="truncate" :title="plan.path">{{ plan.title }}</span>
       <span class="text-fg-muted">{{ plan.current ? `${plan.current.number} de ${plan.total}` : 'Concluído' }}</span>
     </template>
@@ -169,7 +171,7 @@ const unavailableParts = computed(() => (state.value?.path ? pathParts(state.val
     </template>
     <span v-else class="text-fg-muted">{{ state ? 'Nenhum' : '…' }}</span>
 
-    <div v-if="state" class="flex flex-wrap gap-1.5">
+    <div v-if="state" class="flex flex-wrap gap-1.5" :class="summary ? '' : 'items-start'">
       <button
         ref="trigger"
         type="button"
@@ -195,13 +197,13 @@ const unavailableParts = computed(() => (state.value?.path ? pathParts(state.val
       >Ligar automaticamente</button>
     </div>
 
-    <p v-if="menuOpen && plans.length === 0" role="status" class="m-0 rounded-lg border border-line-strong bg-elevated px-2.5 py-1.5 text-xs text-fg-muted">Nenhum plano em docs/superpowers/plans/</p>
+    <p v-if="menuOpen && plans.length === 0" role="status" class="m-0 w-full rounded-lg border border-line-strong bg-elevated px-2.5 py-1.5 text-xs text-fg-muted">Nenhum plano em docs/superpowers/plans/</p>
     <div
       v-else-if="menuOpen"
       ref="menu"
       role="menu"
       aria-label="Planos do projeto"
-      class="flex max-h-60 flex-col overflow-y-auto rounded-lg border border-line-strong bg-card p-1 shadow-lg"
+      class="flex max-h-60 w-full flex-col overflow-y-auto rounded-lg border border-line-strong bg-card p-1 shadow-lg"
       @keydown="onMenuKey"
     >
       <button
@@ -221,12 +223,12 @@ const unavailableParts = computed(() => (state.value?.path ? pathParts(state.val
       </button>
     </div>
 
-    <p v-if="error" role="alert" class="m-0 text-xs text-diff-del-fg">{{ error }}</p>
+    <p v-if="error" role="alert" class="m-0 w-full text-xs text-diff-del-fg">{{ error }}</p>
     <button
       v-if="!state && error"
       type="button"
       class="h-7 w-fit cursor-pointer rounded-md border border-line-strong bg-transparent px-2 text-xs text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary"
       @click="load"
     >Tentar de novo</button>
-  </dd>
+  </div>
 </template>

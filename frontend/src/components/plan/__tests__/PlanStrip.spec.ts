@@ -26,6 +26,18 @@ const planState = (plan: PlanSummary): PlanState => ({
   ],
 })
 
+// 19 tasks: 14 done, the 15th is the current one and 4 are left after it.
+const bigState = (): PlanState => {
+  const plan = summary({ total: 19, done: 14, current: { number: 15, title: 'Quinze' } })
+  return {
+    link: 'auto',
+    path: plan.path,
+    plan,
+    tasks: Array.from({ length: 19 }, (_, i) => ({ number: i + 1, title: i === 14 ? 'Quinze' : `Tarefa ${i + 1}`, done: i < 14 })),
+  }
+}
+const bigSession = () => makeSession({ display_state: 'running', plan: bigState().plan })
+
 const session = (extra: Partial<Session> = {}): Session =>
   makeSession({ display_state: 'running', plan: summary(), ...extra })
 
@@ -102,22 +114,121 @@ describe('faixa do plano', () => {
     w.unmount()
   })
 
-  it('no painel, a lista de tarefas já vem aberta e sem largura máxima', async () => {
+  it('no painel, o plano já vem aberto, compacto e sem largura máxima: concluídas recolhidas, a atual e a próxima', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())) }))
     const w = mount(PlanStrip, { props: { session: session(), variant: 'panel' } })
     await flushPromises()
     expect(toggle(w).attributes('aria-expanded')).toBe('true')
-    expect(w.findAll('[data-test="plan-task"]')).toHaveLength(5)
+    const items = w.findAll('[data-test="plan-task"]')
+    expect(items.map((i) => i.attributes('data-status'))).toEqual(['current', 'queued'])
     expect(w.find('[data-test="plan-strip"]').classes()).not.toContain('max-w-(--chat-width)')
   })
 
-  it('no painel, o botão recolhe a lista', async () => {
+  it('no painel, mostra título, "N de T", a barra, as concluídas recolhidas, a atual em destaque, 2 próximas e "+N depois"', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(bigState()) }))
+    const w = mount(PlanStrip, { props: { session: bigSession(), variant: 'panel' } })
+    await flushPromises()
+    const head = toggle(w).text()
+    expect(head).toContain('Plano da loja')
+    expect(head).toContain('15 de 19')
+    expect(head).not.toContain('Tarefa 15 de 19')
+    expect(w.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('14')
+    const done = w.find('[data-test="plan-done-toggle"]')
+    expect(done.text()).toContain('14 concluídas')
+    expect(done.attributes('aria-expanded')).toBe('false')
+    expect(done.find('svg').classes()).toContain('text-primary')
+    const items = w.findAll('[data-test="plan-task"]')
+    expect(items.map((i) => i.attributes('data-status'))).toEqual(['current', 'queued', 'queued'])
+    const current = items[0]!
+    expect(current.text()).toContain('AGORA')
+    expect(current.text()).toContain('Quinze')
+    expect(current.classes()).toEqual(expect.arrayContaining(['rounded-[10px]', 'border', 'border-primary/30', 'bg-primary-tint', 'px-2.5', 'py-2']))
+    expect(current.find('.cap').classes()).toContain('text-primary-soft')
+    expect(current.attributes('aria-current')).toBe('step')
+    expect(items[1]!.text()).toContain('Tarefa 16')
+    expect(items[2]!.text()).toContain('Tarefa 17')
+    expect(w.find('[data-test="plan-later"]').text()).toBe('+2 depois')
+  })
+
+  it('no painel, sem tarefas depois das 2 próximas não mostra "+N depois"; sem concluídas não mostra o recolhido', async () => {
+    const plan = summary({ total: 2, done: 0, current: { number: 1, title: 'Única' } })
+    const state: PlanState = { link: 'auto', path: plan.path, plan, tasks: [{ number: 1, title: 'Única', done: false }, { number: 2, title: 'Dois', done: false }] }
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(state) }))
+    const w = mount(PlanStrip, { props: { session: session({ plan }), variant: 'panel' } })
+    await flushPromises()
+    expect(w.find('[data-test="plan-later"]').exists()).toBe(false)
+    expect(w.find('[data-test="plan-done-toggle"]').exists()).toBe(false)
+    expect(w.findAll('[data-test="plan-task"]')).toHaveLength(2)
+  })
+
+  it.each([
+    ['lista vazia', () => jsonResponse({ ...planState(summary()), tasks: [] })],
+    ['lista ainda não carregada', () => new Promise<Response>(() => {})],
+  ])('no painel, com %s o destaque AGORA usa a tarefa atual do resumo', async (_name, handler) => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': handler }))
+    const w = mount(PlanStrip, { props: { session: session(), variant: 'panel' } })
+    await flushPromises()
+    const items = w.findAll('[data-test="plan-task"]')
+    expect(items).toHaveLength(1)
+    expect(items[0]!.attributes('data-status')).toBe('current')
+    expect(items[0]!.attributes('aria-current')).toBe('step')
+    expect(items[0]!.text()).toContain('AGORA')
+    expect(items[0]!.text()).toContain('4.')
+    expect(items[0]!.text()).toContain('Faixa do plano')
+    expect(w.find('[data-test="plan-done-toggle"]').exists()).toBe(false)
+    expect(w.find('[data-test="plan-later"]').exists()).toBe(false)
+  })
+
+  it('no painel, "N concluídas" abre e recolhe a lista das feitas, antes da atual', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(bigState()) }))
+    const w = mount(PlanStrip, { props: { session: bigSession(), variant: 'panel' } })
+    await flushPromises()
+    await w.find('[data-test="plan-done-toggle"]').trigger('click')
+    expect(w.find('[data-test="plan-done-toggle"]').attributes('aria-expanded')).toBe('true')
+    let statuses = w.findAll('[data-test="plan-task"]').map((i) => i.attributes('data-status'))
+    expect(statuses).toHaveLength(17)
+    expect(statuses.slice(0, 14).every((s) => s === 'done')).toBe(true)
+    expect(statuses.slice(14)).toEqual(['current', 'queued', 'queued'])
+    await w.find('[data-test="plan-done-toggle"]').trigger('click')
+    statuses = w.findAll('[data-test="plan-task"]').map((i) => i.attributes('data-status'))
+    expect(statuses).toEqual(['current', 'queued', 'queued'])
+  })
+
+  it('no painel, "Abrir plano" fica no rodapé junto do espaço das ações e chama o editor', async () => {
+    const fetchMock = routeFetch({
+      'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())),
+      'POST /api/open-in-editor': () => jsonResponse(undefined, 204),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const w = mount(PlanStrip, {
+      props: { session: session(), variant: 'panel' },
+      slots: { actions: '<button data-test="slot-action">Trocar plano…</button>' },
+    })
+    await flushPromises()
+    const footer = w.find('[data-test="plan-footer"]')
+    expect(footer.find('[data-test="plan-open"]').exists()).toBe(true)
+    expect(footer.find('[data-test="slot-action"]').exists()).toBe(true)
+    expect(toggle(w).element.parentElement!.querySelector('[data-test="plan-open"]')).toBeNull()
+    await footer.find('[data-test="plan-open"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/open-in-editor')).toBe(true)
+  })
+
+  it('na faixa, "Abrir plano" continua no topo e não há rodapé', () => {
+    const w = mount(PlanStrip, { props: { session: session() }, slots: { actions: '<button data-test="slot-action">x</button>' } })
+    expect(w.find('[data-test="plan-footer"]').exists()).toBe(false)
+    expect(toggle(w).element.parentElement!.querySelector('[data-test="plan-open"]')).not.toBeNull()
+    expect(w.find('[data-test="slot-action"]').exists()).toBe(false)
+  })
+
+  it('no painel, o botão recolhe o plano', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())) }))
     const w = mount(PlanStrip, { props: { session: session(), variant: 'panel' } })
     await flushPromises()
     await toggle(w).trigger('click')
     expect(toggle(w).attributes('aria-expanded')).toBe('false')
     expect(w.findAll('[data-test="plan-task"]')).toHaveLength(0)
+    expect(w.find('[data-test="plan-done-toggle"]').exists()).toBe(false)
   })
 
   // The "(na fila)" labels are sr-only (position: absolute). Without a positioned list they
@@ -152,7 +263,7 @@ describe('faixa do plano', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s2/plan', expect.objectContaining({ method: 'GET' }))
     expect(toggle(w).attributes('aria-expanded')).toBe('true')
-    expect(w.findAll('[data-test="plan-task"]')).toHaveLength(5)
+    expect(w.findAll('[data-test="plan-task"]')).toHaveLength(2)
   })
 
   it('busca a lista de novo quando done muda com a lista aberta', async () => {

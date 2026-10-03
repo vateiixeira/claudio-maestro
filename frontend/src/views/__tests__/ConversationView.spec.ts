@@ -70,7 +70,9 @@ describe('página da conversa', () => {
     expect(wrapper.findAll('[data-test="plan-strip"]')).toHaveLength(1)
     const inPanel = wrapper.find('[data-test="details-panel"] [data-test="plan-strip"]')
     expect(inPanel.exists()).toBe(true)
-    expect(inPanel.text()).toContain('Tarefa 4 de 12: Faixa do plano')
+    expect(inPanel.text()).toContain('Plano da loja')
+    expect(inPanel.text()).toContain('4 de 12')
+    expect(inPanel.find('[data-status="current"]').text()).toContain('Faixa do plano')
   })
 
   it('não mostra o progresso do plano sem plano', async () => {
