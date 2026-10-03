@@ -37,18 +37,27 @@ def test_patch_priority(api, home):
 
 
 @pytest.mark.parametrize(
-    "body",
+    ("body", "message"),
     [
-        {"mark": "other"},
-        {"mark": "review", "mark_note": "x"},
-        {"mark": "on_hold", "mark_until": 1},
-        {"mark": "blocked", "mark_note": "x" * 81},
+        ({"mark": "other"}, "Marcação inválida."),
+        ({"mark": "review", "mark_note": "x"}, "A nota só vale para sessões bloqueadas."),
+        ({"mark": "on_hold", "mark_until": 1}, "Escolha uma data no futuro, em até um ano."),
+        ({"mark": "blocked", "mark_note": "x" * 81}, "A nota pode ter até 80 caracteres."),
+        ({"mark": "blocked", "mark_note": "x" * 500}, "A nota pode ter até 80 caracteres."),
     ],
 )
-def test_patch_rejects_invalid_marks(api, home, body):
+def test_patch_rejects_invalid_marks_in_portuguese(api, home, body, message):
     sid = new_sid(api, home)
     response = api.patch(f"/api/sessions/{sid}", json=body)
     assert response.status_code == 422
+    assert response.json()["detail"] == message
+
+
+def test_patch_trims_the_note_before_the_limit(api, home):
+    sid = new_sid(api, home)
+    note = "  " + "x" * 80 + "  "
+    body = api.patch(f"/api/sessions/{sid}", json={"mark": "blocked", "mark_note": note}).json()
+    assert body["mark_note"] == "x" * 80
 
 
 def test_patch_removes_mark_with_null(api, home):

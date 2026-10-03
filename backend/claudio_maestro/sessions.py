@@ -435,7 +435,8 @@ def resolve_mark(
 
     Changing `mark` drops the note and the wake time not sent along. A note needs
     `blocked`, a wake time `on_hold`; a wake time sent must be in the future and at
-    most MARK_UNTIL_MAX away. Raises InvalidMarkError."""
+    most MARK_UNTIL_MAX away; a note (spaces collapsed) has at most MARK_NOTE_MAX
+    characters. Raises InvalidMarkError."""
     if mark is ... and mark_note is ... and mark_until is ...:
         return {}
     new_mark = record.mark if mark is ... else mark
@@ -445,7 +446,9 @@ def resolve_mark(
     if mark_note is ...:
         note = None if switched else record.mark_note
     else:
-        note = " ".join((mark_note or "").split())[:MARK_NOTE_MAX] or None
+        note = " ".join((mark_note or "").split()) or None
+        if note is not None and len(note) > MARK_NOTE_MAX:
+            raise InvalidMarkError(f"A nota pode ter até {MARK_NOTE_MAX} caracteres.")
     until = (None if switched else record.mark_until) if mark_until is ... else mark_until
     if note is not None and new_mark != "blocked":
         raise InvalidMarkError("A nota só vale para sessões bloqueadas.")
@@ -3015,6 +3018,14 @@ class SessionManager:
         if group_id is not ... and group_id != session.record.group_id:
             changes["group_id"] = group_id
         changes.update(mark_changes)
+        if (
+            "mark" in mark_changes
+            and mark_changes["mark"] is None
+            and finished is not True
+            and _now() - session.record.last_activity_at > self.finished_after()
+        ):
+            # Taking off a long-standing mark must not finish the session by inactivity on the spot.
+            changes["last_activity_at"] = _now()
         if priority is not None and priority != session.record.priority:
             changes["priority"] = priority
         if finished is True:
@@ -3160,17 +3171,21 @@ class SessionManager:
             ).fetchall()
         woken: list[str] = []
         for row in rows:
+            # One session failing must not hold back the ones after it (the sweep retries every minute).
             try:
                 session = self.get(row["session_id"])
+                record = session.record
+                if record.mark != "on_hold" or record.mark_until is None or record.mark_until > now:
+                    continue
+                session.save(
+                    mark=None, mark_until=None, last_activity_at=max(record.last_activity_at, now)
+                )
+                session.emit_updated()
             except SessionNotFoundError:
                 continue
-            record = session.record
-            if record.mark != "on_hold" or record.mark_until is None or record.mark_until > now:
+            except Exception:
+                logger.exception("Falha ao acordar a sessão %s", row["session_id"])
                 continue
-            session.save(
-                mark=None, mark_until=None, last_activity_at=max(record.last_activity_at, now)
-            )
-            session.emit_updated()
             woken.append(record.session_id)
         return woken
 

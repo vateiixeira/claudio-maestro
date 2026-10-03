@@ -1,5 +1,7 @@
 """Marcações de sessão: dados, PATCH, regras de envio, inatividade e acordar."""
 
+import asyncio
+
 import pytest
 from test_sessions import env_cleanup, make_env, session_row, wait_until  # noqa: F401
 
@@ -60,6 +62,19 @@ def test_note_is_collapsed_and_empty_becomes_none():
     assert out == {"mark": "blocked", "mark_note": "esperando CI"}
     out = resolve_mark(rec(), mark="blocked", mark_note="   ", mark_until=..., now=NOW)
     assert out == {"mark": "blocked"}
+
+
+def test_resolve_mark_note_limit_has_a_portuguese_message():
+    ok = resolve_mark(rec(), mark="blocked", mark_note="x" * 80, mark_until=..., now=NOW)
+    assert ok == {"mark": "blocked", "mark_note": "x" * 80}
+    with pytest.raises(InvalidMarkError, match="A nota pode ter até 80 caracteres."):
+        resolve_mark(rec(), mark="blocked", mark_note="x" * 81, mark_until=..., now=NOW)
+
+
+def test_resolve_mark_counts_the_note_after_collapsing_spaces():
+    note = "  " + "a  " * 26  # 78 letters once collapsed, longer before
+    out = resolve_mark(rec(), mark="blocked", mark_note=note, mark_until=..., now=NOW)
+    assert out["mark_note"] == " ".join(["a"] * 26)
 
 
 @pytest.mark.parametrize(
@@ -232,3 +247,98 @@ async def test_listing_wakes_overdue_sessions(make_env, env_cleanup):
     [listed] = [s for s in env.manager.list_sessions() if s["session_id"] == session.session_id]
     assert listed["mark"] is None
     assert listed["unread"] is True
+
+
+@pytest.mark.anyio
+async def test_removing_a_long_standing_mark_does_not_finish_the_session(make_env, env_cleanup):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    old = _now() - 5 * DAY
+    await env.manager.update(session.session_id, mark="blocked", mark_note="CI")
+    session.save(last_activity_at=old)
+    assert env.manager.summary(session.session_id)["display_state"] == "waiting"
+
+    summary = await env.manager.update(session.session_id, mark=None)
+
+    assert summary["mark"] is None
+    assert summary["display_state"] == "waiting"
+    assert summary["last_activity_at"] > old
+    assert session_row(env.db_path, session.session_id)["last_activity_at"] > old
+
+
+@pytest.mark.anyio
+async def test_removing_a_recent_mark_keeps_last_activity(make_env, env_cleanup):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    await env.manager.update(session.session_id, mark="review")
+    recent = _now() - 60
+    session.save(last_activity_at=recent)
+    summary = await env.manager.update(session.session_id, mark=None)
+    assert summary["last_activity_at"] == recent
+
+
+@pytest.mark.anyio
+async def test_wake_marks_survives_a_failing_session(make_env, env_cleanup, monkeypatch):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    broken = env.new_session()
+    healthy = env.new_session()
+    now = _now()
+    await env.manager.update(broken.session_id, mark="on_hold", mark_until=now + 60)
+    await env.manager.update(healthy.session_id, mark="on_hold", mark_until=now + 120)
+    real_get = env.manager.get
+
+    def get(session_id):
+        if session_id == broken.session_id:
+            raise RuntimeError("falha")
+        return real_get(session_id)
+
+    monkeypatch.setattr(env.manager, "get", get)
+
+    woken = env.manager.wake_marks(now=now + 300)
+
+    assert woken == [healthy.session_id]
+    assert env.manager.summary(healthy.session_id)["mark"] is None
+
+
+@pytest.mark.anyio
+async def test_wake_marks_survives_a_failing_save(make_env, env_cleanup, monkeypatch):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    broken = env.new_session()
+    healthy = env.new_session()
+    now = _now()
+    await env.manager.update(broken.session_id, mark="on_hold", mark_until=now + 60)
+    await env.manager.update(healthy.session_id, mark="on_hold", mark_until=now + 120)
+
+    def save(**changes):
+        raise RuntimeError("disco cheio")
+
+    monkeypatch.setattr(broken, "save", save)
+
+    assert env.manager.wake_marks(now=now + 300) == [healthy.session_id]
+
+
+@pytest.mark.anyio
+async def test_idle_sweep_wakes_due_marks(make_env, env_cleanup, monkeypatch):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    session.save(mark="on_hold", mark_until=_now() - 5)
+    real_sleep = asyncio.sleep
+    rounds = 0
+
+    async def fast_sleep(seconds):
+        nonlocal rounds
+        rounds += 1
+        if rounds > 1:
+            raise asyncio.CancelledError
+        await real_sleep(0)
+
+    monkeypatch.setattr(asyncio, "sleep", fast_sleep)
+    with pytest.raises(asyncio.CancelledError):
+        await env.manager.run_idle_sweep(0.01)
+    assert env.manager.summary(session.session_id)["mark"] is None
+    assert session_row(env.db_path, session.session_id)["mark"] is None

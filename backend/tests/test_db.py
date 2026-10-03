@@ -42,6 +42,34 @@ def test_sessions_have_mark_columns(tmp_path: Path):
     assert cols["priority"]["dflt_value"] == "0"
 
 
+def test_mark_migration_keeps_existing_sessions_unmarked(tmp_path: Path):
+    # A database from before the marks, with a session in it.
+    with open_db(tmp_path / "old.db") as conn:
+        before = len(db.MIGRATIONS) - 1
+        for statements in db.MIGRATIONS[:before]:
+            for statement in statements:
+                if callable(statement):
+                    statement(conn)
+                else:
+                    conn.execute(statement)
+        conn.execute(f"PRAGMA user_version = {before}")
+        conn.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/p', '#fff', 0, 0)"
+        )
+        conn.execute(
+            "INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at)"
+            " VALUES ('old', 1, '/p', 't', 0, 0)"
+        )
+        assert "mark" not in {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
+
+        db.migrate(conn)
+
+        row = conn.execute("SELECT * FROM sessions WHERE session_id = 'old'").fetchone()
+    assert row["mark"] is None and row["mark_note"] is None and row["mark_until"] is None
+    assert row["priority"] == 0
+
+
 def test_migrate_twice_is_harmless(tmp_path: Path):
     path = tmp_path / "test.db"
     with open_db(path) as conn:

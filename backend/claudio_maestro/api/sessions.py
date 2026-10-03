@@ -153,8 +153,9 @@ class SessionPatch(BaseModel):
     ] | None = None
     confirm_bypass: bool = False
     group_id: int | None = None
-    mark: Literal["on_hold", "blocked", "review"] | None = None
-    mark_note: Annotated[str, StringConstraints(max_length=sessions.MARK_NOTE_MAX)] | None = None
+    # Plain strings: `resolve_mark` validates both and answers in Portuguese.
+    mark: str | None = None
+    mark_note: Annotated[str, StringConstraints(strip_whitespace=True)] | None = None
     mark_until: int | None = None
     priority: bool | None = None
 
