@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as api from '../api/http'
 import { deriveDisplay } from '../sessionState'
-import type { Session } from '../types/api'
+import type { Session, SessionMark, SessionUpdate } from '../types/api'
 import type { SessionStateData, SessionTitleData, WsEvent } from '../types/events'
 
 /** Sessions indexed by project, kept up to date by the session events. */
@@ -120,7 +120,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /** Sends a PATCH and applies the answer unless an event arrived meanwhile. */
-  async function patch(sessionId: string, changes: { finished?: boolean; title?: string; group_id?: number | null }): Promise<void> {
+  async function patch(sessionId: string, changes: SessionUpdate): Promise<void> {
     const sentAt = ++clock
     const session = await api.updateSession(sessionId, changes)
     if ((lastEventAt.get(sessionId) ?? 0) > sentAt) return
@@ -137,6 +137,18 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function setGroup(sessionId: string, groupId: number | null): Promise<void> {
     await patch(sessionId, { group_id: groupId })
+  }
+
+  async function setMark(
+    sessionId: string,
+    mark: SessionMark | null,
+    extra: { mark_note?: string | null; mark_until?: number | null } = {},
+  ): Promise<void> {
+    await patch(sessionId, { mark, ...extra })
+  }
+
+  async function setPriority(sessionId: string, priority: boolean): Promise<void> {
+    await patch(sessionId, { priority })
   }
 
   function noteEvent(sessionId: string): void {
@@ -199,6 +211,6 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   return {
     byProject, loaded, all, forProject, find, setForProject, forgetProject,
-    loadForProject, loadAll, sync, create, setFinished, rename, setGroup, applyEvent,
+    loadForProject, loadAll, sync, create, setFinished, rename, setGroup, setMark, setPriority, applyEvent,
   }
 })

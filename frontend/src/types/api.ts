@@ -64,6 +64,9 @@ export type SessionState =
   | 'idle'
   | 'error'
 
+/** What the user plans to do with a session. */
+export type SessionMark = 'on_hold' | 'blocked' | 'review'
+
 export interface Session {
   session_id: string
   project_id: number
@@ -115,6 +118,14 @@ export interface Session {
   digest_short?: string | null
   /** The digest agent marked the linked plan as completed. */
   plan_done?: boolean
+  /** What the user plans to do with the session; null when unmarked. */
+  mark?: SessionMark | null
+  /** Short note of a blocked session. */
+  mark_note?: string | null
+  /** When a session on hold wakes up (seconds); null without a date. */
+  mark_until?: number | null
+  /** Pinned above the others. */
+  priority?: boolean
 }
 
 /** Group of related sessions inside a project (`GET /api/groups`). Only the app knows it. */
@@ -190,6 +201,10 @@ export interface SessionUpdate {
   permission_mode?: PermissionMode
   confirm_bypass?: boolean
   group_id?: number | null
+  mark?: SessionMark | null
+  mark_note?: string | null
+  mark_until?: number | null
+  priority?: boolean
 }
 
 /** Image sent with a message: base64 without the `data:` prefix. */
