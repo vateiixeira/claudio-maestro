@@ -107,7 +107,7 @@ const itemClass = sidebarItemClass
 </script>
 
 <template>
-  <nav aria-label="Navegação" :style="{ width: `${sidebarWidth}px` }" class="relative flex h-full shrink-0 flex-col border-r border-line bg-bg text-[0.84375rem]">
+  <nav aria-label="Navegação" :style="{ width: `${sidebarWidth}px` }" class="relative flex h-full shrink-0 flex-col border-r border-line-strong bg-bg text-[0.84375rem]">
     <div
       data-test="sidebar-resize"
       role="separator"

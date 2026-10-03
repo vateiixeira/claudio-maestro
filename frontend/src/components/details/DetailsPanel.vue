@@ -123,7 +123,7 @@ function resetWidth() {
     data-test="details-panel"
     :data-wide="String(wide)"
     aria-label="Detalhes da conversa"
-    class="relative flex h-full shrink-0 flex-col border-l border-line bg-bg"
+    class="relative flex h-full shrink-0 flex-col border-l border-line-strong bg-bg"
     :class="[wide ? 'w-[60vw]' : '', drawer ? 'max-w-full' : '']"
     :style="wide ? undefined : { width: `${applied}px` }"
   >

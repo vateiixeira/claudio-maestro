@@ -43,6 +43,13 @@ function mountSidebar() {
 }
 
 describe('menu lateral', () => {
+  it('separa o menu da conversa com a borda forte à direita', () => {
+    const classes = mountSidebar().get('nav[aria-label="Navegação"]').classes()
+    expect(classes).toContain('border-r')
+    expect(classes).toContain('border-line-strong')
+    expect(classes).not.toContain('border-line')
+  })
+
   it('tem as entradas fixas', () => {
     const wrapper = mountSidebar()
     expect(wrapper.find('[data-test="nav-dashboard"]').attributes('href')).toBe('/dashboard')

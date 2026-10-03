@@ -54,6 +54,15 @@ async function mountPanel(fetchHandlers = {}) {
 }
 
 describe('painel Detalhes', () => {
+  it('separa o painel da conversa com a borda forte à esquerda', async () => {
+    const wrapper = await mountPanel()
+
+    const classes = wrapper.get('[data-test="details-panel"]').classes()
+    expect(classes).toContain('border-l')
+    expect(classes).toContain('border-line-strong')
+    expect(classes).not.toContain('border-line')
+  })
+
   it('mostra as propriedades Plano e Agrupador depois das outras propriedades', async () => {
     const wrapper = await mountPanel()
 
