@@ -302,3 +302,38 @@ describe('resumo na linha', () => {
     expect(w.find('[data-test="row-plan-done"]').text()).toBe('Plano concluído')
   })
 })
+
+describe('marcações na linha de conversa', () => {
+  it('clique direito abre o menu de marcação no lugar do menu do navegador', async () => {
+    const row = mountRow(makeSession({ session_id: 's1' }))
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 20 })
+    row.find('[data-test="conversation-row"]').element.dispatchEvent(event)
+    await flushPromises()
+    expect(event.defaultPrevented).toBe(true)
+    expect(document.body.querySelector('[data-test="mark-popover"]')).not.toBeNull()
+  })
+  it('mostra os ícones de marcação e prioridade, como imagens com rótulo', () => {
+    const row = mountRow(makeSession({ mark: 'blocked', priority: true }))
+    const mark = row.find('[data-test="row-mark"]')
+    expect(mark.attributes('role')).toBe('img')
+    expect(mark.attributes('aria-label')).toBe('Bloqueada')
+    const star = row.find('[data-test="row-priority"]')
+    expect(star.attributes('role')).toBe('img')
+    expect(star.classes()).toContain('text-fg-muted')
+  })
+  it('sem marcação não mostra ícones', () => {
+    const row = mountRow(makeSession())
+    expect(row.find('[data-test="row-mark"]').exists()).toBe(false)
+    expect(row.find('[data-test="row-priority"]').exists()).toBe(false)
+  })
+  it('pela tecla de menu (coordenadas 0,0) abre no canto inferior esquerdo da linha', async () => {
+    const row = mountRow(makeSession({ session_id: 's1' }))
+    const el = row.find('[data-test="conversation-row"]').element
+    el.getBoundingClientRect = () => ({ left: 30, bottom: 50, top: 30, right: 130, width: 100, height: 20, x: 30, y: 30, toJSON: () => ({}) })
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 0, clientY: 0 }))
+    await flushPromises()
+    const popover = document.body.querySelector<HTMLElement>('[data-test="mark-popover"]')!
+    expect(popover.style.left).toBe('30px')
+    expect(popover.style.top).toBe('50px')
+  })
+})

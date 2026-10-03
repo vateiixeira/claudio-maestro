@@ -4,9 +4,12 @@ import { RouterLink } from 'vue-router'
 import BranchLabel from '../git/BranchLabel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import MarkIcon from '../MarkIcon.vue'
+import MarkPopover from '../marks/MarkPopover.vue'
 import IconGroup from '../icons/IconGroup.vue'
 import NextNeedsYou from './NextNeedsYou.vue'
 import { errorMessage, openInEditor } from '../../api/http'
+import { markChipText } from '../../conversation/marks'
 import { needsYou } from '../../conversation/needsYou'
 import { useConversationStore } from '../../stores/conversation'
 import { repoLabel, useGitStore } from '../../stores/git'
@@ -48,6 +51,22 @@ const stateLabel = computed(() => {
 const hasDetails = computed(() => !!group.value || !!worktree.value || repos.value.length > 0)
 const hasMeta = computed(() => !!project.value || hasDetails.value)
 const isFinished = computed(() => listed.value?.display_state === 'finished')
+
+const markAt = ref<{ x: number; y: number } | null>(null)
+const markButton = ref<HTMLButtonElement | null>(null)
+const markChipButton = ref<HTMLButtonElement | null>(null)
+const markChip = computed(() => (listed.value ? markChipText(listed.value, new Date()) : null))
+// The button and the chip both toggle. The popover leaves their pointerdown alone, so the click closes it instead of reopening.
+function toggleMark(event: MouseEvent) {
+  if (markAt.value) {
+    markAt.value = null
+    return
+  }
+  const trigger = event.currentTarget as HTMLElement
+  trigger.focus() // Safari does not focus buttons on click; the popover gives the focus back to this element
+  const box = trigger.getBoundingClientRect()
+  markAt.value = { x: box.left, y: box.bottom + 4 }
+}
 
 const error = ref<string | null>(null)
 const toggling = ref(false)
@@ -176,8 +195,13 @@ async function openProject() {
           @click="startRename"
         >{{ title }}</button>
       </h1>
+      <button v-if="markChip" ref="markChipButton" type="button" data-test="mark-chip" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
+        <MarkIcon v-if="listed?.mark" :mark="listed.mark" />{{ markChip }}
+      </button>
+      <span v-if="listed?.priority" data-test="header-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" :size="13" /></span>
       <span v-if="copied" role="status" class="shrink-0 text-xs text-primary-soft">ID copiado</span>
       <NextNeedsYou v-if="showPath" :current-id="id" />
+      <button v-if="listed" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
       <button
         v-if="listed"
         type="button"
@@ -241,5 +265,6 @@ async function openProject() {
       role="status"
       class="m-0 border-t border-secondary/40 bg-secondary-tint px-4 py-2 text-xs text-secondary-soft"
     >Esta sessão foi modificada fora do app no último minuto. Usar a mesma sessão no CLI e aqui ao mesmo tempo pode embaralhar o histórico.</p>
+    <MarkPopover v-if="markAt && listed" :session="listed" :x="markAt.x" :y="markAt.y" :ignore="[markButton, markChipButton]" @close="markAt = null" />
   </header>
 </template>

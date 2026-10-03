@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import MarkIcon from '../MarkIcon.vue'
+import MarkPopover from '../marks/MarkPopover.vue'
+import { contextPoint } from '../marks/menuPoint'
 import { isQuietSession, sidebarItemClass, sidebarNestedItemClass } from './itemClass'
 import { markChipText, markLabels, untilShort } from '../../conversation/marks'
 import { formatActivity, formatElapsedShort } from '../../format'
@@ -24,6 +26,7 @@ const markTitle = computed(() => markChipText(props.session, new Date(now.value)
 const until = computed(() =>
   props.session.mark === 'on_hold' && props.session.mark_until ? untilShort(props.session.mark_until, new Date(now.value)) : null,
 )
+const menuAt = ref<{ x: number; y: number } | null>(null)
 const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.value, prominent.value) : sidebarItemClass(active.value)))
 </script>
 
@@ -32,6 +35,7 @@ const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.va
     :to="{ name: 'session', params: { id: session.session_id } }"
     :class="rowClass"
     :aria-current="active ? 'page' : undefined"
+    @contextmenu.prevent="menuAt = contextPoint($event)"
   >
     <DisplayStateIcon :display="session.display_state" :size="nested ? 10 : 11" :quiet="isQuietSession(session)" />
     <span data-test="row-title" :class="['min-w-0 grow truncate', nested ? 'text-[0.78125rem]' : 'text-[0.8125rem]']">{{ session.title }}</span>
@@ -42,8 +46,8 @@ const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.va
       class="shrink-0 font-mono text-[0.6875rem] text-fg-subtle tabular-nums"
     >{{ age }}</span>
     <span v-if="until" data-test="row-until" class="shrink-0 font-mono text-[0.6875rem] text-fg-subtle">{{ until }}</span>
-    <span v-if="session.mark" data-test="row-mark" :title="markTitle" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
-    <span v-if="session.priority" data-test="row-priority" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" /></span>
+    <span v-if="session.mark" data-test="row-mark" role="img" :title="markTitle" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
+    <span v-if="session.priority" data-test="row-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" /></span>
     <span
       v-if="project && !hideProject"
       data-test="row-project"
@@ -56,5 +60,7 @@ const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.va
         <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><path d="M6.5 10v4a3 3 0 0 0 3 3H14" />
       </svg>
     </span>
+    <!-- Teleported to the body, so the row keeps a single root and the attributes its parents pass. -->
+    <MarkPopover v-if="menuAt" :session="session" :x="menuAt.x" :y="menuAt.y" @close="menuAt = null" />
   </RouterLink>
 </template>

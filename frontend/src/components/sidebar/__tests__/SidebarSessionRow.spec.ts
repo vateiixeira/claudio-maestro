@@ -161,3 +161,29 @@ describe('marcações na linha', () => {
     expect(row.find('[data-test="row-priority"]').exists()).toBe(false)
   })
 })
+
+describe('clique direito', () => {
+  it('abre o menu de marcação no lugar do menu do navegador', async () => {
+    const row = await mountRow({ session_id: 's1' })
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 20 })
+    row.find('a').element.dispatchEvent(event)
+    await flushPromises()
+    expect(event.defaultPrevented).toBe(true)
+    expect(document.body.querySelector('[data-test="mark-popover"]')).not.toBeNull()
+  })
+  it('os ícones de marcação e prioridade são imagens com rótulo', async () => {
+    const row = await mountRow({ session_id: 's1', mark: 'review', priority: true })
+    expect(row.find('[data-test="row-mark"]').attributes('role')).toBe('img')
+    expect(row.find('[data-test="row-priority"]').attributes('role')).toBe('img')
+  })
+  it('pela tecla de menu (coordenadas 0,0) abre no canto inferior esquerdo da linha', async () => {
+    const row = await mountRow({ session_id: 's1' })
+    const link = row.find('a').element
+    link.getBoundingClientRect = () => ({ left: 30, bottom: 50, top: 30, right: 130, width: 100, height: 20, x: 30, y: 30, toJSON: () => ({}) })
+    link.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 0, clientY: 0 }))
+    await flushPromises()
+    const popover = document.body.querySelector<HTMLElement>('[data-test="mark-popover"]')!
+    expect(popover.style.left).toBe('30px')
+    expect(popover.style.top).toBe('50px')
+  })
+})

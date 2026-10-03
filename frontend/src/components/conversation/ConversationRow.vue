@@ -2,11 +2,15 @@
 import { computed, ref } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import MarkIcon from '../MarkIcon.vue'
+import MarkPopover from '../marks/MarkPopover.vue'
+import { contextPoint } from '../marks/menuPoint'
 import BranchLabel from '../git/BranchLabel.vue'
 import GroupTag from '../groups/GroupTag.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import PlanBadge from '../plan/PlanBadge.vue'
 import { errorMessage, markSessionSeen } from '../../api/http'
+import { markChipText, markLabels } from '../../conversation/marks'
 import { waitingReason } from '../../conversationList'
 import { needsYou } from '../../conversation/needsYou'
 import { formatActivity } from '../../format'
@@ -46,6 +50,8 @@ const srState = computed(() => {
 // The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it here.
 const planTitle = computed(() => (!compact.value && planVisible(props.session) ? planPosition(props.session.plan!) : undefined))
 const busy = ref(false)
+const menuAt = ref<{ x: number; y: number } | null>(null)
+const markTitle = computed(() => markChipText(props.session, new Date()) ?? undefined)
 
 async function run(action: () => Promise<unknown>) {
   if (busy.value) return
@@ -67,6 +73,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     data-test="conversation-row"
     :data-unread="String(session.unread)"
     :data-active="active ? 'true' : undefined"
+    @contextmenu.prevent="menuAt = contextPoint($event)"
     class="group relative flex min-h-11 items-center gap-3 rounded-md px-2 hover:bg-card focus-within:bg-card"
     :class="active ? 'bg-card shadow-[inset_2px_0_0_var(--color-primary)]' : ''"
   >
@@ -74,6 +81,8 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       <span v-if="session.unread" data-test="unread-dot" class="size-2 rounded-full bg-info" />
     </span>
     <DisplayStateIcon :display="session.display_state" :quiet="!wantsYou" />
+    <span v-if="session.mark" data-test="row-mark" role="img" :title="markTitle" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
+    <span v-if="session.priority" data-test="row-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" /></span>
     <!-- Not positioned, so the link's stretched ::after still covers the whole row. -->
     <div data-test="row-title" class="flex grow items-center gap-2" :class="compact ? 'min-w-24 overflow-hidden' : 'min-w-0'">
       <RouterLink
@@ -144,5 +153,6 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
         @click="toggleFinished"
       >Finalizar</button>
     </div>
+    <MarkPopover v-if="menuAt" :session="session" :x="menuAt.x" :y="menuAt.y" @close="menuAt = null" />
   </div>
 </template>
