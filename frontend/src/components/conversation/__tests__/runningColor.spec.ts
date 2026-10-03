@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import ActionGroup from '../ActionGroup.vue'
+import WorkBlock from '../WorkBlock.vue'
 import ConversationBlock from '../ConversationBlock.vue'
 import RailNode from '../RailNode.vue'
 import type { ToolItem } from '../../../types/conversation'
@@ -65,12 +65,18 @@ describe('indicadores de rodando em âmbar', () => {
     expect(done.find('[data-test="work-status"] svg').classes()).toContain('text-primary')
   })
 
-  it('grupo de ações: "rodando…" na linha é âmbar', () => {
-    const w = mount(ActionGroup, { props: { items: [tool('Read', { file_path: '/a' })], open: true, sessionActive: true } })
-    const meta = w.find('[data-test="action-row"] span.font-mono.text-\\[0\\.6875rem\\]')
-    expect(meta.text()).toBe('rodando…')
-    expect(meta.classes()).toContain('text-secondary-soft')
-    expect(meta.classes()).not.toContain('text-primary-soft')
+  it('bloco de trabalho: o giro da linha e a atividade com o bloco fechado são âmbar', () => {
+    const items = [tool('Read', { file_path: '/a' })]
+    const open = mount(WorkBlock, { props: { items, open: true, sessionActive: true } })
+    const state = open.find('[data-test="work-row"] [data-test="work-status"]')
+    expect(state.attributes('data-status')).toBe('running')
+    expect(state.find('svg').classes()).toEqual(expect.arrayContaining(['animate-spin', 'text-secondary-soft']))
+    expect(state.find('svg').classes()).not.toContain('text-primary')
+    const closed = mount(WorkBlock, { props: { items, open: false, sessionActive: true } })
+    const line = closed.find('[data-test="work-activity"]')
+    expect(line.text()).toBe('Leitura · /a')
+    expect(line.classes()).toContain('text-secondary-soft')
+    expect(line.classes()).not.toContain('text-primary-soft')
   })
 
   it('tarefas: em andamento é âmbar, concluída verde, pendente cinza', () => {

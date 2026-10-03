@@ -6,7 +6,8 @@ import type { SubagentStatus, ToolItem } from '../../types/conversation'
 import IconChevron from '../icons/IconChevron.vue'
 import WorkHeader from './WorkHeader.vue'
 
-const props = defineProps<{ item: ToolItem; childCount: number; sessionActive?: boolean }>()
+// `headless`: inside a work block the row above is the header, so the card is just its body.
+const props = defineProps<{ item: ToolItem; childCount: number; sessionActive?: boolean; headless?: boolean }>()
 
 // The header speaks the same words as every other action; a subagent that ended well is just "ok".
 const HEADER_STATUS: Record<SubagentStatus, 'running' | 'ok' | 'error' | 'stopped'> = {
@@ -28,9 +29,10 @@ const open = ref(false)
 // The subagent strip asks to reach a card: open it, and the ones around it, and mark it.
 const focus = inject(SUBAGENT_FOCUS_KEY, ref(null))
 const highlighted = computed(() => focus.value?.id === props.item.id)
+// `immediate`: inside a work block the card is mounted by the very click that asked for it.
 watch(focus, (target) => {
   if (target?.path.includes(props.item.id)) open.value = true
-})
+}, { immediate: true })
 
 function duration(ms: number): string {
   const total = Math.round(ms / 1000)
@@ -55,11 +57,19 @@ const metrics = computed(() => {
     :data-subagent-id="item.id"
     :data-highlighted="highlighted ? 'true' : undefined"
     tabindex="-1"
-    class="scroll-mt-14 overflow-hidden rounded-lg border bg-[color-mix(in_oklab,var(--color-type-agent)_9%,var(--color-panel))] outline-none"
-    :class="[status === 'failed' ? 'border-diff-del-fg/40' : 'border-type-agent/40', highlighted ? 'ring-2 ring-primary' : '']"
+    class="scroll-mt-14 outline-none"
+    :class="[
+      headless
+        ? '[&>:first-child]:border-t-0'
+        : [
+            'overflow-hidden rounded-lg border bg-[color-mix(in_oklab,var(--color-type-agent)_9%,var(--color-panel))]',
+            status === 'failed' ? 'border-diff-del-fg/40' : 'border-type-agent/40',
+          ],
+      highlighted ? 'ring-2 ring-primary' : '',
+    ]"
   >
-    <WorkHeader kind="agent" :tag="kind || undefined" :desc="description" :status="headerStatus" :tint="false" />
-    <div v-if="(status === 'running' && sub?.last_activity) || metrics.length || sub?.summary" class="flex flex-col gap-1.5 px-3 pb-2.5">
+    <WorkHeader v-if="!headless" kind="agent" :tag="kind || undefined" :desc="description" :status="headerStatus" :tint="false" />
+    <div v-if="(status === 'running' && sub?.last_activity) || metrics.length || sub?.summary" class="flex flex-col gap-1.5 px-3 pb-2.5" :class="{ 'pt-2.5': headless }">
       <p v-if="status === 'running' && sub?.last_activity" class="m-0 truncate font-mono text-xs text-secondary-soft">{{ sub.last_activity }}</p>
       <p v-if="metrics.length" class="m-0 font-mono text-xs text-fg-subtle">{{ metrics.join(' · ') }}</p>
       <p v-if="sub?.summary" data-test="subagent-summary" class="m-0 text-sm whitespace-pre-wrap text-fg">{{ sub.summary }}</p>

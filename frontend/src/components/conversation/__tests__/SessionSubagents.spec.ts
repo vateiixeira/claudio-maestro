@@ -109,21 +109,41 @@ describe('faixa de subagentes na conversa', () => {
     expect(w.find('[data-test="subagent-strip"]').exists()).toBe(false)
   })
 
-  it('clicar leva ao cartão, abre e destaca', async () => {
+  // The block's rows start closed, so the card of a subagent only exists once the strip opens its row.
+  const scrollIntoView = vi.fn()
+  beforeEach(() => {
+    scrollIntoView.mockClear()
+    Element.prototype.scrollIntoView = scrollIntoView
+  })
+
+  it('clicar leva ao cartão, abre a linha do bloco e destaca', async () => {
     const w = await mountWith({
       state: 'running',
       items: [user('u1'), agent('a', 'completed'), child('r', 'tu-a'), agent('b', 'running')],
     })
-    const card = w.find('[data-subagent-id="a"]')
-    expect(card.exists()).toBe(true)
-    expect(card.find('[data-test="subagent-children"]').isVisible()).toBe(false)
-    const scrollIntoView = vi.fn()
-    ;(card.element as HTMLElement).scrollIntoView = scrollIntoView
+    expect(w.find('[data-subagent-id="a"]').exists()).toBe(false)
     await w.findAll('[data-test="subagent-row"]')[0]!.trigger('click')
     await flushPromises()
+    const card = w.find('[data-subagent-id="a"]')
+    expect(card.exists()).toBe(true)
     expect(scrollIntoView).toHaveBeenCalled()
+    expect(scrollIntoView.mock.contexts[0]).toBe(card.element)
     expect(card.find('[data-test="subagent-children"]').isVisible()).toBe(true)
     expect(card.attributes('data-highlighted')).toBe('true')
+    // The other subagent's row stays closed.
+    expect(w.find('[data-subagent-id="b"]').exists()).toBe(false)
+  })
+
+  it('clicar na faixa abre também o bloco recolhido que guarda o subagente', async () => {
+    const w = await mountWith({
+      state: 'idle',
+      items: [user('u1'), agent('a', 'running'), child('r', 'tu-a'), { type: 'tool', id: 'x', tool_use_id: 'tu-x', name: 'Read', input: { file_path: '/p/x.py' }, result: { content: 'ok', is_error: false, details: null }, streaming: false, parent_tool_use_id: null }],
+    })
+    expect(w.find('[data-test="work-block-toggle"]').attributes('aria-expanded')).toBe('false')
+    await w.findAll('[data-test="subagent-row"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="work-block-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(w.find('[data-subagent-id="a"]').attributes('data-highlighted')).toBe('true')
   })
 
   it('cartão de subagente rodando começa fechado e abre ao clicar na faixa', async () => {
@@ -131,11 +151,10 @@ describe('faixa de subagentes na conversa', () => {
       state: 'running',
       items: [user('u1'), agent('a', 'completed'), agent('b', 'running'), child('r', 'tu-b')],
     })
-    const card = w.find('[data-subagent-id="b"]')
-    expect(card.find('[data-test="subagent-children"]').isVisible()).toBe(false)
-    ;(card.element as HTMLElement).scrollIntoView = vi.fn()
     await w.findAll('[data-test="subagent-row"]')[1]!.trigger('click')
     await flushPromises()
+    const card = w.find('[data-subagent-id="b"]')
+    expect(card.exists()).toBe(true)
     expect(card.find('[data-test="subagent-children"]').isVisible()).toBe(true)
   })
 
@@ -148,10 +167,10 @@ describe('faixa de subagentes na conversa', () => {
         agent('inner', 'running', { parent_tool_use_id: 'tu-outer' }),
       ],
     })
-    const outer = w.find('[data-subagent-id="outer"]')
-    expect(outer.find('[data-test="subagent-children"]').isVisible()).toBe(false)
+    expect(w.find('[data-subagent-id="outer"]').exists()).toBe(false)
     await w.findAll('[data-test="subagent-row"]')[1]!.trigger('click')
     await flushPromises()
+    const outer = w.find('[data-subagent-id="outer"]')
     expect(outer.find('[data-test="subagent-children"]').isVisible()).toBe(true)
     expect(w.find('[data-subagent-id="inner"]').attributes('data-highlighted')).toBe('true')
   })

@@ -5,7 +5,8 @@ import type { ToolItem } from '../../types/conversation'
 import TruncatedText from './TruncatedText.vue'
 import WorkHeader from './WorkHeader.vue'
 
-const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
+// `headless`: inside a work block the row above is the header, so the card is just its body.
+const props = defineProps<{ item: ToolItem; sessionActive?: boolean; headless?: boolean }>()
 const open = ref(false)
 
 const content = computed(() => resultText(props.item.result?.content))
@@ -23,8 +24,9 @@ const meta = computed(() => {
 </script>
 
 <template>
-  <div class="overflow-hidden rounded-lg border border-line bg-panel">
+  <div :class="headless ? '[&>:first-child]:border-t-0' : 'overflow-hidden rounded-lg border border-line bg-panel'">
     <WorkHeader
+      v-if="!headless"
       kind="read"
       as="button"
       :desc="str(item.input.file_path)"
@@ -40,7 +42,7 @@ const meta = computed(() => {
         <span data-test="result-missing" class="shrink-0 text-xs text-fg-subtle">Resultado não disponível no histórico</span>
       </template>
     </WorkHeader>
-    <div v-if="open && item.result" class="border-t border-line px-3 py-2" :class="{ 'text-diff-del-fg': item.result.is_error }">
+    <div v-if="(open || headless) && item.result" class="border-t border-line px-3 py-2" :class="{ 'text-diff-del-fg': item.result.is_error }">
       <TruncatedText :text="content" />
     </div>
   </div>

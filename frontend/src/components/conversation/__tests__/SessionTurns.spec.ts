@@ -79,10 +79,10 @@ describe('chat em turnos', () => {
   it('nós do trilho: rodando e com erro', async () => {
     const w = await mountWith({
       state: 'running',
-      items: [user('u1'), tool('b1', 'Bash', { result: { content: 'x', is_error: true, details: null } }), tool('b2', 'Bash', { result: null })],
+      items: [user('u1'), tool('b1', 'Bash', { result: { content: 'x', is_error: true, details: null } }), text('a'), tool('b2', 'Bash', { result: null })],
     })
     const nodes = w.findAll('[data-test="rail-node"]')
-    expect(nodes.map((n) => n.attributes('data-kind'))).toEqual(['error', 'running'])
+    expect(nodes.map((n) => n.attributes('data-kind'))).toEqual(['error', 'text', 'running'])
     expect(nodes[0]!.attributes('aria-hidden')).toBe('true')
   })
 
@@ -98,7 +98,7 @@ describe('chat em turnos', () => {
       ],
     })
     const kinds = w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))
-    expect(kinds).toEqual(['warning', 'agent'])
+    expect(kinds).toEqual(['warning', 'group'])
     expect(w.find('[data-test="turn-end"]').text()).toContain('3 ações · 1 arquivo alterado')
   })
 
@@ -110,64 +110,130 @@ describe('chat em turnos', () => {
   })
 })
 
-describe('grupo de ações', () => {
-  const group = (w: Awaited<ReturnType<typeof mountWith>>) => w.find('[data-test="action-group"]')
-  const header = (w: Awaited<ReturnType<typeof mountWith>>) => w.find('[data-test="action-group-toggle"]')
+describe('bloco de trabalho', () => {
+  type Wrapper = Awaited<ReturnType<typeof mountWith>>
+  const block = (w: Wrapper) => w.find('[data-test="work-block"]')
+  const header = (w: Wrapper) => w.find('[data-test="work-block-toggle"]')
+  const rowHeaders = (w: Wrapper) => w.findAll('[data-test="work-row"] [data-test="work-header"]')
+  const turnResult = () => fake.session.get('s1')!(makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 10, total_cost_usd: null }, 2))
 
-  it('cabeçalho com contagem e chips; aberto enquanto o turno roda', async () => {
+  it('cabeçalho com contagem e resumo; aberto enquanto o turno roda', async () => {
     const w = await mountWith({
       state: 'running',
       items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read'), tool('b1', 'Bash', { input: { command: 'ls' }, result: null })],
     })
-    expect(w.findAll('[data-test="action-group"]')).toHaveLength(1)
-    expect(header(w).text()).toContain('3 ações')
-    expect(w.findAll('[data-test="group-chip"]').map((c) => c.text())).toEqual(['2 leituras', '1 comando'])
+    expect(w.findAll('[data-test="work-block"]')).toHaveLength(1)
+    expect(w.find('[data-test="work-count"]').text()).toBe('3 ações')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('2 leituras · 1 rodando')
     expect(header(w).attributes('aria-expanded')).toBe('true')
     expect(header(w).text()).toContain('Recolher')
-    expect(header(w).text()).not.toMatch(/[▸▾]/)
     expect(header(w).find('svg[data-open="true"]').exists()).toBe(true)
-    expect(w.findAll('[data-test="action-row"]')).toHaveLength(3)
+    expect(rowHeaders(w)).toHaveLength(3)
     expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['running'])
+  })
+
+  it('todo o trabalho entre duas falas cai numa caixa só, e cada trecho tem a sua', async () => {
+    const w = await mountWith({
+      state: 'idle',
+      items: [
+        user('u1'), tool('b1', 'Bash', { input: { command: 'ls' } }), tool('ag', 'Agent', { input: { description: 'x', prompt: 'y' } }),
+        tool('b2', 'Bash', { input: { command: 'pwd' } }), text('a'), tool('e1', 'Edit'),
+      ],
+    })
+    const blocks = w.findAll('[data-test="work-block"]')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]!.find('[data-test="work-count"]').text()).toBe('3 ações')
+    expect(blocks[1]!.find('[data-test="work-count"]').text()).toBe('1 ação')
   })
 
   it('recolhido depois que o turno termina', async () => {
     const w = await mountWith({ state: 'idle', items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read')] })
     expect(header(w).attributes('aria-expanded')).toBe('false')
     expect(header(w).text()).toContain('Ver')
-    expect(header(w).text()).not.toMatch(/[▸▾]/)
     expect(header(w).find('svg[data-open="false"]').exists()).toBe(true)
-    expect(w.findAll('[data-test="action-row"]')).toHaveLength(0)
+    expect(rowHeaders(w)).toHaveLength(0)
+    expect(w.find('[data-test="work-summary"]').text()).toBe('2 leituras')
     expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['group'])
+  })
+
+  it('um bloco de uma ação só continua aberto depois do turno', async () => {
+    const w = await mountWith({ state: 'idle', items: [user('u1'), tool('e1', 'Edit')] })
+    expect(header(w).attributes('aria-expanded')).toBe('true')
+    expect(rowHeaders(w)).toHaveLength(1)
   })
 
   it('a escolha manual prevalece quando o turno termina', async () => {
     const w = await mountWith({ state: 'running', items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read')] })
     await header(w).trigger('click')
     expect(header(w).attributes('aria-expanded')).toBe('false')
-    fake.session.get('s1')!(makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 10, total_cost_usd: null }, 2))
+    turnResult()
     await flushPromises()
     expect(header(w).attributes('aria-expanded')).toBe('false')
     await header(w).trigger('click')
     expect(header(w).attributes('aria-expanded')).toBe('true')
   })
 
-  it('a linha expande o cartão completo da ferramenta', async () => {
+  it('a linha abre o card da ferramenta, sem repetir o cabeçalho', async () => {
     const w = await mountWith({
       state: 'running',
       items: [user('u1'), tool('r1', 'Read', { result: { content: 'a\nb\n', is_error: false, details: null } }), tool('b1', 'Bash', { input: { command: 'ls -la' } })],
     })
-    const rows = w.findAll('[data-test="action-row"]')
+    const rows = rowHeaders(w)
     expect(rows[0]!.text()).toContain('Leitura')
     expect(rows[0]!.text()).toContain('/p/r1.py')
     expect(rows[0]!.text()).toContain('2 linhas')
     expect(rows[1]!.attributes('aria-expanded')).toBe('false')
-    expect(group(w).find('[data-test="tool-output"]').exists()).toBe(false)
+    expect(block(w).find('[data-test="bash-command"]').exists()).toBe(false)
     await rows[1]!.trigger('click')
     expect(rows[1]!.attributes('aria-expanded')).toBe('true')
-    expect(group(w).find('[data-test="bash-command"]').text()).toContain('ls -la')
+    expect(block(w).find('[data-test="bash-command"]').text()).toContain('ls -la')
+    expect(block(w).find('[data-test="bash-header"]').exists()).toBe(false)
+    await rows[1]!.trigger('click')
+    expect(block(w).find('[data-test="bash-command"]').exists()).toBe(false)
+  })
+
+  it('a ação que falhou abre sozinha, e o bloco também depois do turno', async () => {
+    const w = await mountWith({
+      state: 'idle',
+      items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { input: { command: 'make' }, result: { content: 'deu ruim', is_error: true, details: null } }), tool('r2', 'Read')],
+    })
+    expect(header(w).attributes('aria-expanded')).toBe('true')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('2 leituras · 1 falhou')
+    const rows = rowHeaders(w)
+    expect(rows.map((r) => r.attributes('aria-expanded'))).toEqual(['false', 'true', 'false'])
+    expect(w.findAll('[data-test="tool-error"]')).toHaveLength(1)
+    expect(w.find('[data-test="tool-error"]').text()).toContain('deu ruim')
+    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['error'])
+  })
+
+  it('fechado e rodando, mostra numa linha o que está acontecendo', async () => {
+    const w = await mountWith({
+      state: 'running',
+      items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { input: { command: 'pytest -q' }, result: null })],
+    })
+    expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
+    await header(w).trigger('click')
+    const line = w.find('[data-test="work-activity"]')
+    expect(line.text()).toBe('Comando · pytest -q')
+    expect(line.classes()).toEqual(expect.arrayContaining(['font-mono', 'text-secondary-soft']))
+    turnResult()
+    await flushPromises()
+  })
+
+  it('o comando fechado mostra a descrição e, embaixo, o próprio comando', async () => {
+    const w = await mountWith({
+      state: 'idle',
+      items: [user('u1'), tool('b1', 'Bash', { input: { command: 'pytest -q', description: 'Roda os testes' } })],
+    })
+    const row = rowHeaders(w)[0]!
+    expect(row.text()).toContain('Roda os testes')
+    const command = row.find('[data-test="work-command"]')
+    expect(command.text()).toBe('pytest -q')
+    expect(command.classes()).toEqual(expect.arrayContaining(['font-mono', 'text-fg-muted']))
+    await row.trigger('click')
+    expect(row.find('[data-test="work-command"]').exists()).toBe(false)
   })
 })
-
 
 describe('barra fixa do turno', () => {
   // jsdom has no layout: each turn anchor gets a fake offsetTop.

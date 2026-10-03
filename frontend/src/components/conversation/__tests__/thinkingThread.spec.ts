@@ -49,6 +49,13 @@ async function mountWith(items: Record<string, unknown>[]) {
   return w
 }
 
+// The actions of a work block start closed; opens every row.
+async function openRows(w: { findAll: (selector: string) => { attributes: (name: string) => string | undefined; trigger: (event: string) => Promise<unknown> }[] }) {
+  for (const row of w.findAll('[data-test="work-row"] [data-test="work-header"]')) {
+    if (row.attributes('aria-expanded') === 'false') await row.trigger('click')
+  }
+}
+
 describe('pensamento na conversa', () => {
   it('pensamentos seguidos viram um bloco só e o vazio terminado não aparece', async () => {
     const w = await mountWith([user('u1'), th('t1', 'primeiro'), th('t2', ''), th('t3', 'segundo')])
@@ -60,6 +67,7 @@ describe('pensamento na conversa', () => {
 
   it('dentro de um subagente vale a mesma regra', async () => {
     const w = await mountWith([user('u1'), agent, th('c1', 'um', false, 'tu-a'), th('c2', '  ', false, 'tu-a'), th('c3', 'dois', false, 'tu-a')])
+    await openRows(w)
     const kids = w.find('[data-test="subagent-children"]')
     expect(kids.findAll('button[aria-expanded]')).toHaveLength(1)
     await kids.find('button[aria-expanded]').trigger('click')
@@ -68,6 +76,8 @@ describe('pensamento na conversa', () => {
 
   it('filho com pensamento vazio terminado não deixa rótulo solto', async () => {
     const w = await mountWith([user('u1'), agent, th('c1', '', false, 'tu-a')])
+    await openRows(w)
+    expect(w.find('[data-test="subagent-card"]').exists()).toBe(true)
     expect(w.find('[data-test="subagent-children"] [data-kind="thinking"]').exists()).toBe(false)
     expect(w.find('[data-test="subagent-children"] button[aria-expanded]').exists()).toBe(false)
   })

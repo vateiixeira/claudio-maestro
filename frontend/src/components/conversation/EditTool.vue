@@ -7,7 +7,8 @@ import { diffCounts, toolDiff } from '../../conversation/diff'
 import { resultText, str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 
-const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
+// `headless`: inside a work block the row above is the header, so the card is just its body.
+const props = defineProps<{ item: ToolItem; sessionActive?: boolean; headless?: boolean }>()
 
 const LIMIT = 200
 const DIFF_PREVIEW = 40
@@ -56,8 +57,8 @@ const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
 </script>
 
 <template>
-  <div class="overflow-hidden rounded-lg border border-line bg-panel">
-    <WorkHeader kind="edit" :label="label" :desc="str(item.input.file_path)" mono :status="status">
+  <div :class="headless ? '[&>:first-child]:border-t-0' : 'overflow-hidden rounded-lg border border-line bg-panel'">
+    <WorkHeader v-if="!headless" kind="edit" :label="label" :desc="str(item.input.file_path)" mono :status="status">
       <template #trail>
         <span v-if="item.result_missing" data-test="result-missing" class="shrink-0 text-xs text-fg-subtle">Resultado não disponível no histórico</span>
         <span class="shrink-0 font-mono text-xs text-diff-add-fg">+{{ counts.added }}</span>
@@ -72,6 +73,14 @@ const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
         >Ver alterações</button>
       </template>
     </WorkHeader>
+    <div v-if="headless && sessionId" class="flex justify-end px-3 py-1.5">
+      <button
+        type="button"
+        data-test="view-changes"
+        class="shrink-0 cursor-pointer rounded-md border border-line-strong bg-transparent px-2 py-0.5 text-xs text-fg-muted hover:bg-elevated hover:text-fg"
+        @click="viewChanges"
+      >Ver alterações</button>
+    </div>
     <p v-if="isError" data-test="tool-error" class="m-0 border-t border-line bg-diff-del-bg px-3 py-2 font-mono text-xs text-diff-del-fg whitespace-pre-wrap">{{ resultText(item.result?.content) }}</p>
     <div v-if="isNewFile" data-test="new-file-preview" class="border-t border-line px-3 py-2">
       <pre class="m-0 font-mono text-xs leading-[1.7] text-fg-muted whitespace-pre-wrap break-words">{{ newFileText }}</pre>

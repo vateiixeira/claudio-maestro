@@ -1,23 +1,28 @@
 import type { ConversationItem, ToolItem, UserItem } from '../types/conversation'
 import { TASK_TOOLS } from './tasks'
-import { countLines, resultText, str, toolLabel } from './tool'
 
 export const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit'])
 export const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'WebSearch', 'WebFetch'])
 export const AGENT_TOOLS = new Set(['Agent', 'Task'])
 
 /**
- * One row of the assistant's rail: a single item, or a group of two or more
- * consecutive light actions. A group's id is its first item's id.
+ * One row of the assistant's rail: a single item (text, thinking, notice, task list, question or
+ * plan), or a group, the work block: everything Claude did between two statements. A group's id
+ * is its first item's id, so it keeps its state while it grows.
  */
 export type TurnEntry =
   | { kind: 'item'; item: ConversationItem }
   | { kind: 'group'; id: string; items: ToolItem[] }
 
-/** Reads, searches, commands and generic tools without error can join a group. */
-function groupable(item: ConversationItem): item is ToolItem {
-  if (item.type !== 'tool' || item.result?.is_error) return false
-  return !EDIT_TOOLS.has(item.name) && !AGENT_TOOLS.has(item.name) && !TASK_TOOLS.has(item.name)
+/** Tools that ask the user something: they are shown by themselves, never inside a work block. */
+const ASK_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+
+/**
+ * Work is any tool call (read, search, edit, command, other tool, subagent), failed or still
+ * waiting for permission. Task lists, questions and plans are not: they stand on their own.
+ */
+function isWork(item: ConversationItem): item is ToolItem {
+  return item.type === 'tool' && !TASK_TOOLS.has(item.name) && !ASK_TOOLS.has(item.name)
 }
 
 /**
@@ -47,12 +52,11 @@ function groupEntries(items: ConversationItem[]): TurnEntry[] {
   const entries: TurnEntry[] = []
   let run: ToolItem[] = []
   const flush = () => {
-    if (run.length >= 2) entries.push({ kind: 'group', id: run[0]!.id, items: run })
-    else run.forEach((item) => entries.push({ kind: 'item', item }))
+    if (run.length) entries.push({ kind: 'group', id: run[0]!.id, items: run })
     run = []
   }
   for (const item of items) {
-    if (groupable(item)) {
+    if (isWork(item)) {
       run.push(item)
       continue
     }
@@ -115,7 +119,7 @@ export type NodeKind =
   | 'text' | 'thinking' | 'read' | 'search' | 'bash' | 'edit' | 'task' | 'tool' | 'agent'
   | 'running' | 'error' | 'warning' | 'info' | 'group'
 
-function toolRunning(item: ToolItem, sessionActive: boolean): boolean {
+export function toolRunning(item: ToolItem, sessionActive: boolean): boolean {
   if (item.subagent) return item.subagent.status === 'running'
   // A background command ran at launch; what matters is the task, not the launch result.
   if (item.background) return item.background.status === 'running'
@@ -154,60 +158,8 @@ export function summaryText(summary: TurnSummary): string {
   return parts.join(' · ')
 }
 
-/** A group's node: running while any of its actions runs. */
+/** A work block's node: running while any of its actions runs, else error if one failed. */
 export function groupNodeKind(items: ToolItem[], sessionActive: boolean): NodeKind {
-  return items.some((item) => toolRunning(item, sessionActive)) ? 'running' : 'group'
-}
-
-export type ActionCategory = 'read' | 'search' | 'bash' | 'tool'
-function category(item: ToolItem): ActionCategory {
-  if (item.name === 'Read') return 'read'
-  if (SEARCH_TOOLS.has(item.name)) return 'search'
-  if (item.name === 'Bash') return 'bash'
-  return 'tool'
-}
-const CATEGORY_WORDS: Record<ActionCategory, [string, string, string]> = {
-  read: ['Leitura', 'leitura', 'leituras'],
-  search: ['Busca', 'busca', 'buscas'],
-  bash: ['Comando', 'comando', 'comandos'],
-  tool: ['Ferramenta', 'ferramenta', 'ferramentas'],
-}
-
-/** "2 leituras", "1 busca"… in a fixed order, only the kinds present. */
-export function groupChips(items: ToolItem[]): string[] {
-  const counts = new Map<ActionCategory, number>()
-  items.forEach((item) => counts.set(category(item), (counts.get(category(item)) ?? 0) + 1))
-  return (['read', 'search', 'bash', 'tool'] as const)
-    .filter((c) => counts.has(c))
-    .map((c) => plural(counts.get(c)!, CATEGORY_WORDS[c][1], CATEGORY_WORDS[c][2]))
-}
-
-export interface ActionRow {
-  kind: ActionCategory
-  label: string
-  target: string
-  meta: string
-}
-
-/** Compact line of one action inside a group. */
-export function actionRow(item: ToolItem, sessionActive: boolean): ActionRow {
-  const cat = category(item)
-  const input = item.input ?? {}
-  let target: string
-  if (cat === 'read') target = str(input.file_path)
-  else if (cat === 'search') {
-    const subject = str(input.pattern) || str(input.query) || str(input.url)
-    target = str(input.path) ? `${subject} em ${str(input.path)}` : subject
-  } else if (cat === 'bash') target = str(input.command)
-  else target = toolLabel(item.name)
-
-  let meta = ''
-  if (item.result_missing) meta = 'Resultado não disponível no histórico'
-  else if (toolRunning(item, sessionActive)) meta = 'rodando…'
-  else if (!item.result) meta = 'sem resultado'
-  else if (cat === 'read') meta = plural(countLines(resultText(item.result.content)), 'linha', 'linhas')
-  else if (item.name === 'Grep' || item.name === 'Glob') {
-    meta = plural(countLines(resultText(item.result.content)), 'resultado', 'resultados')
-  }
-  return { kind: cat, label: CATEGORY_WORDS[cat][0], target, meta }
+  if (items.some((item) => toolRunning(item, sessionActive))) return 'running'
+  return items.some((item) => nodeKind(item, sessionActive) === 'error') ? 'error' : 'group'
 }

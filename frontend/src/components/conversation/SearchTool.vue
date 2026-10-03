@@ -6,7 +6,8 @@ import TruncatedText from './TruncatedText.vue'
 import IconChevron from '../icons/IconChevron.vue'
 import WorkHeader from './WorkHeader.vue'
 
-const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
+// `headless`: inside a work block the row above is the header, so the card is just its body.
+const props = defineProps<{ item: ToolItem; sessionActive?: boolean; headless?: boolean }>()
 const open = ref(false)
 
 const input = computed(() => props.item.input ?? {})
@@ -35,9 +36,10 @@ const meta = computed(() => {
 </script>
 
 <template>
-  <div class="overflow-hidden rounded-lg border bg-panel" :class="isError ? 'border-diff-del-fg/40' : 'border-line'">
+  <div :class="headless ? '[&>:first-child]:border-t-0' : ['overflow-hidden rounded-lg border bg-panel', isError ? 'border-diff-del-fg/40' : 'border-line']">
     <!-- A link cannot sit inside a button, so with one the row is plain and the chevron button toggles. -->
     <WorkHeader
+      v-if="!headless"
       kind="search"
       :tag="item.name"
       :desc="subject"
@@ -66,7 +68,10 @@ const meta = computed(() => {
         ><IconChevron :open="open" :size="12" /></button>
       </template>
     </WorkHeader>
-    <div v-if="open && item.result" class="border-t border-line px-3 py-2" :class="isError ? 'text-diff-del-fg' : ''">
+    <p v-if="headless && link" class="m-0 truncate px-3 py-2 text-xs">
+      <a :href="link" target="_blank" rel="noopener noreferrer" class="text-info-soft underline">{{ link }}</a>
+    </p>
+    <div v-if="(open || headless) && item.result" class="border-t border-line px-3 py-2" :class="isError ? 'text-diff-del-fg' : ''">
       <TruncatedText :text="output" />
     </div>
   </div>

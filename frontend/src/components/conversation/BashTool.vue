@@ -7,7 +7,8 @@ import type { ToolItem } from '../../types/conversation'
 import BashPane from './BashPane.vue'
 import WorkHeader from './WorkHeader.vue'
 
-const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
+// `headless`: inside a work block the row above is the header, so the card is just its body.
+const props = defineProps<{ item: ToolItem; sessionActive?: boolean; headless?: boolean }>()
 
 const output = computed(() => resultText(props.item.result?.content))
 const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
@@ -43,8 +44,9 @@ const meta = computed(() => (!props.item.result && !props.item.result_missing &&
     :data-highlighted="highlighted ? 'true' : undefined"
     :tabindex="background !== null ? -1 : undefined"
   >
-    <div data-test="bash-box" class="overflow-hidden rounded-lg border border-line bg-panel">
+    <div data-test="bash-box" :class="headless ? '[&>:first-child]:border-t-0' : 'overflow-hidden rounded-lg border border-line bg-panel'">
       <WorkHeader
+        v-if="!headless"
         data-test="bash-header"
         kind="bash"
         :desc="description || commandLine"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actionRow, buildTurns, groupChips, groupNodeKind, nodeKind, tidyThinking, turnSummary } from '../turns'
+import { buildTurns, groupNodeKind, nodeKind, tidyThinking, turnSummary } from '../turns'
 import type { ConversationItem, ToolItem } from '../../types/conversation'
 
 const user = (id: string): ConversationItem => ({ type: 'user', id, text: id })
@@ -141,60 +141,82 @@ describe('nodeKind', () => {
   })
 })
 
-describe('grupos de ações', () => {
+describe('blocos de trabalho', () => {
   const ids = (turn: ReturnType<typeof buildTurns>[number]) =>
     turn.entries.map((e) => (e.kind === 'group' ? `G(${e.items.map((i) => i.id).join(',')})` : e.item.id))
 
-  it('junta duas ou mais ações seguidas; uma sozinha continua item', () => {
+  it('junta todas as ações seguidas, de qualquer tipo; uma sozinha também vira bloco', () => {
     const t = buildTurns([user('u'), tool('r1', 'Read'), tool('g1', 'Grep'), tool('b1', 'Bash'), tool('s1', 'ToolSearch'), tool('m1', 'mcp__x__y'), text('x'), tool('r2', 'Read')])[0]!
-    expect(ids(t)).toEqual(['G(r1,g1,b1,s1,m1)', 'x', 'r2'])
+    expect(ids(t)).toEqual(['G(r1,g1,b1,s1,m1)', 'x', 'G(r2)'])
   })
 
-  it('edição, subagente, tarefas, erro e texto quebram o grupo', () => {
+  it('edição, subagente e erro entram no bloco, na ordem', () => {
     const err = tool('bx', 'Bash', {}, { result: { content: 'x', is_error: true, details: null } })
-    const t = buildTurns([
-      user('u'), tool('r1', 'Read'), tool('r2', 'Read'), tool('e', 'Edit'), tool('r3', 'Read'), tool('r4', 'Read'),
-      tool('a', 'Agent'), tool('r5', 'Read'), err, tool('r6', 'Read'), tool('t', 'TodoWrite'), tool('r7', 'Read'),
-      { type: 'notice', id: 'n', level: 'warning', text: '' }, tool('r8', 'Read'),
-      { type: 'thinking', id: 'th', text: 'hmm', streaming: false, parent_tool_use_id: null }, tool('r9', 'Read'),
-    ])[0]!
-    expect(ids(t)).toEqual(['G(r1,r2)', 'e', 'G(r3,r4)', 'a', 'r5', 'bx', 'r6', 't', 'r7', 'n', 'r8', 'th', 'r9'])
+    const t = buildTurns([user('u'), tool('r1', 'Read'), tool('e', 'Edit'), tool('w', 'Write'), tool('a', 'Agent'), err, tool('me', 'MultiEdit'), tool('n', 'NotebookEdit')])[0]!
+    expect(ids(t)).toEqual(['G(r1,e,w,a,bx,me,n)'])
   })
 
-  it('um pensamento vazio, que não aparece, não quebra o grupo', () => {
+  it('sequência mista: texto no meio separa os trechos', () => {
+    const t = buildTurns([
+      user('u'), tool('r1', 'Read'), tool('e1', 'Edit'), text('x'), tool('b1', 'Bash'), tool('a1', 'Agent'), tool('b2', 'Bash'), text('y'), text('z'), tool('g1', 'Grep'),
+    ])[0]!
+    expect(ids(t)).toEqual(['G(r1,e1)', 'x', 'G(b1,a1,b2)', 'y', 'z', 'G(g1)'])
+  })
+
+  it('texto, aviso, pensamento, tarefas, pergunta e plano quebram o bloco', () => {
+    const t = buildTurns([
+      user('u'), tool('r1', 'Read'), tool('r2', 'Read'), tool('t', 'TodoWrite'), tool('r3', 'Read'), tool('tc', 'TaskCreate'), tool('r4', 'Read'),
+      tool('q', 'AskUserQuestion'), tool('r5', 'Read'), tool('p', 'ExitPlanMode'), tool('r6', 'Read'),
+      { type: 'notice', id: 'n', level: 'warning', text: '' }, tool('r7', 'Read'),
+      { type: 'thinking', id: 'th', text: 'hmm', streaming: false, parent_tool_use_id: null }, tool('r8', 'Read'),
+    ])[0]!
+    expect(ids(t)).toEqual(['G(r1,r2)', 't', 'G(r3)', 'tc', 'G(r4)', 'q', 'G(r5)', 'p', 'G(r6)', 'n', 'G(r7)', 'th', 'G(r8)'])
+  })
+
+  it('a ferramenta que espera permissão (sem resultado) fica no bloco, no fim', () => {
+    const waiting = tool('b2', 'Bash', { command: 'rm x' }, { result: null })
+    const t = buildTurns([user('u'), tool('r1', 'Read'), tool('b1', 'Bash'), waiting])[0]!
+    expect(ids(t)).toEqual(['G(r1,b1,b2)'])
+    const group = t.entries[0]!
+    expect(group.kind === 'group' && group.items[2]).toBe(waiting)
+  })
+
+  it('subagente com filhos: o bloco guarda só o subagente, e o resumo conta os filhos', () => {
+    // Os filhos têm parent_tool_use_id e saem da lista de cima antes de buildTurns.
+    const agent = tool('ag', 'Agent')
+    const kids: Record<string, ConversationItem[]> = { 'tu-ag': [tool('k1', 'Edit', { file_path: '/p/a.py' }), tool('k2', 'Read'), text('kt')] }
+    const t = buildTurns([user('u'), tool('r1', 'Read'), agent, tool('b1', 'Bash')])[0]!
+    expect(ids(t)).toEqual(['G(r1,ag,b1)'])
+    expect(turnSummary(t, (id) => kids[id] ?? [])).toEqual({ actions: 5, files: 1 })
+  })
+
+  it('um pensamento vazio, que não aparece, não quebra o bloco', () => {
     const empty: ConversationItem = { type: 'thinking', id: 'th', text: '', streaming: false, parent_tool_use_id: null }
     expect(ids(buildTurns([user('u'), tool('r1', 'Read'), empty, tool('r2', 'Read')])[0]!)).toEqual(['G(r1,r2)'])
   })
 
-  it('o id do grupo é o do primeiro item e não muda ao crescer', () => {
-    const a = buildTurns([user('u'), tool('r1', 'Read'), tool('r2', 'Read')])[0]!
+  it('cada turno tem os seus blocos: a mensagem do usuário separa', () => {
+    const turns = buildTurns([user('u1'), tool('r1', 'Read'), user('u2'), tool('r2', 'Read'), tool('r3', 'Edit')])
+    expect(turns.map(ids)).toEqual([['G(r1)'], ['G(r2,r3)']])
+  })
+
+  it('o id do bloco é o do primeiro item e não muda ao crescer', () => {
+    const a = buildTurns([user('u'), tool('r1', 'Read')])[0]!
     const b = buildTurns([user('u'), tool('r1', 'Read'), tool('r2', 'Read'), tool('r3', 'Bash')])[0]!
     expect(a.entries[0]).toMatchObject({ kind: 'group', id: 'r1' })
     expect(b.entries[0]).toMatchObject({ kind: 'group', id: 'r1' })
   })
 
-  it('o resumo conta cada ação do grupo', () => {
+  it('o resumo conta cada ação do bloco', () => {
     const t = buildTurns([user('u'), tool('r1', 'Read'), tool('r2', 'Read'), tool('b', 'Bash')])[0]!
     expect(turnSummary(t, () => []).actions).toBe(3)
   })
 
-  it('chips com plural', () => {
-    const items = [tool('a', 'Read'), tool('b', 'Read'), tool('c', 'Grep'), tool('d', 'Bash'), tool('e', 'Bash'), tool('f', 'Bash'), tool('g', 'ToolSearch')]
-    expect(groupChips(items)).toEqual(['2 leituras', '1 busca', '3 comandos', '1 ferramenta'])
-    expect(groupChips([tool('a', 'Glob'), tool('b', 'WebFetch'), tool('c', 'x'), tool('d', 'y')])).toEqual(['2 buscas', '2 ferramentas'])
-  })
-
-  it('nó do grupo: rodando se algum item roda', () => {
+  it('nó do bloco: rodando se algum item roda, depois erro, senão grupo', () => {
+    const failed = tool('f', 'Bash', {}, { result: { content: 'x', is_error: true, details: null } })
     expect(groupNodeKind([tool('a', 'Read'), tool('b', 'Read')], false)).toBe('group')
     expect(groupNodeKind([tool('a', 'Read'), tool('b', 'Read', {}, { result: null })], true)).toBe('running')
-  })
-
-  it('linha: rótulo, alvo e meta', () => {
-    expect(actionRow(tool('a', 'Read', { file_path: '/p/a.py' }, { result: { content: 'x\ny\n', is_error: false, details: null } }), false))
-      .toEqual({ kind: 'read', label: 'Leitura', target: '/p/a.py', meta: '2 linhas' })
-    expect(actionRow(tool('g', 'Grep', { pattern: 'foo', path: 'src' }), false)).toEqual({ kind: 'search', label: 'Busca', target: 'foo em src', meta: '1 resultado' })
-    expect(actionRow(tool('b', 'Bash', { command: 'ls' }, { result: null }), true)).toEqual({ kind: 'bash', label: 'Comando', target: 'ls', meta: 'rodando…' })
-    expect(actionRow(tool('m', 'mcp__s__t', {}, { result: null }), false)).toEqual({ kind: 'tool', label: 'Ferramenta', target: 's · t', meta: 'sem resultado' })
-    expect(actionRow(tool('x', 'ToolSearch', {}, { result: null, result_missing: true }), false).meta).toBe('Resultado não disponível no histórico')
+    expect(groupNodeKind([tool('a', 'Read'), failed], false)).toBe('error')
+    expect(groupNodeKind([failed, tool('b', 'Read', {}, { result: null })], true)).toBe('running')
   })
 })

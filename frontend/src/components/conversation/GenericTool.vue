@@ -5,7 +5,8 @@ import type { ToolItem } from '../../types/conversation'
 import TruncatedText from './TruncatedText.vue'
 import WorkHeader from './WorkHeader.vue'
 
-const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
+// `headless`: inside a work block the row above is the header, so the card is just its body.
+const props = defineProps<{ item: ToolItem; sessionActive?: boolean; headless?: boolean }>()
 const open = ref(false)
 
 const input = computed(() => prettyJson(props.item.input))
@@ -21,8 +22,9 @@ const meta = computed(() => (!props.item.result && !props.item.result_missing &&
 </script>
 
 <template>
-  <div class="overflow-hidden rounded-lg border bg-panel" :class="isError ? 'border-diff-del-fg/40' : 'border-line'">
+  <div :class="headless ? '[&>:first-child]:border-t-0' : ['overflow-hidden rounded-lg border bg-panel', isError ? 'border-diff-del-fg/40' : 'border-line']">
     <WorkHeader
+      v-if="!headless"
       kind="tool"
       as="button"
       :desc="toolLabel(item.name)"
@@ -37,7 +39,7 @@ const meta = computed(() => (!props.item.result && !props.item.result_missing &&
         <span data-test="result-missing" class="shrink-0 text-xs text-fg-subtle">Resultado não disponível no histórico</span>
       </template>
     </WorkHeader>
-    <div v-show="open" class="flex flex-col gap-2 border-t border-line px-3 py-2">
+    <div v-show="open || headless" class="flex flex-col gap-2 border-t border-line px-3 py-2">
       <div>
         <div class="mb-1 text-xs text-fg-subtle">Entrada</div>
         <TruncatedText :text="input" />

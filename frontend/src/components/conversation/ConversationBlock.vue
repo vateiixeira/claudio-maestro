@@ -26,6 +26,8 @@ const props = withDefaults(
     tasks?: TaskEntry[] | null
     /** The session's task list; shown in the block that last changed it, at any depth. */
     taskList?: { tasks: TaskEntry[]; lastItemId: string | null } | null
+    /** Inside a work block the row above is the header: a tool card shows only its body. */
+    headless?: boolean
   }>(),
   { sessionActive: false, childrenOf: () => [], tasks: null, taskList: null },
 )
@@ -43,7 +45,7 @@ const children = computed(() => (props.item.type === 'tool' ? props.childrenOf(p
   <ThinkingBlock v-else-if="item.type === 'thinking'" :item="item" />
   <NoticeBlock v-else-if="item.type === 'notice'" :item="item" />
   <template v-else-if="item.type === 'tool'">
-  <AgentTool v-if="AGENT_TOOLS.has(item.name)" :item="item" :child-count="children.length" :session-active="sessionActive">
+  <AgentTool v-if="AGENT_TOOLS.has(item.name)" :item="item" :child-count="children.length" :session-active="sessionActive" :headless="headless">
     <ConversationBlock
       v-for="child in children"
       :key="child.id"
@@ -54,13 +56,13 @@ const children = computed(() => (props.item.type === 'tool' ? props.childrenOf(p
     />
   </AgentTool>
   <div v-else class="flex min-w-0 flex-col gap-2">
-    <ReadTool v-if="item.name === 'Read'" :item="item" :session-active="sessionActive" />
-    <EditTool v-else-if="EDIT_TOOLS.has(item.name)" :item="item" :session-active="sessionActive" />
-    <BashTool v-else-if="item.name === 'Bash'" :item="item" :session-active="sessionActive" />
-    <SearchTool v-else-if="SEARCH_TOOLS.has(item.name)" :item="item" :session-active="sessionActive" />
+    <ReadTool v-if="item.name === 'Read'" :item="item" :session-active="sessionActive" :headless="headless" />
+    <EditTool v-else-if="EDIT_TOOLS.has(item.name)" :item="item" :session-active="sessionActive" :headless="headless" />
+    <BashTool v-else-if="item.name === 'Bash'" :item="item" :session-active="sessionActive" :headless="headless" />
+    <SearchTool v-else-if="SEARCH_TOOLS.has(item.name)" :item="item" :session-active="sessionActive" :headless="headless" />
     <TaskTool v-else-if="TASK_TOOLS.has(item.name)" :item="item" :tasks="shownTasks" />
     <p v-else-if="item.name === 'ToolSearch'" data-test="tool-search" class="m-0 font-mono text-xs text-fg-muted">{{ item.result ? 'Ferramentas carregadas' : 'Carregando ferramentas…' }}</p>
-    <GenericTool v-else :item="item" :session-active="sessionActive" />
+    <GenericTool v-else :item="item" :session-active="sessionActive" :headless="headless" />
     <div v-if="children.length" data-test="tool-children" class="flex flex-col gap-2 border-l border-line pl-4">
       <ConversationBlock
         v-for="child in children"

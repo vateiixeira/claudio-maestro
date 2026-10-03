@@ -14,11 +14,12 @@ import SubagentStrip from './SubagentStrip.vue'
 import UserMessage from './UserMessage.vue'
 import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
 import { buildTurns, groupNodeKind, nodeKind, summaryText, tidyThinking, turnSummary } from '../../conversation/turns'
-import ActionGroup from './ActionGroup.vue'
+import { workStatus } from '../../conversation/work'
+import WorkBlock from './WorkBlock.vue'
 import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
-import type { ConversationItem } from '../../types/conversation'
+import type { ConversationItem, ToolItem } from '../../types/conversation'
 import { isBareShortcut } from '../../keyboardShortcutGuard'
 
 const props = withDefaults(defineProps<{ id: string; visible?: boolean }>(), { visible: true })
@@ -216,8 +217,14 @@ async function goToSubagent(id: string) {
   }
   focusTimer = setTimeout(() => { subagentFocus.value = null }, HIGHLIGHT_MS)
 }
-// Open/closed chosen by the user per action group (by id); unset follows the turn.
+// Open/closed chosen by the user per work block (by id); unset follows `blockOpen`.
 const groupChoice = reactive(new Map<string, boolean>())
+// By default a block is open while its turn runs, when one of its actions failed (the row opens by itself)
+// and when it holds one action only; a finished turn folds the rest into the header.
+function blockOpen(entry: { id: string; items: ToolItem[] }, done: boolean): boolean {
+  return groupChoice.get(entry.id)
+    ?? (!done || entry.items.length === 1 || entry.items.some((item) => workStatus(item, sessionActive.value) === 'error'))
+}
 
 // Duration and cost of the last turn, shown in its end line; its error is shown apart, in red.
 const resultParts = computed(() => {
@@ -421,14 +428,14 @@ function resolvePrompt(promptId: string) {
                 <div v-for="entry in turn.entries" :key="entry.kind === 'group' ? `group-${entry.id}` : entry.item.id" class="relative flex items-start gap-3">
                   <template v-if="entry.kind === 'group'">
                     <RailNode :kind="groupNodeKind(entry.items, sessionActive)" align="group" />
-                    <ActionGroup
+                    <WorkBlock
                       class="min-w-0 grow"
                       :items="entry.items"
-                      :open="groupChoice.get(entry.id) ?? !done"
+                      :open="blockOpen(entry, done)"
                       :session-active="sessionActive"
                       :children-of="tree.childrenOf"
                       :task-list="taskList"
-                      @toggle="groupChoice.set(entry.id, !(groupChoice.get(entry.id) ?? !done))"
+                      @toggle="groupChoice.set(entry.id, !blockOpen(entry, done))"
                     />
                   </template>
                   <template v-else>

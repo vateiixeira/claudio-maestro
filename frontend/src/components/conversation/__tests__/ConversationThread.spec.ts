@@ -43,6 +43,13 @@ afterEach(() => {
 
 const text = (id: string, t: string) => ({ type: 'text', id, text: t, streaming: false, parent_tool_use_id: null })
 
+// The actions of a work block start closed; opens every row.
+async function openRows(w: { findAll: (selector: string) => { attributes: (name: string) => string | undefined; trigger: (event: string) => Promise<unknown> }[] }) {
+  for (const row of w.findAll('[data-test="work-row"] [data-test="work-header"]')) {
+    if (row.attributes('aria-expanded') === 'false') await row.trigger('click')
+  }
+}
+
 async function mountView(props: Record<string, unknown> = {}, attach = false) {
   const router = createAppRouter(createMemoryHistory())
   await router.push('/sessions/s1')
@@ -438,6 +445,7 @@ describe('controles e imagens na conversa', () => {
     it('subagente dentro de subagente aninha os filhos nos cartões', async () => {
       load([agent('a1', null), agent('a2', 'tu-a1'), toolItem('r', 'Read', 'tu-a2')])
       const w = await mountView()
+      await openRows(w)
       const outer = w.findAll('[data-test="subagent-card"]')
       expect(outer).toHaveLength(2)
       const inner = outer[0]!.find('[data-test="subagent-children"] [data-test="subagent-card"]')
@@ -448,6 +456,7 @@ describe('controles e imagens na conversa', () => {
     it('filho de ferramenta comum aparece recuado', async () => {
       load([toolItem('b', 'Bash', null), toolItem('c', 'Read', 'tu-b')])
       const w = await mountView()
+      await openRows(w)
       const indent = w.find('[data-test="tool-children"]')
       expect(indent.text()).toContain('/p/c.py')
     })

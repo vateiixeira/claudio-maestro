@@ -161,23 +161,27 @@ describe('rodapé aguardando background', () => {
     const button = waiting(w)
     expect(button.element.tagName).toBe('BUTTON')
     expect(button.attributes('type')).toBe('button')
-    const card = w.find('[data-subagent-id="first"]')
-    expect(card.exists()).toBe(true)
+    // The block is open while the card sits in a closed row: the click opens the row.
+    expect(w.find('[data-subagent-id="first"]').exists()).toBe(false)
     const scrollIntoView = vi.fn()
-    ;(card.element as HTMLElement).scrollIntoView = scrollIntoView
+    Element.prototype.scrollIntoView = scrollIntoView
     await button.trigger('click')
     await flushPromises()
+    const card = w.find('[data-subagent-id="first"]')
+    expect(card.exists()).toBe(true)
     expect(scrollIntoView).toHaveBeenCalled()
+    expect(scrollIntoView.mock.contexts[0]).toBe(card.element)
     expect(card.attributes('data-highlighted')).toBe('true')
   })
 
-  it('o clique abre o grupo recolhido que guarda o comando e destaca o cartão', async () => {
+  it('o clique abre o bloco recolhido que guarda o comando e destaca o cartão', async () => {
     const w = await mountWith({ state: 'idle', items: [user('u1'), bg('b', 'running'), tool('r1', 'Read')] })
-    expect(w.find('[data-test="action-group"]').exists()).toBe(true)
+    expect(w.find('[data-test="work-block-toggle"]').attributes('aria-expanded')).toBe('false')
     expect(w.find('[data-subagent-id="b"]').exists()).toBe(false)
     await waiting(w).trigger('click')
     await flushPromises()
     const card = w.find('[data-subagent-id="b"]')
+    expect(w.find('[data-test="work-block-toggle"]').attributes('aria-expanded')).toBe('true')
     expect(card.exists()).toBe(true)
     expect(card.attributes('data-highlighted')).toBe('true')
   })
@@ -202,11 +206,12 @@ describe('faixa com comandos em background', () => {
 
   it('clicar na linha leva ao cartão do comando', async () => {
     const w = await mountWith({ state: 'idle', items: [user('u1'), bg('b', 'running')] })
-    const card = w.find('[data-subagent-id="b"]')
+    expect(w.find('[data-subagent-id="b"]').exists()).toBe(false)
     const scrollIntoView = vi.fn()
-    ;(card.element as HTMLElement).scrollIntoView = scrollIntoView
+    Element.prototype.scrollIntoView = scrollIntoView
     await w.find('[data-test="subagent-row"]').trigger('click')
     await flushPromises()
+    const card = w.find('[data-subagent-id="b"]')
     expect(scrollIntoView).toHaveBeenCalled()
     expect(card.attributes('data-highlighted')).toBe('true')
   })
