@@ -21,11 +21,14 @@ Se você não lê português, o tradutor do navegador dá conta, e o próprio Cl
 - **Todos os projetos numa tela.** Menu lateral com cada projeto, suas branches e suas conversas.
 - **Estado de relance.** Cada conversa está rodando, esperando você ou finalizada, com ícone próprio além da cor. O que pede a sua atenção aparece primeiro.
 - **Leitura confortável.** Respostas em markdown, o diff de cada edição, comandos com a saída, tabelas e blocos de código legíveis.
-- **Você decide pela interface.** Permissões (permitir uma vez, sempre ou negar), perguntas do Claude e aprovação de planos.
+- **Você decide pela interface.** Permissões (permitir uma vez, sempre ou negar), perguntas do Claude e aprovação de planos. O pedido para editar mostra o diff, e "Permitir sempre" diz a regra que vai ser gravada.
+- **Triagem pelo teclado.** Na Inbox, `j`/`k` movem, `Enter` abre, `a` permite e `d` nega, sem abrir cada conversa.
+- **Notificações do sistema.** O navegador avisa quando uma conversa pede permissão, faz uma pergunta ou traz um plano (ligue em Preferências → Notificações).
 - **Git sempre à vista.** A branch de cada repositório do projeto, inclusive worktrees, e as alterações de cada conversa.
 - **Continuidade com o CLI.** As conversas ficam em `~/.claude/projects`, como no CLI e na extensão. Dá para retomar no Maestro uma conversa começada no terminal, e vice-versa.
 - **Controles por conversa.** Modelo, nível de raciocínio, modo de permissão, imagens coladas, comandos `/` e menções `@`.
 - **Resumo das conversas.** Um agente do próprio app pode resumir em fases o que cada conversa em andamento já fez.
+- **Resumo ao voltar.** Ao reabrir uma conversa depois de um tempo, um card mostra o que aconteceu enquanto você estava fora e o que falta.
 
 O que ele não é, de propósito: IDE, terminal embutido, editor de código ou árvore de arquivos.
 
