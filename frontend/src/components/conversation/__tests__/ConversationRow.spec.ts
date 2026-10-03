@@ -352,4 +352,34 @@ describe('marcações na linha de conversa', () => {
     expect(popover.style.left).toBe('30px')
     expect(popover.style.top).toBe('50px')
   })
+
+  it('com foco de teclado destaca a linha e mostra as ações sem passar o mouse', () => {
+    const wrapper = mountRow(makeSession(), 'inbox', { focused: true })
+    const row = wrapper.get('[data-test="conversation-row"]')
+    expect(row.classes()).toContain('bg-card')
+    expect(row.classes().join(' ')).toContain('inset_2px_0_0_var(--color-primary)')
+    expect(row.attributes('data-focused')).toBe('true')
+    expect(wrapper.get('[data-test="row-actions"]').classes()).toContain('opacity-100')
+    expect(wrapper.get('[data-test="row-link"]').attributes('aria-current')).toBeUndefined()
+
+    const idle = mountRow(makeSession(), 'inbox')
+    expect(idle.get('[data-test="conversation-row"]').attributes('data-focused')).toBeUndefined()
+    expect(idle.get('[data-test="row-actions"]').classes()).not.toContain('opacity-100')
+  })
+
+  it('aceita ações extras e um estado no lugar do motivo de espera', () => {
+    const session = makeSession({ display_state: 'waiting', pending_kind: 'tool' })
+    const plain = mountRow(session, 'inbox')
+    expect(plain.find('[data-test="waiting-reason"]').exists()).toBe(true)
+
+    const router = createAppRouter(createMemoryHistory())
+    const wrapper = mount(ConversationRow, {
+      props: { session, variant: 'inbox' },
+      slots: { actions: '<button data-test="extra">Extra</button>', status: '<span data-test="decided">Negado</span>' },
+      global: { plugins: [pinia, router] },
+    })
+    expect(wrapper.find('[data-test="row-actions"] [data-test="extra"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="decided"]').text()).toBe('Negado')
+    expect(wrapper.find('[data-test="waiting-reason"]').exists()).toBe(false)
+  })
 })

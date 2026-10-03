@@ -24,8 +24,10 @@ import { worktreeLabel } from '../../worktree'
 
 // One conversation in a list. `inbox` adds "Marcar como lida"; `compact` has no actions.
 // `to` replaces the link's destination (still a link, so middle-click opens a tab); `active` marks the open row.
+// `focused` is the keyboard cursor of a list (same look as `active`, with the actions always shown). The `actions` slot
+// adds buttons before the usual ones; the `status` slot takes the place of the waiting reason.
 const props = withDefaults(
-  defineProps<{ session: Session; variant?: 'inbox' | 'list' | 'compact'; to?: RouteLocationRaw; active?: boolean }>(),
+  defineProps<{ session: Session; variant?: 'inbox' | 'list' | 'compact'; to?: RouteLocationRaw; active?: boolean; focused?: boolean }>(),
   { variant: 'list' },
 )
 const target = computed<RouteLocationRaw>(() => props.to ?? { name: 'session', params: { id: props.session.session_id } })
@@ -75,9 +77,10 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     data-test="conversation-row"
     :data-unread="String(session.unread)"
     :data-active="active ? 'true' : undefined"
+    :data-focused="focused ? 'true' : undefined"
     @contextmenu.prevent="menuAt = contextPoint($event)"
     class="group relative flex min-h-11 items-center gap-3 rounded-md px-2 hover:bg-card focus-within:bg-card"
-    :class="active ? 'bg-card shadow-[inset_2px_0_0_var(--color-primary)]' : ''"
+    :class="active || focused ? 'bg-card shadow-[inset_2px_0_0_var(--color-primary)]' : ''"
   >
     <span class="flex w-2 shrink-0 justify-center">
       <span v-if="session.unread" data-test="unread-dot" class="size-2 rounded-full bg-info" />
@@ -109,7 +112,9 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       >{{ session.digest_short }}</span>
     </div>
     <span class="sr-only">{{ srState }}{{ session.unread ? ', com novidade' : '' }}</span>
-    <span v-if="reason && !compact" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs" :class="wantsYou ? 'text-secondary-soft' : 'text-fg-muted'">{{ reason }}</span>
+    <slot name="status">
+      <span v-if="reason && !compact" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs" :class="wantsYou ? 'text-secondary-soft' : 'text-fg-muted'">{{ reason }}</span>
+    </slot>
     <!-- Fixed widths, kept even when empty, so the columns line up from row to row. The actions float over the right end instead of taking room from them. -->
     <span data-test="row-project" class="hidden items-center gap-1.5 text-xs text-fg-subtle md:flex" :class="compact ? 'w-28 min-w-0 shrink' : 'w-36 shrink-0'">
       <template v-if="project">
@@ -125,8 +130,10 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     <div
       v-if="variant !== 'compact'"
       data-test="row-actions"
-      class="absolute inset-y-0 right-2 z-10 flex items-center gap-1 rounded-md bg-card pl-2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
+      class="absolute inset-y-0 right-2 z-10 flex items-center gap-1 rounded-md bg-card pl-2 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
+      :class="focused ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'"
     >
+      <slot name="actions" />
       <button
         v-if="variant === 'inbox' && session.unread"
         type="button"

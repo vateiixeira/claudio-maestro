@@ -155,3 +155,236 @@ describe('Inbox', () => {
     expect(loadEverything).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('Inbox: triagem pelo teclado', () => {
+  const prompt = (id: string, tool = 'Bash') => ({ prompt_id: id, tool_name: tool, summary: 'ls', can_allow_always: true })
+  let fetch: ReturnType<typeof routeFetch>
+
+  beforeEach(() => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 't1', title: 'Ferramenta 1', display_state: 'waiting', pending_kind: 'tool', pending_permission: prompt('p1'), last_activity_at: now }),
+      makeSession({ session_id: 'q1', title: 'Pergunta 1', display_state: 'waiting', pending_kind: 'question', last_activity_at: now - 10 }),
+      makeSession({ session_id: 't2', title: 'Ferramenta 2', display_state: 'waiting', pending_kind: 'tool', pending_permission: prompt('p2', 'Edit'), last_activity_at: now - 20 }),
+      makeSession({ session_id: 'r1', title: 'Roda 1', display_state: 'running', last_activity_at: now }),
+    ])
+    useSessionsStore(pinia).setForProject(2, [])
+    fetch = routeFetch({
+      'GET /api/projects/1/git': () => jsonResponse({ repos: [] }),
+      'GET /api/projects/2/git': () => jsonResponse({ repos: [] }),
+      'POST /api/sessions/t1/prompts/p1': () => jsonResponse({}),
+      'POST /api/sessions/t2/prompts/p2': () => jsonResponse({}),
+      'POST /api/sessions/q1/prompts/p3': () => jsonResponse({}),
+    })
+    vi.stubGlobal('fetch', fetch)
+  })
+
+  async function mountAttached(path = '/inbox') {
+    const router = createAppRouter(createMemoryHistory())
+    await router.push(path)
+    const wrapper = mount(InboxView, { attachTo: document.body, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    return { wrapper, router }
+  }
+  const listbox = (w: Awaited<ReturnType<typeof mountAttached>>['wrapper']) => w.get('[role="listbox"]')
+  const key = async (w: Awaited<ReturnType<typeof mountAttached>>['wrapper'], k: string) => {
+    await listbox(w).trigger('keydown', { key: k })
+    await flushPromises()
+  }
+  const focusedTitle = (w: Awaited<ReturnType<typeof mountAttached>>['wrapper']) =>
+    w.find('[data-focused="true"] [data-test="row-link"]').exists()
+      ? w.get('[data-focused="true"] [data-test="row-link"]').text()
+      : undefined
+  const posts = () => fetch.mock.calls.filter(([, init]) => init?.method === 'POST')
+
+  it('a lista da aba Aguardando você é um listbox focável com uma opção por conversa', async () => {
+    const { wrapper } = await mountAttached()
+    const box = listbox(wrapper)
+    expect(box.attributes('tabindex')).toBe('0')
+    expect(box.attributes('aria-label')).toBeTruthy()
+    expect(box.findAll('[role="option"]')).toHaveLength(3)
+    expect(box.find('[aria-selected="true"]').exists()).toBe(false)
+  })
+
+  it('as outras abas continuam sem listbox e sem atalhos', async () => {
+    const { wrapper } = await mountAttached('/inbox?aba=todas')
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="inbox-keys"]').exists()).toBe(false)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+    await flushPromises()
+    expect(posts()).toHaveLength(0)
+  })
+
+  it('j e k (e as setas) movem o foco; a primeira tecla vai para a primeira linha', async () => {
+    const { wrapper } = await mountAttached()
+    expect(focusedTitle(wrapper)).toBeUndefined()
+    await key(wrapper, 'j')
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 1')
+    await key(wrapper, 'j')
+    expect(focusedTitle(wrapper)).toBe('Pergunta 1')
+    await key(wrapper, 'ArrowDown')
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 2')
+    await key(wrapper, 'j')
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 2')
+    await key(wrapper, 'k')
+    expect(focusedTitle(wrapper)).toBe('Pergunta 1')
+    await key(wrapper, 'ArrowUp')
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 1')
+    await key(wrapper, 'k')
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 1')
+    expect(listbox(wrapper).attributes('aria-activedescendant')).toBe('inbox-option-t1')
+    expect(wrapper.get('[data-focused="true"]').attributes('aria-selected')).toBe('true')
+  })
+
+  it('a primeira tecla de seta ou k também começa na primeira linha e leva o foco para a lista', async () => {
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'k')
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 1')
+    expect(document.activeElement).toBe(listbox(wrapper).element)
+  })
+
+  it('Enter abre a conversa em foco', async () => {
+    const { wrapper, router } = await mountAttached()
+    await key(wrapper, 'Enter')
+    expect(router.currentRoute.value.name).toBe('inbox')
+    await key(wrapper, 'j')
+    await key(wrapper, 'j')
+    await key(wrapper, 'Enter')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/sessions/q1')
+  })
+
+  it('a e d não agem quando o foco saiu da lista', async () => {
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'j')
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    outside.focus()
+    outside.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+    outside.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }))
+    await flushPromises()
+    expect(posts()).toHaveLength(0)
+    outside.remove()
+  })
+
+  it('a permite uma vez a ferramenta em foco, mostra "Permitido uma vez", anuncia e desce o foco', async () => {
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'j')
+    await key(wrapper, 'a')
+
+    expect(posts()).toHaveLength(1)
+    expect(posts()[0]![0]).toBe('/api/sessions/t1/prompts/p1')
+    expect(JSON.parse(posts()[0]![1]!.body as string).decision).toBe('allow_once')
+    const row = wrapper.get('#inbox-option-t1')
+    expect(row.get('[data-test="row-decided"]').text()).toBe('Permitido uma vez')
+    expect(row.get('[data-test="row-decided"]').classes()).toContain('text-fg-muted')
+    expect(row.find('[data-test="inbox-allow"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="inbox-announce"]').attributes('role')).toBe('status')
+    expect(wrapper.get('[data-test="inbox-announce"]').text()).toContain('Permitido uma vez')
+    expect(wrapper.get('[data-test="inbox-announce"]').text()).toContain('Ferramenta 1')
+    expect(focusedTitle(wrapper)).toBe('Pergunta 1')
+  })
+
+  it('d nega a ferramenta em foco e mostra "Negado"', async () => {
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'j')
+    await key(wrapper, 'j')
+    await key(wrapper, 'j')
+    await key(wrapper, 'd')
+
+    expect(posts()[0]![0]).toBe('/api/sessions/t2/prompts/p2')
+    expect(JSON.parse(posts()[0]![1]!.body as string).decision).toBe('deny')
+    expect(wrapper.get('#inbox-option-t2').get('[data-test="row-decided"]').text()).toBe('Negado')
+    expect(wrapper.get('[data-test="inbox-announce"]').text()).toContain('Negado')
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 2')
+  })
+
+  it('a e d numa pergunta não respondem: pedem para abrir a conversa', async () => {
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'j')
+    await key(wrapper, 'j')
+    await key(wrapper, 'a')
+    await key(wrapper, 'd')
+
+    expect(posts()).toHaveLength(0)
+    expect(wrapper.get('#inbox-option-q1').find('[data-test="inbox-allow"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="inbox-announce"]').text()).toContain('abra a conversa')
+    expect(focusedTitle(wrapper)).toBe('Pergunta 1')
+  })
+
+  it('a e d sem linha em foco não fazem nada', async () => {
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'a')
+    await key(wrapper, 'd')
+    expect(posts()).toHaveLength(0)
+  })
+
+  it('com o foco num campo de texto, as letras não disparam atalho', async () => {
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'j')
+    const search = wrapper.get('[data-test="inbox-search"]')
+    await search.trigger('keydown', { key: 'a' })
+    await search.trigger('keydown', { key: 'j' })
+    await flushPromises()
+    expect(posts()).toHaveLength(0)
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 1')
+  })
+
+  it('com um diálogo aberto, os atalhos não disparam', async () => {
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'j')
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.appendChild(dialog)
+    await key(wrapper, 'a')
+    dialog.remove()
+    expect(posts()).toHaveLength(0)
+  })
+
+  it('Permitir e Negar aparecem só nas conversas que pedem ferramenta e funcionam com o clique', async () => {
+    const { wrapper } = await mountAttached()
+    expect(wrapper.findAll('[data-test="inbox-allow"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-test="inbox-deny"]')).toHaveLength(2)
+    const allow = wrapper.get('#inbox-option-t2').get('[data-test="inbox-allow"]')
+    expect(allow.classes()).toContain('rounded-md')
+    expect(allow.classes()).toContain('h-9')
+    expect(allow.attributes('aria-label')).toBe('Permitir Edit em Ferramenta 2')
+    await allow.trigger('click')
+    await flushPromises()
+    expect(posts()[0]![0]).toBe('/api/sessions/t2/prompts/p2')
+    expect(wrapper.get('#inbox-option-t2').get('[data-test="row-decided"]').text()).toBe('Permitido uma vez')
+  })
+
+  it('mostra o erro quando a resposta falha e não desce o foco', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/git': () => jsonResponse({ repos: [] }),
+      'GET /api/projects/2/git': () => jsonResponse({ repos: [] }),
+      'POST /api/sessions/t1/prompts/p1': () => jsonResponse({ detail: 'Falhou.' }, 500),
+    }))
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'j')
+    await key(wrapper, 'a')
+    expect(wrapper.get('[data-test="inbox-error"]').text()).toContain('Falhou.')
+    expect(wrapper.find('[data-test="row-decided"]').exists()).toBe(false)
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 1')
+  })
+
+  it('tem uma legenda de teclas no rodapé', async () => {
+    const { wrapper } = await mountAttached()
+    const keys = wrapper.get('[data-test="inbox-keys"]')
+    expect(keys.findAll('kbd').map((k) => k.text())).toEqual(['j', 'k', 'Enter', 'a', 'd'])
+    expect(keys.get('kbd').classes()).toContain('border-line-strong')
+  })
+
+  it('se a conversa em foco sai da lista, o foco fica na vizinha', async () => {
+    const { wrapper } = await mountAttached()
+    await key(wrapper, 'j')
+    await key(wrapper, 'j')
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 't1', title: 'Ferramenta 1', display_state: 'waiting', pending_kind: 'tool', pending_permission: prompt('p1'), last_activity_at: now }),
+      makeSession({ session_id: 't2', title: 'Ferramenta 2', display_state: 'waiting', pending_kind: 'tool', pending_permission: prompt('p2', 'Edit'), last_activity_at: now - 20 }),
+    ])
+    await flushPromises()
+    expect(focusedTitle(wrapper)).toBe('Ferramenta 2')
+  })
+})
+
