@@ -113,4 +113,43 @@ describe('menu de marcação', () => {
       expect(w.find('[data-test="mark-date-input"]').element.parentElement?.getAttribute('role')).toBe('none')
     })
   })
+  describe('acessibilidade', () => {
+    it('o título "Em espera" e seus itens formam um grupo nomeado', () => {
+      const w = mountMenu()
+      const group = w.find('[role="group"]')
+      expect(group.exists()).toBe(true)
+      const title = w.find(`#${group.attributes('aria-labelledby')}`)
+      expect(title.text()).toBe('Em espera')
+      for (const id of ['mark-tomorrow', 'mark-monday', 'mark-pick-date', 'mark-no-date']) {
+        expect(group.find(`[data-test="${id}"]`).exists()).toBe(true)
+      }
+      expect(group.find('[data-test="mark-review"]').exists()).toBe(false)
+    })
+    it('os separadores são role="separator"', () => {
+      expect(mountMenu().findAll('[role="separator"]')).toHaveLength(2)
+    })
+    it('Sem data marca a opção atual quando em espera sem data', () => {
+      const w = mountMenu({ mark: 'on_hold', mark_until: null })
+      expect(w.find('[data-test="mark-no-date"]').attributes('role')).toBe('menuitemradio')
+      expect(w.find('[data-test="mark-no-date"]').attributes('aria-checked')).toBe('true')
+      for (const id of ['mark-tomorrow', 'mark-monday', 'mark-pick-date']) {
+        expect(w.find(`[data-test="${id}"]`).attributes('aria-checked')).toBe('false')
+      }
+    })
+    it('marca a data atual: amanhã, segunda ou outra', () => {
+      const checked = (until: number) => {
+        const w = mountMenu({ mark: 'on_hold', mark_until: until })
+        return ['mark-tomorrow', 'mark-monday', 'mark-pick-date', 'mark-no-date'].filter((id) => w.find(`[data-test="${id}"]`).attributes('aria-checked') === 'true')
+      }
+      expect(checked(Math.floor(new Date(2026, 9, 4, 9).getTime() / 1000))).toEqual(['mark-tomorrow'])
+      expect(checked(Math.floor(new Date(2026, 9, 5, 9).getTime() / 1000))).toEqual(['mark-monday'])
+      expect(checked(Math.floor(new Date(2026, 9, 10, 8, 30).getTime() / 1000))).toEqual(['mark-pick-date'])
+    })
+    it('sem em espera, nenhuma das opções de data fica marcada', () => {
+      const w = mountMenu({ mark: 'review' })
+      for (const id of ['mark-tomorrow', 'mark-monday', 'mark-pick-date', 'mark-no-date']) {
+        expect(w.find(`[data-test="${id}"]`).attributes('aria-checked')).toBe('false')
+      }
+    })
+  })
 })

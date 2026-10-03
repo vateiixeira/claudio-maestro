@@ -62,6 +62,13 @@ describe('linha de conversa', () => {
     expect(wrapper.find('[data-test="row-branch"]').text()).not.toContain('develop')
   })
 
+  it('marcada e não lida, sem pedido real: triângulo discreto e "Sua vez"', () => {
+    const wrapper = mountRow(makeSession({ display_state: 'waiting', state: 'idle', unread: true, mark: 'on_hold' }))
+
+    expect(wrapper.find('svg').classes()).toContain('stroke-fg-subtle')
+    expect(wrapper.find('[data-test="waiting-reason"]').text()).toBe('Sua vez')
+  })
+
   it('mostra a bolinha de não lida e o motivo da espera', () => {
     const wrapper = mountRow(makeSession({ unread: true, display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question' }))
 
@@ -320,6 +327,15 @@ describe('marcações na linha de conversa', () => {
     const star = row.find('[data-test="row-priority"]')
     expect(star.attributes('role')).toBe('img')
     expect(star.classes()).toContain('text-fg-muted')
+  })
+  it('repete a marcação no title do link, que cobre o ícone', () => {
+    const blocked = mountRow(makeSession({ mark: 'blocked', mark_note: 'esperando o deploy' }))
+    expect(blocked.find('[data-test="row-link"]').attributes('title')).toBe('Bloqueada: esperando o deploy')
+    const compact = mountRow(makeSession({ mark: 'review' }), 'compact')
+    expect(compact.find('[data-test="row-link"]').attributes('title')).toBe('Para revisar')
+    const plan = { path: 'docs/plan.md', title: 'Plano', total: 12, done: 3, current: { number: 4, title: 'Criar o selo' } }
+    const both = mountRow(makeSession({ mark: 'blocked', mark_note: 'deploy', display_state: 'running', plan }))
+    expect(both.find('[data-test="row-link"]').attributes('title')).toBe('Bloqueada: deploy · Tarefa 4 de 12: Criar o selo')
   })
   it('sem marcação não mostra ícones', () => {
     const row = mountRow(makeSession())

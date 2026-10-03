@@ -47,11 +47,13 @@ const srState = computed(() => {
   const label = displayStateLabel(props.session)
   return compact.value && reason.value && reason.value !== label ? `${label}: ${reason.value}` : label
 })
-// The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it here.
+// The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it on the link.
 const planTitle = computed(() => (!compact.value && planVisible(props.session) ? planPosition(props.session.plan!) : undefined))
 const busy = ref(false)
 const menuAt = ref<{ x: number; y: number } | null>(null)
+// Same reason for the mark's note ("Bloqueada: ..."): its icon sits under the link's ::after.
 const markTitle = computed(() => markChipText(props.session, new Date()) ?? undefined)
+const linkTitle = computed(() => [markTitle.value, planTitle.value].filter(Boolean).join(' · ') || undefined)
 
 async function run(action: () => Promise<unknown>) {
   if (busy.value) return
@@ -81,7 +83,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       <span v-if="session.unread" data-test="unread-dot" class="size-2 rounded-full bg-info" />
     </span>
     <DisplayStateIcon :display="session.display_state" :quiet="!wantsYou" />
-    <span v-if="session.mark" data-test="row-mark" role="img" :title="markTitle" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
+    <span v-if="session.mark" data-test="row-mark" role="img" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
     <span v-if="session.priority" data-test="row-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" /></span>
     <!-- Not positioned, so the link's stretched ::after still covers the whole row. -->
     <div data-test="row-title" class="flex grow items-center gap-2" :class="compact ? 'min-w-24 overflow-hidden' : 'min-w-0'">
@@ -89,7 +91,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
         data-test="row-link"
         :to="target"
         :aria-current="active ? 'true' : undefined"
-        :title="planTitle"
+        :title="linkTitle"
         class="min-w-0 truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
         :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal', session.digest_short && !compact ? 'max-w-[55%] shrink-0' : '']"
       >{{ session.title }}</RouterLink>

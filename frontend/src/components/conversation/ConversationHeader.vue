@@ -195,7 +195,7 @@ async function openProject() {
           @click="startRename"
         >{{ title }}</button>
       </h1>
-      <button v-if="markChip" ref="markChipButton" type="button" data-test="mark-chip" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
+      <button v-if="markChip" ref="markChipButton" type="button" data-test="mark-chip" aria-haspopup="menu" :aria-expanded="!!markAt" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
         <MarkIcon v-if="listed?.mark" :mark="listed.mark" />{{ markChip }}
       </button>
       <span v-if="listed?.priority" data-test="header-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" :size="13" /></span>

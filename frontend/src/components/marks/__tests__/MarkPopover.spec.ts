@@ -43,6 +43,41 @@ describe('popover de marcação', () => {
     press(trigger, 'pointerdown')
     expect(w.emitted('close')).toBeUndefined()
   })
+  it('Tab num item fecha o menu, em vez de deixá-lo aberto com o foco fora', () => {
+    const w = mountPopover()
+    const item = popover().querySelector<HTMLElement>('[data-test="mark-monday"]')!
+    const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    item.dispatchEvent(event)
+    expect(w.emitted('close')).toHaveLength(1)
+    expect(event.defaultPrevented).toBe(true)
+  })
+  it('Shift+Tab num item também fecha', () => {
+    const w = mountPopover()
+    popover().querySelector<HTMLElement>('[data-test="mark-review"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    expect(w.emitted('close')).toHaveLength(1)
+  })
+  it('Tab no campo de data deixa o foco ir ao botão Salvar', async () => {
+    const w = mountPopover()
+    popover().querySelector<HTMLElement>('[data-test="mark-pick-date"]')!.click()
+    await vi.waitFor(() => expect(popover().querySelector('[data-test="mark-date-input"]')).not.toBeNull())
+    const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    popover().querySelector('[data-test="mark-date-input"]')!.dispatchEvent(event)
+    expect(w.emitted('close')).toBeUndefined()
+    expect(event.defaultPrevented).toBe(false)
+  })
+  it('o foco saindo do menu por outro caminho também fecha', () => {
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    const w = mountPopover()
+    popover().dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }))
+    expect(w.emitted('close')).toHaveLength(1)
+  })
+  it('o foco passando de um item a outro dentro do menu não fecha', () => {
+    const w = mountPopover()
+    const [a, b] = popover().querySelectorAll('[role^="menuitem"]')
+    a!.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: b! }))
+    expect(w.emitted('close')).toBeUndefined()
+  })
   it('foca o primeiro item ao abrir', () => {
     mountPopover()
     expect(document.activeElement).toBe(popover().querySelector('[data-test="mark-tomorrow"]'))

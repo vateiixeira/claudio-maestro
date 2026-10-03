@@ -22,6 +22,19 @@ function onKeydown(event: KeyboardEvent) {
   event.preventDefault()
   emit('close')
 }
+// Tab on an item would leave the menu open with the focus outside it: close instead, and the focus goes back to the opener.
+// The date and note fields keep their Tab, which moves between the field and its Save button.
+function onTab(event: KeyboardEvent) {
+  if (!(event.target instanceof Element) || !event.target.closest('[role^="menuitem"]')) return
+  event.preventDefault()
+  emit('close')
+}
+// The focus going anywhere else (past the Save button, say) closes it too; the opener's own click handles its toggle.
+function onFocusout(event: FocusEvent) {
+  const next = event.relatedTarget
+  if (!(next instanceof Node) || root.value?.contains(next) || props.ignore?.some((el) => el?.contains(next))) return
+  emit('close')
+}
 function onPointerdown(event: Event) {
   const target = event.target
   if (target instanceof Node && (root.value?.contains(target) || props.ignore?.some((el) => el?.contains(target)))) return
@@ -52,7 +65,7 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div ref="root" data-test="mark-popover" class="fixed z-50 rounded-lg border border-line-strong bg-card shadow-lg" :style="style">
+    <div ref="root" data-test="mark-popover" class="fixed z-50 rounded-lg border border-line-strong bg-card shadow-lg" :style="style" @keydown.tab="onTab" @focusout="onFocusout">
       <MarkMenu :session="session" @done="emit('close')" @error="error = $event" />
       <p v-if="error" role="alert" class="m-0 px-3 pb-2 text-xs text-diff-del-fg">{{ error }}</p>
     </div>

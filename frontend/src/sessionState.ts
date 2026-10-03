@@ -27,7 +27,7 @@ export const displayStateLabels: Record<DisplayState, string> = {
 
 /** Spoken/written label of a session's display state: a plain wait is "Sua vez", one that needs the user "Aguardando você". */
 export function displayStateLabel(
-  session: Pick<Session, 'display_state' | 'unread' | 'state'> & { pending_kind?: string | null; interrupted?: boolean },
+  session: Pick<Session, 'display_state' | 'unread' | 'state'> & { pending_kind?: string | null; interrupted?: boolean; mark?: Session['mark'] },
 ): string {
   if (session.interrupted && session.display_state !== 'running') return 'Interrompida'
   if (session.display_state === 'waiting' && !needsYou(session)) return 'Sua vez'

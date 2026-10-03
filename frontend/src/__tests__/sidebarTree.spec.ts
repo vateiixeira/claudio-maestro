@@ -27,4 +27,12 @@ describe('árvore do menu', () => {
     ]
     expect(projectTree([makeGroup({ id: 1 })], sessions).active[0]!.waiting).toBe(3)
   })
+
+  it('não conta como aguardando a sessão marcada sem pedido real', () => {
+    const sessions = [
+      makeSession({ session_id: 'm', group_id: 1, display_state: 'waiting', unread: true, mark: 'on_hold' }),
+      makeSession({ session_id: 'r', group_id: 1, display_state: 'waiting', unread: true, mark: 'blocked', pending_kind: 'tool' }),
+    ]
+    expect(projectTree([makeGroup({ id: 1 })], sessions).active[0]!.waiting).toBe(1)
+  })
 })

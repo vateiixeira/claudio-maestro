@@ -210,6 +210,15 @@ describe('marcação no cabeçalho', () => {
       expect(popover()).toBeNull()
       expect(button.attributes('aria-expanded')).toBe('false')
     })
+    it('a etiqueta anuncia que abre um menu e se está aberto', async () => {
+      useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', mark: 'review' })])
+      const w = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] }, attachTo: document.body })
+      const chip = w.find('[data-test="mark-chip"]')
+      expect(chip.attributes('aria-haspopup')).toBe('menu')
+      expect(chip.attributes('aria-expanded')).toBe('false')
+      await chip.trigger('click')
+      expect(chip.attributes('aria-expanded')).toBe('true')
+    })
     it('clicar na etiqueta com o menu aberto pelo botão também fecha', async () => {
       useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', mark: 'review' })])
       const w = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] }, attachTo: document.body })

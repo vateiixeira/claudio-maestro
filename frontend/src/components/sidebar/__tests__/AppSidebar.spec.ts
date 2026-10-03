@@ -76,6 +76,27 @@ describe('menu lateral', () => {
     expect(wrapper.find('[data-test="project-waiting"]').exists()).toBe(false)
   })
 
+  it('não conta na Inbox nem no projeto a conversa marcada, mesmo não lida', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', display_state: 'waiting', unread: true, mark: 'on_hold' }),
+      makeSession({ session_id: 'b', display_state: 'waiting', unread: true, mark: 'review' }),
+    ])
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="inbox-count"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="project-waiting"]').exists()).toBe(false)
+  })
+
+  it('conta a conversa marcada que tem pedido real do Claude', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', display_state: 'waiting', mark: 'blocked', pending_kind: 'question' }),
+    ])
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="inbox-count"]').text()).toBe('1')
+    expect(wrapper.find('[data-test="project-waiting"]').text()).toContain('1')
+  })
+
   it('lista projetos com cor, branch e aguardando', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online', color: '#B28CFF' })]
     useGitStore(pinia).set(1, [makeGitRepo({ branch: 'develop' })])

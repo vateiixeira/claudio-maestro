@@ -20,8 +20,19 @@ describe('needsYou', () => {
     expect(needsYou(makeSession({ state: 'awaiting_decision', pending_kind: null, unread: false }))).toBe(true)
   })
 
+  it('uma sessão marcada só pede você com pedido real, não por estar não lida', () => {
+    expect(needsYou(makeSession({ unread: true, mark: 'on_hold' }))).toBe(false)
+    expect(needsYou(makeSession({ unread: true, mark: 'blocked' }))).toBe(false)
+    expect(needsYou(makeSession({ unread: true, mark: 'review' }))).toBe(false)
+    expect(needsYou(makeSession({ unread: true, mark: null }))).toBe(true)
+    expect(needsYou(makeSession({ unread: true }))).toBe(true)
+    expect(needsYou(makeSession({ unread: false, mark: 'on_hold', pending_kind: 'tool' }))).toBe(true)
+    expect(needsYou(makeSession({ unread: false, mark: 'blocked', state: 'error' }))).toBe(true)
+    expect(needsYou(makeSession({ unread: false, mark: 'review', state: 'awaiting_decision' }))).toBe(true)
+  })
+
   it('isQuietSession is its negation', () => {
-    for (const s of [makeSession(), makeSession({ unread: true }), makeSession({ state: 'error' }), makeSession({ pending_kind: 'plan' })]) {
+    for (const s of [makeSession(), makeSession({ unread: true }), makeSession({ state: 'error' }), makeSession({ pending_kind: 'plan' }), makeSession({ unread: true, mark: 'on_hold' })]) {
       expect(isQuietSession(s)).toBe(!needsYou(s))
     }
   })

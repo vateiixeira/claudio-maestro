@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deriveDisplay } from '../sessionState'
+import { deriveDisplay, displayStateLabel } from '../sessionState'
 
 describe('deriveDisplay', () => {
   it('fechada com o CLI no meio de um turno fica em execução', () => {
@@ -14,5 +14,11 @@ describe('deriveDisplay', () => {
     // Without a client there is no subagent of the app: the flag is ignored.
     expect(deriveDisplay('closed', false, 'waiting', false, true).display_state).toBe('waiting')
     expect(deriveDisplay('closed', true, 'finished', false, true).display_state).toBe('finished')
+  })
+
+  it('o rótulo falado de uma marcada não lida, sem pedido real, é "Sua vez"', () => {
+    expect(displayStateLabel({ display_state: 'waiting', unread: true, state: 'idle', mark: 'blocked' })).toBe('Sua vez')
+    expect(displayStateLabel({ display_state: 'waiting', unread: true, state: 'idle' })).toBe('Aguardando você')
+    expect(displayStateLabel({ display_state: 'waiting', unread: false, state: 'idle', mark: 'blocked', pending_kind: 'tool' })).toBe('Aguardando você')
   })
 })

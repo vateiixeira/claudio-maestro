@@ -48,6 +48,18 @@ describe('estrutura do app', () => {
     expect(document.title).toBe('(2) Cláudio Maestro')
   })
 
+  it('o título da aba ignora a conversa marcada não lida', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', display_state: 'waiting', unread: true, mark: 'on_hold' }),
+      makeSession({ session_id: 'b', display_state: 'waiting', unread: true }),
+    ])
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias')
+    mount(App, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(document.title).toBe('(1) Cláudio Maestro')
+  })
+
   it('o atalho C numa conversa abre o modal no projeto e no agrupador dela', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', project_id: 1, group_id: 4 })])
     const router = createAppRouter(createMemoryHistory())
