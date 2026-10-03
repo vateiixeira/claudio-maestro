@@ -7,6 +7,7 @@ import { jsonResponse, makeGitRepo, makeProject, makeRepoDetails, makeSession, r
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 import { useGitStore } from '../../../stores/git'
+import { setSectionOpened } from '../../../sidebarCollapse'
 
 vi.mock('../../../api/socket', () => ({
   useEventSocket: () => ({ status: { value: 'connected' }, onSession: () => () => {}, onReconnect: () => () => {}, onOpen: () => () => {} }),
@@ -38,11 +39,15 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('branches no menu lateral', () => {
   it('mostra a branch do primeiro repositório, HEAD solto e projeto sem git', () => {
+    // "loja" has an open conversation (listed under "Em andamento"); the others sit in "Outros projetos", opened here.
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', project_id: 1 })])
+    setSectionOpened('others', true)
     const w = mount(AppSidebar, { global: { plugins: [pinia, createAppRouter(createMemoryHistory())] } })
-    const [loja, solta, nada] = w.findAll('[data-test="project"]')
-    expect(loja!.find('[data-test="project-branch"]').text()).toBe('main')
-    expect(solta!.find('[data-test="project-branch"]').text()).toBe('HEAD solto · abc1234')
-    expect(nada!.find('[data-test="project-branch"]').exists()).toBe(false)
+    expect(w.get('[data-test="project"] [data-test="project-branch"]').text()).toBe('main')
+    const [solta, nada] = w.findAll('[data-test="other-project"]')
+    expect(solta!.find('[data-test="other-project-branch"]').text()).toBe('HEAD solto · abc1234')
+    expect(nada!.find('[data-test="other-project-branch"]').exists()).toBe(false)
+    setSectionOpened('others', false)
   })
 })
 

@@ -26,6 +26,9 @@ describe('menu lateral com estados', () => {
     projects.projects = [makeProject({ id: 1, name: 'ok' }), makeProject({ id: 2, name: 'sumiu', available: false })]
     projects.loaded = true
 
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    useSessionsStore(pinia).setForProject(2, [makeSession({ session_id: 'b', project_id: 2 })])
+
     const [ok, gone] = mountSidebar().findAll('[data-test="project"]')
 
     expect(ok!.attributes('data-available')).toBe('true')
@@ -54,6 +57,8 @@ describe('menu lateral com estados', () => {
     projects.loaded = true
     useGitStore(pinia).set(1, [makeGitRepo()], true)
     useGitStore(pinia).set(2, [makeGitRepo({ path: '/home/vi/outro' })], false)
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    useSessionsStore(pinia).setForProject(2, [makeSession({ session_id: 'b', project_id: 2 })])
     const items = mountSidebar().findAll('[data-test="project"]')
     expect(items[0]!.find('[data-test="repo-limit"]').text()).toBe('Só os 50 primeiros repositórios')
     expect(items[1]!.find('[data-test="repo-limit"]').exists()).toBe(false)

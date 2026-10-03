@@ -44,7 +44,7 @@ export function setCollapsed(kind: Kind, id: number, value: boolean): void {
   save()
 }
 
-/** A named sidebar section (for now only "open", the "Abertas" list). */
+/** A named sidebar section ("review", the "Para revisar" lane). */
 export function isSectionCollapsed(name: string): boolean {
   return collapsed.value.section.includes(name)
 }
@@ -55,7 +55,7 @@ export function setSectionCollapsed(name: string, value: boolean): void {
   save()
 }
 
-/** Sections that start collapsed ("Depois") remember being opened, kept as "+name". */
+/** Sections that start collapsed ("Depois", "Outros projetos") remember being opened, kept as "+name". */
 export function isSectionOpened(name: string): boolean {
   return collapsed.value.section.includes(`+${name}`)
 }

@@ -23,7 +23,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - O raciocínio aparece numa linha, com a lâmpada, o tempo e uma prévia do texto; um clique abre o texto completo.
 - Visual mais arredondado: a fonte da interface agora é a Rubik, e botões, cards, campos e menus ganharam cantos mais redondos (blocos de código continuam com 8px). Etiquetas pequenas viraram pílulas.
 - A conversa ficou com cara de mensageiro: o que você manda aparece em balão à direita. As respostas do Claude aparecem como texto corrido, sem balão; só o trabalho fica em caixas.
-- O menu lateral ficou mais compacto: ícones na navegação, cada projeto numa linha com a branch ao lado, um círculo quando há conversa rodando e as conversas abertas logo abaixo dele, e "Em execução" e "Recentes" viraram uma lista só, "Abertas" (primeiro o que espera você), que dá para recolher.
+- O menu lateral ficou mais compacto: ícones na navegação, cada projeto numa linha com a branch ao lado, um círculo quando há conversa rodando e as conversas abertas logo abaixo dele, e as conversas não se repetem: ficam sob o projeto (primeiro o que espera você), e os projetos sem conversa aberta ficam recolhidos em "Outros projetos".
 - O chat ficou mais compacto e mais largo: comandos numa caixa só com entrada e saída recolhidas (um clique abre), pensamentos seguidos viram um só e os vazios somem, a trilha usa bolinhas de estado e o rodapé de cada turno virou uma linha discreta.
 - As ações de um subagente começam recolhidas, e o cartão dele tem fundo cinza para se distinguir.
 - Suas mensagens ganharam fundo verde suave, e no chat âmbar passou a indicar o que está rodando ou esperando (verde é concluído).

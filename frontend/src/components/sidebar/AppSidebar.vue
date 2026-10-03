@@ -7,13 +7,13 @@ import DisplayStateIcon from '../DisplayStateIcon.vue'
 import SessionSearch from './SessionSearch.vue'
 import SidebarGroups from './SidebarGroups.vue'
 import SidebarLane from './SidebarLane.vue'
-import SidebarOpen from './SidebarOpen.vue'
 import SidebarSessionRow from './SidebarSessionRow.vue'
 import { looseOpenSessions } from './openList'
 import { sidebarItemClass } from './itemClass'
 import { needsYou } from '../../conversation/needsYou'
 import { useEventSocket } from '../../api/socket'
-import { isCollapsed, setCollapsed } from '../../sidebarCollapse'
+import { isCollapsed, isSectionOpened, setCollapsed, setSectionOpened } from '../../sidebarCollapse'
+import { splitProjects } from '../../sidebarTree'
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_KEY_STEP, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, clampSidebarWidth, sidebarWidth, writeSidebarWidth } from '../../sidebarWidthPref'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
@@ -73,7 +73,7 @@ function waitingIn(projectId: number): number {
 function runningIn(projectId: number): boolean {
   return sessions.forProject(projectId).some((s) => s.display_state === 'running')
 }
-// Open conversations of each project outside its groups, in "Abertas" order; grouped ones show under their group.
+// Open conversations of each project outside its groups, the ones waiting for you first; grouped ones show under their group.
 // Built once per change so the template reads it instead of recomputing per project.
 const looseByProject = computed(() => {
   const map = new Map<number, Session[]>()
@@ -84,6 +84,14 @@ const looseByProject = computed(() => {
 })
 function hasChildren(projectId: number): boolean {
   return groups.forProject(projectId).length > 0 || (looseByProject.value.get(projectId)?.length ?? 0) > 0
+}
+// "Em andamento": projects with an open conversation. "Outros projetos": the rest, kept in one folded line.
+const split = computed(() => splitProjects(projects.projects, sessions.all))
+// The project on screen stays visible even when it has no open conversation and the list is folded.
+const activeIsOther = computed(() => split.value.others.some((p) => p.id === activeProjectId.value))
+const othersOpen = computed(() => isSectionOpened('others') || activeIsOther.value)
+function toggleOthers() {
+  setSectionOpened('others', !isSectionOpened('others'))
 }
 // The branch label only renders for an available project inside a git repository.
 function showsBranch(project: Project): boolean {
@@ -161,62 +169,101 @@ const itemClass = sidebarItemClass
       </RouterLink>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto border-t border-line px-2.5 pt-1.5 pb-2">
-      <div class="flex h-[30px] items-center pr-1 pl-2.5">
-        <span class="grow font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase">Projetos</span>
-        <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-[26px] items-center justify-center rounded-md text-fg-subtle no-underline hover:bg-card hover:text-fg"><IconPlus :size="13" /></RouterLink>
-      </div>
-      <p v-if="projects.loadError" class="px-2.5 py-2 text-xs text-diff-del-fg" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
-      <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-2.5 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
-      <template v-for="(project, index) in projects.projects" :key="project.id">
-        <div class="flex items-center" :class="{ 'mt-1.5': index > 0 }">
+    <div data-test="sidebar-sections" class="flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-2.5 pt-3.5 pb-2">
+      <section aria-labelledby="sidebar-active-title" class="flex flex-col gap-px">
+        <div class="flex h-[30px] items-center pr-1 pl-2.5">
+          <h2 id="sidebar-active-title" data-test="section-title" class="grow font-mono text-[0.6875rem] font-normal tracking-[0.08em] text-fg-subtle uppercase">Em andamento</h2>
+          <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-[26px] items-center justify-center rounded-md text-fg-subtle no-underline hover:bg-card hover:text-fg"><IconPlus :size="13" /></RouterLink>
+        </div>
+        <p v-if="projects.loadError" class="px-2.5 py-2 text-xs text-diff-del-fg" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
+        <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-2.5 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
+        <p v-else-if="projects.projects.length > 0 && split.active.length === 0" data-test="no-open" class="px-2.5 py-1 text-xs text-fg-subtle">Nenhuma conversa aberta</p>
+        <template v-for="(project, index) in split.active" :key="project.id">
+          <div class="flex items-center" :class="{ 'mt-1.5': index > 0 }">
+            <RouterLink
+              data-test="project"
+              :data-available="String(project.available)"
+              :to="{ name: 'project', params: { id: project.id } }"
+              :class="[itemClass(activeProjectId === project.id), 'min-w-0 grow py-1']"
+              :aria-current="route.name === 'project' && activeProjectId === project.id ? 'page' : undefined"
+            >
+              <span data-test="project-color" class="size-[9px] shrink-0 rounded-[3px]" :class="{ 'opacity-40': !project.available }" :style="{ backgroundColor: project.color }" />
+              <span class="flex min-w-0 grow flex-col">
+                <span class="flex min-w-0 items-baseline gap-2">
+                  <span data-test="project-name" class="truncate font-medium" :class="[showsBranch(project) ? 'max-w-[60%] shrink-0' : '', project.available ? 'text-fg' : 'text-fg-subtle']">{{ project.name }}</span>
+                  <span
+                    v-if="showsBranch(project)"
+                    data-test="project-branch"
+                    :title="repoLabel(git.reposFor(project.id)[0]!)"
+                    class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
+                  >{{ repoLabel(git.reposFor(project.id)[0]!) }}</span>
+                </span>
+                <span v-if="!project.available" class="text-xs text-fg-subtle">pasta indisponível</span>
+                <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-fg-muted">Só os 50 primeiros repositórios</span>
+              </span>
+              <span v-if="runningIn(project.id)" data-test="project-running" class="flex shrink-0 items-center">
+                <DisplayStateIcon display="running" :size="11" /><span class="sr-only">em execução</span>
+              </span>
+              <span v-if="waitingIn(project.id)" data-test="project-waiting" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-secondary">
+                <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}<span class="sr-only"> aguardando você</span>
+              </span>
+            </RouterLink>
+            <button
+              v-if="hasChildren(project.id)"
+              type="button"
+              data-test="project-toggle"
+              :aria-expanded="!isCollapsed('project', project.id)"
+              :aria-label="`${isCollapsed('project', project.id) ? 'Expandir' : 'Recolher'} ${project.name}`"
+              class="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-card hover:text-fg"
+              @click="setCollapsed('project', project.id, !isCollapsed('project', project.id))"
+            ><IconChevron :open="!isCollapsed('project', project.id)" :size="12" /></button>
+          </div>
+          <template v-if="!isCollapsed('project', project.id)">
+            <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="ml-[14px] flex flex-col gap-px border-l border-line pl-2">
+              <SidebarSessionRow v-for="s in looseByProject.get(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project nested />
+            </div>
+            <SidebarGroups v-if="groups.forProject(project.id).length" :project-id="project.id" />
+          </template>
+        </template>
+      </section>
+
+      <section v-if="split.others.length" aria-labelledby="sidebar-others-title" class="flex flex-col gap-px">
+        <div class="flex h-[30px] items-center pl-2.5">
+          <h2 id="sidebar-others-title" data-test="section-title" class="font-mono text-[0.6875rem] font-normal tracking-[0.08em] text-fg-subtle uppercase">Outros projetos</h2>
+        </div>
+        <button
+          type="button"
+          data-test="others-toggle"
+          :aria-expanded="othersOpen"
+          class="flex min-h-7 w-full items-center gap-1.5 rounded-md border-none bg-transparent px-2.5 text-left text-xs text-fg-subtle hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+          @click="toggleOthers"
+        >
+          <IconChevron :open="othersOpen" :size="12" />
+          <span>{{ split.others.length }} sem conversa aberta</span>
+        </button>
+        <template v-if="othersOpen">
           <RouterLink
-            data-test="project"
+            v-for="project in split.others"
+            :key="project.id"
+            data-test="other-project"
             :data-available="String(project.available)"
             :to="{ name: 'project', params: { id: project.id } }"
-            :class="[itemClass(activeProjectId === project.id), 'min-w-0 grow py-1']"
+            :class="[itemClass(activeProjectId === project.id), 'min-h-8 py-1']"
             :aria-current="route.name === 'project' && activeProjectId === project.id ? 'page' : undefined"
           >
             <span data-test="project-color" class="size-[9px] shrink-0 rounded-[3px]" :class="{ 'opacity-40': !project.available }" :style="{ backgroundColor: project.color }" />
-            <span class="flex min-w-0 grow flex-col">
-              <span class="flex min-w-0 items-baseline gap-2">
-                <span data-test="project-name" class="truncate font-medium" :class="[showsBranch(project) ? 'max-w-[60%] shrink-0' : '', project.available ? 'text-fg' : 'text-fg-subtle']">{{ project.name }}</span>
-                <span
-                  v-if="showsBranch(project)"
-                  data-test="project-branch"
-                  :title="repoLabel(git.reposFor(project.id)[0]!)"
-                  class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
-                >{{ repoLabel(git.reposFor(project.id)[0]!) }}</span>
-              </span>
-              <span v-if="!project.available" class="text-xs text-fg-subtle">pasta indisponível</span>
-              <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-fg-muted">Só os 50 primeiros repositórios</span>
-            </span>
-            <span v-if="runningIn(project.id)" data-test="project-running" class="flex shrink-0 items-center">
-              <DisplayStateIcon display="running" :size="11" /><span class="sr-only">em execução</span>
-            </span>
-            <span v-if="waitingIn(project.id)" data-test="project-waiting" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-secondary">
-              <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}<span class="sr-only"> aguardando você</span>
-            </span>
+            <span data-test="other-project-name" class="min-w-0 truncate" :class="[showsBranch(project) ? 'max-w-[60%] shrink-0' : '', project.available ? 'text-fg-muted' : 'text-fg-subtle']">{{ project.name }}</span>
+            <span
+              v-if="showsBranch(project)"
+              data-test="other-project-branch"
+              :title="repoLabel(git.reposFor(project.id)[0]!)"
+              class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
+            >{{ repoLabel(git.reposFor(project.id)[0]!) }}</span>
+            <span v-if="!project.available" class="shrink-0 text-xs text-fg-subtle">pasta indisponível</span>
           </RouterLink>
-          <button
-            v-if="hasChildren(project.id)"
-            type="button"
-            data-test="project-toggle"
-            :aria-expanded="!isCollapsed('project', project.id)"
-            :aria-label="`${isCollapsed('project', project.id) ? 'Expandir' : 'Recolher'} ${project.name}`"
-            class="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-card hover:text-fg"
-            @click="setCollapsed('project', project.id, !isCollapsed('project', project.id))"
-          ><IconChevron :open="!isCollapsed('project', project.id)" :size="12" /></button>
-        </div>
-        <template v-if="!isCollapsed('project', project.id)">
-          <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="ml-[14px] flex flex-col gap-px border-l border-line pl-2">
-            <SidebarSessionRow v-for="s in looseByProject.get(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project nested />
-          </div>
-          <SidebarGroups v-if="groups.forProject(project.id).length" :project-id="project.id" />
         </template>
-      </template>
+      </section>
 
-      <SidebarOpen />
       <SidebarLane lane="review" title="Para revisar" />
       <SidebarLane lane="later" title="Depois" start-collapsed />
     </div>

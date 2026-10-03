@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { OPEN_MAX, laneSessions, looseOpenSessions, nowSessions, openSessions } from '../openList'
+import { laneSessions, looseOpenSessions, openSessions } from '../openList'
 import { makeSession } from '../../../test/factories'
 
 const ids = (list: { session_id: string }[]) => list.map((s) => s.session_id)
 
-describe('lista Abertas', () => {
+describe('ordem das conversas abertas', () => {
   it('põe primeiro o que espera você, depois o que roda, depois o resto, mantendo a ordem de chegada em cada faixa', () => {
     const all = [
       makeSession({ session_id: 'quieta', display_state: 'waiting', unread: false }),
@@ -32,17 +32,6 @@ describe('lista Abertas', () => {
     expect(ids(openSessions(all))).toEqual(['erro', 'roda'])
   })
 
-  it('as que esperam você entram nas primeiras 8 mesmo sendo as mais antigas', () => {
-    const recentes = Array.from({ length: 10 }, (_, i) => makeSession({ session_id: `r${i}`, display_state: 'running' }))
-    const antigas = [
-      makeSession({ session_id: 'velha1', display_state: 'waiting', unread: true }),
-      makeSession({ session_id: 'velha2', display_state: 'waiting', unread: true }),
-    ]
-    const visible = openSessions([...recentes, ...antigas]).slice(0, OPEN_MAX)
-    expect(ids(visible).slice(0, 2)).toEqual(['velha1', 'velha2'])
-    expect(OPEN_MAX).toBe(8)
-  })
-
   it('não altera a lista recebida', () => {
     const all = [makeSession({ session_id: 'a', display_state: 'running' }), makeSession({ session_id: 'b', display_state: 'waiting', unread: true })]
     openSessions(all)
@@ -51,7 +40,7 @@ describe('lista Abertas', () => {
 })
 
 describe('abertas de um projeto fora dos agrupadores', () => {
-  it('só do projeto, sem finalizadas, sem as de agrupador conhecido, na ordem de Abertas', () => {
+  it('só do projeto, sem finalizadas, sem as de agrupador conhecido, na ordem das abertas', () => {
     const all = [
       makeSession({ session_id: 'quieta', project_id: 1 }),
       makeSession({ session_id: 'roda', project_id: 1, display_state: 'running' }),
@@ -70,7 +59,7 @@ describe('abertas de um projeto fora dos agrupadores', () => {
   })
 })
 
-describe('marcações na lista Abertas', () => {
+describe('marcações nas conversas abertas', () => {
   it('Prioridade vem depois do que pede você e antes do que roda', () => {
     const all = [
       makeSession({ session_id: 'roda', display_state: 'running' }),
@@ -79,7 +68,7 @@ describe('marcações na lista Abertas', () => {
     ]
     expect(ids(openSessions(all))).toEqual(['pede', 'prio', 'roda'])
   })
-  it('nowSessions tira as marcadas sem pedido; laneSessions separa revisar e depois', () => {
+  it('laneSessions separa revisar e depois, com a conversa marcada que tem pedido ficando de fora', () => {
     const all = [
       makeSession({ session_id: 'a' }),
       makeSession({ session_id: 'rev', mark: 'review' }),
@@ -87,7 +76,6 @@ describe('marcações na lista Abertas', () => {
       makeSession({ session_id: 'blq', mark: 'blocked' }),
       makeSession({ session_id: 'blq-pede', mark: 'blocked', pending_kind: 'tool' }),
     ]
-    expect(ids(nowSessions(all))).toEqual(['blq-pede', 'a'])
     expect(ids(laneSessions(all, 'review'))).toEqual(['rev'])
     expect(ids(laneSessions(all, 'later'))).toEqual(['esp', 'blq'])
   })
