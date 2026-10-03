@@ -1,11 +1,19 @@
 """Marcações de sessão: dados, PATCH, regras de envio, inatividade e acordar."""
 
 import pytest
-from test_sessions import env_cleanup, make_env, session_row  # noqa: F401
+from test_sessions import env_cleanup, make_env, session_row, wait_until  # noqa: F401
 
-from claudio_maestro.sessions import InvalidMarkError, SessionRecord, resolve_mark
+from claudio_maestro.agent.fake import text_turn
+from claudio_maestro.sessions import (
+    InvalidMarkError,
+    SessionRecord,
+    _now,
+    display_state,
+    resolve_mark,
+)
 
 NOW = 1_800_000_000
+DAY = 86_400
 
 
 def rec(**kw) -> SessionRecord:
@@ -131,3 +139,96 @@ async def test_priority_on_a_finished_session_reopens_it(make_env, env_cleanup):
     await env.manager.update(session.session_id, finished=True)
     summary = await env.manager.update(session.session_id, priority=True)
     assert summary["finished"] is False and summary["priority"] is True
+
+
+@pytest.mark.anyio
+async def test_priority_reopens_a_session_finished_by_inactivity(make_env, env_cleanup):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    old = _now() - 10 * DAY
+    session.save(last_activity_at=old)
+    assert env.manager.summary(session.session_id)["display_state"] == "finished"
+    summary = await env.manager.update(session.session_id, priority=True)
+    assert summary["display_state"] != "finished"
+    assert summary["last_activity_at"] > old
+
+
+@pytest.mark.anyio
+async def test_finishing_an_already_finished_session_drops_mark_and_priority(make_env, env_cleanup):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    await env.manager.update(session.session_id, finished=True)
+    summary = await env.manager.update(
+        session.session_id, finished=True, mark="review", priority=True
+    )
+    assert summary["finished"] is True
+    assert summary["mark"] is None and summary["priority"] is False
+    row = session_row(env.db_path, session.session_id)
+    assert row["mark"] is None and row["priority"] == 0
+
+
+def test_marked_session_does_not_finish_by_inactivity():
+    kw = dict(finished=False, last_activity_at=0, last_seen_at=0, now=10 * DAY, finished_after=3 * DAY)
+    assert display_state("closed", **kw) == "finished"
+    assert display_state("closed", marked=True, **kw) == "waiting"
+    assert display_state("closed", marked=True, **{**kw, "finished": True}) == "finished"
+
+
+@pytest.mark.anyio
+async def test_sending_clears_mark_and_keeps_priority(make_env, env_cleanup):
+    env = make_env(script=lambda content: text_turn("x", "ok"))
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    await env.manager.update(session.session_id, mark="blocked", mark_note="CI", priority=True)
+    await session.send("vamos")
+    await wait_until(lambda: session.state == "idle")
+    summary = env.manager.summary(session.session_id)
+    assert summary["mark"] is None and summary["mark_note"] is None
+    assert summary["priority"] is True
+    assert session_row(env.db_path, session.session_id)["mark"] is None
+
+
+@pytest.mark.anyio
+async def test_wake_marks_wakes_due_sessions(make_env, env_cleanup):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    later = env.new_session()
+    now = _now()
+    await env.manager.update(session.session_id, mark="on_hold", mark_until=now + 60)
+    await env.manager.update(later.session_id, mark="on_hold", mark_until=now + 600)
+    env.recorder.envelopes.clear()
+
+    woken = env.manager.wake_marks(now=now + 120)
+
+    assert woken == [session.session_id]
+    summary = env.manager.summary(session.session_id)
+    assert summary["mark"] is None and summary["mark_until"] is None
+    assert summary["unread"] is True
+    assert summary["last_activity_at"] == now + 120
+    assert env.recorder.of(session.session_id, "session.updated")
+    assert env.manager.summary(later.session_id)["mark"] == "on_hold"
+
+
+@pytest.mark.anyio
+async def test_on_hold_without_date_never_wakes(make_env, env_cleanup):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    await env.manager.update(session.session_id, mark="on_hold")
+    assert env.manager.wake_marks(now=_now() + 10 * DAY) == []
+
+
+@pytest.mark.anyio
+async def test_listing_wakes_overdue_sessions(make_env, env_cleanup):
+    # An overdue wake (computer asleep) is applied by the next listing.
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    # Seen a while ago, so the wake (fresh activity) shows as unread even within the same second.
+    session.save(mark="on_hold", mark_until=_now() - 5, last_seen_at=_now() - 100)
+    [listed] = [s for s in env.manager.list_sessions() if s["session_id"] == session.session_id]
+    assert listed["mark"] is None
+    assert listed["unread"] is True

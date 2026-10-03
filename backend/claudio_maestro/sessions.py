@@ -398,6 +398,7 @@ def display_state(
     finished_after: float,
     cli_running: bool = False,
     subagents_running: bool = False,
+    marked: bool = False,
 ) -> DisplayState:
     """State shown to the user: running, waiting for them, or finished.
 
@@ -405,6 +406,7 @@ def display_state(
     as finished. A pending decision always waits for the user. A session without a
     client (`closed`) whose CLI is mid-turn is running, and so is an idle one whose
     client still runs a subagent (in the background, after the main turn ended).
+    A marked session (`marked`) never finishes by inactivity.
     """
     if state in ("connecting", "running"):
         return "running"
@@ -414,7 +416,9 @@ def display_state(
         return "running"
     if subagents_running and state == "idle":
         return "running"
-    if finished or now - last_activity_at > finished_after:
+    if finished:
+        return "finished"
+    if not marked and now - last_activity_at > finished_after:
         return "finished"
     return "waiting"
 
@@ -541,6 +545,7 @@ def describe(
             finished_after=finished_after,
             cli_running=cli_running,
             subagents_running=subagents_running,
+            marked=record.mark is not None,
         ),
         "unread": record.last_activity_at > (record.last_seen_at or 0),
         "awaiting_decision": state == "awaiting_decision",
@@ -1270,6 +1275,9 @@ class ActiveSession:
         self._touch()
         if self.record.finished:
             self.save(finished=False, finished_at=None)
+        if self.record.mark is not None:
+            # Writing to the session means working on it again: the mark goes, the priority stays.
+            self.save(mark=None, mark_note=None, mark_until=None)
         self.emit_updated()
         first = self._sent_messages == 0
         self._sent_messages += 1
@@ -2821,6 +2829,10 @@ class SessionManager:
 
         The context is only the in-memory value of active sessions: no history file is read.
         """
+        try:
+            self.wake_marks()
+        except Exception:
+            logger.exception("Falha ao acordar sessões em espera")
         query = f"SELECT {_COLUMNS} FROM sessions"
         params: tuple[Any, ...] = ()
         if project_id is not None:
@@ -3005,8 +3017,8 @@ class SessionManager:
         changes.update(mark_changes)
         if priority is not None and priority != session.record.priority:
             changes["priority"] = priority
-        if changes.get("finished") is True:
-            # Finishing drops the mark and the priority.
+        if finished is True:
+            # Finishing (even a session already finished) drops the mark and the priority.
             changes.update(mark=None, mark_note=None, mark_until=None, priority=False)
         elif (changes.get("mark") or changes.get("priority")) and finished is not True:
             # Marking a finished session reopens it, like "Reabrir".
@@ -3134,6 +3146,33 @@ class SessionManager:
                 )
         for session_id, _session in targets:
             self._sessions.pop(session_id, None)
+
+    def wake_marks(self, now: int | None = None) -> list[str]:
+        """Sessions on hold whose wake time came: drop the mark, count the wake as fresh
+        activity (unread, back in the queue) and announce each one. Returns their ids."""
+        now = _now() if now is None else now
+        with closing(db.connect(self._db_path)) as conn:
+            rows = conn.execute(
+                "SELECT session_id FROM sessions"
+                " WHERE mark = 'on_hold' AND mark_until IS NOT NULL AND mark_until <= ?"
+                " ORDER BY mark_until",
+                (now,),
+            ).fetchall()
+        woken: list[str] = []
+        for row in rows:
+            try:
+                session = self.get(row["session_id"])
+            except SessionNotFoundError:
+                continue
+            record = session.record
+            if record.mark != "on_hold" or record.mark_until is None or record.mark_until > now:
+                continue
+            session.save(
+                mark=None, mark_until=None, last_activity_at=max(record.last_activity_at, now)
+            )
+            session.emit_updated()
+            woken.append(record.session_id)
+        return woken
 
     async def close_idle(self) -> None:
         """Close clients idle longer than the timeout. They resume on the next message."""
@@ -3345,6 +3384,10 @@ class SessionManager:
                 await self.close_idle()
             except Exception:
                 logger.exception("Falha na varredura de sessões ociosas")
+            try:
+                self.wake_marks()
+            except Exception:
+                logger.exception("Falha ao acordar sessões em espera")
 
     async def shutdown(self) -> None:
         for session in list(self._sessions.values()):
