@@ -16,6 +16,8 @@ import TextBlock from './TextBlock.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import UserMessage from './UserMessage.vue'
 
+// A text block says its visible text grew; nested blocks pass it up.
+const emit = defineEmits<{ reveal: [] }>()
 const props = withDefaults(
   defineProps<{
     item: ConversationItem
@@ -41,7 +43,7 @@ const children = computed(() => (props.item.type === 'tool' ? props.childrenOf(p
 
 <template>
   <UserMessage v-if="item.type === 'user'" :item="item" />
-  <TextBlock v-else-if="item.type === 'text'" :item="item" />
+  <TextBlock v-else-if="item.type === 'text'" :item="item" @reveal="emit('reveal')" />
   <ThinkingBlock v-else-if="item.type === 'thinking'" :item="item" />
   <NoticeBlock v-else-if="item.type === 'notice'" :item="item" />
   <template v-else-if="item.type === 'tool'">
@@ -53,6 +55,7 @@ const children = computed(() => (props.item.type === 'tool' ? props.childrenOf(p
       :session-active="sessionActive"
       :children-of="childrenOf"
       :task-list="taskList"
+      @reveal="emit('reveal')"
     />
   </AgentTool>
   <div v-else class="flex min-w-0 flex-col gap-2">
@@ -71,6 +74,7 @@ const children = computed(() => (props.item.type === 'tool' ? props.childrenOf(p
         :session-active="sessionActive"
         :children-of="childrenOf"
       :task-list="taskList"
+        @reveal="emit('reveal')"
       />
     </div>
   </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onCodeCopyClick } from '../../conversation/codeCopy'
 import { renderMarkdown } from '../../conversation/markdown'
 import { useSmoothText } from '../../conversation/useSmoothText'
@@ -7,12 +7,16 @@ import type { TextItem } from '../../types/conversation'
 
 // The reply is running text over the background, with no box: only the work has a frame.
 const props = defineProps<{ item: TextItem }>()
+// Tells the conversation that the text on screen grew, so it can keep the end in view.
+const emit = defineEmits<{ reveal: [] }>()
 
 // Safe: markdown-it runs with `html: false`, so raw HTML in the text is escaped.
 // While the reply streams, the markdown comes from the paced text (one render per frame at most);
 // the copy button still uses the whole text that arrived.
 const shown = useSmoothText(() => props.item.text, () => props.item.streaming)
 const html = computed(() => renderMarkdown(shown.value))
+// After the DOM has the new text; nothing is said at mount, history appears whole.
+watch(shown, () => emit('reveal'), { flush: 'post' })
 
 const status = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined

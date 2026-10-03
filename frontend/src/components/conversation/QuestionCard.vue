@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { ApiError, answerPrompt, errorMessage } from '../../api/http'
 import type { PermissionPrompt, PromptDecision } from '../../types/conversation'
 
-const props = defineProps<{ sessionId: string; prompt: PermissionPrompt }>()
+const props = defineProps<{ sessionId: string; prompt: PermissionPrompt; live?: boolean }>()
 const emit = defineEmits<{ resolved: [] }>()
 
 const questions = computed(() => props.prompt.questions ?? [])
@@ -53,7 +53,7 @@ async function send(decision: 'answer' | 'deny') {
 </script>
 
 <template>
-  <div data-test="question-card" class="flex flex-col gap-3 rounded-xl border border-secondary/50 bg-panel p-3.5">
+  <div data-test="question-card" class="flex flex-col gap-3 rounded-xl border border-secondary/50 bg-panel p-3.5" :class="{ 'animate-decision': live }">
     <div class="flex items-center gap-2">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-secondary" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12" y2="17.01" /></svg>
       <span class="font-semibold text-secondary-soft">Pergunta do Claude</span>

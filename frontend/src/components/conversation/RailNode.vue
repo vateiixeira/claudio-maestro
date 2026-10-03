@@ -10,7 +10,8 @@ import IconWorkKind from '../icons/IconWorkKind.vue'
 // kind of action are a ring with the icon of the kind (the same icon as the action's header, in its
 // tone); running, waiting for the user (triangle with "!") and failed (circle with "×") look
 // different in shape, not only in color, and the state wins over the kind. The card next to it says it all again for screen readers.
-const props = defineProps<{ kind: NodeKind; align?: RailAlign }>()
+// `live` is for a node that arrives while the conversation is open: it pops in once.
+const props = defineProps<{ kind: NodeKind; align?: RailAlign; live?: boolean }>()
 
 const WORK_KINDS: Record<WorkKind, 'command' | 'file' | 'agent'> = {
   bash: 'command', tool: 'command', read: 'file', search: 'file', edit: 'file', agent: 'agent',
@@ -54,12 +55,12 @@ const tone = computed(() => {
 
 <template>
   <div data-test="rail-node" :data-kind="kind" aria-hidden="true" class="flex w-7 shrink-0 justify-center" :style="style">
-    <span v-if="dot" data-test="rail-dot" class="size-[7px] rounded-full shadow-[0_0_0_4px_var(--color-surface)]" :class="dot" />
+    <span v-if="dot" data-test="rail-dot" class="size-[7px] rounded-full shadow-[0_0_0_4px_var(--color-surface)]" :class="[dot, live && 'animate-pop']" />
     <span
       v-else
       data-test="rail-ring"
       class="flex shrink-0 items-center justify-center rounded-full bg-surface"
-      :class="[ringSize === 18 ? 'size-[18px]' : 'size-[22px]', kind === 'error' ? '' : 'border', tone]"
+      :class="[ringSize === 18 ? 'size-[18px]' : 'size-[22px]', kind === 'error' ? '' : 'border', tone, live && 'animate-pop']"
     >
       <IconThink v-if="kind === 'thinking'" :size="10" />
       <IconWorkKind v-else-if="workKind" :kind="workKind" :size="12" />

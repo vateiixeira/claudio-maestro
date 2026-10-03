@@ -142,3 +142,11 @@ describe('RailNode: alinhamento vertical', () => {
     expect(top('task') + 3.5).toBe(17)
   })
 })
+
+describe('RailNode: entrada ao vivo', () => {
+  it.each(['text', 'read', 'running', 'error'] as NodeKind[])('%s: o nó só ganha o pop quando é novo', (kind) => {
+    const shape = (w: ReturnType<typeof mount>) => w.find('[data-test="rail-dot"], [data-test="rail-ring"]')
+    expect(shape(mount(RailNode, { props: { kind } })).classes()).not.toContain('animate-pop')
+    expect(shape(mount(RailNode, { props: { kind, live: true } })).classes()).toContain('animate-pop')
+  })
+})

@@ -23,6 +23,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- A conversa ficou mais fluida: o texto chega num ritmo constante, itens novos entram suavemente, um pedido de decisão brilha uma vez ao chegar e linhas abrem sem pular. Com movimento reduzido no sistema, tudo é instantâneo.
 - O trilho da conversa mostra o tipo de cada item: um ponto para o texto, uma lâmpada para o raciocínio e o ícone da ação em cada bloco de trabalho. Rodando, esperando você (triângulo) e erro (círculo com ×) têm forma própria.
 - O que o Claude faz entre duas respostas aparece num bloco só; cada ação vira uma linha, e comandos que deram certo ficam em uma linha. O bloco abre sozinho quando algo falha.
 - Todas as ações do Claude (comando, leitura, busca, edição, ferramenta e subagente) têm o mesmo cabeçalho, com um tom discreto por tipo (azul-aço para comando, verde-água para arquivos, lilás para subagente) e o estado à direita.

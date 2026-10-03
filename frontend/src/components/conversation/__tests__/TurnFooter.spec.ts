@@ -7,6 +7,9 @@ import { jsonResponse, makeEvent, makeProject, makeSnapshot, routeFetch } from '
 import { useProjectsStore } from '../../../stores/projects'
 import { useGitStore } from '../../../stores/git'
 
+// The shortcut waits for the row it opens to finish growing before it scrolls.
+const openingWait = () => new Promise((resolve) => setTimeout(resolve, 260))
+
 const fake = vi.hoisted(() => ({ session: new Map<string, (e: unknown) => void>() }))
 vi.mock('../../../api/socket', () => ({
   useEventSocket: () => ({
@@ -50,7 +53,8 @@ async function mountWith(snapshot: Record<string, unknown>, fetches: Record<stri
   vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, ...snapshot })), ...fetches }))
   const router = createAppRouter(createMemoryHistory())
   await router.push('/sessions/s1')
-  const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] }, attachTo: document.body })
+  const w = mount(ConversationThread, { props: { id: 's1', visible: true }, // Real transition: the shortcut learns about openings from its hooks.
+    global: { plugins: [pinia, router], stubs: { transition: false } }, attachTo: document.body })
   await flushPromises()
   return w
 }
@@ -167,6 +171,7 @@ describe('rodapé aguardando background', () => {
     Element.prototype.scrollIntoView = scrollIntoView
     await button.trigger('click')
     await flushPromises()
+    await openingWait()
     const card = w.find('[data-subagent-id="first"]')
     expect(card.exists()).toBe(true)
     expect(scrollIntoView).toHaveBeenCalled()
@@ -211,6 +216,7 @@ describe('faixa com comandos em background', () => {
     Element.prototype.scrollIntoView = scrollIntoView
     await w.find('[data-test="subagent-row"]').trigger('click')
     await flushPromises()
+    await openingWait()
     const card = w.find('[data-subagent-id="b"]')
     expect(scrollIntoView).toHaveBeenCalled()
     expect(card.attributes('data-highlighted')).toBe('true')

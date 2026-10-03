@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch } from 'vue'
 import { SESSION_ID_KEY, useChangesPanelStore } from '../../stores/changesPanel'
 import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
 import { useEventSocket } from '../../api/socket'
@@ -15,6 +15,8 @@ import UserMessage from './UserMessage.vue'
 import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
 import { buildTurns, nodeKind, summaryText, tidyThinking, turnSummary } from '../../conversation/turns'
 import { groupNodeKind, workStatus } from '../../conversation/work'
+import { COLLAPSE_OPENING_KEY } from '../../conversation/collapseActivity'
+import { entryKey, isNearEnd, promptKey, turnKeys } from '../../conversation/liveItems'
 import WorkBlock from './WorkBlock.vue'
 import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
@@ -172,6 +174,19 @@ const turns = computed(() => {
     return { turn, done, last, waiting, summary, failed: done && !waiting && last && resultFailed.value }
   })
 })
+// What was already there when the conversation opened (or was switched to) is history and appears
+// at once; whatever shows up afterwards arrived live and enters with a motion. Rows that only
+// change (streaming text, a result arriving, a work block growing) keep their key and never re-enter.
+const historyKeys = shallowRef<ReadonlySet<string> | null>(null)
+watch(
+  () => (conv.value ? props.id : null),
+  (id) => {
+    historyKeys.value = id ? turnKeys(turns.value.map((t) => t.turn), conv.value?.prompts ?? []) : null
+  },
+  { immediate: true, flush: 'pre' },
+)
+const isLive = (key: string) => historyKeys.value !== null && !historyKeys.value.has(key)
+
 // Last finished reply of the assistant, for the polite live region.
 const announcement = computed(() => {
   const items = conv.value?.items ?? []
@@ -204,6 +219,12 @@ const waitingIds = computed(() => {
 const subagentEntries = computed(() => stripSubagents(deriveSubagents(conv.value?.items ?? [], sessionActive.value)))
 // The card the user picked in the strip: opened, marked for a moment and scrolled to.
 const HIGHLIGHT_MS = 2000
+// A bit more than the opening transition (--motion-enter, 200ms).
+const OPEN_WAIT_MS = 220
+let focusRun = 0
+// Counts the Collapse transitions that began; it only ever goes up, so an opening is seen even when another block closes at the same time.
+let collapseOpenings = 0
+provide(COLLAPSE_OPENING_KEY, () => { collapseOpenings++ })
 const subagentFocus = ref<SubagentFocus | null>(null)
 provide(SUBAGENT_FOCUS_KEY, subagentFocus)
 let focusTimer: ReturnType<typeof setTimeout> | null = null
@@ -220,13 +241,21 @@ async function goToSubagent(id: string) {
     cur = parent
   }
   if (focusTimer) clearTimeout(focusTimer)
+  const run = ++focusRun
   subagentFocus.value = null
   await nextTick()
+  // Blocks and rows open by growing (see Collapse): know whether this shortcut started any opening.
+  const before = collapseOpenings
   subagentFocus.value = { id, path }
   await nextTick()
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  // The card has no height until the transition ends: scrolling now would aim at an empty spot.
+  if (collapseOpenings > before && !reduce) {
+    await new Promise<void>((resolve) => setTimeout(resolve, OPEN_WAIT_MS))
+    if (unmounted || run !== focusRun) return
+  }
   const card = Array.from(scroller.value?.querySelectorAll<HTMLElement>('[data-subagent-id]') ?? []).find((el) => el.dataset.subagentId === id)
   if (card) {
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     card.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
     card.focus({ preventScroll: true })
   }
@@ -264,21 +293,44 @@ const OWN_SEND_WINDOW_MS = 5000
 let ownSendAt = 0
 const PROMPT_CARD = '[data-prompt-card]'
 const jumpLabel = computed(() => (unseen.value === 'prompt' && (conv.value?.prompts.length ?? 0) > 0 ? 'Pedido abaixo' : 'Novidades abaixo'))
+// A smooth scroll to the end takes a while and passes through positions far from it: until it
+// ends, moving down is the scroll following the end, not the user leaving it.
+const SMOOTH_WINDOW_MS = 600
+let smoothUntil = 0
+let lastTop = 0
+// Smooth, unless the system asks for less motion; while a smooth scroll runs, later follow-ups
+// retarget it instead of cutting it short.
+function scrollToEnd(el: HTMLElement, smooth: boolean) {
+  if (!el.scrollTo) {
+    el.scrollTop = el.scrollHeight
+    return
+  }
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const glide = !reduce && (smooth || Date.now() < smoothUntil)
+  if (glide) smoothUntil = Date.now() + SMOOTH_WINDOW_MS
+  el.scrollTo({ top: el.scrollHeight, behavior: glide ? 'smooth' : 'auto' })
+}
 function jumpToEnd() {
   const el = scroller.value
   if (!el) return
   const toPrompt = jumpLabel.value === 'Pedido abaixo'
   unseen.value = null
-  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  if (el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
-  else el.scrollTop = el.scrollHeight
+  scrollToEnd(el, true)
   // Whoever jumped for a request is sent to it: keyboard and screen reader users land on the card.
   if (toPrompt) el.querySelector<HTMLElement>(PROMPT_CARD)?.focus({ preventScroll: true })
+}
+// A reply being written (or catching up) grows the page without any event from the store: while the
+// user is pinned to the end, the end follows it. Opening a row of work says nothing here, so it never pulls.
+function onReveal() {
+  const el = scroller.value
+  if (el && atBottom.value) scrollToEnd(el, false)
 }
 function onScroll() {
   const el = scroller.value
   if (!el) return
-  atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+  const movedDown = el.scrollTop > lastTop
+  lastTop = el.scrollTop
+  atBottom.value = isNearEnd(el) || (Date.now() < smoothUntil && movedDown)
   if (atBottom.value) unseen.value = null
   scheduleTurnUpdate()
 }
@@ -357,7 +409,11 @@ watch(
     }
     await nextTick()
     const el = scroller.value
-    if (el) el.scrollTop = el.scrollHeight
+    // New content (an item or a request) glides to the end; a streamed token only keeps up.
+    // The first load (before is undefined) is not news: the history goes to the end at once.
+    const arrived = itemsBefore !== undefined && promptsBefore !== undefined
+      && ((items ?? 0) > itemsBefore || (prompts ?? 0) > promptsBefore)
+    if (el) scrollToEnd(el, arrived)
   },
 )
 
@@ -437,12 +493,12 @@ function resolvePrompt(promptId: string) {
               :tabindex="index === 0 ? -1 : undefined"
               class="flex scroll-mt-11 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
             >
-              <UserMessage v-if="turn.user" :item="turn.user" />
+              <UserMessage v-if="turn.user" :item="turn.user" :class="{ 'animate-enter': isLive(turn.user.id) }" />
               <div v-if="turn.entries.length" class="relative flex flex-col gap-[18px]">
                 <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
-                <div v-for="entry in turn.entries" :key="entry.kind === 'group' ? `group-${entry.id}` : entry.item.id" class="relative flex items-start gap-3">
+                <div v-for="entry in turn.entries" :key="entryKey(entry)" data-test="turn-entry" class="relative flex items-start gap-3" :class="{ 'animate-enter': isLive(entryKey(entry)) }">
                   <template v-if="entry.kind === 'group'">
-                    <RailNode :kind="groupNodeKind(entry.items, sessionActive, waitingIds)" align="group" />
+                    <RailNode :kind="groupNodeKind(entry.items, sessionActive, waitingIds)" align="group" :live="isLive(entryKey(entry))" />
                     <WorkBlock
                       class="min-w-0 grow"
                       :items="entry.items"
@@ -454,13 +510,14 @@ function resolvePrompt(promptId: string) {
                     />
                   </template>
                   <template v-else>
-                    <RailNode :kind="nodeKind(entry.item, sessionActive, waitingIds)" :align="railAlign(entry.item)" />
+                    <RailNode :kind="nodeKind(entry.item, sessionActive, waitingIds)" :align="railAlign(entry.item)" :live="isLive(entryKey(entry))" />
                     <div class="flex min-w-0 grow flex-col">
                       <ConversationBlock
                         :item="entry.item"
                         :session-active="sessionActive"
                         :children-of="tree.childrenOf"
                         :task-list="taskList"
+                        @reveal="onReveal"
                       />
                     </div>
                   </template>
@@ -498,6 +555,7 @@ function resolvePrompt(promptId: string) {
               v-if="prompt.kind === 'question'"
               :session-id="conv.sessionId"
               :prompt="prompt"
+              :live="isLive(promptKey(prompt.prompt_id))"
               @resolved="resolvePrompt(prompt.prompt_id)"
             />
             <PlanCard
@@ -507,6 +565,7 @@ function resolvePrompt(promptId: string) {
               v-else-if="prompt.kind === 'plan'"
               :session-id="conv.sessionId"
               :prompt="prompt"
+              :live="isLive(promptKey(prompt.prompt_id))"
               @resolved="resolvePrompt(prompt.prompt_id)"
             />
             <PermissionCard
@@ -516,6 +575,7 @@ function resolvePrompt(promptId: string) {
               v-else
               :session-id="conv.sessionId"
               :prompt="prompt"
+              :live="isLive(promptKey(prompt.prompt_id))"
               @resolved="resolvePrompt(prompt.prompt_id)"
             />
           </template>

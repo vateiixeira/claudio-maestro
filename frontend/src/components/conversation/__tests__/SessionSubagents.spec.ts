@@ -7,6 +7,9 @@ import { jsonResponse, makeEvent, makeProject, makeSnapshot, routeFetch } from '
 import { useProjectsStore } from '../../../stores/projects'
 import { useGitStore } from '../../../stores/git'
 
+// The shortcut waits for the row it opens to finish growing before it scrolls.
+const openingWait = () => new Promise((resolve) => setTimeout(resolve, 260))
+
 const fake = vi.hoisted(() => ({ session: new Map<string, (e: unknown) => void>() }))
 vi.mock('../../../api/socket', () => ({
   useEventSocket: () => ({
@@ -48,7 +51,8 @@ async function mountWith(snapshot: Record<string, unknown>) {
   vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, ...snapshot })) }))
   const router = createAppRouter(createMemoryHistory())
   await router.push('/sessions/s1')
-  const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] }, attachTo: document.body })
+  const w = mount(ConversationThread, { props: { id: 's1', visible: true }, // Real transition: the shortcut learns about openings from its hooks.
+    global: { plugins: [pinia, router], stubs: { transition: false } }, attachTo: document.body })
   await flushPromises()
   return w
 }
@@ -75,7 +79,8 @@ describe('faixa de subagentes na conversa', () => {
     vi.stubGlobal('fetch', fetchMock)
     const router = createAppRouter(createMemoryHistory())
     await router.push('/sessions/s1')
-    const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] }, attachTo: document.body })
+    const w = mount(ConversationThread, { props: { id: 's1', visible: true }, // Real transition: the shortcut learns about openings from its hooks.
+    global: { plugins: [pinia, router], stubs: { transition: false } }, attachTo: document.body })
     await flushPromises()
     expect(w.find('[data-test="interrupt"]').exists()).toBe(false)
     const stop = w.find('[data-test="subagent-stop"]')
@@ -124,6 +129,7 @@ describe('faixa de subagentes na conversa', () => {
     expect(w.find('[data-subagent-id="a"]').exists()).toBe(false)
     await w.findAll('[data-test="subagent-row"]')[0]!.trigger('click')
     await flushPromises()
+    await openingWait()
     const card = w.find('[data-subagent-id="a"]')
     expect(card.exists()).toBe(true)
     expect(scrollIntoView).toHaveBeenCalled()
@@ -173,5 +179,56 @@ describe('faixa de subagentes na conversa', () => {
     const outer = w.find('[data-subagent-id="outer"]')
     expect(outer.find('[data-test="subagent-children"]').isVisible()).toBe(true)
     expect(w.find('[data-subagent-id="inner"]').attributes('data-highlighted')).toBe('true')
+  })
+
+  describe('espera a linha abrir antes de rolar', () => {
+    const items = () => [user('u1'), agent('a', 'completed'), child('r', 'tu-a'), agent('b', 'running')]
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }))
+    afterEach(() => vi.useRealTimers())
+    const click = async (w: Awaited<ReturnType<typeof mountWith>>) => {
+      await w.findAll('[data-test="subagent-row"]')[0]!.trigger('click')
+      await vi.advanceTimersByTimeAsync(0)
+    }
+
+    it('quando o atalho abriu algo, rola e foca só depois da transição; o destaque já vale', async () => {
+      const w = await mountWith({ state: 'running', items: items() })
+      await click(w)
+      const card = w.find('[data-subagent-id="a"]')
+      expect(card.attributes('data-highlighted')).toBe('true')
+      expect(scrollIntoView).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(150)
+      expect(scrollIntoView).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView.mock.contexts[0]).toBe(card.element)
+      expect(scrollIntoView.mock.calls[0]![0]).toMatchObject({ behavior: 'smooth' })
+      expect(document.activeElement).toBe(card.element)
+    })
+
+    it('quando nada abriu (já estava aberto), rola na hora', async () => {
+      const w = await mountWith({ state: 'running', items: items() })
+      await click(w)
+      await vi.advanceTimersByTimeAsync(300)
+      scrollIntoView.mockClear()
+      await click(w)
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    })
+
+    it('com movimento reduzido não espera', async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {} }))
+      const w = await mountWith({ state: 'running', items: items() })
+      await click(w)
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView.mock.calls[0]![0]).toMatchObject({ behavior: 'auto' })
+    })
+
+    it('um segundo atalho durante a espera cancela a rolagem do primeiro', async () => {
+      const w = await mountWith({ state: 'running', items: items() })
+      await click(w)
+      await w.findAll('[data-test="subagent-row"]')[1]!.trigger('click')
+      await vi.advanceTimersByTimeAsync(300)
+      const targets = scrollIntoView.mock.contexts.map((el) => (el as HTMLElement).dataset.subagentId)
+      expect(targets).not.toContain('a')
+    })
   })
 })

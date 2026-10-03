@@ -161,3 +161,12 @@ describe('cartão de permissão', () => {
     })
   })
 })
+
+describe('entrada ao vivo do cartão de permissão', () => {
+  it('só leva a animação de decisão quando chegou ao vivo', () => {
+    const history = mount(PermissionCard, { props: { sessionId: 's1', prompt: prompt() } })
+    expect(history.find('[data-test="permission-card"]').classes()).not.toContain('animate-decision')
+    const live = mount(PermissionCard, { props: { sessionId: 's1', prompt: prompt(), live: true } })
+    expect(live.find('[data-test="permission-card"]').classes()).toContain('animate-decision')
+  })
+})

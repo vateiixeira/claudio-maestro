@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import Collapse from '../Collapse.vue'
+import { COLLAPSE_OPENING_KEY } from '../../conversation/collapseActivity'
 
 const mountCollapse = (open: boolean, stubTransition = true) =>
   mount(Collapse, {
@@ -37,5 +38,32 @@ describe('Collapse', () => {
     await w.setProps({ open: false })
     // Whether it is still leaving or already gone, the element was locked as soon as it began to leave.
     expect(grid.hasAttribute('inert')).toBe(true)
+  })
+})
+
+describe('Collapse avisa quando começa a abrir', () => {
+  const mountWithListener = (open: boolean) => {
+    const opening = vi.fn()
+    const w = mount(Collapse, {
+      props: { open },
+      slots: { default: '<p>dentro</p>' },
+      global: { stubs: { transition: false }, provide: { [COLLAPSE_OPENING_KEY as symbol]: opening } },
+    })
+    return { w, opening }
+  }
+
+  it('avisa a cada abertura, e não ao montar aberto nem ao fechar', async () => {
+    const { w, opening } = mountWithListener(true)
+    expect(opening).not.toHaveBeenCalled()
+    await w.setProps({ open: false })
+    expect(opening).not.toHaveBeenCalled()
+    await w.setProps({ open: true })
+    expect(opening).toHaveBeenCalledTimes(1)
+  })
+
+  it('sem quem escute, funciona do mesmo jeito', async () => {
+    const w = mountCollapse(false, false)
+    await w.setProps({ open: true })
+    expect(w.find('[data-test="inside"]').exists()).toBe(true)
   })
 })

@@ -233,3 +233,21 @@ describe('cartão de plano com passos', () => {
     expect(w.find('[data-test="reject-message"]').exists()).toBe(true)
   })
 })
+
+describe('entrada ao vivo dos cartões de pergunta e de plano', () => {
+  const planPrompt = (): PermissionPrompt => ({ prompt_id: 'p1', tool_name: 'ExitPlanMode', input: {}, can_always: false, kind: 'plan', plan: '# Plano' })
+
+  it('pergunta: a animação de decisão só vem com live', () => {
+    const history = mount(QuestionCard, { props: { sessionId: 's1', prompt: questionPrompt() } })
+    expect(history.find('[data-test="question-card"]').classes()).not.toContain('animate-decision')
+    const live = mount(QuestionCard, { props: { sessionId: 's1', prompt: questionPrompt(), live: true } })
+    expect(live.find('[data-test="question-card"]').classes()).toContain('animate-decision')
+  })
+
+  it('plano: a animação de decisão só vem com live', () => {
+    const history = mount(PlanCard, { props: { sessionId: 's1', prompt: planPrompt() } })
+    expect(history.find('[data-test="plan-card"]').classes()).not.toContain('animate-decision')
+    const live = mount(PlanCard, { props: { sessionId: 's1', prompt: planPrompt(), live: true } })
+    expect(live.find('[data-test="plan-card"]').classes()).toContain('animate-decision')
+  })
+})
