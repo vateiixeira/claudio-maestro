@@ -6,6 +6,7 @@ import SidebarSessionRow from '../SidebarSessionRow.vue'
 import { createAppRouter } from '../../../router'
 import { useProjectsStore } from '../../../stores/projects'
 import { clockNow } from '../../../minuteClock'
+import { tomorrowAt9 } from '../../../conversation/marks'
 import { makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
@@ -131,5 +132,32 @@ describe('linha de conversa do menu', () => {
   it('sem nested continua com 34px', async () => {
     const row = await mountRow({ session_id: 'n' })
     expect(row.classes()).toContain('min-h-[34px]')
+  })
+})
+
+describe('marcações na linha', () => {
+  it('mostra o ícone da marcação e a data curta da espera', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 9, 3, 14, 0))
+    clockNow.value = Date.now()
+    const row = await mountRow({ mark: 'on_hold', mark_until: tomorrowAt9(new Date()) })
+    expect(row.find('[data-test="row-mark"]').attributes('aria-label')).toBe('Em espera')
+    expect(row.find('[data-test="row-until"]').text()).toBe('amanhã')
+  })
+
+  it('bloqueada mostra a nota no title', async () => {
+    const row = await mountRow({ mark: 'blocked', mark_note: 'esperando CI' })
+    expect(row.find('[data-test="row-mark"]').attributes('title')).toBe('Bloqueada: esperando CI')
+  })
+
+  it('prioridade mostra a estrela', async () => {
+    const row = await mountRow({ priority: true })
+    expect(row.find('[data-test="row-priority"]').attributes('aria-label')).toBe('Prioridade')
+  })
+
+  it('sem marcação não mostra ícones', async () => {
+    const row = await mountRow({})
+    expect(row.find('[data-test="row-mark"]').exists()).toBe(false)
+    expect(row.find('[data-test="row-priority"]').exists()).toBe(false)
   })
 })

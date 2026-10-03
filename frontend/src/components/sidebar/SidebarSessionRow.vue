@@ -2,7 +2,9 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import MarkIcon from '../MarkIcon.vue'
 import { isQuietSession, sidebarItemClass, sidebarNestedItemClass } from './itemClass'
+import { markChipText, markLabels, untilShort } from '../../conversation/marks'
 import { formatActivity, formatElapsedShort } from '../../format'
 import { useMinuteClock } from '../../minuteClock'
 import { useProjectsStore } from '../../stores/projects'
@@ -18,6 +20,10 @@ const active = computed(() => route.name === 'session' && route.params.id === pr
 const prominent = computed(() => props.session.display_state === 'running' || (props.session.display_state === 'waiting' && !isQuietSession(props.session)))
 const now = useMinuteClock()
 const age = computed(() => (props.session.display_state === 'waiting' ? formatElapsedShort(props.session.last_activity_at, now.value) : null))
+const markTitle = computed(() => markChipText(props.session, new Date(now.value)) ?? undefined)
+const until = computed(() =>
+  props.session.mark === 'on_hold' && props.session.mark_until ? untilShort(props.session.mark_until, new Date(now.value)) : null,
+)
 const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.value, prominent.value) : sidebarItemClass(active.value)))
 </script>
 
@@ -35,6 +41,9 @@ const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.va
       :title="`Última interação ${formatActivity(session.last_activity_at)}`"
       class="shrink-0 font-mono text-[0.6875rem] text-fg-subtle tabular-nums"
     >{{ age }}</span>
+    <span v-if="until" data-test="row-until" class="shrink-0 font-mono text-[0.6875rem] text-fg-subtle">{{ until }}</span>
+    <span v-if="session.mark" data-test="row-mark" :title="markTitle" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
+    <span v-if="session.priority" data-test="row-priority" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" /></span>
     <span
       v-if="project && !hideProject"
       data-test="row-project"

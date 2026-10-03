@@ -2,14 +2,15 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import SidebarSessionRow from './SidebarSessionRow.vue'
-import { OPEN_MAX, openSessions } from './openList'
+import { OPEN_MAX, nowSessions } from './openList'
 import { isSectionCollapsed, setSectionCollapsed } from '../../sidebarCollapse'
 import { useSessionsStore } from '../../stores/sessions'
 import IconChevron from '../icons/IconChevron.vue'
 
 const sessions = useSessionsStore()
-// `all` is newest first; openSessions keeps that inside each band (waits for you, running, the rest).
-const open = computed(() => openSessions(sessions.all))
+// `all` is newest first; the order keeps that inside each band (waits for you, priority, running, the rest).
+// Sessions marked "Para revisar", "Em espera" or "Bloqueada" show in their own lanes, unless Claude has a request.
+const open = computed(() => nowSessions(sessions.all))
 const shown = computed(() => open.value.slice(0, OPEN_MAX))
 const collapsed = computed(() => isSectionCollapsed('open'))
 </script>

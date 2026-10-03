@@ -6,6 +6,7 @@ import ConnectionIndicator from '../ConnectionIndicator.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import SessionSearch from './SessionSearch.vue'
 import SidebarGroups from './SidebarGroups.vue'
+import SidebarLane from './SidebarLane.vue'
 import SidebarOpen from './SidebarOpen.vue'
 import SidebarSessionRow from './SidebarSessionRow.vue'
 import { looseOpenSessions } from './openList'
@@ -216,6 +217,8 @@ const itemClass = sidebarItemClass
       </template>
 
       <SidebarOpen />
+      <SidebarLane lane="review" title="Para revisar" />
+      <SidebarLane lane="later" title="Depois" start-collapsed />
     </div>
 
     <div class="flex h-12 shrink-0 items-center gap-1.5 border-t border-line px-2.5">

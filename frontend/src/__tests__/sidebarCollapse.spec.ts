@@ -64,4 +64,13 @@ describe('estado recolhido do menu', () => {
     expect(old.isCollapsed('project', 2)).toBe(true)
     expect(old.isSectionCollapsed('open')).toBe(false)
   })
+
+  it('seção que começa recolhida lembra quando foi aberta', async () => {
+    const mod = await import('../sidebarCollapse')
+    expect(mod.isSectionOpened('later')).toBe(false)
+    mod.setSectionOpened('later', true)
+    expect(mod.isSectionOpened('later')).toBe(true)
+    mod.setSectionOpened('later', false)
+    expect(mod.isSectionOpened('later')).toBe(false)
+  })
 })

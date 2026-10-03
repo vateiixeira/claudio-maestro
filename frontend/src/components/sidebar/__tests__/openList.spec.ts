@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OPEN_MAX, looseOpenSessions, openSessions } from '../openList'
+import { OPEN_MAX, laneSessions, looseOpenSessions, nowSessions, openSessions } from '../openList'
 import { makeSession } from '../../../test/factories'
 
 const ids = (list: { session_id: string }[]) => list.map((s) => s.session_id)
@@ -67,5 +67,32 @@ describe('abertas de um projeto fora dos agrupadores', () => {
   it('sem agrupadores, traz todas as abertas do projeto', () => {
     const all = [makeSession({ session_id: 'a', project_id: 3, group_id: 5 }), makeSession({ session_id: 'b', project_id: 3 })]
     expect(ids(looseOpenSessions(all, 3, new Set()))).toEqual(['a', 'b'])
+  })
+})
+
+describe('marcações na lista Abertas', () => {
+  it('Prioridade vem depois do que pede você e antes do que roda', () => {
+    const all = [
+      makeSession({ session_id: 'roda', display_state: 'running' }),
+      makeSession({ session_id: 'prio', priority: true }),
+      makeSession({ session_id: 'pede', display_state: 'waiting', unread: true }),
+    ]
+    expect(ids(openSessions(all))).toEqual(['pede', 'prio', 'roda'])
+  })
+  it('nowSessions tira as marcadas sem pedido; laneSessions separa revisar e depois', () => {
+    const all = [
+      makeSession({ session_id: 'a' }),
+      makeSession({ session_id: 'rev', mark: 'review' }),
+      makeSession({ session_id: 'esp', mark: 'on_hold' }),
+      makeSession({ session_id: 'blq', mark: 'blocked' }),
+      makeSession({ session_id: 'blq-pede', mark: 'blocked', pending_kind: 'tool' }),
+    ]
+    expect(ids(nowSessions(all))).toEqual(['blq-pede', 'a'])
+    expect(ids(laneSessions(all, 'review'))).toEqual(['rev'])
+    expect(ids(laneSessions(all, 'later'))).toEqual(['esp', 'blq'])
+  })
+  it('a árvore de projetos continua com as marcadas', () => {
+    const all = [makeSession({ session_id: 'esp', project_id: 1, mark: 'on_hold' })]
+    expect(ids(looseOpenSessions(all, 1, new Set()))).toEqual(['esp'])
   })
 })

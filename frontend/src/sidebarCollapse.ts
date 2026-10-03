@@ -54,3 +54,12 @@ export function setSectionCollapsed(name: string, value: boolean): void {
   collapsed.value = { ...collapsed.value, section: value ? [...rest, name] : rest }
   save()
 }
+
+/** Sections that start collapsed ("Depois") remember being opened, kept as "+name". */
+export function isSectionOpened(name: string): boolean {
+  return collapsed.value.section.includes(`+${name}`)
+}
+
+export function setSectionOpened(name: string, value: boolean): void {
+  setSectionCollapsed(`+${name}`, value)
+}
