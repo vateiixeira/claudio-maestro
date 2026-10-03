@@ -34,6 +34,14 @@ def test_sessions_have_worktree_columns(tmp_path: Path):
     assert {"history_dir", "worktree_name", "worktree_path", "git_branch"} <= cols
 
 
+def test_sessions_have_mark_columns(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        db.migrate(conn)
+        cols = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
+    assert {"mark", "mark_note", "mark_until", "priority"} <= cols.keys()
+    assert cols["priority"]["dflt_value"] == "0"
+
+
 def test_migrate_twice_is_harmless(tmp_path: Path):
     path = tmp_path / "test.db"
     with open_db(path) as conn:

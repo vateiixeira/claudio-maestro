@@ -128,6 +128,12 @@ class SessionOut(BaseModel):
     plan_done: bool = False
     # A turn was running when the app stopped and the session has no client now.
     interrupted: bool = False
+    # What the user plans to do with the session; None when unmarked.
+    mark: Literal["on_hold", "blocked", "review"] | None = None
+    mark_note: str | None = None
+    # When a session on hold wakes up (seconds); None without a date.
+    mark_until: int | None = None
+    priority: bool = False
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]

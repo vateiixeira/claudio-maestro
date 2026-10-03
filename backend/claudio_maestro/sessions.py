@@ -309,6 +309,14 @@ class SessionRecord:
     git_branch: str | None = None
     # A turn was running when the app last left this session (see INTERRUPTED_TEXT).
     turn_open: bool = False
+    # What the user plans to do with the session: "on_hold", "blocked", "review" or None.
+    mark: str | None = None
+    # Short note of a blocked session.
+    mark_note: str | None = None
+    # When a session on hold wakes up (seconds); None without a date.
+    mark_until: int | None = None
+    # Pinned above the others.
+    priority: bool = False
 
     @property
     def history_directory(self) -> str:
@@ -350,13 +358,14 @@ _COLUMNS = (
     + ", summary, first_prompt, title_custom, rename_pending, file_modified_at, app_modified_at"
     + ", model, effort, permission_mode, finished_at, plan_path, plan_link, group_id"
     + ", history_dir, worktree_name, worktree_path, git_branch, turn_open"
+    + ", mark, mark_note, mark_until, priority"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
     "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
     "plan_path", "plan_link", "history_dir", "turn_open",
 )
-_BOOL_FIELDS = ("finished", "title_custom", "rename_pending", "turn_open")
+_BOOL_FIELDS = ("finished", "title_custom", "rename_pending", "turn_open", "priority")
 
 
 def _record(row: sqlite3.Row) -> SessionRecord:

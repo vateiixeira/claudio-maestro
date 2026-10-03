@@ -163,6 +163,15 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         # last stopped (kept live; read at startup to show "Interrompida").
         "ALTER TABLE sessions ADD COLUMN turn_open INTEGER NOT NULL DEFAULT 0",
     ],
+    [
+        # Marcações de sessão: what the user plans to do with the session ("on_hold",
+        # "blocked", "review"), the note of a blocked one, when one on hold wakes up,
+        # and the priority pin.
+        "ALTER TABLE sessions ADD COLUMN mark TEXT",
+        "ALTER TABLE sessions ADD COLUMN mark_note TEXT",
+        "ALTER TABLE sessions ADD COLUMN mark_until INTEGER",
+        "ALTER TABLE sessions ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)
