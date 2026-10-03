@@ -51,6 +51,11 @@ const rowRefs = new Map<string, InstanceType<typeof InboxTriageRow>>()
 const announcement = ref('')
 const kbdClass = 'rounded-sm border border-line-strong px-1.5 py-0.5 font-mono text-[0.6875rem] text-fg-muted'
 let focusedIndex = -1
+// After the cursor moves by itself (a decision, or its row leaving the list) `a` and `d` wait a moment, so a key
+// already on its way, or a double tap, cannot answer the row that just came under the cursor.
+const DECIDE_LOCK_MS = 300
+let decideLockedUntil = 0
+const lockDeciding = () => { decideLockedUntil = Date.now() + DECIDE_LOCK_MS }
 
 function setRow(id: string, el: unknown) {
   if (el) rowRefs.set(id, el as InstanceType<typeof InboxTriageRow>)
@@ -77,11 +82,15 @@ watch(flat, (rows) => {
   if (!focusedId.value) return
   const index = rows.findIndex((s) => s.session_id === focusedId.value)
   if (index !== -1) focusedIndex = index
-  else focusRow(rows.length ? rows[Math.min(Math.max(focusedIndex, 0), rows.length - 1)]!.session_id : null)
+  else {
+    lockDeciding()
+    focusRow(rows.length ? rows[Math.min(Math.max(focusedIndex, 0), rows.length - 1)]!.session_id : null)
+  }
 })
 watch(focusedId, (id) => { focusedIndex = id ? flat.value.findIndex((s) => s.session_id === id) : -1 })
 
 async function decideFocused(choice: 'allow_once' | 'deny') {
+  if (Date.now() < decideLockedUntil) return
   const session = flat.value.find((s) => s.session_id === focusedId.value)
   if (!session) return
   if (session.pending_kind === 'question' || session.pending_kind === 'plan') {
@@ -93,7 +102,10 @@ async function decideFocused(choice: 'allow_once' | 'deny') {
   announcement.value = `${choice === 'allow_once' ? 'Permitido uma vez' : 'Negado'}: ${session.title}`
   const rows = flat.value
   const at = rows.findIndex((s) => s.session_id === session.session_id)
-  if (at !== -1 && at < rows.length - 1) focusRow(rows[at + 1]!.session_id)
+  if (at !== -1 && at < rows.length - 1) {
+    lockDeciding()
+    focusRow(rows[at + 1]!.session_id)
+  }
 }
 
 // The arrows scroll the page, so they only move the cursor while the focus is in the list.
@@ -112,8 +124,9 @@ function onKey(event: KeyboardEvent) {
   } else if (isBareShortcut(event, 'k') || (inList(event) && isBareShortcut(event, 'ArrowUp'))) {
     event.preventDefault()
     move(-1)
-  } else if (!inList(event)) {
-    // Deciding needs the list to hold the focus: after a click elsewhere, a stray key must not answer a tool.
+  } else if (event.target !== listEl.value || event.repeat) {
+    // Deciding needs the list itself to hold the focus (a link or button inside it, or a click elsewhere, leaves the
+    // cursor and the focus on different rows), and a held key must not answer row after row.
     return
   } else if (isBareShortcut(event, 'a')) {
     event.preventDefault()

@@ -375,6 +375,87 @@ describe('Inbox: triagem pelo teclado', () => {
     expect(keys.get('kbd').classes()).toContain('border-line-strong')
   })
 
+  describe('segurança das teclas a e d', () => {
+    const twoTools = () => useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 't1', title: 'Ferramenta 1', display_state: 'waiting', pending_kind: 'tool', pending_permission: prompt('p1'), last_activity_at: now }),
+      makeSession({ session_id: 't2', title: 'Ferramenta 2', display_state: 'waiting', pending_kind: 'tool', pending_permission: prompt('p2', 'Edit'), last_activity_at: now - 20 }),
+    ])
+    afterEach(() => vi.useRealTimers())
+
+    it('a tecla repetida (segurar a ou d) não decide nada', async () => {
+      const { wrapper } = await mountAttached()
+      await key(wrapper, 'j')
+      await listbox(wrapper).trigger('keydown', { key: 'a', repeat: true })
+      await listbox(wrapper).trigger('keydown', { key: 'd', repeat: true })
+      await flushPromises()
+      expect(posts()).toHaveLength(0)
+    })
+
+    it('logo depois de o cursor descer sozinho, a e d não decidem; passado o intervalo, voltam a valer', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      twoTools()
+      const { wrapper } = await mountAttached()
+      await key(wrapper, 'j')
+      await key(wrapper, 'a')
+      expect(posts()).toHaveLength(1)
+      expect(focusedTitle(wrapper)).toBe('Ferramenta 2')
+
+      await key(wrapper, 'a')
+      await key(wrapper, 'd')
+      expect(posts()).toHaveLength(1)
+
+      vi.setSystemTime(Date.now() + 400)
+      await key(wrapper, 'a')
+      expect(posts()).toHaveLength(2)
+      expect(posts()[1]![0]).toBe('/api/sessions/t2/prompts/p2')
+    })
+
+    it('o mesmo vale quando a linha em foco some da lista e o cursor passa para a vizinha', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      twoTools()
+      const { wrapper } = await mountAttached()
+      await key(wrapper, 'j')
+      useSessionsStore(pinia).setForProject(1, [
+        makeSession({ session_id: 't2', title: 'Ferramenta 2', display_state: 'waiting', pending_kind: 'tool', pending_permission: prompt('p2', 'Edit'), last_activity_at: now - 20 }),
+      ])
+      await flushPromises()
+      expect(focusedTitle(wrapper)).toBe('Ferramenta 2')
+
+      await key(wrapper, 'a')
+      expect(posts()).toHaveLength(0)
+
+      vi.setSystemTime(Date.now() + 400)
+      await key(wrapper, 'a')
+      expect(posts()).toHaveLength(1)
+    })
+
+    it('com o foco num link de outra linha, a e d não decidem a linha do cursor', async () => {
+      const { wrapper } = await mountAttached()
+      await key(wrapper, 'j')
+      const link = wrapper.get('#inbox-option-t2').get('[data-test="row-link"]')
+      ;(link.element as HTMLElement).focus()
+      await link.trigger('keydown', { key: 'a' })
+      await link.trigger('keydown', { key: 'd' })
+      await flushPromises()
+      expect(posts()).toHaveLength(0)
+    })
+  })
+
+  it('a linha de uma ferramenta mostra o comando, em mono, truncado e com o texto inteiro no title', async () => {
+    const command = 'rm -rf /tmp/build && ' + 'x'.repeat(150)
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 't1', title: 'Ferramenta 1', display_state: 'waiting', pending_kind: 'tool', pending_permission: { ...prompt('p1'), summary: command }, last_activity_at: now }),
+      makeSession({ session_id: 'q1', title: 'Pergunta 1', display_state: 'waiting', pending_kind: 'question', last_activity_at: now - 10 }),
+    ])
+    const { wrapper } = await mountAttached()
+    const summary = wrapper.get('#inbox-option-t1').get('[data-test="row-pending-summary"]')
+    expect(summary.text()).toBe(command)
+    expect(summary.attributes('title')).toBe(command)
+    expect(summary.classes()).toEqual(expect.arrayContaining(['font-mono', 'truncate']))
+    expect(wrapper.get('#inbox-option-t1').get('[data-test="waiting-reason"]').text()).toContain('Bash')
+    expect(wrapper.get('#inbox-option-q1').find('[data-test="row-pending-summary"]').exists()).toBe(false)
+  })
+
   it('se a conversa em foco sai da lista, o foco fica na vizinha', async () => {
     const { wrapper } = await mountAttached()
     await key(wrapper, 'j')

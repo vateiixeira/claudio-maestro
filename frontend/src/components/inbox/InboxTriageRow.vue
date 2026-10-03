@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import ConversationRow from '../conversation/ConversationRow.vue'
+import { waitingReason } from '../../conversationList'
 import { usePendingDecision } from '../../conversation/pendingDecision'
 import type { Session } from '../../types/api'
 
@@ -38,6 +39,17 @@ defineExpose({ decide, canDecide })
     <ConversationRow :session="session" variant="inbox" :focused="focused" @error="emit('error', $event)">
       <template v-if="decision.answered.value" #status>
         <span data-test="row-decided" class="shrink-0 text-xs text-fg-muted">{{ verdict === 'allow_once' ? 'Permitido uma vez' : verdict === 'deny' ? 'Negado' : 'Respondido' }}</span>
+      </template>
+      <template v-else-if="session.pending_kind === 'tool' && decision.pending.value" #status>
+        <span class="flex min-w-0 max-w-[24rem] shrink items-center gap-2 text-xs">
+          <span data-test="waiting-reason" class="shrink-0 text-secondary-soft">{{ waitingReason(session) }}</span>
+          <span
+            v-if="decision.pending.value.summary"
+            data-test="row-pending-summary"
+            :title="decision.pending.value.summary"
+            class="min-w-0 truncate font-mono text-fg-muted"
+          >{{ decision.pending.value.summary }}</span>
+        </span>
       </template>
       <template v-if="session.pending_kind === 'tool' && decision.pending.value && !decision.answered.value" #actions>
         <button
