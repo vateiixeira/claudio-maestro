@@ -14,7 +14,9 @@ import { useSessionsStore } from '../stores/sessions'
 import IconPlus from '../components/icons/IconPlus.vue'
 
 const PAGE = 100
-type StateFilter = 'ativas' | 'finalizadas' | 'todas'
+type StateFilter = 'ativas' | 'finalizadas' | 'em-espera' | 'bloqueadas' | 'para-revisar' | 'prioridade' | 'todas'
+const STATE_FILTERS: StateFilter[] = ['ativas', 'finalizadas', 'em-espera', 'bloqueadas', 'para-revisar', 'prioridade']
+const MARK_OF: Partial<Record<StateFilter, string>> = { 'em-espera': 'on_hold', bloqueadas: 'blocked', 'para-revisar': 'review' }
 
 const route = useRoute()
 const router = useRouter()
@@ -27,8 +29,8 @@ const newConversation = useNewConversationStore()
 
 const text = (v: unknown) => (typeof v === 'string' ? v : '')
 const state = computed<StateFilter>(() => {
-  const v = text(route.query.estado)
-  return v === 'ativas' || v === 'finalizadas' ? v : 'todas'
+  const v = text(route.query.estado) as StateFilter
+  return STATE_FILTERS.includes(v) ? v : 'todas'
 })
 const projectId = computed(() => text(route.query.projeto))
 const search = computed(() => text(route.query.busca))
@@ -69,6 +71,9 @@ const filtered = computed(() => {
   return sessions.all.filter((s) => {
     if (state.value === 'ativas' && s.display_state === 'finished') return false
     if (state.value === 'finalizadas' && s.display_state !== 'finished') return false
+    const mark = MARK_OF[state.value]
+    if (mark && s.mark !== mark) return false
+    if (state.value === 'prioridade' && !s.priority) return false
     if (projectId.value && s.project_id !== Number(projectId.value)) return false
     if (groupFilter.value === 'sem' && s.group_id != null) return false
     if (groupFilter.value && groupFilter.value !== 'sem' && String(s.group_id) !== groupFilter.value) return false
@@ -101,6 +106,10 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
         <option value="todas">Todas</option>
         <option value="ativas">Ativas</option>
         <option value="finalizadas">Finalizadas</option>
+        <option value="em-espera">Em espera</option>
+        <option value="bloqueadas">Bloqueadas</option>
+        <option value="para-revisar">Para revisar</option>
+        <option value="prioridade">Prioridade</option>
       </select>
     </div>
     <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>

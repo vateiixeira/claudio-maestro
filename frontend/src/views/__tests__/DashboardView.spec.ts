@@ -201,3 +201,31 @@ describe('Dashboard: bloco Agora limitado', () => {
     expect(wrapper.find('[data-test="stat-waiting"] span').text()).toBe('2')
   })
 })
+
+describe('Dashboard com marcações', () => {
+  it('"Aguardando você" ignora em espera e bloqueada sem pedido, e há card Para revisar', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'livre', unread: true, last_activity_at: now }),
+      makeSession({ session_id: 'espera', unread: true, mark: 'on_hold', last_activity_at: now }),
+      makeSession({ session_id: 'blq', mark: 'blocked', state: 'awaiting_decision', awaiting_decision: true, pending_kind: 'question', last_activity_at: now }),
+      makeSession({ session_id: 'rev1', mark: 'review', last_activity_at: now }),
+      makeSession({ session_id: 'rev2', mark: 'review', last_activity_at: now }),
+    ])
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.find('[data-test="stat-waiting"]').text()).toContain('2')
+    const review = wrapper.find('[data-test="stat-review"]')
+    expect(review.text()).toContain('2')
+    expect(review.text()).toContain('Para revisar')
+    expect(review.attributes('href')).toBe('/inbox?aba=para-revisar')
+  })
+
+  it('cards de Agora não mostram sessões em Depois', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', title: 'Comum', display_state: 'running', state: 'running', last_activity_at: now }),
+      makeSession({ session_id: 'b', title: 'Guardada', display_state: 'running', state: 'running', mark: 'on_hold', last_activity_at: now }),
+    ])
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.findAll('[data-test="now-card"]').map((c) => c.find('a').text())).toEqual(['Comum'])
+    expect(wrapper.find('[data-test="stat-running"]').text()).toContain('2')
+  })
+})

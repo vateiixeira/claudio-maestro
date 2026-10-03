@@ -8,6 +8,7 @@ import ConversationRow from '../components/conversation/ConversationRow.vue'
 import DisplayStateIcon from '../components/DisplayStateIcon.vue'
 import BranchLabel from '../components/git/BranchLabel.vue'
 import { getActivity } from '../api/http'
+import { markLane } from '../conversation/marks'
 import { needsYou } from '../conversation/needsYou'
 import { useLoadState } from '../loadState'
 import { changedCount, repoLabel, useGitStore } from '../stores/git'
@@ -21,7 +22,8 @@ const git = useGitStore()
 const loadState = useLoadState()
 
 const NOW_LIMIT = 6
-const active = computed(() => sessions.all.filter((s) => s.display_state === 'running' || s.display_state === 'waiting'))
+// Only what is for now or for review gets a card; sessions on hold or blocked stay out.
+const active = computed(() => sessions.all.filter((s) => (s.display_state === 'running' || s.display_state === 'waiting') && markLane(s) !== 'later'))
 // Pending requests first, then running, then the rest of the waiting ones; newest first inside each group.
 const nowRank = (s: Session) => (s.awaiting_decision || s.pending_kind != null ? 0 : s.display_state === 'running' ? 1 : 2)
 const nowCards = computed(() =>
@@ -29,10 +31,12 @@ const nowCards = computed(() =>
     .sort((a, b) => nowRank(a) - nowRank(b) || b.last_activity_at - a.last_activity_at)
     .slice(0, NOW_LIMIT),
 )
-const running = computed(() => active.value.filter((s) => s.display_state === 'running').length)
+// "Running" is a fact, not a queue: it counts the ones on hold too.
+const running = computed(() => sessions.all.filter((s) => s.display_state === 'running').length)
 // Only the waits that need you count, the same rule as the sidebar.
-const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s)
+const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s) && markLane(s) === 'now'
 const waiting = computed(() => active.value.filter(isWaitingOnYou).length)
+const toReview = computed(() => sessions.all.filter((s) => s.display_state !== 'finished' && markLane(s) === 'review').length)
 const startOfToday = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000 }
 const finishedToday = computed(() => sessions.all.filter((s) => s.finished && (s.finished_at ?? 0) >= startOfToday()).length)
 const changedFiles = (projectId: number) => git.reposFor(projectId).reduce((sum, r) => sum + changedCount(r), 0)
@@ -81,9 +85,10 @@ function scrollToProjects() {
       </template>
     </section>
 
-    <section v-if="loadState === 'ready'" aria-label="Números" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <section v-if="loadState === 'ready'" aria-label="Números" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <RouterLink data-test="stat-running" to="/inbox?aba=em-execucao" class="flex flex-col rounded-lg border border-line bg-panel p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ running }}</span><span class="text-sm text-fg-muted">Em execução</span></RouterLink>
       <RouterLink data-test="stat-waiting" to="/inbox?aba=pede-voce" class="flex flex-col rounded-lg border border-line bg-panel p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ waiting }}</span><span class="text-sm text-fg-muted">Aguardando você</span></RouterLink>
+      <RouterLink data-test="stat-review" to="/inbox?aba=para-revisar" class="flex flex-col rounded-lg border border-line bg-panel p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ toReview }}</span><span class="text-sm text-fg-muted">Para revisar</span></RouterLink>
       <RouterLink data-test="stat-finished-today" to="/sessions?estado=finalizadas" class="flex flex-col rounded-lg border border-line bg-panel p-4 no-underline hover:bg-card"><span class="text-3xl font-semibold text-fg">{{ finishedToday }}</span><span class="text-sm text-fg-muted">Finalizadas hoje</span></RouterLink>
       <button type="button" data-test="stat-projects-changes" class="flex flex-col rounded-lg border border-line bg-panel p-4 text-left hover:bg-card" @click="scrollToProjects"><span class="text-3xl font-semibold text-fg">{{ projectsWithChanges }}</span><span class="text-sm text-fg-muted">Projetos com alterações</span></button>
     </section>

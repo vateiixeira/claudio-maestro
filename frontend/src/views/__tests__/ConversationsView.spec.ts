@@ -208,3 +208,25 @@ describe('Conversas', () => {
     })
   })
 })
+
+describe('filtros de marcação', () => {
+  beforeEach(() => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'e', title: 'Espera', mark: 'on_hold', last_activity_at: now }),
+      makeSession({ session_id: 'b', title: 'Bloq', mark: 'blocked', last_activity_at: now - 1 }),
+      makeSession({ session_id: 'r', title: 'Rev', mark: 'review', priority: true, last_activity_at: now - 2 }),
+      makeSession({ session_id: 'n', title: 'Nada', last_activity_at: now - 3 }),
+    ])
+  })
+  const titles = (w: Awaited<ReturnType<typeof mountList>>['wrapper']) => w.findAll('[data-test="row-link"]').map((r) => r.text())
+
+  it.each([
+    ['em-espera', ['Espera']],
+    ['bloqueadas', ['Bloq']],
+    ['para-revisar', ['Rev']],
+    ['prioridade', ['Rev']],
+  ])('?estado=%s mostra só as marcadas assim', async (estado, expected) => {
+    const { wrapper } = await mountList(`/sessions?estado=${estado}`)
+    expect(titles(wrapper)).toEqual(expected)
+  })
+})

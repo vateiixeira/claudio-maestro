@@ -58,4 +58,12 @@ describe('próxima conversa que aguarda você', () => {
     expect(nextNeedsYou([waiting('a', 1)], 'a')).toBeNull()
     expect(nextNeedsYou([], 'a')).toBeNull()
   })
+
+  it('pula as sessões em espera sem pedido', () => {
+    const all = [
+      makeSession({ session_id: 'a', display_state: 'waiting', unread: true, mark: 'on_hold' }),
+      makeSession({ session_id: 'b', display_state: 'waiting', unread: true }),
+    ]
+    expect(nextNeedsYou(all, null)?.session_id).toBe('b')
+  })
 })

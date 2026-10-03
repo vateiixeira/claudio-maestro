@@ -77,3 +77,32 @@ describe('grupos por data', () => {
     ])
   })
 })
+
+describe('Inbox com marcações', () => {
+  const waitingUnread = { display_state: 'waiting' as const, unread: true }
+  it('Aguardando você deixa de fora em espera, bloqueada e para revisar sem pedido', () => {
+    expect(inInbox(makeSession({ ...waitingUnread, mark: 'on_hold' }), 'pede-voce')).toBe(false)
+    expect(inInbox(makeSession({ ...waitingUnread, mark: 'blocked' }), 'pede-voce')).toBe(false)
+    expect(inInbox(makeSession({ ...waitingUnread, mark: 'review' }), 'pede-voce')).toBe(false)
+  })
+  it('pedido do Claude volta para Aguardando você mesmo marcada', () => {
+    expect(inInbox(makeSession({ display_state: 'waiting', mark: 'on_hold', pending_kind: 'question' }), 'pede-voce')).toBe(true)
+  })
+  it('Não lidas deixa de fora só o que está em Depois', () => {
+    expect(inInbox(makeSession({ ...waitingUnread, mark: 'on_hold' }), 'nao-lidas')).toBe(false)
+    expect(inInbox(makeSession({ ...waitingUnread, mark: 'review' }), 'nao-lidas')).toBe(true)
+  })
+  it('abas Para revisar e Depois', () => {
+    expect(inInbox(makeSession({ mark: 'review' }), 'para-revisar')).toBe(true)
+    expect(inInbox(makeSession({ mark: 'on_hold' }), 'depois')).toBe(true)
+    expect(inInbox(makeSession({ mark: 'blocked' }), 'depois')).toBe(true)
+    expect(inInbox(makeSession({ mark: 'on_hold' }), 'para-revisar')).toBe(false)
+    expect(inInbox(makeSession(), 'depois')).toBe(false)
+  })
+  it('Todas inclui as marcadas', () => {
+    expect(inInbox(makeSession({ display_state: 'waiting', mark: 'on_hold' }), 'todas')).toBe(true)
+  })
+  it('a ordem das abas', () => {
+    expect(INBOX_TABS.map((t) => t.label)).toEqual(['Aguardando você', 'Não lidas', 'Em execução', 'Para revisar', 'Depois', 'Todas'])
+  })
+})
