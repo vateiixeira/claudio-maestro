@@ -67,6 +67,28 @@ describe('tela de preferências', () => {
     expect(w.find('#pref-editor').exists()).toBe(false)
   })
 
+  it('a aba Notificações abre pela URL e tem a ordem Geral, Agente, Notificações nas setas', async () => {
+    stub({ preferences: {} })
+    vi.stubGlobal('Notification', undefined)
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias')
+    const w = mount(PreferencesView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="tab-notifications"]').text()).toBe('Notificações')
+    await w.find('[data-test="tab-notifications"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.aba).toBe('notificacoes')
+    expect(w.find('[data-test="tab-notifications"]').attributes('aria-selected')).toBe('true')
+    expect(w.find('[data-test="notif-unsupported"]').exists()).toBe(true)
+    expect(w.find('#pref-editor').exists()).toBe(false)
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
+    await flushPromises()
+    expect(w.find('[data-test="tab-general"]').attributes('aria-selected')).toBe('true')
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
+    await flushPromises()
+    expect(router.currentRoute.value.query.aba).toBe('notificacoes')
+  })
+
   it('a aba ativa vem da URL e as setas trocam de aba', async () => {
     stub({ preferences: {} })
     const router = createAppRouter(createMemoryHistory())

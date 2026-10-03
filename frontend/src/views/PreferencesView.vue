@@ -3,16 +3,18 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DigestAgentPreferences from '../components/preferences/DigestAgentPreferences.vue'
 import GeneralPreferences from '../components/preferences/GeneralPreferences.vue'
+import NotificationPreferences from '../components/preferences/NotificationPreferences.vue'
 
 const TABS = [
-  { id: 'geral', label: 'Geral' },
-  { id: 'agente', label: 'Agente de resumos' },
+  { id: 'geral', label: 'Geral', test: 'tab-general' },
+  { id: 'agente', label: 'Agente de resumos', test: 'tab-agent' },
+  { id: 'notificacoes', label: 'Notificações', test: 'tab-notifications' },
 ] as const
 type Tab = (typeof TABS)[number]['id']
 
 const route = useRoute()
 const router = useRouter()
-const tab = computed<Tab>(() => (route.query.aba === 'agente' ? 'agente' : 'geral'))
+const tab = computed<Tab>(() => TABS.find((t) => t.id === route.query.aba)?.id ?? 'geral')
 
 function select(id: Tab) {
   if (id === tab.value) return
@@ -43,7 +45,7 @@ function onKey(event: KeyboardEvent) {
             :key="t.id"
             type="button"
             role="tab"
-            :data-test="t.id === 'geral' ? 'tab-general' : 'tab-agent'"
+            :data-test="t.test"
             :aria-selected="tab === t.id"
             :aria-controls="`panel-${t.id}`"
             :tabindex="tab === t.id ? 0 : -1"
@@ -55,7 +57,8 @@ function onKey(event: KeyboardEvent) {
       </header>
       <section :id="`panel-${tab}`" role="tabpanel" :aria-labelledby="`tab-${tab}`">
         <GeneralPreferences v-if="tab === 'geral'" />
-        <DigestAgentPreferences v-else />
+        <DigestAgentPreferences v-else-if="tab === 'agente'" />
+        <NotificationPreferences v-else />
       </section>
     </div>
   </div>
