@@ -106,6 +106,15 @@ describe('painel Detalhes', () => {
     expect(order).toEqual(['details-properties', 'details-plan', 'details-changes'])
   })
 
+  // Content marked sr-only (position: absolute) inside the scrolling body must stay inside it;
+  // otherwise it stretches the page and the whole window scrolls (seen on 1080p screens).
+  it('o corpo rolável é o bloco de contenção do que tem posição absoluta', async () => {
+    const wrapper = await mountPanel()
+
+    const body = wrapper.find('[data-test="details-body"]')
+    expect(body.classes()).toEqual(expect.arrayContaining(['overflow-y-auto', 'relative']))
+  })
+
   it('sem plano, não há seção Plano', async () => {
     const wrapper = await mountPanel()
     expect(wrapper.find('[data-test="details-plan"]').exists()).toBe(false)

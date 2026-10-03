@@ -122,7 +122,7 @@ async function openPlan() {
         :style="{ width: plan.total > 0 ? `${Math.min(100, (plan.done / plan.total) * 100)}%` : '0%' }"
       />
     </div>
-    <ol v-if="open && tasks.length" ref="list" class="m-0 flex list-none flex-col gap-0.5 p-0 pt-1" :class="inPanel ? '' : 'max-h-56 overflow-y-auto'">
+    <ol v-if="open && tasks.length" ref="list" class="relative m-0 flex list-none flex-col gap-0.5 p-0 pt-1" :class="inPanel ? '' : 'max-h-56 overflow-y-auto'">
       <li
         v-for="(task, index) in tasks"
         :key="index"
