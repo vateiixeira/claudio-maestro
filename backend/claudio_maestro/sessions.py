@@ -159,6 +159,8 @@ DisplayState = Literal["running", "waiting", "finished"]
 # States in which the session has a client of the app.
 _WITH_CLIENT: tuple[str, ...] = ("idle", "running", "awaiting_decision")
 DISPLAY_STATES: tuple[str, ...] = ("running", "waiting", "finished")
+MARKS: tuple[str, ...] = ("on_hold", "blocked", "review")
+MARK_NOTE_MAX = 80
 
 Publish = Callable[[dict[str, Any]], None]
 HistoryExists = Callable[[str, str], bool]
@@ -189,6 +191,8 @@ APP_WRITE_TOLERANCE = 2  # seconds
 PROJECT_CLOSE_WAIT = 30.0  # seconds
 DEFAULT_FINISHED_AFTER_DAYS = 3.0
 DAY_SECONDS = 86_400
+# Farthest wake time accepted for a session on hold.
+MARK_UNTIL_MAX = 365 * DAY_SECONDS
 # Context window of a model; ids ending in "[1m]" have the large one.
 DEFAULT_CONTEXT_WINDOW = 200_000
 LARGE_CONTEXT_WINDOW = 1_000_000
@@ -260,6 +264,10 @@ class RejectMessageRequiredError(SessionError):
 
 
 class InvalidImageError(SessionError):
+    pass
+
+
+class InvalidMarkError(SessionError):
     pass
 
 
@@ -409,6 +417,40 @@ def display_state(
     if finished or now - last_activity_at > finished_after:
         return "finished"
     return "waiting"
+
+
+def resolve_mark(
+    record: SessionRecord,
+    *,
+    mark: str | None | EllipsisType,
+    mark_note: str | None | EllipsisType,
+    mark_until: int | None | EllipsisType,
+    now: int,
+) -> dict[str, Any]:
+    """Record fields a mark request changes; `...` keeps the current value.
+
+    Changing `mark` drops the note and the wake time not sent along. A note needs
+    `blocked`, a wake time `on_hold`; a wake time sent must be in the future and at
+    most MARK_UNTIL_MAX away. Raises InvalidMarkError."""
+    if mark is ... and mark_note is ... and mark_until is ...:
+        return {}
+    new_mark = record.mark if mark is ... else mark
+    if new_mark is not None and new_mark not in MARKS:
+        raise InvalidMarkError("Marcação inválida.")
+    switched = mark is not ... and mark != record.mark
+    if mark_note is ...:
+        note = None if switched else record.mark_note
+    else:
+        note = " ".join((mark_note or "").split())[:MARK_NOTE_MAX] or None
+    until = (None if switched else record.mark_until) if mark_until is ... else mark_until
+    if note is not None and new_mark != "blocked":
+        raise InvalidMarkError("A nota só vale para sessões bloqueadas.")
+    if until is not None and new_mark != "on_hold":
+        raise InvalidMarkError("A data só vale para sessões em espera.")
+    if mark_until is not ... and until is not None and not now < until <= now + MARK_UNTIL_MAX:
+        raise InvalidMarkError("Escolha uma data no futuro, em até um ano.")
+    wanted = {"mark": new_mark, "mark_note": note, "mark_until": until}
+    return {key: value for key, value in wanted.items() if getattr(record, key) != value}
 
 
 def context_window(*models: str | None) -> int:
@@ -2909,12 +2951,18 @@ class SessionManager:
         permission_mode: str | None = None,
         confirm_bypass: bool = False,
         group_id: int | None | EllipsisType = ...,
+        mark: str | None | EllipsisType = ...,
+        mark_note: str | None | EllipsisType = ...,
+        mark_until: int | None | EllipsisType = ...,
+        priority: bool | None = None,
     ) -> dict[str, Any]:
         """Finish, reopen, rename or change options (model, effort, permission mode).
 
         `group_id` moves the session to a group of its project; `None` takes it out,
         `...` keeps it. `bypassPermissions` needs `confirm_bypass`. Emits `session.updated` when
-        something changed, and `session.options` when an option changed.
+        something changed, and `session.options` when an option changed. `mark`,
+        `mark_note` and `mark_until` follow `resolve_mark`; finishing drops them and the
+        priority, and marking a finished session reopens it.
         """
         session = self.get(session_id)
         if group_id is not ... and group_id is not None:
@@ -2934,6 +2982,9 @@ class SessionManager:
             raise BypassNotConfirmedError(
                 "Confirme que quer rodar sem perguntas antes de ativar este modo."
             )
+        mark_changes = resolve_mark(
+            session.record, mark=mark, mark_note=mark_note, mark_until=mark_until, now=_now()
+        )
         options_changed = await session.set_options(
             model=model, effort=effort, permission_mode=permission_mode
         )
@@ -2951,6 +3002,18 @@ class SessionManager:
                 changes["title_custom"] = True
         if group_id is not ... and group_id != session.record.group_id:
             changes["group_id"] = group_id
+        changes.update(mark_changes)
+        if priority is not None and priority != session.record.priority:
+            changes["priority"] = priority
+        if changes.get("finished") is True:
+            # Finishing drops the mark and the priority.
+            changes.update(mark=None, mark_note=None, mark_until=None, priority=False)
+        elif (changes.get("mark") or changes.get("priority")) and finished is not True:
+            # Marking a finished session reopens it, like "Reabrir".
+            if session.record.finished:
+                changes["finished"] = False
+            if session.summary()["display_state"] == "finished":
+                changes["last_activity_at"] = _now()
         if "finished" in changes:
             changes["finished_at"] = _now() if changes["finished"] else None
         if not changes:

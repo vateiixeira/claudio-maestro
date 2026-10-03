@@ -153,6 +153,10 @@ class SessionPatch(BaseModel):
     ] | None = None
     confirm_bypass: bool = False
     group_id: int | None = None
+    mark: Literal["on_hold", "blocked", "review"] | None = None
+    mark_note: Annotated[str, StringConstraints(max_length=sessions.MARK_NOTE_MAX)] | None = None
+    mark_until: int | None = None
+    priority: bool | None = None
 
 
 class SessionCreate(BaseModel):
@@ -181,6 +185,7 @@ _STATUS = {
     sessions.InvalidAnswerError: status.HTTP_400_BAD_REQUEST,
     sessions.RejectMessageRequiredError: status.HTTP_400_BAD_REQUEST,
     sessions.InvalidImageError: status.HTTP_400_BAD_REQUEST,
+    sessions.InvalidMarkError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     sessions.SessionClosedError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
@@ -274,6 +279,10 @@ async def update_session(
             permission_mode=body.permission_mode,
             confirm_bypass=body.confirm_bypass,
             group_id=body.group_id if "group_id" in body.model_fields_set else ...,
+            mark=body.mark if "mark" in body.model_fields_set else ...,
+            mark_note=body.mark_note if "mark_note" in body.model_fields_set else ...,
+            mark_until=body.mark_until if "mark_until" in body.model_fields_set else ...,
+            priority=body.priority,
         )
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
