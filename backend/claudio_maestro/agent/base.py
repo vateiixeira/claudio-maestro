@@ -40,6 +40,15 @@ class AgentError(Exception):
         self.refused = refused
 
 
+@dataclass(frozen=True)
+class AttachInfo:
+    """A `claude` process the agentd kept running, to attach to instead of starting one."""
+
+    agentd_id: str
+    from_pos: int
+    init_response: dict[str, Any] | None
+
+
 @dataclass
 class AgentOptions:
     cwd: Path
@@ -58,6 +67,11 @@ class AgentOptions:
     # Value of CLAUDE_CODE_ENTRYPOINT for the agent process, written to the transcript.
     # None keeps the SDK default (`sdk-py`), which the editor extension hides from its list.
     entrypoint: str | None = None
+    # AgentdClient: sessions go through the agentd so they survive backend restarts.
+    # None (throwaway clients, tests, MAESTRO_AGENTD=0): the SDK starts `claude` directly.
+    agentd: Any | None = None
+    # Attach to a process the agentd kept (see AttachInfo) instead of starting one.
+    attach: AttachInfo | None = None
 
 
 @runtime_checkable
@@ -86,6 +100,11 @@ class AgentClient(Protocol):
 
     async def get_context_usage(self) -> dict[str, Any] | None:
         """Context window usage (`/context`): `totalTokens`, `rawMaxTokens`, `maxTokens`, `percentage`."""
+        ...
+
+    async def detach(self) -> bool:
+        """Let go of the process without stopping it. False when the client cannot
+        outlive the app (no agentd): the caller then uses close()."""
         ...
 
     async def close(self) -> None: ...

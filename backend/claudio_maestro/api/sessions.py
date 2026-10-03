@@ -126,6 +126,8 @@ class SessionOut(BaseModel):
     digest_short: str | None = None
     # The digest agent marked the linked plan as completed.
     plan_done: bool = False
+    # A turn was running when the app stopped and the session has no client now.
+    interrupted: bool = False
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]

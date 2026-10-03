@@ -180,6 +180,9 @@ _THINKING_BLOCKS = {"thinking", "redacted_thinking"}
 _TOOL_BLOCKS = {"tool_use", "server_tool_use", "mcp_tool_use"}
 
 
+_BLOCK_EVENTS = {"content_block_start", "content_block_delta", "content_block_stop"}
+
+
 @dataclass
 class _Stream:
     """Streaming state of one response, per parent_tool_use_id."""
@@ -206,6 +209,14 @@ class ConversationBuilder:
         self._subagent_started: dict[str, float] = {}
         # Echoes still expected from live changes by the app, counted by prefix.
         self._expected_echoes: dict[str, int] = {}
+        # Ids loaded from the saved conversation in live mode (a reattached session):
+        # the replay from the agentd may bring them again and must not duplicate them.
+        self._history_uuids: set[str] = set()
+        self._history_message_ids: set[str] = set()
+        # Stream of a message already on disk, by parent: ignored until the next message_start.
+        self._skipped_streams: set[str | None] = set()
+        # Set by `load_history(live=True)`: a replay may start in the middle of a message.
+        self._live = False
         self.init: SessionInit | None = None
         self.last_result: TurnResult | None = None
         self.rate_limit: RateLimit | None = None
@@ -252,6 +263,8 @@ class ConversationBuilder:
         entries: list[Any],
         tool_results: dict[str, dict[str, Any]] | None = None,
         compact_uuids: set[str] | None = None,
+        *,
+        live: bool = False,
     ) -> None:
         """Rebuild items from a saved conversation (`get_session_messages`).
 
@@ -264,10 +277,23 @@ class ConversationBuilder:
         `details` (`toolUseResult`). A tool still without a result gets
         `result_missing`. Base64 images are never kept. Entries in
         `compact_uuids` (`isCompactSummary`) become a "Conversa compactada" notice.
+
+        With `live` (a session reattached to a process still running) nothing is
+        declared lost: tools without a result stay pending, subagents and background
+        commands keep running, and the entry uuids and assistant message ids are
+        remembered so the replay of the same messages is dropped by `handle`.
         """
         tool_results = tool_results or {}
         compact_uuids = compact_uuids or set()
+        self._live = self._live or live
         for entry in entries:
+            if live:
+                if getattr(entry, "uuid", None):
+                    self._history_uuids.add(entry.uuid)
+                raw_message = entry.message if isinstance(entry.message, dict) else {}
+                message_id = raw_message.get("id")
+                if entry.type == "assistant" and message_id:
+                    self._history_message_ids.add(message_id)
             message = entry.message if isinstance(entry.message, dict) else {}
             content = message.get("content")
             if entry.type == "user" and getattr(entry, "uuid", None) in compact_uuids:
@@ -299,8 +325,8 @@ class ConversationBuilder:
                     }
                 elif item.result.get("details") is None:
                     item.result["details"] = slim_details(item.name, raw.get("details"))
-            item.result_missing = item.result is None
-            if item.subagent is not None and item.subagent["status"] == "running":
+            item.result_missing = item.result is None and not live
+            if not live and item.subagent is not None and item.subagent["status"] == "running":
                 if item.result is None:
                     item.subagent["status"] = "stopped"
                 elif item.result.get("is_error"):
@@ -348,6 +374,9 @@ class ConversationBuilder:
             )
 
     def handle(self, message: Any) -> list[Event]:
+        if isinstance(message, (AssistantMessage, UserMessage)) and \
+                getattr(message, "uuid", None) in self._history_uuids:
+            return self._close_stream_of(message)
         if isinstance(message, StreamEvent):
             return self._on_stream_event(message)
         if isinstance(message, AssistantMessage):
@@ -361,6 +390,19 @@ class ConversationBuilder:
         if isinstance(message, SystemMessage):
             return self._on_system(message)
         return []
+
+    def _close_stream_of(self, message: Any) -> list[Event]:
+        """A message already loaded from disk came again: only end its open stream item."""
+        stream = self._streams.get(getattr(message, "parent_tool_use_id", None))
+        message_id = getattr(message, "message_id", None)
+        if stream is None or stream.message_id != message_id or stream.open_index is None:
+            return []
+        item = self.get(f"{message_id}:{stream.open_index}")
+        stream.finalized.add(stream.open_index)
+        if item is None or not getattr(item, "streaming", False):
+            return []
+        item.streaming = False  # type: ignore[union-attr]
+        return [self._put(item)]
 
     # Items -----------------------------------------------------------------
 
@@ -418,7 +460,19 @@ class ConversationBuilder:
         parent = message.parent_tool_use_id
         if kind == "message_start":
             message_id = (event.get("message") or {}).get("id")
+            if message_id in self._history_message_ids:
+                self._skipped_streams.add(parent)
+                return []
+            self._skipped_streams.discard(parent)
             self._streams[parent] = _Stream(message_id=message_id)
+            return []
+        if parent in self._skipped_streams:
+            return []
+        if self._live and parent not in self._streams and kind in _BLOCK_EVENTS:
+            # The replay began after this message's `message_start` (an earlier block was
+            # already acked): its message id is unknown, so inventing one would show the
+            # reply twice. Skip the stream; the complete message still creates the item.
+            self._skipped_streams.add(parent)
             return []
         if kind == "content_block_start":
             return self._on_block_start(parent, event)

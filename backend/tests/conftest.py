@@ -92,6 +92,8 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MAESTRO_PORT", raising=False)
     monkeypatch.delenv("MAESTRO_DEV_PORT", raising=False)
     monkeypatch.delenv("MAESTRO_PREVIEW_PORT", raising=False)
+    # Tests that start the app with the real agent must not launch an agentd process.
+    monkeypatch.setenv("MAESTRO_AGENTD", "0")
     # The CLI history watcher never looks at the real ~/.claude.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
 

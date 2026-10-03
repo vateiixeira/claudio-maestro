@@ -94,6 +94,8 @@ export interface Session {
   finished_at?: number | null
   /** Last tool of the main conversation ("Edit sessions.py"); null after a backend restart. */
   last_action?: string | null
+  /** A turn was running when the app restarted and its process did not survive. */
+  interrupted?: boolean
   /** Kind of the oldest pending prompt. */
   pending_kind?: 'tool' | 'question' | 'plan' | null
   /** Progress of the plan file linked to the session; null when there is none. */

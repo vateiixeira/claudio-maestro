@@ -498,3 +498,11 @@ async def test_connect_error_can_depend_on_options(tmp_path):
     assert fresh.connected is False
     assert resumed.connected is True
     await resumed.close()
+
+
+@pytest.mark.anyio
+async def test_fake_client_cannot_detach(tmp_path):
+    factory = FakeAgentFactory()
+    client = factory(AgentOptions(cwd=tmp_path, session_id="s", resume=False,
+                                  can_use_tool=lambda *a: None))
+    assert await client.detach() is False
