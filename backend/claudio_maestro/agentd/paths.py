@@ -15,10 +15,14 @@ def socket_path(data_dir: Path) -> Path:
     candidate = data_dir / SOCKET_NAME
     if len(str(candidate).encode()) <= MAX_SOCKET_PATH:
         return candidate
-    runtime = os.environ.get("XDG_RUNTIME_DIR")
-    base = Path(runtime) if runtime else Path(f"/tmp/claudio-maestro-{os.getuid()}")
     digest = hashlib.sha1(str(data_dir).encode()).hexdigest()[:10]
-    return base / "claudio-maestro" / f"{digest}-{SOCKET_NAME}"
+    name = f"{digest}-{SOCKET_NAME}"
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        fallback = Path(runtime) / "claudio-maestro" / name
+        if len(str(fallback).encode()) <= MAX_SOCKET_PATH:
+            return fallback
+    return Path(f"/tmp/claudio-maestro-{os.getuid()}") / "claudio-maestro" / name
 
 
 def lock_path(data_dir: Path) -> Path:

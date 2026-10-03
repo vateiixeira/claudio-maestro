@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import os
+import shutil
 import signal
 import socket
 import sys
@@ -302,14 +303,31 @@ async def test_second_agentd_exits_when_locked(tmp_path):
 
 
 def test_long_data_dir_uses_short_socket(tmp_path, monkeypatch):
-    # pytest's tmp_path is itself long; the runtime dir must be short to fit.
-    with tempfile.TemporaryDirectory() as run:
+    # /tmp keeps the runtime dir short on every OS (macOS temp dirs are long).
+    run = tempfile.mkdtemp(dir="/tmp")
+    try:
         monkeypatch.setenv("XDG_RUNTIME_DIR", run)
         deep = tmp_path / ("d" * 120)
         path = socket_path(deep)
         assert len(str(path).encode()) <= 100
         assert path.parent == Path(run) / "claudio-maestro"
-    assert lock_path(deep) == deep / "agentd-v1.lock"
+        assert lock_path(deep) == deep / "agentd-v1.lock"
+    finally:
+        shutil.rmtree(run, ignore_errors=True)
+
+
+def test_long_runtime_dir_falls_back_to_tmp(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / ("r" * 90)))
+    path = socket_path(tmp_path / ("d" * 120))
+    assert len(str(path).encode()) <= 100
+    assert path.parent == Path(f"/tmp/claudio-maestro-{os.getuid()}") / "claudio-maestro"
+
+
+def test_unset_runtime_dir_falls_back_to_tmp(tmp_path, monkeypatch):
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    path = socket_path(tmp_path / ("d" * 120))
+    assert len(str(path).encode()) <= 100
+    assert path.parent == Path(f"/tmp/claudio-maestro-{os.getuid()}") / "claudio-maestro"
 
 
 async def wait_for_exit(conn: Conn, timeout: float = 8) -> dict:
