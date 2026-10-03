@@ -58,6 +58,7 @@ from claudio_maestro.conversation import (
     rate_limit_text,
 )
 from claudio_maestro.digest import store as digest_store
+from claudio_maestro.foreign import has_foreign_reply
 from claudio_maestro.plans import (
     PLAN_TOOLS,
     PlanCache,
@@ -876,6 +877,10 @@ class ActiveSession:
         self.pending_turns = 0
         self.prompts: dict[str, PendingPrompt] = {}
         self.client: AgentClient | None = None
+        # Uuids of the main-chain messages the current client's stream delivered, and
+        # when that client started (wall clock): what tells the app's own writes apart.
+        self.own_uuids: set[str] = set()
+        self.client_since: float | None = None
         self.error: str | None = None
         self.seq = 0
 
@@ -990,6 +995,26 @@ class ActiveSession:
     def busy(self) -> bool:
         """A send or connect holds the lock."""
         return self._lock.locked()
+
+    @property
+    def idle_client_only(self) -> bool:
+        """The app holds a client but is doing nothing with it: the condition under
+        which it would also close it for idleness, and no follow-up turn is owed."""
+        return (
+            self.state == "idle"
+            and not self.busy
+            and not self.subagents_running
+            and self._followup_owed == 0
+        )
+
+    async def release_for_external(self) -> bool:
+        """Another process continued this conversation: drop the idle client, so the
+        next message resumes from the file. Does nothing if the app started working."""
+        if not self.idle_client_only:
+            return False
+        logger.info("Sessão %s alterada por outro processo; cliente solto", self.session_id)
+        await self.close()
+        return True
 
     def _refresh_state(self) -> None:
         turn_open = self.pending_turns > 0 or self._autonomous_turn
@@ -1395,9 +1420,7 @@ class ActiveSession:
             await self._dispose(client, None)
             self._refresh_state()
             return False
-        self.client = client
-        self._has_connected = True
-        self._reader = asyncio.create_task(self._read(client))
+        self._start_reader(client)
         if not await self._reconcile_options(client, options):
             return False
         if self._on_connected is not None:
@@ -1507,6 +1530,14 @@ class ActiveSession:
             logger.exception("Falha ao consultar o histórico da sessão %s", self.session_id)
             return False
 
+    def _start_reader(self, client: AgentClient) -> None:
+        """Adopt a connected client: a new stream, so new own uuids and start time."""
+        self.client = client
+        self._has_connected = True
+        self.own_uuids = set()
+        self.client_since = time.time()
+        self._reader = asyncio.create_task(self._read(client))
+
     async def _read(self, client: AgentClient) -> None:
         try:
             async for message in client.messages():
@@ -1540,6 +1571,13 @@ class ActiveSession:
                 ):
                     # The CLI is about to open a turn for this: do not announce yet.
                     self._hold_subagent_end()
+                if (
+                    isinstance(message, (AssistantMessage, UserMessage))
+                    and message.parent_tool_use_id is None
+                    and message.uuid
+                    and self.client is client
+                ):
+                    self.own_uuids.add(message.uuid)
                 if isinstance(message, AssistantMessage):
                     if message.parent_tool_use_id is None:
                         self._note_tool_use(message)
@@ -2134,9 +2172,7 @@ class ActiveSession:
                 await self._dispose(client, None)
                 self._refresh_state()
                 return False
-            self.client = client
-            self._has_connected = True
-            self._reader = asyncio.create_task(self._read(client))
+            self._start_reader(client)
             self._refresh_state()
             self.emit_updated()
             return True
@@ -3223,6 +3259,16 @@ class SessionManager:
         return session is not None and (
             session.active or session.pending_turns > 0 or bool(session.prompts) or session.busy
         )
+
+    async def release_if_foreign(self, session_id: str, lines: list[str]) -> bool:
+        """`lines` (new lines of the session's file) hold a reply written by another
+        process while the app only holds an idle client: release the client."""
+        session = self._sessions.get(session_id)
+        if session is None or not session.idle_client_only:
+            return False
+        if not has_foreign_reply(lines, session.own_uuids, session.client_since):
+            return False
+        return await session.release_for_external()
 
     async def apply_external_change(self, session_id: str, *, reload: bool = True) -> bool:
         """The CLI changed a session's file (its row is already updated): refresh

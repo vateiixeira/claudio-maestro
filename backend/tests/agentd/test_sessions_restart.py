@@ -396,3 +396,17 @@ async def test_error_reading_the_session_row_kills_the_child_instead_of_orphanin
     monkeypatch.setattr(manager2, "_read_row", boom)
     await manager2.reattach_all()
     await env._wait_no_children()
+
+
+@pytest.mark.anyio
+async def test_reattach_sets_a_new_client_start(env):
+    manager = env.manager()
+    await manager.send(env.session_id, "stream:5")
+    await env.wait_state(manager, "idle")
+    await manager.shutdown()
+    before = time.time()
+    manager2 = env.manager()
+    await manager2.reattach_all()
+    session = manager2.get(env.session_id)
+    assert session.client is not None
+    assert session.client_since is not None and session.client_since >= before
