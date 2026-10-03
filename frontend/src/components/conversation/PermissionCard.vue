@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ApiError, answerPrompt, errorMessage } from '../../api/http'
+import DiffLines from './DiffLines.vue'
+import { diffCounts, toolDiff } from '../../conversation/diff'
+import { describePermissionRule } from '../../conversation/permissionRule'
 import { prettyJson, str } from '../../conversation/tool'
 import type { PermissionPrompt, PromptDecision } from '../../types/conversation'
 
@@ -23,6 +26,20 @@ const subject = computed(() => {
   const input = props.prompt.input ?? {}
   return str(input.command) || str(input.file_path) || str(input.path) || str(input.url) || prettyJson(input)
 })
+
+// Edit, Write and MultiEdit show what would change, not the raw input. Long diffs start folded.
+const DIFF_PREVIEW = 12
+const diffLines = computed(() => {
+  const name = props.prompt.tool_name
+  if (name !== 'Edit' && name !== 'Write' && name !== 'MultiEdit') return []
+  return toolDiff(name, props.prompt.input ?? {}, null)
+})
+const counts = computed(() => diffCounts(diffLines.value))
+const diffExpanded = ref(false)
+const folded = computed(() => !diffExpanded.value && diffLines.value.length > DIFF_PREVIEW)
+const shownDiff = computed(() => (folded.value ? diffLines.value.slice(0, DIFF_PREVIEW) : diffLines.value))
+const diffPath = computed(() => str(props.prompt.input?.file_path))
+const ruleHints = computed(() => (props.prompt.can_always ? describePermissionRule(props.prompt.suggestions) : []))
 
 async function decide(decision: PromptDecision) {
   if (sending.value) return
@@ -48,7 +65,23 @@ async function decide(decision: PromptDecision) {
       <span class="font-semibold text-secondary-soft">{{ heading }}</span>
       <span class="ml-auto font-mono text-xs text-secondary-soft">{{ toolLabel }}</span>
     </div>
-    <pre class="m-0 max-h-60 overflow-auto rounded-md border border-line bg-bg px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-fg">{{ subject }}</pre>
+    <div v-if="diffLines.length" data-test="permission-diff" class="overflow-hidden rounded-[8px] border border-line bg-bg">
+      <div class="flex items-center gap-2 border-b border-line px-3 py-2">
+        <span data-test="diff-path" class="min-w-0 grow truncate font-mono text-xs text-info-soft">{{ diffPath }}</span>
+        <span data-test="diff-counts" class="shrink-0 font-mono text-xs"><span class="text-diff-add-fg">+{{ counts.added }}</span> <span class="text-diff-del-fg">−{{ counts.removed }}</span></span>
+      </div>
+      <div class="max-h-80 overflow-y-auto py-1.5"><DiffLines :lines="shownDiff" /></div>
+      <button
+        v-if="folded"
+        type="button"
+        data-test="diff-expand"
+        class="min-h-8 w-full cursor-pointer border-0 border-t border-line bg-transparent px-3 py-1 text-left text-xs text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+        @click="diffExpanded = true"
+      >
+        Ver as {{ diffLines.length }} linhas
+      </button>
+    </div>
+    <pre v-else class="m-0 max-h-60 overflow-auto rounded-md border border-line bg-bg px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-fg">{{ subject }}</pre>
     <p v-if="prompt.description" class="m-0 text-xs text-secondary-soft">{{ prompt.description }}</p>
     <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <div class="flex flex-col gap-2">
@@ -82,6 +115,13 @@ async function decide(decision: PromptDecision) {
       >
         Permitir sempre
       </button>
+      <p v-if="ruleHints.length" data-test="rule-hint" class="m-0 flex flex-col gap-1 text-xs text-fg-muted">
+        <span v-for="(hint, index) in ruleHints" :key="index" class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+          <span>{{ hint.lead }}</span>
+          <code v-for="chip in hint.chips" :key="chip" data-test="rule-chip" class="rounded-[6px] border border-line bg-bg px-1.5 py-0.5 font-mono break-all text-fg">{{ chip }}</code>
+          <span v-if="hint.scope">· {{ hint.scope }}</span>
+        </span>
+      </p>
     </div>
   </div>
 </template>
