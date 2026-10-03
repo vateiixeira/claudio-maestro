@@ -56,7 +56,7 @@ describe('camadas visuais do chat (opção A)', () => {
   it('Bash com erro mantém a saída em vermelho', () => {
     const w = mount(ConversationBlock, { props: { item: bash({ content: 'boom', is_error: true }), sessionActive: false } })
     expect(w.find('[data-test="tool-error"] [data-test="pane-toggle"]').classes()).toContain('text-diff-del-fg')
-    expect(w.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('error')
+    expect(w.find('[data-test="bash-header"] [data-test="work-icon"]').classes()).toContain('text-diff-del-fg')
   })
 
   it('TextBlock limita a largura de leitura a 72ch, com corpo de 15px', () => {

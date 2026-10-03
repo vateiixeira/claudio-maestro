@@ -4,6 +4,7 @@ import { countLines, resultText, safeHttpUrl, str } from '../../conversation/too
 import type { ToolItem } from '../../types/conversation'
 import TruncatedText from './TruncatedText.vue'
 import IconChevron from '../icons/IconChevron.vue'
+import WorkHeader from './WorkHeader.vue'
 
 const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
 const open = ref(false)
@@ -15,40 +16,56 @@ const link = computed(() => (props.item.name === 'WebFetch' ? safeHttpUrl(str(in
 const output = computed(() => resultText(props.item.result?.content))
 const isError = computed(() => props.item.result?.is_error === true)
 const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
+const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
+  if (running.value) return 'running'
+  if (isError.value) return 'error'
+  return props.item.result ? 'ok' : 'idle'
+})
+// The whole row is the toggle, unless it holds a link or has nothing to open.
+const rowToggles = computed(() => !link.value && !!props.item.result)
 const count = computed(() => {
   if (!props.item.result || isError.value || !['Grep', 'Glob'].includes(props.item.name)) return null
   const n = countLines(output.value)
   return `${n} ${n === 1 ? 'resultado' : 'resultados'}`
 })
+const meta = computed(() => {
+  if (status.value === 'ok') return count.value ?? undefined
+  return !props.item.result && !props.item.result_missing && !running.value ? 'sem resultado' : undefined
+})
 </script>
 
 <template>
   <div class="overflow-hidden rounded-lg border bg-panel" :class="isError ? 'border-diff-del-fg/40' : 'border-line'">
-    <div class="flex items-center gap-2 px-3 py-2">
-      <button
-        v-if="item.result"
-        type="button"
-        class="inline-flex cursor-pointer items-center border-none bg-transparent p-0 text-xs text-fg-subtle"
-        :aria-expanded="open"
-        :aria-label="open ? 'Recolher resultado' : 'Expandir resultado'"
-        @click="open = !open"
-      ><IconChevron :open="open" :size="12" /></button>
-      <span class="cap text-fg">{{ item.name }}</span>
-      <a
-        v-if="link"
-        :href="link"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="min-w-0 grow truncate font-mono text-xs text-info-soft underline"
-      >{{ link }}</a>
-      <span v-else class="min-w-0 grow truncate font-mono text-xs text-fg">{{ subject }}</span>
-      <span v-if="path" class="truncate font-mono text-xs text-fg-subtle">em {{ path }}</span>
-      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>
-      <span v-else-if="running" class="animate-pulse text-xs text-secondary-soft">rodando…</span>
-      <span v-else-if="isError" class="text-xs text-diff-del-fg">erro</span>
-      <span v-else-if="count" class="text-xs text-fg-subtle">{{ count }}</span>
-      <span v-else-if="!item.result" class="text-xs text-fg-subtle">sem resultado</span>
-    </div>
+    <!-- A link cannot sit inside a button, so with one the row is plain and the chevron button toggles. -->
+    <WorkHeader
+      kind="search"
+      :tag="item.name"
+      :desc="subject"
+      mono
+      :as="rowToggles ? 'button' : 'div'"
+      :open="rowToggles ? open : undefined"
+      :aria-expanded="rowToggles ? open : undefined"
+      :status="status"
+      :meta="meta"
+      @click="rowToggles && (open = !open)"
+    >
+      <template v-if="link" #desc>
+        <a :href="link" target="_blank" rel="noopener noreferrer" class="text-info-soft underline">{{ link }}</a>
+      </template>
+      <template #trail>
+        <span v-if="path" class="min-w-0 shrink truncate font-mono text-xs text-fg-subtle">em {{ path }}</span>
+        <span v-if="item.result_missing" data-test="result-missing" class="shrink-0 text-xs text-fg-subtle">Resultado não disponível no histórico</span>
+      </template>
+      <template v-if="link && item.result" #actions>
+        <button
+          type="button"
+          class="inline-flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0 text-xs text-fg-subtle"
+          :aria-expanded="open"
+          :aria-label="open ? 'Recolher resultado' : 'Expandir resultado'"
+          @click="open = !open"
+        ><IconChevron :open="open" :size="12" /></button>
+      </template>
+    </WorkHeader>
     <div v-if="open && item.result" class="border-t border-line px-3 py-2" :class="isError ? 'text-diff-del-fg' : ''">
       <TruncatedText :text="output" />
     </div>

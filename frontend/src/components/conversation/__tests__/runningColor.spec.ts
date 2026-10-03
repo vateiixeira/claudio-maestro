@@ -24,29 +24,30 @@ describe('indicadores de rodando em âmbar', () => {
     expect(cls).not.toContain('bg-primary')
   })
 
-  it('Bash: bolinha do cabeçalho rodando é âmbar; concluída segue verde', () => {
-    const running = runningBlock(tool('Bash', { command: 'ls' })).find('[data-test="bash-status-dot"]')
-    expect(running.attributes('data-state')).toBe('running')
-    expect(running.classes()).toEqual(expect.arrayContaining(['bg-secondary', 'animate-pulse']))
-    expect(running.classes()).not.toContain('bg-primary')
+  it('Bash: o estado rodando é âmbar e gira; concluído segue verde', () => {
+    const running = runningBlock(tool('Bash', { command: 'ls' })).find('[data-test="work-status"]')
+    expect(running.attributes('data-status')).toBe('running')
+    expect(running.find('svg').classes()).toEqual(expect.arrayContaining(['text-secondary-soft', 'animate-spin']))
+    expect(running.find('svg').classes()).not.toContain('text-primary')
     const done = mount(ConversationBlock, {
       props: { item: tool('Bash', { command: 'ls' }, { result: { content: 'ok', is_error: false, details: null } }), sessionActive: false },
-    }).find('[data-test="bash-status-dot"]')
-    expect(done.attributes('data-state')).toBe('ok')
-    expect(done.classes()).toContain('bg-primary')
+    }).find('[data-test="work-status"]')
+    expect(done.attributes('data-status')).toBe('ok')
+    expect(done.find('svg').classes()).toContain('text-primary')
   })
 
   it.each([
-    ['Read', { file_path: '/a' }, 'lendo…'],
-    ['Grep', { pattern: 'x' }, 'rodando…'],
-    ['WebFetch', { url: 'x' }, 'rodando…'],
-    ['Edit', { file_path: '/a', old_string: 'a', new_string: 'b' }, 'aplicando…'],
-  ])('%s: texto de andamento em âmbar', (name, input, label) => {
-    const w = runningBlock(tool(name, input))
-    const span = w.findAll('span').find((s) => s.text() === label)
-    expect(span, label).toBeDefined()
-    expect(span!.classes()).toContain('text-secondary-soft')
-    expect(span!.classes()).not.toContain('text-primary-soft')
+    ['Read', { file_path: '/a' }],
+    ['Grep', { pattern: 'x' }],
+    ['WebFetch', { url: 'x' }],
+    ['Edit', { file_path: '/a', old_string: 'a', new_string: 'b' }],
+    ['NotebookEdit', { notebook_path: '/a' }],
+  ])('%s: o giro de andamento é âmbar, com "rodando…" para leitor de tela', (name, input) => {
+    const state = runningBlock(tool(name, input)).find('[data-test="work-status"]')
+    expect(state.attributes('data-status')).toBe('running')
+    expect(state.find('svg').classes()).toContain('text-secondary-soft')
+    expect(state.find('svg').classes()).not.toContain('text-primary-soft')
+    expect(state.find('.sr-only').text()).toBe('rodando…')
   })
 
   it('subagente rodando: giro e última atividade em âmbar; concluído segue verde', () => {
@@ -54,14 +55,14 @@ describe('indicadores de rodando em âmbar', () => {
       task_id: 't', subagent_type: 'x', description: 'd', status, last_activity: 'lendo coisa', usage: null, summary: null,
     })
     const running = runningBlock(tool('Agent', { description: 'd', prompt: 'p' }, { subagent: sub('running') }))
-    const icon = running.find('[data-test="subagent-state"] svg')
-    expect(icon.classes()).toEqual(expect.arrayContaining(['animate-spin', 'text-secondary']))
+    const icon = running.find('[data-test="work-status"] svg')
+    expect(icon.classes()).toEqual(expect.arrayContaining(['animate-spin', 'text-secondary-soft']))
     expect(icon.classes()).not.toContain('text-primary')
     expect(running.find('p.font-mono').classes()).toContain('text-secondary-soft')
     const done = mount(ConversationBlock, {
       props: { item: tool('Agent', { description: 'd', prompt: 'p' }, { subagent: sub('completed') }), sessionActive: false },
     })
-    expect(done.find('[data-test="subagent-state"] svg').classes()).toContain('text-primary')
+    expect(done.find('[data-test="work-status"] svg').classes()).toContain('text-primary')
   })
 
   it('grupo de ações: "rodando…" na linha é âmbar', () => {

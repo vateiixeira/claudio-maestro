@@ -17,15 +17,25 @@ const child = (id: string, name: string): ConversationItem =>
 
 describe('subagente', () => {
   it.each([
-    ['running', 'Rodando'],
-    ['completed', 'Concluído'],
-    ['failed', 'Com erro'],
-    ['stopped', 'Parado'],
-  ] as const)('estado %s', (status, label) => {
+    ['running', 'running', 'rodando…'],
+    ['completed', 'ok', 'concluído'],
+    ['failed', 'error', 'falhou'],
+    ['stopped', 'stopped', 'parado'],
+  ] as const)('estado %s no cabeçalho', (status, shown, word) => {
     const w = mount(ConversationBlock, { props: { item: tool('Agent', { description: 'x' }, { subagent: sub({ status }) }) } })
-    const state = w.find('[data-test="subagent-state"]')
-    expect(state.attributes('data-status')).toBe(status)
-    expect(state.attributes('aria-label')).toBe(label)
+    const state = w.find('[data-test="subagent-card"] [data-test="work-status"]')
+    expect(state.attributes('data-status')).toBe(shown)
+    expect(state.text()).toBe(word)
+  })
+
+  it('o cabeçalho é o dos outros blocos, no tom lilás de subagente, com o tipo num chip', () => {
+    const w = mount(ConversationBlock, { props: { item: tool('Agent', { description: 'x' }, { subagent: sub() }) } })
+    const header = w.find('[data-test="subagent-card"] [data-test="work-header"]')
+    expect(header.attributes('data-kind')).toBe('agent')
+    expect(header.find('.cap').text()).toBe('Subagente')
+    expect(header.find('.cap').classes()).toContain('text-type-agent')
+    expect(header.find('[data-test="work-tag"]').text()).toBe('Explore')
+    expect(header.find('[data-test="work-desc"]').text()).toBe('Mapear rotas')
   })
 
   it('mostra tipo, descrição, atividade, métricas e resumo', () => {
@@ -69,17 +79,30 @@ describe('subagente', () => {
     expect(visible()).toBe(false)
   })
 
-  it('o cartão usa o fundo de cartão, diferente do painel dos outros blocos', () => {
+  it('o cartão inteiro leva 9% de lilás sobre o painel e borda lilás a 40%; o cabeçalho não repete o fundo', () => {
     const w = mount(ConversationBlock, { props: { item: tool('Agent', {}, { subagent: sub() }) } })
     const card = w.find('[data-test="subagent-card"]')
-    expect(card.classes()).toContain('bg-card')
-    expect(card.classes()).not.toContain('bg-panel')
+    expect(card.classes().join(' ')).toContain('bg-[color-mix(in_oklab,var(--color-type-agent)_9%,var(--color-panel))]')
+    expect(card.classes()).toContain('border-type-agent/40')
+    expect(card.classes()).not.toContain('bg-card')
+    expect(card.find('[data-test="work-header"]').classes().join(' ')).not.toContain('color-mix')
+  })
+
+  it('subagente que falhou troca a borda lilás pela vermelha', () => {
+    const w = mount(ConversationBlock, { props: { item: tool('Agent', {}, { subagent: sub({ status: 'failed' }) }) } })
+    const card = w.find('[data-test="subagent-card"]')
+    expect(card.classes()).toContain('border-diff-del-fg/40')
+    expect(card.classes()).not.toContain('border-type-agent/40')
   })
 })
 
 describe('blocos de busca', () => {
   it('Grep mostra padrão, caminho e contagem, e expande', async () => {
     const w = mount(ConversationBlock, { props: { item: tool('Grep', { pattern: 'def \\w+', path: 'src' }, { result: ok('a.py\nb.py') }) } })
+    const header = w.find('[data-test="work-header"]')
+    expect(header.attributes('data-kind')).toBe('search')
+    expect(header.find('.cap').text()).toBe('Busca')
+    expect(header.find('[data-test="work-tag"]').text()).toBe('Grep')
     expect(w.text()).toContain('def \\w+')
     expect(w.text()).toContain('src')
     expect(w.text()).toContain('2 resultados')

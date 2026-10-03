@@ -55,9 +55,27 @@ describe('Write de arquivo novo', () => {
     expect(w.find('[data-test="new-file-preview"]').text()).toContain('linha 250')
   })
 
-  it('o caminho continua em info-soft no cabeçalho', () => {
+  it('o cabeçalho é o dos outros blocos: "Escrita" no tom de arquivo e o caminho em mono, sem cor própria', () => {
     const w = mountTool(tool('Write', { file_path: '/p/novo.md', content: 'a' }))
-    expect(w.find('span.text-info-soft').text()).toBe('/p/novo.md')
+    const header = w.find('[data-test="work-header"]')
+    expect(header.attributes('data-kind')).toBe('edit')
+    expect(header.find('.cap').text()).toBe('Escrita')
+    expect(header.find('.cap').classes()).toContain('text-type-file')
+    const path = header.find('[data-test="work-desc"]')
+    expect(path.text()).toBe('/p/novo.md')
+    expect(path.classes()).toEqual(expect.arrayContaining(['font-mono', 'text-fg']))
+    expect(path.classes()).not.toContain('text-info-soft')
+  })
+
+  it('Edit se chama "Edição" e mostra as contagens ao lado do caminho', () => {
+    const w = mountTool(tool('Edit', { file_path: '/p/a.py', old_string: 'a', new_string: 'b' }, {
+      structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-a', '+b'] }],
+    }))
+    const header = w.find('[data-test="work-header"]')
+    expect(header.find('.cap').text()).toBe('Edição')
+    expect(header.text()).toContain('+1')
+    expect(header.text()).toContain('−1')
+    expect(header.find('[data-test="work-status"]').attributes('data-status')).toBe('ok')
   })
 
   it('Write sobre arquivo existente continua como diff', () => {

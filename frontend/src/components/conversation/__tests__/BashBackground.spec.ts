@@ -57,15 +57,22 @@ describe('Bash em background', () => {
     expect(none.find('[data-test="bash-background-summary"]').exists()).toBe(false)
   })
 
-  it('antes do resultado a bolinha pulsa e o "rodando…" fica só para leitor de tela', () => {
+  it('antes do resultado o giro roda e o "rodando…" fica só para leitor de tela', () => {
     const w = mount(BashTool, { props: { item: bash({ result: null, background: null }), sessionActive: true } })
     expect(w.find('[data-test="bash-header"] .sr-only').text()).toBe('rodando…')
-    expect(w.find('[data-test="bash-status-dot"]').classes()).toContain('animate-pulse')
+    expect(w.find('[data-test="work-status"] svg').classes()).toContain('animate-spin')
   })
 
-  it('falha em background deixa a bolinha vermelha', () => {
+  it('falha em background deixa o ícone vermelho, sem repetir "falhou" ao lado do selo', () => {
     const w = mount(BashTool, { props: { item: bash({ background: live('failed') }), sessionActive: true } })
-    expect(w.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('error')
+    expect(w.find('[data-test="work-icon"]').classes()).toContain('text-diff-del-fg')
+    expect(w.find('[data-test="work-status"]').exists()).toBe(false)
+    expect(w.find('[data-test="bash-header"]').text()).toContain('Falhou')
+  })
+
+  it('em background o ícone segue a cor do tipo, e concluído não vira vermelho', () => {
+    const w = mount(BashTool, { props: { item: bash({ background: live('completed') }), sessionActive: true } })
+    expect(w.find('[data-test="work-icon"]').classes()).toContain('text-type-command')
   })
 
   it('o selo é o único estado no cabeçalho depois do resultado', () => {

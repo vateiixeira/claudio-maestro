@@ -4,18 +4,21 @@ import { agentStatus, SUBAGENT_FOCUS_KEY } from '../../conversation/subagents'
 import { str } from '../../conversation/tool'
 import type { SubagentStatus, ToolItem } from '../../types/conversation'
 import IconChevron from '../icons/IconChevron.vue'
+import WorkHeader from './WorkHeader.vue'
 
 const props = defineProps<{ item: ToolItem; childCount: number; sessionActive?: boolean }>()
 
-const STATUS_LABEL: Record<SubagentStatus, string> = {
-  running: 'Rodando',
-  completed: 'Concluído',
-  failed: 'Com erro',
-  stopped: 'Parado',
+// The header speaks the same words as every other action; a subagent that ended well is just "ok".
+const HEADER_STATUS: Record<SubagentStatus, 'running' | 'ok' | 'error' | 'stopped'> = {
+  running: 'running',
+  completed: 'ok',
+  failed: 'error',
+  stopped: 'stopped',
 }
 
 const sub = computed(() => props.item.subagent ?? null)
 const status = computed<SubagentStatus>(() => agentStatus(props.item, props.sessionActive ?? false))
+const headerStatus = computed(() => HEADER_STATUS[status.value])
 const kind = computed(() => sub.value?.subagent_type || str(props.item.input.subagent_type))
 const description = computed(() => sub.value?.description || str(props.item.input.description))
 
@@ -52,21 +55,11 @@ const metrics = computed(() => {
     :data-subagent-id="item.id"
     :data-highlighted="highlighted ? 'true' : undefined"
     tabindex="-1"
-    class="scroll-mt-14 overflow-hidden rounded-lg border bg-card outline-none"
-    :class="[status === 'failed' ? 'border-diff-del-fg/40' : 'border-line', highlighted ? 'ring-2 ring-primary' : '']"
+    class="scroll-mt-14 overflow-hidden rounded-lg border bg-[color-mix(in_oklab,var(--color-type-agent)_9%,var(--color-panel))] outline-none"
+    :class="[status === 'failed' ? 'border-diff-del-fg/40' : 'border-type-agent/40', highlighted ? 'ring-2 ring-primary' : '']"
   >
-    <div class="flex flex-col gap-1.5 px-3 py-2.5">
-      <div class="flex items-center gap-2">
-        <span data-test="subagent-state" :data-status="status" :aria-label="STATUS_LABEL[status]" :title="STATUS_LABEL[status]" role="img" class="flex shrink-0">
-          <svg v-if="status === 'running'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" class="animate-spin text-secondary" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" stroke-linecap="round" /></svg>
-          <svg v-else-if="status === 'completed'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="text-primary" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-          <svg v-else-if="status === 'failed'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="text-diff-del-fg" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" /><line x1="12" y1="10" x2="12" y2="14" /></svg>
-          <svg v-else width="14" height="14" viewBox="0 0 24 24" class="text-fg-subtle" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" /></svg>
-        </span>
-        <span class="cap text-fg">Subagente</span>
-        <span v-if="kind" class="rounded-full border border-line-strong bg-elevated px-2 py-0.5 font-mono text-xs text-fg-muted">{{ kind }}</span>
-        <span class="min-w-0 grow truncate text-sm text-fg">{{ description }}</span>
-      </div>
+    <WorkHeader kind="agent" :tag="kind || undefined" :desc="description" :status="headerStatus" :tint="false" />
+    <div v-if="(status === 'running' && sub?.last_activity) || metrics.length || sub?.summary" class="flex flex-col gap-1.5 px-3 pb-2.5">
       <p v-if="status === 'running' && sub?.last_activity" class="m-0 truncate font-mono text-xs text-secondary-soft">{{ sub.last_activity }}</p>
       <p v-if="metrics.length" class="m-0 font-mono text-xs text-fg-subtle">{{ metrics.join(' · ') }}</p>
       <p v-if="sub?.summary" data-test="subagent-summary" class="m-0 text-sm whitespace-pre-wrap text-fg">{{ sub.summary }}</p>

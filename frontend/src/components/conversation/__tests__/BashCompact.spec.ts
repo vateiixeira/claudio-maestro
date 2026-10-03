@@ -25,54 +25,55 @@ function stubClipboard(writeText: (t: string) => Promise<void>) {
 }
 
 describe('Bash compacto: cabeçalho', () => {
-  it('uma linha solta: rótulo, descrição e nenhum cifrão', () => {
+  it('uma linha solta: rótulo do tipo, descrição e nenhum cifrão', () => {
     const w = mountBash(bash('ls -la'))
     const header = w.find('[data-test="bash-header"]')
-    expect(header.text()).toContain('Comando')
+    expect(header.attributes('data-kind')).toBe('bash')
+    expect(header.find('.cap').text()).toBe('Comando')
+    expect(header.find('.cap').classes()).toContain('text-type-command')
     expect(header.text()).toContain('Lista os arquivos')
     expect(header.classes()).not.toContain('border-b')
     expect(header.classes()).not.toContain('bg-panel')
-    expect(header.find('.cap').exists()).toBe(false)
+    expect(w.find('[data-test="bash-status-dot"]').exists()).toBe(false)
     expect(w.find('[data-test="bash-prompt"]').exists()).toBe(false)
     expect(w.text()).not.toContain('$ ')
   })
 
-  it('bolinha: rodando pulsa e respeita motion-reduce, com texto só para leitor de tela', () => {
+  it('rodando: giro âmbar que respeita motion-reduce, com texto só para leitor de tela', () => {
     const w = mountBash(bash('sleep 5', null), true)
-    const dot = w.find('[data-test="bash-status-dot"]')
-    expect(dot.attributes('data-state')).toBe('running')
-    expect(dot.classes()).toEqual(expect.arrayContaining(['bg-secondary', 'animate-pulse', 'motion-reduce:animate-none']))
-    const sr = w.find('[data-test="bash-header"] .sr-only')
-    expect(sr.text()).toBe('rodando…')
-    expect(w.find('[data-test="bash-header"]').findAll('span').filter((s) => s.text() === 'rodando…' && !s.classes().includes('sr-only'))).toHaveLength(0)
+    const state = w.find('[data-test="bash-header"] [data-test="work-status"]')
+    expect(state.attributes('data-status')).toBe('running')
+    expect(state.find('svg').classes()).toEqual(expect.arrayContaining(['text-secondary-soft', 'animate-spin', 'motion-reduce:animate-none']))
+    expect(state.find('.sr-only').text()).toBe('rodando…')
   })
 
-  it('bolinha vermelha quando falhou, verde quando terminou bem', () => {
+  it('falhou: "falhou" em vermelho e o ícone vermelho; terminou bem: visto verde', () => {
     const bad = mountBash(bash('false', failed('boom')))
-    expect(bad.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('error')
-    expect(bad.find('[data-test="bash-status-dot"]').classes()).toContain('bg-diff-del-fg')
-    expect(bad.find('[data-test="bash-header"] .sr-only').text()).toBe('falhou')
+    expect(bad.find('[data-test="work-status"]').attributes('data-status')).toBe('error')
+    expect(bad.find('[data-test="work-status"]').text()).toBe('falhou')
+    expect(bad.find('[data-test="work-icon"]').classes()).toContain('text-diff-del-fg')
 
     const good = mountBash(bash('true'))
-    expect(good.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('ok')
-    expect(good.find('[data-test="bash-status-dot"]').classes()).toContain('bg-primary')
-    expect(good.find('[data-test="bash-status-dot"]').classes()).not.toContain('animate-pulse')
-    expect(good.find('[data-test="bash-header"] .sr-only').exists()).toBe(false)
+    expect(good.find('[data-test="work-status"]').attributes('data-status')).toBe('ok')
+    expect(good.find('[data-test="work-status"] svg').classes()).toContain('text-primary')
+    expect(good.find('[data-test="work-icon"]').classes()).toContain('text-type-command')
+    expect(good.find('[data-test="work-status"] .animate-spin').exists()).toBe(false)
   })
 
   it('sem resultado e resultado ausente do histórico viram texto discreto', () => {
     expect(mountBash(bash('x', null)).text()).toContain('sem resultado')
     const missing = mountBash(bash('x', null, { result_missing: true }))
     expect(missing.find('[data-test="result-missing"]').text()).toBe('Resultado não disponível no histórico')
-    expect(missing.find('[data-test="bash-status-dot"]').attributes('data-state')).toBe('idle')
+    expect(missing.find('[data-test="work-status"]').attributes('data-status')).toBe('idle')
   })
 })
 
 describe('Bash compacto: caixa IN e OUT', () => {
-  it('uma caixa só com as duas linhas rotuladas', () => {
+  it('uma caixa só, com o cabeçalho e as duas linhas rotuladas', () => {
     const w = mountBash(bash('ls', ok('a.txt')))
     const box = w.find('[data-test="bash-box"]')
-    expect(box.classes()).toEqual(expect.arrayContaining(['border-line', 'rounded-md']))
+    expect(box.find('[data-test="bash-header"]').exists()).toBe(true)
+    expect(box.classes()).toEqual(expect.arrayContaining(['border-line', 'rounded-lg']))
     expect(box.find('[data-test="bash-command"]').text()).toContain('IN')
     expect(box.find('[data-test="bash-output"]').text()).toContain('OUT')
     expect(box.find('[data-test="bash-command"]').text()).toContain('ls')

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { countLines, resultText, str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 import TruncatedText from './TruncatedText.vue'
+import WorkHeader from './WorkHeader.vue'
 
 const props = defineProps<{ item: ToolItem; sessionActive?: boolean }>()
 const open = ref(false)
@@ -10,26 +11,35 @@ const open = ref(false)
 const content = computed(() => resultText(props.item.result?.content))
 const lineCount = computed(() => countLines(content.value))
 const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
+const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
+  if (running.value) return 'running'
+  if (props.item.result?.is_error) return 'error'
+  return props.item.result ? 'ok' : 'idle'
+})
+const meta = computed(() => {
+  if (status.value === 'ok') return `${lineCount.value} ${lineCount.value === 1 ? 'linha' : 'linhas'}`
+  return !props.item.result && !props.item.result_missing && !running.value ? 'sem resultado' : undefined
+})
 </script>
 
 <template>
   <div class="overflow-hidden rounded-lg border border-line bg-panel">
-    <button
-      type="button"
-      class="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-3 py-2 text-left text-fg"
+    <WorkHeader
+      kind="read"
+      as="button"
+      :desc="str(item.input.file_path)"
+      mono
+      :status="status"
+      :meta="meta"
+      :open="open"
       :aria-expanded="open"
       :disabled="!item.result"
       @click="open = !open"
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-fg-subtle" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></svg>
-      <span class="cap text-fg">Leitura</span>
-      <span class="min-w-0 grow truncate font-mono text-xs text-info-soft">{{ str(item.input.file_path) }}</span>
-      <span v-if="item.result_missing" data-test="result-missing" class="text-xs text-fg-subtle">Resultado não disponível no histórico</span>
-      <span v-else-if="running" class="text-xs text-secondary-soft">lendo…</span>
-      <span v-else-if="!item.result" class="text-xs text-fg-subtle">sem resultado</span>
-      <span v-else-if="item.result.is_error" class="text-xs text-diff-del-fg">erro</span>
-      <span v-else class="text-xs text-fg-subtle">{{ lineCount }} {{ lineCount === 1 ? 'linha' : 'linhas' }}</span>
-    </button>
+      <template v-if="item.result_missing" #trail>
+        <span data-test="result-missing" class="shrink-0 text-xs text-fg-subtle">Resultado não disponível no histórico</span>
+      </template>
+    </WorkHeader>
     <div v-if="open && item.result" class="border-t border-line px-3 py-2" :class="{ 'text-diff-del-fg': item.result.is_error }">
       <TruncatedText :text="content" />
     </div>
