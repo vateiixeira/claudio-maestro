@@ -3291,6 +3291,8 @@ class SessionManager:
         except Exception as error:  # includes TimeoutError
             logger.warning("Não foi possível listar as sessões do agentd: %r", error)
             return
+        if not children:
+            return  # asyncio.wait below refuses an empty set
 
         async def kill(child: Any) -> None:
             try:

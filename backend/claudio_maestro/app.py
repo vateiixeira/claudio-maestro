@@ -1,6 +1,7 @@
 """Application assembly: settings, database, middleware and routes."""
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
@@ -41,6 +42,8 @@ from claudio_maestro.security import (
     allowed_origins,
 )
 from claudio_maestro.sessions import HistoryExists, RenameSession, SessionManager
+
+logger = logging.getLogger(__name__)
 
 
 def publish_synced(publish: Callable[[dict[str, Any]], None], project_ids: set[int]) -> None:
@@ -127,7 +130,11 @@ def create_app(
             agentd=app.state.agentd,
             agentd_new_sessions=new_through_agentd,
         )
-        await app.state.sessions.reattach_all()
+        try:
+            await app.state.sessions.reattach_all()
+        except Exception:
+            # Sessions that could not be reattached show as interrupted; the app must start.
+            logger.exception("Falha ao religar as sessões do agentd")
         app.state.commands = CommandCatalog(app.state.sessions.agent_factory)
         app.state.files = FileIndex()
         app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
