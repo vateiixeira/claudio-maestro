@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { jsonResponse, makeSession, routeFetch } from '../../../test/factories'
 import PlanStrip from '../PlanStrip.vue'
+import Collapse from '../../Collapse.vue'
 import type { PlanState, PlanSummary, Session } from '../../../types/api'
 
 const summary = (extra: Partial<PlanSummary> = {}): PlanSummary => ({
@@ -192,6 +193,18 @@ describe('faixa do plano', () => {
     await w.find('[data-test="plan-done-toggle"]').trigger('click')
     statuses = w.findAll('[data-test="plan-task"]').map((i) => i.attributes('data-status'))
     expect(statuses).toEqual(['current', 'queued', 'queued'])
+  })
+
+  it('no painel, a lista das feitas abre dentro de um Collapse e o chevron acompanha o tempo do app', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(bigState()) }))
+    const w = mount(PlanStrip, { props: { session: bigSession(), variant: 'panel' } })
+    await flushPromises()
+    const collapse = w.findComponent(Collapse)
+    expect(collapse.props('open')).toBe(false)
+    expect(w.find('[data-test="plan-done-toggle"] svg:last-child').classes()).toEqual(expect.arrayContaining(['duration-(--motion-enter)', 'ease-(--ease-maestro)']))
+    await w.find('[data-test="plan-done-toggle"]').trigger('click')
+    expect(collapse.props('open')).toBe(true)
+    expect(w.find('[data-test="plan-done-toggle"]').attributes('aria-expanded')).toBe('true')
   })
 
   it('no painel, "Abrir plano" fica no rodapé junto do espaço das ações e chama o editor', async () => {

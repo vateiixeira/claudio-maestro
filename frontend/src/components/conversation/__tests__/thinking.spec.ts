@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ThinkingBlock from '../ThinkingBlock.vue'
+import Collapse from '../../Collapse.vue'
 import UserMessage from '../UserMessage.vue'
 import { claimLocalImages, rememberSentImages, resetLocalImages } from '../../../conversation/localImages'
 
@@ -284,5 +285,18 @@ describe('imagens na mensagem do usuário', () => {
   it('só imagem, sem texto, não mostra balão vazio', () => {
     const w = mount(UserMessage, { props: { item: { ...user, text: '' } } })
     expect(w.find('[data-test="user-message"]').exists()).toBe(false)
+  })
+})
+
+describe('raciocínio: abrir e fechar', () => {
+  it('o chevron gira no tempo do movimento do app e o corpo vai dentro de um Collapse', async () => {
+    const w = mount(ThinkingBlock, { props: { item: item(false) } })
+    expect(w.find('[data-test="thinking-chevron"]').classes()).toEqual(expect.arrayContaining(['duration-(--motion-enter)', 'ease-(--ease-maestro)']))
+    const collapse = w.findComponent(Collapse)
+    expect(collapse.props('open')).toBe(false)
+    await w.find('button').trigger('click')
+    expect(collapse.props('open')).toBe(true)
+    expect(w.find('button').attributes('aria-expanded')).toBe('true')
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(true)
   })
 })

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { TextItem } from '../../types/conversation'
+import Collapse from '../Collapse.vue'
 import IconChevron from '../icons/IconChevron.vue'
 import IconThink from '../icons/IconThink.vue'
 
@@ -113,9 +114,9 @@ const label = computed(() => (props.item.streaming ? 'Pensando…' : 'Raciocíni
         data-test="thinking-preview"
         class="min-w-0 flex-1 truncate italic text-fg-subtle"
       >{{ preview }}</span>
-      <IconChevron v-if="hasText" data-test="thinking-chevron" :open="open" :size="10" class="ml-auto text-fg-subtle" />
+      <IconChevron v-if="hasText" data-test="thinking-chevron" :open="open" :size="10" class="ml-auto text-fg-subtle duration-(--motion-enter) ease-(--ease-maestro)" />
     </component>
-    <template v-if="open && hasText">
+    <Collapse :open="open && hasText">
       <p
         ref="textEl"
         data-test="thinking-text"
@@ -130,6 +131,6 @@ const label = computed(() => (props.item.streaming ? 'Pensando…' : 'Raciocíni
         :aria-expanded="full"
         @click="toggleFull"
       >{{ full ? 'Recolher' : 'Ver tudo' }}</button>
-    </template>
+    </Collapse>
   </div>
 </template>

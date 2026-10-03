@@ -131,6 +131,11 @@ describe('WorkHeader: conteúdo', () => {
 })
 
 describe('WorkHeader: chevron e botão', () => {
+  it('o chevron gira no tempo do movimento do app', () => {
+    const chevron = mountHeader({ as: 'button', open: true }).find('[data-test="work-chevron"]')
+    expect(chevron.classes()).toEqual(expect.arrayContaining(['duration-(--motion-enter)', 'ease-(--ease-maestro)']))
+  })
+
   it('sem open não há chevron; com open ele tem 12px e gira', () => {
     expect(mountHeader().find('[data-test="work-chevron"]').exists()).toBe(false)
     const closed = mountHeader({ as: 'button', open: false }).find('[data-test="work-chevron"]')

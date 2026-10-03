@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { errorMessage, getSessionPlan, openInEditor } from '../../api/http'
 import type { PlanTask, Session } from '../../types/api'
 import { planPosition, planStopped, planVisible } from './planText'
+import Collapse from '../Collapse.vue'
+import PlanTaskRow from './PlanTaskRow.vue'
 import IconCheck from '../icons/IconCheck.vue'
 import IconChevron from '../icons/IconChevron.vue'
 import IconCircle from '../icons/IconCircle.vue'
@@ -79,13 +81,13 @@ const NEXT_SHOWN = 2
 const doneCount = computed(() => tasks.value.filter((t) => t.done).length)
 const nextCount = computed(() => (currentIndex.value < 0 ? 0 : tasks.value.length - currentIndex.value - 1))
 const laterCount = computed(() => Math.max(0, nextCount.value - NEXT_SHOWN))
+// The finished ones sit in their own list, above the rest, so "N concluídas" can open and close it as a block.
+const doneRows = computed(() => (currentIndex.value < 0 ? [] : tasks.value.slice(0, currentIndex.value).map((task, index) => ({ task, index }))))
 const compactRows = computed(() => {
   const at = currentIndex.value
   // List empty or not loaded yet: the summary still knows the current task (index -1 is the one `statusOf` calls current).
   if (at < 0) return plan.value?.current ? [{ task: { ...plan.value.current, done: false }, index: -1 }] : []
-  const rows = tasks.value.map((task, index) => ({ task, index }))
-  const finished = doneOpen.value ? rows.slice(0, at) : []
-  return [...finished, ...rows.slice(at, at + 1 + NEXT_SHOWN)]
+  return tasks.value.map((task, index) => ({ task, index })).slice(at, at + 1 + NEXT_SHOWN)
 })
 const positionText = computed(() => (plan.value?.current ? `${plan.value.current.number} de ${plan.value.total}` : 'Concluído'))
 
@@ -116,7 +118,7 @@ async function openPlan() {
         class="flex min-w-0 grow items-baseline gap-2 rounded-md py-1 text-left text-sm hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
         @click="toggle"
       >
-        <IconChevron :open="open" :size="12" class="self-center text-fg-subtle" />
+        <IconChevron :open="open" :size="12" class="self-center text-fg-subtle duration-(--motion-enter) ease-(--ease-maestro)" />
         <template v-if="inPanel">
           <span class="min-w-0 truncate font-medium text-fg">{{ plan.title }}</span>
           <span class="shrink-0 font-mono text-xs text-fg-muted">{{ positionText }}</span>
@@ -159,39 +161,15 @@ async function openPlan() {
     >
       <IconCheck :size="12" class="text-primary" />
       {{ doneCount }} {{ doneCount === 1 ? 'concluída' : 'concluídas' }}
-      <IconChevron :open="doneOpen" :size="10" class="text-fg-subtle" />
+      <IconChevron :open="doneOpen" :size="10" class="text-fg-subtle duration-(--motion-enter) ease-(--ease-maestro)" />
     </button>
+    <Collapse v-if="inPanel && open" :open="doneOpen && doneRows.length > 0">
+      <ol class="m-0 flex list-none flex-col gap-1 p-0 pt-0.5">
+        <PlanTaskRow v-for="row in doneRows" :key="row.index" :task="row.task" :status="statusOf(row.task, row.index)" />
+      </ol>
+    </Collapse>
     <ol v-if="open && inPanel && compactRows.length" ref="list" class="relative m-0 flex list-none flex-col gap-1 p-0 pt-0.5">
-      <li
-        v-for="row in compactRows"
-        :key="row.index"
-        data-test="plan-task"
-        :data-status="statusOf(row.task, row.index)"
-        :aria-current="statusOf(row.task, row.index) === 'current' ? 'step' : undefined"
-        class="text-sm"
-        :class="{
-          'flex items-baseline gap-2 text-fg-muted': statusOf(row.task, row.index) === 'done',
-          'flex flex-col gap-0.5 rounded-[10px] border border-primary/30 bg-primary-tint px-2.5 py-2 text-fg': statusOf(row.task, row.index) === 'current',
-          'flex items-baseline gap-2 text-fg': statusOf(row.task, row.index) === 'queued',
-        }"
-      >
-        <template v-if="statusOf(row.task, row.index) === 'current'">
-          <span aria-hidden="true" class="cap text-primary-soft">AGORA</span>
-          <span class="flex items-baseline gap-2">
-            <span class="shrink-0 font-mono text-xs text-fg-muted">{{ row.task.number }}.</span>
-            <span class="min-w-0 font-medium">{{ row.task.title }}</span>
-          </span>
-        </template>
-        <template v-else>
-          <span aria-hidden="true" class="flex w-4 shrink-0 items-center justify-center self-center">
-            <IconCheck v-if="statusOf(row.task, row.index) === 'done'" :size="12" class="text-primary" />
-            <IconCircle v-else :size="12" />
-          </span>
-          <span class="shrink-0 font-mono text-xs">{{ row.task.number }}.</span>
-          <span class="min-w-0">{{ row.task.title }}</span>
-        </template>
-        <span class="sr-only">{{ { done: '(concluída)', current: '(atual)', queued: '(na fila)' }[statusOf(row.task, row.index)] }}</span>
-      </li>
+      <PlanTaskRow v-for="row in compactRows" :key="row.index" :task="row.task" :status="statusOf(row.task, row.index)" />
     </ol>
     <p v-if="inPanel && open && laterCount > 0" data-test="plan-later" class="m-0 text-xs text-fg-subtle">+{{ laterCount }} depois</p>
     <ol v-if="open && !inPanel && tasks.length" ref="list" class="relative m-0 flex max-h-56 list-none flex-col gap-0.5 overflow-y-auto p-0 pt-1">

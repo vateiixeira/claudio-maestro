@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { SUBAGENT_FOCUS_KEY, type SubagentFocus } from '../../../conversation/subagents'
 import WorkBlock from '../WorkBlock.vue'
+import Collapse from '../../Collapse.vue'
 import type { ToolItem } from '../../../types/conversation'
 
 const done = { content: 'ok', is_error: false, details: null }
@@ -171,5 +172,33 @@ describe('WorkBlock: pedido para chegar a uma ação', () => {
     focus.value = { id: 'z', path: ['z'] }
     await w.vm.$nextTick()
     expect(w.emitted('toggle')).toBeUndefined()
+  })
+})
+
+describe('WorkBlock: animações', () => {
+  it('o resumo só anima quando o texto muda, não ao montar', async () => {
+    const w = mountBlock({ items: [tool('b', 'Bash', { command: 'ls' }, { result: null })], sessionActive: true })
+    expect(w.find('[data-test="work-summary"]').classes()).not.toContain('animate-enter')
+    await w.setProps({ items: [tool('b', 'Bash', { command: 'ls' })] })
+    expect(w.find('[data-test="work-summary"]').text()).toBe('1 comando ok')
+    expect(w.find('[data-test="work-summary"]').classes()).toContain('animate-enter')
+    expect(w.find('[data-test="work-summary"]').classes()).toContain('[animation-duration:var(--motion-state)]')
+  })
+
+  it('a caixa e o corpo de cada linha abrem e fecham dentro de um Collapse, com aria-expanded certo', async () => {
+    const w = mountBlock({ items: [tool('b', 'Bash', { command: 'ls' })], open: false })
+    const collapses = () => w.findAllComponents(Collapse).map((c) => c.props('open'))
+    expect(collapses()).toEqual([false])
+    await w.setProps({ open: true })
+    expect(collapses()).toEqual([true, false])
+    await rows(w)[0]!.trigger('click')
+    expect(collapses()).toEqual([true, true])
+    expect(rows(w)[0]!.attributes('aria-expanded')).toBe('true')
+  })
+
+  it('o chevron do cabeçalho gira no tempo do movimento do app', () => {
+    const w = mountBlock({ items: [tool('r', 'Read')], open: true })
+    const chevron = w.find('[data-test="work-block-toggle"] svg')
+    expect(chevron.classes()).toEqual(expect.arrayContaining(['duration-(--motion-enter)', 'ease-(--ease-maestro)']))
   })
 })

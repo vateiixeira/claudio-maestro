@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import WorkStatus from '../WorkStatus.vue'
 
@@ -63,5 +63,56 @@ describe('WorkStatus', () => {
     expect(w.find('svg').exists()).toBe(false)
     expect(w.find('.sr-only').exists()).toBe(false)
     expect(w.text()).toBe('sem resultado')
+  })
+})
+
+describe('WorkStatus: troca de estado suave', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const layers = (w: ReturnType<typeof mountStatus>) => w.findAll('[data-test="work-state-layer"]')
+
+  it('ao montar só há o estado ativo, sem animar de entrada', () => {
+    const w = mountStatus({ status: 'ok' })
+    expect(layers(w)).toHaveLength(1)
+    expect(layers(w)[0]!.attributes('aria-hidden')).toBeUndefined()
+    expect(layers(w)[0]!.classes()).not.toContain('work-state-in')
+  })
+
+  it('ao trocar, o estado ativo é o único visível e o anterior sai com aria-hidden', async () => {
+    const w = mountStatus({ status: 'running', elapsed: '4 s' })
+    await w.setProps({ status: 'ok' })
+    const all = layers(w)
+    expect(all).toHaveLength(2)
+    const hidden = all.filter((l) => l.attributes('aria-hidden') === 'true')
+    const active = all.filter((l) => l.attributes('aria-hidden') === undefined)
+    expect(hidden).toHaveLength(1)
+    expect(active).toHaveLength(1)
+    expect(active[0]!.classes()).toContain('work-state-in')
+    expect(active[0]!.find('.sr-only').text()).toBe('concluído')
+    // The state that is leaving never reaches a screen reader.
+    expect(hidden[0]!.attributes('data-state')).toBe('running')
+    expect(w.findAll('.sr-only').filter((s) => !s.element.closest('[aria-hidden="true"]'))).toHaveLength(1)
+  })
+
+  it('o estado que saiu é removido depois do tempo da troca', async () => {
+    const w = mountStatus({ status: 'running' })
+    await w.setProps({ status: 'error' })
+    expect(layers(w)).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(layers(w)).toHaveLength(1)
+    expect(w.find('[data-test="work-word"]').text()).toBe('falhou')
+  })
+
+  it('sem estado (idle) não deixa camada nem folga', async () => {
+    const w = mountStatus({ status: 'idle', meta: 'sem resultado' })
+    expect(layers(w)).toHaveLength(0)
+    expect(w.text()).toBe('sem resultado')
+  })
+
+  it('o meta não faz parte da troca', async () => {
+    const w = mountStatus({ status: 'running', meta: '3 linhas' })
+    await w.setProps({ status: 'ok' })
+    expect(w.findAll('[data-test="work-meta"]')).toHaveLength(1)
   })
 })

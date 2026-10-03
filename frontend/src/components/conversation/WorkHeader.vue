@@ -72,6 +72,6 @@ const rowClass = computed(() => [
     <slot name="trail" />
     <slot name="status"><WorkStatus :status="status" :meta="meta" :elapsed="elapsed" /></slot>
     <slot name="actions" />
-    <IconChevron v-if="open !== undefined" data-test="work-chevron" :open="open" :size="12" class="text-fg-subtle" />
+    <IconChevron v-if="open !== undefined" data-test="work-chevron" :open="open" :size="12" class="text-fg-subtle duration-(--motion-enter) ease-(--ease-maestro)" />
   </component>
 </template>
