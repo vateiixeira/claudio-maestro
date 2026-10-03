@@ -49,3 +49,15 @@ export function formatElapsedShort(seconds: number, nowMs: number = Date.now()):
   const days = Math.floor(elapsed / 86400)
   return days === 1 ? '1 dia' : `${days} dias`
 }
+
+/** How long something has been running, to the second: "12 s", "1 min 3 s", "1 h 5 min". */
+export function formatRunningTime(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds))
+  if (total < 60) return `${total} s`
+  if (total < 3600) {
+    const rest = total % 60
+    return rest ? `${Math.floor(total / 60)} min ${rest} s` : `${Math.floor(total / 60)} min`
+  }
+  const minutes = Math.floor((total % 3600) / 60)
+  return minutes ? `${Math.floor(total / 3600)} h ${minutes} min` : `${Math.floor(total / 3600)} h`
+}

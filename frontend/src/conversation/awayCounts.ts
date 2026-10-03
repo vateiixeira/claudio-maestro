@@ -28,7 +28,7 @@ export function shouldShowAway(input: { lastSeenAt: number | null | undefined; l
  * What the items created after `since` (Unix seconds) add up to. A turn is a user message and
  * what follows it, so the turn that was already running when the user left counts once if it kept
  * working. Actions are tool calls, subagents' included; files are the distinct paths edited.
- * Items without a time (old transcripts) are left out.
+ * Items without a time (old transcripts) and notices are left out.
  */
 export function awayCounts(items: ConversationItem[], since: number): AwayCounts {
   let turns = 0
@@ -37,7 +37,8 @@ export function awayCounts(items: ConversationItem[], since: number): AwayCounts
   const files = new Set<string>()
   for (const item of items) {
     if (item.type === 'user') segmentCounted = false
-    if (item.at == null || item.at <= since) continue
+    // A notice ("Interrompida") is made by the backend when it loads the history, stamped with that moment.
+    if (item.type === 'notice' || item.at == null || item.at <= since) continue
     if (!segmentCounted) {
       segmentCounted = true
       turns++

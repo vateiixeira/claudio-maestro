@@ -95,6 +95,17 @@ describe('chat em turnos', () => {
     expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['waiting', 'text', 'running'])
   })
 
+  it('a linha da ferramenta que espera o usuário diz "esperando você", e o resumo do bloco também', async () => {
+    const w = await mountWith({
+      state: 'awaiting_decision',
+      items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { result: null })],
+      prompts: [{ prompt_id: 'p1', tool_name: 'Bash', input: { command: 'ls' }, can_always: false, tool_use_id: 'tu-b1' }],
+    })
+    expect(w.find('[data-test="work-summary"]').text()).toBe('1 leitura · 1 esperando você')
+    const statuses = w.findAll('[data-test="work-row"] [data-test="work-status"]').map((n) => n.attributes('data-status'))
+    expect(statuses).toEqual(['ok', 'waiting'])
+  })
+
   it('nós de aviso e de subagente; filhos do subagente contam no resumo', async () => {
     const w = await mountWith({
       state: 'idle',

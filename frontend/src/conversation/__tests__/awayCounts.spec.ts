@@ -42,6 +42,16 @@ describe('awayCounts', () => {
     expect(awayCounts(items, 300)).toEqual({ turns: 1, actions: 1, files: 0 })
   })
 
+  it('aviso criado ao carregar (ex.: "Interrompida") não conta como turno nem como ação', () => {
+    const notice: ConversationItem = { type: 'notice', id: 'n', level: 'warning', text: 'Interrompida', at: 900 }
+    expect(awayCounts([user('u1', 100), text('a', 110), notice], 300)).toEqual({ turns: 0, actions: 0, files: 0 })
+  })
+
+  it('aviso no meio do turno novo não conta a mais', () => {
+    const notice: ConversationItem = { type: 'notice', id: 'n', level: 'info', text: 'x', at: 450 }
+    expect(awayCounts([user('u1', 400), notice, tool('t', 'Bash', 460)], 300)).toEqual({ turns: 1, actions: 1, files: 0 })
+  })
+
   it('conta cada pedido novo como um turno', () => {
     const items = [user('u1', 100), text('a', 110), user('u2', 400), text('b', 410), user('u3', 500), text('c', 510)]
     expect(awayCounts(items, 300).turns).toBe(2)

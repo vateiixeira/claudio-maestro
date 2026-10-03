@@ -29,6 +29,9 @@ export interface Conversation {
   externalActivity: boolean
   options: SessionOptions
   context: ContextUsage | null
+  /** When the user last saw it and when it last had activity, as the snapshot said (the "while you were away" card). */
+  lastSeenAt?: number | null
+  lastActivityAt?: number | null
 }
 
 /** Reads the options from a snapshot, a session or a `session.options` payload. */
@@ -79,6 +82,8 @@ export function conversationFromSnapshot(snapshot: SessionSnapshot): Conversatio
     externalActivity: snapshot.external_activity === true,
     options: optionsFrom(snapshot),
     context: snapshot.context ?? null,
+    lastSeenAt: snapshot.last_seen_at ?? null,
+    lastActivityAt: snapshot.last_activity_at ?? null,
   }
 }
 

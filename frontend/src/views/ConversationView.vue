@@ -39,14 +39,19 @@ const awayDismissed = ref(false)
 let awayCapturedFor: string | null = null
 function captureAway() {
   if (awayCapturedFor === props.id) return
+  // The session list can arrive after the thread marked the conversation as seen; the snapshot, loaded
+  // before that, still has the old moment.
   const session = sessions.find(props.id)
-  if (!session) return
+  const conv = conversations.get(props.id)
+  const lastSeenAt = session ? session.last_seen_at : conv?.lastSeenAt
+  const lastActivityAt = session ? session.last_activity_at : conv?.lastActivityAt
+  if (!session && (!conv || lastActivityAt == null)) return
   awayCapturedFor = props.id
   awayDismissed.value = false
-  const show = shouldShowAway({ lastSeenAt: session.last_seen_at, lastActivityAt: session.last_activity_at, now: Date.now() / 1000 })
-  away.value = show ? { seenAt: session.last_seen_at as number } : null
+  const show = shouldShowAway({ lastSeenAt, lastActivityAt: lastActivityAt as number, now: Date.now() / 1000 })
+  away.value = show ? { seenAt: lastSeenAt as number } : null
 }
-watch(() => [props.id, sessions.find(props.id)?.session_id], () => {
+watch(() => [props.id, sessions.find(props.id)?.session_id, conversations.get(props.id)?.sessionId], () => {
   if (awayCapturedFor !== props.id) away.value = null
   captureAway()
 }, { immediate: true })

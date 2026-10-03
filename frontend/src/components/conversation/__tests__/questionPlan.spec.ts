@@ -206,6 +206,24 @@ describe('cartão de plano com passos', () => {
     expect(w.emitted('resolved')).toHaveLength(1)
   })
 
+  it('dois passos com o mesmo número têm anotações separadas', async () => {
+    const fetchMock = routeFetch({ [URL]: () => jsonResponse({}) })
+    vi.stubGlobal('fetch', fetchMock)
+    const dup = '# Plano\n\n### Tarefa 1: Criar tabela\n- [ ] a\n\n### Tarefa 1: Expor rota\n- [ ] b\n'
+    const w = mount(PlanCard, { props: { sessionId: 's1', prompt: planPrompt(dup) } })
+    await openChanges(w)
+    await w.findAll('[data-test="plan-step"]')[1]!.trigger('click')
+    await w.find('[data-test="step-note"]').setValue('Só a rota')
+    await w.findAll('[data-test="plan-step"]')[0]!.trigger('click')
+    expect(w.find('[data-test="step-note"]').element).toHaveProperty('value', '')
+    expect(w.findAll('[data-test="step-note-text"]')).toHaveLength(1)
+    expect(w.findAll('[data-test="plan-step"]')[1]!.find('[data-test="step-number"]').classes()).toContain('text-secondary-soft')
+    expect(w.findAll('[data-test="plan-step"]')[0]!.find('[data-test="step-number"]').classes()).not.toContain('text-secondary-soft')
+    await w.find('[data-test="send-reject"]').trigger('click')
+    await flushPromises()
+    expect(body(fetchMock)).toEqual({ decision: 'reject', message: 'Passo 1: Só a rota' })
+  })
+
   it('só o comentário geral já habilita o envio', async () => {
     const fetchMock = routeFetch({ [URL]: () => jsonResponse({}) })
     vi.stubGlobal('fetch', fetchMock)

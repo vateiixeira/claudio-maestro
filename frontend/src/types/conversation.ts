@@ -136,6 +136,7 @@ export interface SessionSnapshot {
   prompts: PermissionPrompt[]
   init: SessionInit | null
   last_seen_at?: number | null
+  last_activity_at?: number
   finished?: boolean
   display_state?: DisplayState
   unread?: boolean

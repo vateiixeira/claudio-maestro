@@ -42,3 +42,21 @@ describe('formatElapsedShort', () => {
     expect(formatElapsedShort(ago(3 * 86400 + 5), now)).toBe('3 dias')
   })
 })
+
+describe('formatRunningTime', () => {
+  it('segundos, minutos com segundos e horas', async () => {
+    const { formatRunningTime } = await import('../format')
+    expect(formatRunningTime(0)).toBe('0 s')
+    expect(formatRunningTime(12)).toBe('12 s')
+    expect(formatRunningTime(59.9)).toBe('59 s')
+    expect(formatRunningTime(63)).toBe('1 min 3 s')
+    expect(formatRunningTime(120)).toBe('2 min')
+    expect(formatRunningTime(3599)).toBe('59 min 59 s')
+    expect(formatRunningTime(3600)).toBe('1 h')
+    expect(formatRunningTime(3600 + 5 * 60 + 9)).toBe('1 h 5 min')
+  })
+  it('relógio um pouco atrasado não dá tempo negativo', async () => {
+    const { formatRunningTime } = await import('../format')
+    expect(formatRunningTime(-3)).toBe('0 s')
+  })
+})

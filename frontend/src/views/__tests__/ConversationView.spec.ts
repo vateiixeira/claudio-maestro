@@ -617,7 +617,7 @@ describe('resumo ao voltar', () => {
     digestPosts = 0
     seenPosts = 0
     return mountAt('/sessions/s1', {
-      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ title: 'Corrigir login', items: items as never })),
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ title: 'Corrigir login', items: items as never, last_seen_at: SEEN, last_activity_at: NOW - 60 })),
       'GET /api/digest/config': () => jsonResponse({ config: {}, status: { enabled: false, running: false, next_run_at: null, paused_until: null } }),
       'POST /api/sessions/s1/digest': () => { digestPosts++; return jsonResponse({ queued: true }, 202) },
       'POST /api/sessions/s1/seen': () => { seenPosts++; return jsonResponse(makeSession()) },
@@ -648,6 +648,17 @@ describe('resumo ao voltar', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('na carga a frio a lista de sessões chega depois de marcar como vista e o card aparece', async () => {
+    useSessionsStore(pinia).setForProject(1, [])
+    const { wrapper } = await mountAway()
+    expect(wrapper.find('[data-test="away-title"]').text()).toBe('Enquanto você estava fora · há 42 min')
+    // The list loads after the thread told the backend it was seen: it already carries the new moment.
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', last_seen_at: NOW, last_activity_at: NOW - 60 })])
+    await flushPromises()
+    expect(wrapper.find('[data-test="away-title"]').text()).toBe('Enquanto você estava fora · há 42 min')
+    expect(wrapper.find('[data-test="away-counts"]').text()).toBe('1 turno · 2 ações · 1 arquivo alterado')
   })
 
   it('não aparece com menos de 15 minutos', async () => {

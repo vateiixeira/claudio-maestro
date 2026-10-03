@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-type Status = 'ok' | 'running' | 'error' | 'stopped' | 'idle'
+type Status = 'ok' | 'running' | 'waiting' | 'error' | 'stopped' | 'idle'
 
-// The state at the right of a work header: done, running, failed, stopped, or "idle" (nothing to say but the meta text).
+// The state at the right of a work header: done, running, waiting for the user, failed, stopped, or "idle" (nothing to say but the meta text).
 const props = defineProps<{
   status: Status
   /** Short detail shown next to the state ("3 linhas"). */
@@ -60,8 +60,13 @@ const layers = computed(() => {
         </template>
         <template v-else-if="layer.state === 'running'">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" class="shrink-0 animate-spin text-secondary-soft motion-reduce:animate-none" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" stroke-linecap="round" /></svg>
-          <span v-if="elapsed" data-test="work-elapsed" class="text-secondary-soft">{{ elapsed }}</span>
+          <span v-if="elapsed" data-test="work-elapsed" class="font-mono tabular-nums text-secondary-soft">{{ elapsed }}</span>
           <span class="sr-only">rodando…</span>
+        </template>
+        <template v-else-if="layer.state === 'waiting'">
+          <!-- The same triangle with "!" as the rail node: waiting for the user is a shape, not only a color. -->
+          <svg data-shape="triangle" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-secondary" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" /><path d="M12 10v4" /><path d="M12 17h.01" /></svg>
+          <span data-test="work-word" class="text-secondary-soft">esperando você</span>
         </template>
         <span v-else-if="layer.state === 'error'" data-test="work-word" class="text-diff-del-fg">falhou</span>
         <span v-else-if="layer.state === 'stopped'" data-test="work-word" class="text-fg-subtle">parado</span>

@@ -35,13 +35,17 @@ export const STALE_SECONDS = 10 * 60
  */
 export function subagentClock(entry: SubagentEntry, nowMs: number): { text: string; stale: boolean } | null {
   if (entry.type !== 'agent' || entry.startedAt == null) return null
+  // "agora" says when something happened, not for how long: a duration under a minute is "<1 min".
+  const duration = (endMs: number) => {
+    const text = formatElapsedShort(entry.startedAt!, endMs)
+    return text === 'agora' ? '<1 min' : text
+  }
   if (entry.status !== 'running') {
     if (entry.lastActivityAt == null) return null
-    const text = formatElapsedShort(entry.startedAt, entry.lastActivityAt * 1000)
-    return { text: text === 'agora' ? '<1 min' : text, stale: false }
+    return { text: duration(entry.lastActivityAt * 1000), stale: false }
   }
   const stale = entry.lastActivityAt != null && nowMs / 1000 - entry.lastActivityAt > STALE_SECONDS
-  return { text: formatElapsedShort(entry.startedAt, nowMs), stale }
+  return { text: duration(nowMs), stale }
 }
 
 /** State of a subagent card: the SDK's when known, else inferred from the tool call. */

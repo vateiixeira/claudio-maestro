@@ -161,3 +161,34 @@ describe('groupNodeKind', () => {
     expect(groupNodeKind([tool('a', 'Read')], true, waiting)).toBe('read')
   })
 })
+
+describe('ferramenta esperando o usuário', () => {
+  const waiting = new Set(['tu-w'])
+  const pending = () => tool('w', 'Bash', { command: 'rm -rf x' }, { result: null })
+
+  it('workStatus é "waiting", mesmo com a ferramenta sem resultado (que seria "running")', () => {
+    expect(workStatus(pending(), true)).toBe('running')
+    expect(workStatus(pending(), true, waiting)).toBe('waiting')
+    expect(workStatus(tool('o', 'Read'), true, waiting)).toBe('ok')
+  })
+
+  it('o subagente que contém o pedido também espera', () => {
+    const agent = tool('w', 'Agent', {}, { subagent: sub('running') })
+    expect(workStatus(agent, true, waiting)).toBe('waiting')
+  })
+
+  it('workRow leva o estado', () => {
+    expect(workRow(pending(), true, waiting).status).toBe('waiting')
+  })
+
+  it('o resumo conta "esperando você" no lugar de "rodando"', () => {
+    const items = [tool('a', 'Read'), pending()]
+    expect(workSummary(items, true, waiting)).toBe('1 leitura · 1 esperando você')
+    expect(workSummary([...items, tool('r', 'Bash', {}, { result: null })], true, waiting)).toBe('1 leitura · 1 rodando · 1 esperando você')
+    expect(workSummary([pending(), tool('w2', 'Bash', {}, { result: null })], true, new Set(['tu-w', 'tu-w2']))).toBe('2 esperando você')
+  })
+
+  it('a linha de atividade do bloco fechado continua dizendo qual é a ação', () => {
+    expect(workActivity([pending()], true, waiting)).toBe('Comando · rm -rf x')
+  })
+})

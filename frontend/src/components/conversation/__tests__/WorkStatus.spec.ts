@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import WorkStatus from '../WorkStatus.vue'
 
-type Status = 'ok' | 'running' | 'error' | 'stopped' | 'idle'
+type Status = 'ok' | 'running' | 'waiting' | 'error' | 'stopped' | 'idle'
 const mountStatus = (props: { status: Status; meta?: string; elapsed?: string }) => mount(WorkStatus, { props })
 
 describe('WorkStatus', () => {
@@ -41,6 +41,26 @@ describe('WorkStatus', () => {
     const w = mountStatus({ status: 'running' })
     expect(w.find('[data-test="work-elapsed"]').exists()).toBe(false)
     expect(w.find('svg').exists()).toBe(true)
+  })
+
+  it('esperando: triângulo secundário com "!" e o texto "esperando você"', () => {
+    const w = mountStatus({ status: 'waiting', elapsed: '12 s' })
+    expect(w.attributes('data-status')).toBe('waiting')
+    const triangle = w.find('svg[data-shape="triangle"]')
+    expect(triangle.exists()).toBe(true)
+    expect(triangle.classes()).toContain('text-secondary')
+    expect(triangle.classes()).not.toContain('animate-spin')
+    const word = w.find('[data-test="work-word"]')
+    expect(word.text()).toBe('esperando você')
+    expect(word.classes()).toContain('text-secondary-soft')
+    // Waiting is not running: no time, no "rodando".
+    expect(w.find('[data-test="work-elapsed"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('rodando')
+  })
+
+  it('o tempo é mono com algarismos tabulares', () => {
+    const w = mountStatus({ status: 'running', elapsed: '1 min 3 s' })
+    expect(w.find('[data-test="work-elapsed"]').classes()).toEqual(expect.arrayContaining(['font-mono', 'tabular-nums']))
   })
 
   it('erro: "falhou" visível em diff-del-fg', () => {

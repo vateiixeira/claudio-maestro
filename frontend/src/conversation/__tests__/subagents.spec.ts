@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentStatus, deriveSubagents, stripSubagents, summarizeSubagents, waitingText } from '../subagents'
+import { agentStatus, deriveSubagents, subagentClock, stripSubagents, summarizeSubagents, waitingText } from '../subagents'
 import type { ConversationItem, Subagent, ToolItem } from '../../types/conversation'
 
 const sub = (status: Subagent['status'], extra: Partial<Subagent> = {}): Subagent => ({
@@ -179,5 +179,19 @@ describe('waitingText', () => {
   })
   it('misturados viram "tarefas"', () => {
     expect(waitingText([run('agent'), run('command')])).toBe('Aguardando 2 tarefas em background')
+  })
+})
+
+describe('subagentClock', () => {
+  const entry = (status: 'running' | 'completed', startedAt: number, lastActivityAt: number | null) =>
+    ({ id: 'a', type: 'agent', kind: 'reviewer', description: 'x', status, lastAction: '', startedAt, lastActivityAt }) as const
+  it('no primeiro minuto de um subagente rodando mostra "<1 min", não "agora"', () => {
+    expect(subagentClock(entry('running', 1000, 1010), 1030 * 1000)?.text).toBe('<1 min')
+  })
+  it('depois do primeiro minuto mostra os minutos', () => {
+    expect(subagentClock(entry('running', 1000, 1100), 1190 * 1000)?.text).toBe('3 min')
+  })
+  it('um subagente que terminou em menos de um minuto também mostra "<1 min"', () => {
+    expect(subagentClock(entry('completed', 1000, 1020), 5000 * 1000)?.text).toBe('<1 min')
   })
 })

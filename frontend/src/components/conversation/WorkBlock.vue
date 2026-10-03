@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, inject, reactive, ref, watch } from 'vue'
 import type { TaskEntry } from '../../conversation/tasks'
+import { formatRunningTime } from '../../format'
 import { SUBAGENT_FOCUS_KEY } from '../../conversation/subagents'
 import { workActivity, workRow, workSummary } from '../../conversation/work'
+import { useSecondClock } from '../../secondClock'
 import type { ConversationItem, ToolItem } from '../../types/conversation'
 import ConversationBlock from './ConversationBlock.vue'
 import Collapse from '../Collapse.vue'
@@ -15,21 +17,30 @@ const props = withDefaults(
     items: ToolItem[]
     open: boolean
     sessionActive?: boolean
+    /** `tool_use_id`s of the requests the user has yet to answer: those actions wait for the user. */
+    waitingIds?: ReadonlySet<string>
     childrenOf?: (toolUseId: string) => ConversationItem[]
     taskList?: { tasks: TaskEntry[]; lastItemId: string | null } | null
   }>(),
-  { sessionActive: false, childrenOf: () => [], taskList: null },
+  { sessionActive: false, waitingIds: undefined, childrenOf: () => [], taskList: null },
 )
 const emit = defineEmits<{ toggle: [] }>()
 
 const count = computed(() => (props.items.length === 1 ? '1 ação' : `${props.items.length} ações`))
-const summary = computed(() => workSummary(props.items, props.sessionActive))
+const summary = computed(() => workSummary(props.items, props.sessionActive, props.waitingIds))
 // The summary ("2 comandos ok") enters when its text changes, not when the block first appears.
 const summaryChanged = ref(false)
 watch(summary, () => { summaryChanged.value = true })
 // While the block is closed and something runs, one line says what.
-const activity = computed(() => workActivity(props.items, props.sessionActive))
-const rows = computed(() => props.items.map((item) => ({ item, ...workRow(item, props.sessionActive) })))
+const activity = computed(() => workActivity(props.items, props.sessionActive, props.waitingIds))
+const rows = computed(() => props.items.map((item) => ({ item, ...workRow(item, props.sessionActive, props.waitingIds) })))
+
+// The time of a running action ("12 s"). One clock for the whole app, on only while the block is open and
+// an action with a known start runs in it.
+const ticking = computed(() => props.open && rows.value.some((row) => row.status === 'running' && row.at != null))
+const now = useSecondClock(ticking)
+const elapsedOf = (row: { status: string; at?: number }) =>
+  row.status === 'running' && row.at != null ? formatRunningTime(now.value / 1000 - row.at) : undefined
 
 // A row is closed unless the user opened it; one that failed opens by itself, until the user chooses otherwise.
 const choice = reactive(new Map<string, boolean>())
@@ -81,6 +92,7 @@ watch(focus, (target) => {
             :mono="row.mono"
             :status="row.status"
             :meta="row.meta"
+            :elapsed="elapsedOf(row)"
             :open="isOpen(row.item.id, row.status === 'error')"
             :aria-expanded="isOpen(row.item.id, row.status === 'error')"
             @click="toggleRow(row.item.id, row.status === 'error')"

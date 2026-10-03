@@ -504,6 +504,7 @@ function resolvePrompt(promptId: string) {
                       :items="entry.items"
                       :open="blockOpen(entry, done)"
                       :session-active="sessionActive"
+                      :waiting-ids="waitingIds"
                       :children-of="tree.childrenOf"
                       :task-list="taskList"
                       @toggle="groupChoice.set(entry.id, !blockOpen(entry, done))"

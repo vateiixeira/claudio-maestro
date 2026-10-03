@@ -15,7 +15,7 @@ const props = withDefaults(
     /** A small chip before the description (the subagent type, the search tool). */
     tag?: string
     desc: string
-    status: 'ok' | 'running' | 'error' | 'stopped' | 'idle'
+    status: 'ok' | 'running' | 'waiting' | 'error' | 'stopped' | 'idle'
     meta?: string
     elapsed?: string
     /** When set, the row shows a chevron that points down while open. */
