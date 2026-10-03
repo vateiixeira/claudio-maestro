@@ -3,7 +3,7 @@ import { backgroundState } from './background'
 import { diffCounts, toolDiff } from './diff'
 import { agentStatus } from './subagents'
 import { countLines, resultText, str, toolLabel } from './tool'
-import { AGENT_TOOLS, EDIT_TOOLS, SEARCH_TOOLS, toolRunning } from './turns'
+import { AGENT_TOOLS, EDIT_TOOLS, SEARCH_TOOLS, toolRunning, type NodeKind } from './turns'
 
 // What a work block (the actions between two statements) says about each of its actions.
 
@@ -136,4 +136,17 @@ export function workActivity(items: ToolItem[], sessionActive: boolean): string 
     return [row.label === 'Escrita' ? WORK_LABEL.edit : WORK_LABEL[row.kind], what].filter(Boolean).join(' · ')
   }
   return ''
+}
+
+/**
+ * A work block's rail node. The states win, in this order: something waits for the user, something
+ * runs, something failed. Otherwise the node shows the kind of the block's first action.
+ * `waiting` holds the `tool_use_id`s of the requests the user has yet to answer.
+ */
+export function groupNodeKind(items: ToolItem[], sessionActive: boolean, waiting?: ReadonlySet<string>): NodeKind {
+  if (waiting && items.some((item) => waiting.has(item.tool_use_id))) return 'waiting'
+  const statuses = items.map((item) => workStatus(item, sessionActive))
+  if (statuses.includes('running')) return 'running'
+  if (statuses.includes('error')) return 'error'
+  return workKind(items[0]!)
 }

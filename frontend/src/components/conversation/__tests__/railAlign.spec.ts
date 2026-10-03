@@ -12,12 +12,8 @@ describe('railAlign', () => {
     for (const level of ['info', 'warning', 'error']) {
       expect(railAlign({ type: 'notice', id: 'n', level, text: 'a' } as ConversationItem)).toBe('notice')
     }
-    expect(railAlign(tool('Bash'))).toBe('bash')
-    expect(railAlign(tool('Bash', { result: { content: 'x', is_error: true, details: null } }))).toBe('bash')
-    expect(railAlign(tool('Agent'))).toBe('agent')
-    expect(railAlign(tool('Task'))).toBe('agent')
-    expect(railAlign(tool('Read'))).toBe('card')
-    expect(railAlign(tool('Edit'))).toBe('card')
-    expect(railAlign(tool('WebFetch'))).toBe('card')
+    expect(railAlign(tool('TodoWrite'))).toBe('card')
+    expect(railAlign(tool('AskUserQuestion', { result: { content: 'x', is_error: true, details: null } }))).toBe('card')
+    expect(railAlign(tool('ExitPlanMode'))).toBe('card')
   })
 })

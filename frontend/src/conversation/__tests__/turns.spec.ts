@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildTurns, groupNodeKind, nodeKind, tidyThinking, turnSummary } from '../turns'
+import { buildTurns, nodeKind, tidyThinking, turnSummary } from '../turns'
 import type { ConversationItem, ToolItem } from '../../types/conversation'
 
 const user = (id: string): ConversationItem => ({ type: 'user', id, text: id })
@@ -117,6 +117,9 @@ describe('nodeKind', () => {
     expect(nodeKind(tool('s', 'ToolSearch'), false)).toBe('tool')
     expect(nodeKind(tool('m', 'mcp__x__y'), false)).toBe('tool')
     expect(nodeKind(tool('a', 'Agent'), false)).toBe('agent')
+    // question and plan cards stand alone, with a plain dot
+    expect(nodeKind(tool('q', 'AskUserQuestion'), false)).toBe('task')
+    expect(nodeKind(tool('p', 'ExitPlanMode'), false)).toBe('task')
     expect(nodeKind({ type: 'notice', id: 'n', level: 'warning', text: '' }, false)).toBe('warning')
     expect(nodeKind({ type: 'notice', id: 'n', level: 'info', text: '' }, false)).toBe('info')
     expect(nodeKind({ type: 'notice', id: 'n', level: 'error', text: '' }, false)).toBe('error')
@@ -130,6 +133,14 @@ describe('nodeKind', () => {
     const sub = { task_id: null, subagent_type: null, description: null, last_activity: null, usage: null, summary: null }
     expect(nodeKind(tool('a', 'Agent', {}, { subagent: { ...sub, status: 'running' } }), true)).toBe('running')
     expect(nodeKind(tool('a', 'Agent', {}, { subagent: { ...sub, status: 'failed' } }), false)).toBe('error')
+  })
+
+  it('o que espera o usuário vence o estado e o tipo', () => {
+    const waiting = new Set(['tu-q', 'tu-b'])
+    expect(nodeKind(tool('q', 'AskUserQuestion', {}, { result: null }), true, waiting)).toBe('waiting')
+    expect(nodeKind(tool('b', 'Bash', {}, { result: null }), true, waiting)).toBe('waiting')
+    expect(nodeKind(tool('x', 'Bash', {}, { result: null }), true, waiting)).toBe('running')
+    expect(nodeKind(text('a'), true, new Set(['a']))).toBe('text')
   })
 
   it('Bash em background segue o status da tarefa, não o resultado do lançamento', () => {
@@ -210,13 +221,5 @@ describe('blocos de trabalho', () => {
   it('o resumo conta cada ação do bloco', () => {
     const t = buildTurns([user('u'), tool('r1', 'Read'), tool('r2', 'Read'), tool('b', 'Bash')])[0]!
     expect(turnSummary(t, () => []).actions).toBe(3)
-  })
-
-  it('nó do bloco: rodando se algum item roda, depois erro, senão grupo', () => {
-    const failed = tool('f', 'Bash', {}, { result: { content: 'x', is_error: true, details: null } })
-    expect(groupNodeKind([tool('a', 'Read'), tool('b', 'Read')], false)).toBe('group')
-    expect(groupNodeKind([tool('a', 'Read'), tool('b', 'Read', {}, { result: null })], true)).toBe('running')
-    expect(groupNodeKind([tool('a', 'Read'), failed], false)).toBe('error')
-    expect(groupNodeKind([failed, tool('b', 'Read', {}, { result: null })], true)).toBe('running')
   })
 })

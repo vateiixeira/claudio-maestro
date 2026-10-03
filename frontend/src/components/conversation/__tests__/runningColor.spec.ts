@@ -18,10 +18,12 @@ function runningBlock(item: ToolItem) {
 }
 
 describe('indicadores de rodando em âmbar', () => {
-  it('trilha: bolinha rodando é âmbar e pulsa', () => {
-    const cls = mount(RailNode, { props: { kind: 'running' } }).find('[data-test="rail-dot"]').classes()
-    expect(cls).toEqual(expect.arrayContaining(['bg-secondary', 'animate-pulse', 'motion-reduce:animate-none']))
-    expect(cls).not.toContain('bg-primary')
+  it('trilha: o nó rodando tem a borda e o giro em âmbar', () => {
+    const w = mount(RailNode, { props: { kind: 'running' } })
+    expect(w.find('[data-test="rail-ring"]').classes()).toContain('border-secondary')
+    const cls = w.find('svg').classes()
+    expect(cls).toEqual(expect.arrayContaining(['text-secondary', 'animate-spin', 'motion-reduce:animate-none']))
+    expect(cls).not.toContain('text-primary')
   })
 
   it('Bash: o estado rodando é âmbar e gira; concluído segue verde', () => {

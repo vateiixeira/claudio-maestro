@@ -1,8 +1,10 @@
 import type { ConversationItem } from '../types/conversation'
-import { AGENT_TOOLS } from './turns'
 
-/** Which kind of card sits next to a rail node; decides how far the dot is pushed down. */
-export type RailAlign = 'text' | 'thinking' | 'notice' | 'bash' | 'agent' | 'group' | 'card'
+/**
+ * Which kind of card sits next to a rail node; decides how far the node is pushed down. Only what
+ * stands alone in the rail is here: every action is inside a work block (`group`).
+ */
+export type RailAlign = 'text' | 'thinking' | 'notice' | 'group' | 'card'
 
 /** Alignment by the card an item renders, never by its state (running/error fit any card). */
 export function railAlign(item: ConversationItem): RailAlign {
@@ -15,7 +17,5 @@ export function railAlign(item: ConversationItem): RailAlign {
     case 'notice':
       return 'notice'
   }
-  if (AGENT_TOOLS.has(item.name)) return 'agent'
-  if (item.name === 'Bash') return 'bash'
   return 'card'
 }

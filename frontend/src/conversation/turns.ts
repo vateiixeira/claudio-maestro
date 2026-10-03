@@ -115,9 +115,14 @@ export function turnSummary(turn: Turn, childrenOf: (toolUseId: string) => Conve
   return { actions, files: files.size }
 }
 
+/**
+ * What a rail node draws. `text`, `task` (a card that stands alone: task list, question, plan),
+ * `info` and `warning` are a plain dot; `thinking` and the kinds of action get an icon; `running`,
+ * `waiting` (needs the user) and `error` are states, and they win over the kind.
+ */
 export type NodeKind =
   | 'text' | 'thinking' | 'read' | 'search' | 'bash' | 'edit' | 'task' | 'tool' | 'agent'
-  | 'running' | 'error' | 'warning' | 'info' | 'group'
+  | 'running' | 'waiting' | 'error' | 'warning' | 'info'
 
 export function toolRunning(item: ToolItem, sessionActive: boolean): boolean {
   if (item.subagent) return item.subagent.status === 'running'
@@ -126,8 +131,11 @@ export function toolRunning(item: ToolItem, sessionActive: boolean): boolean {
   return item.streaming || (!item.result && !item.result_missing && sessionActive)
 }
 
-/** Which rail node an item gets. */
-export function nodeKind(item: ConversationItem, sessionActive: boolean): NodeKind {
+/**
+ * Which rail node an item gets. `waiting` holds the `tool_use_id`s of the requests the user has
+ * yet to answer; the item they belong to waits for the user, whatever it is doing.
+ */
+export function nodeKind(item: ConversationItem, sessionActive: boolean, waiting?: ReadonlySet<string>): NodeKind {
   switch (item.type) {
     case 'text':
       return 'text'
@@ -138,6 +146,7 @@ export function nodeKind(item: ConversationItem, sessionActive: boolean): NodeKi
     case 'user':
       return 'text'
   }
+  if (waiting?.has(item.tool_use_id)) return 'waiting'
   if (item.result?.is_error || item.subagent?.status === 'failed' || item.background?.status === 'failed') return 'error'
   if (toolRunning(item, sessionActive)) return 'running'
   if (AGENT_TOOLS.has(item.name)) return 'agent'
@@ -145,7 +154,7 @@ export function nodeKind(item: ConversationItem, sessionActive: boolean): NodeKi
   if (SEARCH_TOOLS.has(item.name)) return 'search'
   if (item.name === 'Bash') return 'bash'
   if (EDIT_TOOLS.has(item.name)) return 'edit'
-  if (TASK_TOOLS.has(item.name)) return 'task'
+  if (TASK_TOOLS.has(item.name) || ASK_TOOLS.has(item.name)) return 'task'
   return 'tool'
 }
 
@@ -156,10 +165,4 @@ export function summaryText(summary: TurnSummary): string {
   const parts = [plural(summary.actions, 'ação', 'ações')]
   if (summary.files) parts.push(plural(summary.files, 'arquivo alterado', 'arquivos alterados'))
   return parts.join(' · ')
-}
-
-/** A work block's node: running while any of its actions runs, else error if one failed. */
-export function groupNodeKind(items: ToolItem[], sessionActive: boolean): NodeKind {
-  if (items.some((item) => toolRunning(item, sessionActive))) return 'running'
-  return items.some((item) => nodeKind(item, sessionActive) === 'error') ? 'error' : 'group'
 }

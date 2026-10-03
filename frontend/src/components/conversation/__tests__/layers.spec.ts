@@ -117,7 +117,9 @@ describe('camadas visuais do chat (opção A)', () => {
     expect(end.classes()).not.toEqual(expect.arrayContaining(['bg-panel']))
     expect(end.find('[data-test="turn-end-label"]').classes()).toContain('text-fg-subtle')
     expect(end.find('.text-primary-soft').exists()).toBe(false)
-    expect(w.html()).toContain('bg-line-strong')
+    // A linha do trilho é discreta: line, não line-strong.
+    expect(w.find('[data-test="turn"] .bg-line').exists()).toBe(true)
+    expect(w.find('[data-test="turn"] .bg-line-strong').exists()).toBe(false)
     // As respostas do turno aparecem como texto corrido, sem balão.
     expect(w.findAll('[data-test="assistant-bubble"]')).toHaveLength(0)
     expect(w.find('.markdown').classes()).toContain('max-w-[72ch]')

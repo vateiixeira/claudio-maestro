@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import IconChevron from '../icons/IconChevron.vue'
+import IconWorkKind from '../icons/IconWorkKind.vue'
 import WorkStatus from './WorkStatus.vue'
 
 type Kind = 'bash' | 'tool' | 'read' | 'search' | 'edit' | 'agent'
@@ -64,27 +65,7 @@ const rowClass = computed(() => [
 
 <template>
   <component :is="as" :type="clickable ? 'button' : undefined" data-test="work-header" :data-kind="kind" :class="rowClass">
-    <svg
-      data-test="work-icon"
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class="shrink-0"
-      :class="iconTone"
-      aria-hidden="true"
-    >
-      <template v-if="kind === 'bash'"><path d="m4 17 6-6-6-6" /><path d="M12 19h8" /></template>
-      <template v-else-if="kind === 'tool'"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z" /></template>
-      <template v-else-if="kind === 'read'"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></template>
-      <template v-else-if="kind === 'search'"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></template>
-      <template v-else-if="kind === 'edit'"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></template>
-      <template v-else><rect x="4" y="8" width="16" height="12" rx="3" /><path d="M12 8V4" /><path d="M9 14h.01" /><path d="M15 14h.01" /></template>
-    </svg>
+    <IconWorkKind data-test="work-icon" :kind="kind" :size="13" :class="iconTone" />
     <span class="cap w-[5.5rem] shrink-0" :class="tone.text">{{ label ?? LABEL[kind] }}</span>
     <span v-if="tag" data-test="work-tag" class="shrink-0 rounded-full bg-elevated px-2 py-0.5 font-mono text-[0.6875rem] text-fg-muted">{{ tag }}</span>
     <span data-test="work-desc" class="min-w-0 grow truncate text-[0.8125rem] text-fg" :class="{ 'font-mono': mono }"><slot name="desc">{{ desc }}</slot></span>

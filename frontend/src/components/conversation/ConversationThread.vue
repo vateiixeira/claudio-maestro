@@ -13,8 +13,8 @@ import { railAlign } from '../../conversation/railAlign'
 import SubagentStrip from './SubagentStrip.vue'
 import UserMessage from './UserMessage.vue'
 import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
-import { buildTurns, groupNodeKind, nodeKind, summaryText, tidyThinking, turnSummary } from '../../conversation/turns'
-import { workStatus } from '../../conversation/work'
+import { buildTurns, nodeKind, summaryText, tidyThinking, turnSummary } from '../../conversation/turns'
+import { groupNodeKind, workStatus } from '../../conversation/work'
 import WorkBlock from './WorkBlock.vue'
 import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
@@ -184,6 +184,21 @@ const announcement = computed(() => {
   return ''
 })
 const taskList = computed(() => conversations.taskList(props.id))
+// The actions that wait for the user: the tool of each pending request and the subagents it runs inside.
+const waitingIds = computed(() => {
+  const prompts = conv.value?.prompts ?? []
+  const ids = new Set<string>()
+  if (!prompts.length) return ids
+  const items = conv.value?.items ?? []
+  const byToolUse = new Map(items.flatMap((i) => (i.type === 'tool' ? [[i.tool_use_id, i] as const] : [])))
+  for (const prompt of prompts) {
+    for (let id = prompt.tool_use_id; id && !ids.has(id); ) {
+      ids.add(id)
+      id = byToolUse.get(id)?.parent_tool_use_id
+    }
+  }
+  return ids
+})
 
 // Strip above the message field: the current subagents while any of them runs.
 const subagentEntries = computed(() => stripSubagents(deriveSubagents(conv.value?.items ?? [], sessionActive.value)))
@@ -423,11 +438,11 @@ function resolvePrompt(promptId: string) {
               class="flex scroll-mt-11 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
             >
               <UserMessage v-if="turn.user" :item="turn.user" />
-              <div v-if="turn.entries.length" class="relative flex flex-col gap-3.5">
-                <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line-strong" />
+              <div v-if="turn.entries.length" class="relative flex flex-col gap-[18px]">
+                <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
                 <div v-for="entry in turn.entries" :key="entry.kind === 'group' ? `group-${entry.id}` : entry.item.id" class="relative flex items-start gap-3">
                   <template v-if="entry.kind === 'group'">
-                    <RailNode :kind="groupNodeKind(entry.items, sessionActive)" align="group" />
+                    <RailNode :kind="groupNodeKind(entry.items, sessionActive, waitingIds)" align="group" />
                     <WorkBlock
                       class="min-w-0 grow"
                       :items="entry.items"
@@ -439,7 +454,7 @@ function resolvePrompt(promptId: string) {
                     />
                   </template>
                   <template v-else>
-                    <RailNode :kind="nodeKind(entry.item, sessionActive)" :align="railAlign(entry.item)" />
+                    <RailNode :kind="nodeKind(entry.item, sessionActive, waitingIds)" :align="railAlign(entry.item)" />
                     <div class="flex min-w-0 grow flex-col">
                       <ConversationBlock
                         :item="entry.item"

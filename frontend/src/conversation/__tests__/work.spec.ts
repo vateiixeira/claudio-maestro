@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { workActivity, workRow, workStatus, workSummary } from '../work'
+import { groupNodeKind, workActivity, workRow, workStatus, workSummary } from '../work'
 import type { ToolItem } from '../../types/conversation'
 
 const done = { content: 'ok', is_error: false, details: null }
@@ -128,5 +128,36 @@ describe('workActivity', () => {
     const item = tool('a', 'Agent', { description: 'd' }, { subagent: sub('running', { last_activity: 'Grep foo' }) })
     expect(workActivity([item], true)).toBe('Subagente · Grep foo')
     expect(workActivity([tool('a', 'Agent', {}, { subagent: sub('running') })], true)).toBe('Subagente · achar o bug')
+  })
+})
+
+describe('groupNodeKind', () => {
+  const running = (name: string) => tool('run', name, {}, { result: null })
+  const failedTool = tool('f', 'Bash', {}, { result: failed })
+
+  it('sem estado a dizer, é o tipo da primeira ação', () => {
+    expect(groupNodeKind([tool('a', 'Read'), tool('b', 'Bash')], false)).toBe('read')
+    expect(groupNodeKind([tool('a', 'Grep')], false)).toBe('search')
+    expect(groupNodeKind([tool('a', 'Write')], false)).toBe('edit')
+    expect(groupNodeKind([tool('a', 'Agent')], false)).toBe('agent')
+    expect(groupNodeKind([tool('a', 'mcp__x__y'), tool('b', 'Read')], false)).toBe('tool')
+    expect(groupNodeKind([tool('a', 'Bash')], false)).toBe('bash')
+  })
+
+  it('rodando vence o tipo e o erro', () => {
+    expect(groupNodeKind([tool('a', 'Read'), running('Read')], true)).toBe('running')
+    expect(groupNodeKind([failedTool, running('Read')], true)).toBe('running')
+  })
+
+  it('erro vence o tipo, ainda que a ação que falhou não seja a primeira', () => {
+    expect(groupNodeKind([tool('a', 'Read'), failedTool], false)).toBe('error')
+    expect(groupNodeKind([tool('a', 'Agent', {}, { subagent: sub('failed') })], false)).toBe('error')
+  })
+
+  it('esperando o usuário vence tudo', () => {
+    const waiting = new Set(['tu-run'])
+    expect(groupNodeKind([tool('a', 'Read'), running('Bash')], true, waiting)).toBe('waiting')
+    expect(groupNodeKind([failedTool, running('Bash')], true, waiting)).toBe('waiting')
+    expect(groupNodeKind([tool('a', 'Read')], true, waiting)).toBe('read')
   })
 })

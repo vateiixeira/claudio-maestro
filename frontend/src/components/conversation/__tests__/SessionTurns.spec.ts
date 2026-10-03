@@ -86,6 +86,15 @@ describe('chat em turnos', () => {
     expect(nodes[0]!.attributes('aria-hidden')).toBe('true')
   })
 
+  it('o bloco com um pedido de permissão em aberto espera o usuário, e os outros seguem o próprio estado', async () => {
+    const w = await mountWith({
+      state: 'awaiting_decision',
+      items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { result: null }), text('a'), tool('r2', 'Read', { result: null })],
+      prompts: [{ prompt_id: 'p1', tool_name: 'Bash', input: { command: 'ls' }, can_always: false, tool_use_id: 'tu-b1' }],
+    })
+    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['waiting', 'text', 'running'])
+  })
+
   it('nós de aviso e de subagente; filhos do subagente contam no resumo', async () => {
     const w = await mountWith({
       state: 'idle',
@@ -98,7 +107,7 @@ describe('chat em turnos', () => {
       ],
     })
     const kinds = w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))
-    expect(kinds).toEqual(['warning', 'group'])
+    expect(kinds).toEqual(['warning', 'agent'])
     expect(w.find('[data-test="turn-end"]').text()).toContain('3 ações · 1 arquivo alterado')
   })
 
@@ -153,7 +162,7 @@ describe('bloco de trabalho', () => {
     expect(header(w).find('svg[data-open="false"]').exists()).toBe(true)
     expect(rowHeaders(w)).toHaveLength(0)
     expect(w.find('[data-test="work-summary"]').text()).toBe('2 leituras')
-    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['group'])
+    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['read'])
   })
 
   it('um bloco de uma ação só continua aberto depois do turno', async () => {
