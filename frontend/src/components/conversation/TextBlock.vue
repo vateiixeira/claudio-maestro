@@ -2,13 +2,17 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { onCodeCopyClick } from '../../conversation/codeCopy'
 import { renderMarkdown } from '../../conversation/markdown'
+import { useSmoothText } from '../../conversation/useSmoothText'
 import type { TextItem } from '../../types/conversation'
 
 // The reply is running text over the background, with no box: only the work has a frame.
 const props = defineProps<{ item: TextItem }>()
 
 // Safe: markdown-it runs with `html: false`, so raw HTML in the text is escaped.
-const html = computed(() => renderMarkdown(props.item.text))
+// While the reply streams, the markdown comes from the paced text (one render per frame at most);
+// the copy button still uses the whole text that arrived.
+const shown = useSmoothText(() => props.item.text, () => props.item.streaming)
+const html = computed(() => renderMarkdown(shown.value))
 
 const status = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
