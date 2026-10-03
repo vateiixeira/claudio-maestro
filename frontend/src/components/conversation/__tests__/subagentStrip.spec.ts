@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { jsonResponse, routeFetch } from '../../../test/factories'
+import { clockNow } from '../../../minuteClock'
 import SubagentStrip from '../SubagentStrip.vue'
 import type { SubagentEntry } from '../../../conversation/subagents'
 
 const entry = (id: string, status: SubagentEntry['status'], extra: Partial<SubagentEntry> = {}): SubagentEntry => ({
-  id, type: 'agent', kind: 'reviewer', description: `desc ${id}`, status, lastAction: `Read ${id}.py`, ...extra,
+  id, type: 'agent', kind: 'reviewer', description: `desc ${id}`, status, lastAction: `Read ${id}.py`, startedAt: null, lastActivityAt: null, ...extra,
 })
 const rows = (w: ReturnType<typeof mount>) => w.findAll('[data-test="subagent-row"]')
 
@@ -202,6 +203,78 @@ describe('faixa de subagentes', () => {
       await stop(w).trigger('click')
       await flushPromises()
       expect(w.find('[data-test="subagent-stop-error"]').exists()).toBe(false)
+    })
+  })
+
+  describe('tempo de cada subagente', () => {
+    const NOW = new Date('2026-10-03T12:00:00Z')
+    const ago = (minutes: number) => Math.floor(NOW.getTime() / 1000) - minutes * 60
+    const time = (w: ReturnType<typeof mount>, index = 0) => rows(w)[index]!.find('[data-test="subagent-time"]')
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(NOW)
+      clockNow.value = Date.now()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('mostra há quanto tempo o subagente roda, em mono, antes do estado', () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { startedAt: ago(3), lastActivityAt: ago(1) })] } })
+      const el = time(w)
+      expect(el.text()).toBe('3 min')
+      expect(el.classes()).toContain('font-mono')
+      expect(el.classes()).toContain('tabular-nums')
+      expect(el.classes()).toContain('text-fg-subtle')
+      expect(el.attributes('title')).toBeUndefined()
+      const spans = rows(w)[0]!.findAll('span').map((x) => x.text())
+      expect(spans.indexOf('3 min')).toBeLessThan(spans.indexOf('Rodando'))
+    })
+
+    it('atualiza com o relógio do minuto', async () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { startedAt: ago(3), lastActivityAt: ago(0) })] } })
+      expect(time(w).text()).toBe('3 min')
+      vi.setSystemTime(new Date(NOW.getTime() + 2 * 60_000))
+      clockNow.value = Date.now()
+      await w.vm.$nextTick()
+      expect(time(w).text()).toBe('5 min')
+    })
+
+    it('rodando sem atividade há mais de 10 minutos: tempo em secondary-soft com aviso', () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { startedAt: ago(30), lastActivityAt: ago(11) })] } })
+      expect(time(w).classes()).toContain('text-secondary-soft')
+      expect(time(w).classes()).not.toContain('text-fg-subtle')
+      expect(time(w).attributes('title')).toBe('Sem atividade há algum tempo')
+    })
+
+    it('com atividade nos últimos 10 minutos não avisa', () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { startedAt: ago(30), lastActivityAt: ago(9) })] } })
+      expect(time(w).classes()).toContain('text-fg-subtle')
+      expect(time(w).attributes('title')).toBeUndefined()
+    })
+
+    it('sem o momento da última atividade não avisa de parado', () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { startedAt: ago(30), lastActivityAt: null })] } })
+      expect(time(w).text()).toBe('30 min')
+      expect(time(w).classes()).toContain('text-fg-subtle')
+    })
+
+    it('sem started_at o tempo não aparece', () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { startedAt: null, lastActivityAt: null }), entry('b', 'running')] } })
+      expect(time(w, 0).exists()).toBe(false)
+      expect(time(w, 1).exists()).toBe(false)
+    })
+
+    it('comando em background não mostra tempo', () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { type: 'command', startedAt: ago(3), lastActivityAt: ago(3) })] } })
+      expect(time(w).exists()).toBe(false)
+    })
+
+    it('subagente que terminou mostra quanto durou, sem aviso', () => {
+      const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running'), entry('b', 'completed', { startedAt: ago(40), lastActivityAt: ago(30) })] } })
+      expect(time(w, 1).text()).toBe('10 min')
+      expect(time(w, 1).classes()).toContain('text-fg-subtle')
     })
   })
 })

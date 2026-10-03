@@ -21,7 +21,7 @@ from claude_agent_sdk import (
     RateLimitInfo,
     TextBlock,
 )
-from history_fakes import FakeHistory, user_entry
+from history_fakes import FakeHistory, assistant_entry, user_entry
 from test_controls_review import with_background_agent
 from test_sessions import env_cleanup, make_env, session_row, wait_until  # noqa: F401
 
@@ -339,6 +339,28 @@ async def test_skipped_lines_show_a_warning(history_env):
     assert [i["type"] for i in items] == ["user", "notice"]
     assert items[1]["level"] == "warning"
     assert items[1]["text"] == "Parte do histórico não pôde ser lida."
+
+
+@pytest.mark.anyio
+async def test_subagent_times_come_from_the_transcript(history_env):
+    agent = assistant_entry(
+        {"type": "tool_use", "id": "toolu_1", "name": "Agent", "input": {"prompt": "x"}}, "m1")
+
+    def read_transcript(session_id, directory):
+        return Transcript(
+            messages=[user_entry("oi", session_id), agent],
+            tool_results={"toolu_1": {"content": "ok", "is_error": None, "details": None}},
+            tool_times={"toolu_1": {"started_at": 100, "ended_at": 160}},
+        )
+
+    env = history_env(read_transcript=read_transcript)
+    sid = env.add_old_session()
+
+    items = (await env.manager.open(sid))["items"]
+
+    [tool] = [i for i in items if i["type"] == "tool"]
+    assert tool["subagent"]["started_at"] == 100
+    assert tool["subagent"]["last_activity_at"] == 160
 
 
 @pytest.mark.anyio

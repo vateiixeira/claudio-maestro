@@ -2,7 +2,8 @@
 import { computed, ref } from 'vue'
 import { errorMessage, stopSubagents } from '../../api/http'
 import { BACKGROUND_LABEL } from '../../conversation/background'
-import { summarizeSubagents, type SubagentEntry } from '../../conversation/subagents'
+import { subagentClock, summarizeSubagents, type SubagentEntry } from '../../conversation/subagents'
+import { useMinuteClock } from '../../minuteClock'
 import type { SubagentStatus } from '../../types/conversation'
 import IconChevron from '../icons/IconChevron.vue'
 
@@ -21,6 +22,9 @@ const STATUS_LABEL: Record<SubagentStatus, string> = {
 
 // A command's state reads like its card's ("Em background"); a subagent's like its own.
 const stateLabel = (entry: SubagentEntry) => (entry.type === 'command' ? BACKGROUND_LABEL[entry.status] : STATUS_LABEL[entry.status])
+
+const now = useMinuteClock()
+const clockOf = (entry: SubagentEntry) => subagentClock(entry, now.value)
 
 const hasCommands = computed(() => props.entries.some((e) => e.type === 'command'))
 const regionLabel = computed(() => (hasCommands.value ? 'Tarefas em background' : 'Subagentes'))
@@ -96,6 +100,13 @@ async function stopAll() {
             </span>
             <span v-if="entry.kind" class="shrink-0 rounded-full bg-elevated px-2 py-px font-mono text-[0.6875rem] text-fg-muted">{{ entry.kind }}</span>
             <span class="min-w-0 grow truncate text-xs">{{ entry.description }}</span>
+            <span
+              v-if="clockOf(entry)"
+              data-test="subagent-time"
+              class="shrink-0 font-mono text-[0.6875rem] tabular-nums"
+              :class="clockOf(entry)!.stale ? 'text-secondary-soft' : 'text-fg-subtle'"
+              :title="clockOf(entry)!.stale ? 'Sem atividade há algum tempo' : undefined"
+            >{{ clockOf(entry)!.text }}</span>
             <span class="shrink-0 text-[0.6875rem]" :class="entry.status === 'failed' ? 'text-diff-del-fg' : entry.status === 'running' ? 'text-secondary-soft' : 'text-fg-subtle'">{{ stateLabel(entry) }}</span>
           </span>
           <span v-if="entry.lastAction" data-test="subagent-last-action" class="block truncate pl-[21px] font-mono text-[0.6875rem] text-fg-subtle">{{ entry.lastAction }}</span>

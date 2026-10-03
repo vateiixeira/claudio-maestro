@@ -33,6 +33,21 @@ describe('deriveSubagents', () => {
     expect(entry).toMatchObject({ id: 'a', kind: 'reviewer', description: 'desc a', status: 'running' })
   })
 
+  it('leva o início e a última atividade do subagente; sem dado, null', () => {
+    const timed = agent('a', 'running', { subagent: sub('running', { started_at: 1000, last_activity_at: 1200 }) })
+    const [withTimes, without] = deriveSubagents([user('u'), timed, agent('b', 'running')], true)
+    expect(withTimes).toMatchObject({ startedAt: 1000, lastActivityAt: 1200 })
+    expect(without).toMatchObject({ startedAt: null, lastActivityAt: null })
+  })
+
+  it('comando em background não tem tempo', () => {
+    const bg: ToolItem = {
+      type: 'tool', id: 'c', tool_use_id: 'tu-c', name: 'Bash', input: { command: 'sleep 9', run_in_background: true },
+      result: null, streaming: false, parent_tool_use_id: null, background: { task_id: 't', status: 'running', summary: null },
+    }
+    expect(deriveSubagents([user('u'), bg], true)[0]).toMatchObject({ type: 'command', startedAt: null, lastActivityAt: null })
+  })
+
   it('última ação: a ferramenta mais recente dentro do cartão, com alvo curto', () => {
     const items = [
       user('u'),
@@ -153,7 +168,7 @@ describe('comandos Bash em background na lista', () => {
 })
 
 describe('waitingText', () => {
-  const run = (type: 'agent' | 'command') => ({ id: 'x', type, kind: '', description: '', status: 'running' as const, lastAction: '' })
+  const run = (type: 'agent' | 'command') => ({ id: 'x', type, kind: '', description: '', status: 'running' as const, lastAction: '', startedAt: null, lastActivityAt: null })
   it('só comandos: singular e plural', () => {
     expect(waitingText([run('command')])).toBe('Aguardando 1 comando em background')
     expect(waitingText([run('command'), run('command')])).toBe('Aguardando 2 comandos em background')

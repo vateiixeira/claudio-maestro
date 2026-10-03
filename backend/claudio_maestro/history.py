@@ -19,6 +19,7 @@ import time
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import closing
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,9 @@ class Transcript:
     skipped_lines: int = 0
     # uuids of `isCompactSummary` entries (the summary written when compacting).
     compact_uuids: set[str] = field(default_factory=set)
+    # {tool_use_id: {started_at, ended_at}} in epoch seconds, from the entry timestamps, for
+    # Agent/Task calls only. A moment the transcript does not say is left out.
+    tool_times: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 # read_transcript(session_id, directory) -> Transcript, or None when there is no file.
@@ -216,6 +220,47 @@ def _collect_tool_results(entry: Any, results: dict[str, dict[str, Any]]) -> Non
         }
 
 
+_TIMED_TOOLS = frozenset({"Agent", "Task"})
+
+
+def _epoch_seconds(value: Any) -> int | None:
+    """An entry's ISO `timestamp` as epoch seconds; None when missing or unreadable."""
+    if not isinstance(value, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return int(moment.timestamp())
+
+
+def _collect_tool_times(entry: dict[str, Any], times: dict[str, dict[str, int]]) -> None:
+    """Note when an Agent/Task call was made (assistant entry) and when its result came back."""
+    stamp = _epoch_seconds(entry.get("timestamp"))
+    if stamp is None:
+        return
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if (
+            entry.get("type") == "assistant"
+            and block.get("type") == "tool_use"
+            and block.get("name") in _TIMED_TOOLS
+            and isinstance(block.get("id"), str)
+        ):
+            times.setdefault(block["id"], {})["started_at"] = stamp
+        elif entry.get("type") == "user" and block.get("type") == "tool_result":
+            tool_use_id = block.get("tool_use_id")
+            if tool_use_id in times:
+                times[tool_use_id]["ended_at"] = stamp
+
+
 def _lines(path: Path):
     """(line, complete) for each non-blank line; `complete` is False for a last
     line without newline (possibly still being written)."""
@@ -241,6 +286,7 @@ def read_transcript_file(path: Path) -> Transcript:
 
     entries: list[dict[str, Any]] = []
     results: dict[str, dict[str, Any]] = {}
+    times: dict[str, dict[str, int]] = {}
     skipped = 0
     for line, complete in _lines(path):
         try:
@@ -253,6 +299,8 @@ def read_transcript_file(path: Path) -> Transcript:
             continue
         if '"tool_result"' in line:
             _collect_tool_results(entry, results)
+        if '"tool_use"' in line or '"tool_result"' in line:
+            _collect_tool_times(entry, times)
         if entry.get("type") in _TRANSCRIPT_TYPES and isinstance(entry.get("uuid"), str):
             entries.append(entry)
     chain = [e for e in _build_conversation_chain(entries) if _is_visible_message(e)]
@@ -261,6 +309,7 @@ def read_transcript_file(path: Path) -> Transcript:
         tool_results=results,
         skipped_lines=skipped,
         compact_uuids={e["uuid"] for e in chain if e.get("isCompactSummary")},
+        tool_times=times,
     )
 
 

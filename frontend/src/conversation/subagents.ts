@@ -1,5 +1,6 @@
 import type { InjectionKey, Ref } from 'vue'
 import type { ConversationItem, SubagentStatus, ToolItem } from '../types/conversation'
+import { formatElapsedShort } from '../format'
 import { backgroundState } from './background'
 import { AGENT_TOOLS } from './turns'
 import { str, toolLabel } from './tool'
@@ -20,6 +21,27 @@ export interface SubagentEntry {
   description: string
   status: SubagentStatus
   lastAction: string
+  /** Unix seconds; null for a command and when the history does not say. */
+  startedAt: number | null
+  lastActivityAt: number | null
+}
+
+/** A running subagent with no activity for this long is flagged. */
+export const STALE_SECONDS = 10 * 60
+
+/**
+ * The time of a subagent's row: how long it has been running (or, once it ended, how long it ran),
+ * and whether it looks stuck. Null when the start is unknown or for a command.
+ */
+export function subagentClock(entry: SubagentEntry, nowMs: number): { text: string; stale: boolean } | null {
+  if (entry.type !== 'agent' || entry.startedAt == null) return null
+  if (entry.status !== 'running') {
+    if (entry.lastActivityAt == null) return null
+    const text = formatElapsedShort(entry.startedAt, entry.lastActivityAt * 1000)
+    return { text: text === 'agora' ? '<1 min' : text, stale: false }
+  }
+  const stale = entry.lastActivityAt != null && nowMs / 1000 - entry.lastActivityAt > STALE_SECONDS
+  return { text: formatElapsedShort(entry.startedAt, nowMs), stale }
 }
 
 /** State of a subagent card: the SDK's when known, else inferred from the tool call. */
@@ -92,6 +114,8 @@ export function deriveSubagents(items: ConversationItem[], sessionActive: boolea
         description: item.subagent?.description || str(item.input.description),
         status,
         lastAction: action ? describeAction(action) : item.subagent?.last_activity ?? '',
+        startedAt: item.subagent?.started_at ?? null,
+        lastActivityAt: item.subagent?.last_activity_at ?? null,
       })
       return
     }
@@ -105,6 +129,8 @@ export function deriveSubagents(items: ConversationItem[], sessionActive: boolea
       description: str(item.input.description) || clip(str(item.input.command)),
       status: background,
       lastAction: '',
+      startedAt: null,
+      lastActivityAt: null,
     })
   })
   return entries

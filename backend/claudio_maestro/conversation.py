@@ -82,7 +82,8 @@ class ToolItem:
     # Loaded from history without a result anywhere in the transcript.
     result_missing: bool = False
     # Agent/Task only: {task_id, subagent_type, description, status, last_activity,
-    # usage, summary}, updated by the SDK task messages.
+    # usage, summary, started_at, last_activity_at}, updated by the SDK task messages.
+    # The last two are epoch seconds, None when the history does not say.
     subagent: dict[str, Any] | None = None
     # Bash started with run_in_background only: {task_id, status, summary}, updated by
     # the SDK task messages. Absent (None) in history: no live status exists there.
@@ -207,6 +208,8 @@ class ConversationBuilder:
         self._backgrounds: dict[str, dict[str, Any]] = {}
         # Monotonic time each subagent or background Bash was first seen, by tool_use_id.
         self._subagent_started: dict[str, float] = {}
+        # Wall clock, in epoch seconds, for the times shown (a test replaces it).
+        self._wall_clock: Callable[[], float] = time.time
         # Echoes still expected from live changes by the app, counted by prefix.
         self._expected_echoes: dict[str, int] = {}
         # Ids loaded from the saved conversation in live mode (a reattached session):
@@ -265,6 +268,7 @@ class ConversationBuilder:
         compact_uuids: set[str] | None = None,
         *,
         live: bool = False,
+        tool_times: dict[str, dict[str, int]] | None = None,
     ) -> None:
         """Rebuild items from a saved conversation (`get_session_messages`).
 
@@ -282,8 +286,12 @@ class ConversationBuilder:
         declared lost: tools without a result stay pending, subagents and background
         commands keep running, and the entry uuids and assistant message ids are
         remembered so the replay of the same messages is dropped by `handle`.
+
+        `tool_times` ({tool_use_id: {started_at, ended_at}}, epoch seconds, from the
+        transcript timestamps) gives the subagents their times; without it they stay None.
         """
         tool_results = tool_results or {}
+        tool_times = tool_times or {}
         compact_uuids = compact_uuids or set()
         self._live = self._live or live
         for entry in entries:
@@ -326,6 +334,10 @@ class ConversationBuilder:
                 elif item.result.get("details") is None:
                     item.result["details"] = slim_details(item.name, raw.get("details"))
             item.result_missing = item.result is None and not live
+            if item.subagent is not None:
+                times = tool_times.get(item.tool_use_id) or {}
+                item.subagent["started_at"] = times.get("started_at")
+                item.subagent["last_activity_at"] = times.get("ended_at")
             if not live and item.subagent is not None and item.subagent["status"] == "running":
                 if item.result is None:
                     item.subagent["status"] = "stopped"
@@ -427,6 +439,7 @@ class ConversationBuilder:
     def _subagent_for(self, item: ToolItem) -> dict[str, Any]:
         sub = self._subagents.get(item.tool_use_id)
         if sub is None:
+            now = int(self._wall_clock())
             sub = {
                 "task_id": None,
                 "subagent_type": None,
@@ -435,6 +448,8 @@ class ConversationBuilder:
                 "last_activity": None,
                 "usage": None,
                 "summary": None,
+                "started_at": now,
+                "last_activity_at": now,
             }
             self._subagents[item.tool_use_id] = sub
             self._subagent_started[item.tool_use_id] = time.monotonic()
@@ -644,6 +659,8 @@ class ConversationBuilder:
             "details": slim_details(tool.name, details),
         }
         tool.streaming = False
+        if tool.subagent is not None:
+            tool.subagent["last_activity_at"] = int(self._wall_clock())
         if block.is_error and tool.subagent is not None and tool.subagent["status"] == "running":
             tool.subagent["status"] = "failed"
         self._note_agent_id(tool, details)
@@ -669,6 +686,8 @@ class ConversationBuilder:
         # A card loaded from history has no task_id; stopping it needs one.
         self._subagents[tool_use_id]["task_id"] = task_id
         self._subagents[tool_use_id]["status"] = "running"
+        self._subagents[tool_use_id]["started_at"] = int(self._wall_clock())
+        self._subagents[tool_use_id]["last_activity_at"] = int(self._wall_clock())
         self._subagent_started[tool_use_id] = time.monotonic()
         return [self._put(tool)]
 
@@ -695,6 +714,7 @@ class ConversationBuilder:
         self._task_tools[task_id] = tool.tool_use_id
         sub = self._subagent_for(tool)
         sub["task_id"] = task_id
+        sub["last_activity_at"] = int(self._wall_clock())
         if isinstance(message, TaskStartedMessage):
             sub["subagent_type"] = message.data.get("subagent_type") or sub["subagent_type"]
             sub["description"] = message.description or sub["description"]

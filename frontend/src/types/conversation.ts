@@ -63,6 +63,9 @@ export interface Subagent {
   last_activity: string | null
   usage: { total_tokens?: number | null; tool_uses?: number | null; duration_ms?: number | null } | null
   summary: string | null
+  /** When the subagent started and when it was last active (Unix seconds); null when the history does not say. */
+  started_at?: number | null
+  last_activity_at?: number | null
 }
 
 export interface NoticeItem {

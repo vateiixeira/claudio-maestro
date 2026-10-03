@@ -6,6 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Cada subagente na faixa acima do campo de mensagem mostra há quanto tempo está rodando (ou quanto durou), e avisa quando passa mais de 10 minutos sem atividade.
 - Na Inbox, j/k movem, Enter abre, a permite e d nega, sem abrir cada conversa.
 - Ao pedir mudanças num plano, dá para comentar passos específicos.
 - O pedido de permissão para editar mostra o diff, e "Permitir sempre" diz a regra que vai ser gravada e onde ela vale.
