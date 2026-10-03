@@ -59,6 +59,8 @@ class Transcript:
     # {tool_use_id: {started_at, ended_at}} in epoch seconds, from the entry timestamps, for
     # Agent/Task calls only. A moment the transcript does not say is left out.
     tool_times: dict[str, dict[str, int]] = field(default_factory=dict)
+    # {uuid: epoch seconds} of the user and assistant entries that have a timestamp.
+    entry_times: dict[str, int] = field(default_factory=dict)
 
 
 # read_transcript(session_id, directory) -> Transcript, or None when there is no file.
@@ -287,6 +289,7 @@ def read_transcript_file(path: Path) -> Transcript:
     entries: list[dict[str, Any]] = []
     results: dict[str, dict[str, Any]] = {}
     times: dict[str, dict[str, int]] = {}
+    entry_times: dict[str, int] = {}
     skipped = 0
     for line, complete in _lines(path):
         try:
@@ -303,6 +306,9 @@ def read_transcript_file(path: Path) -> Transcript:
             _collect_tool_times(entry, times)
         if entry.get("type") in _TRANSCRIPT_TYPES and isinstance(entry.get("uuid"), str):
             entries.append(entry)
+            stamp = _epoch_seconds(entry.get("timestamp"))
+            if stamp is not None and entry["type"] in ("user", "assistant"):
+                entry_times[entry["uuid"]] = stamp
     chain = [e for e in _build_conversation_chain(entries) if _is_visible_message(e)]
     return Transcript(
         messages=[_to_session_message(e) for e in chain],
@@ -310,6 +316,7 @@ def read_transcript_file(path: Path) -> Transcript:
         skipped_lines=skipped,
         compact_uuids={e["uuid"] for e in chain if e.get("isCompactSummary")},
         tool_times=times,
+        entry_times=entry_times,
     )
 
 

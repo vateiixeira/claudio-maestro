@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import AwaySummary from '../components/conversation/AwaySummary.vue'
 import ConversationHeader from '../components/conversation/ConversationHeader.vue'
 import ConversationThread from '../components/conversation/ConversationThread.vue'
 import DetailsPanel from '../components/details/DetailsPanel.vue'
+import { awayCounts, shouldShowAway } from '../conversation/awayCounts'
 import { readDetailsOpen, writeDetailsOpen } from '../detailsPanelPref'
 import { useMediaQuery } from '../useMediaQuery'
 import { useChangesPanelStore } from '../stores/changesPanel'
@@ -28,6 +30,29 @@ const project = computed(() => {
 
 const missing = ref(false)
 watch(() => props.id, () => { missing.value = false })
+
+// "Enquanto você estava fora": the moment the conversation was last seen is read as soon as the
+// session is known, before the thread tells the backend it was seen (that happens after it loads).
+// Later changes to `last_seen_at` do not move it.
+const away = ref<{ seenAt: number } | null>(null)
+const awayDismissed = ref(false)
+let awayCapturedFor: string | null = null
+function captureAway() {
+  if (awayCapturedFor === props.id) return
+  const session = sessions.find(props.id)
+  if (!session) return
+  awayCapturedFor = props.id
+  awayDismissed.value = false
+  const show = shouldShowAway({ lastSeenAt: session.last_seen_at, lastActivityAt: session.last_activity_at, now: Date.now() / 1000 })
+  away.value = show ? { seenAt: session.last_seen_at as number } : null
+}
+watch(() => [props.id, sessions.find(props.id)?.session_id], () => {
+  if (awayCapturedFor !== props.id) away.value = null
+  captureAway()
+}, { immediate: true })
+const awayItems = computed(() => conversations.get(props.id)?.items)
+const awayShown = computed(() => (away.value && !awayDismissed.value && awayItems.value ? away.value : null))
+const awayStats = computed(() => (awayShown.value && awayItems.value ? awayCounts(awayItems.value, awayShown.value.seenAt) : null))
 
 // Wide screens: a side panel whose open state is remembered. Narrow: a drawer, closed at first.
 // Embedded, the column is narrow: always the drawer.
@@ -69,6 +94,22 @@ watch(drawerOpen, async (open) => {
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onDrawerKeydown))
 
+// "Ver alterações" in the away card: the details panel, whose list has the changed files.
+function viewChanges() {
+  if (changesPanel.sessionId === props.id) changesPanel.close()
+  if (sidePanel.value) sideOpen.value = true
+  else drawerOpen.value = true
+}
+// "Ir para o fim": the thread's own scroller, the same move as its "Novidades abaixo" button.
+const column = ref<HTMLElement | null>(null)
+function jumpToEnd() {
+  const el = column.value?.querySelector<HTMLElement>('[data-test="conversation-scroller"]')
+  if (!el) return
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  if (el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
+  else el.scrollTop = el.scrollHeight
+}
+
 // "Ver alterações" in an edit card opens the panel (the drawer on narrow screens).
 watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (open) => {
   if (!open) return
@@ -79,7 +120,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
 
 <template>
   <div class="relative flex h-full min-w-0">
-    <div class="flex min-w-0 grow flex-col">
+    <div ref="column" class="flex min-w-0 grow flex-col">
       <div v-if="embedded" data-test="embedded-bar" class="flex min-h-12 items-center gap-1 border-b border-line pr-2 pl-4">
         <span data-test="embedded-title" :title="title" class="min-w-0 grow truncate text-sm font-medium text-fg">{{ title }}</span>
         <button
@@ -142,6 +183,19 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
             </button>
           </template>
         </ConversationHeader>
+        <div v-if="awayShown && awayStats" data-test="away-slot" class="max-h-[45vh] shrink-0 overflow-y-auto px-4 pt-3">
+          <div class="mx-auto w-full max-w-(--chat-width)">
+            <AwaySummary
+              :key="id"
+              :session-id="id"
+              :since="awayShown.seenAt"
+              :counts="awayStats"
+              @close="awayDismissed = true"
+              @view-changes="viewChanges"
+              @jump-to-end="jumpToEnd"
+            />
+          </div>
+        </div>
         <ConversationThread :key="id" :id="id" @missing="missing = true" />
       </template>
     </div>

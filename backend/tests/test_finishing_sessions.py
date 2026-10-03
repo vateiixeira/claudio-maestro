@@ -364,6 +364,24 @@ async def test_subagent_times_come_from_the_transcript(history_env):
 
 
 @pytest.mark.anyio
+async def test_item_times_come_from_the_transcript(history_env):
+    def read_transcript(session_id, directory):
+        return Transcript(
+            messages=[user_entry("oi", session_id, uuid="u1"),
+                      assistant_entry({"type": "text", "text": "olá"}, "m1")],
+            tool_results={},
+            entry_times={"u1": 100, "a-m1": 130},
+        )
+
+    env = history_env(read_transcript=read_transcript)
+    sid = env.add_old_session()
+
+    items = (await env.manager.open(sid))["items"]
+
+    assert [i["at"] for i in items] == [100, 130]
+
+
+@pytest.mark.anyio
 async def test_compact_summary_becomes_info_notice(history_env):
     summary = user_entry("Resumo do que aconteceu antes", "old-1", uuid="c1")
 

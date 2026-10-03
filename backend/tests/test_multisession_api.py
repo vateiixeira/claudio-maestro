@@ -185,6 +185,19 @@ def test_seen(api, home):
     assert response.json()["last_seen_at"] > 0
 
 
+def test_last_seen_at_is_in_the_session_payload(api, home):
+    project = make_project(api, home)
+    sid = new_session(api, project)["session_id"]
+    before = api.get(f"/api/sessions/{sid}").json()["last_seen_at"]
+
+    seen = api.post(f"/api/sessions/{sid}/seen").json()["last_seen_at"]
+
+    assert seen >= (before or 0)
+    assert api.get(f"/api/sessions/{sid}").json()["last_seen_at"] == seen
+    [listed] = api.get(f"/api/projects/{project['id']}/sessions").json()
+    assert listed["last_seen_at"] == seen
+
+
 # App state -----------------------------------------------------------------
 
 

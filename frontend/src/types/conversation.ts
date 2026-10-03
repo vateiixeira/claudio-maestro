@@ -14,6 +14,8 @@ export interface UserItem {
   id: string
   text: string
   images?: Attachment[]
+  /** When the item was created (Unix seconds); absent or null when the history does not say. Same on every item type. */
+  at?: number | null
 }
 
 export interface TextItem {
@@ -22,6 +24,7 @@ export interface TextItem {
   text: string
   streaming: boolean
   parent_tool_use_id: string | null
+  at?: number | null
 }
 
 export interface ToolResult {
@@ -45,6 +48,7 @@ export interface ToolItem {
   subagent?: Subagent | null
   /** Present on `Bash` calls the CLI started in the background; absent in history. */
   background?: BackgroundTask | null
+  at?: number | null
 }
 
 export interface BackgroundTask {
@@ -73,6 +77,7 @@ export interface NoticeItem {
   id: string
   level: 'info' | 'warning' | 'error'
   text: string
+  at?: number | null
 }
 
 export type ConversationItem = UserItem | TextItem | ToolItem | NoticeItem

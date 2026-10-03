@@ -591,3 +591,122 @@ describe('página da conversa', () => {
     })
   })
 })
+
+describe('resumo ao voltar', () => {
+  const NOW = Math.floor(Date.now() / 1000)
+  const SEEN = NOW - 42 * 60
+  const item = (type: string, id: string, at: number, extra: Record<string, unknown> = {}) =>
+    ({ type, id, tool_use_id: id, name: 'Bash', input: {}, result: null, streaming: false, parent_tool_use_id: null, text: id, at, ...extra })
+  const ITEMS = [
+    item('user', 'u1', SEEN - 600),
+    item('tool', 't1', SEEN - 590),
+    item('user', 'u2', SEEN + 60),
+    item('tool', 't2', SEEN + 120, { name: 'Edit', input: { file_path: '/p/a.py' } }),
+    item('tool', 't3', SEEN + 180),
+  ]
+  let digestPosts: number
+  let seenPosts: number
+
+  function stubSession(overrides: Parameters<typeof makeSession>[0] = {}) {
+    useSessionsStore(pinia).setForProject(1, [makeSession({
+      session_id: 's1', title: 'Corrigir login', display_state: 'waiting',
+      last_seen_at: SEEN, last_activity_at: NOW - 60, ...overrides,
+    })])
+  }
+  async function mountAway(items = ITEMS) {
+    digestPosts = 0
+    seenPosts = 0
+    return mountAt('/sessions/s1', {
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ title: 'Corrigir login', items: items as never })),
+      'GET /api/digest/config': () => jsonResponse({ config: {}, status: { enabled: false, running: false, next_run_at: null, paused_until: null } }),
+      'POST /api/sessions/s1/digest': () => { digestPosts++; return jsonResponse({ queued: true }, 202) },
+      'POST /api/sessions/s1/seen': () => { seenPosts++; return jsonResponse(makeSession()) },
+    })
+  }
+
+  it('aparece no topo com o tempo e as contagens desde a última vez que viu', async () => {
+    stubSession()
+    const { wrapper } = await mountAway()
+    expect(wrapper.find('[data-test="away-title"]').text()).toBe('Enquanto você estava fora · há 42 min')
+    expect(wrapper.find('[data-test="away-counts"]').text()).toBe('1 turno · 2 ações · 1 arquivo alterado')
+    // Above the thread, not inside its scroller.
+    expect(wrapper.find('[data-test="conversation-scroller"] [data-test="away-summary"]').exists()).toBe(false)
+  })
+
+  it('guarda o valor antigo: marcar como vista não muda o card', async () => {
+    stubSession()
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const { wrapper } = await mountAway()
+      await vi.advanceTimersByTimeAsync(400)
+      await flushPromises()
+      expect(seenPosts).toBeGreaterThan(0)
+      useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', last_seen_at: NOW, last_activity_at: NOW - 60 })])
+      await flushPromises()
+      expect(wrapper.find('[data-test="away-title"]').text()).toBe('Enquanto você estava fora · há 42 min')
+      expect(wrapper.find('[data-test="away-counts"]').text()).toBe('1 turno · 2 ações · 1 arquivo alterado')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('não aparece com menos de 15 minutos', async () => {
+    stubSession({ last_seen_at: NOW - 10 * 60 })
+    const { wrapper } = await mountAway()
+    expect(wrapper.find('[data-test="away-summary"]').exists()).toBe(false)
+  })
+
+  it('não aparece sem atividade depois de ter visto', async () => {
+    stubSession({ last_activity_at: SEEN - 5 })
+    const { wrapper } = await mountAway()
+    expect(wrapper.find('[data-test="away-summary"]').exists()).toBe(false)
+  })
+
+  it('não aparece em conversa nunca vista', async () => {
+    stubSession({ last_seen_at: null })
+    const { wrapper } = await mountAway()
+    expect(wrapper.find('[data-test="away-summary"]').exists()).toBe(false)
+  })
+
+  it('o × fecha o card', async () => {
+    stubSession()
+    const { wrapper } = await mountAway()
+    await wrapper.get('[data-test="away-close"]').trigger('click')
+    expect(wrapper.find('[data-test="away-summary"]').exists()).toBe(false)
+  })
+
+  it('com o resumo desligado só roda o modelo ao clicar em "Resumir agora"', async () => {
+    stubSession()
+    const { wrapper } = await mountAway()
+    expect(digestPosts).toBe(0)
+    expect(wrapper.find('[data-test="away-done"]').exists()).toBe(false)
+    await wrapper.get('[data-test="away-digest-request"]').trigger('click')
+    await flushPromises()
+    expect(digestPosts).toBe(1)
+  })
+
+  it('"Ver alterações" abre o painel de Detalhes que estava fechado', async () => {
+    localStorage.setItem('maestro:details-open', 'false')
+    stubSession()
+    const { wrapper } = await mountAway()
+    expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(false)
+    await wrapper.get('[data-test="away-view-changes"]').trigger('click')
+    expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(true)
+    expect(localStorage.getItem('maestro:details-open')).toBe('false')
+  })
+
+  it('"Ir para o fim" rola a conversa até o fim', async () => {
+    stubSession()
+    const scrollTo = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: scrollTo })
+    try {
+      const { wrapper } = await mountAway()
+      const scroller = wrapper.get('[data-test="conversation-scroller"]')
+      Object.defineProperty(scroller.element, 'scrollHeight', { configurable: true, value: 2000 })
+      await wrapper.get('[data-test="away-jump"]').trigger('click')
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 2000 }))
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo
+    }
+  })
+})

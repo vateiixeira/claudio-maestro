@@ -49,6 +49,9 @@ class UserItem:
     id: str
     text: str
     images: list[Any] = field(default_factory=list)
+    # Epoch seconds when the item was created; None when the history does not say.
+    # Left out of equality: it is metadata, not content.
+    at: int | None = field(default=None, compare=False)
     type: Literal["user"] = field(default="user", init=False)
 
 
@@ -58,6 +61,7 @@ class TextItem:
     text: str
     streaming: bool
     parent_tool_use_id: str | None = None
+    at: int | None = field(default=None, compare=False)
     type: Literal["text"] = field(default="text", init=False)
 
 
@@ -67,6 +71,7 @@ class ThinkingItem:
     text: str
     streaming: bool
     parent_tool_use_id: str | None = None
+    at: int | None = field(default=None, compare=False)
     type: Literal["thinking"] = field(default="thinking", init=False)
 
 
@@ -88,6 +93,7 @@ class ToolItem:
     # Bash started with run_in_background only: {task_id, status, summary}, updated by
     # the SDK task messages. Absent (None) in history: no live status exists there.
     background: dict[str, Any] | None = None
+    at: int | None = field(default=None, compare=False)
     type: Literal["tool"] = field(default="tool", init=False)
 
 
@@ -97,6 +103,7 @@ class NoticeItem:
     level: NoticeLevel
     text: str
     parent_tool_use_id: str | None = None
+    at: int | None = field(default=None, compare=False)
     type: Literal["notice"] = field(default="notice", init=False)
 
 
@@ -210,6 +217,10 @@ class ConversationBuilder:
         self._subagent_started: dict[str, float] = {}
         # Wall clock, in epoch seconds, for the times shown (a test replaces it).
         self._wall_clock: Callable[[], float] = time.time
+        # While rebuilding from the saved conversation: items take the time of their entry
+        # (`_entry_time`, None when unknown) instead of the clock.
+        self._loading = False
+        self._entry_time: int | None = None
         # Echoes still expected from live changes by the app, counted by prefix.
         self._expected_echoes: dict[str, int] = {}
         # Ids loaded from the saved conversation in live mode (a reattached session):
@@ -269,6 +280,7 @@ class ConversationBuilder:
         *,
         live: bool = False,
         tool_times: dict[str, dict[str, int]] | None = None,
+        entry_times: dict[str, int] | None = None,
     ) -> None:
         """Rebuild items from a saved conversation (`get_session_messages`).
 
@@ -289,12 +301,17 @@ class ConversationBuilder:
 
         `tool_times` ({tool_use_id: {started_at, ended_at}}, epoch seconds, from the
         transcript timestamps) gives the subagents their times; without it they stay None.
+        `entry_times` ({entry uuid: epoch seconds}) gives each item its `at`; an entry it
+        does not list leaves `at` None.
         """
         tool_results = tool_results or {}
         tool_times = tool_times or {}
+        entry_times = entry_times or {}
         compact_uuids = compact_uuids or set()
         self._live = self._live or live
+        self._loading = True
         for entry in entries:
+            self._entry_time = entry_times.get(getattr(entry, "uuid", None) or "")
             if live:
                 if getattr(entry, "uuid", None):
                     self._history_uuids.add(entry.uuid)
@@ -318,6 +335,8 @@ class ConversationBuilder:
                             message_id=message.get("id") or entry.uuid,
                         )
                     )
+        self._loading = False
+        self._entry_time = None
         self.close_open_items()
         for item in self.items:
             if not isinstance(item, ToolItem):
@@ -423,6 +442,14 @@ class ConversationBuilder:
             # A Write of a big file would otherwise weigh on every snapshot.
             item.input = _cut_strings(item.input, TOOL_INPUT_STRING_LIMIT)
         position = self._positions.get(item.id)
+        if item.at is None:
+            before = self.items[position].at if position is not None else None
+            if before is not None:
+                item.at = before
+            elif self._loading:
+                item.at = self._entry_time
+            else:
+                item.at = int(self._wall_clock())
         if position is None:
             self._positions[item.id] = len(self.items)
             self.items.append(item)

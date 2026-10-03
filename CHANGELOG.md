@@ -6,6 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Ao voltar para uma conversa depois de um tempo, um resumo mostra o que aconteceu e o que falta.
 - Notificações do sistema quando uma conversa precisa de você (Preferências → Notificações).
 - Cada subagente na faixa acima do campo de mensagem mostra há quanto tempo está rodando (ou quanto durou), e avisa quando passa mais de 10 minutos sem atividade.
 - Na Inbox, j/k movem, Enter abre, a permite e d nega, sem abrir cada conversa.
