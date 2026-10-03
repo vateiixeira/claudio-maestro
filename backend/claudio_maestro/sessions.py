@@ -65,6 +65,7 @@ from claudio_maestro.plans import (
     is_plan_path,
     last_plan_ref,
     looks_like_plan_path,
+    read_new_lines,
 )
 from claudio_maestro.projects import Project
 from claudio_maestro.projects import project_roots as registered_project_roots
@@ -2386,6 +2387,7 @@ class SessionManager:
         history_limit: int = DEFAULT_HISTORY_LIMIT,
         read_tool_results: ReadToolResults | None = None,
         file_mtime: FileMtime | None = None,
+        session_file: Callable[[str, str], Path | None] | None = None,
         on_turn_end: Callable[[int], None] | None = None,
         default_permission_mode: Callable[[], str | None] | None = None,
         read_transcript: history_module.ReadTranscript | None = None,
@@ -2415,6 +2417,8 @@ class SessionManager:
         self._on_turn_end = on_turn_end
         self._db_path = db_path
         self._file_mtime = file_mtime or history_module.sdk_session_file_mtime
+        # session_file(session_id, directory): path of the session's `.jsonl`, or None.
+        self._session_file = session_file or history_module.sdk_session_file
         # State of sessions forgotten from memory (seq, connected before, app
         # activity), so events keep increasing and they resume as before.
         self._forgotten: dict[str, tuple[int, bool, float, float | None]] = {}
@@ -2681,6 +2685,7 @@ class SessionManager:
         session = self.get(session_id)
         session.users += 1
         try:
+            await self._note_foreign_writes(session)
             if session.foreign_pending and session.client is not None:
                 # Another process continued the conversation while the app was busy:
                 # this client's view is stale and a send would fork the history.
@@ -2696,6 +2701,34 @@ class SessionManager:
             return {"state": session.state, "external_activity": external}
         finally:
             session.users -= 1
+
+    async def _note_foreign_writes(self, session: ActiveSession) -> None:
+        """Read the end of the session's file, as the watcher's first pass does, and
+        remember replies another process wrote that no watcher pass judged (the write
+        happened with the backend down, or a pass was lost). Only for an idle session,
+        where the stream has delivered every uuid the process emitted. Never fails the
+        send."""
+        if session.client is None or session.state != "idle":
+            # Not idle: an app turn or prompt may have its own reply in the file before
+            # the stream delivers it (the watcher covers that case).
+            return
+        try:
+            path = await asyncio.to_thread(
+                self._session_file, session.session_id, session.record.history_directory
+            )
+            if path is None:
+                return
+            try:
+                lines, _ = await asyncio.to_thread(read_new_lines, path, None)
+            except OSError:
+                return  # missing or unreadable: nothing to judge
+            session.foreign_candidates |= foreign_reply_uuids(
+                lines, session.own_uuids, session.client_since
+            )
+        except Exception:
+            logger.exception(
+                "Falha ao checar escrita de outro processo na sessão %s", session.session_id
+            )
 
     async def refresh_file_info(self, session: ActiveSession) -> None:
         """Read the history file's mtime (one `stat`) for a session not active in the app."""

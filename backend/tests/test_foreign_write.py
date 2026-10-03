@@ -325,3 +325,108 @@ async def test_a_new_client_clears_a_stale_detach_time(env):
     assert row["detached_at"] is None
     assert session.client_since is not None and session.client_since > time.time() - 60
     await env.manager.shutdown()
+
+
+# Checagem no envio ------------------------------------------------------------
+
+def locate(env, path: Path) -> None:
+    env.manager._session_file = lambda session_id, directory: path
+
+
+@pytest.mark.anyio
+async def test_send_checks_the_file_and_releases_for_a_write_no_pass_saw(env, tmp_path):
+    env.factory.script = scripted(text_turn("x", "olá"), text_turn("x", "voltei"))
+    session, _ = await idle_session(env)
+    old_client = env.factory.clients[-1]
+    path = tmp_path / "s.jsonl"
+    path.write_text("\n".join(foreign_lines()) + "\n")
+    locate(env, path)
+    await env.manager.send(session.session_id, "outra")
+    assert old_client.closed is True
+    new_client = env.factory.clients[-1]
+    assert new_client is not old_client and "outra" in new_client.sent
+    await env.manager.shutdown()
+
+
+@pytest.mark.anyio
+async def test_send_checking_the_file_refuses_while_background_work_runs(env, tmp_path, monkeypatch):
+    session, _ = await idle_session(env)
+    client = env.factory.clients[-1]
+    path = tmp_path / "s.jsonl"
+    path.write_text("\n".join(foreign_lines()) + "\n")
+    locate(env, path)
+    monkeypatch.setattr(type(session), "subagents_running", property(lambda self: True))
+    with pytest.raises(ContinuedElsewhereError):
+        await env.manager.send(session.session_id, "nova")
+    assert session.client is client and client.closed is False
+    assert "nova" not in client.sent
+    assert not [i for i in session.builder.items if getattr(i, "text", None) == "nova"]
+    monkeypatch.undo()
+    await env.manager.shutdown()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("content", ["own", "old"])
+async def test_send_keeps_the_client_when_the_file_has_nothing_foreign(env, tmp_path, content):
+    env.factory.script = scripted(text_turn("x", "olá"), text_turn("x", "segue"))
+    session, _ = await idle_session(env)
+    client = env.factory.clients[-1]
+    path = tmp_path / "s.jsonl"
+    if content == "own":
+        lines = [entry("assistant", u, time.time()) for u in session.own_uuids]
+    else:
+        lines = [entry("assistant", "antiga", session.client_since - 60)]
+    path.write_text("\n".join(lines) + "\n")
+    locate(env, path)
+    await env.manager.send(session.session_id, "nova")
+    assert env.factory.clients[-1] is client and "nova" in client.sent
+    assert client.closed is False
+    await env.manager.shutdown()
+
+
+@pytest.mark.anyio
+async def test_send_with_a_missing_file_goes_to_the_existing_client(env, tmp_path):
+    env.factory.script = scripted(text_turn("x", "olá"), text_turn("x", "segue"))
+    session, _ = await idle_session(env)
+    client = env.factory.clients[-1]
+    locate(env, tmp_path / "nao-existe.jsonl")
+    await env.manager.send(session.session_id, "nova")
+    assert env.factory.clients[-1] is client and "nova" in client.sent
+    await env.manager.shutdown()
+
+
+@pytest.mark.anyio
+async def test_send_never_fails_because_the_foreign_check_failed(env, caplog):
+    env.factory.script = scripted(text_turn("x", "olá"), text_turn("x", "segue"))
+    session, _ = await idle_session(env)
+    client = env.factory.clients[-1]
+
+    def boom(session_id, directory):
+        raise RuntimeError("falhou")
+
+    env.manager._session_file = boom
+    await env.manager.send(session.session_id, "nova")
+    assert "nova" in client.sent
+    assert "escrita de outro processo" in caplog.text
+    await env.manager.shutdown()
+
+
+@pytest.mark.anyio
+async def test_send_does_not_check_the_file_while_the_app_turn_runs(env, tmp_path, monkeypatch):
+    env.factory.script = scripted(text_turn("x", "olá"), text_turn("x", "segue"))
+    session, _ = await idle_session(env)
+    client = env.factory.clients[-1]
+    path = tmp_path / "s.jsonl"
+    # The app's own reply may reach the file before the stream delivers its uuid.
+    path.write_text("\n".join(foreign_lines()) + "\n")
+    locate(env, path)
+    monkeypatch.setattr(type(session), "subagents_running", property(lambda self: True))
+    session.pending_turns = 1
+    session._refresh_state()
+    assert session.state != "idle"
+    await env.manager.send(session.session_id, "nova")
+    assert session.foreign_candidates == set()
+    assert env.factory.clients[-1] is client and "nova" in client.sent
+    session.pending_turns = 0
+    monkeypatch.undo()
+    await env.manager.shutdown()
