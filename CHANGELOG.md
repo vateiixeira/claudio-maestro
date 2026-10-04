@@ -38,6 +38,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Corrigido
 
+- O cartão de um subagente em execução mostrava como título a última ação dele ("Running cd …"); agora mantém a descrição dada no lançamento, e a ação atual aparece abaixo.
 - Logo depois da meia-noite, algo de menos de uma hora atrás aparecia como "ontem"; agora mostra "há N min".
 - As sessões abertas pelo Maestro passam a aparecer na lista de sessões da extensão do Claude no VSCode e no Cursor. As anteriores continuam fora dela.
 - Com um plano longo no painel Detalhes, a página inteira deixava de caber na janela e ganhava uma barra de rolagem extra, com espaço vazio embaixo (aparecia em telas de 1080p).

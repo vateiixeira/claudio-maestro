@@ -822,8 +822,12 @@ class ConversationBuilder:
             sub["description"] = message.description or sub["description"]
             sub["status"] = "running"
         elif isinstance(message, TaskProgressMessage):
-            sub["description"] = message.description or sub["description"]
-            sub["last_activity"] = message.last_tool_name or sub["last_activity"]
+            # `description` here describes the current action ("Running cd ..."), not
+            # the task: the card title (`sub["description"]`) is the one from the launch.
+            # The description is more informative than the bare tool name.
+            sub["last_activity"] = (
+                message.description or message.last_tool_name or sub["last_activity"]
+            )
             sub["usage"] = dict(message.usage) if message.usage else sub["usage"]
         elif isinstance(message, TaskUpdatedMessage):
             status = message.status or message.patch.get("status")

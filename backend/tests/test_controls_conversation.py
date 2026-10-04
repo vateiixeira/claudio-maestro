@@ -114,9 +114,21 @@ def test_subagent_follows_the_four_task_messages():
         SID, "task-1", "toolu_agent", description="Lendo main.py", last_tool_name="Read",
         usage=usage))
     sub = event.data["subagent"]
-    assert sub["description"] == "Lendo main.py"
-    assert sub["last_activity"] == "Read"
+    # The progress description is the current action: it must not replace the title
+    # given at launch.
+    assert sub["description"] == "Explorar"
+    assert sub["last_activity"] == "Lendo main.py"
     assert sub["usage"] == usage
+
+    # Without a progress description the tool name is the fallback, and with neither
+    # the previous activity stays.
+    [event] = builder.handle(task_progress_message(
+        SID, "task-1", "toolu_agent", description="", last_tool_name="Grep"))
+    assert event.data["subagent"]["last_activity"] == "Grep"
+    [event] = builder.handle(task_progress_message(
+        SID, "task-1", "toolu_agent", description="", last_tool_name=None))
+    assert event.data["subagent"]["last_activity"] == "Grep"
+    assert event.data["subagent"]["description"] == "Explorar"
 
     # Child messages stay as items with the parent id (no stream events for subagents).
     child = feed(builder, [
