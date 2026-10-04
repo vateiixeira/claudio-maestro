@@ -1300,7 +1300,9 @@ class ActiveSession:
         """Announce the session when `subagents_running` differs from what the
         clients last saw: a subagent started or ended without the state changing
         (an idle session shows as running while one works), or the last one
-        outlived SUBAGENT_MAX_SECONDS and no longer counts."""
+        outlived SUBAGENT_MAX_SECONDS and no longer counts. The cards of those lost
+        subagents are announced as stopped first."""
+        self._emit_events(self.builder.expire_lost_subagents())
         if self.subagents_running != self._subagents_announced:
             self.emit_updated()
 
@@ -3324,7 +3326,7 @@ class SessionManager:
         """Close clients idle longer than the timeout. They resume on the next message."""
         now = time.monotonic()
         for session in list(self._sessions.values()):
-            # A subagent that outlived its limit stops counting without any event:
+            # A subagent that outlived its limit has its card stopped and stops counting:
             # tell the clients, so the session stops showing as running.
             session.sync_subagents()
             if session.foreign_pending and session.idle_client_only:

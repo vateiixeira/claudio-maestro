@@ -44,6 +44,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - Com um plano longo no painel Detalhes, a página inteira deixava de caber na janela e ganhava uma barra de rolagem extra, com espaço vazio embaixo (aparecia em telas de 1080p).
 - Uma conversa continuada por outro processo (o Claude no terminal ou outra janela do app) passa a aparecer na tela, e a próxima mensagem segue dela em vez de criar um ramo na conversa.
 - Depois de reiniciar o backend, subagentes que já tinham terminado continuavam aparecendo como "rodando" (e a sessão como ocupada). Agora o estado final vem da notificação gravada na conversa, e um subagente iniciado há mais de 3 horas deixa de contar mesmo entre reinícios. Os que continuam rodando em segundo plano podem ser parados pelo botão "Parar subagentes", e os que já tinham respondido de forma síncrona saem de "rodando" na hora.
+- Um subagente que morria sem avisar (sem nenhuma atividade por mais de 3 horas) continuava aparecendo como "Rodando", e "Parar subagentes" tentava parar algo que não existia. Agora o cartão passa a "Parado"; se o subagente der sinal de vida depois, volta a refletir o estado real. A contagem de 3 horas passou a valer desde a última atividade, não desde o início, então um subagente que trabalha há horas não é dado como perdido.
 
 ## [0.1.0] - 2026-10-01
 

@@ -169,8 +169,9 @@ ECHO_PREFIXES = ("Set model to ",)
 
 SUBAGENT_TOOLS = {"Agent", "Task"}
 BACKGROUND_TOOLS = {"Bash"}
-# A subagent or background command running longer than this is assumed lost
-# (never blocks closing).
+# A subagent or background command with no sign of life (Task* message or message of its
+# own) for longer than this is assumed lost: it stops counting as running and
+# `expire_lost_subagents` moves its card to "stopped".
 SUBAGENT_MAX_SECONDS = 3 * 60 * 60
 # SDK task status -> status shown ("running" | "completed" | "failed" | "stopped").
 _SUBAGENT_STATUS = {
@@ -213,8 +214,12 @@ class ConversationBuilder:
         self._task_tools: dict[str, str] = {}
         # Background Bash state by tool_use_id; its task_id maps in `_task_tools` too.
         self._backgrounds: dict[str, dict[str, Any]] = {}
-        # Monotonic time each subagent or background Bash was first seen, by tool_use_id.
+        # Monotonic time of the last sign of life of each subagent or background Bash
+        # (its start, then every Task* message or message of its own), by tool_use_id.
         self._subagent_started: dict[str, float] = {}
+        # Cards `expire_lost_subagents` moved to "stopped": only these come back to
+        # "running" when a Task* message shows they were alive after all.
+        self._lapsed: set[str] = set()
         # Wall clock, in epoch seconds, for the times shown (a test replaces it).
         self._wall_clock: Callable[[], float] = time.time
         # While rebuilding from the saved conversation: items take the time of their entry
@@ -380,8 +385,10 @@ class ConversationBuilder:
                 else:
                     sub["status"] = "completed"
             if sub["status"] == "running" and sub["started_at"] is not None:
-                # The guard counts from when it really started, not from this load.
-                age = max(0.0, self._wall_clock() - sub["started_at"])
+                # The guard counts from its last sign of life (the start, or a later
+                # activity the transcript showed), not from this load.
+                last_seen = max(sub["started_at"], sub["last_activity_at"] or 0)
+                age = max(0.0, self._wall_clock() - last_seen)
                 self._subagent_started[item.tool_use_id] = time.monotonic() - age
 
     def _apply_task_endings(
@@ -662,6 +669,8 @@ class ConversationBuilder:
         message_id = message.message_id or message.uuid or f"msg-{uuid.uuid4().hex}"
         stream = self._streams.get(parent)
         events: list[Event] = []
+        if parent is not None:
+            events.extend(self._note_alive(parent))
         for block in message.content:
             if (
                 stream is not None
@@ -727,18 +736,20 @@ class ConversationBuilder:
         return []
 
     def _on_user(self, message: UserMessage) -> list[Event]:
+        events: list[Event] = []
+        if message.parent_tool_use_id is not None:
+            events.extend(self._note_alive(message.parent_tool_use_id))
         # Plain text is the echo of what the user sent; add_user_message has it.
         # Output of a local command (e.g. after set_model) becomes a notice.
         if isinstance(message.content, str):
             if "<local-command-stdout>" not in message.content:
-                return []
+                return events
             output = _STDOUT.sub("", message.content).strip()
             prefix = next((p for p in ECHO_PREFIXES if output.startswith(p)), None)
             if prefix is not None and self._expected_echoes.get(prefix, 0) > 0:
                 self._expected_echoes[prefix] -= 1
-                return []
-            return [self._notice("info", output)] if output else []
-        events: list[Event] = []
+                return events
+            return [*events, self._notice("info", output)] if output else events
         for block in message.content:
             if isinstance(block, ToolResultBlock):
                 events.extend(self._attach_tool_result(block, message.tool_use_result))
@@ -791,6 +802,7 @@ class ConversationBuilder:
         self._subagents[tool_use_id]["started_at"] = int(self._wall_clock())
         self._subagents[tool_use_id]["last_activity_at"] = int(self._wall_clock())
         self._subagent_started[tool_use_id] = time.monotonic()
+        self._lapsed.discard(tool_use_id)
         return [self._put(tool)]
 
     # System, result, rate limit ------------------------------------------
@@ -815,6 +827,7 @@ class ConversationBuilder:
             return []
         self._task_tools[task_id] = tool.tool_use_id
         sub = self._subagent_for(tool)
+        self._touch(tool.tool_use_id, sub)
         sub["task_id"] = task_id
         sub["last_activity_at"] = int(self._wall_clock())
         if isinstance(message, TaskStartedMessage):
@@ -845,6 +858,8 @@ class ConversationBuilder:
         never started that way (e.g. a foreground command) is ignored."""
         task_id = message.task_id  # type: ignore[attr-defined]
         state = self._backgrounds.get(tool.tool_use_id)
+        if state is not None:
+            self._subagent_started[tool.tool_use_id] = time.monotonic()
         if state is None:
             if not isinstance(message, TaskStartedMessage):
                 return []
@@ -890,19 +905,64 @@ class ConversationBuilder:
         yield from self._subagents.items()
         yield from self._backgrounds.items()
 
+    def _is_lost(self, tool_use_id: str, state: dict[str, Any], now: float) -> bool:
+        """Running, but without a sign of life for longer than SUBAGENT_MAX_SECONDS
+        (the single rule behind `subagents_running` and `expire_lost_subagents`)."""
+        return (
+            state["status"] == "running"
+            and now - self._subagent_started.get(tool_use_id, now) > SUBAGENT_MAX_SECONDS
+        )
+
+    def _touch(self, tool_use_id: str, state: dict[str, Any]) -> bool:
+        """A sign of life of a subagent: restart its clock, and bring
+        it back to "running" if `expire_lost_subagents` had stopped it (a later
+        notification or update then sets its real status). True when it came back."""
+        self._subagent_started[tool_use_id] = time.monotonic()
+        if tool_use_id not in self._lapsed:
+            return False
+        self._lapsed.discard(tool_use_id)
+        state["status"] = "running"
+        return True
+
+    def _note_alive(self, tool_use_id: str) -> list[Event]:
+        """The subagent of this call produced a message of its own."""
+        state = self._subagents.get(tool_use_id)
+        tool = self._tool_item(tool_use_id)
+        if state is None or tool is None:
+            return []
+        return [self._put(tool)] if self._touch(tool_use_id, state) else []
+
     @property
     def subagents_running(self) -> bool:
         """Some subagent or background Bash (usually run in the background) has not
         finished yet.
 
-        Last resort: one running for longer than SUBAGENT_MAX_SECONDS no longer counts.
+        Last resort: one without a sign of life for SUBAGENT_MAX_SECONDS no longer counts.
         """
         now = time.monotonic()
         return any(
-            state["status"] == "running"
-            and now - self._subagent_started.get(tool_use_id, now) <= SUBAGENT_MAX_SECONDS
+            state["status"] == "running" and not self._is_lost(tool_use_id, state, now)
             for tool_use_id, state in self._running_states()
         )
+
+    def expire_lost_subagents(self) -> list[Event]:
+        """Move to "stopped" the subagent cards `subagents_running` no longer counts (the
+        subagent died and the CLI never said so), so the screen and "Stop subagents" agree
+        with the count. A later Task* message of the same task brings the card back.
+
+        Background Bash is left alone: it often lives silent for hours (a dev server, a
+        watcher) and the CLI sends no progress for it, so it only stops counting in
+        `subagents_running`; its card stays "running" and "Stop subagents" still reaches it."""
+        now = time.monotonic()
+        events: list[Event] = []
+        for tool_use_id, state in list(self._subagents.items()):
+            tool = self._tool_item(tool_use_id)
+            if tool is None or not self._is_lost(tool_use_id, state, now):
+                continue
+            state["status"] = "stopped"
+            self._lapsed.add(tool_use_id)
+            events.append(self._put(tool))
+        return events
 
     def _end_subagents(self, status_for: Callable[[str, ToolItem], str | None]) -> list[Event]:
         """Give running subagents and background Bash the status `status_for` returns
