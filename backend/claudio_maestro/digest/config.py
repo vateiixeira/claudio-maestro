@@ -25,6 +25,7 @@ MESSAGES: dict[str, str] = {
     "min_new_messages": "O mínimo de mensagens novas precisa ser um número inteiro de 1 a 500.",
     "open_turn_minutes": "O teto com turno aberto precisa ser um número inteiro de 5 a 480 minutos.",
     "window_days": "A janela precisa ser um número inteiro de 1 a 30 dias.",
+    "closure_auto": "Verificar entrega automaticamente precisa ser verdadeiro ou falso.",
 }
 
 
@@ -38,6 +39,7 @@ class DigestConfig:
     min_new_messages: int = 10
     open_turn_minutes: int = 30
     window_days: int = 3
+    closure_auto: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -62,7 +64,7 @@ def _is_int(value: Any) -> bool:
 
 def _field_ok(name: str, value: Any, known_models: Iterable[str] | None) -> bool:
     """`known_models=None` accepts any well-formed model id (stored values)."""
-    if name == "enabled":
+    if name in ("enabled", "closure_auto"):
         return isinstance(value, bool)
     if name == "model":
         if not isinstance(value, str) or not 1 <= len(value) <= 100:

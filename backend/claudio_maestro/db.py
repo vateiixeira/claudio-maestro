@@ -177,6 +177,24 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         # keeping it): the next reattach judges writes by other processes from then on.
         "ALTER TABLE sessions ADD COLUMN detached_at REAL",
     ],
+    [
+        # Verificação de fechamento: whether the session can be closed, what the user
+        # still has to do and what was not delivered, kept by the digest agent.
+        """
+        CREATE TABLE session_closure (
+          session_id    TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+          verdict       TEXT,
+          user_actions  TEXT NOT NULL DEFAULT '[]',
+          missing       TEXT NOT NULL DEFAULT '[]',
+          evidence      TEXT,
+          resolved      TEXT NOT NULL DEFAULT '[]',
+          fingerprint   TEXT,
+          checked_at    INTEGER,
+          error         TEXT,
+          error_at      INTEGER
+        )
+        """,
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

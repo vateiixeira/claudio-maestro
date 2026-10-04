@@ -24,7 +24,7 @@ def test_defaults() -> None:
     assert DigestConfig().to_dict() == {
         "enabled": False, "model": "sonnet", "effort": "medium", "extra_instructions": "",
         "interval_minutes": 10, "min_new_messages": 10, "open_turn_minutes": 30,
-        "window_days": 3,
+        "window_days": 3, "closure_auto": True,
     }
 
 
@@ -96,3 +96,13 @@ def test_save_and_load(tmp_path: Path) -> None:
         assert load_config(conn) == DigestConfig()
         save_config(conn, DigestConfig(enabled=True, window_days=7))
         assert load_config(conn) == DigestConfig(enabled=True, window_days=7)
+
+
+def test_closure_auto_defaults_and_validation() -> None:
+    assert DigestConfig().closure_auto is True
+    assert coerce({"closure_auto": False}).closure_auto is False
+    assert coerce({"closure_auto": "no"}).closure_auto is True
+    assert validate({"closure_auto": False}, ["sonnet"]).closure_auto is False
+    with pytest.raises(ConfigError) as info:
+        validate({"closure_auto": 1}, ["sonnet"])
+    assert "closure_auto" in info.value.errors
