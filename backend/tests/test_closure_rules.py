@@ -8,6 +8,7 @@ from claudio_maestro.digest.closure import (
     GitFacts,
     apply_answer,
     cheap_key,
+    closure_candidate,
     closure_eligible,
     decide,
     fingerprint,
@@ -109,3 +110,25 @@ def test_eligibility() -> None:
     # Manual: ignores the switches and the quiet time, never an open turn.
     assert closure_eligible(session(), NOW - 1, off, NOW, automatic=False)
     assert not closure_eligible(session(state="running"), NOW - 1, off, NOW, automatic=False)
+
+
+def test_git_head_is_part_of_the_fingerprint() -> None:
+    def facts(head: str) -> GitFacts:
+        return GitFacts.from_status(RepoStatus(path="/r", rel_path=".", branch="main", head=head,
+                                               upstream="origin/main", ahead=0))
+
+    assert facts("abc").head == "abc"
+    base = cheap_key(file_mtime=1.0, plan=None, resolved=[])
+    assert fingerprint(base, facts("abc")) != fingerprint(base, facts("def"))
+    assert fingerprint(base, facts("abc")) == fingerprint(base, facts("abc"))
+
+
+def test_candidate_needs_no_file() -> None:
+    off = DigestConfig(enabled=True, closure_auto=False)
+    assert closure_candidate(session(), CFG, NOW, automatic=True)
+    assert not closure_candidate(session(state="running"), CFG, NOW, automatic=True)
+    assert not closure_candidate(session(finished=True), CFG, NOW, automatic=True)
+    assert not closure_candidate(session(last_activity_at=int(NOW - 4 * 86400)), CFG, NOW,
+                                 automatic=True)
+    assert not closure_candidate(session(), off, NOW, automatic=True)
+    assert closure_candidate(session(), off, NOW, automatic=False)

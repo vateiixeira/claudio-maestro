@@ -63,6 +63,7 @@ class GitFacts:
     ahead: int | None
     upstream: str | None
     error: str | None
+    head: str | None = None
 
     @classmethod
     def from_status(cls, status: RepoStatus) -> "GitFacts":
@@ -71,7 +72,7 @@ class GitFacts:
             branch=status.branch, detached=status.detached,
             staged=int(changed.get("staged", 0)), unstaged=int(changed.get("unstaged", 0)),
             untracked=int(changed.get("untracked", 0)), ahead=status.ahead,
-            upstream=status.upstream, error=status.error,
+            upstream=status.upstream, error=status.error, head=status.head,
         )
 
 
@@ -201,6 +202,28 @@ def fingerprint(cheap: str, git: GitFacts | None) -> str:
     return _hash([cheap, None if git is None else asdict(git)])
 
 
+def closure_candidate(
+    session: dict[str, Any],
+    config: DigestConfig,
+    now: float,
+    *,
+    automatic: bool,
+) -> bool:
+    """What the session dictionary alone says: turn closed and not finished; the
+    automatic check also needs the switches on and activity within the window."""
+    if session.get("display_state") in ("finished", "running") or session.get("finished"):
+        return False
+    if session.get("state") not in CLOSED_STATES:
+        return False
+    if session.get("cli_running") or session.get("subagents_running"):
+        return False
+    if not automatic:
+        return True
+    if not (config.enabled and config.closure_auto):
+        return False
+    return now - session["last_activity_at"] <= config.window_days * 86400
+
+
 def closure_eligible(
     session: dict[str, Any],
     file_mtime: float | None,
@@ -209,20 +232,10 @@ def closure_eligible(
     *,
     automatic: bool,
 ) -> bool:
-    """Turn closed and not finished; the automatic check also needs the switches on,
-    activity within the window and the file quiet for QUIET_SECONDS."""
-    if session.get("display_state") in ("finished", "running") or session.get("finished"):
-        return False
-    if session.get("state") not in CLOSED_STATES:
-        return False
-    if session.get("cli_running") or session.get("subagents_running"):
+    """A candidate with a file; the automatic check also needs the file quiet for
+    QUIET_SECONDS."""
+    if not closure_candidate(session, config, now, automatic=automatic):
         return False
     if file_mtime is None:
         return False
-    if not automatic:
-        return True
-    if not (config.enabled and config.closure_auto):
-        return False
-    if now - session["last_activity_at"] > config.window_days * 86400:
-        return False
-    return now - file_mtime >= QUIET_SECONDS
+    return not automatic or now - file_mtime >= QUIET_SECONDS

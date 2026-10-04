@@ -22,6 +22,7 @@ from claudio_maestro.digest.closure import (
     apply_answer,
     build_closure_prompt,
     cheap_key,
+    closure_candidate,
     closure_eligible,
     closure_system_prompt,
     decide,
@@ -468,14 +469,18 @@ class DigestService:
 
     async def _check_closure(self, session: dict[str, Any], config: DigestConfig, *,
                              automatic: bool) -> str:
-        """"read", "skipped" or the error message. Raises _StopPass."""
+        """"read", "skipped", "ignored" (not a candidate: not even counted) or the error
+        message. Raises _StopPass."""
         sid = session["session_id"]
         now = self._clock()
+        if not closure_candidate(session, config, now, automatic=automatic):
+            return "ignored"
         inputs = await asyncio.to_thread(self._closure_inputs, session)
         if inputs is None or not closure_eligible(session, inputs["mtime"], config, now,
                                                   automatic=automatic):
             return "skipped"
         old: Closure | None = inputs["old"]
+        last = session.get("last_activity_at")
         if automatic:
             scanned = self._closure_scanned.get(sid)
             if (scanned and scanned[0] == inputs["cheap"]
@@ -484,7 +489,8 @@ class DigestService:
         git = await self._git_facts(session["cwd"])
         self._closure_scanned[sid] = (inputs["cheap"], now)
         stamp = fingerprint(inputs["cheap"], git)
-        if automatic and old is not None and old.fingerprint == stamp and old.error is None:
+        if automatic and old is not None and old.is_settled(
+                stamp, last, now, config.interval_minutes * 60):
             return "skipped"
         transcript = await asyncio.to_thread(
             self._read_transcript, self._session_file(sid, inputs["directory"]))
@@ -500,17 +506,19 @@ class DigestService:
         )
         request = DigestRequest(closure_system_prompt(config.extra_instructions), prompt,
                                 config.model, config.effort, schema=CLOSURE_SCHEMA)
-        last = session.get("last_activity_at")
+        # `now` is taken before the conversation is read, like `read_at` of the summary:
+        # a message sent while the model answers makes the verdict stale.
+        at = int(now)
         try:
             async with asyncio.timeout(self._session_timeout):
                 raw = await self._model.summarize(request)
             verdict, actions, missing, evidence = apply_answer(raw, inputs["resolved"])
         except TimeoutError:
-            return await self._closure_fail(sid, TIMEOUT_MESSAGE, last)
+            return await self._closure_fail(sid, TIMEOUT_MESSAGE, last, at, stamp)
         except ClosureFormatError as error:
-            return await self._closure_fail(sid, str(error), last)
+            return await self._closure_fail(sid, str(error), last, at, stamp)
         except DigestModelError as error:
-            await self._closure_fail(sid, error.message, last)
+            await self._closure_fail(sid, error.message, last, at, stamp)
             if error.stop_pass:
                 if error.resets_at:
                     self._paused_until = float(error.resets_at)
@@ -518,16 +526,19 @@ class DigestService:
             return error.message
         closure = Closure(sid, verdict=verdict, user_actions=actions, missing=missing,
                           evidence=evidence, resolved=list(inputs["resolved"]),
-                          fingerprint=stamp, checked_at=int(self._clock()))
+                          fingerprint=stamp, checked_at=at)
         if not await asyncio.to_thread(self._save_closure, closure):
             return "skipped"
         await self._closure_saved(closure, last)
         return "read"
 
-    async def _closure_fail(self, sid: str, message: str, last: int | None) -> str:
+    async def _closure_fail(self, sid: str, message: str, last: int | None,
+                            at: int | None = None, stamp: str | None = None) -> str:
+        when = int(self._clock()) if at is None else at
+
         def save() -> Closure | None:
             with closing(db.connect(self._db_path)) as conn:
-                return closure_store.save_closure_error(conn, sid, message, int(self._clock()))
+                return closure_store.save_closure_error(conn, sid, message, when, stamp)
 
         closure = await asyncio.to_thread(save)
         if closure is not None:
@@ -559,8 +570,7 @@ class DigestService:
     async def run_closure_pass(self) -> dict[str, Any] | None:
         """Automatic scan. Logs a run (`auto_closure`) only when the model was called,
         something failed or the pass stopped."""
-        config = self._config
-        if not (config.enabled and config.closure_auto):
+        if not (self._config.enabled and self._config.closure_auto):
             return None
         started = int(self._clock())
         read = skipped = 0
@@ -569,6 +579,11 @@ class DigestService:
         announced = False
         try:
             for session in self._manager.list_sessions():
+                config = self._config  # read again: the switches may change during the scan
+                if not (config.enabled and config.closure_auto):
+                    break
+                if self._pending_all or self._pending_sessions:
+                    break  # a manual request goes first; the next tick resumes the scan
                 try:
                     outcome = await self._check_closure(session, config, automatic=True)
                 except _StopPass:
@@ -578,6 +593,8 @@ class DigestService:
                                      session["session_id"])
                     outcome = await self._closure_fail(session["session_id"], UNEXPECTED,
                                                        session.get("last_activity_at"))
+                if outcome == "ignored":
+                    continue
                 if outcome == "skipped":
                     skipped += 1
                     continue
@@ -595,7 +612,7 @@ class DigestService:
             if self._paused_until is None or self._paused_until <= self._clock():
                 # No reset time to wait for (login, CLI missing): do not hit the same
                 # error every minute; go back to the pace of the summaries.
-                self._closure_next_at = self._clock() + config.interval_minutes * 60
+                self._closure_next_at = self._clock() + self._config.interval_minutes * 60
         finally:
             if announced or stopped:
                 self._running = False

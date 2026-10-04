@@ -48,6 +48,15 @@ def test_error_keeps_last_verdict(conn) -> None:
     assert save_closure_error(conn, "nope", "x", 1) is None
 
 
+def test_error_records_the_fingerprint_and_keeps_the_old_one_without_it(conn) -> None:
+    save_closure(conn, Closure("s1", verdict="can_close", checked_at=200, fingerprint="old"))
+    kept = save_closure_error(conn, "s1", "Tempo esgotado.", 300)
+    assert kept is not None and kept.fingerprint == "old"
+    after = save_closure_error(conn, "s1", "Tempo esgotado.", 400, fingerprint="new")
+    assert after is not None
+    assert (after.fingerprint, after.error_at, after.verdict) == ("new", 400, "can_close")
+
+
 def test_stale_hides_verdict(conn) -> None:
     closure = Closure("s1", verdict="user_action", user_actions=["A"], evidence="e", checked_at=200)
     assert closure.to_dict(150)["verdict"] == "user_action"

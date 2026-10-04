@@ -34,6 +34,20 @@ class Closure:
             return True
         return last_activity_at is not None and last_activity_at > self.checked_at
 
+    def is_settled(self, stamp: str, last_activity_at: int | None, now: float,
+                   retry_after: float) -> bool:
+        """The last attempt read the same inputs and the conversation did not move
+        since, so another call would only repeat it. A verdict stays settled; a
+        failure only for `retry_after` seconds, whatever its kind."""
+        if self.fingerprint != stamp:
+            return False
+        done_at = self.error_at if self.error else self.checked_at
+        if done_at is None:
+            return False
+        if last_activity_at is not None and last_activity_at > done_at:
+            return False
+        return not self.error or now - done_at < retry_after
+
     def to_dict(self, last_activity_at: int | None = None) -> dict[str, Any]:
         """What the frontend receives; a stale check shows no verdict."""
         stale = self.is_stale(last_activity_at)
@@ -95,15 +109,20 @@ def save_closure(conn: sqlite3.Connection, closure: Closure) -> None:
 
 
 def save_closure_error(
-    conn: sqlite3.Connection, session_id: str, message: str, at: int
+    conn: sqlite3.Connection, session_id: str, message: str, at: int,
+    fingerprint: str | None = None,
 ) -> Closure | None:
-    """Record a failed check, keeping the last verdict. None when the session is gone."""
+    """Record a failed check, keeping the last verdict. With a `fingerprint`, it is what
+    the failed check read, so the automatic scan does not try the same input again.
+    None when the session is gone."""
     try:
         conn.execute(
-            "INSERT INTO session_closure (session_id, error, error_at) VALUES (?, ?, ?)"
+            "INSERT INTO session_closure (session_id, error, error_at, fingerprint)"
+            " VALUES (?, ?, ?, ?)"
             " ON CONFLICT(session_id) DO UPDATE SET error = excluded.error,"
-            " error_at = excluded.error_at",
-            (session_id, message, at),
+            " error_at = excluded.error_at,"
+            " fingerprint = COALESCE(excluded.fingerprint, fingerprint)",
+            (session_id, message, at, fingerprint),
         )
     except sqlite3.IntegrityError:
         return None
