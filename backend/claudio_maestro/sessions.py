@@ -1197,7 +1197,8 @@ class ActiveSession:
                 self.builder.add_notice("warning", HISTORY_LOAD_FAILED)
                 self._history_failed = True
                 return
-            entries, tool_results, skipped, compact, tool_times, entry_times = loaded
+            (entries, tool_results, skipped, compact, tool_times, entry_times,
+             task_endings, task_resumes) = loaded
             self._history_failed = False
             self._link_history_plan(entries)
             if len(entries) > self._history_limit:
@@ -1205,7 +1206,7 @@ class ActiveSession:
                 entries = entries[-self._history_limit:]
             self.builder.load_history(
                 entries, tool_results, compact, live=live, tool_times=tool_times,
-                entry_times=entry_times,
+                entry_times=entry_times, task_endings=task_endings, task_resumes=task_resumes,
             )
             if self.record.turn_open and not self.active and not live:
                 self.builder.add_notice("warning", INTERRUPTED_TEXT)
@@ -1225,21 +1226,24 @@ class ActiveSession:
     async def _load_entries(
         self,
     ) -> tuple[
-        list[Any], dict[str, dict[str, Any]], int, set[str], dict[str, dict[str, int]], dict[str, int]
+        list[Any], dict[str, dict[str, Any]], int, set[str], dict[str, dict[str, int]],
+        dict[str, int], dict[str, dict[str, Any]], dict[str, int]
     ]:
         """(entries, tool results, skipped lines, compact summary uuids, subagent times,
-        entry times)."""
+        entry times, task endings, task resumes)."""
         if self._read_transcript is not None:
             transcript = await asyncio.to_thread(
                 self._read_transcript, self.session_id, self.record.history_directory
             )
             if transcript is None:
-                return [], {}, 0, set(), {}, {}
+                return [], {}, 0, set(), {}, {}, {}, {}
             return (
                 list(transcript.messages), transcript.tool_results,
                 transcript.skipped_lines, set(transcript.compact_uuids),
                 dict(getattr(transcript, "tool_times", None) or {}),
                 dict(getattr(transcript, "entry_times", None) or {}),
+                dict(getattr(transcript, "task_endings", None) or {}),
+                dict(getattr(transcript, "task_resumes", None) or {}),
             )
         assert self._get_session_messages is not None
         entries = list(
@@ -1256,7 +1260,7 @@ class ActiveSession:
                 logger.exception(
                     "Falha ao ler os resultados de ferramentas da sessão %s", self.session_id
                 )
-        return entries, tool_results, 0, set(), {}, {}
+        return entries, tool_results, 0, set(), {}, {}, {}, {}
 
     async def _apply_pending_rename(self) -> None:
         """Write a title chosen before the conversation existed on disk."""

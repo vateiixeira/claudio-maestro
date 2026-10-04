@@ -42,6 +42,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - As sessões abertas pelo Maestro passam a aparecer na lista de sessões da extensão do Claude no VSCode e no Cursor. As anteriores continuam fora dela.
 - Com um plano longo no painel Detalhes, a página inteira deixava de caber na janela e ganhava uma barra de rolagem extra, com espaço vazio embaixo (aparecia em telas de 1080p).
 - Uma conversa continuada por outro processo (o Claude no terminal ou outra janela do app) passa a aparecer na tela, e a próxima mensagem segue dela em vez de criar um ramo na conversa.
+- Depois de reiniciar o backend, subagentes que já tinham terminado continuavam aparecendo como "rodando" (e a sessão como ocupada). Agora o estado final vem da notificação gravada na conversa, e um subagente iniciado há mais de 3 horas deixa de contar mesmo entre reinícios.
 
 ## [0.1.0] - 2026-10-01
 

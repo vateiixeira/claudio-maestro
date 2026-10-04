@@ -364,6 +364,33 @@ async def test_subagent_times_come_from_the_transcript(history_env):
 
 
 @pytest.mark.anyio
+async def test_reattached_session_takes_subagent_endings_from_the_transcript(history_env):
+    agent = assistant_entry(
+        {"type": "tool_use", "id": "toolu_1", "name": "Agent",
+         "input": {"prompt": "x", "run_in_background": True}}, "m1")
+
+    def read_transcript(session_id, directory):
+        return Transcript(
+            messages=[user_entry("oi", session_id), agent],
+            tool_results={"toolu_1": {"content": "launched", "is_error": None, "details": {
+                "isAsync": True, "status": "async_launched", "agentId": "agent-1"}}},
+            tool_times={"toolu_1": {"started_at": int(time.time()) - 60}},
+            task_endings={"toolu_1": {"status": "completed", "at": int(time.time()) - 30,
+                                      "task_id": "agent-1", "summary": "feito"}},
+        )
+
+    env = history_env(read_transcript=read_transcript)
+    sid = env.add_old_session()
+    session = env.manager.get(sid)
+
+    await session.ensure_history(live=True)
+
+    [tool] = [i for i in session.builder.snapshot() if i["type"] == "tool"]
+    assert tool["subagent"]["status"] == "completed"
+    assert not session.subagents_running
+
+
+@pytest.mark.anyio
 async def test_item_times_come_from_the_transcript(history_env):
     def read_transcript(session_id, directory):
         return Transcript(

@@ -281,6 +281,8 @@ class ConversationBuilder:
         live: bool = False,
         tool_times: dict[str, dict[str, int]] | None = None,
         entry_times: dict[str, int] | None = None,
+        task_endings: dict[str, dict[str, Any]] | None = None,
+        task_resumes: dict[str, int] | None = None,
     ) -> None:
         """Rebuild items from a saved conversation (`get_session_messages`).
 
@@ -303,6 +305,14 @@ class ConversationBuilder:
         transcript timestamps) gives the subagents their times; without it they stay None.
         `entry_times` ({entry uuid: epoch seconds}) gives each item its `at`; an entry it
         does not list leaves `at` None.
+
+        `task_endings` ({tool_use_id: {status, at, task_id, summary}}, from the transcript's
+        `<task-notification>` texts) gives the subagents that ended while the app was not
+        watching their final status, live or not: a reattached process never sends those
+        notifications again. A subagent without one keeps running (live). `task_resumes`
+        ({task_id: epoch seconds}) lists the SendMessage resumes: one later than the
+        subagent's notification means it is running again (live only, as in the stream).
+        Cards still running take their real start as the base of SUBAGENT_MAX_SECONDS.
         """
         tool_results = tool_results or {}
         tool_times = tool_times or {}
@@ -357,13 +367,60 @@ class ConversationBuilder:
                 times = tool_times.get(item.tool_use_id) or {}
                 item.subagent["started_at"] = times.get("started_at")
                 item.subagent["last_activity_at"] = times.get("ended_at")
-            if not live and item.subagent is not None and item.subagent["status"] == "running":
+        self._apply_task_endings(task_endings or {}, task_resumes or {}, live)
+        for item in self.items:
+            if not isinstance(item, ToolItem) or item.subagent is None:
+                continue
+            sub = item.subagent
+            if not live and sub["status"] == "running":
                 if item.result is None:
-                    item.subagent["status"] = "stopped"
+                    sub["status"] = "stopped"
                 elif item.result.get("is_error"):
-                    item.subagent["status"] = "failed"
+                    sub["status"] = "failed"
                 else:
-                    item.subagent["status"] = "completed"
+                    sub["status"] = "completed"
+            if sub["status"] == "running" and sub["started_at"] is not None:
+                # The guard counts from when it really started, not from this load.
+                age = max(0.0, self._wall_clock() - sub["started_at"])
+                self._subagent_started[item.tool_use_id] = time.monotonic() - age
+
+    def _apply_task_endings(
+        self, endings: dict[str, dict[str, Any]], resumes: dict[str, int], live: bool
+    ) -> None:
+        """Give the subagent cards the status of their `<task-notification>` (see `load_history`)."""
+        by_task = {e["task_id"]: e for e in endings.values() if e.get("task_id")}
+        for item in self.items:
+            if not isinstance(item, ToolItem) or item.subagent is None:
+                continue
+            sub = item.subagent
+            task_ids = {t for t, tool_use_id in self._task_tools.items()
+                        if tool_use_id == item.tool_use_id}
+            if sub["task_id"]:
+                task_ids.add(sub["task_id"])
+            found = [e for e in (endings.get(item.tool_use_id),
+                                 *(by_task.get(t) for t in task_ids)) if e is not None]
+            end = max(found, key=lambda e: -1 if e.get("at") is None else e["at"], default=None)
+            if end is not None and end.get("task_id"):
+                self._task_tools.setdefault(end["task_id"], item.tool_use_id)
+                sub["task_id"] = sub["task_id"] or end["task_id"]
+                task_ids.add(end["task_id"])
+            resumed = max((resumes[t] for t in task_ids if t in resumes), default=None)
+            if resumed is not None and (end is None or end.get("at") is None or resumed > end["at"]):
+                # Woken by a SendMessage after it ended (or with no notification at all).
+                if live:
+                    sub["status"] = "running"
+                    sub["started_at"] = resumed
+                    sub["last_activity_at"] = resumed
+                continue
+            if end is None:
+                continue
+            status = _SUBAGENT_STATUS.get(str(end.get("status")))
+            if status is None or status == "running":
+                continue
+            sub["status"] = status
+            sub["summary"] = end.get("summary") or sub["summary"]
+            if end.get("at") is not None:
+                sub["last_activity_at"] = end["at"]
 
     def _load_user(self, content: Any) -> None:
         if isinstance(content, str):

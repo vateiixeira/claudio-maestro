@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 from collections.abc import Awaitable, Callable, Iterable
@@ -61,6 +62,12 @@ class Transcript:
     tool_times: dict[str, dict[str, int]] = field(default_factory=dict)
     # {uuid: epoch seconds} of the user and assistant entries that have a timestamp.
     entry_times: dict[str, int] = field(default_factory=dict)
+    # {tool_use_id: {status, at, task_id, summary}} from the `<task-notification>` texts: how
+    # each background subagent (or command) ended, the latest notification of the call winning.
+    # `status` is the CLI's word (completed, failed, killed...), `at` epoch seconds or None.
+    task_endings: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # {task_id: epoch seconds} of the latest SendMessage that resumed that subagent.
+    task_resumes: dict[str, int] = field(default_factory=dict)
 
 
 # read_transcript(session_id, directory) -> Transcript, or None when there is no file.
@@ -263,6 +270,74 @@ def _collect_tool_times(entry: dict[str, Any], times: dict[str, dict[str, int]])
                 times[tool_use_id]["ended_at"] = stamp
 
 
+_NOTIFICATION = re.compile(r"<task-notification>(.*?)(?:</task-notification>|\Z)", re.DOTALL)
+
+
+def _notification_tag(text: str, tag: str) -> str | None:
+    match = re.search(rf"<{tag}>(.*?)</{tag}>", text, re.DOTALL)
+    return match.group(1).strip() if match else None
+
+
+def _notification_texts(entry: dict[str, Any]) -> list[str]:
+    """Texts of an entry that carry a `<task-notification>`: the queued command, the user
+    message the CLI writes for it, or the queued attachment. A user message that only
+    quotes one in the middle of other text does not count."""
+    kind = entry.get("type")
+    if kind == "queue-operation":
+        # `remove` repeats an `enqueue` already seen.
+        content = entry.get("content")
+        return [content] if entry.get("operation") == "enqueue" and isinstance(content, str) else []
+    if kind == "attachment":
+        attachment = entry.get("attachment")
+        prompt = attachment.get("prompt") if isinstance(attachment, dict) else None
+        return [prompt] if isinstance(prompt, str) else []
+    if kind == "user":
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, str):
+            return [content]
+        if isinstance(content, list):
+            return [
+                block["text"] for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+            ]
+    return []
+
+
+def _collect_task_endings(entry: dict[str, Any], endings: dict[str, dict[str, Any]]) -> None:
+    """Note how a background task ended, from the `<task-notification>` the CLI writes."""
+    stamp = _epoch_seconds(entry.get("timestamp"))
+    for text in _notification_texts(entry):
+        if not text.lstrip().startswith("<task-notification>"):
+            continue
+        for match in _NOTIFICATION.finditer(text):
+            # The result of the task may hold anything, tags included.
+            head = match.group(1).split("<result>", 1)[0]
+            tool_use_id = _notification_tag(head, "tool-use-id")
+            status = _notification_tag(head, "status")
+            if not tool_use_id or not status:
+                continue
+            before = endings.get(tool_use_id)
+            if before is not None and None not in (before["at"], stamp) and stamp < before["at"]:
+                continue
+            endings[tool_use_id] = {
+                "status": status,
+                "at": stamp,
+                "task_id": _notification_tag(head, "task-id"),
+                "summary": _notification_tag(head, "summary"),
+            }
+
+
+def _collect_task_resumes(entry: dict[str, Any], resumes: dict[str, int]) -> None:
+    """Note when a SendMessage woke a subagent (`toolUseResult.resumedAgentId`)."""
+    details = entry.get("toolUseResult")
+    agent_id = details.get("resumedAgentId") if isinstance(details, dict) else None
+    stamp = _epoch_seconds(entry.get("timestamp"))
+    if isinstance(agent_id, str) and agent_id and stamp is not None:
+        resumes[agent_id] = max(stamp, resumes.get(agent_id, stamp))
+
+
 def _lines(path: Path):
     """(line, complete) for each non-blank line; `complete` is False for a last
     line without newline (possibly still being written)."""
@@ -290,6 +365,8 @@ def read_transcript_file(path: Path) -> Transcript:
     results: dict[str, dict[str, Any]] = {}
     times: dict[str, dict[str, int]] = {}
     entry_times: dict[str, int] = {}
+    endings: dict[str, dict[str, Any]] = {}
+    resumes: dict[str, int] = {}
     skipped = 0
     for line, complete in _lines(path):
         try:
@@ -304,6 +381,10 @@ def read_transcript_file(path: Path) -> Transcript:
             _collect_tool_results(entry, results)
         if '"tool_use"' in line or '"tool_result"' in line:
             _collect_tool_times(entry, times)
+        if "<task-notification>" in line:
+            _collect_task_endings(entry, endings)
+        if "resumedAgentId" in line:
+            _collect_task_resumes(entry, resumes)
         if entry.get("type") in _TRANSCRIPT_TYPES and isinstance(entry.get("uuid"), str):
             entries.append(entry)
             stamp = _epoch_seconds(entry.get("timestamp"))
@@ -317,6 +398,8 @@ def read_transcript_file(path: Path) -> Transcript:
         compact_uuids={e["uuid"] for e in chain if e.get("isCompactSummary")},
         tool_times=times,
         entry_times=entry_times,
+        task_endings=endings,
+        task_resumes=resumes,
     )
 
 
