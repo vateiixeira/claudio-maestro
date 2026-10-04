@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from claudio_maestro import db
+from claudio_maestro.gitinfo import RepoStatus
 from claudio_maestro.history import Transcript
 
 NOW = 1_000_000.0
@@ -36,6 +37,7 @@ class FakeManager:
         self.sessions: list[dict[str, Any]] = []
         self.briefs: dict[str, tuple[str | None, bool]] = {}
         self.models = [{"value": "default"}, {"value": "sonnet"}, {"value": "haiku"}]
+        self.closure_briefs: dict[str, tuple[str | None, int | None]] = {}
 
     def list_sessions(self) -> list[dict[str, Any]]:
         return [dict(s) for s in self.sessions]
@@ -48,6 +50,10 @@ class FakeManager:
 
     async def set_digest_brief(self, session_id: str, short: str | None, plan_done: bool) -> None:
         self.briefs[session_id] = (short, plan_done)
+
+    async def set_closure_brief(self, session_id: str, verdict: str | None,
+                                checked_at: int | None) -> None:
+        self.closure_briefs[session_id] = (verdict, checked_at)
 
 
 class World:
@@ -70,6 +76,9 @@ class World:
         self.envelopes: list[dict[str, Any]] = []
         self.clock = [NOW]
         self.lookups: list[tuple[str, str]] = []  # (session_id, directory) asked of `session_file`
+        self.git = RepoStatus(path=str(self.root), rel_path=".", branch="main",
+                              upstream="origin/main", ahead=0)
+        self.git_calls: list[Path] = []
 
     def add(self, sid: str, messages: list[Any], *, mtime: float = NOW - 10,
             history_dir: str | None = None, **fields) -> None:
@@ -83,6 +92,7 @@ class World:
             "session_id": sid, "project_id": 1, "cwd": str(self.root), "title": f"Sessão {sid}",
             "created_at": int(NOW - 3600), "last_activity_at": int(NOW - 60), "state": "closed",
             "display_state": "waiting", "cli_running": False, "plan": None,
+            "subagents_running": False, "finished": False,
         }
         session.update(fields)
         self.manager.sessions.append(session)
@@ -94,6 +104,10 @@ class World:
     def touch(self, sid: str, messages: list[Any], mtime: float) -> None:
         self.transcripts[sid].messages.extend(messages)
         os.utime(self.files_dir / f"{sid}.jsonl", (mtime, mtime))
+
+    async def git_status(self, path: Path):
+        self.git_calls.append(path)
+        return self.git
 
     def session_file(self, sid: str, directory: str) -> Path | None:
         self.lookups.append((sid, directory))
@@ -109,7 +123,7 @@ class World:
         service = DigestService(
             self.db_path, self.manager, self.envelopes.append, model,
             clock=lambda: self.clock[0], session_file=self.session_file,
-            read_transcript=self.read_transcript, **kwargs,
+            read_transcript=self.read_transcript, git_status=self.git_status, **kwargs,
         )
         service.load()
         return service
@@ -122,3 +136,9 @@ class World:
 
     def published(self, type_: str) -> list[dict[str, Any]]:
         return [e for e in self.envelopes if e["type"] == type_]
+
+    def closure(self, sid: str):
+        from claudio_maestro.digest.closure_store import get_closure
+
+        with closing(db.connect(self.db_path)) as conn:
+            return get_closure(conn, sid)

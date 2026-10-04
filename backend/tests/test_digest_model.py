@@ -217,3 +217,15 @@ async def test_login_words_in_a_successful_reading_do_not_discard_it(tmp_path: P
     query, _ = stub_query(SystemMessage("init", {"session_id": "sess-1"}), talk, result())
     model = SdkDigestModel(tmp_path, query_fn=query, delete_fn=lambda s, d: None)
     assert await model.summarize(REQUEST) == OUTPUT
+
+
+def test_options_use_the_request_schema(tmp_path) -> None:
+    from claudio_maestro.digest.closure import CLOSURE_SCHEMA
+    from claudio_maestro.digest.model import DigestRequest, build_digest_options
+    from claudio_maestro.digest.prompt import DIGEST_SCHEMA
+
+    plain = build_digest_options(DigestRequest("s", "p", "haiku", "low"), tmp_path)
+    assert plain.output_format["schema"] is DIGEST_SCHEMA
+    closure = build_digest_options(
+        DigestRequest("s", "p", "haiku", "low", schema=CLOSURE_SCHEMA), tmp_path)
+    assert closure.output_format["schema"] is CLOSURE_SCHEMA

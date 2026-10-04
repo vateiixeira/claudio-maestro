@@ -11,6 +11,7 @@ from digest_fakes import NOW, World, claude, exchange, user
 from claudio_maestro import db
 from claudio_maestro.digest.config import DigestConfig, save_config
 from claudio_maestro.digest.model import DigestModelError, FakeDigestModel
+from claudio_maestro.digest.prompt import DIGEST_SCHEMA
 from claudio_maestro.digest.service import pre_eligible
 from claudio_maestro.digest.store import Digest
 
@@ -240,7 +241,8 @@ async def test_manual_session_without_news_republishes(tmp_path: Path) -> None:
     service = world.service(model)
     await service.run_pass("manual_session", ["s1"])
     await service.run_pass("manual_session", ["s1"])
-    assert len(model.requests) == 1
+    # each manual run is followed by a closure check (its own request)
+    assert len([r for r in model.requests if r.schema is DIGEST_SCHEMA]) == 1
     assert len(world.published("session.digest")) == 2
 
 

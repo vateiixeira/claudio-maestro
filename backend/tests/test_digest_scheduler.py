@@ -12,6 +12,7 @@ from claudio_maestro import db
 from claudio_maestro.digest import store
 from claudio_maestro.digest.config import DigestConfig, load_config
 from claudio_maestro.digest.model import DigestModelError, FakeDigestModel
+from claudio_maestro.digest.prompt import DIGEST_SCHEMA
 
 
 def runs(world: World) -> list[dict]:
@@ -25,7 +26,7 @@ async def test_first_automatic_pass_waits_an_interval(tmp_path: Path) -> None:
     world.add("s1", exchange(0, 12))
     model = FakeDigestModel()
     service = world.service(model)
-    await service.update_config(DigestConfig(enabled=True))
+    await service.update_config(DigestConfig(enabled=True, closure_auto=False))
     assert service.status()["next_run_at"] == int(NOW + 600)
     await service.tick()
     assert model.requests == []
@@ -46,7 +47,8 @@ async def test_disabled_agent_runs_only_manual_requests(tmp_path: Path) -> None:
     assert model.requests == [] and service.status()["next_run_at"] is None
     service.request_session("s1")
     await service.tick()
-    assert len(model.requests) == 1
+    # the manual summary is followed by a closure check (its own request)
+    assert len([r for r in model.requests if r.schema is DIGEST_SCHEMA]) == 1
     assert [r["trigger"] for r in runs(world)] == ["manual_session"]
 
 
@@ -166,7 +168,7 @@ async def test_pause_holds_automatic_passes(tmp_path: Path) -> None:
     world.add("s1", exchange(0, 12))
     model = FakeDigestModel()
     service = world.service(model)
-    await service.update_config(DigestConfig(enabled=True))
+    await service.update_config(DigestConfig(enabled=True, closure_auto=False))
     service._paused_until = NOW + 3600
     world.clock[0] = NOW + 600
     await service.tick()
@@ -239,7 +241,7 @@ async def test_limit_error_pauses_automatic_passes(tmp_path: Path) -> None:
     model = FakeDigestModel([DigestModelError("Limite atingido.", stop_pass=True,
                                               resets_at=resets_at)])
     service = world.service(model)
-    await service.update_config(DigestConfig(enabled=True))
+    await service.update_config(DigestConfig(enabled=True, closure_auto=False))
     world.clock[0] = NOW + 600
     await service.tick()
     assert len(model.requests) == 1

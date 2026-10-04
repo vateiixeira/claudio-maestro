@@ -8,7 +8,7 @@ import logging
 from collections import deque
 from collections.abc import Callable
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -34,6 +34,8 @@ class DigestRequest:
     prompt: str
     model: str
     effort: str
+    # JSON schema of the answer; the closure check passes its own.
+    schema: dict[str, Any] = field(default_factory=lambda: DIGEST_SCHEMA)
 
 
 class DigestModelError(Exception):
@@ -88,7 +90,7 @@ def build_digest_options(
         # from ~/.claude.json and the claude.ai connectors.
         "strict_mcp_config": True,
         "system_prompt": request.system_prompt,
-        "output_format": {"type": "json_schema", "schema": DIGEST_SCHEMA},
+        "output_format": {"type": "json_schema", "schema": request.schema},
     }
     if stderr is not None:
         kwargs["stderr"] = stderr
