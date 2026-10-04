@@ -126,6 +126,8 @@ class SessionOut(BaseModel):
     digest_short: str | None = None
     # The digest agent marked the linked plan as completed.
     plan_done: bool = False
+    # Closure check of the digest agent; None when unchecked, stale or finished.
+    closure_verdict: Literal["can_close", "user_action", "incomplete", "in_progress"] | None = None
     # A turn was running when the app stopped and the session has no client now.
     interrupted: bool = False
     # What the user plans to do with the session; None when unmarked.

@@ -12,13 +12,16 @@ from claudio_maestro import db
 from claudio_maestro.api.deps import DbDep
 from claudio_maestro.api.sessions import get_session_manager
 from claudio_maestro.digest import store
+from claudio_maestro.digest.closure_store import get_closure
 from claudio_maestro.digest.config import ConfigError, validate
-from claudio_maestro.digest.service import DigestService
+from claudio_maestro.digest.service import ClosureItemNotFound, DigestService
 from claudio_maestro.sessions import SessionManager
 
 router = APIRouter(prefix="/api")
 
 NOT_FOUND = "Sessão não encontrada."
+ITEM_INVALID = "O item precisa ter de 1 a 200 caracteres."
+ITEM_MAX = 200
 
 
 def get_digest_service(request: Request) -> DigestService:
@@ -96,3 +99,36 @@ async def request_session_digest(
     await asyncio.to_thread(check)
     service.request_session(session_id)
     return {"queued": True}
+
+
+@router.get("/sessions/{session_id}/closure")
+def get_session_closure(session_id: str, conn: DbDep) -> dict[str, Any] | None:
+    _require_session(conn, session_id)
+    row = conn.execute("SELECT last_activity_at FROM sessions WHERE session_id = ?",
+                       (session_id,)).fetchone()
+    closure = get_closure(conn, session_id)
+    return None if closure is None else closure.to_dict(row["last_activity_at"])
+
+
+@router.post("/sessions/{session_id}/closure/resolve")
+async def resolve_closure_item(
+    session_id: str, request: Request, service: ServiceDep
+) -> dict[str, Any]:
+    path = request.app.state.settings.db_path
+
+    def check() -> None:
+        with closing(db.connect(path)) as conn:
+            _require_session(conn, session_id)
+
+    await asyncio.to_thread(check)
+    try:
+        raw = json.loads(await request.body())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="JSON inválido.") from exc
+    item = raw.get("item") if isinstance(raw, dict) else None
+    if not isinstance(item, str) or not item.strip() or len(item) > ITEM_MAX:
+        raise HTTPException(status_code=422, detail=ITEM_INVALID)
+    try:
+        return await service.resolve_closure_item(session_id, item)
+    except ClosureItemNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

@@ -58,6 +58,7 @@ from claudio_maestro.conversation import (
     rate_limit_text,
 )
 from claudio_maestro.digest import store as digest_store
+from claudio_maestro.digest.closure_store import closure_briefs
 from claudio_maestro.foreign import foreign_reply_uuids
 from claudio_maestro.plans import (
     PLAN_TOOLS,
@@ -536,6 +537,7 @@ def describe(
     cli_running: bool = False,
     digest_short: str | None = None,
     plan_done: bool = False,
+    closure_verdict: str | None = None,
     subagents_running: bool = False,
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`.
@@ -578,6 +580,7 @@ def describe(
         "subagents_running": subagents_running,
         "digest_short": digest_short,
         "plan_done": plan_done,
+        "closure_verdict": closure_verdict,
         "interrupted": bool(record.turn_open) and state in ("closed", "error"),
     }
 
@@ -2463,6 +2466,8 @@ class SessionManager:
         self._load_models()
         # Short sentence and plan seal of the digest agent, by session (memory copy).
         self._digest_briefs: dict[str, tuple[str | None, bool]] = {}
+        # Closure verdict and check time of the digest agent, by session (memory copy).
+        self._closure_briefs: dict[str, tuple[str | None, int | None]] = {}
         self._load_digest_briefs()
 
     def list_models(self) -> list[dict[str, Any]]:
@@ -2890,11 +2895,14 @@ class SessionManager:
         plan = self.plan_summary(record)
         cli_running = self._cli_running(record.session_id)
         short, plan_done = self._digest_briefs.get(record.session_id, (None, False))
+        verdict, checked_at = self._closure_briefs.get(record.session_id, (None, None))
+        if record.finished or checked_at is None or record.last_activity_at > checked_at:
+            verdict = None
         if active is None:
             return {"context": None, "pending_permission": None, "last_action": None,
                     "pending_kind": None, "plan": plan, "cli_running": cli_running,
                     "digest_short": short, "plan_done": plan_done,
-                    "subagents_running": False}
+                    "closure_verdict": verdict, "subagents_running": False}
         return {
             "context": active.context,
             "pending_permission": active.pending_permission,
@@ -2904,6 +2912,7 @@ class SessionManager:
             "cli_running": cli_running,
             "digest_short": short,
             "plan_done": plan_done,
+            "closure_verdict": verdict,
             "subagents_running": active.subagents_running,
         }
 
@@ -2911,6 +2920,7 @@ class SessionManager:
         try:
             with closing(db.connect(self._db_path)) as conn:
                 self._digest_briefs = digest_store.briefs(conn)
+                self._closure_briefs = closure_briefs(conn)
         except sqlite3.Error:
             logger.exception("Falha ao ler os resumos do agente")
 
@@ -2920,6 +2930,16 @@ class SessionManager:
         if self._digest_briefs.get(session_id) == brief:
             return
         self._digest_briefs[session_id] = brief
+        await self._announce_session(session_id)
+
+    async def set_closure_brief(
+        self, session_id: str, verdict: str | None, checked_at: int | None
+    ) -> None:
+        """The digest agent checked the session: show its closure verdict in the lists."""
+        brief = (verdict, checked_at)
+        if self._closure_briefs.get(session_id) == brief:
+            return
+        self._closure_briefs[session_id] = brief
         await self._announce_session(session_id)
 
     def _describe_active(self, session: ActiveSession) -> dict[str, Any]:
