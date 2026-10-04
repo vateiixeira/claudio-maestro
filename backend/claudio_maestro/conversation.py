@@ -393,24 +393,42 @@ class ConversationBuilder:
             if not isinstance(item, ToolItem) or item.subagent is None:
                 continue
             sub = item.subagent
-            task_ids = {t for t, tool_use_id in self._task_tools.items()
+            # Insertion order: the first `agentId` the result named comes first.
+            task_ids = {t: None for t, tool_use_id in self._task_tools.items()
                         if tool_use_id == item.tool_use_id}
             if sub["task_id"]:
-                task_ids.add(sub["task_id"])
+                task_ids[sub["task_id"]] = None
             found = [e for e in (endings.get(item.tool_use_id),
                                  *(by_task.get(t) for t in task_ids)) if e is not None]
             end = max(found, key=lambda e: -1 if e.get("at") is None else e["at"], default=None)
             if end is not None and end.get("task_id"):
                 self._task_tools.setdefault(end["task_id"], item.tool_use_id)
                 sub["task_id"] = sub["task_id"] or end["task_id"]
-                task_ids.add(end["task_id"])
-            resumed = max((resumes[t] for t in task_ids if t in resumes), default=None)
+                task_ids[end["task_id"]] = None
+            result = item.result
+            details = result.get("details") if result is not None else None
+            background = _is_background_launch(details)
+            if not sub["task_id"] and task_ids and background:
+                # No Task* message in the transcript (a card still running when the app
+                # reattached): the `agentId` of the result is what lets "Stop subagents"
+                # reach it. A synchronous Agent result carries one too, but it is no task.
+                sub["task_id"] = next(iter(task_ids))
+            resumed_ids = [t for t in task_ids if t in resumes]
+            resumed = max((resumes[t] for t in resumed_ids), default=None)
             if resumed is not None and (end is None or end.get("at") is None or resumed > end["at"]):
                 # Woken by a SendMessage after it ended (or with no notification at all).
                 if live:
+                    sub["task_id"] = sub["task_id"] or max(resumed_ids, key=resumes.__getitem__)
                     sub["status"] = "running"
                     sub["started_at"] = resumed
                     sub["last_activity_at"] = resumed
+                continue
+            if end is None and live and result is not None and isinstance(details, dict) \
+                    and not background:
+                # A synchronous call that already returned and nothing woke it again:
+                # no notification will ever come, so it is over (as when not live). Without
+                # `details` we cannot tell it from a background launch: it stays running.
+                sub["status"] = "failed" if result.get("is_error") else "completed"
                 continue
             if end is None:
                 continue
@@ -1059,6 +1077,13 @@ def _cut_strings(value: Any, limit: int) -> Any:
     if isinstance(value, dict):
         return {k: _cut_strings(v, limit) for k, v in value.items()}
     return value
+
+
+def _is_background_launch(details: Any) -> bool:
+    """Whether an Agent/Task result says the subagent was launched in the background."""
+    return isinstance(details, dict) and (
+        details.get("isAsync") is True or details.get("status") == "async_launched"
+    )
 
 
 def slim_details(tool_name: str, details: Any) -> Any:

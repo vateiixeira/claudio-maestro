@@ -86,6 +86,87 @@ def test_live_history_without_notification_keeps_running():
     assert builder.subagents_running
 
 
+def test_live_history_card_without_notification_gets_the_task_id_from_the_result():
+    # The "Stop subagents" button only reaches subagents that have a task_id.
+    builder = load(endings=None)
+
+    sub = sub_of(builder)
+    assert sub["status"] == "running"
+    assert sub["task_id"] == "agent-1"
+    assert "agent-1" in builder.running_task_ids()
+
+
+SYNC_RESULT = {"content": "done", "is_error": None,
+               "details": {"status": "completed", "agentId": "agent-1", "result": "done"}}
+
+
+def test_live_history_finished_sync_subagent_is_completed_without_task_id():
+    # A synchronous Agent result also carries `agentId`, but it is not a running task.
+    builder = load(endings=None, results={"toolu_1": SYNC_RESULT})
+
+    sub = sub_of(builder)
+    assert sub["status"] == "completed"
+    assert sub["task_id"] is None
+    assert builder.running_task_ids() == []
+    assert not builder.subagents_running
+
+
+def test_live_history_failed_sync_subagent_is_failed():
+    result = {**SYNC_RESULT, "is_error": True}
+    builder = load(endings=None, results={"toolu_1": result})
+
+    assert sub_of(builder)["status"] == "failed"
+    assert not builder.subagents_running
+
+
+def test_live_history_sync_subagent_resumed_later_runs_again():
+    builder = load(endings=None, results={"toolu_1": SYNC_RESULT}, resumes={"agent-1": 3_000})
+
+    sub = sub_of(builder)
+    assert sub["status"] == "running"
+    assert sub["task_id"] == "agent-1"
+    assert builder.running_task_ids() == ["agent-1"]
+
+
+def test_live_history_result_without_details_stays_running():
+    result = {"content": "Async agent launched successfully.", "is_error": None, "details": None}
+    builder = load(endings=None, results={"toolu_1": result})
+
+    assert sub_of(builder)["status"] == "running"
+    assert builder.subagents_running
+
+
+def test_live_history_async_flag_alone_counts_as_background():
+    result = {"content": "ok", "is_error": None,
+              "details": {"isAsync": True, "agentId": "agent-1"}}
+    builder = load(endings=None, results={"toolu_1": result})
+
+    assert sub_of(builder)["status"] == "running"
+    assert builder.running_task_ids() == ["agent-1"]
+
+
+def test_task_id_of_the_result_does_not_replace_the_one_from_a_notification():
+    builder = load(endings={"toolu_1": ending("completed", at=2_000, task_id="agent-2")},
+                   resumes={"agent-2": 3_000})
+
+    sub = sub_of(builder)
+    assert sub["status"] == "running"
+    assert sub["task_id"] == "agent-2"
+    assert builder.running_task_ids() == ["agent-2"]
+
+
+def test_task_id_already_on_the_card_is_kept_when_the_history_loads_again():
+    builder = load(endings=None)
+    builder._subagents["toolu_1"]["task_id"] = "agent-7"
+
+    builder.load_history(
+        agent_entries(), {"toolu_1": LAUNCHED}, live=True,
+        tool_times={"toolu_1": {"started_at": 1_000}},
+    )
+
+    assert sub_of(builder)["task_id"] == "agent-7"
+
+
 def test_notification_of_another_agent_does_not_end_this_one():
     builder = load(endings={"toolu_other": ending(task_id="agent-9")})
 
