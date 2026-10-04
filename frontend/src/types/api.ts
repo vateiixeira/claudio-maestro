@@ -341,7 +341,7 @@ export interface DigestRun {
   id: number
   started_at: number
   finished_at: number | null
-  trigger: 'auto' | 'manual_all' | 'manual_session'
+  trigger: 'auto' | 'auto_closure' | 'manual_all' | 'manual_session'
   read_count: number
   skipped_count: number
   errors: DigestRunError[]

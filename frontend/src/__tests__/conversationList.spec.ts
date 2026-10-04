@@ -49,6 +49,7 @@ describe('abas da Inbox', () => {
     expect(inInbox(open, 'pode-fechar')).toBe(true)
     expect(inInbox({ ...open, closure_verdict: 'user_action' }, 'pode-fechar')).toBe(false)
     expect(inInbox({ ...open, display_state: 'finished' }, 'pode-fechar')).toBe(false)
+    expect(inInbox({ ...open, display_state: 'running' }, 'pode-fechar')).toBe(false)
     expect(INBOX_TABS.find((t) => t.id === 'pode-fechar')?.label).toBe('Pode fechar')
     expect(isInboxTab('pode-fechar')).toBe(true)
   })

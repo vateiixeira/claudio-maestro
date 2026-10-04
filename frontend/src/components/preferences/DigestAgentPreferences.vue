@@ -13,6 +13,7 @@ const models = useModelsStore()
 
 const TRIGGER_LABELS: Record<DigestRun['trigger'], string> = {
   auto: 'Automática',
+  auto_closure: 'Verificação automática',
   manual_all: 'Rodar agora',
   manual_session: 'Resumir conversa',
 }

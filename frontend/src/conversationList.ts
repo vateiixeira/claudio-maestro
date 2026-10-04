@@ -1,3 +1,4 @@
+import { shownVerdict } from './closure'
 import { markLane } from './conversation/marks'
 import { needsYou } from './conversation/needsYou'
 import type { Session } from './types/api'
@@ -39,7 +40,7 @@ export function inInbox(session: Session, tab: InboxTab): boolean {
   if (tab === 'nao-lidas') return unread && lane !== 'later'
   if (tab === 'em-execucao') return running
   if (tab === 'para-revisar') return open && lane === 'review'
-  if (tab === 'pode-fechar') return open && session.closure_verdict === 'can_close'
+  if (tab === 'pode-fechar') return shownVerdict(session) === 'can_close'
   if (tab === 'depois') return open && lane === 'later'
   return waiting || running || unread
 }

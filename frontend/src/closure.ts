@@ -20,9 +20,9 @@ export const CLOSURE_DOT_CLASS: Record<ShownVerdict, string> = {
   incomplete: 'bg-diff-del-fg',
 }
 
-/** Verdict worth a badge: none for finished sessions, open work or a stale check. */
+/** Verdict worth a badge: none for finished or running sessions, open work or a stale check. */
 export function shownVerdict(session: Pick<Session, 'display_state' | 'closure_verdict'>): ShownVerdict | null {
-  if (session.display_state === 'finished') return null
+  if (session.display_state === 'finished' || session.display_state === 'running') return null
   const verdict = session.closure_verdict
   return verdict && verdict !== 'in_progress' ? verdict : null
 }

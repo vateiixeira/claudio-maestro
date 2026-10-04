@@ -19,6 +19,9 @@ describe('ClosureBadge', () => {
   it.each([[null], ['in_progress']])('renders nothing for %s', (v) => {
     expect(mount(ClosureBadge, { props: { session: s(v) } }).html()).toBe('<!--v-if-->')
   })
+  it('renders nothing for a running session', () => {
+    expect(mount(ClosureBadge, { props: { session: s('can_close', 'running') } }).html()).toBe('<!--v-if-->')
+  })
   it('renders nothing for a finished session', () => {
     expect(mount(ClosureBadge, { props: { session: s('can_close', 'finished') } }).html()).toBe('<!--v-if-->')
   })

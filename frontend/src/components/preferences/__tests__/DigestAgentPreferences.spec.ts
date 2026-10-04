@@ -21,12 +21,14 @@ const RUN: DigestRun = {
 let pinia: Pinia
 let puts: unknown[]
 let runCalls: number
+let runList: DigestRun[]
 
 beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   puts = []
   runCalls = 0
+  runList = [RUN]
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -39,7 +41,7 @@ function stub(put?: (body: DigestConfig) => Response) {
       return put ? put(body) : jsonResponse({ config: body, status: { ...STATUS, enabled: body.enabled } })
     },
     'POST /api/digest/run': () => { runCalls++; return jsonResponse({ ...STATUS, running: true }, 202) },
-    'GET /api/digest/runs': () => jsonResponse([RUN]),
+    'GET /api/digest/runs': () => jsonResponse(runList),
     'GET /api/models': () => jsonResponse([{ value: 'sonnet', displayName: 'Sonnet' }, { value: 'haiku', displayName: 'Haiku' }]),
   }))
 }
@@ -126,6 +128,13 @@ describe('aba do agente de resumos', () => {
     expect(w.find('[data-test="digest-run-details"]').exists()).toBe(false)
     await w.find('[data-test="digest-run-toggle"]').trigger('click')
     expect(w.find('[data-test="digest-run-details"]').text()).toContain('Sessão A: Resposta ruim.')
+  })
+
+  it('rotula as passadas da verificação automática de fechamento', async () => {
+    runList = [{ ...RUN, trigger: 'auto_closure' }]
+    stub()
+    const w = await mountTab()
+    expect(w.find('[data-test="digest-run-row"]').text()).toContain('Verificação automática')
   })
 
   it('recarrega o registro quando uma passada termina', async () => {
