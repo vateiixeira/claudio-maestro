@@ -118,6 +118,8 @@ export interface Session {
   digest_short?: string | null
   /** The digest agent marked the linked plan as completed. */
   plan_done?: boolean
+  /** Closure check verdict; null when never checked or stale. */
+  closure_verdict?: ClosureVerdict | null
   /** What the user plans to do with the session; null when unmarked. */
   mark?: SessionMark | null
   /** Short note of a blocked session. */
@@ -309,6 +311,18 @@ export interface SessionDigest {
   error: string | null
   error_at: number | null
 }
+export type ClosureVerdict = 'can_close' | 'user_action' | 'incomplete' | 'in_progress'
+/** Closure check of a session (`GET /api/sessions/{id}/closure`). */
+export interface SessionClosure {
+  session_id: string
+  verdict: ClosureVerdict | null
+  user_actions: string[]
+  missing: string[]
+  evidence: string | null
+  checked_at: number | null
+  error: string | null
+  error_at: number | null
+}
 export interface DigestConfig {
   enabled: boolean
   model: string
@@ -318,6 +332,7 @@ export interface DigestConfig {
   min_new_messages: number
   open_turn_minutes: number
   window_days: number
+  closure_auto: boolean
 }
 export interface DigestStatus { enabled: boolean; running: boolean; next_run_at: number | null; paused_until: number | null }
 export interface DigestState { config: DigestConfig; status: DigestStatus }

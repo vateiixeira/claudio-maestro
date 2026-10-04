@@ -21,6 +21,8 @@ const form = reactive<DigestForm>({
   enabled: false, model: 'sonnet', effort: 'medium', extra_instructions: '',
   interval_minutes: '10', min_new_messages: '10', open_turn_minutes: '30', window_days: '3',
 })
+// Not edited here yet: kept as read so saving does not turn it off.
+let closureAuto = false
 const loading = ref(true)
 const loadError = ref<string | null>(null)
 const saving = ref(false)
@@ -50,6 +52,7 @@ function fill(config: DigestConfig) {
   form.min_new_messages = String(config.min_new_messages)
   form.open_turn_minutes = String(config.open_turn_minutes)
   form.window_days = String(config.window_days)
+  closureAuto = config.closure_auto
 }
 
 async function loadRuns() {
@@ -102,6 +105,7 @@ async function save() {
       min_new_messages: Number(form.min_new_messages),
       open_turn_minutes: Number(form.open_turn_minutes),
       window_days: Number(form.window_days),
+      closure_auto: closureAuto,
     })
     fill(state.config)
     digest.applyStatus(state.status)

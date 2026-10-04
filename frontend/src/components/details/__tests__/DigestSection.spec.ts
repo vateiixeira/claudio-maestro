@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import DigestSection from '../DigestSection.vue'
-import { jsonResponse, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeSession, routeFetch } from '../../../test/factories'
 import { useDigestStore } from '../../../stores/digest'
+import { useSessionsStore } from '../../../stores/sessions'
 import type { SessionDigest } from '../../../types/api'
 
 enableAutoUnmount(afterEach)
@@ -154,5 +155,31 @@ describe('seção Resumo', () => {
     release()
     await flushPromises()
     expect(w.find('[data-test="digest-short"]').text()).toBe('Segunda')
+  })
+})
+
+describe('bloco Fechamento na seção Resumo', () => {
+  const CLOSURE = { session_id: 's1', verdict: 'can_close', user_actions: [], missing: [], evidence: null, checked_at: 5, error: null, error_at: null }
+
+  function stubWithClosure(digest: SessionDigest | null) {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/digest': () => jsonResponse(digest),
+      'GET /api/sessions/s1/closure': () => jsonResponse(CLOSURE),
+    }))
+    useSessionsStore().setForProject(1, [makeSession({ closure_verdict: 'can_close' })])
+  }
+
+  it('aparece junto do resumo', async () => {
+    stubWithClosure(DIGEST)
+    const w = await mountSection()
+    expect(w.find('[data-test="digest-short"]').exists()).toBe(true)
+    expect(w.find('[data-test="closure-badge"]').text()).toBe('Pode fechar')
+  })
+
+  it('aparece mesmo sem resumo', async () => {
+    stubWithClosure(null)
+    const w = await mountSection()
+    expect(w.find('[data-test="digest-empty"]').exists()).toBe(true)
+    expect(w.find('[data-test="closure-badge"]').text()).toBe('Pode fechar')
   })
 })

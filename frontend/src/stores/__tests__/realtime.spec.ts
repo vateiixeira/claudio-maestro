@@ -9,6 +9,7 @@ import { useGitStore } from '../git'
 import { useModelsStore } from '../models'
 import { useGroupsStore } from '../groups'
 import { useDigestStore } from '../digest'
+import { useClosureStore } from '../closure'
 import { jsonResponse, makeGroup, makeProject, makeSession } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
@@ -54,6 +55,26 @@ describe('bindRealtime', () => {
     const store = useDigestStore()
     expect(store.digests.s1?.short).toBe('Faz X')
     expect(store.status?.running).toBe(true)
+  })
+
+  it('leva session.closure ao store da verificação e o invalida ao reconectar', () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    const closure = { session_id: 's1', verdict: 'can_close', user_actions: [], missing: [], evidence: null, checked_at: 5, error: null, error_at: null }
+    sockets[0]!.onmessage?.({
+      data: JSON.stringify({ session_id: null, seq: 0, type: 'session.closure', data: { session_id: 's1', closure } }),
+    })
+    const store = useClosureStore()
+    expect(store.closures.s1?.verdict).toBe('can_close')
+    sockets[0]!.onclose?.({})
+    vi.advanceTimersByTime(10)
+    sockets[1]!.onopen?.({})
+    expect(store.epoch).toBe(1)
+    expect('s1' in store.closures).toBe(false)
   })
 
   it('relê o estado do agente de resumos ao reconectar', async () => {

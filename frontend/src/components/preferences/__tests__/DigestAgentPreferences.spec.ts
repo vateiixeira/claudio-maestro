@@ -10,7 +10,7 @@ enableAutoUnmount(afterEach)
 
 const CONFIG: DigestConfig = {
   enabled: false, model: 'sonnet', effort: 'medium', extra_instructions: '',
-  interval_minutes: 10, min_new_messages: 10, open_turn_minutes: 30, window_days: 3,
+  interval_minutes: 10, min_new_messages: 10, open_turn_minutes: 30, window_days: 3, closure_auto: true,
 }
 const STATUS = { enabled: false, running: false, next_run_at: null, paused_until: null }
 const RUN: DigestRun = {

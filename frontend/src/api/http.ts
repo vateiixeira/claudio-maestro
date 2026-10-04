@@ -23,6 +23,7 @@ import type {
   ProjectUpdate,
   SendResult,
   Session,
+  SessionClosure,
   SessionDigest,
   SessionGroup,
   SessionUpdate,
@@ -334,4 +335,12 @@ export function getSessionDigest(id: string): Promise<SessionDigest | null> {
 
 export function requestSessionDigest(id: string): Promise<{ queued: boolean }> {
   return request('POST', `/api/sessions/${encodeURIComponent(id)}/digest`)
+}
+
+export function getSessionClosure(id: string): Promise<SessionClosure | null> {
+  return request('GET', `/api/sessions/${encodeURIComponent(id)}/closure`)
+}
+
+export function resolveClosureItem(id: string, item: string): Promise<SessionClosure> {
+  return request('POST', `/api/sessions/${encodeURIComponent(id)}/closure/resolve`, { item })
 }

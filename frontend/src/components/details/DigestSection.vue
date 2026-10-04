@@ -3,6 +3,7 @@
 import { computed, watch } from 'vue'
 import { PHASE_KIND_LABELS } from '../../digestConfig'
 import { formatActivity } from '../../format'
+import ClosureBlock from './ClosureBlock.vue'
 import { useDigestStore } from '../../stores/digest'
 
 const props = defineProps<{ sessionId: string }>()
@@ -35,8 +36,10 @@ const fileName = (path: string) => path.split('/').pop() ?? path
     </div>
     <template v-else>
       <p v-if="!hasSummary" data-test="digest-empty" class="m-0 text-sm text-fg-muted">Ainda não resumida</p>
+      <ClosureBlock v-if="!hasSummary" :session-id="sessionId" />
       <template v-else>
         <p v-if="digest?.short" data-test="digest-short" class="m-0 text-sm leading-normal text-fg">{{ digest.short }}</p>
+        <ClosureBlock :session-id="sessionId" />
         <ol class="m-0 flex list-none flex-col gap-3 p-0">
           <li
             v-for="(phase, i) in digest?.phases ?? []"

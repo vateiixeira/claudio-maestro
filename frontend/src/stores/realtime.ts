@@ -1,4 +1,5 @@
 import type { EventSocket } from '../api/socket'
+import { useClosureStore } from './closure'
 import { useDigestStore } from './digest'
 import { useGitStore } from './git'
 import { useGitDetailsStore } from './gitDetails'
@@ -51,8 +52,10 @@ export function bindRealtime(socket: EventSocket): () => void {
     // The digest agent wrote a summary, or its state changed (both global events).
     socket.on('session.digest', (event) => useDigestStore().applyDigest(event.data)),
     socket.on('digest.status', (event) => useDigestStore().applyStatus(event.data)),
+    socket.on('session.closure', (event) => useClosureStore().applyClosure(event.data)),
     socket.onReconnect(() => {
       useDigestStore().invalidate()
+      useClosureStore().invalidate()
       void useDigestStore().refreshStatus()
       // The startup read of the preferences failed: read them again now.
       const layout = useLayoutStore()
