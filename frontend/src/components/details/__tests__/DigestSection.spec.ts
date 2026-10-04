@@ -9,8 +9,11 @@ import type { SessionDigest } from '../../../types/api'
 
 enableAutoUnmount(afterEach)
 
+// Midday: relative times like "há 2 min" must stay on the same day whatever time the suite runs.
+const MIDDAY = new Date(2026, 9, 3, 12, 0, 0)
+
 const DIGEST: SessionDigest = {
-  session_id: 's1', read_at: Math.floor(Date.now() / 1000) - 120, short: 'Executa o plano do agrupador',
+  session_id: 's1', read_at: Math.floor(MIDDAY.getTime() / 1000) - 120, short: 'Executa o plano do agrupador',
   plan_done: false, error: null, error_at: null,
   phases: [
     { title: 'Plano do agrupador', kind: 'plan', status: 'done', done: ['Tarefa 1: tabela'], pending: [], ref: '/p/docs/superpowers/plans/agrupador.md' },
@@ -22,11 +25,16 @@ let pinia: Pinia
 let posts: number
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(MIDDAY)
   pinia = createPinia()
   setActivePinia(pinia)
   posts = 0
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
 
 function stub(digest: SessionDigest | null) {
   vi.stubGlobal('fetch', routeFetch({

@@ -593,7 +593,14 @@ describe('página da conversa', () => {
 })
 
 describe('resumo ao voltar', () => {
-  const NOW = Math.floor(Date.now() / 1000)
+  // Midday: "há 42 min" must stay on the same day whatever time the suite runs.
+  const MIDDAY = new Date(2026, 9, 3, 12, 0, 0)
+  const NOW = Math.floor(MIDDAY.getTime() / 1000)
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(MIDDAY)
+  })
+  afterEach(() => vi.useRealTimers())
   const SEEN = NOW - 42 * 60
   const item = (type: string, id: string, at: number, extra: Record<string, unknown> = {}) =>
     ({ type, id, tool_use_id: id, name: 'Bash', input: {}, result: null, streaming: false, parent_tool_use_id: null, text: id, at, ...extra })
@@ -635,7 +642,8 @@ describe('resumo ao voltar', () => {
 
   it('guarda o valor antigo: marcar como vista não muda o card', async () => {
     stubSession()
-    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] })
+    vi.setSystemTime(MIDDAY)
     try {
       const { wrapper } = await mountAway()
       await vi.advanceTimersByTimeAsync(400)

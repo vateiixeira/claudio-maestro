@@ -191,6 +191,9 @@ describe('visão git do projeto', () => {
   })
 
   it('lista commits com hash, assunto, autor e tempo, e marca os que não subiram', async () => {
+    // Midday: "10 min ago" must stay on the same day whatever time the suite runs.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 3, 12, 0, 0))
     const recent = new Date(Date.now() - 10 * 60_000).toISOString()
     const { wrapper } = await mountWith([
       makeRepoDetails({

@@ -8,7 +8,9 @@ import type { DigestStatus, SessionDigest } from '../../../types/api'
 
 enableAutoUnmount(afterEach)
 
-const NOW = Math.floor(Date.now() / 1000)
+// Midday: relative times like "há 2 min" must stay on the same day whatever time the suite runs.
+const MIDDAY = new Date(2026, 9, 3, 12, 0, 0)
+const NOW = Math.floor(MIDDAY.getTime() / 1000)
 const SINCE = NOW - 42 * 60
 const COUNTS = { turns: 2, actions: 14, files: 3 }
 
@@ -27,12 +29,17 @@ let posts: number
 let modelCalls: number
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(MIDDAY)
   pinia = createPinia()
   setActivePinia(pinia)
   posts = 0
   modelCalls = 0
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
 
 function stub(status: DigestStatus, digest: SessionDigest | null) {
   useDigestStore(pinia).status = status
