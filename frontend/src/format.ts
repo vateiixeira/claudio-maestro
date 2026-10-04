@@ -30,10 +30,9 @@ export function formatActivity(seconds: number, now: Date = new Date()): string 
   const day = startOfDay(date)
 
   if (elapsed < 60) return 'agora'
-  if (day === today) {
-    if (elapsed < 3600) return `há ${Math.floor(elapsed / 60)} min`
-    return `há ${Math.floor(elapsed / 3600)} h`
-  }
+  // Under an hour stays in minutes even across midnight: "ontem" for 42 minutes ago reads wrong.
+  if (elapsed < 3600) return `há ${Math.floor(elapsed / 60)} min`
+  if (day === today) return `há ${Math.floor(elapsed / 3600)} h`
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime()
   if (day === yesterday) return 'ontem'
   const label = `${date.getDate()} ${MONTHS[date.getMonth()]}`

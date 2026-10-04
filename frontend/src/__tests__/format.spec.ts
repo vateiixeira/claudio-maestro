@@ -20,6 +20,12 @@ describe('formatActivity', () => {
     expect(formatActivity(at(new Date(2026, 8, 28, 12, 0, 0)), now)).toBe('há 3 h')
   })
 
+  it('menos de uma hora continua em minutos mesmo depois da meia-noite', () => {
+    const justAfterMidnight = new Date(2026, 8, 28, 0, 3, 0)
+    expect(formatActivity(at(new Date(2026, 8, 27, 23, 21, 0)), justAfterMidnight)).toBe('há 42 min')
+    expect(formatActivity(at(new Date(2026, 8, 27, 22, 0, 0)), justAfterMidnight)).toBe('ontem')
+  })
+
   it('usa ontem e depois a data', () => {
     expect(formatActivity(at(new Date(2026, 8, 27, 23, 0, 0)), now)).toBe('ontem')
     expect(formatActivity(at(new Date(2026, 8, 26, 10, 0, 0)), now)).toBe('26 set')

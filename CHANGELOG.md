@@ -38,6 +38,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Corrigido
 
+- Logo depois da meia-noite, algo de menos de uma hora atrás aparecia como "ontem"; agora mostra "há N min".
 - As sessões abertas pelo Maestro passam a aparecer na lista de sessões da extensão do Claude no VSCode e no Cursor. As anteriores continuam fora dela.
 - Com um plano longo no painel Detalhes, a página inteira deixava de caber na janela e ganhava uma barra de rolagem extra, com espaço vazio embaixo (aparecia em telas de 1080p).
 - Uma conversa continuada por outro processo (o Claude no terminal ou outra janela do app) passa a aparecer na tela, e a próxima mensagem segue dela em vez de criar um ramo na conversa.
