@@ -38,6 +38,13 @@ describe('linha de conversa do menu', () => {
     expect(age.attributes('title')).toContain('Última interação')
   })
 
+  it('mostra a bolinha de fechamento', async () => {
+    const row = await mountRow({ display_state: 'waiting', closure_verdict: 'incomplete' })
+    expect(row.get('[data-test="closure-dot"]').attributes('aria-label')).toBe('Entrega incompleta')
+    const none = await mountRow({ display_state: 'waiting', closure_verdict: null })
+    expect(none.find('[data-test="closure-dot"]').exists()).toBe(false)
+  })
+
   it('em execução não mostra o tempo', async () => {
     const row = await mountRow({ display_state: 'running' })
     expect(row.find('[data-test="row-age"]').exists()).toBe(false)

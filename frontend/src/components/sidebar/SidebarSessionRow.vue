@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import ClosureBadge from '../ClosureBadge.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import MarkIcon from '../MarkIcon.vue'
 import MarkPopover from '../marks/MarkPopover.vue'
@@ -48,6 +49,7 @@ const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.va
     <span v-if="until" data-test="row-until" class="shrink-0 font-mono text-[0.6875rem] text-fg-subtle">{{ until }}</span>
     <span v-if="session.mark" data-test="row-mark" role="img" :title="markTitle" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
     <span v-if="session.priority" data-test="row-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" /></span>
+    <ClosureBadge :session="session" compact />
     <span
       v-if="project && !hideProject"
       data-test="row-project"

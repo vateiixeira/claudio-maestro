@@ -5,6 +5,7 @@ import DisplayStateIcon from '../DisplayStateIcon.vue'
 import MarkIcon from '../MarkIcon.vue'
 import MarkPopover from '../marks/MarkPopover.vue'
 import { contextPoint } from '../marks/menuPoint'
+import ClosureBadge from '../ClosureBadge.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import GroupTag from '../groups/GroupTag.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
@@ -105,6 +106,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
         data-test="row-plan-done"
         class="shrink-0 rounded-full border border-primary/40 px-1.5 font-mono text-[0.6875rem] text-primary-soft"
       >Plano concluído</span>
+      <ClosureBadge :session="session" :compact="compact" />
       <span
         v-if="session.digest_short && !compact"
         data-test="row-digest"

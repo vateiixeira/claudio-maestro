@@ -52,7 +52,7 @@ async function finish() {
       <div v-if="closure.user_actions.length" class="flex flex-col gap-1">
         <p class="m-0 text-[0.71875rem] font-semibold text-fg">Falta você fazer</p>
         <ul class="m-0 flex list-none flex-col gap-1 p-0 text-[0.8125rem] leading-normal font-medium text-fg">
-          <li v-for="item in closure.user_actions" :key="item" data-test="closure-action" class="flex items-start gap-2">
+          <li v-for="(item, i) in closure.user_actions" :key="`${i}-${item}`" data-test="closure-action" class="flex items-start gap-2">
             <span class="mt-[5px] size-2.5 shrink-0 rounded-full border border-fg-muted" aria-hidden="true" />
             <span class="min-w-0 grow">{{ item }}</span>
             <button
@@ -69,7 +69,7 @@ async function finish() {
       <div v-if="closure.missing.length" class="flex flex-col gap-1">
         <p class="m-0 text-[0.71875rem] font-semibold text-fg">Falta implementar</p>
         <ul class="m-0 flex list-none flex-col gap-1 p-0 text-[0.8125rem] leading-normal text-fg">
-          <li v-for="item in closure.missing" :key="item" data-test="closure-missing" class="flex items-start gap-2">
+          <li v-for="(item, i) in closure.missing" :key="`${i}-${item}`" data-test="closure-missing" class="flex items-start gap-2">
             <span class="mt-[5px] size-2.5 shrink-0 rounded-full border border-fg-muted" aria-hidden="true" />
             <span class="min-w-0">{{ item }}</span>
           </li>
@@ -78,16 +78,17 @@ async function finish() {
       <p v-if="closure.checked_at" data-test="closure-checked" class="m-0 text-xs text-fg-muted">
         Verificado {{ formatActivity(closure.checked_at) }}<template v-if="closure.evidence"> · {{ closure.evidence }}</template>
       </p>
-      <button
-        v-if="verdict === 'can_close'"
-        type="button"
-        data-test="closure-finish"
-        class="h-8 self-start rounded-md border border-primary/50 px-2.5 text-xs font-medium text-primary-soft hover:bg-primary-tint disabled:opacity-40"
-        :disabled="finishing"
-        @click="finish"
-      >Finalizar conversa</button>
-      <p v-if="finishError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ finishError }}</p>
     </template>
+
+    <button
+      v-if="verdict === 'can_close'"
+      type="button"
+      data-test="closure-finish"
+      class="h-8 self-start rounded-md border border-primary/50 px-2.5 text-xs font-medium text-primary-soft hover:bg-primary-tint disabled:opacity-40"
+      :disabled="finishing"
+      @click="finish"
+    >Finalizar conversa</button>
+    <p v-if="finishError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ finishError }}</p>
 
     <p v-if="error" data-test="closure-error" role="alert" class="m-0 text-xs text-diff-del-fg">{{ error }}</p>
   </section>

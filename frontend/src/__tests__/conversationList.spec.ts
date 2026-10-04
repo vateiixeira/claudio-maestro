@@ -44,6 +44,15 @@ describe('abas da Inbox', () => {
     expect(ids('todas')).toEqual(['w', 'pw', 'e', 'r', 'u'])
   })
 
+  it('pode-fechar lista as abertas que podem ser fechadas', () => {
+    const open = makeSession({ display_state: 'waiting', closure_verdict: 'can_close' })
+    expect(inInbox(open, 'pode-fechar')).toBe(true)
+    expect(inInbox({ ...open, closure_verdict: 'user_action' }, 'pode-fechar')).toBe(false)
+    expect(inInbox({ ...open, display_state: 'finished' }, 'pode-fechar')).toBe(false)
+    expect(INBOX_TABS.find((t) => t.id === 'pode-fechar')?.label).toBe('Pode fechar')
+    expect(isInboxTab('pode-fechar')).toBe(true)
+  })
+
   it('reconhece as abas válidas', () => {
     expect(isInboxTab('nao-lidas')).toBe(true)
     expect(isInboxTab('outra')).toBe(false)
@@ -103,6 +112,6 @@ describe('Inbox com marcações', () => {
     expect(inInbox(makeSession({ display_state: 'waiting', mark: 'on_hold' }), 'todas')).toBe(true)
   })
   it('a ordem das abas', () => {
-    expect(INBOX_TABS.map((t) => t.label)).toEqual(['Aguardando você', 'Não lidas', 'Em execução', 'Para revisar', 'Depois', 'Todas'])
+    expect(INBOX_TABS.map((t) => t.label)).toEqual(['Aguardando você', 'Não lidas', 'Em execução', 'Para revisar', 'Pode fechar', 'Depois', 'Todas'])
   })
 })

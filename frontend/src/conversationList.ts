@@ -12,13 +12,14 @@ export function waitingReason(session: Session): string | null {
   return 'Sua vez'
 }
 
-export type InboxTab = 'pede-voce' | 'nao-lidas' | 'em-execucao' | 'para-revisar' | 'depois' | 'todas'
+export type InboxTab = 'pede-voce' | 'nao-lidas' | 'em-execucao' | 'para-revisar' | 'pode-fechar' | 'depois' | 'todas'
 
 export const INBOX_TABS: { id: InboxTab; label: string }[] = [
   { id: 'pede-voce', label: 'Aguardando você' },
   { id: 'nao-lidas', label: 'Não lidas' },
   { id: 'em-execucao', label: 'Em execução' },
   { id: 'para-revisar', label: 'Para revisar' },
+  { id: 'pode-fechar', label: 'Pode fechar' },
   { id: 'depois', label: 'Depois' },
   { id: 'todas', label: 'Todas' },
 ]
@@ -38,6 +39,7 @@ export function inInbox(session: Session, tab: InboxTab): boolean {
   if (tab === 'nao-lidas') return unread && lane !== 'later'
   if (tab === 'em-execucao') return running
   if (tab === 'para-revisar') return open && lane === 'review'
+  if (tab === 'pode-fechar') return open && session.closure_verdict === 'can_close'
   if (tab === 'depois') return open && lane === 'later'
   return waiting || running || unread
 }

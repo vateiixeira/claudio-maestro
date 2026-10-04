@@ -74,6 +74,19 @@ describe('aba do agente de resumos', () => {
     expect(w.find('[data-test="digest-saved"]').exists()).toBe(true)
   })
 
+  it('mostra a chave de verificação de entrega e salva o valor novo', async () => {
+    stub()
+    const w = await mountTab()
+    const toggle = w.get('#digest-closure-auto')
+    expect((toggle.element as HTMLInputElement).checked).toBe(true)
+    expect(w.text()).toContain('Verificar entrega automaticamente')
+    expect(w.text()).toContain('Desligada, a verificação só roda pelo Resumir agora.')
+    await toggle.setValue(false)
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(puts).toEqual([{ ...CONFIG, closure_auto: false }])
+  })
+
   it('valida no navegador sem chamar o servidor', async () => {
     stub()
     const w = await mountTab()

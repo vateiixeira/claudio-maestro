@@ -172,6 +172,16 @@ describe('linha de conversa', () => {
     expect(fetch).toHaveBeenCalledOnce()
   })
 
+  it('mostra o selo de fechamento e, na compacta, só a bolinha', () => {
+    const session = makeSession({ display_state: 'waiting', closure_verdict: 'incomplete' })
+    const full = mountRow(session)
+    expect(full.get('[data-test="closure-badge"]').text()).toBe('Entrega incompleta')
+    const compact = mountRow(session, 'compact')
+    expect(compact.find('[data-test="closure-badge"]').exists()).toBe(false)
+    expect(compact.get('[data-test="closure-dot"]').attributes('aria-label')).toBe('Entrega incompleta')
+    expect(mountRow(makeSession({ closure_verdict: null })).find('[data-test="closure-badge"]').exists()).toBe(false)
+  })
+
   it('a variante compacta não tem ações', () => {
     const wrapper = mountRow(makeSession({ unread: true }), 'compact')
     expect(wrapper.find('[data-test="row-finish"]').exists()).toBe(false)

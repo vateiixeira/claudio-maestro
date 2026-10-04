@@ -81,6 +81,16 @@ describe('Inbox', () => {
     expect(titles(wrapper)).toEqual(['Roda 1'])
   })
 
+  it('a aba Pode fechar filtra pela rota', async () => {
+    useSessionsStore(pinia).setForProject(2, [
+      makeSession({ session_id: 'c2', project_id: 2, title: 'Entregue', display_state: 'waiting', closure_verdict: 'can_close', last_activity_at: now }),
+      makeSession({ session_id: 'u2', project_id: 2, title: 'Falta algo', display_state: 'waiting', closure_verdict: 'user_action', last_activity_at: now }),
+    ])
+    const { wrapper } = await mountInbox('/inbox?aba=pode-fechar')
+    expect(wrapper.findAll('[data-test="inbox-tab"]').map((t) => t.text())).toContainEqual(expect.stringContaining('Pode fechar'))
+    expect(titles(wrapper)).toEqual(['Entregue'])
+  })
+
   it('filtra por projeto e por texto', async () => {
     const { wrapper } = await mountInbox('/inbox?aba=todas')
     await wrapper.find('[data-test="inbox-project"]').setValue('2')

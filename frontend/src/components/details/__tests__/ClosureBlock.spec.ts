@@ -87,6 +87,29 @@ describe('bloco Fechamento', () => {
     expect(patches).toEqual([{ finished: true }])
   })
 
+  it('Pode fechar mantém Finalizar conversa quando a verificação deu erro ou não carregou', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/closure': () => jsonResponse({ detail: 'Falhou.' }, 500),
+      'PATCH /api/sessions/s1': async (init?: RequestInit) => {
+        patches.push(JSON.parse(String(init?.body)))
+        return jsonResponse(makeSession({ finished: true, display_state: 'finished' }))
+      },
+    }))
+    useSessionsStore().setForProject(1, [makeSession({ closure_verdict: 'can_close', display_state: 'waiting' })])
+    const w = await mountBlock()
+    expect(w.get('[data-test="closure-badge"]').text()).toBe('Pode fechar')
+    await w.get('[data-test="closure-finish"]').trigger('click')
+    await flushPromises()
+    expect(patches).toEqual([{ finished: true }])
+  })
+
+  it('itens repetidos não repetem a chave', async () => {
+    setup('user_action', closure({ user_actions: ['Reiniciar', 'Reiniciar'], missing: ['Falta X', 'Falta X'] }))
+    const w = await mountBlock()
+    expect(w.findAll('[data-test="closure-action"]')).toHaveLength(2)
+    expect(w.findAll('[data-test="closure-missing"]')).toHaveLength(2)
+  })
+
   it.each([
     ['vencido', null, closure()],
     ['em andamento', 'in_progress' as const, closure({ verdict: 'in_progress' })],

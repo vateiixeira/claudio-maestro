@@ -40,6 +40,7 @@ export interface DigestForm {
   min_new_messages: string
   open_turn_minutes: string
   window_days: string
+  closure_auto: boolean
 }
 
 export function digestConfigProblem(form: DigestForm): string | null {

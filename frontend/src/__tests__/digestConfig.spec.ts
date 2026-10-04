@@ -3,7 +3,7 @@ import { digestConfigProblem, digestStatusText, type DigestForm } from '../diges
 
 const form = (over: Partial<DigestForm> = {}): DigestForm => ({
   enabled: true, model: 'sonnet', effort: 'medium', extra_instructions: '',
-  interval_minutes: '10', min_new_messages: '10', open_turn_minutes: '30', window_days: '3',
+  interval_minutes: '10', min_new_messages: '10', open_turn_minutes: '30', window_days: '3', closure_auto: true,
   ...over,
 })
 
