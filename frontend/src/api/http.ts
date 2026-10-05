@@ -27,6 +27,7 @@ import type {
   SessionDigest,
   SessionGroup,
   SessionUpdate,
+  UpdateState,
 } from '../types/api'
 import type { PromptDecision, PromptExtra, SessionSnapshot } from '../types/conversation'
 
@@ -105,6 +106,12 @@ async function request<T>(method: Method, url: string, body?: unknown, signal?: 
 
 export function getHealth(): Promise<{ status: string }> {
   return request('GET', '/api/health')
+}
+
+// Updates
+
+export function getUpdates(): Promise<UpdateState> {
+  return request('GET', '/api/updates')
 }
 
 // Projects

@@ -354,3 +354,21 @@ export interface CommandInfo { name: string; description: string; argument_hint:
 export interface FileMatch { path: string; name: string; type: 'file' | 'directory' }
 /** Where the suggestion endpoints read from: an existing session or a project folder. */
 export type SuggestionScope = { sessionId: string } | { projectId: number }
+
+// Updates (GET /api/updates and the `app.update` event)
+
+export interface ReleaseInfo {
+  version: string
+  url: string
+  notes: string
+  published_at: number | null
+}
+
+export interface UpdateState {
+  enabled: boolean
+  current: string
+  available: boolean
+  latest: ReleaseInfo | null
+  checked_at: number | null
+  releases_url: string
+}
