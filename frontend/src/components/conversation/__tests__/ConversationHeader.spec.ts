@@ -240,3 +240,35 @@ describe('marcação no cabeçalho', () => {
     })
   })
 })
+
+describe('etiqueta de commits para baixar', () => {
+  const nowSec = () => Math.floor(Date.now() / 1000)
+
+  it('aparece ao lado da branch com a contagem e a dica', () => {
+    useGitStore(pinia).set(1, [makeGitRepo({ branch: 'main', upstream: 'origin/main', behind: 3, fetched_at: nowSec() - 150 })])
+    const tag = mountHeader(null).get('[data-test="header-meta"] [data-test="header-behind"]')
+    expect(tag.text()).toBe('3 para baixar')
+    expect(tag.attributes('title')).toBe('3 commits para baixar de origin/main · verificado há 2 min')
+    expect(tag.classes()).toEqual(expect.arrayContaining(['rounded-full', 'border-line-strong', 'text-secondary-soft', 'font-mono', 'tabular-nums']))
+    expect(tag.get('svg').attributes('width')).toBe('11')
+  })
+
+  it('sai com o painel Detalhes aberto', () => {
+    useGitStore(pinia).set(1, [makeGitRepo({ behind: 3 })])
+    expect(mountHeader(null, { detailsOpen: true }).find('[data-test="header-behind"]').exists()).toBe(false)
+  })
+
+  it('não aparece em dia nem sem remota', () => {
+    useGitStore(pinia).set(1, [makeGitRepo({ behind: 0 })])
+    expect(mountHeader(null).find('[data-test="header-behind"]').exists()).toBe(false)
+    useGitStore(pinia).set(1, [makeGitRepo({ upstream: null, behind: null })])
+    expect(mountHeader(null).find('[data-test="header-behind"]').exists()).toBe(false)
+  })
+
+  it('sessão em worktree não ganha o aviso', () => {
+    useGitStore(pinia).set(1, [makeGitRepo({ behind: 3 })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias' })])
+    const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    expect(wrapper.find('[data-test="header-behind"]').exists()).toBe(false)
+  })
+})

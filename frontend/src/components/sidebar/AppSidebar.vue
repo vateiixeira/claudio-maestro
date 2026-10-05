@@ -13,6 +13,8 @@ import { sidebarItemClass } from './itemClass'
 import { needsYou } from '../../conversation/needsYou'
 import { useEventSocket } from '../../api/socket'
 import { isCollapsed, isSectionOpened, setCollapsed, setSectionOpened } from '../../sidebarCollapse'
+import { behindCount, behindSrText, behindTitle } from '../../gitSync'
+import { useMinuteClock } from '../../minuteClock'
 import { splitProjects } from '../../sidebarTree'
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_KEY_STEP, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, clampSidebarWidth, sidebarWidth, writeSidebarWidth } from '../../sidebarWidthPref'
 import { repoLabel, useGitStore } from '../../stores/git'
@@ -21,7 +23,8 @@ import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useUpdatesStore } from '../../stores/updates'
-import type { Project, Session } from '../../types/api'
+import type { GitRepo, Project, Session } from '../../types/api'
+import IconArrowDown from '../icons/IconArrowDown.vue'
 import IconChat from '../icons/IconChat.vue'
 import IconChevron from '../icons/IconChevron.vue'
 import IconDashboard from '../icons/IconDashboard.vue'
@@ -37,6 +40,7 @@ const newConversation = useNewConversationStore()
 const updates = useUpdatesStore()
 const route = useRoute()
 const socket = useEventSocket()
+const now = useMinuteClock()
 
 // The handle sits on the right edge: moving the pointer right makes the sidebar wider.
 let drag: { startX: number; startWidth: number } | null = null
@@ -98,6 +102,11 @@ function toggleOthers() {
 // The branch label only renders for an available project inside a git repository.
 function showsBranch(project: Project): boolean {
   return project.available && Boolean(git.reposFor(project.id)[0])
+}
+// The repository shown next to the project name, when the remote has commits to pull.
+function behindRepo(project: Project): GitRepo | undefined {
+  const repo = showsBranch(project) ? git.reposFor(project.id)[0] : undefined
+  return repo && behindCount(repo) > 0 ? repo : undefined
 }
 // The project being looked at, directly or through one of its conversations.
 const activeProjectId = computed<number | null>(() => {
@@ -199,6 +208,12 @@ const itemClass = sidebarItemClass
                     :title="repoLabel(git.reposFor(project.id)[0]!)"
                     class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
                   >{{ repoLabel(git.reposFor(project.id)[0]!) }}</span>
+                  <span
+                    v-if="behindRepo(project)"
+                    data-test="project-behind"
+                    :title="behindTitle(behindRepo(project)!, now)"
+                    class="inline-flex shrink-0 items-center self-center text-secondary-soft"
+                  ><IconArrowDown :size="10" :stroke-width="2.6" /><span class="sr-only">{{ behindSrText(behindRepo(project)!) }}</span></span>
                 </span>
                 <span v-if="!project.available" class="text-xs text-fg-subtle">pasta indisponível</span>
                 <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-fg-muted">Só os 50 primeiros repositórios</span>
@@ -261,6 +276,12 @@ const itemClass = sidebarItemClass
               :title="repoLabel(git.reposFor(project.id)[0]!)"
               class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
             >{{ repoLabel(git.reposFor(project.id)[0]!) }}</span>
+            <span
+              v-if="behindRepo(project)"
+              data-test="project-behind"
+              :title="behindTitle(behindRepo(project)!, now)"
+              class="inline-flex shrink-0 items-center self-center text-secondary-soft"
+            ><IconArrowDown :size="10" :stroke-width="2.6" /><span class="sr-only">{{ behindSrText(behindRepo(project)!) }}</span></span>
             <span v-if="!project.available" class="shrink-0 text-xs text-fg-subtle">pasta indisponível</span>
           </RouterLink>
         </template>

@@ -229,6 +229,12 @@ export interface GitRepo {
   ahead: number | null
   /** Commits to pull (as of the last fetch); null without upstream or when it is gone. */
   behind: number | null
+  /** Unix seconds of the last successful fetch; null = never. Absent on an older backend. */
+  fetched_at?: number | null
+  /** Why the last fetch attempt failed; null after a success. Absent on an older backend. */
+  fetch_error?: string | null
+  /** A fetch is running right now. Absent on an older backend. */
+  fetching?: boolean
   error: string | null
 }
 

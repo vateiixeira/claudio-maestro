@@ -149,6 +149,16 @@ describe('painel Detalhes', () => {
     expect(wrapper.find('[data-test="prop-turns"]').text()).toContain('2')
   })
 
+  it('Branch mostra o estado de sincronização de cada repositório, menos na worktree', async () => {
+    useGitStore(pinia).set(1, [makeGitRepo({ behind: 3, upstream: 'origin/main' })])
+    const wrapper = await mountPanel()
+    expect(wrapper.find('[data-test="prop-branch"] [data-test="prop-branch-sync"]').text()).toContain('3 commits para baixar de origin/main')
+
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', worktree_name: 'melhorias', git_branch: 'worktree-melhorias' })])
+    const inWorktree = await mountPanel()
+    expect(inWorktree.find('[data-test="prop-branch-sync"]').exists()).toBe(false)
+  })
+
   it('Detalhes mostra a linha Worktree com o caminho na dica e o branch da sessão', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias', git_branch: 'worktree-melhorias' })])
     const wrapper = await mountPanel()

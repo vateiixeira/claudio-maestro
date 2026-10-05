@@ -38,3 +38,9 @@ describe('ícones em SVG', () => {
     expect(open.attributes('data-open')).toBe('true')
   })
 })
+
+describe('IconArrowDown com traço mais grosso', () => {
+  it('aceita strokeWidth', () => {
+    expect(mount(IconArrowDown, { props: { size: 10, strokeWidth: 2.6 } }).find('svg').attributes('stroke-width')).toBe('2.6')
+  })
+})

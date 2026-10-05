@@ -9,6 +9,52 @@ import { diffFromUnified } from '../../conversation/diff'
 beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => vi.unstubAllGlobals())
 
+describe('store git, verificar agora', () => {
+  it('chama o POST, atualiza os repositórios e o aviso de limite', async () => {
+    const fetchMock = routeFetch({
+      'POST /api/projects/1/git/fetch': () => jsonResponse({ repos: [makeGitRepo({ behind: 2, fetched_at: 1_700_000_000 })], limit_reached: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const git = useGitStore()
+    await git.fetchNow(1)
+    expect(git.reposFor(1)[0]!.behind).toBe(2)
+    expect(git.limitReached(1)).toBe(true)
+    expect((fetchMock.mock.calls[0]![1] as RequestInit).headers).toMatchObject({ 'X-Maestro': '1' })
+    expect(git.fetchError(1)).toBeNull()
+    expect(git.isFetching(1)).toBe(false)
+  })
+
+  it('fica ocupado enquanto o POST roda e ignora um segundo clique', async () => {
+    let release: (r: Response) => void = () => {}
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => { release = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    const git = useGitStore()
+    const first = git.fetchNow(1)
+    const second = git.fetchNow(1)
+    expect(git.isFetching(1)).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    release(jsonResponse({ repos: [] }))
+    await Promise.all([first, second])
+    expect(git.isFetching(1)).toBe(false)
+  })
+
+  it('guarda a falha do POST sem apagar os repositórios e a limpa na próxima tentativa', async () => {
+    let fail = true
+    vi.stubGlobal('fetch', routeFetch({
+      'POST /api/projects/1/git/fetch': () => (fail ? jsonResponse({ detail: 'Sem rede.' }, 502) : jsonResponse({ repos: [] })),
+    }))
+    const git = useGitStore()
+    git.set(1, [makeGitRepo({ branch: 'main' })])
+    await git.fetchNow(1)
+    expect(git.fetchError(1)).toBe('Sem rede.')
+    expect(git.reposFor(1)).toHaveLength(1)
+    expect(git.isFetching(1)).toBe(false)
+    fail = false
+    await git.fetchNow(1)
+    expect(git.fetchError(1)).toBeNull()
+  })
+})
+
 describe('store git', () => {
   it('carrega os repositórios do projeto', async () => {
     vi.stubGlobal('fetch', routeFetch({

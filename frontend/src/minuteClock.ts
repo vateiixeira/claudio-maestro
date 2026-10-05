@@ -5,6 +5,10 @@ export const clockNow = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | null = null
 
 export function useMinuteClock(): Ref<number> {
-  if (!timer) timer = setInterval(() => { clockNow.value = Date.now() }, 30_000)
+  if (!timer) {
+    // The ref was set when the module loaded; start from the real time.
+    clockNow.value = Date.now()
+    timer = setInterval(() => { clockNow.value = Date.now() }, 30_000)
+  }
   return clockNow
 }

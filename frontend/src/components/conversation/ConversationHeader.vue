@@ -6,11 +6,14 @@ import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import MarkIcon from '../MarkIcon.vue'
 import MarkPopover from '../marks/MarkPopover.vue'
+import IconArrowDown from '../icons/IconArrowDown.vue'
 import IconGroup from '../icons/IconGroup.vue'
 import NextNeedsYou from './NextNeedsYou.vue'
 import { errorMessage, openInEditor } from '../../api/http'
+import { behindCount, behindTitle } from '../../gitSync'
 import { markChipText } from '../../conversation/marks'
 import { needsYou } from '../../conversation/needsYou'
+import { useMinuteClock } from '../../minuteClock'
 import { useConversationStore } from '../../stores/conversation'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
@@ -28,6 +31,7 @@ const conversations = useConversationStore()
 const projects = useProjectsStore()
 const git = useGitStore()
 const groups = useGroupsStore()
+const now = useMinuteClock()
 
 const listed = computed(() => sessions.find(props.id))
 const conv = computed(() => conversations.get(props.id))
@@ -255,6 +259,12 @@ async function openProject() {
       <template v-else>
         <span v-for="repo in repos" :key="repo.path" class="flex items-center">
           <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
+          <span
+            v-if="behindCount(repo) > 0"
+            data-test="header-behind"
+            :title="behindTitle(repo, now)"
+            class="ml-1.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-line-strong py-px pr-2 pl-1.5 font-mono text-xs tabular-nums text-secondary-soft"
+          ><IconArrowDown :size="11" />{{ behindCount(repo) }} para baixar</span>
         </span>
       </template>
     </div>

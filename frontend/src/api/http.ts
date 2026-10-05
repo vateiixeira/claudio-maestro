@@ -282,6 +282,11 @@ export function getProjectGit(projectId: number): Promise<{ repos: GitRepo[]; li
   return request('GET', `/api/projects/${projectId}/git`)
 }
 
+/** "Verificar agora": fetches the remotes of the project's repositories and returns them like GET /git. */
+export function fetchProjectGit(projectId: number): Promise<{ repos: GitRepo[]; limit_reached?: boolean }> {
+  return request('POST', `/api/projects/${projectId}/git/fetch`)
+}
+
 /** Files and latest commits of each repository of the project. */
 export function getProjectGitDetails(projectId: number, signal?: AbortSignal): Promise<ProjectGitDetails> {
   return request('GET', `/api/projects/${projectId}/git/details`, undefined, signal)

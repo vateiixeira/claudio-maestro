@@ -9,6 +9,7 @@ import GroupProperty from '../groups/GroupProperty.vue'
 import PlanProperty from '../plan/PlanProperty.vue'
 import PlanStrip from '../plan/PlanStrip.vue'
 import { planVisible } from '../plan/planText'
+import BranchSync from './BranchSync.vue'
 import ChangesList from './ChangesList.vue'
 import DigestSection from './DigestSection.vue'
 import FileDiffView from './FileDiffView.vue'
@@ -215,7 +216,10 @@ function resetWidth() {
                   <span v-else class="text-fg-muted">desconhecido</span>
                 </template>
                 <template v-else>
-                  <BranchLabel v-for="repo in repos" :key="repo.path" :text="repoLabel(repo)" :muted="!!repo.error" />
+                  <div v-for="repo in repos" :key="repo.path" class="flex min-w-0 flex-col gap-0.5">
+                    <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
+                    <BranchSync v-if="projectId != null && !repo.error" :project-id="projectId" :repo="repo" />
+                  </div>
                   <span v-if="repos.length === 0" class="text-fg-muted">sem repositório git</span>
                 </template>
               </dd>

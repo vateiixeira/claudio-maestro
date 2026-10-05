@@ -593,3 +593,48 @@ describe('versão no rodapé do menu', () => {
     expect(wrapper.get('[data-test="app-version"] a').classes()).toContain('truncate')
   })
 })
+
+describe('menu lateral: commits para baixar', () => {
+  const nowSec = () => Math.floor(Date.now() / 1000)
+
+  it('mostra a seta depois da branch, com a dica, sem número visível', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
+    useGitStore(pinia).set(1, [makeGitRepo({ branch: 'main', upstream: 'origin/main', behind: 3, fetched_at: nowSec() - 150 })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    const row = mountSidebar().get('[data-test="project"]')
+    const arrow = row.get('[data-test="project-behind"]')
+    expect(arrow.attributes('title')).toBe('3 commits para baixar de origin/main · verificado há 2 min')
+    expect(arrow.classes()).toContain('text-secondary-soft')
+    expect(arrow.get('.sr-only').text()).toBe('3 commits para baixar')
+    expect(arrow.get('svg').attributes('width')).toBe('10')
+    expect(arrow.text()).toBe('3 commits para baixar')
+    const branch = row.get('[data-test="project-branch"]')
+    expect(arrow.element.parentElement).toBe(branch.element.parentElement)
+  })
+
+  it('usa o singular e omite o "verificado" quando nunca verificou', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useGitStore(pinia).set(1, [makeGitRepo({ upstream: 'origin/main', behind: 1 })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    expect(mountSidebar().get('[data-test="project-behind"]').attributes('title')).toBe('1 commit para baixar de origin/main')
+  })
+
+  it('não mostra a seta em dia, sem remota ou sem número', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    for (const repo of [makeGitRepo({ behind: 0 }), makeGitRepo({ upstream: null, behind: null }), makeGitRepo({ behind: null })]) {
+      useGitStore(pinia).set(1, [repo])
+      expect(mountSidebar().find('[data-test="project-behind"]').exists()).toBe(false)
+    }
+  })
+
+  it('também aparece nas linhas de Outros projetos', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' }), makeProject({ id: 2, name: 'blog' })]
+    useGitStore(pinia).set(2, [makeGitRepo({ upstream: 'origin/develop', behind: 2 })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
+    const w = mountSidebar()
+    await w.get('[data-test="others-toggle"]').trigger('click')
+    const row = w.get('[data-test="other-project"]')
+    expect(row.get('[data-test="project-behind"]').attributes('title')).toBe('2 commits para baixar de origin/develop')
+  })
+})

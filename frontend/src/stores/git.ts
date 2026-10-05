@@ -32,6 +32,10 @@ export const useGitStore = defineStore('git', () => {
   // Projects with more repositories than the limit (only the first ones are tracked).
   const limited = ref<Record<number, boolean>>({})
 
+  // "Verificar agora" per project: running now, and why the last click failed.
+  const fetching = ref<Record<number, boolean>>({})
+  const fetchErrors = ref<Record<number, string | null>>({})
+
   function reposFor(projectId: number): GitRepo[] {
     return byProject.value[projectId] ?? []
   }
@@ -57,6 +61,30 @@ export const useGitStore = defineStore('git', () => {
     return repos
   }
 
+  function isFetching(projectId: number): boolean {
+    return fetching.value[projectId] === true
+  }
+
+  /** Failure of the last "Verificar agora" request (not of the fetch itself, which is `fetch_error` on the repo). */
+  function fetchError(projectId: number): string | null {
+    return fetchErrors.value[projectId] ?? null
+  }
+
+  /** Asks the backend to fetch the project's remotes now and shows the result. A click while one runs is ignored. */
+  async function fetchNow(projectId: number): Promise<void> {
+    if (isFetching(projectId)) return
+    fetching.value[projectId] = true
+    fetchErrors.value[projectId] = null
+    try {
+      const result = await api.fetchProjectGit(projectId)
+      set(projectId, Array.isArray(result?.repos) ? result.repos : [], result?.limit_reached === true)
+    } catch (e) {
+      fetchErrors.value[projectId] = api.errorMessage(e)
+    } finally {
+      fetching.value[projectId] = false
+    }
+  }
+
   /** Loads once; failures just leave the project without branches. */
   function ensure(projectId: number): void {
     if (isLoaded(projectId)) return
@@ -71,5 +99,5 @@ export const useGitStore = defineStore('git', () => {
     useGitDetailsStore().notifyChanged(data.project_id)
   }
 
-  return { byProject, reposFor, isLoaded, limitReached, set, load, ensure, applyEvent }
+  return { byProject, reposFor, isLoaded, limitReached, set, load, ensure, applyEvent, isFetching, fetchError, fetchNow }
 })
