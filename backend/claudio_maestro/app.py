@@ -42,6 +42,7 @@ from claudio_maestro.security import (
     allowed_origins,
 )
 from claudio_maestro.sessions import HistoryExists, RenameSession, SessionManager
+from claudio_maestro.updates import FetchRelease, UpdateChecker, fetch_latest_release
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ def create_app(
     ports: tuple[int, ...] | None = None,
     frontend_dir: Path | None = None,
     agentd: bool | None = None,
+    fetch_release: FetchRelease | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -86,6 +88,7 @@ def create_app(
     `frontend_dir`: the built frontend to serve at the root; None (development) serves only the API.
     `agentd`: keep sessions across restarts. None turns it on only with the real agent and
     when `MAESTRO_AGENTD` is not `0`.
+    `fetch_release` replaces the GitHub read of the latest release (tests pass fakes).
     """
 
     @asynccontextmanager
@@ -99,6 +102,11 @@ def create_app(
         # Only one system folder picker open at a time.
         app.state.pick_lock = asyncio.Lock()
         app.state.git_monitor = GitMonitor(app.state.settings.db_path, app.state.hub)
+        app.state.updates = UpdateChecker(
+            app.state.hub.publish,
+            enabled=app.state.settings.update_check,
+            fetch=fetch_release or fetch_latest_release,
+        )
         # One-off tasks (e.g. syncing a new project), cancelled on shutdown.
         app.state.background = set()
 
@@ -167,6 +175,12 @@ def create_app(
             asyncio.create_task(
                 app.state.git_monitor.run_periodic(
                     app.state.settings.git_refresh_interval_seconds
+                )
+            ),
+            asyncio.create_task(
+                app.state.updates.run_periodic(
+                    app.state.settings.update_check_delay_seconds,
+                    app.state.settings.update_check_interval_seconds,
                 )
             ),
             asyncio.create_task(app.state.digest.run()),

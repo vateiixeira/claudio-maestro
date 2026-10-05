@@ -87,6 +87,10 @@ class Settings:
     models_refresh_interval_seconds: float = 8 * 3600
     # Progress of plans linked to unfinished conversations is reread this often.
     plan_sweep_interval_seconds: float = 30
+    # Check GitHub for a newer release (`MAESTRO_UPDATE_CHECK=0` turns it off).
+    update_check: bool = True
+    update_check_delay_seconds: float = 60
+    update_check_interval_seconds: float = 24 * 3600
     # Folder where the CLI saves conversations, watched for real-time updates.
     # None: `$CLAUDE_CONFIG_DIR/projects` or `~/.claude/projects`, resolved at startup.
     claude_projects_dir: Path | None = None
@@ -185,6 +189,7 @@ def load_settings() -> Settings:
     `MAESTRO_DATA_DIR` overrides where the database lives. Without it, data left by the
     old name (`vini7-vibing`) is moved to the new folder first (see `migrate_legacy_data_dir`);
     `DataMigrationError` propagates when that cannot be done safely.
+    `MAESTRO_UPDATE_CHECK=0` turns off the daily check for a newer release.
     """
     home_env = os.environ.get("MAESTRO_HOME")
     home = Path(home_env) if home_env else Path.home()
@@ -194,7 +199,10 @@ def load_settings() -> Settings:
     data_dir = Path(data_env).resolve() if data_env else migrate_legacy_data_dir(home)
 
     return Settings(
-        home_dir=home, data_dir=data_dir, claude_projects_dir=claude_projects_dir()
+        home_dir=home,
+        data_dir=data_dir,
+        claude_projects_dir=claude_projects_dir(),
+        update_check=os.environ.get("MAESTRO_UPDATE_CHECK", "1") != "0",
     )
 
 

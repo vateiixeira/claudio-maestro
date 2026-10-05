@@ -15,6 +15,7 @@ from claudio_maestro.api import (
     projects,
     sessions,
     suggestions,
+    updates,
     ws,
 )
 
@@ -31,4 +32,5 @@ router.include_router(app_state.router)
 router.include_router(git.router)
 router.include_router(editor.router)
 router.include_router(suggestions.router)
+router.include_router(updates.router)
 router.include_router(ws.router)

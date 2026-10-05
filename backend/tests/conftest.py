@@ -81,6 +81,16 @@ def no_real_digest_model(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_update_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The release check never reaches GitHub in tests."""
+
+    def no_network(*args, **kwargs):
+        raise RuntimeError("Os testes não podem consultar o GitHub.")
+
+    monkeypatch.setattr("claudio_maestro.updates._get_latest", no_network)
+
+
+@pytest.fixture(autouse=True)
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point home and data dirs to temporary folders in every test."""
     home = tmp_path / "home"
@@ -94,6 +104,8 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MAESTRO_PREVIEW_PORT", raising=False)
     # Tests that start the app with the real agent must not launch an agentd process.
     monkeypatch.setenv("MAESTRO_AGENTD", "0")
+    # The update check never runs by default in tests (no request to GitHub).
+    monkeypatch.setenv("MAESTRO_UPDATE_CHECK", "0")
     # The CLI history watcher never looks at the real ~/.claude.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
 
