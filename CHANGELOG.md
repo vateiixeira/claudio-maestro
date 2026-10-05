@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- O rodapé do menu lateral mostra o consumo da assinatura, como o `/usage` do CLI: a sessão (5 horas) e a semana, com o percentual usado e o horário em que cada limite renova. A cor muda quando o limite se aproxima, e o consumo por modelo aparece ao passar o mouse sobre a linha Semana. `MAESTRO_USAGE_CHECK=0` desliga a consulta.
+
 ## [0.3.0] - 2026-10-05
 
 O app passa a avisar quando a branch de um projeto tem commits novos no remoto para baixar, e trocar uma conversa em andamento para o modo sem perguntas passa a funcionar.

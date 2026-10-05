@@ -43,6 +43,8 @@ from claudio_maestro.security import (
 )
 from claudio_maestro.sessions import HistoryExists, RenameSession, SessionManager
 from claudio_maestro.updates import FetchRelease, UpdateChecker, fetch_latest_release
+from claudio_maestro.usage import FetchUsage, UsageChecker
+from claudio_maestro.usage import fetch_usage as default_fetch_usage
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,7 @@ def create_app(
     agentd: bool | None = None,
     fetch_release: FetchRelease | None = None,
     git_fetch: gitinfo.FetchUpstream | None = None,
+    fetch_usage: FetchUsage | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -91,6 +94,7 @@ def create_app(
     when `MAESTRO_AGENTD` is not `0`.
     `fetch_release` replaces the GitHub read of the latest release (tests pass fakes).
     `git_fetch` replaces `gitinfo.fetch_upstream`, the one thing that reaches a git remote.
+    `fetch_usage` replaces the read of the subscription usage (tests pass fakes).
     """
 
     @asynccontextmanager
@@ -111,6 +115,11 @@ def create_app(
             enabled=app.state.settings.update_check,
             fetch=fetch_release or fetch_latest_release,
         )
+        app.state.usage = UsageChecker(
+            app.state.hub.publish,
+            enabled=app.state.settings.usage_check,
+            fetch=fetch_usage or default_fetch_usage,
+        )
         # One-off tasks (e.g. syncing a new project), cancelled on shutdown.
         app.state.background = set()
 
@@ -120,6 +129,13 @@ def create_app(
             )
             app.state.background.add(task)
             task.add_done_callback(app.state.background.discard)
+
+        def on_turn_end(project_id: int) -> None:
+            refresh_git(project_id)
+            if app.state.usage.wants_refresh():
+                task = asyncio.create_task(app.state.usage.refresh())
+                app.state.background.add(task)
+                task.add_done_callback(app.state.background.discard)
 
         use_agentd = agentd if agentd is not None else agent_factory is None
         new_through_agentd = os.environ.get("MAESTRO_AGENTD", "1") != "0"
@@ -138,7 +154,7 @@ def create_app(
             list_sessions=list_sessions,
             get_session_messages=get_session_messages,
             read_tool_results=read_tool_results,
-            on_turn_end=refresh_git,
+            on_turn_end=on_turn_end,
             agentd=app.state.agentd,
             agentd_new_sessions=new_through_agentd,
         )
@@ -185,6 +201,12 @@ def create_app(
                 app.state.updates.run_periodic(
                     app.state.settings.update_check_delay_seconds,
                     app.state.settings.update_check_interval_seconds,
+                )
+            ),
+            asyncio.create_task(
+                app.state.usage.run_periodic(
+                    app.state.settings.usage_check_delay_seconds,
+                    app.state.settings.usage_check_interval_seconds,
                 )
             ),
             asyncio.create_task(

@@ -83,6 +83,8 @@ Para saber da versão nova, o app consulta a API do GitHub (`api.github.com`) um
 
 O Cláudio Maestro não faz login e não guarda credenciais. Ele usa a autenticação que o Claude Code já tem na sua máquina, do mesmo jeito que o CLI usa.
 
+Para mostrar o consumo da assinatura no menu lateral, o backend lê o token de login do CLI (`~/.claude/.credentials.json`) e consulta `api.anthropic.com`, como o `/usage` do CLI faz. O token não sai da sua máquina para nenhum outro lugar, e o app nunca o renova. No macOS, onde o CLI guarda o token no Keychain, o medidor mostra "Uso indisponível". Para desligar, use `MAESTRO_USAGE_CHECK=0`.
+
 A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [autenticação por chave de API](https://code.claude.com/docs/en/agent-sdk/overview) (`ANTHROPIC_API_KEY`). Escolha a forma de autenticação de acordo com os termos que valem para a sua conta.
 
 ## Configuração
@@ -96,6 +98,7 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 | `MAESTRO_DATA_DIR` | Onde fica o banco SQLite (só metadados); vale mais que o `MAESTRO_HOME` | `~/.local/share/claudio-maestro` |
 | `MAESTRO_AGENTD` | Com `0`, não inicia o agentd: as sessões novas só vivem enquanto o backend viver (as que já estão num agentd ativo continuam sendo religadas) | ligado |
 | `MAESTRO_UPDATE_CHECK` | Com `0`, o app não consulta o GitHub para saber se há versão nova | ligado |
+| `MAESTRO_USAGE_CHECK` | Com `0`, o app não consulta o consumo da assinatura | ligado |
 | `CLAUDE_CONFIG_DIR` | Pasta de configuração do Claude Code | `~/.claude` |
 
 As portas precisam estar entre 1024 e 65535, fora de 6665 a 6669 (os navegadores bloqueiam essas). O app escuta só em `127.0.0.1`, sempre.

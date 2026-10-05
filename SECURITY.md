@@ -17,7 +17,7 @@ Defesas:
 - **Processos.** git, o editor e o seletor de pastas rodam com argumentos em lista, nunca por shell.
 - **agentd.** O processo auxiliar que guarda os processos do agente escuta só num socket Unix com permissão 0600, numa pasta 0700, e confere o uid de quem conecta. Não abre porta de rede. Quem consegue falar com o socket já roda código como o seu usuário. O conteúdo das conversas fica só em memória, nunca em disco.
 - **Tamanho.** Corpos acima de 60 MB são recusados.
-- **Saída para a internet.** A única conexão que o app abre por conta própria é uma leitura da última release em `api.github.com`, um minuto depois de subir e uma vez por dia. Nenhum dado de projeto ou conversa é enviado, e as notas da versão são mostradas sem HTML. `MAESTRO_UPDATE_CHECK=0` desliga.
+- **Saída para a internet.** O app abre duas conexões por conta própria. Uma lê a última release em `api.github.com`, um minuto depois de subir e uma vez por dia; `MAESTRO_UPDATE_CHECK=0` desliga. A outra lê o consumo da assinatura em `api.anthropic.com/api/oauth/usage`, a cada 3 minutos e logo depois de cada turno (no máximo uma vez por minuto), com o token de login que o CLI guarda em `~/.claude/.credentials.json`; `MAESTRO_USAGE_CHECK=0` desliga. O token é lido a cada consulta e só vai para a Anthropic: não fica em memória, no banco, nos logs nem no navegador, e o app nunca o renova nem grava nesse arquivo. Nenhum dado de projeto ou conversa é enviado, e as notas da versão são mostradas sem HTML.
 
 Fora do modelo: alguém com acesso à sua conta no sistema operacional, e expor o app na rede (não faça isso).
 
