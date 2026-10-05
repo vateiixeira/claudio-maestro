@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- O app confere de tempos em tempos (a cada 5 minutos, com o app aberto) se a branch atual tem commits novos no remoto. Uma seta laranja ao lado da branch no menu lateral, uma etiqueta "↓ 3 para baixar" no cabeçalho da conversa e a linha Branch do painel Detalhes avisam o que falta baixar, com "Verificar agora" para conferir na hora. O app só avisa: o pull continua com você.
+
 ## [0.2.0] - 2026-10-05
 
 Versão de uso diário: sessões que sobrevivem ao reinício do backend, marcações de sessão, verificação de fechamento, notificações e uma conversa redesenhada, mais compacta e com cara de mensageiro. A partir dela, o app avisa no menu lateral quando sai uma versão nova.
@@ -25,7 +29,6 @@ Versão de uso diário: sessões que sobrevivem ao reinício do backend, marcaç
 - No menu lateral, as conversas em "Sua vez" mostram há quanto tempo foi a última interação ("3 min", "1 h", "2 dias").
 - Sessões continuam rodando quando o backend reinicia, inclusive perguntas pendentes e subagentes. Uma sessão que não sobreviveu aparece como Interrompida, com o motivo quando o agente deixou uma mensagem. `MAESTRO_AGENTD=0` desliga isso.
 - O agente de resumos confere se a conversa pode ser fechada: alguns minutos depois de o turno terminar, a sessão mostra "Pode fechar", "Falta ação sua" ou "Entrega incompleta", com a lista do que falta, o botão "Já fiz" e, quando pode fechar, "Finalizar conversa". A aba "Pode fechar" na Inbox junta essas conversas, e a verificação automática pode ser desligada nas Preferências.
-- O app confere de tempos em tempos (a cada 5 minutos, com o app aberto) se a branch atual tem commits novos no remoto. Uma seta laranja ao lado da branch no menu lateral, uma etiqueta "↓ 3 para baixar" no cabeçalho da conversa e a linha Branch do painel Detalhes avisam o que falta baixar, com "Verificar agora" para conferir na hora. O app só avisa: o pull continua com você.
 
 ### Alterado
 
