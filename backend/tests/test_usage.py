@@ -1,11 +1,15 @@
 import asyncio
+import http.server
 import io
 import json
+import logging
+import threading
 import urllib.error
 from pathlib import Path
 
 import pytest
 
+from claudio_maestro import usage
 from claudio_maestro.usage import (
     OAUTH_BETA,
     USAGE_URL,
@@ -166,7 +170,7 @@ def test_read_credentials_keeps_validations(tmp_path):
     with pytest.raises(UsageCheckError, match="Credenciais do CLI não encontradas"):
         read_credentials(tmp_path / "nada")
     folder = write_credentials(tmp_path / "c", expires_at=1_000_000)
-    with pytest.raises(UsageCheckError, match="Login do CLI expirado"):
+    with pytest.raises(UsageCheckError, match="Token do CLI vencido; renova no próximo uso do CLI"):
         read_credentials(folder, clock=lambda: 1_001.0)
 
 
@@ -188,8 +192,16 @@ def test_read_token_bad_file(tmp_path, content):
 
 def test_read_token_expired(tmp_path):
     folder = write_credentials(tmp_path / "c", expires_at=1_000_000)  # ms
-    with pytest.raises(UsageCheckError, match="Login do CLI expirado"):
+    with pytest.raises(UsageCheckError, match="Token do CLI vencido; renova no próximo uso do CLI"):
         read_access_token(folder, clock=lambda: 1_001.0)
+
+
+@pytest.mark.parametrize("token", ["abc\nX", "abc def", "abc\tX", "tokén", "abc\r", "\x00abc"])
+def test_read_credentials_rejects_token_with_unsafe_characters(tmp_path, token):
+    folder = write_credentials(tmp_path / "c", token=token)
+    with pytest.raises(UsageCheckError, match="Credenciais do CLI não encontradas") as info:
+        read_credentials(folder)
+    assert "abc" not in str(info.value)
 
 
 def test_read_token_not_yet_expired(tmp_path):
@@ -210,6 +222,74 @@ def test_request_sends_token_and_beta_header(tmp_path):
     assert request.get_header("Authorization") == f"Bearer {TOKEN}"
     assert request.get_header("Anthropic-beta") == OAUTH_BETA
     assert timeout == 10
+
+
+def test_request_authorization_is_not_redirectable(tmp_path):
+    seen: list = []
+    folder = write_credentials(tmp_path / "c")
+    request_usage(folder, opener_returning(json.dumps(REAL_PAYLOAD).encode(), seen))
+    request = seen[0][0]
+    assert request.unredirected_hdrs.get("Authorization") == f"Bearer {TOKEN}"
+    assert "Authorization" not in request.headers
+
+
+def _serve(handler_class):
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler_class)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def test_request_does_not_follow_redirects(tmp_path, monkeypatch):
+    received: list[str | None] = []
+
+    class Second(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            received.append(self.headers.get("Authorization"))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"limits": []}')
+
+        def log_message(self, *args):
+            pass
+
+    second, second_thread = _serve(Second)
+
+    class First(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{second.server_port}/x")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    first, first_thread = _serve(First)
+    try:
+        monkeypatch.setattr(usage, "USAGE_URL", f"http://127.0.0.1:{first.server_port}/api/oauth/usage")
+        folder = write_credentials(tmp_path / "c")
+        with pytest.raises(UsageCheckError) as info:
+            request_usage(folder)
+        assert str(info.value) == "Consulta de uso falhou (HTTP 302)"
+        _assert_no_token(info.value)
+        assert received == []
+    finally:
+        for server, thread in ((first, first_thread), (second, second_thread)):
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+
+def test_request_unexpected_error_hides_the_token(tmp_path):
+    folder = write_credentials(tmp_path / "c")
+    leak = ValueError(f"Invalid header value b'Bearer {TOKEN}'")
+    with pytest.raises(UsageCheckError) as info:
+        request_usage(folder, opener_raising(leak))
+    assert str(info.value) == "Consulta de uso falhou"
+    assert info.value.__cause__ is None
+    assert info.value.__context__ is None
+    _assert_no_token(info.value)
 
 
 def test_request_report_has_plan_from_credentials(tmp_path):
@@ -323,6 +403,19 @@ def test_unexpected_exception_becomes_generic_error():
     checker, _, _ = make_checker([RuntimeError("boom")])
     asyncio.run(checker.refresh())
     assert checker.snapshot()["error"] == "Consulta de uso falhou"
+
+
+def test_unexpected_exception_never_logs_its_message(caplog):
+    caplog.set_level(logging.DEBUG)
+    checker, _, _ = make_checker([RuntimeError("SEGREDO"), RuntimeError("SEGREDO")], clock=Clock())
+    asyncio.run(checker.refresh())
+    asyncio.run(checker.refresh())
+    assert checker.snapshot()["error"] == "Consulta de uso falhou"
+    for record in caplog.records:
+        assert "SEGREDO" not in record.getMessage()
+        assert "SEGREDO" not in (record.exc_text or "")
+        assert record.exc_info is None
+    assert sum("Consulta de uso falhou" in r.getMessage() for r in caplog.records) == 1
 
 
 def test_same_error_is_logged_once(caplog):

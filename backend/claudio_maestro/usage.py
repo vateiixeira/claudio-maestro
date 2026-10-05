@@ -139,12 +139,16 @@ def read_credentials(
         raise UsageCheckError("Credenciais do CLI não encontradas") from None
     oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
     token = oauth.get("accessToken") if isinstance(oauth, dict) else None
+    # Only visible ASCII: a newline or a space would break the header, and the resulting
+    # error would carry the token in its message.
     if not isinstance(token, str) or not token:
+        raise UsageCheckError("Credenciais do CLI não encontradas")
+    if not (token.isascii() and token.isprintable() and " " not in token):
         raise UsageCheckError("Credenciais do CLI não encontradas")
     expires = oauth.get("expiresAt")
     if isinstance(expires, int | float) and not isinstance(expires, bool):
         if expires / 1000 <= clock():
-            raise UsageCheckError("Login do CLI expirado")
+            raise UsageCheckError("Token do CLI vencido; renova no próximo uso do CLI")
     return token, plan_label(oauth.get("subscriptionType"), oauth.get("rateLimitTier"))
 
 
@@ -153,39 +157,60 @@ def read_access_token(config_dir: Path, clock: Callable[[], float] = time.time) 
     return read_credentials(config_dir, clock)[0]
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect would carry the request (and the token) to another host: refuse it.
+    The 30x then surfaces as an `HTTPError`."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
+
+
 def request_usage(
     config_dir: Path,
-    opener: Opener = urllib.request.urlopen,
+    opener: Opener = _opener.open,
     clock: Callable[[], float] = time.time,
 ) -> UsageReport:
-    """Blocking read of the usage. Every error is re-raised `from None`: the urllib
-    exceptions carry the request, and with it the Authorization header."""
+    """Blocking read of the usage. No error is raised from inside an `except`: the
+    urllib exceptions carry the request, and with it the Authorization header, and the
+    original would stay in `__context__`."""
     token, plan = read_credentials(config_dir, clock)
     request = urllib.request.Request(
         USAGE_URL,
         headers={
-            "Authorization": f"Bearer {token}",
             "anthropic-beta": OAUTH_BETA,
             "Accept": "application/json",
             "User-Agent": f"claudio-maestro/{current_version()}",
         },
     )
+    # Never copied to another request by a redirect (and the opener refuses them anyway).
+    request.add_unredirected_header("Authorization", f"Bearer {token}")
+    failure: str | None = None
+    raw = b""
     try:
         with opener(request, timeout=TIMEOUT_SECONDS) as response:
             raw = response.read(MAX_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:  # before URLError: it is a subclass
-        code = exc.code
-        if code in (401, 403):
-            raise UsageCheckError("Login do CLI expirado") from None
-        raise UsageCheckError(f"Consulta de uso falhou (HTTP {code})") from None
+        if exc.code in (401, 403):
+            failure = "Login do CLI expirado"
+        else:
+            failure = f"Consulta de uso falhou (HTTP {exc.code})"
     except (urllib.error.URLError, OSError):  # TimeoutError is an OSError
-        raise UsageCheckError("Sem conexão com a Anthropic") from None
+        failure = "Sem conexão com a Anthropic"
+    except Exception:  # e.g. ValueError("Invalid header value b'Bearer ...'")
+        failure = "Consulta de uso falhou"
+    if failure is not None:
+        raise UsageCheckError(failure)
     if len(raw) > MAX_RESPONSE_BYTES:
         raise UsageCheckError("Resposta inesperada")
     try:
         payload = json.loads(raw)
     except ValueError:
-        raise UsageCheckError("Resposta inesperada") from None
+        payload = None
+    if payload is None:
+        raise UsageCheckError("Resposta inesperada")
     return UsageReport(parse_usage(payload), plan)
 
 
@@ -237,9 +262,11 @@ class UsageChecker:
             return True
         return self._clock() - self._attempted_at >= TURN_REFRESH_MIN_SECONDS
 
-    def _fail(self, message: str) -> None:
+    def _fail(self, message: str, detail: str | None = None) -> None:
         if message != self._error:
-            logger.warning("Consulta de uso da assinatura: %s", message)
+            logger.warning(
+                "Consulta de uso da assinatura: %s%s", message, f" ({detail})" if detail else ""
+            )
         self._error = message
 
     async def refresh(self) -> None:
@@ -251,9 +278,9 @@ class UsageChecker:
             report = await self._fetch()
         except UsageCheckError as exc:
             self._fail(str(exc))
-        except Exception:
-            logger.exception("Falha inesperada na consulta de uso")
-            self._fail("Consulta de uso falhou")
+        except Exception as exc:
+            # Only the class name: the message of an unexpected error may have the token.
+            self._fail("Consulta de uso falhou", type(exc).__name__)
         else:
             self._limits = report.limits
             self._plan = report.plan
