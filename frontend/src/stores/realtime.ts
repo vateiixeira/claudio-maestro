@@ -9,6 +9,7 @@ import { useModelsStore } from './models'
 import { useProjectsStore } from './projects'
 import { useSessionsStore } from './sessions'
 import { useUpdatesStore } from './updates'
+import { useUsageStore } from './usage'
 
 /** Loads projects and then the sessions of each one. */
 export async function loadEverything(): Promise<void> {
@@ -22,6 +23,8 @@ export async function loadEverything(): Promise<void> {
   void useModelsStore().reload()
   // The version line is secondary: a failure only hides it.
   void useUpdatesStore().load().catch(() => {})
+  // The usage meter is secondary: a failure keeps the last numbers.
+  void useUsageStore().load().catch(() => {})
   // A failure leaves the menu without groups until the next load.
   void useGroupsStore().load().catch(() => {})
   await sessions.loadAll(projects.projects.map((p) => p.id))
@@ -53,6 +56,7 @@ export function bindRealtime(socket: EventSocket): () => void {
       useModelsStore().apply((event.data as { models?: unknown } | null)?.models)
     }),
     socket.on('app.update', (event) => useUpdatesStore().apply(event.data)),
+    socket.on('app.usage', (event) => useUsageStore().apply(event.data)),
     // The digest agent wrote a summary, or its state changed (both global events).
     socket.on('session.digest', (event) => useDigestStore().applyDigest(event.data)),
     socket.on('digest.status', (event) => useDigestStore().applyStatus(event.data)),

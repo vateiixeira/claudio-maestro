@@ -28,6 +28,7 @@ import type {
   SessionGroup,
   SessionUpdate,
   UpdateState,
+  UsageSnapshot,
 } from '../types/api'
 import type { PromptDecision, PromptExtra, SessionSnapshot } from '../types/conversation'
 
@@ -112,6 +113,12 @@ export function getHealth(): Promise<{ status: string }> {
 
 export function getUpdates(): Promise<UpdateState> {
   return request('GET', '/api/updates')
+}
+
+// Usage
+
+export function getUsage(): Promise<UsageSnapshot> {
+  return request('GET', '/api/usage')
 }
 
 // Projects

@@ -378,3 +378,23 @@ export interface UpdateState {
   checked_at: number | null
   releases_url: string
 }
+
+// Subscription usage (GET /api/usage and the `app.usage` event)
+
+export type UsageKind = 'session' | 'weekly_all' | 'weekly_scoped'
+export type UsageSeverity = 'normal' | 'warning' | 'critical'
+
+export interface UsageLimit {
+  kind: UsageKind
+  label: string
+  percent: number
+  severity: UsageSeverity
+  resets_at: number | null
+}
+
+export interface UsageSnapshot {
+  enabled: boolean
+  limits: UsageLimit[]
+  fetched_at: number | null
+  error: string | null
+}
