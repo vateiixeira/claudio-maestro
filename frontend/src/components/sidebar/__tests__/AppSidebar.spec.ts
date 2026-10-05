@@ -18,6 +18,7 @@ import { useNewConversationStore } from '../../../stores/newConversation'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 import { useUpdatesStore } from '../../../stores/updates'
+import { useUsageStore } from '../../../stores/usage'
 import { setCollapsed, setSectionCollapsed, setSectionOpened } from '../../../sidebarCollapse'
 import { sidebarWidth } from '../../../sidebarWidthPref'
 import { makeGitRepo, makeGroup, makeProject, makeSession } from '../../../test/factories'
@@ -284,6 +285,20 @@ describe('menu lateral', () => {
     const wrapper = mountSidebar()
     await wrapper.find('[data-test="nav-new"]').trigger('click')
     expect(useNewConversationStore(pinia).presetGroupId).toBeUndefined()
+  })
+
+  it('mostra o consumo acima de Preferências quando há dados', async () => {
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="usage-meter"]').exists()).toBe(false)
+    useUsageStore().apply({
+      enabled: true,
+      limits: [{ kind: 'session', label: 'Sessão', percent: 14, severity: 'normal', resets_at: null }],
+      fetched_at: 1, error: null,
+    })
+    await nextTick()
+    const html = wrapper.html()
+    expect(html.indexOf('data-test="usage-meter"')).toBeGreaterThan(-1)
+    expect(html.indexOf('data-test="usage-meter"')).toBeLessThan(html.indexOf('data-test="preferences"'))
   })
 
   it('mostra o indicador de conexão no rodapé, abaixo de Preferências, só sem conexão', async () => {

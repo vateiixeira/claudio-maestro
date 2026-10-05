@@ -8,6 +8,7 @@ import SessionSearch from './SessionSearch.vue'
 import SidebarGroups from './SidebarGroups.vue'
 import SidebarLane from './SidebarLane.vue'
 import SidebarSessionRow from './SidebarSessionRow.vue'
+import UsageMeter from './UsageMeter.vue'
 import { looseOpenSessions } from './openList'
 import { sidebarItemClass } from './itemClass'
 import { needsYou } from '../../conversation/needsYou'
@@ -291,6 +292,7 @@ const itemClass = sidebarItemClass
       <SidebarLane lane="later" title="Depois" start-collapsed />
     </div>
 
+    <UsageMeter />
     <div class="flex h-12 shrink-0 items-center gap-1.5 border-t border-line px-2.5">
       <RouterLink to="/preferencias" data-test="preferences" :class="[itemClass(route.name === 'preferences'), 'grow']" :aria-current="route.name === 'preferences' ? 'page' : undefined">
         <IconSettings />Preferências
