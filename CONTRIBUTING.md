@@ -92,6 +92,12 @@ Exemplo: `[Feat] Mostrar a branch de cada worktree no menu lateral`.
 - CI verde antes da revisão.
 - Mudanças que o usuário percebe entram no [CHANGELOG.md](CHANGELOG.md), na seção "Não lançado".
 
+## Lançar uma versão
+
+Para quem mantém o projeto. No Claude Code, `/release` (com `patch`, `minor` ou `atual`; sem argumento, ele sugere o tipo olhando o CHANGELOG) conduz tudo: confere a CI, revisa o "Não lançado" com você, carimba o CHANGELOG e o `pyproject.toml`, atualiza o `uv.lock`, roda as verificações e só publica depois do seu "ok" (push na `main`, tag `vX.Y.Z` e release no GitHub). O cálculo da versão e a troca nos arquivos ficam em `scripts/release.py` (`suggest`, `check` e `prepare`), que também dá para rodar à mão. O passo a passo está em `.claude/skills/release/SKILL.md`.
+
+Os scripts de `scripts/` são ferramentas de quem mantém o projeto e chamam o `git` direto; a regra do `run_git` vale para o app, não para eles.
+
 ## Usando o Claude Code para contribuir
 
 O [CLAUDE.md](CLAUDE.md) tem as regras do projeto, e `.claude/agents/` traz três agentes prontos: `implementer` (implementa com testes antes), `reviewer` (revisa uma tarefa) e `milestone-reviewer` (revisão profunda de um conjunto de mudanças).
