@@ -8,10 +8,12 @@ import { needsYou } from './conversation/needsYou'
 import { documentTitle } from './documentTitle'
 import { useSessionsStore } from './stores/sessions'
 import NewConversationModal from './components/NewConversationModal.vue'
+import UpdateModal from './components/updates/UpdateModal.vue'
 import { shouldOpenNewConversation } from './newConversationShortcut'
 import { nextNeedsYou } from './nextNeedsYou'
 import { shouldGoToNextNeedsYou } from './nextNeedsYouShortcut'
 import { useNewConversationStore } from './stores/newConversation'
+import { useUpdatesStore } from './stores/updates'
 
 const layout = useLayoutStore()
 const sessions = useSessionsStore()
@@ -20,6 +22,7 @@ const waiting = computed(() => sessions.all.filter((s) => s.display_state === 'w
 watchEffect(() => { document.title = documentTitle(waiting.value) })
 
 const newConversation = useNewConversationStore()
+const updates = useUpdatesStore()
 const route = useRoute()
 const router = useRouter()
 // The project in view: a project page, or the project of the open conversation.
@@ -72,5 +75,6 @@ onMounted(() => {
       <RouterView />
     </main>
     <NewConversationModal v-if="newConversation.isOpen" />
+    <UpdateModal v-if="updates.modalOpen" />
   </div>
 </template>

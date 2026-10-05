@@ -9,6 +9,8 @@ import type { Effort, PermissionMode } from '../../types/api'
 import OptionMenu, { type MenuOption } from '../session/OptionMenu.vue'
 import { DEFAULT_FINISHED_AFTER_DAYS, useLayoutStore } from '../../stores/layout'
 import { UI_SCALES, setUiScale, uiScale } from '../../uiScale'
+import { formatActivity } from '../../format'
+import { useUpdatesStore } from '../../stores/updates'
 
 const MIN_DAYS = 1
 const MAX_DAYS = 365
@@ -20,6 +22,15 @@ const INHERIT = 'inherit-default'
 const layout = useLayoutStore()
 const models = useModelsStore()
 void models.ensure()
+
+const updates = useUpdatesStore()
+const versionStatus = computed(() => {
+  const s = updates.state
+  if (!s) return null
+  if (!s.enabled) return 'verificação de versões desligada (MAESTRO_UPDATE_CHECK=0)'
+  if (s.available && s.latest) return null // the button below says it
+  return s.checked_at ? `verificado ${formatActivity(s.checked_at)}` : 'ainda não verificado'
+})
 
 const loading = ref(true)
 const loadError = ref<string | null>(null)
@@ -249,6 +260,16 @@ onMounted(load)
           <span class="font-mono">settings.json</span>. Dá para mudar na própria conversa. "Sem perguntas" só se ativa dentro da conversa.
         </p>
       </fieldset>
+
+      <div v-if="updates.state" class="flex flex-col gap-2">
+        <span class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Versão</span>
+        <p data-test="pref-version" class="m-0 font-mono text-sm text-fg">{{ updates.state.current }} · <template v-if="versionStatus">{{ versionStatus }}</template><button
+            v-else
+            type="button"
+            class="cursor-pointer border-none bg-transparent p-0 font-mono text-sm text-secondary underline hover:text-fg"
+            @click="updates.openModal()"
+          >{{ updates.state.latest?.version }} disponível</button></p>
+      </div>
     </div>
 
     <p

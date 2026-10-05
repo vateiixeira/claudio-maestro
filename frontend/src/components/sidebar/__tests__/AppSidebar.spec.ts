@@ -17,6 +17,7 @@ import { useGroupsStore } from '../../../stores/groups'
 import { useNewConversationStore } from '../../../stores/newConversation'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
+import { useUpdatesStore } from '../../../stores/updates'
 import { setCollapsed, setSectionCollapsed, setSectionOpened } from '../../../sidebarCollapse'
 import { sidebarWidth } from '../../../sidebarWidthPref'
 import { makeGitRepo, makeGroup, makeProject, makeSession } from '../../../test/factories'
@@ -539,5 +540,56 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     const scroller = mountSidebar().get('[data-test="sidebar-sections"]')
     expect(scroller.classes()).toContain('gap-[22px]')
     expect(scroller.classes().filter((c) => c.startsWith('border'))).toEqual([])
+  })
+})
+
+const RELEASES = 'https://github.com/vateiixeira/claudio-maestro/releases'
+function updateState(overrides = {}) {
+  return {
+    enabled: true,
+    current: '0.1.0',
+    available: false,
+    latest: null,
+    checked_at: 1791303600,
+    releases_url: RELEASES,
+    ...overrides,
+  }
+}
+
+describe('versão no rodapé do menu', () => {
+  beforeEach(() => localStorage.removeItem('maestro:update-dismissed'))
+
+  it('esconde a linha antes de o backend responder', () => {
+    expect(mountSidebar().find('[data-test="app-version"]').exists()).toBe(false)
+  })
+
+  it('mostra só a versão, com link para a release instalada', async () => {
+    useUpdatesStore().apply(updateState())
+    const wrapper = mountSidebar()
+    await nextTick()
+    const link = wrapper.get('[data-test="app-version"] a')
+    expect(link.text()).toBe('v0.1.0')
+    expect(link.attributes('href')).toBe(`${RELEASES}/tag/v0.1.0`)
+    expect(link.attributes('target')).toBe('_blank')
+    expect(wrapper.find('[data-test="update-notice"]').exists()).toBe(false)
+  })
+
+  it('avisa da versão nova e abre o modal', async () => {
+    const updates = useUpdatesStore()
+    updates.apply(updateState({ available: true, latest: { version: '0.2.0', url: `${RELEASES}/tag/v0.2.0`, notes: '', published_at: null } }))
+    const wrapper = mountSidebar()
+    await nextTick()
+    const notice = wrapper.get('[data-test="update-notice"]')
+    expect(notice.text()).toContain('v0.1.0')
+    expect(notice.text()).toContain('0.2.0 disponível')
+    await notice.trigger('click')
+    expect(updates.modalOpen).toBe(true)
+  })
+
+  it('a linha da versão trunca em vez de quebrar', async () => {
+    useUpdatesStore().apply(updateState())
+    const wrapper = mountSidebar()
+    await nextTick()
+    expect(wrapper.get('[data-test="app-version"] a').classes()).toContain('truncate')
   })
 })

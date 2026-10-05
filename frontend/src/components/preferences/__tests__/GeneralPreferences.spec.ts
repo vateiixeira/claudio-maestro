@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import GeneralPreferences from '../GeneralPreferences.vue'
 import { jsonResponse, routeFetch } from '../../../test/factories'
 import { setUiScale, uiScale } from '../../../uiScale'
+import { useUpdatesStore } from '../../../stores/updates'
 
 enableAutoUnmount(afterEach)
 
@@ -215,5 +217,45 @@ describe('preferências gerais: tamanho do texto', () => {
     await input.setValue(true)
     expect(document.documentElement.style.fontSize).toBe('150%')
     expect(localStorage.getItem('maestro:ui-scale')).toBe('150')
+  })
+})
+
+describe('versão nas Preferências', () => {
+  const RELEASES = 'https://github.com/vateiixeira/claudio-maestro/releases'
+  const NOW = new Date(2026, 9, 5, 15, 0)
+  const base = { enabled: true, current: '0.1.0', available: false, latest: null, checked_at: NOW.getTime() / 1000 - 7200, releases_url: RELEASES }
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW); stub({}) })
+  afterEach(() => vi.useRealTimers())
+
+  it('mostra a versão e quando foi verificado', async () => {
+    const wrapper = await mountTab()
+    useUpdatesStore().apply(base)
+    await nextTick()
+    expect(wrapper.get('[data-test="pref-version"]').text()).toBe('0.1.0 · verificado há 2 h')
+  })
+
+  it('mostra a versão nova e abre o modal', async () => {
+    const wrapper = await mountTab()
+    const updates = useUpdatesStore()
+    updates.apply({ ...base, available: true, latest: { version: '0.2.0', url: `${RELEASES}/tag/v0.2.0`, notes: '', published_at: null } })
+    await nextTick()
+    const button = wrapper.get('[data-test="pref-version"] button')
+    expect(button.text()).toBe('0.2.0 disponível')
+    await button.trigger('click')
+    expect(updates.modalOpen).toBe(true)
+  })
+
+  it('avisa quando a verificação está desligada', async () => {
+    const wrapper = await mountTab()
+    useUpdatesStore().apply({ ...base, enabled: false, checked_at: null })
+    await nextTick()
+    expect(wrapper.get('[data-test="pref-version"]').text()).toBe('0.1.0 · verificação de versões desligada (MAESTRO_UPDATE_CHECK=0)')
+  })
+
+  it('ainda não verificado', async () => {
+    const wrapper = await mountTab()
+    useUpdatesStore().apply({ ...base, checked_at: null })
+    await nextTick()
+    expect(wrapper.get('[data-test="pref-version"]').text()).toBe('0.1.0 · ainda não verificado')
   })
 })

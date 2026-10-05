@@ -20,6 +20,7 @@ import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import { useUpdatesStore } from '../../stores/updates'
 import type { Project, Session } from '../../types/api'
 import IconChat from '../icons/IconChat.vue'
 import IconChevron from '../icons/IconChevron.vue'
@@ -33,6 +34,7 @@ const sessions = useSessionsStore()
 const git = useGitStore()
 const groups = useGroupsStore()
 const newConversation = useNewConversationStore()
+const updates = useUpdatesStore()
 const route = useRoute()
 const socket = useEventSocket()
 
@@ -275,6 +277,26 @@ const itemClass = sidebarItemClass
       <span v-if="socket.status.value === 'connected'" data-test="connection-ok" class="flex shrink-0 items-center gap-1.5 pr-1.5 text-xs text-fg-subtle">
         <span class="size-[7px] rounded-full bg-primary" aria-hidden="true" />Conectado
       </span>
+    </div>
+    <div v-if="updates.state" data-test="app-version" class="flex min-w-0 shrink-0 items-center px-4 pb-2 font-mono text-xs text-fg-subtle">
+      <button
+        v-if="updates.showNotice"
+        type="button"
+        data-test="update-notice"
+        class="min-w-0 cursor-pointer truncate rounded-sm border-none bg-transparent p-0 text-left font-mono text-xs text-fg-subtle hover:text-fg"
+        :aria-label="`Versão ${updates.state.latest?.version} disponível. Você está na ${updates.state.current}.`"
+        @click="updates.openModal()"
+      >
+        v{{ updates.state.current }} <span class="text-secondary">· {{ updates.state.latest?.version }} disponível</span>
+      </button>
+      <a
+        v-else
+        :href="`${updates.state.releases_url}/tag/v${updates.state.current}`"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="min-w-0 truncate text-fg-subtle no-underline hover:text-fg"
+        :title="`Versão instalada: ${updates.state.current}`"
+      >v{{ updates.state.current }}</a>
     </div>
     <ConnectionIndicator class="mx-2.5 mb-2.5" :status="socket.status.value" />
   </nav>
