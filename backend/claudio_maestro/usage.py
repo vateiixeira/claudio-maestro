@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import time
 import urllib.error
 import urllib.request
@@ -31,6 +32,14 @@ MAX_RESPONSE_BYTES = 1_000_000
 TURN_REFRESH_MIN_SECONDS = 60
 SEVERITIES = frozenset({"normal", "warning", "critical"})
 _ORDER = {"session": 0, "weekly_all": 1, "weekly_scoped": 2}
+_PLAN_NAMES = {
+    "max": "Max",
+    "pro": "Pro",
+    "team": "Team",
+    "enterprise": "Enterprise",
+    "free": "Free",
+}
+_TIER_MULTIPLIER = re.compile(r"_(\d+)x$")
 
 
 @dataclass(frozen=True)
@@ -42,11 +51,17 @@ class UsageLimit:
     resets_at: float | None  # Unix seconds
 
 
+@dataclass(frozen=True)
+class UsageReport:
+    limits: list[UsageLimit]
+    plan: str | None  # "Max 20x", "Pro"... Never has the token.
+
+
 class UsageCheckError(Exception):
     """The check failed. The message is short, in Portuguese, and never has the token."""
 
 
-FetchUsage = Callable[[], Awaitable[list[UsageLimit]]]
+FetchUsage = Callable[[], Awaitable[UsageReport]]
 Opener = Callable[..., Any]
 
 
@@ -104,8 +119,20 @@ def parse_usage(payload: object) -> list[UsageLimit]:
     return sorted(limits, key=lambda limit: _ORDER[limit.kind])
 
 
-def read_access_token(config_dir: Path, clock: Callable[[], float] = time.time) -> str:
-    """The CLI login token, read now. Never keep the returned value."""
+def plan_label(subscription_type: object, rate_limit_tier: object) -> str | None:
+    """The plan name for the menu, such as "Max 20x". Neither field is a secret."""
+    if not isinstance(subscription_type, str) or not subscription_type.strip():
+        return None
+    name = _PLAN_NAMES.get(subscription_type.strip().lower()) or subscription_type.strip().capitalize()
+    if isinstance(rate_limit_tier, str) and (match := _TIER_MULTIPLIER.search(rate_limit_tier)):
+        return f"{name} {match.group(1)}x"
+    return name
+
+
+def read_credentials(
+    config_dir: Path, clock: Callable[[], float] = time.time
+) -> tuple[str, str | None]:
+    """The CLI login token and the plan name, read now. Never keep the token."""
     try:
         data = json.loads((config_dir / ".credentials.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -118,17 +145,22 @@ def read_access_token(config_dir: Path, clock: Callable[[], float] = time.time) 
     if isinstance(expires, int | float) and not isinstance(expires, bool):
         if expires / 1000 <= clock():
             raise UsageCheckError("Login do CLI expirado")
-    return token
+    return token, plan_label(oauth.get("subscriptionType"), oauth.get("rateLimitTier"))
+
+
+def read_access_token(config_dir: Path, clock: Callable[[], float] = time.time) -> str:
+    """The CLI login token, read now. Never keep the returned value."""
+    return read_credentials(config_dir, clock)[0]
 
 
 def request_usage(
     config_dir: Path,
     opener: Opener = urllib.request.urlopen,
     clock: Callable[[], float] = time.time,
-) -> list[UsageLimit]:
+) -> UsageReport:
     """Blocking read of the usage. Every error is re-raised `from None`: the urllib
     exceptions carry the request, and with it the Authorization header."""
-    token = read_access_token(config_dir, clock)
+    token, plan = read_credentials(config_dir, clock)
     request = urllib.request.Request(
         USAGE_URL,
         headers={
@@ -154,15 +186,15 @@ def request_usage(
         payload = json.loads(raw)
     except ValueError:
         raise UsageCheckError("Resposta inesperada") from None
-    return parse_usage(payload)
+    return UsageReport(parse_usage(payload), plan)
 
 
-def _get_usage() -> list[UsageLimit]:
+def _get_usage() -> UsageReport:
     # Indirection so tests can block the network (see conftest).
     return request_usage(claude_config_dir())
 
 
-async def fetch_usage() -> list[UsageLimit]:
+async def fetch_usage() -> UsageReport:
     return await asyncio.to_thread(_get_usage)
 
 
@@ -182,6 +214,7 @@ class UsageChecker:
         self._fetch = fetch
         self._clock = clock
         self._limits: list[UsageLimit] = []
+        self._plan: str | None = None
         self._fetched_at: float | None = None
         self._error: str | None = None
         self._attempted_at: float | None = None
@@ -193,6 +226,7 @@ class UsageChecker:
             "limits": [asdict(limit) for limit in self._limits] if self.enabled else [],
             "fetched_at": self._fetched_at,
             "error": self._error,
+            "plan": self._plan if self.enabled else None,
         }
 
     def wants_refresh(self) -> bool:
@@ -214,14 +248,15 @@ class UsageChecker:
         self._running = True
         self._attempted_at = self._clock()
         try:
-            limits = await self._fetch()
+            report = await self._fetch()
         except UsageCheckError as exc:
             self._fail(str(exc))
         except Exception:
             logger.exception("Falha inesperada na consulta de uso")
             self._fail("Consulta de uso falhou")
         else:
-            self._limits = limits
+            self._limits = report.limits
+            self._plan = report.plan
             self._fetched_at = self._clock()
             self._error = None
         finally:

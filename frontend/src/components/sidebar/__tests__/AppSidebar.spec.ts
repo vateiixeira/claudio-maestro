@@ -293,7 +293,7 @@ describe('menu lateral', () => {
     useUsageStore().apply({
       enabled: true,
       limits: [{ kind: 'session', label: 'Sessão', percent: 14, severity: 'normal', resets_at: null }],
-      fetched_at: 1, error: null,
+      fetched_at: 1, error: null, plan: null,
     })
     await nextTick()
     const html = wrapper.html()

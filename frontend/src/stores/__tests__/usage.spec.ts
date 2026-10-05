@@ -17,6 +17,7 @@ function makeSnapshot(overrides: Partial<UsageSnapshot> = {}): UsageSnapshot {
     ],
     fetched_at: 1791329000,
     error: null,
+    plan: 'Max 20x',
     ...overrides,
   }
 }

@@ -20,6 +20,7 @@ function snapshot(overrides: Partial<UsageSnapshot> = {}): UsageSnapshot {
     ],
     fetched_at: NOW / 1000,
     error: null,
+    plan: 'Max 20x',
     ...overrides,
   }
 }
@@ -87,5 +88,27 @@ describe('medidor de consumo', () => {
     expect(session.classes()).toContain('opacity-60')
     expect(session.attributes('title')).toContain('Não atualizado: Sem conexão com a Anthropic')
     expect(wrapper.find('[data-test="usage-unavailable"]').exists()).toBe(false)
+  })
+
+  it('mostra o plano da assinatura no topo, antes das barras', () => {
+    const wrapper = mountWith(snapshot())
+    const plan = wrapper.get('[data-test="usage-plan"]')
+    expect(plan.text()).toContain('Plano')
+    expect(plan.text()).toContain('Max 20x')
+    expect(plan.attributes('title')).toBe('Plano da assinatura')
+    expect(plan.classes()).not.toContain('opacity-60')
+    const html = wrapper.html()
+    expect(html.indexOf('data-test="usage-plan"')).toBeLessThan(html.indexOf('data-test="usage-session"'))
+  })
+
+  it('sem plano a linha não aparece', () => {
+    expect(mountWith(snapshot({ plan: null })).find('[data-test="usage-plan"]').exists()).toBe(false)
+  })
+
+  it('com erro o plano fica apagado, inclusive junto de "Uso indisponível"', () => {
+    expect(mountWith(snapshot({ error: 'Sem conexão com a Anthropic' })).get('[data-test="usage-plan"]').classes()).toContain('opacity-60')
+    const unavailable = mountWith(snapshot({ limits: [], fetched_at: null, error: 'Login do CLI expirado' }))
+    expect(unavailable.get('[data-test="usage-plan"]').classes()).toContain('opacity-60')
+    expect(unavailable.find('[data-test="usage-unavailable"]').exists()).toBe(true)
   })
 })

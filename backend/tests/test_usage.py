@@ -12,8 +12,11 @@ from claudio_maestro.usage import (
     UsageChecker,
     UsageCheckError,
     UsageLimit,
+    UsageReport,
     parse_usage,
+    plan_label,
     read_access_token,
+    read_credentials,
     request_usage,
 )
 
@@ -35,9 +38,11 @@ REAL_PAYLOAD = {
 }
 
 
-def write_credentials(folder: Path, *, token=TOKEN, expires_at=None) -> Path:
+def write_credentials(folder: Path, *, token=TOKEN, expires_at=None, tier="default_claude_max_20x") -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     oauth = {"accessToken": token, "refreshToken": "r", "subscriptionType": "max"}
+    if tier is not None:
+        oauth["rateLimitTier"] = tier
     if expires_at is not None:
         oauth["expiresAt"] = expires_at
     (folder / ".credentials.json").write_text(json.dumps({"claudeAiOauth": oauth}))
@@ -121,7 +126,48 @@ def test_parse_rejects_payload_without_limits(payload):
         parse_usage(payload)
 
 
+# plan_label ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("subscription", "tier", "expected"),
+    [
+        ("max", "default_claude_max_20x", "Max 20x"),
+        ("max", "default_claude_max_5x", "Max 5x"),
+        ("pro", "default_claude_pro", "Pro"),
+        ("pro", None, "Pro"),
+        ("team", 3, "Team"),
+        ("enterprise", "", "Enterprise"),
+        ("free", None, "Free"),
+        ("MAX", "default_claude_max_5x", "Max 5x"),
+        ("novo_plano", None, "Novo_plano"),
+        (None, "x_20x", None),
+        ("", None, None),
+        (5, None, None),
+    ],
+)
+def test_plan_label(subscription, tier, expected):
+    assert plan_label(subscription, tier) == expected
+
+
 # read_access_token -----------------------------------------------------------
+
+
+def test_read_credentials_returns_token_and_plan(tmp_path):
+    assert read_credentials(write_credentials(tmp_path / "c")) == (TOKEN, "Max 20x")
+
+
+def test_read_credentials_without_plan_fields(tmp_path):
+    (tmp_path / ".credentials.json").write_text(json.dumps({"claudeAiOauth": {"accessToken": TOKEN}}))
+    assert read_credentials(tmp_path) == (TOKEN, None)
+
+
+def test_read_credentials_keeps_validations(tmp_path):
+    with pytest.raises(UsageCheckError, match="Credenciais do CLI não encontradas"):
+        read_credentials(tmp_path / "nada")
+    folder = write_credentials(tmp_path / "c", expires_at=1_000_000)
+    with pytest.raises(UsageCheckError, match="Login do CLI expirado"):
+        read_credentials(folder, clock=lambda: 1_001.0)
 
 
 def test_read_token(tmp_path):
@@ -157,13 +203,21 @@ def test_read_token_not_yet_expired(tmp_path):
 def test_request_sends_token_and_beta_header(tmp_path):
     seen: list = []
     folder = write_credentials(tmp_path / "c")
-    limits = request_usage(folder, opener_returning(json.dumps(REAL_PAYLOAD).encode(), seen))
-    assert len(limits) == 3
+    report = request_usage(folder, opener_returning(json.dumps(REAL_PAYLOAD).encode(), seen))
+    assert len(report.limits) == 3
     request, timeout = seen[0]
     assert request.full_url == USAGE_URL
     assert request.get_header("Authorization") == f"Bearer {TOKEN}"
     assert request.get_header("Anthropic-beta") == OAUTH_BETA
     assert timeout == 10
+
+
+def test_request_report_has_plan_from_credentials(tmp_path):
+    folder = write_credentials(tmp_path / "c", tier="default_claude_max_5x")
+    report = request_usage(folder, opener_returning(json.dumps(REAL_PAYLOAD).encode()))
+    assert isinstance(report, UsageReport)
+    assert report.plan == "Max 5x"
+    assert TOKEN not in repr(report)
 
 
 def _assert_no_token(exc: BaseException) -> None:
@@ -206,6 +260,7 @@ def test_request_bad_json_and_oversized(tmp_path):
 # UsageChecker -----------------------------------------------------------------
 
 LIMIT = UsageLimit("session", "Sessão", 14, "normal", 1791333000.0)
+REPORT = UsageReport([LIMIT], "Max 20x")
 
 
 class Clock:
@@ -232,7 +287,7 @@ def make_checker(results, *, enabled=True, clock=None):
 
 
 def test_refresh_success_publishes_snapshot():
-    checker, published, _ = make_checker([[LIMIT]])
+    checker, published, _ = make_checker([REPORT])
     asyncio.run(checker.refresh())
     snap = checker.snapshot()
     assert snap == {
@@ -241,6 +296,7 @@ def test_refresh_success_publishes_snapshot():
                     "severity": "normal", "resets_at": 1791333000.0}],
         "fetched_at": 1000.0,
         "error": None,
+        "plan": "Max 20x",
     }
     assert published == [{"session_id": None, "seq": 0, "type": "app.usage", "data": snap}]
 
@@ -248,7 +304,7 @@ def test_refresh_success_publishes_snapshot():
 def test_error_keeps_old_limits_and_success_clears_error():
     clock = Clock()
     checker, published, _ = make_checker(
-        [[LIMIT], UsageCheckError("Login do CLI expirado"), [LIMIT]], clock=clock
+        [REPORT, UsageCheckError("Login do CLI expirado"), REPORT], clock=clock
     )
     asyncio.run(checker.refresh())
     clock.now = 2000.0
@@ -256,6 +312,7 @@ def test_error_keeps_old_limits_and_success_clears_error():
     snap = checker.snapshot()
     assert snap["error"] == "Login do CLI expirado"
     assert snap["limits"][0]["percent"] == 14
+    assert snap["plan"] == "Max 20x"
     assert snap["fetched_at"] == 1000.0
     asyncio.run(checker.refresh())
     assert checker.snapshot()["error"] is None
@@ -278,7 +335,7 @@ def test_same_error_is_logged_once(caplog):
 
 def test_wants_refresh_respects_sixty_seconds():
     clock = Clock()
-    checker, _, _ = make_checker([[LIMIT]], clock=clock)
+    checker, _, _ = make_checker([REPORT], clock=clock)
     assert checker.wants_refresh() is True
     asyncio.run(checker.refresh())
     clock.now += 59
@@ -294,7 +351,7 @@ def test_no_second_refresh_while_one_runs():
     async def slow_fetch():
         calls.append(1)
         await gate.wait()
-        return [LIMIT]
+        return REPORT
 
     checker = UsageChecker(lambda e: None, enabled=True, fetch=slow_fetch, clock=Clock())
 
@@ -311,9 +368,30 @@ def test_no_second_refresh_while_one_runs():
 
 
 def test_disabled_never_fetches():
-    checker, published, calls = make_checker([[LIMIT]], enabled=False)
+    checker, published, calls = make_checker([REPORT], enabled=False)
     asyncio.run(checker.refresh())
     asyncio.run(checker.run_periodic(0, 0))
     assert calls == [] and published == []
     assert checker.wants_refresh() is False
-    assert checker.snapshot() == {"enabled": False, "limits": [], "fetched_at": None, "error": None}
+    assert checker.snapshot() == {
+        "enabled": False, "limits": [], "fetched_at": None, "error": None, "plan": None,
+    }
+
+
+def test_error_keeps_old_plan_and_success_updates_it():
+    clock = Clock()
+    checker, _, _ = make_checker(
+        [REPORT, UsageCheckError("Sem conexão com a Anthropic"), UsageReport([LIMIT], "Pro")],
+        clock=clock,
+    )
+    asyncio.run(checker.refresh())
+    asyncio.run(checker.refresh())
+    assert checker.snapshot()["plan"] == "Max 20x"
+    asyncio.run(checker.refresh())
+    assert checker.snapshot()["plan"] == "Pro"
+
+
+def test_snapshot_without_data_has_no_plan():
+    checker, _, _ = make_checker([UsageCheckError("Login do CLI expirado")])
+    asyncio.run(checker.refresh())
+    assert checker.snapshot()["plan"] is None

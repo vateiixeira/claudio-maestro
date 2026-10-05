@@ -397,4 +397,5 @@ export interface UsageSnapshot {
   limits: UsageLimit[]
   fetched_at: number | null
   error: string | null
+  plan: string | null
 }

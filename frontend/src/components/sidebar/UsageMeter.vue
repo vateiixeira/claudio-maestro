@@ -34,6 +34,16 @@ function ariaLabel(limit: UsageLimit): string {
 
 <template>
   <div v-if="visible" data-test="usage-meter" class="flex shrink-0 flex-col gap-1.5 border-t border-line px-4 py-2.5">
+    <div
+      v-if="usage.snapshot?.plan"
+      data-test="usage-plan"
+      class="flex min-w-0 items-center justify-between gap-2 text-xs"
+      :class="{ 'opacity-60': error }"
+      title="Plano da assinatura"
+    >
+      <span class="text-fg-subtle">Plano</span>
+      <span class="truncate font-mono text-fg-muted">{{ usage.snapshot.plan }}</span>
+    </div>
     <p v-if="rows.length === 0 && error" data-test="usage-unavailable" class="m-0 text-xs text-fg-subtle" :title="error">Uso indisponível</p>
     <div
       v-for="limit in rows"

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from claudio_maestro.app import create_app
 from claudio_maestro.config import Settings, load_settings
-from claudio_maestro.usage import UsageLimit
+from claudio_maestro.usage import UsageLimit, UsageReport
 
 HEADERS = {"origin": APP_ORIGIN, "x-maestro": "1"}
 LIMIT = UsageLimit("session", "Sessão", 14, "normal", 1791333000.0)
@@ -22,7 +22,7 @@ def _client(home, data_dir, *, enabled, fetch):
 
 def test_usage_endpoint_returns_snapshot(home, data_dir):
     async def fetch():
-        return [LIMIT]
+        return UsageReport([LIMIT], "Max 20x")
 
     with _client(home, data_dir, enabled=True, fetch=fetch) as client:
         client.portal.call(client.app.state.usage.refresh)
@@ -30,6 +30,7 @@ def test_usage_endpoint_returns_snapshot(home, data_dir):
 
     assert body["enabled"] is True
     assert body["error"] is None
+    assert body["plan"] == "Max 20x"
     assert isinstance(body["fetched_at"], float)
     assert body["limits"] == [
         {"kind": "session", "label": "Sessão", "percent": 14, "severity": "normal",
@@ -45,7 +46,7 @@ def test_usage_endpoint_when_disabled(home, data_dir):
         client.portal.call(client.app.state.usage.refresh)
         body = client.get("/api/usage").json()
 
-    assert body == {"enabled": False, "limits": [], "fetched_at": None, "error": None}
+    assert body == {"enabled": False, "limits": [], "fetched_at": None, "error": None, "plan": None}
 
 
 def test_usage_endpoint_requires_maestro_header(client):
@@ -57,7 +58,7 @@ def test_turn_end_refreshes_usage(home, data_dir):
 
     async def fetch():
         calls.append(1)
-        return [LIMIT]
+        return UsageReport([LIMIT], "Max 20x")
 
     (home / "app").mkdir()
     with _client(home, data_dir, enabled=True, fetch=fetch) as client:
