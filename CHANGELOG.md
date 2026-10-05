@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-10-05
+
+O app passa a avisar quando a branch de um projeto tem commits novos no remoto para baixar, e trocar uma conversa em andamento para o modo sem perguntas passa a funcionar.
+
 ### Adicionado
 
 - O app confere de tempos em tempos (a cada 5 minutos, com o app aberto) se a branch atual tem commits novos no remoto. Uma seta laranja ao lado da branch no menu lateral, uma etiqueta "↓ 3 para baixar" no cabeçalho da conversa e a linha Branch do painel Detalhes avisam o que falta baixar, com "Verificar agora" para conferir na hora. O app só avisa: o pull continua com você.
