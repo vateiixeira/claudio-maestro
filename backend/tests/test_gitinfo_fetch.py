@@ -1,10 +1,13 @@
 """`gitinfo.fetch_upstream`: updates the tracking branch and never runs repository config."""
 
+import asyncio
 import http.server
 import os
+import ssl
 import stat
 import subprocess
 import threading
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -201,25 +204,29 @@ async def test_fetch_times_out(tmp_path: Path, local_remotes):
 
 
 async def test_fetch_command_and_environment(tmp_path: Path, local_remotes, monkeypatch):
-    _, clone = make_clone(tmp_path)
+    remote, clone = make_clone(tmp_path)
     monkeypatch.setenv("SSH_ASKPASS", "/bin/evil")
     monkeypatch.setenv("GIT_ASKPASS", "/bin/evil")
     monkeypatch.setenv("GIT_SSH_COMMAND", "evil")
-    seen: list[tuple[tuple[str, ...], dict[str, str]]] = []
+    seen: list[tuple[tuple[str, ...], dict[str, str], Path]] = []
     real = gitinfo._exec_now
 
     async def spy(repo, args, timeout, extra_config, limit, extra_env=None, own_group=False):
-        seen.append((args, gitinfo._env(extra_config, extra_env)))
+        seen.append((args, gitinfo._env(extra_config, extra_env), repo))
         assert own_group is (args[0] == "fetch")  # only the fetch gets its own process group
         return await real(repo, args, timeout, extra_config, limit, extra_env, own_group)
 
     monkeypatch.setattr(gitinfo, "_exec_now", spy)
     await gitinfo.fetch_upstream(clone)
-    (args, env), = [item for item in seen if item[0][0] == "fetch"]
+    (args, env, where), = [item for item in seen if item[0][0] == "fetch"]
     assert args == (
         "fetch", "--quiet", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
-        "--no-prune", "--upload-pack=git-upload-pack", "--", "origin", "+refs/heads/main:refs/remotes/origin/main",
+        "--no-prune", "--upload-pack=git-upload-pack", "--", str(remote),
+        "+refs/heads/main:refs/remotes/origin/main",
     )
+    # It runs in a throwaway repository, never in the real one, and writes objects to the real one.
+    assert where != clone and env["GIT_DIR"] == str(where)
+    assert env["GIT_OBJECT_DIRECTORY"] == str(clone / ".git" / "objects")
     assert env["GIT_SSH_COMMAND"] == "ssh -o BatchMode=yes -o ConnectTimeout=10"
     assert env["SSH_ASKPASS_REQUIRE"] == "never"
     assert env["GIT_ALLOW_PROTOCOL"] == "https:ssh:file"
@@ -230,7 +237,7 @@ async def test_fetch_command_and_environment(tmp_path: Path, local_remotes, monk
         for i in range(int(env["GIT_CONFIG_COUNT"]))
     }
     for key, value in (
-        ("credential.helper", ""), ("core.askPass", ""), ("protocol.allow", "never"),
+        ("core.askPass", ""), ("protocol.allow", "never"),
         ("protocol.https.allow", "always"), ("protocol.ssh.allow", "always"),
         ("protocol.file.allow", "always"),
         ("fetch.recurseSubmodules", "false"), ("submodule.recurse", "false"), ("gc.auto", "0"),
@@ -340,8 +347,7 @@ async def test_remote_helper_program_is_not_run(tmp_path: Path, local_remotes, m
     raw_fetch(clone, {"PATH": os.environ["PATH"]})
     assert marker.exists(), "control: without the protections the program runs"
     marker.unlink()
-    with pytest.raises(gitinfo.GitError):
-        await gitinfo.fetch_upstream(clone)
+    await gitinfo.fetch_upstream(clone)  # the repository's `remote.origin.vcs` is not even read
     assert not marker.exists()
 
 
@@ -351,8 +357,8 @@ async def test_ext_transport_enabled_by_the_repository_is_not_run(tmp_path: Path
     _, clone = make_clone(tmp_path)
     marker = tmp_path / "marker-ext"
     evil = script(tmp_path / "evil-ext.sh", f"touch {marker}\nexit 1")
-    git(clone, "remote", "set-url", "origin", "https://example.invalid/repo.git")
-    git(clone, "config", f"url.ext::{evil} .insteadOf", "https://example.invalid/")
+    git(clone, "remote", "set-url", "origin", "https://127.0.0.1:1/repo.git")
+    git(clone, "config", f"url.ext::{evil} .insteadOf", "https://127.0.0.1:1/")
     git(clone, "config", "protocol.ext.allow", "always")
     raw_fetch(clone)
     assert marker.exists(), "control: without the protections the program runs"
@@ -566,3 +572,398 @@ async def test_cancelling_kills_the_programs_git_started(tmp_path: Path, local_r
     with pytest.raises(asyncio.CancelledError):
         await task
     assert await wait_dead(pid), "the ssh child outlived the cancelled fetch"
+
+
+
+# The repository's config is not read at all ---------------------------------------------
+#
+# A local HTTPS server stands in for an attacker's. Its certificate is trusted through the
+# user's own global git config (`http.sslCAInfo`), as a real login would be; the repository
+# asks for `http.sslVerify=false`, which must not matter.
+
+
+class _Recorder(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802
+        server = self.server
+        server.requests.append({k.lower(): v for k, v in self.headers.items()})  # type: ignore[attr-defined]
+        body = b""
+        if server.advert and self.path.startswith("/repo.git/info/refs"):  # type: ignore[attr-defined]
+            # A valid smart-http answer naming a tip the repository already has: git
+            # finishes cleanly, which is when it writes a cookie jar.
+            def pkt(data: bytes) -> bytes:
+                return f"{len(data) + 4:04x}".encode() + data
+
+            body = (
+                pkt(b"# service=git-upload-pack\n") + b"0000"
+                + pkt(f"{server.advert} refs/heads/main\0ofs-delta agent=teste\n".encode())  # type: ignore[attr-defined]
+                + b"0000"
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-git-upload-pack-advertisement")
+        else:
+            self.send_response(404)
+        self.send_header("Set-Cookie", "sessao=roubada; Path=/; Secure")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_POST = do_GET  # noqa: N815
+
+    def log_message(self, *args):
+        pass
+
+
+class HttpsRecorder:
+    def __init__(self, tmp_path: Path) -> None:
+        cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+        subprocess.run(
+            ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(key),
+             "-out", str(cert), "-days", "2", "-subj", "/CN=127.0.0.1",
+             "-addext", "subjectAltName=IP:127.0.0.1"],
+            check=True, capture_output=True,
+        )
+        self.cert = cert
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Recorder)
+        self.server.requests = []  # type: ignore[attr-defined]
+        self.server.advert = None  # type: ignore[attr-defined]
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(cert, key)
+        self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"https://127.0.0.1:{self.server.server_address[1]}"
+        self.url = f"{self.base}/repo.git"
+
+    def advertise(self, sha: str) -> None:
+        """Answer `info/refs` as a server whose `main` is at `sha`."""
+        self.server.advert = sha  # type: ignore[attr-defined]
+
+    @property
+    def requests(self) -> list[dict[str, str]]:
+        return self.server.requests  # type: ignore[attr-defined]
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+
+@pytest.fixture
+def https_server(tmp_path: Path, monkeypatch):
+    server = HttpsRecorder(tmp_path)
+    home = tmp_path / "fakehome"
+    home.mkdir()
+    (home / ".gitconfig").write_text(f"[http]\n\tsslCAInfo = {server.cert}\n")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    yield server
+    server.close()
+
+
+async def attempt(clone: Path) -> None:
+    with suppress(gitinfo.GitError):
+        await gitinfo.fetch_upstream(clone)
+
+
+def untrusting_clone(tmp_path: Path, server: HttpsRecorder) -> Path:
+    _, clone = make_clone(tmp_path)
+    git(clone, "remote", "set-url", "origin", server.url)
+    git(clone, "config", "http.sslVerify", "false")
+    return clone
+
+
+@pytest.mark.parametrize("scoped", [False, True], ids=["generic", "url-scoped"])
+async def test_cookie_jar_is_never_written_to_a_file_named_by_the_repository(
+    tmp_path: Path, https_server, scoped: bool
+):
+    clone = untrusting_clone(tmp_path, https_server)
+    https_server.advertise(git(clone, "rev-parse", "HEAD").strip())
+    victim = tmp_path / "importante.txt"
+    victim.write_text("dados importantes\n")
+    prefix = f"http.{https_server.base}/." if scoped else "http."
+    git(clone, "config", f"{prefix}cookieFile", str(victim))
+    git(clone, "config", f"{prefix}saveCookies", "true")
+    raw_fetch(clone)
+    assert victim.read_text().startswith("# Netscape HTTP Cookie File"), (
+        "control: without the protections the file is overwritten with the cookie jar"
+    )
+    victim.write_text("dados importantes\n")
+    https_server.requests.clear()
+    await attempt(clone)
+    assert https_server.requests, "the fetch should have reached the server"
+    assert victim.read_text() == "dados importantes\n"
+
+
+@pytest.mark.parametrize("scoped", [False, True], ids=["generic", "url-scoped"])
+async def test_cookie_file_is_never_read_nor_sent(tmp_path: Path, https_server, scoped: bool):
+    clone = untrusting_clone(tmp_path, https_server)
+    secret = tmp_path / "cookies.txt"
+    secret.write_text("127.0.0.1\tFALSE\t/\tTRUE\t0\tsegredo\tvalor\n")
+    prefix = f"http.{https_server.base}/." if scoped else "http."
+    git(clone, "config", f"{prefix}cookieFile", str(secret))
+    raw_fetch(clone)
+    assert any("segredo=valor" in r.get("cookie", "") for r in https_server.requests), (
+        "control: without the protections the file's cookies go to the server"
+    )
+    https_server.requests.clear()
+    await attempt(clone)
+    assert https_server.requests, "the fetch should have reached the server"
+    assert all("cookie" not in r for r in https_server.requests)
+
+
+async def test_client_certificate_and_headers_from_the_repository_are_not_used(
+    tmp_path: Path, https_server
+):
+    clone = untrusting_clone(tmp_path, https_server)
+    git(clone, "config", "http.extraHeader", "X-Vazamento: sim")
+    raw_fetch(clone)
+    assert any(r.get("x-vazamento") == "sim" for r in https_server.requests), (
+        "control: without the protections the repository's header is sent"
+    )
+    # A client certificate the repository names does not exist: git would fail before the
+    # request if it read that key.
+    git(clone, "config", "http.sslCert", str(tmp_path / "nao-existe.pem"))
+    git(clone, "config", "http.sslKey", str(tmp_path / "nao-existe.key"))
+    https_server.requests.clear()
+    await attempt(clone)
+    assert https_server.requests, "the client certificate named by the repository was used"
+    assert all("x-vazamento" not in r for r in https_server.requests)
+
+
+async def test_users_global_git_config_still_applies(tmp_path: Path, https_server, monkeypatch):
+    # The server's certificate is only trusted through the user's global `http.sslCAInfo`.
+    clone = untrusting_clone(tmp_path, https_server)
+    git(clone, "config", "--unset", "http.sslVerify")
+    await attempt(clone)
+    assert https_server.requests
+
+
+# What cannot be checked is refused with a clear message ------------------------------------
+
+
+async def test_shallow_repository_is_refused(tmp_path: Path, local_remotes):
+    remote, _ = make_clone(tmp_path)
+    shallow = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", remote.as_uri(), str(shallow)], check=True,
+        env={**GIT_ENV, "GIT_ALLOW_PROTOCOL": "file"},
+    )
+    with pytest.raises(gitinfo.GitError, match="raso"):
+        await gitinfo.fetch_upstream(shallow)
+
+
+@pytest.mark.parametrize("key", ["extensions.partialclone", "remote.origin.promisor"])
+async def test_partial_clone_is_refused(tmp_path: Path, local_remotes, key: str):
+    _, clone = make_clone(tmp_path)
+    git(clone, "config", key, "origin" if key.startswith("ext") else "true")
+    with pytest.raises(gitinfo.GitError, match="parcial"):
+        await gitinfo.fetch_upstream(clone)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com/x.git", "git://example.com/x.git", "ext::sh -c touch% x", "evil::x",
+        "-oProxyCommand=x", "-x:y", "ssh://-oProxyCommand=x/y", "file:///tmp/x", "/tmp/x",
+        "ftp://example.com/x.git", "https://exa mple.com/x",
+    ],
+)
+async def test_urls_outside_https_and_ssh_are_refused(tmp_path: Path, url: str):
+    with pytest.raises(gitinfo.GitError, match="https e ssh"):
+        gitinfo._check_fetch_url(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/x.git", "HTTPS://user:token@example.com:8443/x.git",
+        "ssh://git@example.com/x.git", "ssh://git@example.com:2222/x.git",
+        "git@github.com:vateiixeira/claudio-maestro.git", "example.com:x/y.git",
+    ],
+)
+async def test_https_and_ssh_urls_are_accepted(url: str):
+    gitinfo._check_fetch_url(url)
+
+
+async def test_local_remote_is_refused_by_default_with_a_clear_message(tmp_path: Path):
+    _, clone = make_clone(tmp_path)
+    with pytest.raises(gitinfo.GitError, match="https e ssh"):
+        await gitinfo.fetch_upstream(clone)
+
+
+async def test_upstream_with_an_invalid_ref_name_is_refused(tmp_path: Path, local_remotes):
+    _, clone = make_clone(tmp_path)
+    git(clone, "config", "branch.main.merge", "refs/heads/a:refs/heads/b")
+    with pytest.raises(gitinfo.GitError, match="inválido"):
+        await gitinfo.fetch_upstream(clone)
+
+
+# Behaviour of the throwaway-repository fetch ------------------------------------------------
+
+
+async def test_negotiation_starts_from_what_the_repository_has(tmp_path: Path, local_remotes, monkeypatch):
+    remote, clone = make_clone(tmp_path)
+    other = push_from_elsewhere(tmp_path, remote)
+    for index in range(30):
+        commit_file(other, f"f{index}.txt", f"{index}\n" * 50)
+    git(other, "push", "-q")
+    await gitinfo.fetch_upstream(clone)
+    old = git(clone, "rev-parse", "origin/main").strip()
+    commit_file(other, "ultimo.txt")
+    git(other, "push", "-q")
+    new = git(other, "rev-parse", "HEAD").strip()
+    trace = tmp_path / "packets.txt"
+    monkeypatch.setitem(gitinfo.FETCH_ENV, "GIT_TRACE_PACKET", str(trace))
+    assert await gitinfo.fetch_upstream(clone) is True
+    packets = trace.read_text()
+    assert f"want {new}" in packets
+    assert f"have {old}" in packets, "git did not tell the server what the repository already has"
+    assert git(clone, "rev-parse", "origin/main").strip() == new
+
+
+async def test_first_fetch_uses_the_local_branch_as_what_it_has(tmp_path: Path, local_remotes, monkeypatch):
+    remote, clone = make_clone(tmp_path)
+    push_from_elsewhere(tmp_path, remote)
+    git(clone, "update-ref", "-d", "refs/remotes/origin/main")
+    head = git(clone, "rev-parse", "HEAD").strip()
+    trace = tmp_path / "packets.txt"
+    monkeypatch.setitem(gitinfo.FETCH_ENV, "GIT_TRACE_PACKET", str(trace))
+    await gitinfo.fetch_upstream(clone)
+    assert f"have {head}" in trace.read_text()
+    assert (await gitinfo.repo_status(clone)).behind == 1
+
+
+async def test_linked_worktree(tmp_path: Path, local_remotes):
+    remote, clone = make_clone(tmp_path)
+    tree = tmp_path / "tree"
+    git(clone, "worktree", "add", "-q", "-b", "trabalho", str(tree), "origin/main")
+    assert git(tree, "config", "branch.trabalho.remote").strip() == "origin"
+    push_from_elsewhere(tmp_path, remote)
+    assert await gitinfo.fetch_upstream(tree) is True
+    assert (await gitinfo.repo_status(tree)).behind == 1
+    assert git(clone, "rev-parse", "origin/main").strip() == git(tree, "rev-parse", "origin/main").strip()
+
+
+async def test_sha256_repository(tmp_path: Path, local_remotes):
+    remote = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "--object-format=sha256", "-b", "main", str(remote)],
+        check=True, env=GIT_ENV,
+    )
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "init", "-q", "--object-format=sha256", "-b", "main", str(clone)],
+        check=True, env=GIT_ENV,
+    )
+    commit_file(clone, "a.txt")
+    git(clone, "remote", "add", "origin", str(remote))
+    git(clone, "push", "-q", "-u", "origin", "main")
+    other = tmp_path / "other"
+    clone_to(remote, other)
+    commit_file(other, "b.txt")
+    git(other, "push", "-q")
+    assert await gitinfo.fetch_upstream(clone) is True
+    assert (await gitinfo.repo_status(clone)).behind == 1
+
+
+async def test_a_concurrent_update_of_the_ref_is_not_overwritten(tmp_path: Path, local_remotes, monkeypatch):
+    remote, clone = make_clone(tmp_path)
+    other = push_from_elsewhere(tmp_path, remote)
+    commit_file(other, "segundo.txt")
+    git(other, "push", "-q")
+    middle = git(other, "rev-parse", "HEAD~1").strip()
+    real = gitinfo.run_git
+
+    async def racing(repo, *args, **kwargs):
+        result = await real(repo, *args, **kwargs)
+        if args[0] == "fetch":
+            # Meanwhile the user's own `git fetch` brings the ref to another commit.
+            git(clone, "fetch", "-q", "origin")
+            git(clone, "update-ref", "refs/remotes/origin/main", middle)
+        return result
+
+    monkeypatch.setattr(gitinfo, "run_git", racing)
+    assert await gitinfo.fetch_upstream(clone) is True
+    assert git(clone, "rev-parse", "origin/main").strip() == middle
+
+
+async def test_the_ref_is_created_when_it_did_not_exist(tmp_path: Path, local_remotes):
+    remote, clone = make_clone(tmp_path)
+    push_from_elsewhere(tmp_path, remote)
+    git(clone, "update-ref", "-d", "refs/remotes/origin/main")
+    assert await gitinfo.fetch_upstream(clone) is True
+    assert git(clone, "rev-parse", "origin/main").strip() == git(remote, "rev-parse", "main").strip()
+
+
+async def test_a_failure_of_the_ref_update_is_reported(tmp_path: Path, local_remotes, monkeypatch):
+    remote, clone = make_clone(tmp_path)
+    push_from_elsewhere(tmp_path, remote)
+    lock = clone / ".git" / "refs" / "remotes" / "origin" / "main.lock"
+    real = gitinfo.run_git
+
+    async def locking(repo, *args, **kwargs):
+        if args[0] == "update-ref" and repo == clone:
+            lock.write_text("")
+        return await real(repo, *args, **kwargs)
+
+    monkeypatch.setattr(gitinfo, "run_git", locking)
+    with pytest.raises(gitinfo.GitError):
+        await gitinfo.fetch_upstream(clone)
+
+
+# The throwaway repository is always removed ---------------------------------------------------
+
+
+@pytest.fixture
+def scratch(tmp_path: Path, monkeypatch) -> Path:
+    folder = tmp_path / "scratch"
+    folder.mkdir()
+    monkeypatch.setattr(gitinfo, "FETCH_SCRATCH_ROOT", folder)
+    return folder
+
+
+async def test_scratch_is_removed_after_success(tmp_path: Path, local_remotes, scratch):
+    remote, clone = make_clone(tmp_path)
+    push_from_elsewhere(tmp_path, remote)
+    assert await gitinfo.fetch_upstream(clone) is True
+    assert list(scratch.iterdir()) == []
+
+
+async def test_scratch_is_removed_after_a_failure(tmp_path: Path, local_remotes, scratch):
+    _, clone = make_clone(tmp_path)
+    git(clone, "remote", "set-url", "origin", str(tmp_path / "nao-existe.git"))
+    with pytest.raises(gitinfo.GitError):
+        await gitinfo.fetch_upstream(clone)
+    assert list(scratch.iterdir()) == []
+
+
+async def test_scratch_is_not_made_when_nothing_is_checked(tmp_path: Path, scratch):
+    _, clone = make_clone(tmp_path)
+    with pytest.raises(gitinfo.GitError):
+        await gitinfo.fetch_upstream(clone)  # local path: refused before any work
+    assert list(scratch.iterdir()) == []
+
+
+async def test_scratch_is_removed_after_a_timeout(tmp_path: Path, local_remotes, monkeypatch, scratch):
+    _, clone = make_clone(tmp_path)
+    git(clone, "remote", "set-url", "origin", "ssh://127.0.0.1:1/repo.git")
+    hanging_ssh(tmp_path, monkeypatch)
+    with pytest.raises(gitinfo.GitError):
+        await gitinfo.fetch_upstream(clone, timeout=1.5)
+    assert list(scratch.iterdir()) == []
+
+
+async def test_scratch_is_removed_after_a_cancellation(tmp_path: Path, local_remotes, monkeypatch, scratch):
+    _, clone = make_clone(tmp_path)
+    git(clone, "remote", "set-url", "origin", "ssh://127.0.0.1:1/repo.git")
+    pid_file = hanging_ssh(tmp_path, monkeypatch)
+    task = asyncio.create_task(gitinfo.fetch_upstream(clone, timeout=30))
+    for _ in range(100):
+        if pid_file.exists() and pid_file.read_text().strip():
+            break
+        await asyncio.sleep(0.05)
+    assert list(scratch.iterdir()), "the fetch was running in a scratch repository"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert list(scratch.iterdir()) == []

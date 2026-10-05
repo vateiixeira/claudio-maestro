@@ -10,7 +10,9 @@ import contextvars
 import logging
 import os
 import re
+import shutil
 import signal
+import tempfile
 import time
 import weakref
 from collections.abc import Awaitable, Callable
@@ -765,40 +767,62 @@ async def project_details_scan(
 
 
 # Fetching the upstream ------------------------------------------------------------
+#
+# The fetch never reads the repository's own config. A repository under the home folder
+# is untrusted input, and git has dozens of keys that run a program or read and write a
+# file during a fetch (`http.<url>.cookieFile`, `core.alternateRefsCommand`, ...), some of
+# which a command-line override cannot beat (a URL-scoped key is more specific). Blocking
+# them one by one cannot be complete, so instead:
+#
+# 1. The repository is only *read* (`config --get`, `for-each-ref`, `rev-parse`) for what
+#    the fetch needs: the upstream, the remote's URL, the object directory and format.
+# 2. The fetch runs in a throwaway bare repository with default config (`GIT_DIR`), sharing
+#    the real repository's object directory (`GIT_OBJECT_DIRECTORY`), with the URL given
+#    explicitly. The user's own system and global git config still apply (their
+#    `insteadOf`, `http.*`, credential helpers): it is theirs.
+# 3. The remote-tracking ref is then moved in the real repository with `update-ref`,
+#    compare-and-swap, so a concurrent update is never overwritten.
+#
+# The protections below stay on top as defence in depth.
 
 FETCH_TIMEOUT = 30.0
 # Only these transports may run during a fetch. Everything else (`ext::`, remote
-# helpers such as `remote.<n>.vcs` or `foo::url`, `git://`, plain `http://`, `file://`,
-# local paths) is refused, so a repository's config cannot make git run a program or
-# reach a service the user did not expect. Two layers: `GIT_ALLOW_PROTOCOL` overrides
-# every `protocol.<name>.allow` in the config (the repository could otherwise turn one
-# on for itself), and the config entries keep it shut for helpers that ignore it.
-# Tests add "file".
+# helpers such as `foo::url`, `git://`, plain `http://`, `file://`, local paths) is
+# refused, both here (`_check_fetch_url`) and by git (`GIT_ALLOW_PROTOCOL`, which beats
+# any `protocol.<name>.allow`, plus the config entries). Tests add "file".
 FETCH_ALLOWED_PROTOCOLS: tuple[str, ...] = ("https", "ssh")
-# Never prompt and never run a program named by the repository. An empty
-# `credential.helper` clears every helper listed before it; the user's own are added
-# back after it (see `_user_credential_config`).
+# Never prompt for a password and never fetch more than the one branch.
 FETCH_CONFIG: tuple[tuple[str, str], ...] = (
-    ("credential.helper", ""),
     ("core.askPass", ""),
     ("fetch.recurseSubmodules", "false"),
     ("submodule.recurse", "false"),
     ("gc.auto", "0"),
     ("maintenance.auto", "false"),
     ("fetch.writeCommitGraph", "false"),
-    # Bundle URIs make git download, or for file:// read, a file named by the repository.
+    # Bundle URIs make git download, or for file:// read, a file named by the config.
     ("fetch.bundleURI", ""),
     ("transfer.bundleURI", "false"),
-    # Otherwise the repository picks how git builds the ssh command line.
     ("ssh.variant", "ssh"),
 )
-# `GIT_SSH_COMMAND` wins over `core.sshCommand` in the repository's config.
+# `GIT_SSH_COMMAND` wins over any `core.sshCommand`.
 FETCH_ENV: dict[str, str | None] = {
     "GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o ConnectTimeout=10",
     "SSH_ASKPASS_REQUIRE": "never",
     "SSH_ASKPASS": None,
     "GIT_ASKPASS": None,
 }
+# Where the throwaway repositories are made; None is the system temporary folder.
+FETCH_SCRATCH_ROOT: Path | None = None
+# Ref, in the throwaway repository, that tells the server what the local branch has.
+_HAVE_REF = "refs/maestro/have"
+
+PARTIAL_CLONE_MESSAGE = "Clone parcial: a verificação automática não suporta."
+SHALLOW_MESSAGE = "Repositório raso (shallow): a verificação automática não suporta."
+URL_MESSAGE = "O remoto usa um endereço que a verificação automática não aceita (só https e ssh)."
+INVALID_REF_MESSAGE = "A branch de acompanhamento tem um nome de referência inválido."
+
+_URL_CREDENTIALS = re.compile(r"(?<=://)[^/\s@]*@")
+_URL_SCHEME = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*)://")
 
 
 def _fetch_protocol_settings() -> tuple[list[tuple[str, str]], dict[str, str | None]]:
@@ -807,32 +831,29 @@ def _fetch_protocol_settings() -> tuple[list[tuple[str, str]], dict[str, str | N
     return config, {"GIT_ALLOW_PROTOCOL": ":".join(allowed)}
 
 
-_URL_CREDENTIALS = re.compile(r"(?<=://)[^/\s@]*@")
+def _check_fetch_url(url: str) -> None:
+    """Raise GitError unless `url` uses one of `FETCH_ALLOWED_PROTOCOLS`.
 
-
-async def _user_credential_config(repo: Path) -> list[tuple[str, str]]:
-    """The `credential.*helper` entries of the user's system and global git config.
-
-    Those are how an https login works (`gh auth setup-git`, the OS keychain...), and
-    the user owns them, unlike the repository's. They go after the empty
-    `credential.helper` that clears the rest.
+    Classified like git does: `scheme://...`, scp-like `host:path` (ssh) or a local path
+    (file). `name::url` remote helpers, option-like values and control characters never pass.
     """
-    entries: list[tuple[str, str]] = []
-    for scope in ("--system", "--global"):
-        try:
-            code, out, _ = await run_git(
-                repo, "config", scope, "--includes", "-z", "--get-regexp",
-                r"^credential\.(.*\.)?helper$",
-            )
-        except GitError:
-            continue
-        if code != 0:
-            continue
-        for item in out.split("\0"):
-            key, _, value = item.partition("\n")
-            if key:
-                entries.append((key, value))
-    return entries
+    allowed = FETCH_ALLOWED_PROTOCOLS
+    if not url or url.startswith("-") or "::" in url or _has_control(url) or " " in url:
+        raise GitError(URL_MESSAGE)
+    match = _URL_SCHEME.match(url)
+    if match:
+        scheme = match.group(1).lower()
+        host = url[match.end():].split("/", 1)[0].rsplit("@", 1)[-1]
+        if scheme not in allowed or host.startswith("-"):
+            raise GitError(URL_MESSAGE)
+        return
+    colon, slash = url.find(":"), url.find("/")
+    if colon > 0 and (slash == -1 or colon < slash):  # scp-like `[user@]host:path`
+        if "ssh" not in allowed:
+            raise GitError(URL_MESSAGE)
+        return
+    if "file" not in allowed:
+        raise GitError(URL_MESSAGE)
 
 
 def _fetch_failure(stderr: str) -> str:
@@ -847,27 +868,33 @@ async def fetch_upstream(repo: Path, *, timeout: float = FETCH_TIMEOUT) -> bool:
 
     Returns False when there is nothing to fetch (detached HEAD, no upstream, or an
     upstream that is a local branch) and True after a successful fetch. Raises GitError
-    with a one-line message on failure. Nothing is prompted and no program named by the
-    repository's config runs; see `FETCH_ALLOWED_PROTOCOLS`, `FETCH_CONFIG` and `FETCH_ENV`.
-    Only that one branch is fetched: no tags, submodules, `FETCH_HEAD` or other refs.
+    with a one-line message on failure, and for repositories it cannot check (shallow,
+    partial clone, a remote that is not https or ssh). Only that one branch is fetched:
+    no tags, submodules, `FETCH_HEAD` or other refs. See the notes above for why the
+    repository's own config is never read by the fetch.
     """
     return await _within(timeout, _fetch_upstream(repo, timeout))
 
 
+async def _read(repo: Path, *args: str, env: dict[str, str | None] | None = None) -> str | None:
+    """Stdout of a read-only git command, None when it fails."""
+    code, out, _ = await run_git(repo, *args, env=env)
+    return out.strip() if code == 0 else None
+
+
 async def _fetch_upstream(repo: Path, timeout: float) -> bool:
-    code, out, _ = await run_git(repo, "symbolic-ref", "-q", "HEAD")
-    if code != 0:
+    head_ref = await _read(repo, "symbolic-ref", "-q", "HEAD")
+    if head_ref is None:
         return False
-    code, out, _ = await run_git(
-        repo, "for-each-ref", "--format=%(upstream)%00%(upstream:remotename)%00%(upstream:remoteref)",
-        out.strip(),
+    listed = await _read(
+        repo, "for-each-ref",
+        "--format=%(upstream)%00%(upstream:remotename)%00%(upstream:remoteref)%00%(objectname)",
+        head_ref,
     )
-    if code != 0:
+    parts = (listed or "").split("\0")
+    if len(parts) != 4:
         return False
-    parts = out.rstrip("\n").split("\0")
-    if len(parts) != 3:
-        return False
-    tracking, remote, merge = parts
+    tracking, remote, merge, head_sha = parts
     if (
         not tracking.startswith("refs/remotes/")
         or not merge.startswith("refs/")
@@ -875,15 +902,87 @@ async def _fetch_upstream(repo: Path, timeout: float) -> bool:
         or remote.startswith("-")
     ):
         return False
-    protocols, protocol_env = _fetch_protocol_settings()
-    config = [*protocols, *FETCH_CONFIG, *await _user_credential_config(repo)]
+    for ref in (tracking, merge):
+        if await _read(repo, "check-ref-format", ref) is None:
+            raise GitError(INVALID_REF_MESSAGE)
+    if await _read(repo, "rev-parse", "--is-shallow-repository") == "true":
+        raise GitError(SHALLOW_MESSAGE)
+    if (
+        await _read(repo, "config", "--get", "extensions.partialclone") is not None
+        or await _read(repo, "config", "--bool", "--get", f"remote.{remote}.promisor") == "true"
+    ):
+        raise GitError(PARTIAL_CLONE_MESSAGE)
+    urls = await _read(repo, "config", "--get-all", f"remote.{remote}.url")
+    if not urls:
+        return False
+    url = urls.splitlines()[0]  # a fetch uses the first one
+    _check_fetch_url(url)
+    objects = await _read(repo, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+    object_format = await _read(repo, "rev-parse", "--show-object-format")
+    if not objects or object_format not in ("sha1", "sha256"):
+        raise GitError("Não foi possível ler o formato dos objetos do repositório.")
+    old = await _read(repo, "rev-parse", "--verify", "-q", tracking)
+
+    scratch = Path(tempfile.mkdtemp(prefix="maestro-fetch-", dir=FETCH_SCRATCH_ROOT))
+    try:
+        new = await _fetch_in_scratch(
+            scratch, url, merge, tracking, objects, object_format, old, head_sha, timeout
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    await _move_tracking_ref(repo, tracking, old, new)
+    return True
+
+
+async def _fetch_in_scratch(
+    scratch: Path, url: str, merge: str, tracking: str, objects: str, object_format: str,
+    old: str | None, head_sha: str, timeout: float,
+) -> str:
+    """Fetch `merge` from `url` in the throwaway repository; return the new tip."""
     code, _, err = await run_git(
-        repo, "fetch", "--quiet", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
-        # `remote.<name>.uploadpack` would name the program run on the other end.
-        "--no-prune", "--upload-pack=git-upload-pack",
-        "--", remote, f"+{merge}:{tracking}",
-        timeout=timeout, config=config, env={**FETCH_ENV, **protocol_env}, own_group=True,
+        scratch, "init", "-q", "--bare", "--template=", f"--object-format={object_format}"
+    )
+    if code != 0:
+        raise GitError(_failure(err))
+    protocols, protocol_env = _fetch_protocol_settings()
+    env = {
+        **FETCH_ENV, **protocol_env, "GIT_DIR": str(scratch), "GIT_OBJECT_DIRECTORY": objects,
+    }
+    # What the repository already has, so the server sends only what is new. The objects
+    # are there through the shared object directory.
+    for ref, sha in ((tracking, old), (_HAVE_REF, head_sha)):
+        if sha:
+            code, _, err = await run_git(scratch, "update-ref", ref, sha, env=env)
+            if code != 0:
+                raise GitError(_failure(err))
+    code, _, err = await run_git(
+        scratch, "fetch", "--quiet", "--no-tags", "--no-recurse-submodules",
+        "--no-write-fetch-head", "--no-prune",
+        # Not needed (the throwaway config has no `remote.<name>.uploadpack`), but cheap.
+        "--upload-pack=git-upload-pack",
+        "--", url, f"+{merge}:{tracking}",
+        timeout=timeout, config=[*protocols, *FETCH_CONFIG], env=env, own_group=True,
     )
     if code != 0:
         raise GitError(_fetch_failure(err))
-    return True
+    new = await _read(scratch, "rev-parse", "--verify", "-q", tracking, env=env)
+    if not new:
+        raise GitError("O remoto não devolveu a branch esperada.")
+    return new
+
+
+async def _move_tracking_ref(repo: Path, tracking: str, old: str | None, new: str) -> None:
+    """Point the real repository's remote-tracking ref at `new`, unless it moved meanwhile.
+
+    The expected old value makes this a compare-and-swap: when something else (the user's
+    own `git fetch`, another pass) updated the ref since it was read, that newer value stays.
+    """
+    if old == new:
+        return
+    code, _, err = await run_git(repo, "update-ref", tracking, new, old or "")
+    if code == 0:
+        return
+    current = await _read(repo, "rev-parse", "--verify", "-q", tracking)
+    if current != old and current is not None:
+        return  # someone else got there first
+    raise GitError(_failure(err))
