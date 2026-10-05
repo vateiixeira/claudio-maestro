@@ -101,6 +101,22 @@ def no_real_usage_check(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_usage_background_check(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests that build `Settings(...)` by hand do not pass `usage_check=False`, so the
+    periodic check and the end-of-turn refresh would run, log an error and publish
+    `app.usage` on the socket, which makes other tests flaky. Only the usage tests
+    keep the real scheduling."""
+    if request.node.path.name in ("test_usage.py", "test_usage_api.py"):
+        return
+
+    async def no_periodic(self, initial_delay, interval):
+        return None
+
+    monkeypatch.setattr("claudio_maestro.usage.UsageChecker.run_periodic", no_periodic)
+    monkeypatch.setattr("claudio_maestro.usage.UsageChecker.wants_refresh", lambda self: False)
+
+
+@pytest.fixture(autouse=True)
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point home and data dirs to temporary folders in every test."""
     home = tmp_path / "home"
