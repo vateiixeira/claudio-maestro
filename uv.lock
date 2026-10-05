@@ -148,7 +148,7 @@ wheels = [
 
 [[package]]
 name = "claudio-maestro"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },

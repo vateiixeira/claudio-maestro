@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.4.0] - 2026-10-05
+
+O menu lateral passa a mostrar o plano da assinatura e quanto já foi usado da sessão e da semana, com o horário em que cada limite renova, sem precisar abrir o CLI.
+
 ### Adicionado
 
 - O rodapé do menu lateral mostra o plano e o consumo da assinatura, como o `/usage` do CLI: o plano (por exemplo, Max 20x), a sessão (5 horas) e a semana, com o percentual usado e o horário em que cada limite renova. A cor muda quando o limite se aproxima, e o consumo por modelo aparece ao passar o mouse sobre a linha Semana. `MAESTRO_USAGE_CHECK=0` desliga a consulta.
