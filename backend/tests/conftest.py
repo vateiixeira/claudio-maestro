@@ -91,6 +91,16 @@ def no_real_update_check(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_usage_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The usage check never reaches api.anthropic.com in tests."""
+
+    def no_network(*args, **kwargs):
+        raise RuntimeError("Os testes não podem consultar o uso da assinatura.")
+
+    monkeypatch.setattr("claudio_maestro.usage._get_usage", no_network)
+
+
+@pytest.fixture(autouse=True)
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point home and data dirs to temporary folders in every test."""
     home = tmp_path / "home"
@@ -106,6 +116,8 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MAESTRO_AGENTD", "0")
     # The update check never runs by default in tests (no request to GitHub).
     monkeypatch.setenv("MAESTRO_UPDATE_CHECK", "0")
+    # The usage check never runs by default in tests (no request to Anthropic).
+    monkeypatch.setenv("MAESTRO_USAGE_CHECK", "0")
     # The CLI history watcher never looks at the real ~/.claude.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
 
