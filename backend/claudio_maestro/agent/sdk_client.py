@@ -84,6 +84,9 @@ def build_sdk_options(
         "can_use_tool": options.can_use_tool,
         # Messages with several images exceed the SDK's 1 MB default for one JSON line.
         "max_buffer_size": 64 * 1024 * 1024,
+        # Lets set_permission_mode switch to bypassPermissions later; it does not enable it.
+        # The app still asks for a confirmation per session before switching.
+        "extra_args": {"allow-dangerously-skip-permissions": None},
     }
     if stderr is not None:
         kwargs["stderr"] = stderr

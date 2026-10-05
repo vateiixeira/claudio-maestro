@@ -8,6 +8,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - O app confere de tempos em tempos (a cada 5 minutos, com o app aberto) se a branch atual tem commits novos no remoto. Uma seta laranja ao lado da branch no menu lateral, uma etiqueta "↓ 3 para baixar" no cabeçalho da conversa e a linha Branch do painel Detalhes avisam o que falta baixar, com "Verificar agora" para conferir na hora. O app só avisa: o pull continua com você.
 
+### Corrigido
+
+- Trocar uma conversa em andamento para o modo sem perguntas não falha mais com "Cannot set permission mode to bypassPermissions".
+
 ## [0.2.0] - 2026-10-05
 
 Versão de uso diário: sessões que sobrevivem ao reinício do backend, marcações de sessão, verificação de fechamento, notificações e uma conversa redesenhada, mais compacta e com cara de mensageiro. A partir dela, o app avisa no menu lateral quando sai uma versão nova.
