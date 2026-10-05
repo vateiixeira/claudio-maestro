@@ -47,6 +47,11 @@ describe('medidor de consumo', () => {
     expect(mountWith(snapshot({ enabled: false, limits: [] })).find('[data-test="usage-meter"]').exists()).toBe(false)
   })
 
+  it('o snapshot inicial, antes da primeira consulta, não mostra faixa vazia', () => {
+    const initial = snapshot({ limits: [], plan: null, fetched_at: null, error: null })
+    expect(mountWith(initial).find('[data-test="usage-meter"]').exists()).toBe(false)
+  })
+
   it('mostra sessão e semana com percentual, renovação e cor', () => {
     const wrapper = mountWith(snapshot())
     const session = wrapper.get('[data-test="usage-session"]')

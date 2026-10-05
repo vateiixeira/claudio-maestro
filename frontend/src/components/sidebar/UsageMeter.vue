@@ -8,9 +8,10 @@ import { formatReset, resetPhrase, severityClass } from './usageFormat'
 const usage = useUsageStore()
 const now = useMinuteClock()
 
-const visible = computed(() => !!usage.snapshot?.enabled)
 const error = computed(() => usage.snapshot?.error ?? null)
 const rows = computed(() => [usage.session, usage.weekly].filter((l): l is UsageLimit => l !== null))
+// Before the first check the backend sends an empty snapshot: no frame until there is something to show.
+const visible = computed(() => !!usage.snapshot?.enabled && (rows.value.length > 0 || !!error.value || !!usage.snapshot?.plan))
 const scopedLines = computed(() => usage.scoped.map((l) => `${l.label.replace(/^Semana · /, '')}: ${l.percent}%`))
 
 function reset(limit: UsageLimit): string {
