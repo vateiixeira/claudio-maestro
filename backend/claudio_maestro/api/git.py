@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from claudio_maestro import gitinfo, projects, sessions
+from claudio_maestro import gitinfo, gitmonitor, projects, sessions
 from claudio_maestro.api.deps import DbDep
 from claudio_maestro.security import PathNotAllowedError, resolve_within
 
@@ -33,6 +33,23 @@ async def project_git(project_id: int, conn: DbDep) -> dict[str, Any]:
     project = _project(conn, project_id)
     if not project.available:
         return {"repos": [], "limit_reached": False}
+    repos, limit_reached = await gitinfo.project_repos_scan(Path(project.path))
+    return {"repos": [repo.to_dict() for repo in repos], "limit_reached": limit_reached}
+
+
+@router.post("/projects/{project_id}/git/fetch")
+async def project_git_fetch(project_id: int, request: Request, conn: DbDep) -> dict[str, Any]:
+    """Check now: fetch the upstream of every repository, then answer like GET /git.
+
+    Ignores the interval and the wait after failures. A repository that fails shows up
+    with `fetch_error`; the request itself still succeeds.
+    """
+    project = _project(conn, project_id)
+    if not project.available:
+        return {"repos": [], "limit_reached": False}
+    await request.app.state.git_monitor.fetch_project(
+        project_id, limit=gitmonitor.MANUAL_FETCH_LIMIT_SECONDS
+    )
     repos, limit_reached = await gitinfo.project_repos_scan(Path(project.path))
     return {"repos": [repo.to_dict() for repo in repos], "limit_reached": limit_reached}
 

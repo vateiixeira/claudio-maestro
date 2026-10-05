@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from claudio_maestro import db, history
+from claudio_maestro import db, gitinfo, history
 from claudio_maestro.activity import ActivityReader, SessionFile
 from claudio_maestro.agent.agentd_client import AgentdClient
 from claudio_maestro.agent.base import AgentFactory
@@ -74,6 +74,7 @@ def create_app(
     frontend_dir: Path | None = None,
     agentd: bool | None = None,
     fetch_release: FetchRelease | None = None,
+    git_fetch: gitinfo.FetchUpstream | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -89,6 +90,7 @@ def create_app(
     `agentd`: keep sessions across restarts. None turns it on only with the real agent and
     when `MAESTRO_AGENTD` is not `0`.
     `fetch_release` replaces the GitHub read of the latest release (tests pass fakes).
+    `git_fetch` replaces `gitinfo.fetch_upstream`, the one thing that reaches a git remote.
     """
 
     @asynccontextmanager
@@ -101,7 +103,9 @@ def create_app(
         app.state.pick_folder = pick_folder or system_pick_folder
         # Only one system folder picker open at a time.
         app.state.pick_lock = asyncio.Lock()
-        app.state.git_monitor = GitMonitor(app.state.settings.db_path, app.state.hub)
+        app.state.git_monitor = GitMonitor(
+            app.state.settings.db_path, app.state.hub, fetch=git_fetch
+        )
         app.state.updates = UpdateChecker(
             app.state.hub.publish,
             enabled=app.state.settings.update_check,
@@ -181,6 +185,11 @@ def create_app(
                 app.state.updates.run_periodic(
                     app.state.settings.update_check_delay_seconds,
                     app.state.settings.update_check_interval_seconds,
+                )
+            ),
+            asyncio.create_task(
+                app.state.git_monitor.run_fetch_periodic(
+                    app.state.settings.git_fetch_interval_seconds
                 )
             ),
             asyncio.create_task(app.state.digest.run()),

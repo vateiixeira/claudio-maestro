@@ -127,3 +127,11 @@ def client():
         create_app(), base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}
     ) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def fresh_fetch_registry() -> None:
+    """What the app remembers about `git fetch` never leaks from one test to the next."""
+    from claudio_maestro import gitfetch
+
+    gitfetch.registry.reset()

@@ -101,7 +101,7 @@ async def test_uses_list_args_and_no_locks(tmp_path: Path, monkeypatch):
     await gitinfo.repo_status(repo)
     lookup, line = log.read_text().splitlines()[:2]
     assert "-C " + str(repo) + " config -z --name-only --get-regexp" in lookup
-    assert line.startswith("0 9 core.fsmonitor -C ")
+    assert line.startswith("0 10 core.fsmonitor -C ")
     assert "-C " + str(repo) + " status" in line
     assert "status --ignore-submodules=dirty --porcelain=v2 --branch" in line
 

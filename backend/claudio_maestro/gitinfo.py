@@ -9,13 +9,17 @@ import asyncio
 import contextvars
 import logging
 import os
+import re
+import signal
 import time
 import weakref
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from claudio_maestro.gitfetch import registry as fetch_registry
 from claudio_maestro.history import REPO_MAX_COUNT, scan_repositories
 from claudio_maestro.worktree import (
     LinkedWorktree,
@@ -95,6 +99,11 @@ class RepoStatus:
     ahead: int | None = None
     behind: int | None = None
     error: str | None = None
+    # Last `git fetch` of the upstream (see `gitfetch`): epoch of the last success,
+    # the last failure (one line) and whether one is running now.
+    fetched_at: float | None = None
+    fetch_error: str | None = None
+    fetching: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -117,6 +126,11 @@ SAFE_CONFIG: tuple[tuple[str, str], ...] = (
     ("core.hooksPath", "/dev/null"),
     ("diff.external", ""),
     ("core.untrackedCache", "false"),
+    # Run by fetch and push while negotiating, for each alternate object store. An empty
+    # command makes git exec nothing (`sh` is not even started) and list no refs. This relies on
+    # git failing to exec an empty name, not on a documented switch; test_alternate_refs_command_is_not_run
+    # guards it.
+    ("core.alternateRefsCommand", ""),
     ("filter.lfs.process", ""),
     ("filter.lfs.clean", ""),
     ("filter.lfs.smudge", ""),
@@ -159,7 +173,10 @@ async def _disabled_filters(repo: Path, timeout: float) -> list[tuple[str, str]]
     return entries
 
 
-def _env(extra_config: list[tuple[str, str]] | None = None) -> dict[str, str]:
+def _env(
+    extra_config: list[tuple[str, str]] | None = None,
+    extra_env: dict[str, str | None] | None = None,
+) -> dict[str, str]:
     env = {
         key: value for key, value in os.environ.items()
         if not key.startswith("GIT_")
@@ -174,19 +191,33 @@ def _env(extra_config: list[tuple[str, str]] | None = None) -> dict[str, str]:
     for index, (key, value) in enumerate(config):
         env[f"GIT_CONFIG_KEY_{index}"] = key
         env[f"GIT_CONFIG_VALUE_{index}"] = value
+    for key, value in (extra_env or {}).items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
     return env
 
 
 async def run_git(
-    repo: Path, *args: str, timeout: float = GIT_TIMEOUT, limit: int | None = None
+    repo: Path,
+    *args: str,
+    timeout: float = GIT_TIMEOUT,
+    limit: int | None = None,
+    config: list[tuple[str, str]] | None = None,
+    env: dict[str, str | None] | None = None,
+    own_group: bool = False,
 ) -> tuple[int, str, str]:
     """Run git in `repo` with every configured program disabled.
 
-    Raises GitError when it cannot start, times out, or the repository defines
-    a filter whose name cannot be neutralised.
+    `config` adds config entries and `env` sets environment variables (None removes
+    one); both win over the repository's own config. Raises GitError when it cannot
+    start, times out, or the repository defines a filter whose name cannot be
+    neutralised. With `own_group` git starts its own process group, and a timeout or
+    cancellation kills the whole group (ssh, remote helpers), not just git.
     """
     filters = await _disabled_filters(repo, timeout)
-    return await _exec(repo, args, timeout, filters, limit)
+    return await _exec(repo, args, timeout, [*filters, *(config or [])], limit, env, own_group)
 
 
 async def _within(timeout: float, operation):
@@ -205,16 +236,20 @@ async def _exec(
     timeout: float,
     extra_config: list[tuple[str, str]] | None = None,
     limit: int | None = None,
+    extra_env: dict[str, str | None] | None = None,
+    own_group: bool = False,
 ) -> tuple[int, str, str]:
     async with _slots():
         budget = _budget.get()
         if budget is None:
-            return await _exec_now(repo, args, timeout, extra_config, limit)
+            return await _exec_now(repo, args, timeout, extra_config, limit, extra_env, own_group)
         if budget.left <= 0:
             raise GitError(f"O git passou do tempo limite de {budget.total:g} s.")
         started = time.monotonic()
         try:
-            return await _exec_now(repo, args, min(timeout, budget.left), extra_config, limit)
+            return await _exec_now(
+                repo, args, min(timeout, budget.left), extra_config, limit, extra_env, own_group
+            )
         except GitError as exc:
             if budget.left - (time.monotonic() - started) <= 0:
                 raise GitError(f"O git passou do tempo limite de {budget.total:g} s.") from exc
@@ -240,6 +275,8 @@ async def _exec_now(
     timeout: float,
     extra_config: list[tuple[str, str]] | None,
     limit: int | None,
+    extra_env: dict[str, str | None] | None = None,
+    own_group: bool = False,
 ) -> tuple[int, str, str]:
     try:
         process = await asyncio.create_subprocess_exec(
@@ -247,7 +284,8 @@ async def _exec_now(
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=_env(extra_config),
+            env=_env(extra_config, extra_env),
+            start_new_session=own_group,
         )
     except OSError as exc:
         raise GitError(f"Não foi possível executar o git: {exc}") from exc
@@ -265,8 +303,11 @@ async def _exec_now(
                 timeout,
             )
     except (TimeoutError, asyncio.CancelledError) as exc:
-        with suppress(ProcessLookupError):
-            process.kill()
+        with suppress(ProcessLookupError, PermissionError):
+            if own_group:
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
         with suppress(Exception):
             await asyncio.shield(process.wait())
         if isinstance(exc, asyncio.CancelledError):
@@ -332,6 +373,7 @@ async def repo_status(
 ) -> RepoStatus:
     """Branch and change counts. `rel_path` is relative to `root` ("." for itself)."""
     status = RepoStatus(path=str(repo), rel_path=_rel_path(repo, root or repo))
+    fetch_registry.fill(status)
     try:
         code, out, err = await _within(timeout, run_git(
             repo, "status", STATUS_SUBMODULES, "--porcelain=v2", "--branch", timeout=timeout
@@ -686,6 +728,7 @@ async def repo_details(
     """
     root = root or repo
     status = RepoStatus(path=str(repo), rel_path=str(repo))
+    fetch_registry.fill(status)
     try:
         status.rel_path = _rel_path(repo, root)
         files, truncated = await _within(timeout, _repo_files(repo, timeout, status))
@@ -697,6 +740,7 @@ async def repo_details(
     except Exception:
         logger.exception("Falha inesperada ao ler os detalhes de %s", repo)
         fresh = RepoStatus(path=str(repo), rel_path=status.rel_path)
+        fetch_registry.fill(fresh)
         return _detail(fresh, error="Falha ao ler o repositório.")
     return _detail(status, files=files, truncated=truncated, commits=commits)
 
@@ -718,3 +762,128 @@ async def project_details_scan(
     paths, limit_reached = await asyncio.to_thread(discover_scan, root)
     repos = await asyncio.gather(*(repo_details(path, root, timeout=timeout) for path in paths))
     return list(repos), limit_reached
+
+
+# Fetching the upstream ------------------------------------------------------------
+
+FETCH_TIMEOUT = 30.0
+# Only these transports may run during a fetch. Everything else (`ext::`, remote
+# helpers such as `remote.<n>.vcs` or `foo::url`, `git://`, plain `http://`, `file://`,
+# local paths) is refused, so a repository's config cannot make git run a program or
+# reach a service the user did not expect. Two layers: `GIT_ALLOW_PROTOCOL` overrides
+# every `protocol.<name>.allow` in the config (the repository could otherwise turn one
+# on for itself), and the config entries keep it shut for helpers that ignore it.
+# Tests add "file".
+FETCH_ALLOWED_PROTOCOLS: tuple[str, ...] = ("https", "ssh")
+# Never prompt and never run a program named by the repository. An empty
+# `credential.helper` clears every helper listed before it; the user's own are added
+# back after it (see `_user_credential_config`).
+FETCH_CONFIG: tuple[tuple[str, str], ...] = (
+    ("credential.helper", ""),
+    ("core.askPass", ""),
+    ("fetch.recurseSubmodules", "false"),
+    ("submodule.recurse", "false"),
+    ("gc.auto", "0"),
+    ("maintenance.auto", "false"),
+    ("fetch.writeCommitGraph", "false"),
+    # Bundle URIs make git download, or for file:// read, a file named by the repository.
+    ("fetch.bundleURI", ""),
+    ("transfer.bundleURI", "false"),
+    # Otherwise the repository picks how git builds the ssh command line.
+    ("ssh.variant", "ssh"),
+)
+# `GIT_SSH_COMMAND` wins over `core.sshCommand` in the repository's config.
+FETCH_ENV: dict[str, str | None] = {
+    "GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o ConnectTimeout=10",
+    "SSH_ASKPASS_REQUIRE": "never",
+    "SSH_ASKPASS": None,
+    "GIT_ASKPASS": None,
+}
+
+
+def _fetch_protocol_settings() -> tuple[list[tuple[str, str]], dict[str, str | None]]:
+    allowed = FETCH_ALLOWED_PROTOCOLS
+    config = [("protocol.allow", "never"), *((f"protocol.{name}.allow", "always") for name in allowed)]
+    return config, {"GIT_ALLOW_PROTOCOL": ":".join(allowed)}
+
+
+_URL_CREDENTIALS = re.compile(r"(?<=://)[^/\s@]*@")
+
+
+async def _user_credential_config(repo: Path) -> list[tuple[str, str]]:
+    """The `credential.*helper` entries of the user's system and global git config.
+
+    Those are how an https login works (`gh auth setup-git`, the OS keychain...), and
+    the user owns them, unlike the repository's. They go after the empty
+    `credential.helper` that clears the rest.
+    """
+    entries: list[tuple[str, str]] = []
+    for scope in ("--system", "--global"):
+        try:
+            code, out, _ = await run_git(
+                repo, "config", scope, "--includes", "-z", "--get-regexp",
+                r"^credential\.(.*\.)?helper$",
+            )
+        except GitError:
+            continue
+        if code != 0:
+            continue
+        for item in out.split("\0"):
+            key, _, value = item.partition("\n")
+            if key:
+                entries.append((key, value))
+    return entries
+
+
+def _fetch_failure(stderr: str) -> str:
+    return _URL_CREDENTIALS.sub("", _failure(stderr))
+
+
+FetchUpstream = Callable[..., Awaitable[bool]]
+
+
+async def fetch_upstream(repo: Path, *, timeout: float = FETCH_TIMEOUT) -> bool:
+    """Fetch the current branch's upstream into its remote-tracking branch.
+
+    Returns False when there is nothing to fetch (detached HEAD, no upstream, or an
+    upstream that is a local branch) and True after a successful fetch. Raises GitError
+    with a one-line message on failure. Nothing is prompted and no program named by the
+    repository's config runs; see `FETCH_ALLOWED_PROTOCOLS`, `FETCH_CONFIG` and `FETCH_ENV`.
+    Only that one branch is fetched: no tags, submodules, `FETCH_HEAD` or other refs.
+    """
+    return await _within(timeout, _fetch_upstream(repo, timeout))
+
+
+async def _fetch_upstream(repo: Path, timeout: float) -> bool:
+    code, out, _ = await run_git(repo, "symbolic-ref", "-q", "HEAD")
+    if code != 0:
+        return False
+    code, out, _ = await run_git(
+        repo, "for-each-ref", "--format=%(upstream)%00%(upstream:remotename)%00%(upstream:remoteref)",
+        out.strip(),
+    )
+    if code != 0:
+        return False
+    parts = out.rstrip("\n").split("\0")
+    if len(parts) != 3:
+        return False
+    tracking, remote, merge = parts
+    if (
+        not tracking.startswith("refs/remotes/")
+        or not merge.startswith("refs/")
+        or remote in ("", ".")
+        or remote.startswith("-")
+    ):
+        return False
+    protocols, protocol_env = _fetch_protocol_settings()
+    config = [*protocols, *FETCH_CONFIG, *await _user_credential_config(repo)]
+    code, _, err = await run_git(
+        repo, "fetch", "--quiet", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
+        # `remote.<name>.uploadpack` would name the program run on the other end.
+        "--no-prune", "--upload-pack=git-upload-pack",
+        "--", remote, f"+{merge}:{tracking}",
+        timeout=timeout, config=config, env={**FETCH_ENV, **protocol_env}, own_group=True,
+    )
+    if code != 0:
+        raise GitError(_fetch_failure(err))
+    return True

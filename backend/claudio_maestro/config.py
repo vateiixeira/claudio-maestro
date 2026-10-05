@@ -83,6 +83,10 @@ class Settings:
     history_sync_interval_seconds: float = 60
     # Git branches are refreshed this often while a WebSocket is connected.
     git_refresh_interval_seconds: float = 30
+    # Branches with an upstream are fetched this often while a WebSocket is connected
+    # (so "commits to pull" is current). After a failure the wait doubles, up to 30 min.
+    # 0 turns it off.
+    git_fetch_interval_seconds: float = 300
     # The stored models list is checked at startup and then this often (3 times a day).
     models_refresh_interval_seconds: float = 8 * 3600
     # Progress of plans linked to unfinished conversations is reread this often.

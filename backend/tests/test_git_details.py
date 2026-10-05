@@ -361,6 +361,7 @@ def test_details_route_shape(api, home):  # noqa: F811
     assert set(api_repo) == {
         "path", "rel_path", "branch", "detached", "head", "changed", "upstream",
         "ahead", "behind", "error", "files", "files_truncated", "commits",
+        "fetched_at", "fetch_error", "fetching",
     }
     assert api_repo["branch"] == "dev" and api_repo["upstream"] is None
     assert api_repo["files"] == [

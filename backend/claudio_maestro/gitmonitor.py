@@ -8,14 +8,25 @@ from typing import Any
 
 from claudio_maestro import db, gitinfo, projects
 from claudio_maestro.events import EventHub
+from claudio_maestro.gitfetch import registry as fetch_registry
 
 logger = logging.getLogger(__name__)
 
+# The periodic fetch looks for repositories that are due this often (or every interval,
+# when that is shorter), so the first pass comes soon after someone connects.
+FETCH_TICK_SECONDS = 15.0
+# "Verificar agora" gives up on slow remotes after this long.
+MANUAL_FETCH_LIMIT_SECONDS = 45.0
+
 
 class GitMonitor:
-    def __init__(self, db_path: Path, hub: EventHub) -> None:
+    def __init__(
+        self, db_path: Path, hub: EventHub, fetch: gitinfo.FetchUpstream | None = None
+    ) -> None:
         self._db_path = db_path
         self._hub = hub
+        # Looked up when used, so tests can replace `gitinfo.fetch_upstream`.
+        self._fetch = fetch
         self._last: dict[int, tuple[list[dict[str, Any]], bool]] = {}
         self._locks: dict[int, asyncio.Lock] = {}
 
@@ -49,6 +60,83 @@ class GitMonitor:
                 {"session_id": None, "seq": 0, "type": "project.git",
                  "data": {"project_id": project_id, "repos": repos, "limit_reached": limit_reached}}
             )
+
+    async def fetch_project(
+        self,
+        project_id: int,
+        *,
+        interval: float | None = None,
+        limit: float | None = None,
+    ) -> bool:
+        """Fetch the upstream of the project's repositories, then publish the result.
+
+        Without `interval` every repository is fetched at once; with it, only those whose
+        wait is over (see `FetchRegistry.due`). A repository without upstream is skipped
+        by the fetch itself. `limit` bounds the whole operation (the fetches that did not
+        finish are stopped; None: no limit). Returns whether anything was fetched or failed.
+        """
+        path = await asyncio.to_thread(self._project_path, project_id)
+        if path is None:
+            return False
+        last = self._last.get(project_id)
+        if interval is not None and last is not None:
+            # The periodic pass reuses the repositories of the last refresh (at most
+            # `git_refresh_interval_seconds` old) instead of walking the folders every tick.
+            repos = [Path(repo["path"]) for repo in last[0]]
+        else:
+            repos, _ = await asyncio.to_thread(gitinfo.discover_scan, path)
+        if interval is not None:
+            repos = [repo for repo in repos if fetch_registry.due(repo, interval)]
+        if not repos:
+            return False
+        fetch = self._fetch or gitinfo.fetch_upstream
+
+        async def one(repo: Path) -> str:
+            return await fetch_registry.fetch(repo, lambda: fetch(repo))
+
+        try:
+            async with asyncio.timeout(limit):
+                results = await asyncio.gather(*(one(repo) for repo in repos))
+        except TimeoutError:
+            logger.warning("A busca no remoto do projeto %s passou de %s s.", project_id, limit)
+            results = ["failed"]
+        changed = any(result != "skipped" for result in results)
+        if changed:
+            await self.refresh_project(project_id)
+        return changed
+
+    async def fetch_due(self, interval: float) -> None:
+        """One pass of the periodic fetch over every available project."""
+
+        def available() -> list[int]:
+            with closing(db.connect(self._db_path)) as conn:
+                return [p.id for p in projects.list_projects(conn) if p.available]
+
+        project_ids = await asyncio.to_thread(available)
+        results = await asyncio.gather(
+            *(self.fetch_project(pid, interval=interval) for pid in project_ids),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error("Falha ao buscar do remoto", exc_info=result)
+
+    async def run_fetch_periodic(self, interval: float) -> None:
+        """Fetch upstreams every `interval` seconds while some WebSocket is connected.
+
+        The first pass comes as soon as someone connects. 0 turns it off. A repository
+        whose last try failed waits longer (see `FetchRegistry.due`).
+        """
+        if interval <= 0:
+            return
+        tick = min(interval, FETCH_TICK_SECONDS)
+        while True:
+            if self._hub.connection_count > 0:
+                try:
+                    await self.fetch_due(interval)
+                except Exception:
+                    logger.exception("Falha ao buscar do remoto")
+            await asyncio.sleep(tick)
 
     async def refresh_all(self) -> None:
         def ids() -> list[int]:
