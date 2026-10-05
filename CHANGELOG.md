@@ -6,6 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- O rodapé do menu lateral mostra a versão instalada e avisa quando sai uma versão nova, com as notas e os comandos para atualizar. `MAESTRO_UPDATE_CHECK=0` desliga a consulta ao GitHub.
 - Ao voltar para uma conversa depois de um tempo, um resumo mostra o que aconteceu e o que falta.
 - Notificações do sistema quando uma conversa precisa de você (Preferências → Notificações).
 - Cada subagente na faixa acima do campo de mensagem mostra há quanto tempo está rodando (ou quanto durou), e avisa quando passa mais de 10 minutos sem atividade.

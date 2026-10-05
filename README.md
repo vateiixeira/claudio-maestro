@@ -63,6 +63,22 @@ As sessões continuam rodando quando o backend reinicia: um processo auxiliar (a
 
 Se você roda o backend sob um gerenciador de serviços que encerra o grupo de processos inteiro (o padrão do systemd, `KillMode=control-group`), o agentd cai junto com o backend e as sessões não sobrevivem. Use `KillMode=process` na unit, ou rode o backend de modo que o agentd continue vivo depois dele.
 
+## Atualizar
+
+O rodapé do menu lateral mostra a versão instalada e avisa quando sai uma versão nova, com as notas e estes comandos:
+
+```bash
+git pull
+uv sync
+pnpm --dir frontend install
+```
+
+Depois, pare o app (Ctrl+C) e rode `uv run claudio-maestro` de novo; o frontend é recompilado sozinho.
+
+Se as notas da versão disserem que o agentd mudou, encerre-o também, o que derruba as sessões em andamento: `kill $(cat ~/.local/share/claudio-maestro/agentd-v1.lock)` (com `MAESTRO_DATA_DIR`, o arquivo fica nessa pasta). Ele volta sozinho na próxima vez que o app subir.
+
+Para saber da versão nova, o app consulta a API do GitHub (`api.github.com`) um minuto depois de subir e uma vez por dia. A requisição só lê a última release; nada sobre seus projetos ou conversas é enviado. Para desligar, use `MAESTRO_UPDATE_CHECK=0`. Também dá para acompanhar pelo GitHub: **Watch → Custom → Releases**.
+
 ## Autenticação
 
 O Cláudio Maestro não faz login e não guarda credenciais. Ele usa a autenticação que o Claude Code já tem na sua máquina, do mesmo jeito que o CLI usa.
@@ -79,6 +95,7 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 | `MAESTRO_HOME` | Limite do navegador de pastas; também muda a pasta de dados padrão (`$MAESTRO_HOME/.local/share/claudio-maestro`) | sua pasta pessoal |
 | `MAESTRO_DATA_DIR` | Onde fica o banco SQLite (só metadados); vale mais que o `MAESTRO_HOME` | `~/.local/share/claudio-maestro` |
 | `MAESTRO_AGENTD` | Com `0`, não inicia o agentd: as sessões novas só vivem enquanto o backend viver (as que já estão num agentd ativo continuam sendo religadas) | ligado |
+| `MAESTRO_UPDATE_CHECK` | Com `0`, o app não consulta o GitHub para saber se há versão nova | ligado |
 | `CLAUDE_CONFIG_DIR` | Pasta de configuração do Claude Code | `~/.claude` |
 
 As portas precisam estar entre 1024 e 65535, fora de 6665 a 6669 (os navegadores bloqueiam essas). O app escuta só em `127.0.0.1`, sempre.
