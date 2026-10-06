@@ -53,6 +53,8 @@ const error = ref<string | null>(null)
 const submitting = ref(false)
 // Once the session exists it is kept across attempts, so a retry does not create a second one.
 const createdId = ref<string | null>(null)
+// Mode the session was created in, as the backend answered (the saved default or the CLI's).
+const createdMode = ref<PermissionMode | null>(null)
 const optionsApplied = ref(false)
 // Why the title and options were not applied, for the message shown if the user leaves before a retry.
 const optionsError = ref<string | null>(null)
@@ -154,10 +156,11 @@ function confirmBypass() {
   draft.value.permissionMode = 'bypassPermissions'
 }
 
-// The session starts in "Sem perguntas" (saved default) while the user picked a safer mode here: if that
-// mode is not applied, the conversation stays in bypass and has to say so.
+// The session was created in "Sem perguntas" (saved default) while the user picked a safer mode here: if
+// that mode is not applied, the conversation stays in bypass and has to say so. The created session's mode
+// counts, not `prefMode`, which is missing when reading the preferences failed.
 const BYPASS_WARNING = 'A conversa ficou no modo "Sem perguntas".'
-const leftInBypass = computed(() => prefMode.value === 'bypassPermissions' && draft.value.permissionMode !== null && draft.value.permissionMode !== 'bypassPermissions')
+const leftInBypass = computed(() => createdMode.value === 'bypassPermissions' && draft.value.permissionMode !== null && draft.value.permissionMode !== 'bypassPermissions')
 
 const canSubmit = computed(() => !submitting.value && draft.value.projectId != null && (draft.value.prompt.trim() !== '' || images.value.length > 0))
 
@@ -282,7 +285,9 @@ async function submit() {
   const { projectId, groupId, title, prompt, model, effort, permissionMode } = draft.value
   if (createdId.value === null) {
     try {
-      createdId.value = (await sessions.create(projectId!, groupId)).session_id
+      const created = await sessions.create(projectId!, groupId)
+      createdId.value = created.session_id
+      createdMode.value = created.permission_mode ?? null
     } catch (e) {
       error.value = errorMessage(e)
       submitting.value = false

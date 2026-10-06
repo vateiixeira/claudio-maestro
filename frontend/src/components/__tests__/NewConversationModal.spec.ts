@@ -362,7 +362,9 @@ describe('modal de nova conversa: "Sem perguntas"', () => {
   })
 
   describe('preferência "Sem perguntas" e um modo mais seguro escolhido na janela', () => {
-    const prefBypass = { 'GET /api/state': () => jsonResponse({ preferences: { new_session_mode: 'bypassPermissions' } }) }
+    // As in the backend: the saved default makes the session start in bypass.
+    const bornInBypass = { 'POST /api/projects/2/sessions': () => jsonResponse(makeSession({ session_id: 'nova', project_id: 2, permission_mode: 'bypassPermissions' }), 201) }
+    const prefBypass = { 'GET /api/state': () => jsonResponse({ preferences: { new_session_mode: 'bypassPermissions' } }), ...bornInBypass }
     const patches = (fetch: Awaited<ReturnType<typeof openModal>>['fetch']) => fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH')
     const sends = (fetch: Awaited<ReturnType<typeof openModal>>['fetch']) => fetch.mock.calls.filter(([url]) => url === '/api/sessions/nova/messages')
 
@@ -411,6 +413,21 @@ describe('modal de nova conversa: "Sem perguntas"', () => {
       const pending = takePendingDraft('nova')
       expect(pending?.text).toBe('oi')
       expect(pending?.error).toContain('ficou no modo "Sem perguntas"')
+    })
+
+    it('vale o modo em que a conversa nasceu, mesmo se a leitura das Preferências falhou', async () => {
+      const { wrapper, fetch } = await openModal(2, {
+        'GET /api/state': () => jsonResponse({ detail: 'Falhou.' }, 500),
+        ...bornInBypass,
+        'PATCH /api/sessions/nova': () => jsonResponse({ detail: 'Falhou.' }, 500),
+      })
+      await chooseMode(wrapper, 'Planejamento')
+      await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+      await wrapper.find('[data-test="nc-submit"]').trigger('click')
+      await flushPromises()
+      expect(patches(fetch)).toHaveLength(2)
+      expect(sends(fetch)).toHaveLength(0)
+      expect(wrapper.find('[data-test="nc-error"]').text()).toContain('ficou no modo "Sem perguntas"')
     })
 
     it('sem preferência "Sem perguntas", uma falha do PATCH não repete nem fala do modo', async () => {
