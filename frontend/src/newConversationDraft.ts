@@ -1,4 +1,4 @@
-import { ALL_EFFORTS, SELECTABLE_MODES } from './sessionOptions'
+import { ALL_EFFORTS, ALL_MODES } from './sessionOptions'
 import type { Effort, PermissionMode } from './types/api'
 
 const KEY = 'maestro:new-conversation'
@@ -31,7 +31,8 @@ export function loadDraft(): ConversationDraft {
       prompt: typeof value.prompt === 'string' ? value.prompt : '',
       model: typeof value.model === 'string' ? value.model : null,
       effort: ALL_EFFORTS.includes(value.effort as Effort) ? (value.effort as Effort) : null,
-      permissionMode: SELECTABLE_MODES.includes(value.permissionMode as PermissionMode) ? (value.permissionMode as PermissionMode) : null,
+      // "Sem perguntas" is never restored from a draft: it only counts when it was just chosen and confirmed.
+      permissionMode: value.permissionMode !== 'bypassPermissions' && ALL_MODES.includes(value.permissionMode as PermissionMode) ? (value.permissionMode as PermissionMode) : null,
     }
   } catch {
     return emptyDraft()

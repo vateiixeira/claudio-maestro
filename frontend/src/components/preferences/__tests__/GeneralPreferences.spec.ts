@@ -74,12 +74,12 @@ describe('preferências gerais: padrões das conversas novas', () => {
     expect(trigger(w, 'pref-new-mode').text()).toBe('Modo padrão')
   })
 
-  it('o modo não oferece "Sem perguntas" e a lista de modelos vem do catálogo', async () => {
+  it('o modo oferece "Sem perguntas" e a lista de modelos vem do catálogo', async () => {
     stub({})
     const w = await mountTab()
     const modes = await menuLabels(w, 'pref-new-mode')
     expect(modes[0]).toBe('Padrão da conta')
-    expect(modes).not.toContain('Sem perguntas')
+    expect(modes).toContain('Sem perguntas')
     expect(modes).toContain('Aceita edições')
     expect(await menuLabels(w, 'pref-new-model')).toEqual(['Padrão', 'Opus', 'Sonnet'])
   })
@@ -155,11 +155,98 @@ describe('preferências gerais: padrões das conversas novas', () => {
   })
 
   it('ignora valores salvos de tipo errado', async () => {
-    stub({ new_session_model: 5, new_session_effort: 'turbo', new_session_mode: 'bypassPermissions' })
+    stub({ new_session_model: 5, new_session_effort: 'turbo', new_session_mode: 'inventado' })
     const w = await mountTab()
     expect(trigger(w, 'pref-new-model').text()).toBe('Padrão')
     expect(trigger(w, 'pref-new-effort').text()).toBe('Raciocínio padrão')
     expect(trigger(w, 'pref-new-mode').text()).toBe('Modo padrão')
+  })
+})
+
+describe('preferências gerais: "Sem perguntas" como modo padrão', () => {
+  const overlay = (w: Tab) => w.find('[data-test="bypass-overlay"]')
+
+  it('escolher abre o diálogo de confirmação e nada muda até confirmar', async () => {
+    stub({ new_session_mode: 'plan' })
+    const w = await mountTab()
+    await choose(w, 'pref-new-mode', 'Sem perguntas')
+    expect(overlay(w).exists()).toBe(true)
+    expect(w.find('[role="alertdialog"]').text()).toContain('sem pedir')
+    expect(trigger(w, 'pref-new-mode').text()).toBe('Planejamento')
+  })
+
+  it('cancelar mantém o valor anterior', async () => {
+    stub({ new_session_mode: 'plan' })
+    const w = await mountTab()
+    await choose(w, 'pref-new-mode', 'Sem perguntas')
+    await w.find('[data-test="bypass-cancel"]').trigger('click')
+    await flushPromises()
+    expect(overlay(w).exists()).toBe(false)
+    expect(trigger(w, 'pref-new-mode').text()).toBe('Planejamento')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(puts[0]).toMatchObject({ new_session_mode: 'plan' })
+  })
+
+  it('Esc e clique no fundo cancelam', async () => {
+    stub({})
+    const w = await mountTab()
+    await choose(w, 'pref-new-mode', 'Sem perguntas')
+    await w.find('[role="alertdialog"]').trigger('keydown', { key: 'Escape' })
+    expect(overlay(w).exists()).toBe(false)
+    await choose(w, 'pref-new-mode', 'Sem perguntas')
+    await overlay(w).trigger('click')
+    expect(overlay(w).exists()).toBe(false)
+    expect(trigger(w, 'pref-new-mode').text()).toBe('Modo padrão')
+  })
+
+  it('confirmar define o modo, destaca o botão e o Salvar envia', async () => {
+    stub({ editor_command: ['code'] })
+    const w = await mountTab()
+    expect(trigger(w, 'pref-new-mode').classes()).not.toContain('text-secondary')
+    await choose(w, 'pref-new-mode', 'Sem perguntas')
+    await w.find('[data-test="bypass-confirm"]').trigger('click')
+    await flushPromises()
+    expect(overlay(w).exists()).toBe(false)
+    expect(trigger(w, 'pref-new-mode').text()).toBe('Sem perguntas')
+    expect(trigger(w, 'pref-new-mode').classes()).toContain('text-secondary')
+    expect(puts).toEqual([])
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(puts).toHaveLength(1)
+    expect(puts[0]).toMatchObject({ editor_command: ['code'], new_session_mode: 'bypassPermissions' })
+  })
+
+  it.each([['cancelar', 'bypass-cancel'], ['confirmar', 'bypass-confirm']])('ao %s o foco volta ao botão do modo', async (_, test) => {
+    stub({})
+    const w = await mountTab()
+    await choose(w, 'pref-new-mode', 'Sem perguntas')
+    await w.find(`[data-test="${test}"]`).trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(trigger(w, 'pref-new-mode').element)
+  })
+
+  it('reconhece o valor salvo, sem pedir confirmação', async () => {
+    stub({ new_session_mode: 'bypassPermissions' })
+    const w = await mountTab()
+    expect(trigger(w, 'pref-new-mode').text()).toBe('Sem perguntas')
+    expect(trigger(w, 'pref-new-mode').classes()).toContain('text-secondary')
+    expect(overlay(w).exists()).toBe(false)
+  })
+
+  it('escolher outro modo depois não pede confirmação', async () => {
+    stub({ new_session_mode: 'bypassPermissions' })
+    const w = await mountTab()
+    await choose(w, 'pref-new-mode', 'Pede permissão')
+    expect(overlay(w).exists()).toBe(false)
+    expect(trigger(w, 'pref-new-mode').text()).toBe('Pede permissão')
+  })
+
+  it('o texto de ajuda não diz mais que só se ativa na conversa', async () => {
+    stub({})
+    const w = await mountTab()
+    expect(w.find('#pref-new-help').text()).not.toContain('só se ativa dentro da conversa')
+    expect(w.find('#pref-new-help').text()).toContain('pede confirmação ao escolher')
   })
 })
 

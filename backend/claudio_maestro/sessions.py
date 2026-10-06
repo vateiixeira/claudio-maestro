@@ -754,7 +754,7 @@ def new_session_defaults(conn: sqlite3.Connection) -> tuple[str | None, str | No
         model = None
     if not isinstance(effort, str) or effort not in EFFORTS:
         effort = None
-    if not isinstance(mode, str) or mode not in PERMISSION_MODES or mode == "bypassPermissions":
+    if not isinstance(mode, str) or mode not in PERMISSION_MODES:
         mode = None
     return model, effort, mode
 
@@ -763,8 +763,8 @@ def user_default_permission_mode() -> str | None:
     """`permissions.defaultMode` of the user's CLI settings, used by new sessions.
 
     The SDK does not inherit it (verified with `auto`). Unknown values are
-    ignored, and so is `bypassPermissions`: the app only enables it after an
-    explicit confirmation.
+    ignored, and so is `bypassPermissions`: "Sem perguntas" only applies to new
+    sessions when it was chosen (with a confirmation) in the app's Preferências.
     """
     permissions = read_user_claude_settings().get("permissions")
     mode = permissions.get("defaultMode") if isinstance(permissions, dict) else None

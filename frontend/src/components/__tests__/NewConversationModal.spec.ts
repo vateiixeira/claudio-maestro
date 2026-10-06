@@ -277,6 +277,185 @@ describe('modal de nova conversa: revisão', () => {
   })
 })
 
+describe('modal de nova conversa: "Sem perguntas"', () => {
+  type Wrapper = Awaited<ReturnType<typeof openModal>>['wrapper']
+  const modeButton = (w: Wrapper) => w.find('button[aria-label="Modo"]')
+  async function chooseMode(w: Wrapper, label: string) {
+    await modeButton(w).trigger('click')
+    await flushPromises()
+    const items = new DOMWrapper(document.body).findAll('[role="menuitemradio"]')
+    const item = items.find((i) => i.text().startsWith(label))
+    expect(item, `opção ${label}`).toBeDefined()
+    await item!.trigger('click')
+    await flushPromises()
+  }
+  const overlay = (w: Wrapper) => w.find('[data-test="bypass-overlay"]')
+  const patchBody = (fetch: Awaited<ReturnType<typeof openModal>>['fetch']) => {
+    const patch = fetch.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    return patch ? JSON.parse(patch[1]!.body as string) : null
+  }
+
+  it('o menu de modo oferece "Sem perguntas"', async () => {
+    const { wrapper } = await openModal(2)
+    await modeButton(wrapper).trigger('click')
+    await flushPromises()
+    const labels = new DOMWrapper(document.body).findAll('[role="menuitemradio"] > span:first-child').map((i) => i.text())
+    expect(labels).toContain('Sem perguntas')
+  })
+
+  it('escolher abre o diálogo; cancelar mantém o modo', async () => {
+    const { wrapper } = await openModal(2)
+    await chooseMode(wrapper, 'Planejamento')
+    await chooseMode(wrapper, 'Sem perguntas')
+    expect(overlay(wrapper).exists()).toBe(true)
+    await wrapper.find('[data-test="bypass-cancel"]').trigger('click')
+    await flushPromises()
+    expect(overlay(wrapper).exists()).toBe(false)
+    expect(modeButton(wrapper).text()).toBe('Planejamento')
+    expect(useNewConversationStore(pinia).isOpen).toBe(true)
+  })
+
+  it('confirmar destaca o botão e a criação envia confirm_bypass', async () => {
+    const { wrapper, fetch } = await openModal(2)
+    expect(modeButton(wrapper).classes()).not.toContain('text-secondary')
+    await chooseMode(wrapper, 'Sem perguntas')
+    await wrapper.find('[data-test="bypass-confirm"]').trigger('click')
+    await flushPromises()
+    expect(modeButton(wrapper).text()).toBe('Sem perguntas')
+    expect(modeButton(wrapper).classes()).toContain('text-secondary')
+    await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+    await wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    expect(patchBody(fetch)).toEqual({ permission_mode: 'bypassPermissions', confirm_bypass: true })
+  })
+
+  it('outros modos não mandam confirm_bypass', async () => {
+    const { wrapper, fetch } = await openModal(2)
+    await chooseMode(wrapper, 'Planejamento')
+    await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+    await wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    expect(patchBody(fetch)).toEqual({ permission_mode: 'plan' })
+  })
+
+  it('Esc no diálogo fecha só o diálogo, não o modal', async () => {
+    const { wrapper } = await openModal(2)
+    await chooseMode(wrapper, 'Sem perguntas')
+    await wrapper.find('[role="alertdialog"]').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(overlay(wrapper).exists()).toBe(false)
+    expect(useNewConversationStore(pinia).isOpen).toBe(true)
+    await wrapper.find('[data-test="nc-prompt"]').trigger('keydown', { key: 'Escape' })
+    expect(useNewConversationStore(pinia).isOpen).toBe(false)
+  })
+
+  it('a preferência "Sem perguntas" aparece no botão e nada é enviado', async () => {
+    const { wrapper, fetch } = await openModal(2, {
+      'GET /api/state': () => jsonResponse({ preferences: { new_session_mode: 'bypassPermissions' } }),
+    })
+    expect(modeButton(wrapper).text()).toBe('Sem perguntas')
+    expect(modeButton(wrapper).classes()).toContain('text-secondary')
+    await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+    await wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    expect(patchBody(fetch)).toBeNull()
+  })
+
+  describe('preferência "Sem perguntas" e um modo mais seguro escolhido na janela', () => {
+    const prefBypass = { 'GET /api/state': () => jsonResponse({ preferences: { new_session_mode: 'bypassPermissions' } }) }
+    const patches = (fetch: Awaited<ReturnType<typeof openModal>>['fetch']) => fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH')
+    const sends = (fetch: Awaited<ReturnType<typeof openModal>>['fetch']) => fetch.mock.calls.filter(([url]) => url === '/api/sessions/nova/messages')
+
+    it('tenta o PATCH de novo e, se der certo, segue e envia o prompt', async () => {
+      let calls = 0
+      const { wrapper, fetch } = await openModal(2, {
+        ...prefBypass,
+        'PATCH /api/sessions/nova': () => (++calls === 1 ? jsonResponse({ detail: 'Falhou.' }, 500) : jsonResponse(makeSession({ session_id: 'nova', project_id: 2 }))),
+      })
+      await chooseMode(wrapper, 'Planejamento')
+      await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+      await wrapper.find('[data-test="nc-submit"]').trigger('click')
+      await flushPromises()
+      expect(patches(fetch)).toHaveLength(2)
+      expect(sends(fetch)).toHaveLength(1)
+    })
+
+    it('se o PATCH falha de novo, avisa que a conversa ficou em "Sem perguntas" e não envia o prompt', async () => {
+      const { wrapper, fetch } = await openModal(2, {
+        ...prefBypass,
+        'PATCH /api/sessions/nova': () => jsonResponse({ detail: 'Falhou.' }, 500),
+      })
+      await chooseMode(wrapper, 'Planejamento')
+      await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+      await wrapper.find('[data-test="nc-submit"]').trigger('click')
+      await flushPromises()
+      expect(patches(fetch)).toHaveLength(2)
+      expect(sends(fetch)).toHaveLength(0)
+      expect(wrapper.find('[data-test="nc-error"]').text()).toContain('ficou no modo "Sem perguntas"')
+      expect(useNewConversationStore(pinia).isOpen).toBe(true)
+    })
+
+    it('fechar depois da falha abre a conversa com o aviso do modo, sem o prompt enviado', async () => {
+      const { wrapper, fetch, router } = await openModal(2, {
+        ...prefBypass,
+        'PATCH /api/sessions/nova': () => jsonResponse({ detail: 'Falhou.' }, 500),
+      })
+      await chooseMode(wrapper, 'Planejamento')
+      await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+      await wrapper.find('[data-test="nc-submit"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-test="nc-prompt"]').trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      expect(sends(fetch)).toHaveLength(0)
+      expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
+      const pending = takePendingDraft('nova')
+      expect(pending?.text).toBe('oi')
+      expect(pending?.error).toContain('ficou no modo "Sem perguntas"')
+    })
+
+    it('sem preferência "Sem perguntas", uma falha do PATCH não repete nem fala do modo', async () => {
+      const { wrapper, fetch } = await openModal(2, { 'PATCH /api/sessions/nova': () => jsonResponse({ detail: 'Falhou.' }, 500) })
+      await chooseMode(wrapper, 'Planejamento')
+      await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+      await wrapper.find('[data-test="nc-submit"]').trigger('click')
+      await flushPromises()
+      expect(patches(fetch)).toHaveLength(1)
+      expect(wrapper.find('[data-test="nc-error"]').text()).not.toContain('Sem perguntas')
+    })
+  })
+
+  it('Tab dentro do diálogo não chega ao controle de foco da janela', async () => {
+    const { wrapper } = await openModal(2)
+    await chooseMode(wrapper, 'Sem perguntas')
+    const cancel = wrapper.find('[data-test="bypass-cancel"]').element
+    const confirm = wrapper.find('[data-test="bypass-confirm"]').element
+    expect(document.activeElement).toBe(cancel)
+    const event = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true, bubbles: true })
+    const reached = vi.fn()
+    // The modal's own handler is on the root element; a listener on `document` sees only what leaves it.
+    document.addEventListener('keydown', reached)
+    cancel.dispatchEvent(event)
+    document.removeEventListener('keydown', reached)
+    expect(reached).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(confirm)
+  })
+
+  it.each([['cancelar', 'bypass-cancel'], ['confirmar', 'bypass-confirm']])('ao %s o foco volta ao botão "Modo"', async (_, test) => {
+    const { wrapper } = await openModal(2)
+    await chooseMode(wrapper, 'Sem perguntas')
+    await wrapper.find(`[data-test="${test}"]`).trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(modeButton(wrapper).element)
+  })
+
+  it('"Sem perguntas" não volta de um rascunho guardado', async () => {
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({ projectId: 2, title: '', prompt: 'x', model: null, effort: null, permissionMode: 'bypassPermissions' }))
+    const { wrapper } = await openModal(null)
+    expect(modeButton(wrapper).text()).toBe('Modo padrão')
+  })
+})
+
 describe('modal de nova conversa: agrupador', () => {
   function seedGroups() {
     const groups = useGroupsStore(pinia)

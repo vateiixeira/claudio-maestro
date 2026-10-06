@@ -2,10 +2,11 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { errorMessage, getAppState, putAppState } from '../../api/http'
 import { editorCommandProblem, formatEditorCommand, parseEditorCommand } from '../../preferences'
-import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, SELECTABLE_MODES } from '../../sessionOptions'
+import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, ALL_MODES } from '../../sessionOptions'
 import { useModelsStore } from '../../stores/models'
 import { loadEverything } from '../../stores/realtime'
 import type { Effort, PermissionMode } from '../../types/api'
+import BypassConfirmDialog from '../session/BypassConfirmDialog.vue'
 import OptionMenu, { type MenuOption } from '../session/OptionMenu.vue'
 import { DEFAULT_FINISHED_AFTER_DAYS, useLayoutStore } from '../../stores/layout'
 import { UI_SCALES, setUiScale, uiScale } from '../../uiScale'
@@ -40,6 +41,19 @@ const daysText = ref(String(layout.finishedAfterDays))
 const newModel = ref<string | null>(null)
 const newEffort = ref<Effort | null>(null)
 const newMode = ref<PermissionMode | null>(null)
+// "Sem perguntas" runs every tool without asking, so choosing it opens a confirmation first.
+const confirmingBypass = ref(false)
+function selectMode(value: string) {
+  if (value === 'bypassPermissions') {
+    confirmingBypass.value = true
+    return
+  }
+  newMode.value = value === INHERIT ? null : (value as PermissionMode)
+}
+function confirmBypass() {
+  confirmingBypass.value = false
+  newMode.value = 'bypassPermissions'
+}
 const saving = ref(false)
 const saved = ref(false)
 const error = ref<string | null>(null)
@@ -53,10 +67,9 @@ const effortOptions: MenuOption[] = [
   { value: INHERIT, label: 'Padrão' },
   ...ALL_EFFORTS.map((e) => ({ value: e, label: EFFORT_LABELS[e] })),
 ]
-// "Sem perguntas" is not offered here: it needs a confirmation in each conversation.
 const modeOptions: MenuOption[] = [
   { value: INHERIT, label: 'Padrão da conta' },
-  ...SELECTABLE_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] })),
+  ...ALL_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] })),
 ]
 
 const ready = computed(() => !loading.value && loadError.value === null)
@@ -77,7 +90,7 @@ async function load(): Promise<void> {
     daysText.value = String(typeof days === 'number' && Number.isInteger(days) && days > 0 ? days : DEFAULT_FINISHED_AFTER_DAYS)
     newModel.value = typeof prefs.new_session_model === 'string' && prefs.new_session_model.trim() !== '' ? prefs.new_session_model : null
     newEffort.value = ALL_EFFORTS.find((e) => e === prefs.new_session_effort) ?? null
-    newMode.value = SELECTABLE_MODES.find((m) => m === prefs.new_session_mode) ?? null
+    newMode.value = ALL_MODES.find((m) => m === prefs.new_session_mode) ?? null
     saved.value = false
     error.value = null
   } catch (e) {
@@ -251,13 +264,14 @@ onMounted(load)
             :text="newMode ? MODE_LABELS[newMode] : 'Modo padrão'"
             :options="modeOptions"
             :selected="newMode ?? INHERIT"
+            :highlight="newMode === 'bypassPermissions'"
             :disabled="!ready"
-            @select="(v) => (newMode = v === INHERIT ? null : (v as PermissionMode))"
+            @select="selectMode"
           />
         </div>
         <p id="pref-new-help" class="m-0 text-xs text-fg-muted">
           Valem para toda conversa nova. "Padrão" deixa a decisão com o Claude: o modelo e o raciocínio dele e o modo do seu
-          <span class="font-mono">settings.json</span>. Dá para mudar na própria conversa. "Sem perguntas" só se ativa dentro da conversa.
+          <span class="font-mono">settings.json</span>. Dá para mudar na própria conversa. "Sem perguntas" pede confirmação ao escolher.
         </p>
       </fieldset>
 
@@ -296,5 +310,7 @@ onMounted(load)
         {{ saving ? 'Salvando…' : 'Salvar' }}
       </button>
     </footer>
+
+    <BypassConfirmDialog v-if="confirmingBypass" @cancel="confirmingBypass = false" @confirm="confirmBypass" />
   </form>
 </template>

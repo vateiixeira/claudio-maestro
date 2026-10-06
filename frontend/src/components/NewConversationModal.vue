@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import MentionMirror from './conversation/MentionMirror.vue'
 import SuggestionMenu from './conversation/SuggestionMenu.vue'
+import BypassConfirmDialog from './session/BypassConfirmDialog.vue'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
 import { errorMessage, getAppState, sendMessage, updateSession } from '../api/http'
 import { type DraftImage, IMAGE_TYPES, attachImages, base64Of, filesFrom, formatSize } from '../conversation/images'
@@ -12,7 +13,7 @@ import { rememberSentImages } from '../conversation/localImages'
 import { setPendingDraft } from '../conversation/pendingDrafts'
 import { sortGroups } from '../groupList'
 import { clearDraft, loadDraft, loadLastProject, saveDraft, saveLastProject, type ConversationDraft } from '../newConversationDraft'
-import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, SELECTABLE_MODES } from '../sessionOptions'
+import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, ALL_MODES } from '../sessionOptions'
 import { useGroupsStore } from '../stores/groups'
 import { useModelsStore } from '../stores/models'
 import { useNewConversationStore } from '../stores/newConversation'
@@ -41,7 +42,7 @@ getAppState()
     if (!prefs || typeof prefs !== 'object') return
     prefModel.value = typeof prefs.new_session_model === 'string' && prefs.new_session_model.trim() !== '' ? prefs.new_session_model : null
     prefEffort.value = ALL_EFFORTS.find((e) => e === prefs.new_session_effort) ?? null
-    prefMode.value = SELECTABLE_MODES.find((m) => m === prefs.new_session_mode) ?? null
+    prefMode.value = ALL_MODES.find((m) => m === prefs.new_session_mode) ?? null
   })
   .catch(() => {}) // without them the buttons say "Padrão", as before
 
@@ -134,11 +135,29 @@ const effortOptions = computed<MenuOption[]>(() => [
   { value: 'default', label: 'Padrão' },
   ...ALL_EFFORTS.map((e) => ({ value: e, label: EFFORT_LABELS[e] })),
 ])
-// "Sem perguntas" needs a confirmation: it is only offered inside the conversation.
 const modeOptions: MenuOption[] = [
   { value: 'default-account', label: 'Padrão da conta' },
-  ...SELECTABLE_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] })),
+  ...ALL_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] })),
 ]
+
+// "Sem perguntas" runs every tool without asking, so choosing it opens a confirmation first.
+const confirmingBypass = ref(false)
+function selectMode(value: string) {
+  if (value === 'bypassPermissions') {
+    confirmingBypass.value = true
+    return
+  }
+  draft.value.permissionMode = value === 'default-account' ? null : (value as PermissionMode)
+}
+function confirmBypass() {
+  confirmingBypass.value = false
+  draft.value.permissionMode = 'bypassPermissions'
+}
+
+// The session starts in "Sem perguntas" (saved default) while the user picked a safer mode here: if that
+// mode is not applied, the conversation stays in bypass and has to say so.
+const BYPASS_WARNING = 'A conversa ficou no modo "Sem perguntas".'
+const leftInBypass = computed(() => prefMode.value === 'bypassPermissions' && draft.value.permissionMode !== null && draft.value.permissionMode !== 'bypassPermissions')
 
 const canSubmit = computed(() => !submitting.value && draft.value.projectId != null && (draft.value.prompt.trim() !== '' || images.value.length > 0))
 
@@ -280,12 +299,26 @@ async function submit() {
     if (model) changes.model = model
     if (effort) changes.effort = effort
     if (permissionMode) changes.permission_mode = permissionMode
+    // The confirmation was given when the mode was chosen in this window.
+    if (permissionMode === 'bypassPermissions') changes.confirm_bypass = true
+    // A saved "Sem perguntas" default makes the session start in bypass; a safer mode chosen here must
+    // reach it, so that one case gets a second try before the failure is reported.
+    const attempts = leftInBypass.value ? 2 : 1
     try {
-      if (Object.keys(changes).length) await updateSession(sessionId, changes)
+      if (Object.keys(changes).length) {
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await updateSession(sessionId, changes)
+            break
+          } catch (e) {
+            if (attempt >= attempts) throw e
+          }
+        }
+      }
       optionsApplied.value = true
     } catch (e) {
       optionsError.value = errorMessage(e)
-      error.value = `A conversa foi criada, mas não foi possível aplicar o título e as opções. ${optionsError.value} Clique em Iniciar conversa para tentar de novo.`
+      error.value = `A conversa foi criada, mas não foi possível aplicar o título e as opções. ${optionsError.value}${leftInBypass.value ? ` ${BYPASS_WARNING}` : ''} Clique em Iniciar conversa para tentar de novo.`
       submitting.value = false
       return
     }
@@ -316,7 +349,8 @@ function finish() {
 // so nothing stays orphaned or hidden.
 async function leaveToCreated(sessionId: string) {
   const reason = optionsError.value ? ` ${optionsError.value}` : ''
-  const message = `A conversa foi criada, mas não foi possível aplicar o título e as opções.${reason} Envie a mensagem para começar e ajuste as opções aqui.`
+  const bypass = leftInBypass.value ? ` ${BYPASS_WARNING}` : ''
+  const message = `A conversa foi criada, mas não foi possível aplicar o título e as opções.${reason}${bypass} Envie a mensagem para começar e ajuste as opções aqui.`
   setPendingDraft(sessionId, { text: draft.value.prompt, error: message, images: images.value })
   finish()
   opener?.focus()
@@ -475,7 +509,7 @@ function onKeydown(event: KeyboardEvent) {
             </button>
             <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)" />
             <OptionMenu name="Raciocínio" :text="effortText" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
-            <OptionMenu name="Modo" :text="modeText" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" @select="(v) => (draft.permissionMode = v === 'default-account' ? null : (v as PermissionMode))" />
+            <OptionMenu name="Modo" :text="modeText" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" :highlight="(draft.permissionMode ?? prefMode) === 'bypassPermissions'" @select="selectMode" />
           </div>
           <span v-if="dictation.recording.value" data-test="nc-recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
             <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
@@ -490,5 +524,6 @@ function onKeydown(event: KeyboardEvent) {
         </footer>
       </template>
     </div>
+    <BypassConfirmDialog v-if="confirmingBypass" @cancel="confirmingBypass = false" @confirm="confirmBypass" />
   </div>
 </template>

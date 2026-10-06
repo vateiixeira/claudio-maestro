@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { errorMessage, updateSession } from '../../api/http'
 import { useConversationStore } from '../../stores/conversation'
 import { formatTokens } from '../../format'
@@ -7,6 +7,7 @@ import { useModelsStore } from '../../stores/models'
 import { useSessionsStore } from '../../stores/sessions'
 import type { Effort, PermissionMode, SessionUpdate } from '../../types/api'
 import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, modeLabel } from '../../sessionOptions'
+import BypassConfirmDialog from './BypassConfirmDialog.vue'
 import OptionMenu, { type MenuOption } from './OptionMenu.vue'
 
 const props = defineProps<{ sessionId: string }>()
@@ -94,46 +95,16 @@ async function apply(changes: SessionUpdate) {
 
 // "Sem perguntas" runs every tool without asking, so it needs an explicit confirmation.
 const confirming = ref(false)
-const confirmButton = ref<HTMLButtonElement | null>(null)
-const cancelButton = ref<HTMLButtonElement | null>(null)
-let returnFocusTo: HTMLElement | null = null
-async function selectMode(value: string) {
+function selectMode(value: string) {
   if (value === 'bypassPermissions') {
-    returnFocusTo = document.activeElement as HTMLElement | null
     confirming.value = true
-    await nextTick()
-    // The dangerous button is never the default: Enter right after opening must not activate it.
-    cancelButton.value?.focus()
     return
   }
   void apply({ permission_mode: value as PermissionMode })
 }
-async function closeDialog() {
-  confirming.value = false
-  const target = returnFocusTo
-  returnFocusTo = null
-  await nextTick()
-  target?.focus()
-}
-function cancelBypass() {
-  void closeDialog()
-}
 function confirmBypass() {
-  void closeDialog()
+  confirming.value = false
   void apply({ permission_mode: 'bypassPermissions', confirm_bypass: true })
-}
-// Keeps Tab and Shift+Tab between the two buttons while the dialog is open.
-function onDialogKey(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    event.preventDefault()
-    event.stopPropagation()
-    cancelBypass()
-  } else if (event.key === 'Tab') {
-    event.preventDefault()
-    // Two buttons: either direction goes to the other one.
-    const onCancel = document.activeElement === cancelButton.value
-    ;(onCancel ? confirmButton : cancelButton).value?.focus()
-  }
 }
 </script>
 
@@ -179,42 +150,6 @@ function onDialogKey(event: KeyboardEvent) {
     <span v-if="options.effort_pending" data-test="effort-pending" class="text-xs text-fg-subtle">vale a partir do próximo turno</span>
     <p v-if="error" role="alert" class="m-0 w-full text-sm text-diff-del-fg">{{ error }}</p>
 
-    <div
-      v-if="confirming"
-      data-test="bypass-overlay"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-bg/70 p-4"
-      @click.self="cancelBypass"
-      @keydown="onDialogKey"
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="bypass-title"
-        aria-describedby="bypass-text"
-        class="flex max-w-md flex-col gap-3 rounded-lg border border-secondary/50 bg-elevated p-5"
-      >
-        <h3 id="bypass-title" class="m-0 text-base font-semibold text-secondary">Ativar "Sem perguntas"?</h3>
-        <p id="bypass-text" class="m-0 text-sm text-fg">
-          O Claude vai editar arquivos e rodar comandos nesta máquina sem pedir sua permissão.
-          Um erro dele pode apagar dados ou alterar coisas fora do projeto. Use só quando confiar na tarefa.
-        </p>
-        <div class="flex justify-end gap-2">
-          <button
-            type="button"
-            ref="cancelButton"
-            data-test="bypass-cancel"
-            class="h-9 cursor-pointer rounded-md border border-line-strong bg-transparent px-3 text-sm text-fg hover:bg-card"
-            @click="cancelBypass"
-          >Cancelar</button>
-          <button
-            ref="confirmButton"
-            type="button"
-            data-test="bypass-confirm"
-            class="h-9 cursor-pointer rounded-md border-none bg-secondary px-3 text-sm font-semibold text-secondary-fg"
-            @click="confirmBypass"
-          >Ativar sem perguntas</button>
-        </div>
-      </div>
-    </div>
+    <BypassConfirmDialog v-if="confirming" @cancel="confirming = false" @confirm="confirmBypass" />
   </div>
 </template>

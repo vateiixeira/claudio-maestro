@@ -1,5 +1,6 @@
 """Preferences for new sessions: model, effort and mode."""
 
+import time
 from contextlib import closing, contextmanager
 from pathlib import Path
 
@@ -65,6 +66,48 @@ def test_new_sessions_use_the_saved_defaults(api, home):
     assert (again["model"], again["effort"], again["permission_mode"]) == ("opus", "high", "acceptEdits")
 
 
+def test_bypass_can_be_saved_and_new_sessions_start_in_it(api, home):
+    # The confirmation happens in the interface, when the user picks it.
+    pid = project(api, home)
+    r = api.put("/api/state/preferences", json={"new_session_mode": "bypassPermissions"})
+    assert r.status_code == 200
+    s = create(api, pid)
+    assert s["permission_mode"] == "bypassPermissions"
+    again = api.get(f"/api/sessions/{s['session_id']}").json()
+    assert again["permission_mode"] == "bypassPermissions"
+
+
+def test_saved_bypass_wins_over_the_cli_default(monkeypatch, home):
+    with client(monkeypatch, "plan") as api:
+        pid = project(api, home)
+        api.put("/api/state/preferences", json={"new_session_mode": "bypassPermissions"})
+        assert create(api, pid)["permission_mode"] == "bypassPermissions"
+
+
+def test_bypass_saved_in_the_database_is_read_back(api, home):
+    pid = project(api, home)
+    write_raw_preferences(api, '{"new_session_mode": "bypassPermissions"}')
+    assert create(api, pid)["permission_mode"] == "bypassPermissions"
+
+
+def test_the_agent_of_a_bypass_session_starts_in_bypass(monkeypatch, home):
+    factory = FakeAgentFactory()
+    monkeypatch.setattr("claudio_maestro.sessions.user_default_permission_mode", lambda: None)
+    app = create_app(agent_factory=factory, history_exists=lambda sid, cwd: False)
+    headers = {"origin": APP_ORIGIN, "x-maestro": "1"}
+    with TestClient(app, base_url=BACKEND_URL, headers=headers) as api:
+        pid = project(api, home)
+        api.put("/api/state/preferences", json={"new_session_mode": "bypassPermissions"})
+        sid = create(api, pid)["session_id"]
+        r = api.post(f"/api/sessions/{sid}/messages", json={"text": "oi"})
+        assert r.status_code < 300, r.text
+        deadline = time.monotonic() + 5
+        while not factory.clients and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert factory.clients
+        assert factory.clients[0].options.permission_mode == "bypassPermissions"
+
+
 def test_without_defaults_sessions_start_as_before(monkeypatch, home):
     with client(monkeypatch, "plan") as api:
         s = create(api, project(api, home))
@@ -89,7 +132,7 @@ def test_null_mode_falls_back_to_the_cli_default(monkeypatch, home):
     "{not json",
     "[]",
     '{"new_session_model": 7, "new_session_effort": ["high"], "new_session_mode": {}}',
-    '{"new_session_model": "", "new_session_effort": "turbo", "new_session_mode": "bypassPermissions"}',
+    '{"new_session_model": "", "new_session_effort": "turbo", "new_session_mode": "inventado"}',
 ])
 def test_unreadable_preferences_are_ignored(monkeypatch, home, raw):
     with client(monkeypatch, "plan") as api:
@@ -113,7 +156,6 @@ def test_valid_keys_survive_invalid_neighbours(api, home):
     {"new_session_model": 7},
     {"new_session_effort": "turbo"},
     {"new_session_effort": 3},
-    {"new_session_mode": "bypassPermissions"},
     {"new_session_mode": "qualquer"},
 ])
 def test_invalid_defaults_are_refused(api, body):

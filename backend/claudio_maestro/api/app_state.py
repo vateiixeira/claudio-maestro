@@ -33,8 +33,8 @@ def valid_default_effort(effort: object) -> bool:
 
 
 def valid_default_mode(mode: object) -> bool:
-    # bypassPermissions keeps asking for a confirmation per session.
-    return isinstance(mode, str) and mode in PERMISSION_MODES and mode != "bypassPermissions"
+    # bypassPermissions is accepted: the interface asks for the confirmation when it is chosen.
+    return isinstance(mode, str) and mode in PERMISSION_MODES
 
 
 @router.get("")

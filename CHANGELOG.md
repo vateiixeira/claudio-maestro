@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- O modo "Sem perguntas" pode ser o padrão das conversas novas (Preferências) e ser escolhido na janela de nova conversa, sempre com confirmação ao escolher. O `defaultMode: bypassPermissions` do `settings.json` do CLI continua ignorado.
+
 ## [0.4.0] - 2026-10-05
 
 O menu lateral passa a mostrar o plano da assinatura e quanto já foi usado da sessão e da semana, com o horário em que cada limite renova, sem precisar abrir o CLI.

@@ -19,5 +19,5 @@ export const MODE_LABELS: Record<PermissionMode, string> = {
 // A mode the CLI knows but the app does not shows its raw value.
 export const modeLabel = (m: string) => MODE_LABELS[m as PermissionMode] ?? m
 
-// Modes offered when starting a conversation: "Sem perguntas" needs a confirmation, only asked inside the conversation.
-export const SELECTABLE_MODES: PermissionMode[] = (Object.keys(MODE_LABELS) as PermissionMode[]).filter((m) => m !== 'bypassPermissions')
+// Every mode the app offers. "Sem perguntas" is among them: wherever it can be chosen, a confirmation comes first.
+export const ALL_MODES = Object.keys(MODE_LABELS) as PermissionMode[]
