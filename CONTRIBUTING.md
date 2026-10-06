@@ -101,7 +101,7 @@ Os scripts de `scripts/` são ferramentas de quem mantém o projeto e chamam o `
 
 ## Usando o Claude Code para contribuir
 
-O [CLAUDE.md](CLAUDE.md) tem as regras do projeto, e `.claude/agents/` traz três agentes prontos: `implementer` (implementa com testes antes), `reviewer` (revisa uma tarefa) e `milestone-reviewer` (revisão profunda de um conjunto de mudanças).
+O [CLAUDE.md](CLAUDE.md) tem as regras do projeto, e `.claude/agents/` traz três agentes prontos: `implementer` (implementa com testes antes), `reviewer` (revisa uma tarefa) e `milestone-reviewer` (revisão profunda de um conjunto de mudanças). A seção "Agentes" do CLAUDE.md lista as áreas críticas, em que a revisão de cada tarefa roda em Opus.
 
 ## Falhas de segurança
 
