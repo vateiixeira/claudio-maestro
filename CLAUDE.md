@@ -43,6 +43,7 @@ uv run pytest                                                                   
 uv run ruff check                                                                                   # lint do backend
 pnpm --dir frontend test                                                                            # testes do frontend
 pnpm --dir frontend build                                                                           # compilação do frontend
+scripts/check.sh                                                                                    # tudo o que a CI roda: lint, testes e compilação
 uv run python scripts/sdk_smoke.py                                                                  # teste manual contra o SDK real (consome assinatura ou créditos)
 ```
 

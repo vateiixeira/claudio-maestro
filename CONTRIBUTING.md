@@ -40,6 +40,7 @@ uv run pytest                  # backend
 uv run ruff check              # lint do backend
 pnpm --dir frontend test       # frontend
 pnpm --dir frontend build      # compilação e checagem de tipos
+scripts/check.sh               # tudo acima de uma vez, como na CI
 ```
 
 A CI roda tudo isso em cada pull request, no Linux e no macOS.
