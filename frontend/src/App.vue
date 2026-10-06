@@ -69,7 +69,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full bg-bg text-sm leading-[1.45] text-fg">
+  <div class="flex h-full overflow-hidden bg-bg text-sm leading-[1.45] text-fg">
     <AppSidebar />
     <main class="relative min-w-0 flex-1 overflow-y-auto bg-surface">
       <RouterView />

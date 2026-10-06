@@ -105,6 +105,29 @@ describe('página da conversa', () => {
     expect(strip.find('[data-test="toggle-details"]').exists()).toBe(true)
   })
 
+  it('a página da conversa nunca faz a área principal rolar: só a conversa rola', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.classes()).toEqual(expect.arrayContaining(['h-full', 'overflow-hidden']))
+  })
+
+  it('as ações do cabeçalho quebram linha em vez de vazar da coluna estreita', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    const actions = wrapper.get('[data-test="header-actions"]')
+    expect(actions.classes()).toEqual(expect.arrayContaining(['flex', 'flex-wrap', 'min-w-0', 'justify-end']))
+    expect(actions.find('[data-test="mark-button"]').exists()).toBe(true)
+    expect(actions.find('[data-test="toggle-finished"]').exists()).toBe(true)
+    expect(actions.find('[data-test="header-menu"]').exists()).toBe(true)
+    expect(actions.find('[data-test="toggle-details"]').exists()).toBe(true)
+  })
+
+  it('trilha e título ocupam só a sobra, para um título longo não fazer as ações quebrarem linha', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    const title = wrapper.get('[data-test="header-title"]')
+    expect(title.classes()).toEqual(expect.arrayContaining(['min-w-0', 'grow', 'basis-0']))
+    expect(title.find('[data-test="breadcrumb"]').exists()).toBe(true)
+    expect(title.find('[data-test="conversation-title"]').exists()).toBe(true)
+  })
+
   it('o botão de Detalhes tem nome e title, e um ícone SVG', async () => {
     const { wrapper } = await mountAt('/sessions/s1')
     const toggle = wrapper.get('[data-test="toggle-details"]')

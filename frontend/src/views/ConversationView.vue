@@ -124,7 +124,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
 </script>
 
 <template>
-  <div class="relative flex h-full min-w-0">
+  <div class="relative flex h-full min-w-0 overflow-hidden">
     <div ref="column" class="flex min-w-0 grow flex-col">
       <div v-if="embedded" data-test="embedded-bar" class="flex min-h-12 items-center gap-1 border-b border-line pr-2 pl-4">
         <span data-test="embedded-title" :title="title" class="min-w-0 grow truncate text-sm font-medium text-fg">{{ title }}</span>

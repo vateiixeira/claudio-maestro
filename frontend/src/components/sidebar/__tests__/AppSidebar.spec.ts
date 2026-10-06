@@ -556,6 +556,14 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     expect(scroller.classes()).toContain('gap-[22px]')
     expect(scroller.classes().filter((c) => c.startsWith('border'))).toEqual([])
   })
+
+  // Os `sr-only` (absolutos) das linhas tomam o ancestral posicionado mais próximo como
+  // referência. Se não for a lista rolável, escapam do recorte e esticam a página inteira.
+  it('a lista rolável é o bloco de contenção dos elementos absolutos dentro dela', () => {
+    twoProjects()
+    const scroller = mountSidebar().get('[data-test="sidebar-sections"]')
+    expect(scroller.classes()).toContain('relative')
+  })
 })
 
 const RELEASES = 'https://github.com/vateiixeira/claudio-maestro/releases'

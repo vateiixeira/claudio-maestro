@@ -13,6 +13,11 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - A caixa de mensagem ficou um pouco mais alta (15%).
 
+### Corrigido
+
+- A tela inteira podia rolar além do rodapé e deixar uma faixa vazia embaixo, cortando o topo do menu lateral, quando a lista do menu era maior que a janela.
+- Em janelas estreitas ou baixas, a página da conversa não ganha mais barras de rolagem próprias: os botões do cabeçalho quebram linha em vez de vazar, e só a conversa rola.
+
 ## [0.4.0] - 2026-10-05
 
 O menu lateral passa a mostrar o plano da assinatura e quanto já foi usado da sessão e da semana, com o horário em que cada limite renova, sem precisar abrir o CLI.

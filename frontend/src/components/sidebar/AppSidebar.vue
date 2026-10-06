@@ -181,7 +181,7 @@ const itemClass = sidebarItemClass
       </RouterLink>
     </div>
 
-    <div data-test="sidebar-sections" class="flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-2.5 pt-3.5 pb-2">
+    <div data-test="sidebar-sections" class="relative flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-2.5 pt-3.5 pb-2">
       <section aria-labelledby="sidebar-active-title" class="flex flex-col gap-px">
         <div class="flex h-[30px] items-center pr-1 pl-2.5">
           <h2 id="sidebar-active-title" data-test="section-title" class="grow font-mono text-[0.6875rem] font-normal tracking-[0.08em] text-fg-subtle uppercase">Em andamento</h2>

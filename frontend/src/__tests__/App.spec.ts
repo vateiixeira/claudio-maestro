@@ -35,6 +35,16 @@ describe('estrutura do app', () => {
     expect(main.classes()).toEqual(expect.arrayContaining(['relative', 'overflow-y-auto']))
   })
 
+  it('a raiz do app recorta o que transborda, para a janela nunca rolar', async () => {
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias')
+    const wrapper = mount(App, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    // Em janelas baixas o menu lateral passa da altura; a raiz recorta em vez de esticar a página.
+    expect(wrapper.find('main').element.parentElement!.classList).toContain('overflow-hidden')
+  })
+
   it('o título da aba conta só as esperas que precisam de você', async () => {
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 'a', display_state: 'waiting', unread: false }),

@@ -167,78 +167,84 @@ async function openProject() {
 <template>
   <header class="flex w-full flex-col border-b border-line">
     <span data-test="state-live" role="status" aria-live="polite" class="sr-only">{{ stateLabel }}</span>
-    <div data-test="header-strip" class="flex min-h-14 items-center gap-3 px-4">
+    <div data-test="header-strip" class="flex min-h-14 items-center gap-3 px-4 py-2">
       <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="!needsYou(listed)" />
-      <nav v-if="showPath" data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 shrink items-center gap-1 text-xs text-fg-muted max-sm:hidden">
-        <RouterLink to="/sessions" class="inline-flex min-h-8 shrink-0 items-center no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
-        <template v-if="project">
+      <!-- Trilha e título dividem só a sobra: as ações ficam com a largura delas e só quebram linha quando não cabem. -->
+      <div data-test="header-title" class="flex min-w-0 grow basis-0 items-center gap-3">
+        <nav v-if="showPath" data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 shrink items-center gap-1 text-xs text-fg-muted max-sm:hidden">
+          <RouterLink to="/sessions" class="inline-flex min-h-8 shrink-0 items-center no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
+          <template v-if="project">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
+            <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="inline-flex min-h-8 min-w-0 items-center gap-1.5 no-underline text-fg-muted hover:text-fg">
+              <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" /><span class="truncate">{{ project.name }}</span>
+            </RouterLink>
+          </template>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
-          <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="inline-flex min-h-8 min-w-0 items-center gap-1.5 no-underline text-fg-muted hover:text-fg">
-            <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" /><span class="truncate">{{ project.name }}</span>
-          </RouterLink>
-        </template>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
-      </nav>
-      <input
-        v-if="editing"
-        ref="input"
-        v-model="draft"
-        data-test="title-input"
-        aria-label="Título da conversa"
-        maxlength="200"
-        class="h-9 min-w-0 grow rounded-md border border-line-strong bg-elevated px-2.5 text-[1.0625rem] font-semibold text-fg outline-none focus:border-fg-muted"
-        @keydown.enter.prevent="saveRename"
-        @keydown.esc.prevent="editing = false"
-      />
-      <h1 v-else class="m-0 min-w-0 grow text-[1.0625rem] leading-snug font-semibold tracking-tight">
-        <button
-          type="button"
-          data-test="conversation-title"
-          title="Clique para renomear"
-          class="block min-h-8 max-w-full truncate text-left decoration-fg-subtle underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-primary"
-          @click="startRename"
-        >{{ title }}</button>
-      </h1>
-      <button v-if="markChip" ref="markChipButton" type="button" data-test="mark-chip" aria-haspopup="menu" :aria-expanded="!!markAt" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
-        <MarkIcon v-if="listed?.mark" :mark="listed.mark" />{{ markChip }}
-      </button>
-      <span v-if="listed?.priority" data-test="header-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" :size="13" /></span>
-      <span v-if="copied" role="status" class="shrink-0 text-xs text-primary-soft">ID copiado</span>
-      <NextNeedsYou v-if="showPath" :current-id="id" />
-      <button v-if="listed" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
-      <button
-        v-if="listed"
-        type="button"
-        data-test="toggle-finished"
-        class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
-        :class="isFinished ? 'text-primary-soft' : 'text-fg'"
-        :disabled="toggling"
-        @click="toggleFinished"
-      >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
-      <div ref="menuWrap" class="relative shrink-0">
-        <button
-          ref="menuButton"
-          type="button"
-          data-test="header-menu"
-          aria-label="Mais ações"
-          title="Mais ações"
-          aria-haspopup="menu"
-          :aria-expanded="menuOpen"
-          class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
-          @click="menuOpen = !menuOpen"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>
-        </button>
-        <div
-          v-if="menuOpen"
-          role="menu"
-          class="absolute right-0 z-20 mt-1 flex w-56 flex-col rounded-lg border border-line-strong bg-card py-1 shadow-lg"
-        >
-          <button type="button" role="menuitem" data-test="menu-editor" class="px-3 py-2 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted" :disabled="!project" @click="openProject">Abrir projeto no editor</button>
-          <button type="button" role="menuitem" data-test="menu-copy-id" class="px-3 py-2 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted" @click="copyId">Copiar ID da sessão</button>
-        </div>
+        </nav>
+        <input
+          v-if="editing"
+          ref="input"
+          v-model="draft"
+          data-test="title-input"
+          aria-label="Título da conversa"
+          maxlength="200"
+          class="h-9 min-w-0 grow rounded-md border border-line-strong bg-elevated px-2.5 text-[1.0625rem] font-semibold text-fg outline-none focus:border-fg-muted"
+          @keydown.enter.prevent="saveRename"
+          @keydown.esc.prevent="editing = false"
+        />
+        <h1 v-else class="m-0 min-w-0 grow text-[1.0625rem] leading-snug font-semibold tracking-tight">
+          <button
+            type="button"
+            data-test="conversation-title"
+            title="Clique para renomear"
+            class="block min-h-8 max-w-full truncate text-left decoration-fg-subtle underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+            @click="startRename"
+          >{{ title }}</button>
+        </h1>
       </div>
-      <slot name="details-toggle" />
+      <!-- Quebram linha numa coluna estreita: shrink-0 em fila única vazava e fazia a página rolar. -->
+      <div data-test="header-actions" class="flex min-w-0 flex-wrap items-center justify-end gap-3">
+        <button v-if="markChip" ref="markChipButton" type="button" data-test="mark-chip" aria-haspopup="menu" :aria-expanded="!!markAt" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
+          <MarkIcon v-if="listed?.mark" :mark="listed.mark" />{{ markChip }}
+        </button>
+        <span v-if="listed?.priority" data-test="header-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" :size="13" /></span>
+        <span v-if="copied" role="status" class="shrink-0 text-xs text-primary-soft">ID copiado</span>
+        <NextNeedsYou v-if="showPath" :current-id="id" />
+        <button v-if="listed" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
+        <button
+          v-if="listed"
+          type="button"
+          data-test="toggle-finished"
+          class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
+          :class="isFinished ? 'text-primary-soft' : 'text-fg'"
+          :disabled="toggling"
+          @click="toggleFinished"
+        >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
+        <div ref="menuWrap" class="relative shrink-0">
+          <button
+            ref="menuButton"
+            type="button"
+            data-test="header-menu"
+            aria-label="Mais ações"
+            title="Mais ações"
+            aria-haspopup="menu"
+            :aria-expanded="menuOpen"
+            class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+            @click="menuOpen = !menuOpen"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>
+          </button>
+          <div
+            v-if="menuOpen"
+            role="menu"
+            class="absolute right-0 z-20 mt-1 flex w-56 flex-col rounded-lg border border-line-strong bg-card py-1 shadow-lg"
+          >
+            <button type="button" role="menuitem" data-test="menu-editor" class="px-3 py-2 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted" :disabled="!project" @click="openProject">Abrir projeto no editor</button>
+            <button type="button" role="menuitem" data-test="menu-copy-id" class="px-3 py-2 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted" @click="copyId">Copiar ID da sessão</button>
+          </div>
+        </div>
+        <slot name="details-toggle" />
+      </div>
     </div>
     <div
       v-if="!detailsOpen && hasMeta"
