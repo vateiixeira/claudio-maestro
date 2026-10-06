@@ -9,6 +9,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - O texto digitado e as imagens anexadas na caixa de mensagem ficam salvos por conversa, mesmo ao trocar de sessão. O texto também sobrevive a recarregar a página; as imagens, não.
 - O modo "Sem perguntas" pode ser o padrão das conversas novas (Preferências) e ser escolhido na janela de nova conversa, sempre com confirmação ao escolher. O `defaultMode: bypassPermissions` do `settings.json` do CLI continua ignorado.
 
+### Alterado
+
+- A caixa de mensagem ficou um pouco mais alta (15%).
+
 ## [0.4.0] - 2026-10-05
 
 O menu lateral passa a mostrar o plano da assinatura e quanto já foi usado da sessão e da semana, com o horário em que cada limite renova, sem precisar abrir o CLI.

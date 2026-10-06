@@ -220,7 +220,7 @@ async function interrupt() {
           :mentions="suggestions.mentions.value"
           :hint="suggestions.argumentHint.value"
           :scroll-top="scrollTop"
-          class="rounded-xl border border-transparent px-3.5 py-[11px] font-sans text-sm leading-normal"
+          class="rounded-xl border border-transparent px-3.5 py-[14px] font-sans text-sm leading-normal"
         />
         <textarea
           :id="`msg-${sessionId}`"
@@ -233,7 +233,7 @@ async function interrupt() {
           :aria-expanded="suggestions.isOpen.value"
           :aria-controls="suggestions.menuId"
           :aria-activedescendant="suggestions.isOpen.value && suggestions.items.value.length ? suggestions.optionId(suggestions.active.value) : undefined"
-          class="relative block min-h-11 w-full resize-none overflow-hidden rounded-xl border border-line-strong bg-transparent px-3.5 py-[11px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
+          class="relative block min-h-[51px] w-full resize-none overflow-hidden rounded-xl border border-line-strong bg-transparent px-3.5 py-[14px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
           @input="onInput"
           @scroll="onScroll"
           @keydown="onKeydown"
