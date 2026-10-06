@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import MessageComposer from '../MessageComposer.vue'
+import { resetComposerDrafts } from '../../../conversation/composerDrafts'
 import { jsonResponse, routeFetch } from '../../../test/factories'
 
 afterEach(() => vi.unstubAllGlobals())
+beforeEach(resetComposerDrafts)
 
 const URL = 'POST /api/sessions/s1/messages'
 function setup(status = 202, body: unknown = {}) {

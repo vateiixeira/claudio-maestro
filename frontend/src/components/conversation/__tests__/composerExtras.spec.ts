@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import MessageComposer from '../MessageComposer.vue'
+import { resetComposerDrafts } from '../../../conversation/composerDrafts'
 import { jsonResponse, routeFetch } from '../../../test/factories'
 import { setPendingDraft } from '../../../conversation/pendingDrafts'
 import { FakeRecognition } from '../../../test/fakeRecognition'
@@ -8,6 +9,7 @@ import { resetFileReads, settleReads, trackFileReads } from '../../../test/fileR
 import { localImagesFor, claimLocalImages, forgetSessionImages, resetLocalImages } from '../../../conversation/localImages'
 
 enableAutoUnmount(afterEach)
+beforeEach(resetComposerDrafts)
 afterEach(() => {
   vi.unstubAllGlobals()
   resetLocalImages()

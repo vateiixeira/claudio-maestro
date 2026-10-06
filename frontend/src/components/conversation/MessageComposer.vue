@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { errorMessage, interruptSession, sendMessage } from '../../api/http'
+import { loadDraftImages, loadDraftText, saveDraftImages, saveDraftText } from '../../conversation/composerDrafts'
 import { useDictation } from '../../conversation/dictation'
 import { type DraftImage, attachImages, base64Of, filesFrom, formatSize } from '../../conversation/images'
 import { takePendingDraft } from '../../conversation/pendingDrafts'
@@ -17,13 +18,19 @@ const props = defineProps<{ sessionId: string; state: SessionState; blockedReaso
 const emit = defineEmits<{ sending: [] }>()
 
 const pendingDraft = takePendingDraft(props.sessionId)
-const text = ref(pendingDraft?.text ?? '')
+// A first prompt that failed wins; otherwise what was left typed in this session comes back.
+const text = ref(pendingDraft?.text ?? loadDraftText(props.sessionId))
 const sending = ref(false)
 const interrupting = ref(false)
 const error = ref<string | null>(pendingDraft?.error ?? null)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 
-const images = ref<DraftImage[]>(pendingDraft?.images ?? [])
+const images = ref<DraftImage[]>(pendingDraft?.images ?? loadDraftImages(props.sessionId))
+// The draft follows every change (typing, dictation, send), so switching sessions loses nothing.
+watch(text, (value) => saveDraftText(props.sessionId, value), { immediate: true })
+// Deep: attaching an image pushes into the same array.
+watch(images, (list) => saveDraftImages(props.sessionId, list), { immediate: true, deep: true })
+
 const canSend = computed(() => !sending.value && !props.blockedReason && (text.value.trim() !== '' || images.value.length > 0))
 
 /** Attaches image files after checking format, size and count. Used by paste and drop. */
@@ -81,6 +88,8 @@ const scrollTop = ref(0)
 function onScroll() {
   scrollTop.value = textarea.value?.scrollTop ?? 0
 }
+
+onMounted(() => nextTick(resize))
 
 const busy = computed(() => props.state === 'running' || props.state === 'awaiting_decision')
 
@@ -151,6 +160,9 @@ async function send() {
     // Only clear if the user did not keep typing meanwhile.
     if (text.value === message) text.value = ''
     images.value = images.value.filter((i) => !attached.includes(i))
+    // Explicit: the watchers stop when the user left this session before the reply came back.
+    saveDraftText(props.sessionId, text.value)
+    saveDraftImages(props.sessionId, images.value)
     nextTick(resize)
   } catch (e) {
     forget()
