@@ -137,6 +137,12 @@ def create_app(
                 app.state.background.add(task)
                 task.add_done_callback(app.state.background.discard)
 
+        def on_finished(session_id: str, finished_at: int) -> None:
+            # "Entregas": the digest service records the click and queues the summary.
+            task = asyncio.create_task(app.state.digest.record_finish(session_id, finished_at))
+            app.state.background.add(task)
+            task.add_done_callback(app.state.background.discard)
+
         use_agentd = agentd if agentd is not None else agent_factory is None
         new_through_agentd = os.environ.get("MAESTRO_AGENTD", "1") != "0"
         app.state.agentd = (
@@ -155,6 +161,7 @@ def create_app(
             get_session_messages=get_session_messages,
             read_tool_results=read_tool_results,
             on_turn_end=on_turn_end,
+            on_finished=on_finished,
             agentd=app.state.agentd,
             agentd_new_sessions=new_through_agentd,
         )

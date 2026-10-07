@@ -2406,6 +2406,7 @@ class SessionManager:
         file_mtime: FileMtime | None = None,
         session_file: Callable[[str, str], Path | None] | None = None,
         on_turn_end: Callable[[int], None] | None = None,
+        on_finished: Callable[[str, int], None] | None = None,
         default_permission_mode: Callable[[], str | None] | None = None,
         read_transcript: history_module.ReadTranscript | None = None,
         read_edits: history_module.ReadEdits | None = None,
@@ -2432,6 +2433,8 @@ class SessionManager:
         self._read_edits = read_edits or history_module.sdk_read_edits
         # Called with the project id after each turn (e.g. to refresh git).
         self._on_turn_end = on_turn_end
+        # Called with (session_id, finished_at) when a session goes from open to finished.
+        self._on_finished = on_finished
         self._db_path = db_path
         self._file_mtime = file_mtime or history_module.sdk_session_file_mtime
         # session_file(session_id, directory): path of the session's `.jsonl`, or None.
@@ -3201,6 +3204,12 @@ class SessionManager:
         except sqlite3.IntegrityError as exc:
             # The group was removed between the check and the write.
             raise groups.GroupNotFoundError("Agrupador não encontrado.") from exc
+        if changes.get("finished") is True and self._on_finished is not None:
+            # "Entregas": each open-to-finished passage becomes a delivery record.
+            try:
+                self._on_finished(session_id, changes["finished_at"])
+            except Exception:
+                logger.exception("Falha ao registrar a entrega da sessão %s", session_id)
         if "title" in changes:
             if await session.has_history():
                 try:
