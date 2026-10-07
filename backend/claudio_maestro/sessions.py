@@ -2678,6 +2678,10 @@ class SessionManager:
     def active_ids(self) -> set[str]:
         return set(self._sessions)
 
+    def live_count(self) -> int:
+        """Sessions with a client connected or connecting in this app."""
+        return sum(1 for session in self._sessions.values() if session.active)
+
     # History -----------------------------------------------------------------
 
     async def open(self, session_id: str) -> dict[str, Any]:

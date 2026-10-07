@@ -138,6 +138,16 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
 
 
+@pytest.fixture(autouse=True)
+def no_real_run_mode(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The app never runs the real detection (it would call `systemctl show`) in tests."""
+    if request.node.module.__name__.endswith("test_runmode"):
+        return  # those tests exercise the real detection with fakes of their own
+    from claudio_maestro import runmode
+
+    monkeypatch.setattr(runmode, "current_run_mode", lambda **kw: runmode.RunMode("unknown"))
+
+
 @pytest.fixture
 def home(tmp_path: Path) -> Path:
     return (tmp_path / "home").resolve()

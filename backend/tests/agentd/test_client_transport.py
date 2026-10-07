@@ -412,3 +412,50 @@ async def test_failed_start_is_not_retried_during_the_cooldown(tmp_path, monkeyp
     with pytest.raises(AgentdUnavailable):
         await client.ensure_running()
     assert len(starts) == 2
+
+
+@pytest.mark.anyio
+async def test_live_children_does_not_start_an_agentd(tmp_path):
+    client = AgentdClient(tmp_path, idle_exit=5, orphan_timeout=5)
+    assert await client.live_children() is None
+    assert not socket_path(tmp_path).exists()
+    await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_shutdown_server_stops_the_agentd_and_a_new_one_starts_later(tmp_path):
+    client = AgentdClient(tmp_path, idle_exit=5, orphan_timeout=5)
+    await client.ensure_running()
+    first = client.server_pid
+    assert await client.live_children() == []
+    await client.shutdown_server()
+    for _ in range(100):
+        client._reap_launchers()  # the agentd is our child: it stays a zombie until collected
+        try:
+            os.kill(first, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.05)
+    else:
+        pytest.fail("o agentd não saiu")
+    await client.ensure_running()
+    assert client.server_pid != first
+    await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_live_children_gives_up_when_the_agentd_hangs(tmp_path, monkeypatch):
+    client = AgentdClient(tmp_path, idle_exit=5, orphan_timeout=5)
+
+    async def connected(*, start=True):
+        return None
+
+    async def never_answers(op, **args):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(client, "ensure_running", connected)
+    monkeypatch.setattr(client, "_call", never_answers)
+    monkeypatch.setattr("claudio_maestro.agent.agentd_client.LIVE_CHILDREN_TIMEOUT", 0.2)
+    started = asyncio.get_running_loop().time()
+    assert await client.live_children() is None
+    assert asyncio.get_running_loop().time() - started < 2

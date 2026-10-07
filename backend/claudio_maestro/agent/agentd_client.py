@@ -24,6 +24,7 @@ STREAM_LIMIT = 256 * 1024 * 1024
 START_COOLDOWN = 60.0  # after a failed start, new attempts wait this long (seconds)
 GONE_WAIT = 13.0  # a killed child may take stdin grace + SIGTERM grace + SIGKILL (seconds)
 GONE_POLL = 0.1
+LIVE_CHILDREN_TIMEOUT = 3.0  # a hung agentd must not hang the callers (seconds)
 
 
 class AgentdUnavailable(Exception):
@@ -242,6 +243,22 @@ class AgentdClient:
         await self.ensure_running()
         reply = await self._call("list")
         return [AgentdChild.from_reply(child) for child in reply["children"]]
+
+    async def live_children(self) -> "list[AgentdChild] | None":  # `list` is the method above
+        """Children of a running agentd; None when none runs (none is started) or it hangs."""
+        try:
+            async with asyncio.timeout(LIVE_CHILDREN_TIMEOUT):
+                await self.ensure_running(start=False)
+                reply = await self._call("list")
+        except (AgentdUnavailable, TimeoutError):
+            return None
+        return [AgentdChild.from_reply(child) for child in reply["children"]]
+
+    async def shutdown_server(self) -> None:
+        """Ask the agentd to exit; the next session starts a new one (with the new code)."""
+        with contextlib.suppress(AgentdUnavailable):
+            await self.ensure_running(start=False)
+            await self._call("shutdown")
 
     async def kill(self, child_id: str) -> None:
         """Ask the agentd to stop the child (it returns before the process is gone; see

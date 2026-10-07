@@ -223,6 +223,20 @@ async def test_first_message_starts_client_without_resume_and_sets_title(make_en
 
 
 @pytest.mark.anyio
+async def test_live_count_counts_sessions_with_a_connected_client(make_env, env_cleanup):
+    script = lambda content: text_turn("x", "oi")  # noqa: E731
+    env = make_env(script=script)
+    env_cleanup.append(env.manager)
+    assert env.manager.live_count() == 0
+    session = env.new_session()
+    assert env.manager.live_count() == 0  # created but no client yet
+
+    await session.send("oi")
+
+    assert env.manager.live_count() == 1
+
+
+@pytest.mark.anyio
 async def test_empty_message_is_refused(make_env, env_cleanup):
     env = make_env()
     env_cleanup.append(env.manager)

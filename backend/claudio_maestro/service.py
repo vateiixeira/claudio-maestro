@@ -14,9 +14,8 @@ import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-# Same values as runmode.py (task 6 unifies them).
-OFFICIAL_UNIT = "claudio-maestro.service"
-LAUNCHD_LABEL = "io.github.vateiixeira.claudio-maestro"
+from claudio_maestro.runmode import LAUNCHD_LABEL, OFFICIAL_UNIT
+
 MARK = "Gerado por claudio-maestro service install"
 TIMEOUT = 30
 UNIT_DIR = Path(".config/systemd/user")

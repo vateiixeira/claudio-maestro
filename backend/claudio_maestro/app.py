@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from claudio_maestro import db, gitinfo, history
+from claudio_maestro import db, gitinfo, history, runmode, selfupdate
 from claudio_maestro.activity import ActivityReader, SessionFile
 from claudio_maestro.agent.agentd_client import AgentdClient
 from claudio_maestro.agent.base import AgentFactory
@@ -35,6 +35,7 @@ from claudio_maestro.frontend_static import mount_frontend
 from claudio_maestro.gitmonitor import GitMonitor
 from claudio_maestro.picker import PickFolder
 from claudio_maestro.picker import pick_folder as system_pick_folder
+from claudio_maestro.runmode import RunMode
 from claudio_maestro.security import (
     BodySizeLimitMiddleware,
     HostOriginMiddleware,
@@ -79,6 +80,8 @@ def create_app(
     git_fetch: gitinfo.FetchUpstream | None = None,
     fetch_usage: FetchUsage | None = None,
     restart: Callable[[], None] | None = None,
+    run_mode: RunMode | None = None,
+    self_updater: Callable[..., Any] | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -97,6 +100,8 @@ def create_app(
     `git_fetch` replaces `gitinfo.fetch_upstream`, the one thing that reaches a git remote.
     `fetch_usage` replaces the read of the subscription usage (tests pass fakes).
     `restart`: called to restart the app in place (the CLI passes it); None disables the update button.
+    `run_mode`: where the app runs; None detects it.
+    `self_updater`: factory of the updater, called with `publish`, `data_dir` and `restart` (tests pass fakes).
     """
 
     @asynccontextmanager
@@ -117,6 +122,16 @@ def create_app(
             app.state.hub.publish,
             enabled=app.state.settings.update_check,
             fetch=fetch_release or fetch_latest_release,
+        )
+        app.state.run_mode = run_mode or await asyncio.to_thread(runmode.current_run_mode)
+        app.state.update_result = selfupdate.take_update_result(app.state.settings.data_dir)
+        make_updater = self_updater or (
+            lambda publish, data_dir, restart: selfupdate.SelfUpdater(
+                selfupdate.REPO_ROOT, data_dir, publish, restart=restart
+            )
+        )
+        app.state.self_updater = make_updater(
+            publish=app.state.hub.publish, data_dir=app.state.settings.data_dir, restart=app.state.restart
         )
         app.state.usage = UsageChecker(
             app.state.hub.publish,
@@ -152,6 +167,8 @@ def create_app(
             AgentdClient(app.state.settings.data_dir, spawn_allowed=new_through_agentd)
             if use_agentd else None
         )
+        # Sessions outlive a restart of the app only when new ones also go through the agentd.
+        app.state.agentd_new_sessions = app.state.agentd is not None and new_through_agentd
         app.state.sessions = SessionManager(
             app.state.settings.db_path,
             app.state.hub.publish,
