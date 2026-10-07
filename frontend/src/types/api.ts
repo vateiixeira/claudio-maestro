@@ -432,4 +432,7 @@ export interface DeliveriesDay {
   agent_enabled: boolean
   deliveries: Delivery[]
   in_progress: DeliveryInProgress[]
+  /** The closest earlier / later day with at least one record. */
+  prev_day: string | null
+  next_day: string | null
 }

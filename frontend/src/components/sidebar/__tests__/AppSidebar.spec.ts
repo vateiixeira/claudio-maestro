@@ -60,6 +60,7 @@ describe('menu lateral', () => {
     expect(wrapper.find('[data-test="nav-dashboard"]').attributes('href')).toBe('/dashboard')
     expect(wrapper.find('[data-test="nav-inbox"]').attributes('href')).toBe('/inbox')
     expect(wrapper.find('[data-test="nav-conversations"]').attributes('href')).toBe('/sessions')
+    expect(wrapper.find('[data-test="nav-deliveries"]').attributes('href')).toBe('/entregas')
     expect(wrapper.find('[data-test="preferences"]').attributes('href')).toBe('/preferencias')
     expect(wrapper.find('[data-test="new-project"]').attributes('href')).toBe('/projects/new')
   })
@@ -202,9 +203,9 @@ describe('menu lateral', () => {
     expect(localStorage.getItem('maestro:sidebar-width')).toBe('288')
   })
 
-  it('Inbox, Dashboard, Conversas e Preferências têm ícone', () => {
+  it('Inbox, Dashboard, Conversas, Entregas e Preferências têm ícone', () => {
     const w = mountSidebar()
-    for (const id of ['nav-inbox', 'nav-dashboard', 'nav-conversations', 'preferences']) {
+    for (const id of ['nav-inbox', 'nav-dashboard', 'nav-conversations', 'nav-deliveries', 'preferences']) {
       expect(w.find(`[data-test="${id}"] svg`).exists(), id).toBe(true)
     }
   })

@@ -29,6 +29,7 @@ import IconArrowDown from '../icons/IconArrowDown.vue'
 import IconChat from '../icons/IconChat.vue'
 import IconChevron from '../icons/IconChevron.vue'
 import IconDashboard from '../icons/IconDashboard.vue'
+import IconDeliveries from '../icons/IconDeliveries.vue'
 import IconInbox from '../icons/IconInbox.vue'
 import IconPlus from '../icons/IconPlus.vue'
 import IconSettings from '../icons/IconSettings.vue'
@@ -178,6 +179,9 @@ const itemClass = sidebarItemClass
       </RouterLink>
       <RouterLink to="/sessions" data-test="nav-conversations" :class="itemClass(route.name === 'sessions')" :aria-current="route.name === 'sessions' ? 'page' : undefined">
         <IconChat /><span class="grow">Conversas</span>
+      </RouterLink>
+      <RouterLink to="/entregas" data-test="nav-deliveries" :class="itemClass(route.name === 'deliveries')" :aria-current="route.name === 'deliveries' ? 'page' : undefined">
+        <IconDeliveries /><span class="grow">Entregas</span>
       </RouterLink>
     </div>
 

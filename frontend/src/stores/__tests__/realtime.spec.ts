@@ -89,7 +89,7 @@ describe('bindRealtime', () => {
     vi.stubGlobal('fetch', fetchMock)
     const store = useDeliveriesStore()
     store.day = {
-      date: '2026-10-07', agent_enabled: true, in_progress: [],
+      date: '2026-10-07', agent_enabled: true, in_progress: [], prev_day: null, next_day: null,
       deliveries: [{ id: 1, session_id: 's1', project_id: 1, project_name: 'app', title: 'T', finished_at: 5, status: 'pending', summary_title: null, bullets: [], error: null }],
     }
     store.date = '2026-10-07'

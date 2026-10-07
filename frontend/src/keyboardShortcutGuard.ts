@@ -15,10 +15,11 @@ function overlayOpen(): boolean {
 
 /**
  * Whether `event` is the bare `key` (no modifiers), not already handled or composing, with no dialog or menu open
- * and the focus outside any text field. Shared by the single-key shortcuts of the app.
+ * and the focus outside any text field. Shared by the single-key shortcuts of the app. With `shift`, Shift is the
+ * one modifier required (the `key` is then the shifted character, like "C").
  */
-export function isBareShortcut(event: KeyboardEvent, key: string): boolean {
-  if (event.key !== key || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false
+export function isBareShortcut(event: KeyboardEvent, key: string, options: { shift?: boolean } = {}): boolean {
+  if (event.key !== key || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey !== (options.shift ?? false)) return false
   if (event.defaultPrevented || event.isComposing) return false
   if (overlayOpen()) return false
   const target = event.target as HTMLElement | null

@@ -74,7 +74,7 @@ describe('Dashboard', () => {
     expect(wrapper.find('[data-test="stat-running"]').attributes('href')).toBe('/inbox?aba=em-execucao')
     expect(wrapper.find('[data-test="stat-waiting"]').text()).toContain('1')
     expect(wrapper.find('[data-test="stat-finished-today"]').text()).toContain('1')
-    expect(wrapper.find('[data-test="stat-finished-today"]').attributes('href')).toBe('/sessions?estado=finalizadas')
+    expect(wrapper.find('[data-test="stat-finished-today"]').attributes('href')).toBe('/entregas')
     expect(wrapper.find('[data-test="stat-projects-changes"]').text()).toContain('1')
   })
 

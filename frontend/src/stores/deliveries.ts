@@ -16,6 +16,8 @@ export const useDeliveriesStore = defineStore('deliveries', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const actionErrors = ref<Record<number, string>>({})
+  /** Records whose summary is being requested right now. */
+  const busy = ref<Record<number, boolean>>({})
   let ticket = 0
 
   async function load(wanted: string): Promise<void> {
@@ -50,14 +52,19 @@ export const useDeliveriesStore = defineStore('deliveries', () => {
   }
 
   async function summarize(id: number): Promise<void> {
+    if (busy.value[id]) return
     const { [id]: _, ...rest } = actionErrors.value
     actionErrors.value = rest
+    busy.value = { ...busy.value, [id]: true }
     try {
       replace(await summarizeDelivery(id))
     } catch (e) {
       actionErrors.value = { ...actionErrors.value, [id]: errorMessage(e) }
+    } finally {
+      const { [id]: __, ...others } = busy.value
+      busy.value = others
     }
   }
 
-  return { day, date, loading, error, actionErrors, load, applyEvent, summarize }
+  return { day, date, loading, error, actionErrors, busy, load, applyEvent, summarize }
 })
