@@ -4,10 +4,14 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.5.0] - 2026-10-07
+
+Serviço oficial para rodar o Maestro no Linux e no macOS, e atualização pelo próprio app com um clique. Também chegam a tela de Entregas, a leitura de arquivos markdown e o rascunho por conversa.
+
 ### Adicionado
 
-- Comando `claudio-maestro service install` (e `uninstall`, `status`) para rodar o app como serviço no Linux (systemd) e no macOS (launchd), com as sessões sobrevivendo ao reinício.
-- Botão **Atualizar agora** no aviso de versão nova: atualiza o clone, instala as dependências, compila e reinicia o app sozinho, desfazendo tudo se algum passo falhar. O app avisa quando roda num terminal ou num serviço próprio, e Preferências ganhou a aba Execução.
+- Comando `claudio-maestro service install` (e `uninstall`, `status`) para rodar o app como serviço no Linux (systemd) e no macOS (launchd), com as sessões sobrevivendo ao reinício. Ele recusa quando já existe outro serviço que roda o Maestro, e o comando de instalação mostrado no app leva a `--port` quando o app não roda na porta padrão.
+- Botão **Atualizar agora** no aviso de versão nova: atualiza o clone, instala as dependências, compila e reinicia o app sozinho, desfazendo tudo se algum passo falhar e marcando o passo que quebrou. Com sessões abertas que cairiam no reinício, pede confirmação antes. O app avisa quando roda num terminal ou num serviço próprio, e Preferências ganhou a aba Execução.
 - Depois de atualizar pelo botão, o rodapé do menu mostra "Atualizado para X" e, quando a versão nova muda o agentd, um aviso com **Reiniciar agentd**, que só fica ativo sem sessões abertas nele.
 - Tela "Entregas": o que foi finalizado em cada dia, em todos os projetos, num quadro com uma raia por projeto (título e tópicos escritos pelo agente de resumos), a régua do dia, as conversas em andamento e a cópia do dia ou de um projeto em markdown para a daily.
 - Caminhos de arquivos `.md` na conversa, nas ferramentas e no plano viram links que abrem o documento renderizado numa aba nova, só para leitura. A página acompanha as edições ao voltar para a aba e tem "Abrir no editor".
@@ -16,14 +20,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
-- O `service install` recusa quando já existe outro serviço (systemd ou launchd) que roda o Maestro, e a mensagem de porta ocupada lembra que pode ser um terminal ou outro serviço. O comando de instalação mostrado no app leva a `--port` quando o app não roda na porta padrão.
 - A caixa de mensagem ficou um pouco mais alta (15%).
 
 ### Corrigido
 
-- Atualizar pelo app com sessões abertas depois de a página carregar agora mostra a confirmação "Atualizar mesmo assim" em vez de repetir o erro.
-- Quando um passo da atualização falha, o modal marca o passo que quebrou, e não o último que o desfazer rodou. O pnpm não trava mais pedindo confirmação sem terminal, e o reinício não espera requisições penduradas por mais de 10 segundos.
-- Parar ou remover o serviço oficial não o deixa mais como "failed" no systemd.
 - A tela inteira podia rolar além do rodapé e deixar uma faixa vazia embaixo, cortando o topo do menu lateral, quando a lista do menu era maior que a janela.
 - Em janelas estreitas ou baixas, a página da conversa não ganha mais barras de rolagem próprias: os botões do cabeçalho quebram linha em vez de vazar, e só a conversa rola.
 
