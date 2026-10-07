@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from claudio_maestro.api import (
     activity,
     app_state,
+    deliveries,
     digest,
     editor,
     fs,
@@ -29,6 +30,7 @@ router.include_router(sessions.router)
 router.include_router(plans.router)
 router.include_router(markdown.router)
 router.include_router(digest.router)
+router.include_router(deliveries.router)
 router.include_router(groups.router)
 router.include_router(activity.router)
 router.include_router(app_state.router)

@@ -110,3 +110,35 @@ class ActivityReader:
             {"date": day.isoformat(), "project_id": project_id, "sessions": n}
             for (day, project_id), n in sorted(counts.items())
         ]
+
+    def sessions_on(self, day: date) -> set[str]:
+        """Ids of the sessions with user or assistant messages on the local `day`."""
+        since = datetime.combine(day, datetime.min.time()).timestamp()
+        with closing(db.connect(self._db_path)) as conn:
+            rows = conn.execute(
+                "SELECT session_id, COALESCE(history_dir, cwd) AS cwd FROM sessions"
+                " WHERE last_activity_at >= ?",
+                (int(since),),
+            ).fetchall()
+        found: set[str] = set()
+        with self._lock:
+            for row in rows:
+                path = self._find(row["session_id"], row["cwd"])
+                if path is None:
+                    continue
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime < since:
+                    continue
+                cached = self._cache.get(path)
+                if cached is None or cached[0] != mtime:
+                    try:
+                        cached = (mtime, message_days(path))
+                    except OSError:
+                        continue
+                    self._cache[path] = cached
+                if day in cached[1]:
+                    found.add(row["session_id"])
+        return found

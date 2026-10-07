@@ -195,6 +195,64 @@ def test_reader_finds_file_through_history_dir(tmp_path):
     assert sorted(seen) == [("a", "/h"), ("b", "/p")]
 
 
+def test_sessions_on_lists_sessions_with_messages_that_day(tmp_path, files):
+    db_path = tmp_path / "maestro.db"
+    db.init_db(db_path)
+    insert_project(db_path, 1)
+    now = datetime(2026, 10, 7, 12, 0).timestamp()
+    for sid, stamps in [
+        ("s1", [local(2026, 10, 6), local(2026, 10, 7)]),
+        ("s2", [local(2026, 10, 5)]),
+    ]:
+        path = tmp_path / "h" / f"{sid}.jsonl"
+        write_transcript(path, stamps)
+        os.utime(path, (now, now))
+        files.paths[sid] = path
+        insert_session(db_path, 1, sid, now)
+    insert_session(db_path, 1, "nofile", now)
+    reader = ActivityReader(db_path, session_file=files, clock=lambda: now)
+
+    assert reader.sessions_on(date(2026, 10, 6)) == {"s1"}
+    assert reader.sessions_on(date(2026, 10, 7)) == {"s1"}
+    assert reader.sessions_on(date(2026, 10, 5)) == {"s2"}
+    assert reader.sessions_on(date(2026, 10, 4)) == set()
+
+
+def test_sessions_on_skips_stale_sessions_and_old_files(tmp_path, files):
+    db_path = tmp_path / "maestro.db"
+    db.init_db(db_path)
+    insert_project(db_path, 1)
+    now = datetime(2026, 10, 7, 12, 0).timestamp()
+    old = datetime(2026, 10, 1, 12, 0).timestamp()
+    for sid, activity, mtime in [("stale", old, old), ("oldfile", now, old)]:
+        path = tmp_path / "h" / f"{sid}.jsonl"
+        write_transcript(path, [local(2026, 10, 6)])
+        os.utime(path, (mtime, mtime))
+        files.paths[sid] = path
+        insert_session(db_path, 1, sid, activity)
+    reader = ActivityReader(db_path, session_file=files, clock=lambda: now)
+
+    assert reader.sessions_on(date(2026, 10, 6)) == set()
+    assert files.calls == 1  # "stale" is filtered by last_activity_at, before the lookup
+
+
+def test_sessions_on_does_not_prune_the_cache_of_read(tmp_path, files):
+    db_path = tmp_path / "maestro.db"
+    db.init_db(db_path)
+    insert_project(db_path, 1)
+    now = datetime(2026, 10, 7, 12, 0).timestamp()
+    path = tmp_path / "h" / "a.jsonl"
+    write_transcript(path, [local(2026, 10, 7)])
+    os.utime(path, (now, now))
+    files.paths["a"] = path
+    insert_session(db_path, 1, "a", now)
+    reader = ActivityReader(db_path, session_file=files, clock=lambda: now)
+
+    reader.read(14)
+    assert reader.sessions_on(date(2026, 10, 7)) == {"a"}
+    assert path in reader._cache
+
+
 # Routes ---------------------------------------------------------------------------
 
 
