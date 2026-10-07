@@ -27,6 +27,10 @@ function stub(state: unknown, put?: (body: unknown) => Response) {
       saved.push(body)
       return put ? put(body) : jsonResponse(body)
     },
+    'GET /api/updates': () => jsonResponse({
+      enabled: true, current: '0.1.0', available: false, latest: null, checked_at: null, releases_url: 'r',
+      run_mode: { kind: 'terminal', unit: null, kill_mode: null },
+    }),
     'GET /api/projects': () => jsonResponse([]),
     'GET /api/models': () => jsonResponse([]),
     'GET /api/digest/config': () => jsonResponse({
@@ -64,6 +68,18 @@ describe('tela de preferências', () => {
     await w.find('[data-test="tab-agent"]').trigger('click')
     await flushPromises()
     expect(w.find('#digest-enabled').exists()).toBe(true)
+    expect(w.find('#pref-editor').exists()).toBe(false)
+  })
+
+  it('a aba Execução abre pela URL', async () => {
+    stub({ preferences: {} })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias?aba=execucao')
+    const w = mount(PreferencesView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="tab-execution"]').text()).toBe('Execução')
+    expect(w.find('[data-test="tab-execution"]').attributes('aria-selected')).toBe('true')
+    expect(w.find('[data-test="execution-mode"]').text()).toBe('Terminal')
     expect(w.find('#pref-editor').exists()).toBe(false)
   })
 

@@ -134,7 +134,9 @@ export const useUpdatesStore = defineStore('updates', () => {
     const result = state.value?.last_result
     return !!result?.agentd_changed && !!state.value?.agentd?.enabled && result.to !== agentdDismissed.value
   })
-  const agentdBusy = computed(() => (state.value?.agentd?.live_children ?? 0) > 0)
+  /** Sessions that would drop on an agentd restart: the larger of the agentd's live children and the app's live sessions. */
+  const agentdOpenSessions = computed(() => Math.max(state.value?.agentd?.live_children ?? 0, state.value?.live_sessions ?? 0))
+  const agentdBusy = computed(() => agentdOpenSessions.value > 0)
 
   function dismissAgentdNotice(): void {
     const to = state.value?.last_result?.to
@@ -181,6 +183,6 @@ export const useUpdatesStore = defineStore('updates', () => {
     state, showNotice, modalOpen, load, apply, dismiss, openModal, closeModal,
     applyProgress, startUpdate, applying, applyError, restartTimedOut,
     showUpdatedNotice, dismissUpdatedNotice,
-    showAgentdNotice, agentdBusy, agentdRestarting, agentdError, restartAgentd, dismissAgentdNotice,
+    showAgentdNotice, agentdBusy, agentdOpenSessions, agentdRestarting, agentdError, restartAgentd, dismissAgentdNotice,
   }
 })

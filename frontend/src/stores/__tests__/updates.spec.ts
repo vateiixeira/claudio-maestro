@@ -187,4 +187,15 @@ describe('atualização pelo app', () => {
     store.dismissAgentdNotice()
     expect(store.showAgentdNotice).toBe(false)
   })
+
+  it('agentd ocupado com filhos vivos ou sessões vivas no app', () => {
+    const store = useUpdatesStore()
+    const result = { from: '0.1.0', to: '0.2.0', agentd_changed: true, at: 1 }
+    store.apply({ ...BASE, last_result: result, agentd: { enabled: true, live_children: 0 }, live_sessions: 0 })
+    expect(store.agentdBusy).toBe(false)
+    store.apply({ ...BASE, last_result: result, agentd: { enabled: true, live_children: 0 }, live_sessions: 1 })
+    expect(store.agentdBusy).toBe(true)
+    store.apply({ ...BASE, last_result: result, agentd: { enabled: true, live_children: null }, live_sessions: 0 })
+    expect(store.agentdBusy).toBe(false)
+  })
 })

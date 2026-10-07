@@ -9,6 +9,8 @@ import SidebarGroups from './SidebarGroups.vue'
 import SidebarLane from './SidebarLane.vue'
 import SidebarSessionRow from './SidebarSessionRow.vue'
 import UsageMeter from './UsageMeter.vue'
+import AgentdNotice from '../updates/AgentdNotice.vue'
+import UpdatedNotice from '../updates/UpdatedNotice.vue'
 import { looseOpenSessions } from './openList'
 import { sidebarItemClass } from './itemClass'
 import { needsYou } from '../../conversation/needsYou'
@@ -305,6 +307,8 @@ const itemClass = sidebarItemClass
         <span class="size-[7px] rounded-full bg-primary" aria-hidden="true" />Conectado
       </span>
     </div>
+    <UpdatedNotice />
+    <AgentdNotice />
     <div v-if="updates.state" data-test="app-version" class="flex min-w-0 shrink-0 items-center px-4 pb-2 font-mono text-xs text-fg-subtle">
       <button
         v-if="updates.showNotice"
