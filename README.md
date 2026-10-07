@@ -61,11 +61,42 @@ Na primeira execução, e sempre que o frontend mudar (depois de um `git pull`, 
 
 As sessões continuam rodando quando o backend reinicia: um processo auxiliar (agentd) guarda os processos do agente. Para desligar isso, use `MAESTRO_AGENTD=0`.
 
-Se você roda o backend sob um gerenciador de serviços que encerra o grupo de processos inteiro (o padrão do systemd, `KillMode=control-group`), o agentd cai junto com o backend e as sessões não sobrevivem. Use `KillMode=process` na unit, ou rode o backend de modo que o agentd continue vivo depois dele.
+Se você roda o backend sob um gerenciador de serviços que encerra o grupo de processos inteiro (o padrão do systemd, `KillMode=control-group`), o agentd cai junto com o backend e as sessões não sobrevivem. O jeito mais simples é o serviço oficial, que já vem configurado para isso (veja [Rodar como serviço](#rodar-como-serviço)). Num serviço feito à mão, use `KillMode=process` na unit, ou rode o backend de modo que o agentd continue vivo depois dele.
+
+## Rodar como serviço
+
+Para o Maestro subir sozinho e voltar se cair, instale o serviço oficial. No macOS ele sobe quando você entra na conta; no Linux, também no boot, desde que rode `loginctl enable-linger`:
+
+```bash
+uv run claudio-maestro service install            # instala e já sobe (use --port para outra porta)
+uv run claudio-maestro service status             # se está rodando e onde fica o log
+uv run claudio-maestro service uninstall          # para e remove
+```
+
+- **Linux:** cria `~/.config/systemd/user/claudio-maestro.service`. Log: `journalctl --user -u claudio-maestro -f`. Para subir no boot sem fazer login, rode `loginctl enable-linger` (o `install` avisa quando falta).
+- **macOS:** cria `~/Library/LaunchAgents/io.github.vateiixeira.claudio-maestro.plist`. Log: `~/Library/Logs/claudio-maestro.log`.
+
+O serviço guarda o `PATH` e as variáveis `MAESTRO_*` do momento do install. Se instalar o Node ou o uv em outro lugar, ou mudar uma variável, rode o `install` de novo: ele reescreve o arquivo e reinicia o app, e as sessões continuam rodando. Elas sobrevivem ao reinício porque o serviço já vem configurado para isso (`KillMode=process` no systemd, `AbandonProcessGroup` no launchd). O comando só mexe no arquivo que ele mesmo criou; se já existir outro com o mesmo nome, ele recusa e avisa.
+
+Antes de instalar, feche o Maestro que estiver rodando no terminal: a porta precisa estar livre.
 
 ## Atualizar
 
-O rodapé do menu lateral mostra a versão instalada e avisa quando sai uma versão nova, com as notas e estes comandos:
+O rodapé do menu lateral mostra a versão instalada e avisa quando sai uma versão nova. No aviso, **Atualizar agora** baixa a versão, instala as dependências, compila o frontend e reinicia o app. A página recarrega sozinha, e as sessões continuam rodando enquanto o agentd estiver ligado (o padrão). Com `MAESTRO_AGENTD=0`, o app pede confirmação antes de reiniciar e as sessões caem.
+
+O botão funciona quando:
+
+- o app foi iniciado com `uv run claudio-maestro` (no terminal ou pelo serviço);
+- o clone está na `main` (o app faz `git pull`) ou numa tag de release (o app troca para a tag nova);
+- não há arquivos versionados alterados;
+- algum remoto aponta para o repositório oficial no GitHub;
+- `uv` e `pnpm` estão no `PATH` do app.
+
+Se a `main` tiver commits locais que não estão no GitHub, ou se a tag nova não continuar o commit atual, o passo Baixando falha sem mudar nada.
+
+Se algum passo falhar, o app desfaz o que fez e continua na versão anterior. Se nem o desfazer funcionar, o aviso mostra os comandos para recuperar à mão. O log completo fica em `~/.local/share/claudio-maestro/update.log` (ou na pasta de `MAESTRO_DATA_DIR`).
+
+Rodando num terminal, o app reinicia nesse mesmo terminal. Se o botão não estiver disponível, o aviso explica o motivo e mostra os comandos para atualizar à mão:
 
 ```bash
 git pull
@@ -73,9 +104,9 @@ uv sync
 pnpm --dir frontend install
 ```
 
-Depois, pare o app (Ctrl+C) e rode `uv run claudio-maestro` de novo; o frontend é recompilado sozinho.
+Depois, pare o app (Ctrl+C) e rode `uv run claudio-maestro` de novo; o frontend é recompilado sozinho. Se usa o serviço, rode `systemctl --user restart claudio-maestro` (Linux) ou `uv run claudio-maestro service install` de novo.
 
-Se as notas da versão disserem que o agentd mudou, encerre-o também, o que derruba as sessões em andamento: `kill $(cat ~/.local/share/claudio-maestro/agentd-v1.lock)` (com `MAESTRO_DATA_DIR`, o arquivo fica nessa pasta). Ele volta sozinho na próxima vez que o app subir.
+Se a versão nova mudar o agentd e você atualizou pelo botão, um aviso no menu oferece **Reiniciar agentd**, que só fica ativo quando nenhuma sessão está aberta nele. À mão: `kill $(cat ~/.local/share/claudio-maestro/agentd-v1.lock)` (com `MAESTRO_DATA_DIR`, o arquivo fica nessa pasta), o que derruba as sessões em andamento. Ele volta sozinho na próxima sessão. Quem atualiza à mão não vê esse aviso: confira nas notas da versão se o agentd mudou.
 
 Para saber da versão nova, o app consulta a API do GitHub (`api.github.com`) um minuto depois de subir e uma vez por dia. A requisição só lê a última release; nada sobre seus projetos ou conversas é enviado. Para desligar, use `MAESTRO_UPDATE_CHECK=0`. Também dá para acompanhar pelo GitHub: **Watch → Custom → Releases**.
 

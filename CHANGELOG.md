@@ -6,6 +6,9 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Comando `claudio-maestro service install` (e `uninstall`, `status`) para rodar o app como serviço no Linux (systemd) e no macOS (launchd), com as sessões sobrevivendo ao reinício.
+- Botão **Atualizar agora** no aviso de versão nova: atualiza o clone, instala as dependências, compila e reinicia o app sozinho, desfazendo tudo se algum passo falhar. O app avisa quando roda num terminal ou num serviço próprio, e Preferências ganhou a aba Execução.
+- Depois de atualizar pelo botão, o rodapé do menu mostra "Atualizado para X" e, quando a versão nova muda o agentd, um aviso com **Reiniciar agentd**, que só fica ativo sem sessões abertas nele.
 - Tela "Entregas": o que foi finalizado em cada dia, em todos os projetos, num quadro com uma raia por projeto (título e tópicos escritos pelo agente de resumos), a régua do dia, as conversas em andamento e a cópia do dia ou de um projeto em markdown para a daily.
 - Caminhos de arquivos `.md` na conversa, nas ferramentas e no plano viram links que abrem o documento renderizado numa aba nova, só para leitura. A página acompanha as edições ao voltar para a aba e tem "Abrir no editor".
 - O texto digitado e as imagens anexadas na caixa de mensagem ficam salvos por conversa, mesmo ao trocar de sessão. O texto também sobrevive a recarregar a página; as imagens, não.
