@@ -7,10 +7,13 @@ lists, without a shell, in their own process group.
 
 import asyncio
 import contextlib
+import json
 import os
 import re
 import shutil
 import signal
+import time
+import tomllib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +30,7 @@ LOCAL_GIT_TIMEOUT = 30.0
 NETWORK_TIMEOUT = 120.0
 TOOL_TIMEOUT = 600.0
 TAIL = 20
+AGENTD_DIR = "backend/claudio_maestro/agentd/"
 LINE_LIMIT = 1024 * 1024
 # Never ask for a password or a host key: the update runs with nobody at the keyboard.
 GIT_ENV: dict[str, str | None] = {"GIT_TERMINAL_PROMPT": "0", "GIT_SSH_COMMAND": "ssh -o BatchMode=yes"}
@@ -41,6 +45,12 @@ Mode = Literal["pull", "tag"]
 Git = Callable[..., Awaitable[tuple[int, str, str]]]
 RunTool = Callable[[list[str], Path, float, Callable[[str], None]], Awaitable[int]]
 Which = Callable[[str], str | None]
+
+
+STEP_LABELS = {
+    "check": "Verificando", "fetch": "Baixando", "python": "Dependências do Python",
+    "frontend-deps": "Dependências do frontend", "build": "Compilando", "restart": "Reiniciando",
+}
 
 
 def is_official_remote(url: str) -> bool:
@@ -91,6 +101,32 @@ async def run_tool(argv: list[str], cwd: Path, timeout: float, on_line: Callable
         raise
 
 
+def take_update_result(data_dir: Path) -> dict[str, Any] | None:
+    """The result an update left for the new process; read once, then deleted."""
+    path = data_dir / RESULT_FILE
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError):
+        raw = ""
+    with contextlib.suppress(OSError):
+        path.unlink()
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    try:
+        return {
+            "from": str(data.get("from", "")), "to": str(data.get("to", "")),
+            "agentd_changed": bool(data.get("agentd_changed")), "at": float(data.get("at", 0)),
+        }
+    except (TypeError, ValueError):
+        return None
+
+
 class SelfUpdater:
     def __init__(
         self,
@@ -118,6 +154,7 @@ class SelfUpdater:
         self._task: asyncio.Task[None] | None = None
         self._starting = False
         self._job: dict[str, Any] | None = None
+        self._log: Any = None
 
     @property
     def busy(self) -> bool:
@@ -184,3 +221,198 @@ class SelfUpdater:
             ):
                 return parts[0]
         return None
+
+    async def apply(self, version: str) -> None:
+        if self.busy:
+            raise UpdateBusy("já há uma atualização em andamento")
+        if parse_version(version) is None or version.startswith("v"):
+            raise UpdateNotAllowed("versão inválida")
+        self._starting = True
+        try:
+            eligibility = await self.check()
+            if not eligibility.ok:
+                raise UpdateNotAllowed(eligibility.reason or "atualização indisponível")
+            self._job = {
+                "state": "running", "step": "check", "rolling_back": False,
+                "lines": [], "error": None, "log_path": str(self.log_path),
+            }
+            self._emit()
+            self._task = asyncio.create_task(self._run(version, eligibility))
+        finally:
+            self._starting = False
+
+    async def wait(self) -> None:
+        if self._task is not None:
+            await asyncio.shield(self._task)
+
+    # -- job state ---------------------------------------------------------------
+
+    def _emit(self) -> None:
+        self._publish({"session_id": None, "seq": 0, "type": "app.update.progress", "data": self.job_state()})
+
+    def _step(self, step: str) -> None:
+        assert self._job is not None
+        self._job["step"] = step
+        self._line(f"== {STEP_LABELS[step]}")
+
+    def _line(self, text: str) -> None:
+        assert self._job is not None
+        if self._log is not None:
+            with contextlib.suppress(OSError, ValueError):
+                self._log.write(text + "\n")
+                self._log.flush()
+        self._job["lines"] = [*self._job["lines"], text][-TAIL:]
+        self._emit()
+
+    def _finish(self, state: str, error: str | None) -> None:
+        assert self._job is not None
+        self._job["state"] = state
+        self._job["error"] = error
+        if error:
+            self._line(error)
+        else:
+            self._emit()
+
+    # -- the update itself -------------------------------------------------------
+
+    async def _run(self, version: str, eligibility: Eligibility) -> None:
+        self._log = None
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.log_path, "w", encoding="utf-8") as log:
+                self._log = log
+                try:
+                    await self._update(version, eligibility)
+                except Exception as exc:  # noqa: BLE001 - anything unexpected still ends the job
+                    self._finish("failed", f"erro inesperado: {exc}")
+        except Exception as exc:  # noqa: BLE001 - the log could not even be opened or closed
+            self._log = None
+            self._finish("failed", f"erro inesperado: {exc}")
+        finally:
+            self._log = None
+
+    async def _update(self, version: str, eligibility: Eligibility) -> None:
+        assert eligibility.mode is not None and eligibility.remote is not None
+        from_version = self._current()
+        try:
+            old = await self._rev()
+            self._step("fetch")
+            await self._move(eligibility.mode, eligibility.remote, version)
+            moved = await self._rev() != old
+        except StepFailed as exc:
+            self._finish("failed", str(exc))
+            return
+        if not moved:
+            self._finish("up-to-date", None)
+            return
+        try:
+            await self._tools()
+            code, _, _ = await self._git("diff", "--quiet", "--end-of-options", old, "HEAD", "--", AGENTD_DIR)
+            result = {"from": from_version, "to": self._repo_version(), "agentd_changed": code == 1, "at": time.time()}
+            try:
+                (self.data_dir / RESULT_FILE).write_text(json.dumps(result), encoding="utf-8")
+            except OSError as exc:
+                raise StepFailed(f"não foi possível gravar o resultado da atualização: {exc}") from exc
+            self._step("restart")
+            self._finish("restarting", None)
+            assert self._restart is not None
+            self._restart()
+        except StepFailed as exc:
+            await self._rollback(eligibility.mode, old, str(exc))
+        except Exception as exc:  # noqa: BLE001 - the clone already moved, so any failure must undo it
+            await self._rollback(eligibility.mode, old, f"erro inesperado: {exc}")
+
+    async def _move(self, mode: Mode, remote: str, version: str) -> None:
+        if mode == "pull":
+            await self._git_step("fetch", "--no-tags", "--end-of-options", remote, "main", timeout=NETWORK_TIMEOUT)
+            code, _, _ = await self._git_or_fail("merge-base", "--is-ancestor", "--end-of-options", "HEAD", "FETCH_HEAD")
+            if code == 1:
+                raise StepFailed("há commits locais na main que não estão no GitHub")
+            await self._git_step("merge", "--ff-only", "--end-of-options", "FETCH_HEAD")
+            return
+        tag = f"v{version}"
+        await self._git_step(
+            "fetch", "--no-tags", "--end-of-options", remote, f"refs/tags/{tag}:refs/tags/{tag}", timeout=NETWORK_TIMEOUT
+        )
+        await self._verify_tag(tag, version)
+        await self._git_step("checkout", "--detach", "--end-of-options", tag)
+
+    async def _verify_tag(self, tag: str, version: str) -> None:
+        code, out, _ = await self._git_or_fail("show", "--end-of-options", f"{tag}:pyproject.toml")
+        if code != 0:
+            raise StepFailed(f"a tag {tag} não tem pyproject.toml")
+        try:
+            found = tomllib.loads(out)["project"]["version"]
+        except (tomllib.TOMLDecodeError, KeyError, TypeError) as exc:
+            raise StepFailed(f"não foi possível ler a versão da tag {tag}") from exc
+        if found != version:
+            raise StepFailed(f"a tag {tag} traz a versão {found}, não {version}")
+        code, _, _ = await self._git_or_fail("merge-base", "--is-ancestor", "--end-of-options", "HEAD", tag)
+        if code != 0:
+            raise StepFailed(f"a tag {tag} não continua o commit atual do clone")
+
+    async def _tools(self) -> None:
+        frontend = str(self.repo / "frontend")
+        steps = (
+            ("python", "uv", ["sync", "--frozen"]),
+            ("frontend-deps", "pnpm", ["--dir", frontend, "install", "--frozen-lockfile"]),
+            ("build", "pnpm", ["--dir", frontend, "build"]),
+        )
+        for step, tool, args in steps:
+            self._step(step)
+            program = self._which(tool)
+            if program is None:
+                raise StepFailed(f"{tool} não encontrado no PATH do app")
+            argv = [program, *args]
+            shown = " ".join([tool, *(a for a in args if a not in ("--dir", frontend))])
+            try:
+                code = await self._run_tool(argv, self.repo, TOOL_TIMEOUT, self._line)
+            except TimeoutError as exc:
+                raise StepFailed(f"`{shown}` passou de {int(TOOL_TIMEOUT)} s") from exc
+            except ValueError as exc:  # a single output line over LINE_LIMIT
+                raise StepFailed(f"`{shown}` escreveu uma linha longa demais na saída") from exc
+            except OSError as exc:
+                raise StepFailed(f"não foi possível rodar `{shown}`: {exc}") from exc
+            if code != 0:
+                raise StepFailed(f"`{shown}` falhou (código {code})")
+
+    async def _rollback(self, mode: Mode, old: str, reason: str) -> None:
+        assert self._job is not None
+        self._job["rolling_back"] = True
+        self._line(f"Desfazendo: {reason}")
+        with contextlib.suppress(OSError):
+            (self.data_dir / RESULT_FILE).unlink(missing_ok=True)
+        try:
+            if mode == "pull":
+                await self._git_step("reset", "--keep", "--end-of-options", old)
+            else:
+                await self._git_step("checkout", "--detach", "--end-of-options", old)
+            await self._tools()
+        except StepFailed as exc:
+            self._finish("rolled-back-failed", f"{reason}. Não foi possível desfazer: {exc}")
+            return
+        self._finish("failed", reason)
+
+    async def _git_or_fail(self, *args: str, timeout: float = LOCAL_GIT_TIMEOUT) -> tuple[int, str, str]:
+        try:
+            return await self._git(*args, timeout=timeout)
+        except GitError as exc:
+            raise StepFailed(f"git {args[0]} falhou: {exc}") from exc
+
+    async def _git_step(self, *args: str, timeout: float = LOCAL_GIT_TIMEOUT) -> None:
+        code, out, err = await self._git_or_fail(*args, timeout=timeout)
+        for line in (out + err).splitlines():
+            self._line(line)
+        if code != 0:
+            raise StepFailed(f"git {args[0]} falhou: {err.strip()[:300]}")
+
+    async def _rev(self) -> str:
+        code, out, _ = await self._git_or_fail("rev-parse", "HEAD")
+        return out.strip() if code == 0 else ""
+
+    def _repo_version(self) -> str:
+        try:
+            with open(self.repo / "pyproject.toml", "rb") as file:
+                return str(tomllib.load(file)["project"]["version"])
+        except (OSError, tomllib.TOMLDecodeError, KeyError):
+            return "?"
