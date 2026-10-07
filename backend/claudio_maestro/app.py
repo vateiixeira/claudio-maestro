@@ -78,6 +78,7 @@ def create_app(
     fetch_release: FetchRelease | None = None,
     git_fetch: gitinfo.FetchUpstream | None = None,
     fetch_usage: FetchUsage | None = None,
+    restart: Callable[[], None] | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -95,12 +96,14 @@ def create_app(
     `fetch_release` replaces the GitHub read of the latest release (tests pass fakes).
     `git_fetch` replaces `gitinfo.fetch_upstream`, the one thing that reaches a git remote.
     `fetch_usage` replaces the read of the subscription usage (tests pass fakes).
+    `restart`: called to restart the app in place (the CLI passes it); None disables the update button.
     """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         clean_inherited_env()
         app.state.settings = settings or load_settings()
+        app.state.restart = restart
         db.init_db(app.state.settings.db_path)
         app.state.hub = EventHub()
         app.state.spawn_editor = spawn_editor or spawn_detached

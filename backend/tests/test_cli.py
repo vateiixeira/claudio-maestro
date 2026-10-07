@@ -148,6 +148,128 @@ def run_main(frontend: Path, argv: list[str], *, free: bool = True, runner: Runn
     return code, server
 
 
+class RestartingServer(Server):
+    def __call__(self, dist: Path, port: int, ports: tuple[int, int]) -> bool:
+        super().__call__(dist, port, ports)
+        return True
+
+
+def test_main_execs_itself_when_the_app_asks_to_restart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("MAESTRO_PORT", raising=False)
+    monkeypatch.delenv("MAESTRO_DEV_PORT", raising=False)
+    frontend = make_frontend(tmp_path)
+    age_all(frontend, 1000)
+    mark_built(frontend, 2000)
+    calls = []
+    monkeypatch.setattr(cli.sys, "orig_argv", ["/venv/bin/python3", "/venv/bin/claudio-maestro", "--port", "6660"])
+    code = cli.main([], frontend=frontend, serve=RestartingServer(), run=Runner(),
+                    port_free=lambda port: True, execv=lambda exe, argv: calls.append((exe, argv)))
+    assert calls == [(cli.sys.executable, ["/venv/bin/python3", "/venv/bin/claudio-maestro", "--port", "6660"])]
+    assert code == 0
+
+
+def test_main_does_not_exec_on_a_normal_stop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("MAESTRO_PORT", raising=False)
+    monkeypatch.delenv("MAESTRO_DEV_PORT", raising=False)
+    frontend = make_frontend(tmp_path)
+    age_all(frontend, 1000)
+    mark_built(frontend, 2000)
+    calls = []
+    cli.main([], frontend=frontend, serve=Server(), run=Runner(), port_free=lambda port: True,
+             execv=lambda exe, argv: calls.append(argv))
+    assert calls == []
+
+
+def test_restart_flag_stops_the_server():
+    class FakeServer:
+        should_exit = False
+
+    flag = cli.RestartFlag()
+    flag.request()  # before the server exists: only marks
+    assert flag.requested
+    flag.server = FakeServer()
+    flag.request()
+    assert flag.server.should_exit is True
+
+
+class FakeUvicornServer:
+    """Stands in for uvicorn.Server: `run` is whatever the test needs."""
+
+    def __init__(self, config, on_run):
+        self.config = config
+        self.on_run = on_run
+        self.should_exit = False
+
+    def run(self):
+        self.on_run(self)
+
+
+def patch_uvicorn(monkeypatch: pytest.MonkeyPatch, on_run):
+    import uvicorn
+
+    from claudio_maestro import app as app_module
+
+    seen: dict = {}
+    servers: list[FakeUvicornServer] = []
+
+    def fake_create_app(**kwargs):
+        seen["create_app"] = kwargs
+        return "the-app"
+
+    def fake_config(app, **kwargs):
+        seen["config"] = (app, kwargs)
+        return "the-config"
+
+    def fake_server(config):
+        server = FakeUvicornServer(config, on_run)
+        servers.append(server)
+        return server
+
+    monkeypatch.setattr(app_module, "create_app", fake_create_app)
+    monkeypatch.setattr(uvicorn, "Config", fake_config)
+    monkeypatch.setattr(uvicorn, "Server", fake_server)
+    return seen, servers
+
+
+def test_serve_app_returns_true_when_the_app_asks_to_restart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def on_run(server):
+        seen["create_app"]["restart"]()
+        assert server.should_exit is True
+
+    seen, servers = patch_uvicorn(monkeypatch, on_run)
+    assert cli.serve_app(tmp_path / "dist", 6660, (6600, 6660)) is True
+    assert seen["create_app"]["frontend_dir"] == tmp_path / "dist"
+    assert seen["create_app"]["ports"] == (6600, 6660)
+    assert seen["config"] == ("the-app", {"host": cli.HOST, "port": 6660})
+    assert servers[0].config == "the-config"
+
+
+def test_serve_app_returns_false_without_a_restart_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    patch_uvicorn(monkeypatch, lambda server: None)
+    assert cli.serve_app(tmp_path / "dist", 6660, (6600, 6660)) is False
+
+
+def test_serve_app_swallows_ctrl_c(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def on_run(server):
+        raise KeyboardInterrupt
+
+    patch_uvicorn(monkeypatch, on_run)
+    assert cli.serve_app(tmp_path / "dist", 6660, (6600, 6660)) is False
+
+
+def test_create_app_keeps_the_restart_callable(home: Path, data_dir: Path):
+    from fastapi.testclient import TestClient
+
+    from claudio_maestro.app import create_app
+    from claudio_maestro.config import Settings
+
+    def restart():
+        pass
+
+    with TestClient(create_app(settings=Settings(home_dir=home, data_dir=data_dir), restart=restart)) as client:
+        assert client.app.state.restart is restart
+
+
 def test_main_builds_then_serves(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
     monkeypatch.delenv("MAESTRO_PORT", raising=False)
     monkeypatch.delenv("MAESTRO_DEV_PORT", raising=False)

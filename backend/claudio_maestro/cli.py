@@ -9,6 +9,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Any
 
 from claudio_maestro import service
 from claudio_maestro.config import PortError, app_ports, backend_port, validate_port
@@ -25,7 +26,8 @@ BUILD_INPUTS = (
 
 Run = Callable[..., subprocess.CompletedProcess]
 Which = Callable[[str], str | None]
-Serve = Callable[[Path, int, tuple[int, ...]], None]
+Serve = Callable[[Path, int, tuple[int, ...]], bool | None]
+Execv = Callable[[str, list[str]], None]
 
 
 class CliError(Exception):
@@ -84,12 +86,36 @@ def port_available(port: int) -> bool:
     return True
 
 
-def serve_app(dist: Path, port: int, ports: tuple[int, ...]) -> None:
+class RestartFlag:
+    """Handed to the app as `restart`: stops uvicorn the normal way (lifespan shutdown
+    releases the sessions and the agentd) and tells `main` to exec itself again."""
+
+    def __init__(self) -> None:
+        self.requested = False
+        self.server: Any | None = None
+
+    def request(self) -> None:
+        self.requested = True
+        if self.server is not None:
+            self.server.should_exit = True
+
+
+def serve_app(dist: Path, port: int, ports: tuple[int, ...]) -> bool:
+    """Run uvicorn until it stops. True when the app asked to be restarted."""
     import uvicorn
 
     from claudio_maestro.app import create_app
 
-    uvicorn.run(create_app(frontend_dir=dist, ports=ports), host=HOST, port=port)
+    flag = RestartFlag()
+    config = uvicorn.Config(create_app(frontend_dir=dist, ports=ports, restart=flag.request), host=HOST, port=port)
+    server = uvicorn.Server(config)
+    flag.server = server
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        # uvicorn re-raises a captured SIGINT after the shutdown; `uvicorn.run` swallowed it too.
+        return False
+    return flag.requested
 
 
 def main(
@@ -100,6 +126,7 @@ def main(
     run: Run = subprocess.run,
     which: Which = shutil.which,
     port_free: Callable[[int], bool] = port_available,
+    execv: Execv = os.execv,
 ) -> int:
     parser = argparse.ArgumentParser(
         prog="claudio-maestro",
@@ -143,7 +170,11 @@ def main(
         print(f"claudio-maestro: {exc}", file=sys.stderr)
         return 1
     print(f"Cláudio Maestro em http://localhost:{port}", flush=True)
-    serve(frontend / "dist", port, ports)
+    if serve(frontend / "dist", port, ports):
+        print("Reiniciando o Cláudio Maestro...", flush=True)
+        sys.stderr.flush()
+        # Same PID: systemd, launchd, `uv run` or a terminal do not notice the swap.
+        execv(sys.executable, list(sys.orig_argv))
     return 0
 
 
