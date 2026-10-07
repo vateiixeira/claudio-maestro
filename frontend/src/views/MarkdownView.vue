@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect
 import { useRoute, useRouter } from 'vue-router'
 import { errorMessage, getSessionMarkdown, openInEditor } from '../api/http'
 import { onCodeCopyClick } from '../conversation/codeCopy'
-import { dirname, renderMarkdown, slugify } from '../conversation/markdown'
+import { dirname, HEADING_ID_PREFIX, renderMarkdown, slugify } from '../conversation/markdown'
 import { formatActivity } from '../format'
 import type { MarkdownFile } from '../types/api'
 
@@ -16,6 +16,8 @@ const file = ref<MarkdownFile | null>(null)
 const error = ref<string | null>(null)
 const loading = ref(false)
 const notice = ref<string | null>(null)
+const root = ref<HTMLElement | null>(null)
+const STALE = 'Não foi possível atualizar: '
 
 const shownPath = computed(() => file.value?.path ?? requested.value)
 const name = computed(() => shownPath.value.split('/').pop() || 'Arquivo')
@@ -23,10 +25,23 @@ const name = computed(() => shownPath.value.split('/').pop() || 'Arquivo')
 const html = computed(() =>
   file.value ? renderMarkdown(file.value.content, { sessionId: props.id, baseDir: dirname(file.value.path), reader: true }) : '',
 )
-const title = computed(() => {
-  const heading = file.value?.content.match(/^#\s+(.+?)\s*#*\s*$/m)?.[1]
-  return heading || name.value
-})
+/** The first `# heading` outside fenced code blocks (a `# comment` in a bash block is not a title). */
+function firstHeading(content: string): string | undefined {
+  let fence: string | null = null
+  for (const line of content.split('\n')) {
+    const mark = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+    if (fence) {
+      if (mark && mark[0] === fence[0] && mark.length >= fence.length) fence = null
+    } else if (mark) {
+      fence = mark
+    } else {
+      const heading = /^#\s+(.+?)\s*#*\s*$/.exec(line)?.[1]
+      if (heading) return heading
+    }
+  }
+  return undefined
+}
+const title = computed(() => (file.value && firstHeading(file.value.content)) || name.value)
 watchEffect(() => { document.title = file.value ? `${title.value} · Cláudio Maestro` : 'Cláudio Maestro' })
 
 // Drops answers of an older request when a newer one was started.
@@ -44,13 +59,24 @@ async function load(refresh = false) {
   try {
     const next = await getSessionMarkdown(props.id, path)
     if (mine !== ticket) return
-    if (!refresh || next.mtime !== file.value?.mtime || next.path !== file.value?.path) file.value = next
+    // A document that was not on screen yet (first answer, even one that overtook a lost load, or another file).
+    const fresh = !refresh || !file.value || next.path !== file.value.path
+    if (fresh || next.mtime !== file.value?.mtime) file.value = next
     error.value = null
-    if (!refresh) await scrollToAnchor()
+    if (notice.value?.startsWith(STALE)) notice.value = null
+    if (fresh) {
+      if (route.hash) await scrollToAnchor()
+      else scrollToTop()
+    }
   } catch (e) {
     if (mine !== ticket) return
-    file.value = null
-    error.value = errorMessage(e)
+    if (refresh && file.value) {
+      // Coming back to the tab must not wipe what is being read.
+      notice.value = `${STALE}${errorMessage(e)}`
+    } else {
+      file.value = null
+      error.value = errorMessage(e)
+    }
   } finally {
     if (mine === ticket) loading.value = false
   }
@@ -61,7 +87,14 @@ async function scrollToAnchor() {
   await nextTick()
   let anchor = route.hash.slice(1)
   try { anchor = decodeURIComponent(anchor) } catch { /* keeps it as it came */ }
-  document.getElementById(slugify(anchor))?.scrollIntoView?.({ block: 'start' })
+  const id = `${HEADING_ID_PREFIX}${slugify(anchor)}`
+  Array.from(root.value?.querySelectorAll('[id]') ?? []).find((el) => el.id === id)?.scrollIntoView?.({ block: 'start' })
+}
+
+// The tab's scroller is the app's own `overflow-y-auto` div, not the window.
+function scrollToTop() {
+  const scroller = root.value?.closest('.overflow-y-auto') ?? document.scrollingElement
+  scroller?.scrollTo?.({ top: 0 })
 }
 
 watch(() => [props.id, requested.value], () => { void load() }, { immediate: true })
@@ -109,7 +142,7 @@ async function copyPath() {
 </script>
 
 <template>
-  <div class="min-h-full bg-surface text-fg">
+  <div ref="root" class="min-h-full bg-surface text-fg">
     <header class="sticky top-0 z-10 border-b border-line bg-surface">
       <div class="mx-auto flex max-w-[80ch] flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
         <div class="min-w-0 basis-0 grow">
@@ -130,7 +163,7 @@ async function copyPath() {
           class="h-7 shrink-0 rounded-md border border-line-strong px-2.5 text-xs text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
           @click="openEditor"
         >Abrir no editor</button>
-        <p v-if="notice" class="w-full text-xs text-fg-muted" aria-live="polite">{{ notice }}</p>
+        <p v-if="notice" data-test="md-notice" class="w-full text-xs text-fg-muted" aria-live="polite">{{ notice }}</p>
       </div>
     </header>
     <article class="mx-auto max-w-[80ch] px-4 py-8">

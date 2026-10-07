@@ -57,6 +57,11 @@ describe('Ver nas ferramentas', () => {
       }
     })
 
+    it(`${name}: caminho com espaço e acento ganha Ver com o href codificado`, () => {
+      const wrapper = mount(component, { props: tool(name, '/p/plano ação.md'), global: withSession('s1') })
+      expect(wrapper.find('[data-test="md-view"]').attributes('href')).toBe('/sessions/s1/ver?caminho=%2Fp%2Fplano%20a%C3%A7%C3%A3o.md')
+    })
+
     it(`${name}: outros arquivos não ganham Ver`, () => {
       const wrapper = mount(component, { props: tool(name, '/p/a.py'), global: withSession('s1') })
       expect(wrapper.find('[data-test="md-view"]').exists()).toBe(false)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dirname, joinPath, markdownViewHref, parseMarkdownRef, renderMarkdown, slugify } from '../markdown'
+import { dirname, joinPath, markdownFileRef, markdownViewHref, parseMarkdownRef, renderMarkdown, slugify } from '../markdown'
 
 describe('renderMarkdown', () => {
   it('não renderiza HTML cru', () => {
@@ -145,7 +145,7 @@ describe('links de leitura', () => {
 
   it('na leitura os títulos ganham id', () => {
     const el = dom(renderMarkdown('# Plano\n\n## Tarefa 1: Ação\n\n## Tarefa 1: Ação', { reader: true }))
-    expect(Array.from(el.querySelectorAll('h1, h2')).map((h) => h.id)).toEqual(['plano', 'tarefa-1-acao', 'tarefa-1-acao-2'])
+    expect(Array.from(el.querySelectorAll('h1, h2')).map((h) => h.id)).toEqual(['md-plano', 'md-tarefa-1-acao', 'md-tarefa-1-acao-2'])
   })
 
   it('fora da leitura os títulos não ganham id', () => {
@@ -165,5 +165,21 @@ describe('caixas de tarefa', () => {
 
   it('colchetes fora de lista continuam texto', () => {
     expect(dom(renderMarkdown('[ ] solto')).querySelector('input')).toBeNull()
+  })
+})
+
+describe('markdownFileRef', () => {
+  it('aceita caminho de ferramenta com espaço, acento e extensão em maiúsculas', () => {
+    expect(markdownFileRef('/p/plano ação.md')).toEqual({ path: '/p/plano ação.md', anchor: null })
+    expect(markdownFileRef('/p/README.MD')).toEqual({ path: '/p/README.MD', anchor: null })
+    expect(markdownFileRef('  docs/a.md  ')).toEqual({ path: 'docs/a.md', anchor: null })
+  })
+
+  it('recusa outras extensões, vazio e URLs', () => {
+    expect(markdownFileRef('/p/a.py')).toBeNull()
+    expect(markdownFileRef('/p/a.md.bak')).toBeNull()
+    expect(markdownFileRef('')).toBeNull()
+    expect(markdownFileRef('https://x.com/a.md')).toBeNull()
+    expect(markdownFileRef('file:///p/a.md')).toBeNull()
   })
 })

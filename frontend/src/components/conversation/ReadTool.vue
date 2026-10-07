@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
-import { markdownViewHref, parseMarkdownRef } from '../../conversation/markdown'
+import { computed, ref } from 'vue'
+import { useMarkdownViewHref } from '../../conversation/markdownView'
 import { countLines, resultText, str } from '../../conversation/tool'
-import { SESSION_ID_KEY } from '../../stores/changesPanel'
 import type { ToolItem } from '../../types/conversation'
 import MarkdownViewLink from './MarkdownViewLink.vue'
 import TruncatedText from './TruncatedText.vue'
@@ -12,11 +11,7 @@ import WorkHeader from './WorkHeader.vue'
 const props = defineProps<{ item: ToolItem; sessionActive?: boolean; headless?: boolean }>()
 const open = ref(false)
 
-const sessionId = inject(SESSION_ID_KEY, null)
-const viewHref = computed(() => {
-  const ref = parseMarkdownRef(str(props.item.input.file_path))
-  return sessionId && ref ? markdownViewHref(sessionId.value, ref) : null
-})
+const viewHref = useMarkdownViewHref(() => str(props.item.input.file_path))
 
 const content = computed(() => resultText(props.item.result?.content))
 const lineCount = computed(() => countLines(content.value))

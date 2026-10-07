@@ -6,7 +6,11 @@ import MarkdownView from '../MarkdownView.vue'
 import { jsonResponse, routeFetch } from '../../test/factories'
 
 enableAutoUnmount(afterEach)
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  // @ts-expect-error jsdom has no scrollIntoView; tests that need it define one.
+  delete Element.prototype.scrollIntoView
+})
 
 const URL_A = 'GET /api/sessions/s1/markdown?path=docs%2Fplans%2Fa.md'
 const fileA = (over: Partial<{ content: string; mtime: number }> = {}) => ({
@@ -86,5 +90,78 @@ describe('MarkdownView', () => {
     await flushPromises()
     // routeFetch hands the handler the `init` of the request.
     expect(JSON.parse(editor.mock.calls[0]![0]!.body as string)).toEqual({ path: '/p/docs/plans/a.md' })
+  })
+
+  it('a aba usa o primeiro título fora de blocos de código', async () => {
+    const content = '```bash\n# comentário\n```\n\n# Título real\n'
+    vi.stubGlobal('fetch', routeFetch({ [URL_A]: () => jsonResponse(fileA({ content })) }))
+    await open()
+    expect(document.title).toBe('Título real · Cláudio Maestro')
+  })
+
+  it('rola até a âncora mesmo se uma recarga atropelar a carga inicial', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    const answers: Array<() => void> = []
+    const handler = vi.fn(() => new Promise<Response>((resolve) => {
+      answers.push(() => resolve(jsonResponse(fileA({ content: '# Plano A\n\n## Tarefa 1\n\ntexto' }))))
+    }))
+    vi.stubGlobal('fetch', routeFetch({ [URL_A]: handler }))
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1/ver?caminho=docs%2Fplans%2Fa.md#Tarefa%201')
+    const wrapper = mount(MarkdownView, { props: { id: 's1' }, global: { plugins: [router] } })
+    await flushPromises()
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(handler).toHaveBeenCalledTimes(2)
+    answers.forEach((answer) => answer())
+    await flushPromises()
+    expect(wrapper.find('#md-tarefa-1').exists()).toBe(true)
+    expect(scroll).toHaveBeenCalled()
+    expect((scroll.mock.contexts[0] as Element).id).toBe('md-tarefa-1')
+  })
+
+  it('falha numa recarga mantém o documento e avisa', async () => {
+    let fail = false
+    vi.stubGlobal('fetch', routeFetch({
+      [URL_A]: () => (fail ? jsonResponse({ detail: 'Arquivo não encontrado.' }, 404) : jsonResponse(fileA())),
+    }))
+    const { wrapper } = await open()
+    fail = true
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="md-body"] h1').text()).toBe('Plano A')
+    expect(wrapper.find('[data-test="md-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="md-notice"]').text()).toBe('Não foi possível atualizar: Arquivo não encontrado.')
+  })
+
+  it('falha na carga normal substitui o documento pelo erro', async () => {
+    vi.stubGlobal('fetch', routeFetch({ [URL_A]: () => jsonResponse({ detail: 'Arquivo não encontrado.' }, 404) }))
+    const { wrapper } = await open()
+    expect(wrapper.find('[data-test="md-error"]').text()).toContain('Arquivo não encontrado.')
+    expect(wrapper.find('[data-test="md-body"]').exists()).toBe(false)
+  })
+
+  it('trocar de documento pelo link interno volta ao topo de quem rola', async () => {
+    const scrollTo = vi.fn()
+    const fetchB = () => jsonResponse({ path: '/p/docs/specs/b.md', content: '# B', mtime: 1 })
+    vi.stubGlobal('fetch', routeFetch({
+      [URL_A]: () => jsonResponse(fileA()),
+      'GET /api/sessions/s1/markdown?path=%2Fp%2Fdocs%2Fspecs%2Fb.md': fetchB,
+    }))
+    const scroller = document.createElement('div')
+    scroller.className = 'overflow-y-auto'
+    scroller.scrollTo = scrollTo as unknown as typeof scroller.scrollTo
+    document.body.appendChild(scroller)
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1/ver?caminho=docs%2Fplans%2Fa.md')
+    const wrapper = mount(MarkdownView, { props: { id: 's1' }, attachTo: scroller, global: { plugins: [router] } })
+    await flushPromises()
+    scrollTo.mockClear()
+    await wrapper.find('[data-test="md-body"] a[data-md-view]').trigger('click', { button: 0 })
+    await flushPromises()
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0 })
+    wrapper.unmount()
+    scroller.remove()
   })
 })

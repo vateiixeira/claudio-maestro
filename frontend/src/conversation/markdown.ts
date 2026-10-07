@@ -68,6 +68,16 @@ export function parseMarkdownRef(text: string): MarkdownRef | null {
   return { path: match[1]!, anchor: match[2] ? match[2] : null }
 }
 
+/**
+ * The `.md` file a tool's `file_path` points at. A tool path is always a path, never free text,
+ * so spaces are fine: only the extension and the lack of a URL scheme are checked.
+ */
+export function markdownFileRef(path: string): MarkdownRef | null {
+  const value = path.trim()
+  if (!value || SCHEME.test(value) || !/\.md$/i.test(value)) return null
+  return { path: value, anchor: null }
+}
+
 export function markdownViewHref(sessionId: string, ref: MarkdownRef): string {
   const hash = ref.anchor ? `#${encodeURIComponent(ref.anchor)}` : ''
   return `/sessions/${encodeURIComponent(sessionId)}/ver?caminho=${encodeURIComponent(ref.path)}${hash}`
@@ -164,6 +174,9 @@ md.renderer.rules.code_inline = (tokens, idx, options, env, self) => {
   return `<a href="${escapeHtml(view)}" class="md-view-link" data-md-view${target}>${code}</a>`
 }
 
+/** Prefix of heading ids on the reader page, so none collides with the app's own ids (`#app`). */
+export const HEADING_ID_PREFIX = 'md-'
+
 // Reader page: headings get ids, so `#anchor` links can scroll to them.
 const defaultHeadingOpen: Rule =
   md.renderer.rules.heading_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
@@ -175,7 +188,7 @@ md.renderer.rules.heading_open = (...args: Parameters<Rule>) => {
     e.slugs ??= new Map()
     const seen = (e.slugs.get(slug) ?? 0) + 1
     e.slugs.set(slug, seen)
-    tokens[idx]!.attrSet('id', seen === 1 ? slug : `${slug}-${seen}`)
+    tokens[idx]!.attrSet('id', `${HEADING_ID_PREFIX}${seen === 1 ? slug : `${slug}-${seen}`}`)
   }
   return defaultHeadingOpen(...args)
 }

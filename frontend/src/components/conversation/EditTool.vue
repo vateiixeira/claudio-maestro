@@ -5,7 +5,7 @@ import MarkdownViewLink from './MarkdownViewLink.vue'
 import WorkHeader from './WorkHeader.vue'
 import { SESSION_ID_KEY, useChangesPanelStore } from '../../stores/changesPanel'
 import { diffCounts, toolDiff } from '../../conversation/diff'
-import { markdownViewHref, parseMarkdownRef } from '../../conversation/markdown'
+import { useMarkdownViewHref } from '../../conversation/markdownView'
 import { resultText, str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 
@@ -45,10 +45,7 @@ function collapse() {
 }
 const button = 'min-h-8 cursor-pointer rounded-md border border-line-strong bg-transparent px-2.5 py-1 text-xs text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary'
 const sessionId = inject(SESSION_ID_KEY, null)
-const viewHref = computed(() => {
-  const ref = parseMarkdownRef(str(props.item.input.file_path))
-  return sessionId && ref ? markdownViewHref(sessionId.value, ref) : null
-})
+const viewHref = useMarkdownViewHref(() => str(props.item.input.file_path))
 // Only columns provide the session id; outside them there is no panel to open.
 const panel = sessionId ? useChangesPanelStore() : null
 function viewChanges() {
