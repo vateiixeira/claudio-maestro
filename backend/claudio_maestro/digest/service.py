@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from claudio_maestro import db, gitinfo, history
+from claudio_maestro import db, deliveries, gitinfo, history
+from claudio_maestro.deliveries import Delivery
 from claudio_maestro.digest import closure_store, store
 from claudio_maestro.digest.closure import (
     CLOSURE_SCHEMA,
@@ -33,6 +34,13 @@ from claudio_maestro.digest.closure import (
 from claudio_maestro.digest.closure_store import Closure
 from claudio_maestro.digest.condense import Slice, condense, entries_after
 from claudio_maestro.digest.config import DigestConfig, load_config, model_known
+from claudio_maestro.digest.delivery import (
+    DELIVERY_SCHEMA,
+    build_delivery_prompt,
+    clean_delivery,
+    delivery_system_prompt,
+    slice_between,
+)
 from claudio_maestro.digest.merge import DigestFormatError, merge_digest
 from claudio_maestro.digest.model import DigestModel, DigestModelError, DigestRequest
 from claudio_maestro.digest.prompt import build_prompt, spec_refs, system_prompt
@@ -54,10 +62,26 @@ RUNNING_STATES = ("connecting", "running")
 SCAN_INTERVAL = 60
 GIT_RECHECK_SECONDS = 300
 ITEM_NOT_FOUND = "Item não encontrado; a verificação foi atualizada."
+DELIVERY_NOT_FOUND = "Entrega não encontrada."
+AGENT_OFF = "O agente de resumos está desligado."
+ALREADY_PENDING = "Esta entrega já está sendo resumida."
+UNTITLED = "Conversa sem título"
 
 
 class ClosureItemNotFound(Exception):
     pass
+
+
+class DeliveryNotFound(Exception):
+    def __init__(self, message: str = DELIVERY_NOT_FOUND) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class DeliveryConflict(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 def pre_eligible(
@@ -94,6 +118,12 @@ class _Prepared:
     plan: PlanProgress | None
     roots: list[Path]
     read_at: int
+
+
+@dataclass
+class _DeliveryJob:
+    delivery: Delivery
+    prompt: str | None  # None: nothing to summarize (title only)
 
 
 class _StopPass(Exception):
@@ -136,6 +166,7 @@ class DigestService:
         self._paused_until: float | None = None
         self._pending_all = False
         self._pending_sessions: dict[str, None] = {}
+        self._pending_deliveries: dict[int, None] = {}
         self._wake = asyncio.Event()
         self._current: asyncio.Task[dict[str, Any]] | None = None
 
@@ -659,6 +690,221 @@ class DigestService:
         return next((s for s in self._manager.list_sessions()
                      if s["session_id"] == session_id), None)
 
+    # Deliveries ----------------------------------------------------------------
+
+    def _publish_delivery(self, delivery: Delivery) -> None:
+        self._publish({"session_id": None, "seq": 0, "type": "delivery.updated",
+                       "data": delivery.to_dict()})
+
+    def _last_uuid(self, session_id: str, directory: str) -> str | None:
+        try:
+            transcript = self._read_transcript(self._session_file(session_id, directory))
+        except Exception:
+            logger.exception("Falha ao ler o histórico da sessão %s", session_id)
+            return None
+        if transcript is None or not transcript.messages:
+            return None
+        return transcript.messages[-1].uuid
+
+    def _create_delivery(self, session_id: str, finished_at: int) -> Delivery | None:
+        """Blocking. None when the session is not in the index."""
+        with closing(db.connect(self._db_path)) as conn:
+            row = conn.execute(
+                "SELECT s.project_id, s.cwd, s.title, s.history_dir, p.name AS project_name"
+                " FROM sessions s LEFT JOIN projects p ON p.id = s.project_id"
+                " WHERE s.session_id = ?", (session_id,)).fetchone()
+        if row is None:
+            return None
+        to_cursor = self._last_uuid(session_id, row["history_dir"] or row["cwd"])
+        status = "pending" if self._config.enabled else "title_only"
+        with closing(db.connect(self._db_path)) as conn:
+            return deliveries.record_finish(
+                conn, session_id=session_id, project_id=row["project_id"],
+                project_name=row["project_name"] or "", title=row["title"] or UNTITLED,
+                finished_at=finished_at, to_cursor=to_cursor, status=status)
+
+    async def record_finish(self, session_id: str, finished_at: int) -> None:
+        """Record the "Finalizar" click; with the agent on, queue its summary."""
+        try:
+            delivery = await asyncio.to_thread(self._create_delivery, session_id, finished_at)
+        except Exception:
+            logger.exception("Falha ao registrar a entrega da sessão %s", session_id)
+            return
+        if delivery is None:
+            return
+        self._publish_delivery(delivery)
+        if delivery.status == "pending":
+            self.request_delivery(delivery.id)
+
+    def request_delivery(self, delivery_id: int) -> None:
+        self._pending_deliveries[delivery_id] = None
+        self._wake.set()
+
+    async def resummarize(self, delivery_id: int) -> dict[str, Any]:
+        def mark() -> Delivery:
+            with closing(db.connect(self._db_path)) as conn:
+                current = deliveries.get(conn, delivery_id)
+                if current is None:
+                    raise DeliveryNotFound()
+                if not self._config.enabled:
+                    raise DeliveryConflict(AGENT_OFF)
+                if current.status == "pending":
+                    raise DeliveryConflict(ALREADY_PENDING)
+                marked = deliveries.mark_pending(conn, delivery_id, int(self._clock()))
+                assert marked is not None
+                return marked
+
+        delivery = await asyncio.to_thread(mark)
+        self._publish_delivery(delivery)
+        self.request_delivery(delivery_id)
+        return delivery.to_dict()
+
+    async def recover_deliveries(self) -> None:
+        """At startup: queue the records left pending, or settle them when the agent is off."""
+        def settle() -> list[Delivery]:
+            with closing(db.connect(self._db_path)) as conn:
+                at = int(self._clock())
+                return [d for i in deliveries.pending_ids(conn)
+                        if (d := deliveries.mark_title_only(conn, i, at))]
+
+        def pending() -> list[int]:
+            with closing(db.connect(self._db_path)) as conn:
+                return deliveries.pending_ids(conn)
+
+        if self._config.enabled:
+            for delivery_id in await asyncio.to_thread(pending):
+                self.request_delivery(delivery_id)
+        else:
+            for delivery in await asyncio.to_thread(settle):
+                self._publish_delivery(delivery)
+
+    def _prepare_delivery(self, delivery_id: int) -> _DeliveryJob | None:
+        """Blocking. None when the record is gone or no longer pending."""
+        with closing(db.connect(self._db_path)) as conn:
+            delivery = deliveries.get(conn, delivery_id)
+            if delivery is None or delivery.status != "pending":
+                return None
+            row = None
+            if delivery.session_id is not None:
+                row = conn.execute("SELECT cwd, history_dir FROM sessions WHERE session_id = ?",
+                                   (delivery.session_id,)).fetchone()
+            digest = store.get_digest(conn, delivery.session_id) if row else None
+        if row is None:
+            return _DeliveryJob(delivery, None)
+        transcript = self._read_transcript(
+            self._session_file(delivery.session_id, row["history_dir"] or row["cwd"]))
+        if transcript is None:
+            return _DeliveryJob(delivery, None)
+        piece = slice_between(transcript, delivery.from_cursor, delivery.to_cursor)
+        condensed = condense(piece.messages, transcript.tool_results, row["cwd"])
+        if condensed.count == 0:
+            return _DeliveryJob(delivery, None)
+        prompt = build_delivery_prompt(project=delivery.project_name, title=delivery.title,
+                                       digest=digest, text=condensed.text,
+                                       restarted=not piece.cursor_found)
+        return _DeliveryJob(delivery, prompt)
+
+    def _settle_delivery(self, read: Delivery, *, error: str | None = None,
+                         summary: tuple[str, list[str]] | None = None) -> Delivery | None:
+        """Blocking. Writes the outcome of the job that read `read`, but only if the record
+        is still that very reading: pending, with the same `finished_at` and `to_cursor`.
+        Finishing again renews the record (new cursor, back to pending) and queues it, so
+        an outcome computed for the old reading is dropped: None, nothing published."""
+        at = int(self._clock())
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            current = deliveries.get(conn, read.id)
+            if (current is None or current.status != "pending"
+                    or current.finished_at != read.finished_at
+                    or current.to_cursor != read.to_cursor):
+                return None
+            if summary is not None:
+                return deliveries.save_summary(conn, read.id, summary_title=summary[0],
+                                               bullets=summary[1], at=at)
+            if error is not None:
+                return deliveries.mark_error(conn, read.id, error, at)
+            return deliveries.mark_title_only(conn, read.id, at)
+
+    def _fail_delivery(self, delivery_id: int, message: str) -> Delivery | None:
+        """Blocking. Marks the record with an error, whatever its state (cancellation and
+        unexpected failures, where the reading no longer matters)."""
+        with closing(db.connect(self._db_path)) as conn:
+            return deliveries.mark_error(conn, delivery_id, message, int(self._clock()))
+
+    def _delivery_failed_now(self, delivery_id: int, message: str) -> None:
+        """Synchronous, for the cancellation path."""
+        try:
+            delivery = self._fail_delivery(delivery_id, message)
+            if delivery is not None:
+                self._publish_delivery(delivery)
+        except Exception:
+            logger.exception("Could not record the error of delivery %s", delivery_id)
+
+    async def _summarize_delivery(self, delivery_id: int) -> None:
+        config = self._config
+        job = await asyncio.to_thread(self._prepare_delivery, delivery_id)
+        if job is None:
+            return
+        error: str | None = None
+        summary: tuple[str, list[str]] | None = None
+        if job.prompt is not None:
+            request = DigestRequest(delivery_system_prompt(config.extra_instructions), job.prompt,
+                                    config.model, config.effort, schema=DELIVERY_SCHEMA)
+            try:
+                async with asyncio.timeout(self._session_timeout):
+                    result = await self._model.summarize(request)
+                summary = clean_delivery(result)
+            except TimeoutError:
+                error = TIMEOUT_MESSAGE
+            except DigestFormatError as exc:
+                error = str(exc)
+            except DigestModelError as exc:
+                error = exc.message
+                if exc.stop_pass and exc.resets_at:
+                    self._paused_until = float(exc.resets_at)
+        delivery = await asyncio.to_thread(self._settle_delivery, job.delivery,
+                                           error=error, summary=summary)
+        if delivery is not None:
+            self._publish_delivery(delivery)
+
+    async def run_deliveries(self, ids: list[int]) -> None:
+        """Summarize the queued records one at a time. Cancelling (agent disabled)
+        marks the current and the remaining ones with STOPPED_DISABLED; cancelling with the
+        agent still on (the app shutting down) leaves them pending for the next start."""
+        done: set[int] = set()
+        try:
+            for delivery_id in ids:
+                try:
+                    await self._summarize_delivery(delivery_id)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Unexpected error while summarizing delivery %s", delivery_id)
+                    delivery = await asyncio.to_thread(self._fail_delivery, delivery_id, UNEXPECTED)
+                    if delivery is not None:
+                        self._publish_delivery(delivery)
+                done.add(delivery_id)
+        except asyncio.CancelledError:
+            if not self._config.enabled:
+                for delivery_id in ids:
+                    if delivery_id not in done:
+                        self._delivery_failed_now(delivery_id, STOPPED_DISABLED)
+            raise
+
+    async def _stop_queued_deliveries(self) -> None:
+        """The agent was turned off after these records were queued (e.g. while the click
+        was being recorded): settle them without calling the model."""
+        queued = list(self._pending_deliveries)
+        self._pending_deliveries.clear()
+
+        def settle() -> list[Delivery]:
+            with closing(db.connect(self._db_path)) as conn:
+                at = int(self._clock())
+                return [d for i in queued
+                        if (d := deliveries.mark_error(conn, i, STOPPED_DISABLED, at))]
+
+        for delivery in await asyncio.to_thread(settle):
+            self._publish_delivery(delivery)
+
     # Scheduler -----------------------------------------------------------------
 
     def start_schedule(self) -> None:
@@ -690,6 +936,10 @@ class DigestService:
         if not config.enabled:
             self._next_run_at = None
             self._closure_next_at = None
+            queued = list(self._pending_deliveries)
+            self._pending_deliveries.clear()
+            for delivery_id in queued:
+                self._delivery_failed_now(delivery_id, STOPPED_DISABLED)
             if previous.enabled and self._current is not None:
                 self._current.cancel()
         elif not previous.enabled or previous.interval_minutes != config.interval_minutes:
@@ -713,10 +963,15 @@ class DigestService:
             return self._paused_until
         return self._closure_next_at
 
-    async def _run_child(self, trigger: str, session_ids: list[str] | None = None) -> None:
+    async def _run_child(self, trigger: str, session_ids: list[str] | None = None,
+                         ids: list[int] | None = None) -> None:
         """Run a pass as a child task, so disabling the agent cancels only the pass."""
-        coroutine = (self.run_closure_pass() if trigger == "auto_closure"
-                     else self.run_pass(trigger, session_ids))
+        if trigger == "auto_closure":
+            coroutine = self.run_closure_pass()
+        elif trigger == "deliveries":
+            coroutine = self.run_deliveries(ids or [])
+        else:
+            coroutine = self.run_pass(trigger, session_ids)
         task = asyncio.create_task(coroutine)
         self._current = task
         try:
@@ -739,6 +994,13 @@ class DigestService:
             ids = list(self._pending_sessions)
             self._pending_sessions.clear()
             await self._run_child("manual_session", ids)
+        if self._pending_deliveries:
+            if not self._config.enabled:
+                await self._stop_queued_deliveries()
+            else:
+                delivery_ids = list(self._pending_deliveries)
+                self._pending_deliveries.clear()
+                await self._run_child("deliveries", ids=delivery_ids)
         due = self._due_at()
         now = self._clock()
         if due is not None and now >= due:
@@ -755,7 +1017,7 @@ class DigestService:
             await self._run_child("auto_closure")
 
     async def _wait(self) -> None:
-        if self._pending_all or self._pending_sessions:
+        if self._pending_all or self._pending_sessions or self._pending_deliveries:
             return
         due = self._due_at()
         dues = [d for d in (due, self._closure_due_at()) if d is not None]
@@ -772,6 +1034,10 @@ class DigestService:
             await asyncio.to_thread(self.load)
         except Exception:
             logger.exception("Não foi possível ler a configuração do agente de resumos")
+        try:
+            await self.recover_deliveries()
+        except Exception:
+            logger.exception("Não foi possível retomar as entregas pendentes")
         self.start_schedule()
         self._publish_status()
         while True:
