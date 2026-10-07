@@ -74,7 +74,7 @@ def _read(target: Path) -> dict[str, Any]:
 @router.get("/sessions/{session_id}/markdown", response_model=MarkdownOut)
 async def read_markdown(session_id: str, manager: ManagerDep, path: str = "") -> dict[str, Any]:
     try:
-        record = manager.get(session_id).record
+        record = manager.find_record(session_id)
     except sessions.SessionNotFoundError as exc:
         raise _error(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     if not path.strip() or "\x00" in path or len(path) > MAX_PATH:

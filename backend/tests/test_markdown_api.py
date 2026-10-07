@@ -163,6 +163,17 @@ def test_unknown_session(api):  # noqa: F811
     assert read(api, "nao-existe", "a.md").status_code == 404
 
 
+def test_reading_does_not_load_the_session_into_memory(api, home):  # noqa: F811
+    root = home / "proj"
+    root.mkdir()
+    (root / "a.md").write_text("x")
+    sid, _ = session(api, root)
+    manager = api.app.state.sessions
+    manager._sessions.pop(sid, None)  # as after a restart: only the database row exists
+    assert read(api, sid, "a.md").status_code == 200
+    assert sid not in manager._sessions
+
+
 def test_needs_the_app_header(api, home):  # noqa: F811
     root = home / "proj"
     root.mkdir()
