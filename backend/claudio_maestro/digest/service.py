@@ -879,9 +879,17 @@ class DigestService:
                     raise
                 except Exception:
                     logger.exception("Unexpected error while summarizing delivery %s", delivery_id)
-                    delivery = await asyncio.to_thread(self._fail_delivery, delivery_id, UNEXPECTED)
-                    if delivery is not None:
-                        self._publish_delivery(delivery)
+                    try:
+                        delivery = await asyncio.to_thread(
+                            self._fail_delivery, delivery_id, UNEXPECTED)
+                    except Exception:
+                        # The record stays pending (not queued again: with the database
+                        # refusing writes it would call the model on every turn);
+                        # `recover_deliveries` picks it up at the next start. Go on with the batch.
+                        logger.exception("Could not record the error of delivery %s", delivery_id)
+                    else:
+                        if delivery is not None:
+                            self._publish_delivery(delivery)
                 done.add(delivery_id)
         except asyncio.CancelledError:
             if not self._config.enabled:

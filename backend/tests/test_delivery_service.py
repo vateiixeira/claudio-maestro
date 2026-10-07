@@ -1,6 +1,7 @@
 """The digest agent records and summarizes deliveries."""
 
 import asyncio
+import sqlite3
 import threading
 import time
 from contextlib import closing
@@ -145,6 +146,39 @@ async def test_model_error_marks_error(tmp_path) -> None:
     await drain(service)
     [d] = rows(world, "s1")
     assert (d.status, d.error) == ("error", "Limite atingido.")
+
+
+@pytest.mark.anyio
+async def test_failing_to_record_an_outcome_does_not_lose_the_batch_nor_loop(tmp_path) -> None:
+    world = World(tmp_path)
+    enable(world)
+    world.add("s1", exchange(0, 4))
+    world.add("s2", exchange(0, 4))
+    model = FakeDigestModel([ANSWER, ANSWER])
+    service = world.service(model)
+    await service.record_finish("s1", int(NOW))
+    await service.record_finish("s2", int(NOW))
+    first = rows(world, "s1")[0].id
+    settle, fail = service._settle_delivery, service._fail_delivery
+
+    def locked_for_first(delivery, **kwargs):  # the database refuses the writes for one record
+        if delivery.id == first:
+            raise sqlite3.OperationalError("database is locked")
+        return settle(delivery, **kwargs)
+
+    def fail_locked(delivery_id: int, message: str):
+        if delivery_id == first:
+            raise sqlite3.OperationalError("database is locked")
+        return fail(delivery_id, message)
+
+    service._settle_delivery = locked_for_first
+    service._fail_delivery = fail_locked
+    for _ in range(4):  # several turns of the scheduler loop
+        await service.tick()
+    assert len(model.requests) == 2  # one call per record, none for the failed one again
+    assert rows(world, "s2")[0].status == "done"  # the next id of the batch still ran
+    assert rows(world, "s1")[0].status == "pending"  # left for `recover_deliveries` at startup
+    assert not service._pending_deliveries
 
 
 @pytest.mark.anyio
