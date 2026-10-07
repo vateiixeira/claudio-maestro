@@ -19,6 +19,8 @@ export const useDeliveriesStore = defineStore('deliveries', () => {
   /** Records whose summary is being requested right now. */
   const busy = ref<Record<number, boolean>>({})
   let ticket = 0
+  /** Bumped by every event of a record, so a slower HTTP answer cannot overwrite it. */
+  const eventVersions = new Map<number, number>()
 
   async function load(wanted: string): Promise<void> {
     const mine = ++ticket
@@ -45,8 +47,14 @@ export const useDeliveriesStore = defineStore('deliveries', () => {
     return true
   }
 
+  /** The screen is gone: stop following the day (the last one read stays for the next visit). */
+  function release(): void {
+    date.value = null
+  }
+
   function applyEvent(data: unknown): void {
     if (!isDelivery(data) || !date.value) return
+    eventVersions.set(data.id, (eventVersions.get(data.id) ?? 0) + 1)
     if (replace(data)) return
     if (localDay(new Date(data.finished_at * 1000)) === date.value) void load(date.value)
   }
@@ -56,8 +64,11 @@ export const useDeliveriesStore = defineStore('deliveries', () => {
     const { [id]: _, ...rest } = actionErrors.value
     actionErrors.value = rest
     busy.value = { ...busy.value, [id]: true }
+    const seen = eventVersions.get(id) ?? 0
     try {
-      replace(await summarizeDelivery(id))
+      const fresh = await summarizeDelivery(id)
+      // An event for this record that arrived meanwhile is newer than the answer.
+      if ((eventVersions.get(id) ?? 0) === seen) replace(fresh)
     } catch (e) {
       actionErrors.value = { ...actionErrors.value, [id]: errorMessage(e) }
     } finally {
@@ -66,5 +77,5 @@ export const useDeliveriesStore = defineStore('deliveries', () => {
     }
   }
 
-  return { day, date, loading, error, actionErrors, busy, load, applyEvent, summarize }
+  return { day, date, loading, error, actionErrors, busy, load, release, applyEvent, summarize }
 })

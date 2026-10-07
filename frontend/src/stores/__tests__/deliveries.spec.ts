@@ -103,4 +103,46 @@ describe('deliveries store', () => {
     await first
     expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
   })
+
+  it('não deixa a resposta do pedido sobrescrever um evento mais novo', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/deliveries?date=2026-10-07': () => jsonResponse(day([delivery({ status: 'error', error: 'x' })])),
+      'POST /api/deliveries/1/summarize': () => gate.then(() => jsonResponse(delivery({ status: 'pending' }))),
+    }))
+    const store = useDeliveriesStore()
+    await store.load('2026-10-07')
+    const running = store.summarize(1)
+    store.applyEvent(delivery({ status: 'title_only' })) // chega pelo WebSocket antes da resposta
+    release()
+    await running
+    expect(store.day?.deliveries[0]?.status).toBe('title_only')
+  })
+
+  it('aplica a resposta do pedido quando nenhum evento chegou no meio', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/deliveries?date=2026-10-07': () => jsonResponse(day([delivery({ status: 'error', error: 'x' }), delivery({ id: 2 })])),
+      'POST /api/deliveries/1/summarize': () => jsonResponse(delivery({ status: 'pending' })),
+    }))
+    const store = useDeliveriesStore()
+    await store.load('2026-10-07')
+    const running = store.summarize(1)
+    store.applyEvent(delivery({ id: 2, status: 'done' })) // outro registro não conta
+    await running
+    expect(store.day?.deliveries[0]?.status).toBe('pending')
+  })
+
+  it('release() para de escutar o dia: um registro novo não dispara a leitura', async () => {
+    const fetch = routeFetch({ 'GET /api/deliveries?date=2026-10-07': () => jsonResponse(day([])) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useDeliveriesStore()
+    await store.load('2026-10-07')
+    store.release()
+    expect(store.date).toBeNull()
+    expect(store.day).not.toBeNull()
+    store.applyEvent(delivery({ id: 9 }))
+    await Promise.resolve()
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
 })

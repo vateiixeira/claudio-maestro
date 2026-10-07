@@ -152,6 +152,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey)
   clearCopiedTimer()
   clearTimeout(highlightTimer)
+  store.release()
 })
 </script>
 

@@ -5,6 +5,7 @@ import { createMemoryHistory } from 'vue-router'
 import DeliveriesView from '../DeliveriesView.vue'
 import { createAppRouter } from '../../router'
 import { formatDayLong, formatTime, localDay, projectMarkdown, shiftDay } from '../../deliveries'
+import { useDeliveriesStore } from '../../stores/deliveries'
 import { useProjectsStore } from '../../stores/projects'
 import { jsonResponse, makeProject, routeFetch } from '../../test/factories'
 import type { DeliveriesDay, Delivery } from '../../types/api'
@@ -666,5 +667,14 @@ describe('Entregas', () => {
       await flushPromises()
       expect(router.currentRoute.value.query.dia).toBeUndefined()
     })
+  })
+
+  it('ao sair da tela o store deixa de acompanhar o dia, mas guarda o que já leu', async () => {
+    const { wrapper } = await mountAt('/entregas', { [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, { deliveries: [delivery()] })) })
+    const store = useDeliveriesStore()
+    expect(store.date).toBe(today)
+    wrapper.unmount()
+    expect(store.date).toBeNull()
+    expect(store.day?.deliveries).toHaveLength(1)
   })
 })
