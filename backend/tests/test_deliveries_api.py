@@ -73,3 +73,24 @@ def test_summarize_errors(api, home: Path) -> None:
 def test_requires_the_maestro_header(api) -> None:
     assert api.get("/api/deliveries", headers={"x-maestro": ""}).status_code == 403
     assert api.post("/api/deliveries/1/summarize", headers={"x-maestro": ""}).status_code == 403
+
+
+def test_get_day_has_neighbor_days(api, home: Path) -> None:
+    project = make_project(api, home)
+    sid = new_session(api, project)
+    other = new_session(api, project)
+
+    def stamp(text: str) -> int:
+        return int(time.mktime(time.strptime(text, "%Y-%m-%d %H:%M")))
+
+    url = "/api/deliveries?date=2026-10-06"
+    body = api.get(url).json()
+    assert body["prev_day"] is None and body["next_day"] is None
+    seed(api, session_id=sid, project_id=project["id"], name=project["name"],
+         title="A", when=stamp("2026-10-02 10:00"))
+    seed(api, session_id=other, project_id=project["id"], name=project["name"],
+         title="B", when=stamp("2026-10-09 10:00"))
+    body = api.get(url).json()
+    assert body["prev_day"] == "2026-10-02" and body["next_day"] == "2026-10-09"
+    body = api.get("/api/deliveries?date=2026-10-09").json()
+    assert body["prev_day"] == "2026-10-02" and body["next_day"] is None

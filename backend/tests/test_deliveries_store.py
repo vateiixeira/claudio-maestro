@@ -105,3 +105,23 @@ def test_deleting_the_session_keeps_the_record(conn) -> None:
 def test_local_day() -> None:
     assert deliveries.local_day(at("2026-10-06 23:59")) == "2026-10-06"
     assert deliveries.local_day(at("2026-10-07 00:00")) == "2026-10-07"
+
+
+def test_neighbor_days_without_records(conn) -> None:
+    assert deliveries.neighbor_days(conn, "2026-10-06") == (None, None)
+
+
+def test_neighbor_days_skips_empty_days(conn) -> None:
+    finish(conn, sid="s1", when="2026-10-01 10:00")
+    finish(conn, sid="s2", when="2026-10-03 10:00")
+    finish(conn, sid="s1", when="2026-10-09 10:00")
+    finish(conn, sid="s2", when="2026-10-09 15:00")  # two records on the same day
+    # an empty day in the middle looks both ways, skipping empty days
+    assert deliveries.neighbor_days(conn, "2026-10-06") == ("2026-10-03", "2026-10-09")
+    # a day with records is not its own neighbor
+    assert deliveries.neighbor_days(conn, "2026-10-03") == ("2026-10-01", "2026-10-09")
+    # the ends have nothing beyond
+    assert deliveries.neighbor_days(conn, "2026-10-01") == (None, "2026-10-03")
+    assert deliveries.neighbor_days(conn, "2026-10-09") == ("2026-10-03", None)
+    assert deliveries.neighbor_days(conn, "2026-12-31") == ("2026-10-09", None)
+    assert deliveries.neighbor_days(conn, "2026-01-01") == (None, "2026-10-01")

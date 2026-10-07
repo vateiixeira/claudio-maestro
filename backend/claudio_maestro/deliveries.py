@@ -125,6 +125,13 @@ def list_day(conn: sqlite3.Connection, day: str) -> list[Delivery]:
     return [_delivery(r) for r in rows]
 
 
+def neighbor_days(conn: sqlite3.Connection, day: str) -> tuple[str | None, str | None]:
+    """The closest days before and after `day` that have at least one record."""
+    prev_day = conn.execute("SELECT MAX(day) FROM deliveries WHERE day < ?", (day,)).fetchone()[0]
+    next_day = conn.execute("SELECT MIN(day) FROM deliveries WHERE day > ?", (day,)).fetchone()[0]
+    return prev_day, next_day
+
+
 def pending_ids(conn: sqlite3.Connection) -> list[int]:
     return [r["id"] for r in conn.execute(
         "SELECT id FROM deliveries WHERE status = 'pending' ORDER BY id")]

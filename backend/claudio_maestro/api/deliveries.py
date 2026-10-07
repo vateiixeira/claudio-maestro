@@ -17,6 +17,7 @@ INVALID_DATE = "Data inválida."
 def _read_day(app: Any, day: date, sessions: list[dict[str, Any]]) -> dict[str, Any]:
     with closing(db.connect(app.state.settings.db_path)) as conn:
         records = deliveries.list_day(conn, day.isoformat())
+        prev_day, next_day = deliveries.neighbor_days(conn, day.isoformat())
         names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM projects")}
     active = app.state.activity.sessions_on(day)
     delivered = {d.session_id for d in records if d.session_id}
@@ -33,6 +34,8 @@ def _read_day(app: Any, day: date, sessions: list[dict[str, Any]]) -> dict[str, 
         "agent_enabled": app.state.digest.config.enabled,
         "deliveries": [d.to_dict() for d in records],
         "in_progress": open_items,
+        "prev_day": prev_day,
+        "next_day": next_day,
     }
 
 
