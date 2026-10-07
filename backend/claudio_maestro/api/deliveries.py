@@ -1,8 +1,9 @@
 """Routes of "Entregas": what was finished on a day, and the sessions still open."""
 
 import asyncio
+import re
 from contextlib import closing
-from datetime import date
+from datetime import date, datetime, time
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
@@ -12,6 +13,19 @@ from claudio_maestro.digest.service import DeliveryConflict, DeliveryNotFound
 
 router = APIRouter(prefix="/api")
 INVALID_DATE = "Data inválida."
+DAY_FORMAT = re.compile(r"\d{4}-\d{2}-\d{2}")
+EARLIEST_DAY = date(2000, 1, 1)
+
+
+def _parse_day(text: str) -> date:
+    """A calendar day as `YYYY-MM-DD`, not before 2000, whose start the platform can express."""
+    if not DAY_FORMAT.fullmatch(text):
+        raise ValueError(text)
+    parsed = date.fromisoformat(text)
+    if parsed < EARLIEST_DAY:
+        raise ValueError(text)
+    datetime.combine(parsed, time.min).timestamp()  # what `sessions_on` does; may overflow
+    return parsed
 
 
 def _read_day(app: Any, day: date, sessions: list[dict[str, Any]]) -> dict[str, Any]:
@@ -45,11 +59,9 @@ async def get_deliveries(
     day: Annotated[str | None, Query(alias="date")] = None,
 ) -> dict[str, Any]:
     try:
-        wanted = date.fromisoformat(day) if day is not None else date.today()
-    except ValueError as exc:
+        wanted = _parse_day(day) if day is not None else date.today()
+    except (ValueError, OverflowError, OSError) as exc:
         raise HTTPException(status_code=422, detail=INVALID_DATE) from exc
-    if day is not None and len(day) != 10:
-        raise HTTPException(status_code=422, detail=INVALID_DATE)
     sessions = request.app.state.sessions.list_sessions()  # in memory, on the loop
     return await asyncio.to_thread(_read_day, request.app, wanted, sessions)
 

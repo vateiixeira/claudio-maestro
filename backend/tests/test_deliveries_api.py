@@ -54,7 +54,7 @@ def test_get_defaults_to_today(api) -> None:
     assert api.get("/api/deliveries").json()["date"] == date.today().isoformat()
 
 
-@pytest.mark.parametrize("bad", ["2026-13-01", "ontem", "2026-1-1", "20261007"])
+@pytest.mark.parametrize("bad", ["2026-13-01", "ontem", "2026-1-1", "20261007", "2026-W41-3", "0001-01-01", "1999-12-31"])
 def test_get_rejects_bad_dates(api, bad) -> None:
     assert api.get(f"/api/deliveries?date={bad}").status_code == 422
 
