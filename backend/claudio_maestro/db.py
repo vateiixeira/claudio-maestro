@@ -195,6 +195,31 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         )
         """,
     ],
+    [
+        # Entregas: one record per "Finalizar" click and local day, with the digest
+        # agent's title and bullets. Copies of the title and project name keep the
+        # record when the session or the project goes away.
+        """
+        CREATE TABLE deliveries (
+          id             INTEGER PRIMARY KEY,
+          session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+          project_id     INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+          project_name   TEXT NOT NULL,
+          title          TEXT NOT NULL,
+          finished_at    INTEGER NOT NULL,
+          day            TEXT NOT NULL,
+          from_cursor    TEXT,
+          to_cursor      TEXT,
+          status         TEXT NOT NULL,
+          summary_title  TEXT,
+          bullets        TEXT NOT NULL DEFAULT '[]',
+          error          TEXT,
+          updated_at     INTEGER NOT NULL
+        )
+        """,
+        "CREATE INDEX deliveries_day ON deliveries(day)",
+        "CREATE INDEX deliveries_session ON deliveries(session_id)",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)
