@@ -26,6 +26,13 @@ Run = Callable[..., subprocess.CompletedProcess]
 Which = Callable[[str], str | None]
 
 
+MAESTRO_NAMES = ("claudio_maestro", "claudio-maestro")
+# The service port comes from --port; the dev and preview ports belong to development.
+NOT_FOR_THE_SERVICE = frozenset({"MAESTRO_RUN_MODE", "MAESTRO_PORT", "MAESTRO_DEV_PORT", "MAESTRO_PREVIEW_PORT"})
+ACTIVE_STATES = frozenset({"active", "activating", "reloading"})
+ENABLED_STATES = frozenset({"enabled", "enabled-runtime"})
+
+
 class ServiceError(Exception):
     """A problem explained to the user (in Portuguese)."""
 
@@ -34,7 +41,7 @@ def service_env(environ: Mapping[str, str]) -> dict[str, str]:
     env = {"PATH": environ.get("PATH", "")}
     env.update(
         (key, value) for key, value in sorted(environ.items())
-        if key.startswith("MAESTRO_") and key != "MAESTRO_RUN_MODE"
+        if key.startswith("MAESTRO_") and key not in NOT_FOR_THE_SERVICE
     )
     return env
 
@@ -82,6 +89,8 @@ def systemd_unit(uv: str, repo: Path, port: int, env: Mapping[str, str]) -> str:
         "# Ao parar, encerra só o app: o agentd e as sessões ficam vivos.",
         "KillMode=process",
         "TimeoutStopSec=15",
+        "# O `uv run` sai com 143 (SIGTERM) ao parar: não é falha.",
+        "SuccessExitStatus=143",
         "",
         "[Install]",
         "WantedBy=default.target",
@@ -135,8 +144,65 @@ def _require(which: Which, name: str, hint: str) -> str:
 def _port_check(active: bool, port: int, port_free: Callable[[int], bool]) -> None:
     if not active and not port_free(port):
         raise ServiceError(
-            f"a porta {port} está em uso; feche o Maestro que está rodando no terminal e rode de novo"
+            f"a porta {port} está em uso por outro programa (talvez o Maestro rodando num terminal "
+            "ou em outro serviço); pare-o e rode de novo"
         )
+
+
+def _mentions_maestro(text: str) -> bool:
+    return any(name in text for name in MAESTRO_NAMES)
+
+
+def _foreign_systemd_unit(run: Run, systemctl: str) -> str | None:
+    """A user unit, not ours, that runs the Maestro and is active or enabled; None when there is
+    none or when systemctl cannot say (then the install goes on)."""
+    base = [systemctl, "--user"]
+    try:
+        listed = _run(run, [*base, "list-units", "--type=service", "--all", "--no-legend", "--plain"])
+        files = _run(run, [*base, "list-unit-files", "--type=service", "--no-legend"])
+    except ServiceError:
+        return None
+    if listed.returncode != 0 or files.returncode != 0:
+        return None
+    candidates: dict[str, None] = {}
+    for line in (listed.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[2] in ACTIVE_STATES:
+            candidates[parts[0]] = None
+    for line in (files.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] in ENABLED_STATES:
+            candidates[parts[0]] = None
+    for unit in candidates:
+        if unit == OFFICIAL_UNIT or not unit.endswith(".service") or "@." in unit:
+            continue
+        try:
+            shown = _run(run, [*base, "show", unit, "-p", "ExecStart", "--value"])
+        except ServiceError:
+            continue
+        if shown.returncode == 0 and _mentions_maestro(shown.stdout or ""):
+            return unit
+    return None
+
+
+def _foreign_launchd_agent(home: Path) -> tuple[str, Path] | None:
+    """A LaunchAgent, not ours, whose ProgramArguments run the Maestro: (label, file)."""
+    official = f"{LAUNCHD_LABEL}.plist"
+    try:
+        files = sorted((home / AGENTS_DIR).glob("*.plist"))
+    except OSError:
+        return None
+    for path in files:
+        if path.name == official:
+            continue
+        try:
+            data = plistlib.loads(path.read_bytes())
+        except (OSError, ValueError, plistlib.InvalidFileException):
+            continue
+        arguments = data.get("ProgramArguments") if isinstance(data, dict) else None
+        if isinstance(arguments, list) and _mentions_maestro(" ".join(str(a) for a in arguments)):
+            return str(data.get("Label") or path.stem), path
+    return None
 
 
 def _systemd(action, *, port, repo, home, environ, port_free, run, which, user, out) -> None:
@@ -160,9 +226,17 @@ def _systemd(action, *, port, repo, home, environ, port_free, run, which, user, 
         _run(run, [systemctl, "--user", "disable", "--now", OFFICIAL_UNIT])
         path.unlink()
         _checked(run, [systemctl, "--user", "daemon-reload"])
+        # The unit may be left "failed" by the stop; its file is gone, so this can fail harmlessly.
+        _run(run, [systemctl, "--user", "reset-failed", OFFICIAL_UNIT])
         out("Serviço removido.")
         return
     uv = _require(which, "uv", "Instale o uv (https://docs.astral.sh/uv/) e rode de novo.")
+    foreign = _foreign_systemd_unit(run, systemctl)
+    if foreign is not None:
+        raise ServiceError(
+            f"Já existe um serviço que roda o Maestro: {foreign}. "
+            f"Desative-o antes: systemctl --user disable --now {foreign}"
+        )
     active = _run(run, [systemctl, "--user", "is-active", OFFICIAL_UNIT]).stdout.strip() == "active"
     _port_check(active, port, port_free)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -203,6 +277,13 @@ def _launchd(action, *, port, repo, home, environ, port_free, run, which, uid, o
         out("Serviço removido.")
         return
     uv = _require(which, "uv", "Instale o uv (https://docs.astral.sh/uv/) e rode de novo.")
+    foreign_agent = _foreign_launchd_agent(home)
+    if foreign_agent is not None:
+        label, plist = foreign_agent
+        raise ServiceError(
+            f"Já existe um serviço que roda o Maestro: {label}. "
+            f"Desative-o antes: launchctl bootout gui/{uid}/{label} e remova {plist}"
+        )
     loaded = _run(run, [launchctl, "print", target]).returncode == 0
     _port_check(loaded, port, port_free)
     path.parent.mkdir(parents=True, exist_ok=True)
