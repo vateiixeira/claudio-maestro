@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import type { RunModeInfo } from '../../types/api'
-import { runModeNotice, SERVICE_INSTALL } from '../../updates/runMode'
+import { runModeNotice, serviceInstallCommand } from '../../updates/runMode'
 
-const props = defineProps<{ runMode: RunModeInfo }>()
+const props = defineProps<{ runMode: RunModeInfo; port?: number }>()
 const text = computed(() => runModeNotice(props.runMode))
+const command = computed(() => serviceInstallCommand(props.port))
 const copied = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 onBeforeUnmount(() => clearTimeout(timer))
 
 async function copy(): Promise<void> {
   try {
-    await navigator.clipboard.writeText(SERVICE_INSTALL)
+    await navigator.clipboard.writeText(command.value)
     copied.value = true
     clearTimeout(timer)
     timer = setTimeout(() => (copied.value = false), 1500)
@@ -25,7 +26,7 @@ async function copy(): Promise<void> {
   <div v-if="text" data-test="run-mode-notice" class="flex flex-col gap-2 rounded-lg border border-line bg-elevated px-3.5 py-3 text-xs leading-[1.5] text-fg-muted">
     <p class="m-0">{{ text }}</p>
     <div class="flex items-center gap-2">
-      <code data-test="run-mode-command" class="min-w-0 grow overflow-x-auto font-mono text-fg">{{ SERVICE_INSTALL }}</code>
+      <code data-test="run-mode-command" class="min-w-0 grow overflow-x-auto font-mono text-fg">{{ command }}</code>
       <button type="button" data-test="run-mode-copy" class="h-7 shrink-0 cursor-pointer rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card hover:text-fg" @click="copy">
         {{ copied ? 'Copiado' : 'Copiar' }}
       </button>

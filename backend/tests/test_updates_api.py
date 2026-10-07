@@ -129,6 +129,19 @@ def test_get_updates_reports_run_mode_and_self_update(home, data_dir):
     assert body["live_sessions"] == 0
 
 
+def test_get_updates_reports_the_port_the_backend_listens_on(home, data_dir):
+    settings = Settings(home_dir=home, data_dir=data_dir, update_check=False)
+    app = create_app(settings=settings, ports=(7001, 7000, 7002), run_mode=RunMode("terminal"),
+                     agentd=False, refresh_models=False, self_updater=lambda **kw: FakeUpdater())
+    with TestClient(app, base_url="http://127.0.0.1:7000", headers={"origin": "http://localhost:7001", "x-maestro": "1"}) as client:
+        assert client.get("/api/updates").json()["port"] == 7000
+
+
+def test_get_updates_reports_the_default_port(home, data_dir):
+    with _client_with(home, data_dir, FakeUpdater()) as client:
+        assert client.get("/api/updates").json()["port"] == 6660
+
+
 def test_get_updates_reports_last_result_once_per_process(home, data_dir):
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "update-result.json").write_text('{"from": "0.1.0", "to": "0.2.0", "agentd_changed": true, "at": 1}')
@@ -179,7 +192,10 @@ def test_apply_without_agentd_asks_to_confirm_live_sessions(home, data_dir, monk
         monkeypatch.setattr(client.app.state.sessions, "live_count", lambda: 2)
         refused = client.post("/api/updates/apply", json={"version": "999.0.0"})
         accepted = client.post("/api/updates/apply", json={"version": "999.0.0", "confirm_sessions_drop": True})
-    assert refused.status_code == 409 and "2 sessões" in refused.json()["detail"]
+    assert refused.status_code == 409
+    detail = refused.json()["detail"]
+    assert detail["code"] == "sessions_drop" and detail["sessions"] == 2
+    assert "2 sessões" in detail["message"]
     assert accepted.status_code == 202
 
 
@@ -199,7 +215,9 @@ def test_apply_asks_to_confirm_when_new_sessions_skip_the_agentd(home, data_dir,
         body = client.get("/api/updates").json()
         refused = client.post("/api/updates/apply", json={"version": "999.0.0"})
     assert body["agentd"] == {"enabled": False, "live_children": None}
-    assert refused.status_code == 409 and "2 sessões" in refused.json()["detail"]
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["code"] == "sessions_drop"
+    assert refused.json()["detail"]["sessions"] == 2
 
 
 def test_apply_does_not_ask_when_sessions_survive_the_restart(home, data_dir, monkeypatch):

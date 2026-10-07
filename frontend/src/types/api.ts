@@ -386,6 +386,8 @@ export type UpdateJobState = 'running' | 'failed' | 'rolled-back-failed' | 'up-t
 export interface UpdateJob {
   state: UpdateJobState
   step: UpdateStep | null
+  /** The step that broke; `step` moves on while the rollback runs the tools again. */
+  failed_step?: UpdateStep | null
   rolling_back: boolean
   lines: string[]
   error: string | null
@@ -419,6 +421,8 @@ export interface UpdateState {
   last_result?: UpdateResult | null
   agentd?: { enabled: boolean; live_children: number | null }
   live_sessions?: number
+  /** The port the backend listens on. */
+  port?: number
 }
 
 // Subscription usage (GET /api/usage and the `app.usage` event)

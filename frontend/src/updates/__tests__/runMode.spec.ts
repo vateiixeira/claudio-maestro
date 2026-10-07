@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { runModeLabel, runModeNotice, SERVICE_INSTALL } from '../runMode'
+import { runModeLabel, runModeNotice, SERVICE_UNINSTALL, serviceInstallCommand } from '../runMode'
 
 const info = (kind: string, unit: string | null = null, kill_mode: string | null = null) =>
   ({ kind, unit, kill_mode }) as Parameters<typeof runModeNotice>[0]
@@ -36,7 +36,13 @@ describe('modo de execução', () => {
     expect(runModeNotice(info('unknown'))).toBe('Para o Maestro subir sozinho e voltar se cair, rode como serviço:')
   })
 
-  it('comando de instalação', () => {
-    expect(SERVICE_INSTALL).toBe('uv run claudio-maestro service install')
+  it('comando de instalação só leva a porta quando não é a padrão', () => {
+    expect(serviceInstallCommand(6660)).toBe('uv run claudio-maestro service install')
+    expect(serviceInstallCommand(undefined)).toBe('uv run claudio-maestro service install')
+    expect(serviceInstallCommand(7000)).toBe('uv run claudio-maestro service install --port 7000')
+  })
+
+  it('comando de remoção', () => {
+    expect(SERVICE_UNINSTALL).toBe('uv run claudio-maestro service uninstall')
   })
 })

@@ -76,9 +76,11 @@ uv run claudio-maestro service uninstall          # para e remove
 - **Linux:** cria `~/.config/systemd/user/claudio-maestro.service`. Log: `journalctl --user -u claudio-maestro -f`. Para subir no boot sem fazer login, rode `loginctl enable-linger` (o `install` avisa quando falta).
 - **macOS:** cria `~/Library/LaunchAgents/io.github.vateiixeira.claudio-maestro.plist`. Log: `~/Library/Logs/claudio-maestro.log`.
 
-O serviço guarda o `PATH` e as variáveis `MAESTRO_*` do momento do install. Se instalar o Node ou o uv em outro lugar, ou mudar uma variável, rode o `install` de novo: ele reescreve o arquivo e reinicia o app, e as sessões continuam rodando. Elas sobrevivem ao reinício porque o serviço já vem configurado para isso (`KillMode=process` no systemd, `AbandonProcessGroup` no launchd). O comando só mexe no arquivo que ele mesmo criou; se já existir outro com o mesmo nome, ele recusa e avisa.
+O serviço guarda o `PATH` e as variáveis `MAESTRO_*` do momento do install, exceto `MAESTRO_PORT`, `MAESTRO_DEV_PORT` e `MAESTRO_PREVIEW_PORT`: a porta do serviço vem de `--port` (ou de `MAESTRO_PORT`, no momento do install), e as outras duas são de desenvolvimento. Se instalar o Node ou o uv em outro lugar, ou mudar uma variável, rode o `install` de novo: ele reescreve o arquivo e reinicia o app, e as sessões continuam rodando. Elas sobrevivem ao reinício porque o serviço já vem configurado para isso (`KillMode=process` no systemd, `AbandonProcessGroup` no launchd). O comando só mexe no arquivo que ele mesmo criou; se já existir outro com o mesmo nome, ele recusa e avisa.
 
-Antes de instalar, feche o Maestro que estiver rodando no terminal: a porta precisa estar livre.
+Antes de instalar, feche o Maestro que estiver rodando no terminal: a porta precisa estar livre. Se o terminal usa outra porta (`--port 7000`), passe a mesma ao `install`.
+
+**Se você já tem um serviço próprio.** Se existe uma unit do systemd ou um agente do launchd seu que roda o Maestro, o `install` recusa e diz qual é: dois serviços disputariam a mesma porta e a mesma pasta de dados. Desative o seu antes, para ele também não subir no próximo boot: `systemctl --user disable --now <unit>` no Linux, ou `launchctl bootout gui/$(id -u)/<label>` e remover o arquivo `.plist` no macOS. Depois rode o `install`, com `--port` se a porta não for a padrão (6660).
 
 ## Atualizar
 

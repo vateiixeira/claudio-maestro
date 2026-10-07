@@ -1,6 +1,12 @@
 import type { RunModeInfo } from '../types/api'
 
-export const SERVICE_INSTALL = 'uv run claudio-maestro service install'
+const DEFAULT_PORT = 6660
+
+/** The install command; it carries the app's port when that is not the default, so the service listens where the app does now. */
+export function serviceInstallCommand(port?: number): string {
+  const base = 'uv run claudio-maestro service install'
+  return port === undefined || port === DEFAULT_PORT ? base : `${base} --port ${port}`
+}
 export const SERVICE_UNINSTALL = 'uv run claudio-maestro service uninstall'
 
 export function runModeLabel(info: RunModeInfo): string {

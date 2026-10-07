@@ -170,6 +170,88 @@ describe('atualização pelo app', () => {
     expect(store.applyError).toBe('há arquivos alterados no clone')
   })
 
+  it('409 de sessões liga a confirmação com o número do backend, sem erro', async () => {
+    const detail = { code: 'sessions_drop', sessions: 3, message: '3 sessões em andamento serão encerradas; confirme para continuar' }
+    applyUpdate.mockRejectedValueOnce(new ApiError(409, detail.message, 'x', detail))
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    await store.startUpdate()
+    expect(store.confirmSessions).toBe(3)
+    expect(store.applyError).toBeNull()
+    expect(store.applying).toBe(false)
+  })
+
+  it('outros 409 continuam como erro de texto', async () => {
+    applyUpdate.mockRejectedValueOnce(new ApiError(409, 'já há uma atualização em andamento', 'x'))
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    await store.startUpdate()
+    expect(store.confirmSessions).toBeNull()
+    expect(store.applyError).toBe('já há uma atualização em andamento')
+  })
+
+  it('confirmar chama de novo com a confirmação e limpa o pedido', async () => {
+    const detail = { code: 'sessions_drop', sessions: 1, message: 'm' }
+    applyUpdate.mockRejectedValueOnce(new ApiError(409, 'm', 'x', detail))
+    applyUpdate.mockResolvedValueOnce({ job: JOB })
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    await store.startUpdate()
+    await store.startUpdate(true)
+    expect(applyUpdate).toHaveBeenLastCalledWith('0.2.0', true)
+    expect(store.confirmSessions).toBeNull()
+  })
+
+  it('fechar o modal esquece o pedido de confirmação', async () => {
+    applyUpdate.mockRejectedValueOnce(new ApiError(409, 'm', 'x', { code: 'sessions_drop', sessions: 1, message: 'm' }))
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    await store.startUpdate()
+    store.closeModal()
+    expect(store.confirmSessions).toBeNull()
+  })
+
+  it('GET atrasado não troca o job que um evento de progresso já atualizou, mas mescla o resto', async () => {
+    let resolve!: (value: UpdateState) => void
+    getUpdates.mockReturnValue(new Promise<UpdateState>((r) => { resolve = r }))
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    const pending = store.load()
+    store.applyProgress({ ...JOB, state: 'restarting', step: 'restart' })
+    resolve({ ...BASE, job: JOB as never, live_sessions: 4 })
+    await pending
+    expect(store.state?.job?.state).toBe('restarting')
+    expect(store.state?.live_sessions).toBe(4)
+  })
+
+  it('GET sem evento no meio troca o job normalmente', async () => {
+    getUpdates.mockResolvedValue({ ...BASE, job: JOB as never })
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    await store.load()
+    expect(store.state?.job?.step).toBe('fetch')
+  })
+
+  it('a resposta do POST não troca o job quando um evento de progresso chegou antes', async () => {
+    let resolve!: (value: { job: typeof JOB }) => void
+    applyUpdate.mockReturnValue(new Promise((r) => { resolve = r }))
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    const pending = store.startUpdate()
+    store.applyProgress({ ...JOB, state: 'restarting', step: 'restart' })
+    resolve({ job: JOB })
+    await pending
+    expect(store.state?.job?.state).toBe('restarting')
+  })
+
+  it('a resposta do POST entra quando nenhum evento chegou, mesmo sobre um job final antigo', async () => {
+    applyUpdate.mockResolvedValue({ job: JOB })
+    const store = useUpdatesStore()
+    store.apply({ ...BASE, job: { ...JOB, state: 'failed' } as never })
+    await store.startUpdate()
+    expect(store.state?.job?.state).toBe('running')
+  })
+
   it('aviso de atualizado aparece uma vez por versão', () => {
     const store = useUpdatesStore()
     store.apply({ ...BASE, last_result: { from: '0.1.0', to: '0.2.0', agentd_changed: false, at: 1 } })

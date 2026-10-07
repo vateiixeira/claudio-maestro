@@ -11,6 +11,11 @@ describe('RunModeNotice', () => {
     expect(w.get('[data-test="run-mode-command"]').text()).toBe('uv run claudio-maestro service install')
   })
 
+  it('leva a porta do app ao comando quando não é a padrão', () => {
+    const w = mount(RunModeNotice, { props: { runMode: { kind: 'terminal', unit: null, kill_mode: null }, port: 7000 } })
+    expect(w.get('[data-test="run-mode-command"]').text()).toBe('uv run claudio-maestro service install --port 7000')
+  })
+
   it('não renderiza nada no serviço oficial', () => {
     const w = mount(RunModeNotice, { props: { runMode: { kind: 'service-systemd', unit: 'claudio-maestro.service', kill_mode: null } } })
     expect(w.find('[data-test="run-mode-notice"]').exists()).toBe(false)

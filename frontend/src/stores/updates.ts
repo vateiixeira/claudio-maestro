@@ -32,6 +32,13 @@ function isJob(data: unknown): data is UpdateJob {
   return typeof value.state === 'string' && Array.isArray(value.lines)
 }
 
+/** The number of open sessions in the backend's structured 409 ("sessions_drop"), or null for any other error. */
+function droppedSessions(data: Record<string, unknown> | null): number | null {
+  if (!data || data.code !== 'sessions_drop') return null
+  const n = data.sessions
+  return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : null
+}
+
 function isUpdateState(data: unknown): data is UpdateState {
   if (typeof data !== 'object' || data === null) return false
   const value = data as Partial<UpdateState>
@@ -45,6 +52,8 @@ export const useUpdatesStore = defineStore('updates', () => {
   const modalOpen = ref(false)
   const applying = ref(false)
   const applyError = ref<string | null>(null)
+  // Set when the backend refuses because sessions are open (the page's own count may be old): how many.
+  const confirmSessions = ref<number | null>(null)
   const restartTimedOut = ref(false)
   const resultSeen = ref<string | null>(readKey(RESULT_SEEN_KEY))
   const agentdDismissed = ref<string | null>(readKey(AGENTD_DISMISSED_KEY))
@@ -53,8 +62,10 @@ export const useUpdatesStore = defineStore('updates', () => {
   // The version this page was built for: a different `current` means the app restarted on a new one.
   let pageVersion: string | null = null
   let restartTimer: ReturnType<typeof setTimeout> | undefined
-  // Bumped by every event, so a slower GET started before it does not overwrite it.
+  // Bumped by every `app.update` event, so a slower GET started before it does not overwrite it.
   let applied = 0
+  // Bumped by every progress event: a slower GET or POST must not bring back an older job.
+  let progressSeen = 0
 
   const showNotice = computed(() => {
     const s = state.value
@@ -83,8 +94,16 @@ export const useUpdatesStore = defineStore('updates', () => {
 
   async function load(): Promise<void> {
     const before = applied
+    const progressBefore = progressSeen
     const result = await api.getUpdates()
-    if (applied === before) receive(result)
+    if (applied !== before) return
+    if (progressSeen === progressBefore) {
+      receive(result)
+      return
+    }
+    // A progress event arrived meanwhile: the job in this response is older than the one we have.
+    const { job: _older, ...rest } = result
+    receive(rest as UpdateState)
   }
 
   function apply(data: unknown): void {
@@ -95,6 +114,7 @@ export const useUpdatesStore = defineStore('updates', () => {
 
   function applyProgress(data: unknown): void {
     if (!isJob(data) || !state.value) return
+    progressSeen += 1
     state.value = { ...state.value, job: data }
     watchRestart()
   }
@@ -104,15 +124,19 @@ export const useUpdatesStore = defineStore('updates', () => {
     if (!version || applying.value) return
     applying.value = true
     applyError.value = null
+    confirmSessions.value = null
+    const progressBefore = progressSeen
     try {
       const result = await api.applyUpdate(version, confirmSessionsDrop)
-      // Progress events may already have arrived: keep the newer running job.
-      if (result.job && state.value && state.value.job?.state !== 'running') {
+      // Progress events may already have arrived (and are newer than this response): keep them.
+      if (result.job && state.value && progressSeen === progressBefore) {
         state.value = { ...state.value, job: result.job }
       }
       watchRestart()
     } catch (e) {
-      applyError.value = e instanceof Error ? e.message : 'Não foi possível iniciar a atualização.'
+      const sessions = e instanceof api.ApiError && e.status === 409 ? droppedSessions(e.data) : null
+      if (sessions !== null) confirmSessions.value = sessions
+      else applyError.value = e instanceof Error ? e.message : 'Não foi possível iniciar a atualização.'
     } finally {
       applying.value = false
     }
@@ -169,6 +193,7 @@ export const useUpdatesStore = defineStore('updates', () => {
       // Blocked storage: the notice stays hidden only in this tab.
     }
     modalOpen.value = false
+    confirmSessions.value = null
   }
 
   function openModal(): void {
@@ -177,11 +202,12 @@ export const useUpdatesStore = defineStore('updates', () => {
 
   function closeModal(): void {
     modalOpen.value = false
+    confirmSessions.value = null
   }
 
   return {
     state, showNotice, modalOpen, load, apply, dismiss, openModal, closeModal,
-    applyProgress, startUpdate, applying, applyError, restartTimedOut,
+    applyProgress, startUpdate, applying, applyError, confirmSessions, restartTimedOut,
     showUpdatedNotice, dismissUpdatedNotice,
     showAgentdNotice, agentdBusy, agentdOpenSessions, agentdRestarting, agentdError, restartAgentd, dismissAgentdNotice,
   }

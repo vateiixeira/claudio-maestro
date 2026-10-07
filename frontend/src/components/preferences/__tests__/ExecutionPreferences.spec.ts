@@ -31,6 +31,11 @@ describe('Preferências → Execução', () => {
     expect(w.find('[data-test="run-mode-notice"]').exists()).toBe(true)
   })
 
+  it('terminal em outra porta: o comando leva a porta', () => {
+    useUpdatesStore().apply({ ...BASE, port: 7000, run_mode: { kind: 'terminal', unit: null, kill_mode: null } })
+    expect(mountIt().get('[data-test="run-mode-command"]').text()).toBe('uv run claudio-maestro service install --port 7000')
+  })
+
   it('serviço oficial: mostra como remover', () => {
     useUpdatesStore().apply({ ...BASE, run_mode: { kind: 'service-systemd', unit: 'claudio-maestro.service', kill_mode: null } })
     const w = mountIt()

@@ -16,10 +16,14 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- O `service install` recusa quando já existe outro serviço (systemd ou launchd) que roda o Maestro, e a mensagem de porta ocupada lembra que pode ser um terminal ou outro serviço. O comando de instalação mostrado no app leva a `--port` quando o app não roda na porta padrão.
 - A caixa de mensagem ficou um pouco mais alta (15%).
 
 ### Corrigido
 
+- Atualizar pelo app com sessões abertas depois de a página carregar agora mostra a confirmação "Atualizar mesmo assim" em vez de repetir o erro.
+- Quando um passo da atualização falha, o modal marca o passo que quebrou, e não o último que o desfazer rodou. O pnpm não trava mais pedindo confirmação sem terminal, e o reinício não espera requisições penduradas por mais de 10 segundos.
+- Parar ou remover o serviço oficial não o deixa mais como "failed" no systemd.
 - A tela inteira podia rolar além do rodapé e deixar uma faixa vazia embaixo, cortando o topo do menu lateral, quando a lista do menu era maior que a janela.
 - Em janelas estreitas ou baixas, a página da conversa não ganha mais barras de rolagem próprias: os botões do cabeçalho quebram linha em vez de vazar, e só a conversa rola.
 

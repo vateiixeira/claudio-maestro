@@ -78,6 +78,18 @@ describe('cliente REST', () => {
     expect(error.message).toBe('Esta pasta já é usada por outro projeto.')
   })
 
+  it('lança ApiError com o detail estruturado, usando a message como texto', async () => {
+    const detail = { code: 'sessions_drop', sessions: 2, message: '2 sessões em andamento serão encerradas; confirme para continuar' }
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail }, 409)))
+
+    const error = await createProject({ name: 'a', path: '/x', color: '#B28CFF' }).catch((e) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.status).toBe(409)
+    expect(error.detail).toBe(detail.message)
+    expect(error.message).toBe(detail.message)
+    expect(error.data).toEqual(detail)
+  })
+
   it('lança ApiError com mensagem genérica quando o erro não tem corpo', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 500 })))
 

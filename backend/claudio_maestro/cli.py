@@ -15,6 +15,7 @@ from claudio_maestro import service
 from claudio_maestro.config import PortError, app_ports, backend_port, validate_port
 
 HOST = "127.0.0.1"
+GRACEFUL_SHUTDOWN_SECONDS = 10
 # backend/claudio_maestro/cli.py -> repository root.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = REPO_ROOT / "frontend"
@@ -107,7 +108,11 @@ def serve_app(dist: Path, port: int, ports: tuple[int, ...]) -> bool:
     from claudio_maestro.app import create_app
 
     flag = RestartFlag()
-    config = uvicorn.Config(create_app(frontend_dir=dist, ports=ports, restart=flag.request), host=HOST, port=port)
+    config = uvicorn.Config(
+        create_app(frontend_dir=dist, ports=ports, restart=flag.request), host=HOST, port=port,
+        # A request left hanging (an open event stream, say) must not stop the restart.
+        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
+    )
     server = uvicorn.Server(config)
     flag.server = server
     try:

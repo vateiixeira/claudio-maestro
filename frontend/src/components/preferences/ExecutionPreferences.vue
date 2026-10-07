@@ -30,7 +30,7 @@ onMounted(load)
         <span class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Como o Maestro está rodando</span>
         <p data-test="execution-mode" class="m-0 font-mono text-sm text-fg">{{ runModeLabel(runMode) }}</p>
       </div>
-      <RunModeNotice :run-mode="runMode" />
+      <RunModeNotice :run-mode="runMode" :port="updates.state?.port" />
       <div v-if="isService" class="flex flex-col gap-2">
         <span class="text-xs text-fg-muted">Para remover o serviço:</span>
         <code data-test="execution-uninstall" class="w-fit max-w-full overflow-x-auto rounded-md border border-line bg-elevated px-2.5 py-1.5 font-mono text-xs text-fg">{{ SERVICE_UNINSTALL }}</code>

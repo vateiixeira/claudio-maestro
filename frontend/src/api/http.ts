@@ -40,12 +40,15 @@ import type { PromptDecision, PromptExtra, SessionSnapshot } from '../types/conv
 export class ApiError extends Error {
   readonly status: number
   readonly detail: string | null
+  /** The raw `detail` when the backend sent an object (for example `{code, message}`); null otherwise. */
+  readonly data: Record<string, unknown> | null
 
-  constructor(status: number, detail: string | null, fallback: string) {
+  constructor(status: number, detail: string | null, fallback: string, data: Record<string, unknown> | null = null) {
     super(detail ?? fallback)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
+    this.data = data
   }
 }
 
@@ -60,6 +63,7 @@ type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 // FastAPI validation errors (422) come as a list of {loc, msg}; turn them into one line.
 function detailText(detail: unknown): string | null {
   if (typeof detail === 'string' && detail) return detail
+  if (isRecord(detail) && typeof detail.message === 'string' && detail.message) return detail.message
   if (Array.isArray(detail) && detail.length > 0) {
     return 'Dados inválidos: ' + detail
       .map((item) => {
@@ -71,13 +75,18 @@ function detailText(detail: unknown): string | null {
   return null
 }
 
-async function readDetail(response: Response): Promise<string | null> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function readDetail(response: Response): Promise<{ text: string | null; data: Record<string, unknown> | null }> {
   try {
-    const text = await response.text()
-    if (!text) return null
-    return detailText(JSON.parse(text)?.detail)
+    const body = await response.text()
+    if (!body) return { text: null, data: null }
+    const detail = JSON.parse(body)?.detail
+    return { text: detailText(detail), data: isRecord(detail) ? detail : null }
   } catch {
-    return null
+    return { text: null, data: null }
   }
 }
 
@@ -99,8 +108,8 @@ async function request<T>(method: Method, url: string, body?: unknown, signal?: 
   }
 
   if (!response.ok) {
-    const detail = await readDetail(response)
-    throw new ApiError(response.status, detail, `O servidor respondeu com erro ${response.status}.`)
+    const { text, data } = await readDetail(response)
+    throw new ApiError(response.status, text, `O servidor respondeu com erro ${response.status}.`, data)
   }
   if (response.status === 204) return undefined as T
   const text = await response.text()

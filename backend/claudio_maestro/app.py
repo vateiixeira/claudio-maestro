@@ -292,6 +292,7 @@ def create_app(
 
     app = FastAPI(title="Cláudio Maestro", lifespan=lifespan)
     ports = ports or app_ports(backend_port())
+    app.state.port = ports[1]  # (Vite, backend[, preview])
     app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(
         HostOriginMiddleware,

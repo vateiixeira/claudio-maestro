@@ -240,7 +240,7 @@ def test_serve_app_returns_true_when_the_app_asks_to_restart(tmp_path: Path, mon
     assert cli.serve_app(tmp_path / "dist", 6660, (6600, 6660)) is True
     assert seen["create_app"]["frontend_dir"] == tmp_path / "dist"
     assert seen["create_app"]["ports"] == (6600, 6660)
-    assert seen["config"] == ("the-app", {"host": cli.HOST, "port": 6660})
+    assert seen["config"] == ("the-app", {"host": cli.HOST, "port": 6660, "timeout_graceful_shutdown": 10})
     assert servers[0].config == "the-config"
 
 

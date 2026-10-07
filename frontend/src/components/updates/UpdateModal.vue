@@ -50,26 +50,31 @@ const commands = computed(() =>
 const confirmDrop = ref(false)
 const liveSessions = computed(() => updates.state?.live_sessions ?? 0)
 const needsConfirm = computed(() => updates.state?.agentd?.enabled === false && liveSessions.value > 0)
+// Either this page already knows sessions are open, or the backend just said so (its count is newer than ours).
+const confirming = computed(() => confirmDrop.value || updates.confirmSessions !== null)
+const dropCount = computed(() => updates.confirmSessions ?? liveSessions.value)
 
 function stepStatus(id: UpdateStep): 'pending' | 'running' | 'done' | 'failed' {
-  const current = job.value?.step
+  // After a failure `step` is wherever the rollback got to; `failed_step` is the one that broke.
+  const broken = job.value?.failed_step ?? null
+  const current = broken ?? job.value?.step
   if (!job.value || !current) return 'pending'
   const at = STEPS.findIndex((s) => s.id === current)
   const index = STEPS.findIndex((s) => s.id === id)
   if (index < at) return 'done'
   if (index > at) return 'pending'
-  if (failed.value) return 'failed'
+  if (broken || failed.value) return 'failed'
   if (job.value.state === 'up-to-date') return 'done'
   return 'running'
 }
 
 async function startUpdate(): Promise<void> {
-  if (needsConfirm.value && !confirmDrop.value) {
+  if (needsConfirm.value && !confirming.value) {
     confirmDrop.value = true
     await refocus()
     return
   }
-  await updates.startUpdate(confirmDrop.value)
+  await updates.startUpdate(confirming.value)
   confirmDrop.value = false
   await refocus()
 }
@@ -91,6 +96,8 @@ let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
 onMounted(async () => {
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  // The sessions count in the store may be old (the page loaded before the sessions opened).
+  updates.load().catch(() => {})
   await nextTick()
   closeEl.value?.focus()
 })
@@ -207,7 +214,7 @@ function onKeydown(event: KeyboardEvent): void {
 
         <template v-if="showManual">
           <p v-if="!selfUpdate?.can && !failed" data-test="update-unavailable" class="m-0 text-sm text-fg-muted">Atualização automática indisponível: {{ selfUpdate?.reason ?? 'esta instalação não informou o motivo' }}.</p>
-          <RunModeNotice v-if="selfUpdate?.can && !job && updates.state?.run_mode" :run-mode="updates.state.run_mode" />
+          <RunModeNotice v-if="selfUpdate?.can && !job && updates.state?.run_mode" :run-mode="updates.state.run_mode" :port="updates.state.port" />
           <component :is="foldManual ? 'details' : 'div'" data-test="update-manual" class="flex flex-col gap-2">
             <summary v-if="foldManual" class="cursor-pointer text-xs text-fg-muted hover:text-fg">Atualizar à mão</summary>
             <h3 v-else id="update-how" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Para atualizar</h3>
@@ -230,8 +237,8 @@ function onKeydown(event: KeyboardEvent): void {
       <footer class="flex flex-wrap items-center justify-end gap-2 border-t border-line px-6 py-3">
         <button type="button" data-test="update-dismiss" :disabled="running" class="h-9 cursor-pointer rounded-lg border-none bg-transparent px-3.5 text-sm text-fg-muted hover:bg-card hover:text-fg disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg-muted" @click="updates.dismiss()">Dispensar</button>
         <template v-if="canApply">
-          <template v-if="confirmDrop">
-            <span class="text-xs text-fg-muted">{{ liveSessions === 1 ? '1 sessão em andamento será encerrada.' : `${liveSessions} sessões em andamento serão encerradas.` }}</span>
+          <template v-if="confirming">
+            <span class="text-xs text-fg-muted">{{ dropCount === 1 ? '1 sessão em andamento será encerrada.' : `${dropCount} sessões em andamento serão encerradas.` }}</span>
             <button ref="confirmEl" type="button" data-test="update-confirm-drop" :disabled="updates.applying" class="h-9 cursor-pointer rounded-lg border-none bg-secondary px-3.5 text-sm font-semibold text-secondary-fg disabled:cursor-default disabled:opacity-60" @click="startUpdate">Atualizar mesmo assim</button>
           </template>
           <button v-else type="button" data-test="update-apply" :disabled="updates.applying" class="h-9 cursor-pointer rounded-lg border-none bg-primary px-3.5 text-sm font-semibold text-primary-fg hover:bg-primary-soft disabled:cursor-default disabled:opacity-60 disabled:hover:bg-primary" @click="startUpdate">{{ failed ? 'Tentar de novo' : 'Atualizar agora' }}</button>

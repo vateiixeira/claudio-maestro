@@ -14,7 +14,7 @@ import shutil
 import signal
 import time
 import tomllib
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -43,7 +43,7 @@ _OFFICIAL = re.compile(
 
 Mode = Literal["pull", "tag"]
 Git = Callable[..., Awaitable[tuple[int, str, str]]]
-RunTool = Callable[[list[str], Path, float, Callable[[str], None]], Awaitable[int]]
+RunTool = Callable[..., Awaitable[int]]  # (argv, cwd, timeout, on_line, env=None)
 Which = Callable[[str], str | None]
 
 
@@ -77,12 +77,19 @@ class StepFailed(Exception):
     """One step of the update failed (the message is shown to the user)."""
 
 
-async def run_tool(argv: list[str], cwd: Path, timeout: float, on_line: Callable[[str], None]) -> int:
-    """Run `argv` in `cwd`, without a shell, stdout and stderr merged, line by line.
+async def run_tool(
+    argv: list[str],
+    cwd: Path,
+    timeout: float,
+    on_line: Callable[[str], None],
+    env: Mapping[str, str] | None = None,
+) -> int:
+    """Run `argv` in `cwd` (with `env`, or the app's own environment), without a shell, stdout and
+    stderr merged, line by line.
 
     Raises TimeoutError after `timeout` seconds, killing the whole process group."""
     proc = await asyncio.create_subprocess_exec(
-        *argv, cwd=cwd, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
+        *argv, cwd=cwd, env=None if env is None else dict(env), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT, start_new_session=True, limit=LINE_LIMIT,
     )
 
@@ -233,7 +240,7 @@ class SelfUpdater:
             if not eligibility.ok:
                 raise UpdateNotAllowed(eligibility.reason or "atualização indisponível")
             self._job = {
-                "state": "running", "step": "check", "rolling_back": False,
+                "state": "running", "step": "check", "failed_step": None, "rolling_back": False,
                 "lines": [], "error": None, "log_path": str(self.log_path),
             }
             self._emit()
@@ -268,6 +275,8 @@ class SelfUpdater:
         assert self._job is not None
         self._job["state"] = state
         self._job["error"] = error
+        if state in ("failed", "rolled-back-failed") and self._job["failed_step"] is None:
+            self._job["failed_step"] = self._job["step"]
         if error:
             self._line(error)
         else:
@@ -353,6 +362,8 @@ class SelfUpdater:
 
     async def _tools(self) -> None:
         frontend = str(self.repo / "frontend")
+        # CI=1: with no terminal, pnpm aborts when it wants to confirm recreating node_modules.
+        env = {**os.environ, "CI": "1"}
         steps = (
             ("python", "uv", ["sync", "--frozen"]),
             ("frontend-deps", "pnpm", ["--dir", frontend, "install", "--frozen-lockfile"]),
@@ -366,7 +377,7 @@ class SelfUpdater:
             argv = [program, *args]
             shown = " ".join([tool, *(a for a in args if a not in ("--dir", frontend))])
             try:
-                code = await self._run_tool(argv, self.repo, TOOL_TIMEOUT, self._line)
+                code = await self._run_tool(argv, self.repo, TOOL_TIMEOUT, self._line, env=env)
             except TimeoutError as exc:
                 raise StepFailed(f"`{shown}` passou de {int(TOOL_TIMEOUT)} s") from exc
             except ValueError as exc:  # a single output line over LINE_LIMIT
@@ -378,6 +389,8 @@ class SelfUpdater:
 
     async def _rollback(self, mode: Mode, old: str, reason: str) -> None:
         assert self._job is not None
+        # The rollback runs the tools again and moves `step`: remember which one broke.
+        self._job["failed_step"] = self._job["step"]
         self._job["rolling_back"] = True
         self._line(f"Desfazendo: {reason}")
         with contextlib.suppress(OSError):

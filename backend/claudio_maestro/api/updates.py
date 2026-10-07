@@ -38,6 +38,7 @@ async def get_updates(request: Request) -> dict[str, Any]:
         "last_result": app.state.update_result,
         "agentd": {"enabled": survives(app), "live_children": live_children},
         "live_sessions": app.state.sessions.live_count(),
+        "port": app.state.port,
     }
 
 
@@ -52,7 +53,11 @@ async def apply_update(body: ApplyBody, request: Request) -> dict[str, Any]:
         live = app.state.sessions.live_count()
         if live:
             noun = "sessão em andamento será encerrada" if live == 1 else "sessões em andamento serão encerradas"
-            raise HTTPException(status.HTTP_409_CONFLICT, f"{live} {noun}; confirme para continuar")
+            # Structured so the page can show the confirmation even when its own count is stale.
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                {"code": "sessions_drop", "sessions": live, "message": f"{live} {noun}; confirme para continuar"},
+            )
     try:
         await app.state.self_updater.apply(body.version)
     except (UpdateNotAllowed, UpdateBusy) as exc:

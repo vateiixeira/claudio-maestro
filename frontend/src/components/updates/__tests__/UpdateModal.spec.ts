@@ -21,6 +21,7 @@ const RELEASES = 'https://github.com/vateiixeira/claudio-maestro/releases'
 beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
+  getUpdates.mockReturnValue(new Promise(() => {}))
   localStorage.removeItem('maestro:update-dismissed')
   useUpdatesStore().apply({
     enabled: true,
@@ -146,6 +147,47 @@ describe('atualizar pelo app', () => {
     expect(spy).toHaveBeenCalledWith('0.2.0', true)
   })
 
+  it('ao abrir, recarrega o estado para chegar com as sessões atuais', () => {
+    mountModal()
+    expect(getUpdates).toHaveBeenCalledOnce()
+  })
+
+  it('o estado recarregado ao abrir já pede a confirmação', async () => {
+    getUpdates.mockResolvedValue({ ...useUpdatesStore().state!, self_update: CAN, agentd: { enabled: false, live_children: null }, live_sessions: 2 })
+    const w = mountModal()
+    await flushPromises()
+    await w.get('[data-test="update-apply"]').trigger('click')
+    expect(applyUpdate).not.toHaveBeenCalled()
+    expect(w.text()).toContain('2 sessões em andamento serão encerradas')
+  })
+
+  it('contagem velha: o 409 estruturado mostra a confirmação e confirmar manda a confirmação', async () => {
+    const detail = { code: 'sessions_drop', sessions: 2, message: '2 sessões em andamento serão encerradas; confirme para continuar' }
+    applyUpdate.mockRejectedValueOnce(new ApiError(409, detail.message, 'x', detail))
+    applyUpdate.mockResolvedValueOnce({ job: job() as never })
+    setState({ self_update: CAN, agentd: { enabled: false, live_children: null }, live_sessions: 0 })
+    const w = mountModal()
+    await w.get('[data-test="update-apply"]').trigger('click')
+    await flushPromises()
+    expect(applyUpdate).toHaveBeenCalledWith('0.2.0', false)
+    expect(w.find('[data-test="update-apply-error"]').exists()).toBe(false)
+    expect(w.text()).toContain('2 sessões em andamento serão encerradas.')
+    expect(document.activeElement).toBe(w.get('[data-test="update-confirm-drop"]').element)
+    await w.get('[data-test="update-confirm-drop"]').trigger('click')
+    await flushPromises()
+    expect(applyUpdate).toHaveBeenLastCalledWith('0.2.0', true)
+  })
+
+  it('o 409 estruturado com uma sessão usa o singular', async () => {
+    const detail = { code: 'sessions_drop', sessions: 1, message: 'm' }
+    applyUpdate.mockRejectedValueOnce(new ApiError(409, 'm', 'x', detail))
+    setState({ self_update: CAN })
+    const w = mountModal()
+    await w.get('[data-test="update-apply"]').trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('1 sessão em andamento será encerrada.')
+  })
+
   it('com uma sessão, usa o singular', async () => {
     setState({ self_update: CAN, agentd: { enabled: false, live_children: null }, live_sessions: 1 })
     const w = mountModal()
@@ -182,6 +224,21 @@ describe('atualizar pelo app', () => {
     expect(w.get('[data-test="update-step-build"]').attributes('data-status')).toBe('failed')
     expect(w.get('[data-test="update-commands"]').text()).toContain('git pull')
     expect(w.find('[data-test="update-apply"]').exists()).toBe(true)
+  })
+
+  it('marca como falho o passo que quebrou, não o último que o desfazer rodou', () => {
+    setState({ self_update: CAN, job: job({ state: 'failed', step: 'build', failed_step: 'python', error: '`uv sync --frozen` falhou (código 1)' }) })
+    const w = mountModal()
+    expect(w.get('[data-test="update-step-fetch"]').attributes('data-status')).toBe('done')
+    expect(w.get('[data-test="update-step-python"]').attributes('data-status')).toBe('failed')
+    expect(w.get('[data-test="update-step-build"]').attributes('data-status')).toBe('pending')
+  })
+
+  it('durante o desfazer, o passo que quebrou já aparece como falho', () => {
+    setState({ self_update: CAN, job: job({ state: 'running', step: 'frontend-deps', failed_step: 'python', rolling_back: true }) })
+    const w = mountModal()
+    expect(w.get('[data-test="update-step-python"]').attributes('data-status')).toBe('failed')
+    expect(w.get('[data-test="update-step-frontend-deps"]').attributes('data-status')).toBe('pending')
   })
 
   it('falha sem desfazer avisa', () => {

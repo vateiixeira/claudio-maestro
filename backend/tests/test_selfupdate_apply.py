@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 
 import pytest
 from git_helpers import git
@@ -21,13 +22,15 @@ class Tools:
 
     def __init__(self, fail_on: tuple[str, ...] = (), gate: asyncio.Event | None = None):
         self.calls: list[list[str]] = []
+        self.envs: list[dict[str, str] | None] = []
         self.fail_on = list(fail_on)
         self.gate = gate
 
-    async def __call__(self, argv, cwd, timeout, on_line):
+    async def __call__(self, argv, cwd, timeout, on_line, env=None):
         if self.gate is not None:
             await self.gate.wait()
         self.calls.append(argv)
+        self.envs.append(env)
         on_line(f"rodou {argv[1]}")
         if self.fail_on and self.fail_on[0] in argv:
             self.fail_on.pop(0)
@@ -183,6 +186,56 @@ async def test_failed_step_rolls_back(tmp_path, failing):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(("failing", "step"), [("sync", "python"), ("install", "frontend-deps"), ("build", "build")])
+async def test_failed_step_is_kept_after_the_rollback(tmp_path, failing, step):
+    origin, clone = make_origin_and_clone(tmp_path)
+    u, publish, _ = make(tmp_path, clone, origin, Tools(fail_on=(failing,)))
+    assert (await u.apply("0.2.0")) is None
+    assert u.job_state()["failed_step"] is None
+    await u.wait()
+    job = u.job_state()
+    # The rollback reinstalls and rebuilds, leaving `step` on the last one; `failed_step` says what broke.
+    assert job["step"] == "build"
+    assert job["failed_step"] == step
+    rolling = [e["data"] for e in publish.events if e["data"]["rolling_back"]]
+    assert rolling and all(data["failed_step"] == step for data in rolling)
+
+
+@pytest.mark.anyio
+async def test_failed_step_when_the_rollback_fails_too(tmp_path):
+    origin, clone = make_origin_and_clone(tmp_path)
+    u, _, _ = make(tmp_path, clone, origin, Tools(fail_on=("install", "sync")))
+    await u.apply("0.2.0")
+    await u.wait()
+    job = u.job_state()
+    assert job["state"] == "rolled-back-failed" and job["failed_step"] == "frontend-deps"
+
+
+@pytest.mark.anyio
+async def test_failed_step_when_the_download_fails(tmp_path):
+    origin, clone = make_origin_and_clone(tmp_path)
+    commit_release(clone, "0.1.1", tag=False)
+    u, _, _ = make(tmp_path, clone, origin)
+    await u.apply("0.2.0")
+    await u.wait()
+    job = u.job_state()
+    assert job["state"] == "failed" and job["failed_step"] == "fetch"
+
+
+@pytest.mark.anyio
+async def test_tools_run_with_ci_set_so_pnpm_never_prompts(tmp_path):
+    origin, clone = make_origin_and_clone(tmp_path)
+    tools = Tools()
+    u, _, _ = make(tmp_path, clone, origin, tools)
+    await u.apply("0.2.0")
+    await u.wait()
+    assert len(tools.envs) == 3
+    for env in tools.envs:
+        assert env is not None and env["CI"] == "1"
+        assert env.get("PATH") == os.environ.get("PATH")
+
+
+@pytest.mark.anyio
 async def test_rollback_in_tag_mode_returns_to_old_commit(tmp_path):
     origin, clone = make_origin_and_clone(tmp_path)
     git(clone, "checkout", "-q", "--detach", "v0.1.0")
@@ -232,11 +285,11 @@ async def test_tool_output_line_too_long_rolls_back(tmp_path):
     before = head(clone)
 
     class Overflow(Tools):
-        async def __call__(self, argv, cwd, timeout, on_line):
+        async def __call__(self, argv, cwd, timeout, on_line, env=None):
             if not self.calls:
                 self.calls.append(argv)
                 raise ValueError("Separator is not found, and chunk exceed the limit")
-            return await super().__call__(argv, cwd, timeout, on_line)
+            return await super().__call__(argv, cwd, timeout, on_line, env)
 
     tools = Overflow()
     u, _, restart = make(tmp_path, clone, origin, tools)
@@ -278,11 +331,11 @@ async def test_unexpected_tool_error_rolls_back_and_publishes_failed(tmp_path):
     before = head(clone)
 
     class Boom(Tools):
-        async def __call__(self, argv, cwd, timeout, on_line):
+        async def __call__(self, argv, cwd, timeout, on_line, env=None):
             if not self.calls:
                 self.calls.append(argv)
                 raise RuntimeError("quebrou")
-            return await super().__call__(argv, cwd, timeout, on_line)
+            return await super().__call__(argv, cwd, timeout, on_line, env)
 
     tools = Boom()
     u, publish, restart = make(tmp_path, clone, origin, tools)
