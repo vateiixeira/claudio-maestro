@@ -8,6 +8,7 @@ import ConversationView from '../views/ConversationView.vue'
 import ConversationsView from '../views/ConversationsView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import InboxView from '../views/InboxView.vue'
+import MarkdownView from '../views/MarkdownView.vue'
 import NewProjectView from '../views/NewProjectView.vue'
 import PreferencesView from '../views/PreferencesView.vue'
 import ProjectView from '../views/ProjectView.vue'
@@ -18,6 +19,8 @@ export const routes: RouteRecordRaw[] = [
   { path: '/dashboard', name: 'dashboard', component: DashboardView },
   { path: '/sessions', name: 'sessions', component: ConversationsView },
   { path: '/sessions/:id', name: 'session', component: ConversationView, props: true },
+  // Reader page of a markdown file, opened in its own tab: no sidebar, no live connection.
+  { path: '/sessions/:id/ver', name: 'markdown-view', component: MarkdownView, props: true, meta: { bare: true } },
   { path: '/projects/new', name: 'project-new', component: NewProjectView },
   {
     path: '/projects/:id(\\d+)',

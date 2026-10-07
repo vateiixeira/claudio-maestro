@@ -141,6 +141,8 @@ export interface SessionGroup {
 export interface PlanCurrent { number: number; title: string }
 export interface PlanSummary { path: string; title: string; total: number; done: number; current: PlanCurrent | null }
 export interface PlanTask { number: number; title: string; done: boolean }
+/** A markdown file read for the reader page (`GET /api/sessions/{id}/markdown`). */
+export interface MarkdownFile { path: string; content: string; mtime: number }
 export interface PlanState { link: 'auto' | 'manual' | 'off'; path: string | null; plan: PlanSummary | null; tasks: PlanTask[] }
 export interface ProjectPlan { path: string; title: string; total: number; done: number }
 

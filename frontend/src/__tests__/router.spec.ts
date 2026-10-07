@@ -23,6 +23,14 @@ describe('rotas', () => {
     expect(router.resolve('/projects/3').name).toBe('project')
   })
 
+  it('a página de leitura é uma rota sem o shell', () => {
+    const router = createAppRouter(createMemoryHistory())
+    const route = router.resolve('/sessions/abc/ver?caminho=docs%2Fa.md')
+    expect(route.name).toBe('markdown-view')
+    expect(route.meta.bare).toBe(true)
+    expect(router.resolve('/sessions/abc').name).toBe('session')
+  })
+
   async function projectProps(path: string) {
     const router = createAppRouter(createMemoryHistory())
     await router.push(path)

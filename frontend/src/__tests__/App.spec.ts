@@ -8,10 +8,12 @@ vi.mock('../api/socket', () => ({ useEventSocket: () => ({ status: ref('connecte
 vi.mock('../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
 
 import App from '../App.vue'
+import AppSidebar from '../components/sidebar/AppSidebar.vue'
 import { createAppRouter } from '../router'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useSessionsStore } from '../stores/sessions'
 import { jsonResponse, makeSession, routeFetch } from '../test/factories'
+import { loadEverything } from '../stores/realtime'
 
 enableAutoUnmount(afterEach)
 let pinia: ReturnType<typeof createPinia>
@@ -172,5 +174,23 @@ describe('estrutura do app', () => {
       expect(router.currentRoute.value.fullPath).toBe('/sessions/only')
       expect(event.defaultPrevented).toBe(false)
     })
+  })
+})
+
+describe('página de leitura', () => {
+  it('não monta a barra lateral nem liga o tempo real', async () => {
+    vi.mocked(loadEverything).mockClear()
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/markdown?path=docs%2Fa.md': () => jsonResponse({ path: '/p/docs/a.md', content: '# A', mtime: 1 }),
+    }))
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1/ver?caminho=docs%2Fa.md')
+    const wrapper = mount(App, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    expect(wrapper.findComponent(AppSidebar).exists()).toBe(false)
+    expect(wrapper.find('main').exists()).toBe(false)
+    expect(loadEverything).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="md-body"] h1').text()).toBe('A')
+    expect(document.title).toBe('A · Cláudio Maestro')
   })
 })

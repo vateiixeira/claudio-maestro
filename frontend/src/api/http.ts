@@ -15,6 +15,7 @@ import type {
   GitRepo,
   ImageInput,
   ModelInfo,
+  MarkdownFile,
   PlanState,
   Project,
   ProjectCreate,
@@ -313,6 +314,10 @@ export function openInEditor(path: string): Promise<void> {
 }
 
 // Plans
+
+export function getSessionMarkdown(id: string, path: string): Promise<MarkdownFile> {
+  return request('GET', `/api/sessions/${encodeURIComponent(id)}/markdown?path=${encodeURIComponent(path)}`)
+}
 
 export function getSessionPlan(id: string): Promise<PlanState> {
   return request('GET', `/api/sessions/${encodeURIComponent(id)}/plan`)
