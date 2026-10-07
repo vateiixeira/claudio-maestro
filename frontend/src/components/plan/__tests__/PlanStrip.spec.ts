@@ -258,6 +258,18 @@ describe('faixa do plano', () => {
     expect(w.find('[data-test="plan-task"]').element.parentElement!.classList).toContain('relative')
   })
 
+  it.each([['na faixa', undefined], ['no painel', 'panel']] as const)('%s, Ver abre o plano na página de leitura', async (_label, variant) => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/plan': () => jsonResponse(planState(summary())) }))
+    const s = session()
+    const w = mount(PlanStrip, { props: { session: s, variant } })
+    await flushPromises()
+    const link = w.find('[data-test="md-view"]')
+    expect(link.attributes('href')).toBe(`/sessions/${s.session_id}/ver?caminho=${encodeURIComponent(s.plan!.path)}`)
+    expect(link.attributes('target')).toBe('_blank')
+    // Next to the toggle, never inside it.
+    expect(link.element.closest('button')).toBeNull()
+  })
+
   it('na faixa, a lista continua fechada e com largura máxima', () => {
     const w = mount(PlanStrip, { props: { session: session() } })
     expect(toggle(w).attributes('aria-expanded')).toBe('false')

@@ -9,7 +9,7 @@ import type { PermissionPrompt } from '../../types/conversation'
 const props = defineProps<{ sessionId: string; prompt: PermissionPrompt; live?: boolean }>()
 const emit = defineEmits<{ resolved: [] }>()
 
-const html = computed(() => renderMarkdown(props.prompt.plan ?? ''))
+const html = computed(() => renderMarkdown(props.prompt.plan ?? '', { sessionId: props.sessionId }))
 const steps = computed(() => parseSteps(props.prompt.plan ?? ''))
 const asking = ref(false)
 const message = ref('')

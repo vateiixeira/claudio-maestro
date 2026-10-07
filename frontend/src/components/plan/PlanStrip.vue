@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { errorMessage, getSessionPlan, openInEditor } from '../../api/http'
+import { markdownViewHref } from '../../conversation/markdown'
 import type { PlanTask, Session } from '../../types/api'
 import { planPosition, planStopped, planVisible } from './planText'
 import Collapse from '../Collapse.vue'
+import MarkdownViewLink from '../conversation/MarkdownViewLink.vue'
 import PlanTaskRow from './PlanTaskRow.vue'
 import IconCheck from '../icons/IconCheck.vue'
 import IconChevron from '../icons/IconChevron.vue'
@@ -15,6 +17,7 @@ const inPanel = computed(() => props.variant === 'panel')
 
 const plan = computed(() => props.session.plan ?? null)
 const visible = computed(() => planVisible(props.session))
+const viewHref = computed(() => (plan.value ? markdownViewHref(props.session.session_id, { path: plan.value.path, anchor: null }) : null))
 const stopped = computed(() => planStopped(props.session))
 
 const open = ref(inPanel.value)
@@ -129,6 +132,7 @@ async function openPlan() {
         </template>
         <span v-if="stopped" class="shrink-0 text-xs text-fg-subtle">· parado</span>
       </button>
+      <MarkdownViewLink v-if="viewHref" :href="viewHref" />
       <button
         v-if="!inPanel"
         type="button"

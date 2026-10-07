@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
 import DiffLines from './DiffLines.vue'
+import MarkdownViewLink from './MarkdownViewLink.vue'
 import WorkHeader from './WorkHeader.vue'
 import { SESSION_ID_KEY, useChangesPanelStore } from '../../stores/changesPanel'
 import { diffCounts, toolDiff } from '../../conversation/diff'
+import { markdownViewHref, parseMarkdownRef } from '../../conversation/markdown'
 import { resultText, str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
 
@@ -43,6 +45,10 @@ function collapse() {
 }
 const button = 'min-h-8 cursor-pointer rounded-md border border-line-strong bg-transparent px-2.5 py-1 text-xs text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary'
 const sessionId = inject(SESSION_ID_KEY, null)
+const viewHref = computed(() => {
+  const ref = parseMarkdownRef(str(props.item.input.file_path))
+  return sessionId && ref ? markdownViewHref(sessionId.value, ref) : null
+})
 // Only columns provide the session id; outside them there is no panel to open.
 const panel = sessionId ? useChangesPanelStore() : null
 function viewChanges() {
@@ -65,6 +71,7 @@ const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
         <span class="shrink-0 font-mono text-xs text-diff-del-fg">−{{ counts.removed }}</span>
       </template>
       <template v-if="sessionId" #actions>
+        <MarkdownViewLink v-if="viewHref" :href="viewHref" />
         <button
           type="button"
           data-test="view-changes"
@@ -73,7 +80,8 @@ const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
         >Ver alterações</button>
       </template>
     </WorkHeader>
-    <div v-if="headless && sessionId" class="flex justify-end px-3 py-1.5">
+    <div v-if="headless && sessionId" class="flex justify-end gap-2 px-3 py-1.5">
+      <MarkdownViewLink v-if="viewHref" :href="viewHref" />
       <button
         type="button"
         data-test="view-changes"

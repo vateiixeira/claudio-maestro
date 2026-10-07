@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { onCodeCopyClick } from '../../conversation/codeCopy'
 import { renderMarkdown } from '../../conversation/markdown'
 import { useSmoothText } from '../../conversation/useSmoothText'
+import { SESSION_ID_KEY } from '../../stores/changesPanel'
 import type { TextItem } from '../../types/conversation'
 
 // The reply is running text over the background, with no box: only the work has a frame.
@@ -14,7 +15,9 @@ const emit = defineEmits<{ reveal: [] }>()
 // While the reply streams, the markdown comes from the paced text (one render per frame at most);
 // the copy button still uses the whole text that arrived.
 const shown = useSmoothText(() => props.item.text, () => props.item.streaming)
-const html = computed(() => renderMarkdown(shown.value))
+// Paths to .md files in the text link to the reader page of this conversation (none outside a column).
+const sessionId = inject(SESSION_ID_KEY, null)
+const html = computed(() => renderMarkdown(shown.value, { sessionId: sessionId?.value }))
 // After the DOM has the new text; nothing is said at mount, history appears whole.
 watch(shown, () => emit('reveal'), { flush: 'post' })
 
