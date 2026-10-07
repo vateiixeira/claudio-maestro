@@ -1,6 +1,8 @@
 import type {
   ActivityDay,
   CommandInfo,
+  DeliveriesDay,
+  Delivery,
   FileMatch,
   SuggestionScope,
   DigestConfig,
@@ -367,4 +369,14 @@ export function getSessionClosure(id: string): Promise<SessionClosure | null> {
 
 export function resolveClosureItem(id: string, item: string): Promise<SessionClosure> {
   return request('POST', `/api/sessions/${encodeURIComponent(id)}/closure/resolve`, { item })
+}
+
+// Deliveries
+
+export function getDeliveries(date: string): Promise<DeliveriesDay> {
+  return request('GET', `/api/deliveries?date=${encodeURIComponent(date)}`)
+}
+
+export function summarizeDelivery(id: number): Promise<Delivery> {
+  return request('POST', `/api/deliveries/${id}/summarize`)
 }

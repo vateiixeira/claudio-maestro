@@ -401,3 +401,35 @@ export interface UsageSnapshot {
   error: string | null
   plan: string | null
 }
+
+// Deliveries (GET /api/deliveries and the `delivery.updated` event)
+
+export type DeliveryStatus = 'pending' | 'done' | 'title_only' | 'error'
+
+export interface Delivery {
+  id: number
+  session_id: string | null
+  project_id: number | null
+  project_name: string
+  title: string
+  finished_at: number
+  status: DeliveryStatus
+  summary_title: string | null
+  bullets: string[]
+  error: string | null
+}
+
+export interface DeliveryInProgress {
+  session_id: string
+  project_id: number
+  project_name: string
+  title: string
+  short: string | null
+}
+
+export interface DeliveriesDay {
+  date: string
+  agent_enabled: boolean
+  deliveries: Delivery[]
+  in_progress: DeliveryInProgress[]
+}

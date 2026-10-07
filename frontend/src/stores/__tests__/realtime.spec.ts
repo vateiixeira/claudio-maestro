@@ -10,6 +10,7 @@ import { useModelsStore } from '../models'
 import { useGroupsStore } from '../groups'
 import { useDigestStore } from '../digest'
 import { useClosureStore } from '../closure'
+import { useDeliveriesStore } from '../deliveries'
 import { jsonResponse, makeGroup, makeProject, makeSession } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
@@ -75,6 +76,37 @@ describe('bindRealtime', () => {
     sockets[1]!.onopen?.({})
     expect(store.epoch).toBe(1)
     expect('s1' in store.closures).toBe(false)
+  })
+
+  it('leva delivery.updated ao store de entregas e recarrega o dia ao reconectar', async () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    const fetchMock = vi.fn(async (url: string) =>
+      url === '/api/deliveries?date=2026-10-07'
+        ? jsonResponse({ date: '2026-10-07', agent_enabled: true, deliveries: [], in_progress: [] })
+        : jsonResponse([]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const store = useDeliveriesStore()
+    store.day = {
+      date: '2026-10-07', agent_enabled: true, in_progress: [],
+      deliveries: [{ id: 1, session_id: 's1', project_id: 1, project_name: 'app', title: 'T', finished_at: 5, status: 'pending', summary_title: null, bullets: [], error: null }],
+    }
+    store.date = '2026-10-07'
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    const updated = { id: 1, session_id: 's1', project_id: 1, project_name: 'app', title: 'T', finished_at: 5, status: 'done', summary_title: 'Feito', bullets: ['a'], error: null }
+    sockets[0]!.onmessage?.({
+      data: JSON.stringify({ session_id: null, seq: 0, type: 'delivery.updated', data: updated }),
+    })
+    expect(store.day?.deliveries[0]?.summary_title).toBe('Feito')
+    sockets[0]!.onclose?.({})
+    vi.advanceTimersByTime(10)
+    sockets[1]!.onopen?.({})
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/deliveries?date=2026-10-07', expect.anything())
+    expect(store.day?.deliveries).toEqual([])
   })
 
   it('relê o estado do agente de resumos ao reconectar', async () => {

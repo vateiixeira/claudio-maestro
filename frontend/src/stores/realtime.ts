@@ -1,5 +1,6 @@
 import type { EventSocket } from '../api/socket'
 import { useClosureStore } from './closure'
+import { useDeliveriesStore } from './deliveries'
 import { useDigestStore } from './digest'
 import { useGitStore } from './git'
 import { useGitDetailsStore } from './gitDetails'
@@ -61,10 +62,15 @@ export function bindRealtime(socket: EventSocket): () => void {
     socket.on('session.digest', (event) => useDigestStore().applyDigest(event.data)),
     socket.on('digest.status', (event) => useDigestStore().applyStatus(event.data)),
     socket.on('session.closure', (event) => useClosureStore().applyClosure(event.data)),
+    // A delivery record was created or changed (global event).
+    socket.on('delivery.updated', (event) => useDeliveriesStore().applyEvent(event.data)),
     socket.onReconnect(() => {
       useDigestStore().invalidate()
       useClosureStore().invalidate()
       void useDigestStore().refreshStatus()
+      // Events sent while the socket was down are lost: reread the day on screen.
+      const deliveries = useDeliveriesStore()
+      if (deliveries.date) void deliveries.load(deliveries.date)
       // The startup read of the preferences failed: read them again now.
       const layout = useLayoutStore()
       if (!layout.loadedFromServer) void layout.restore()
