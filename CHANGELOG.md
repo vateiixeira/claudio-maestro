@@ -6,6 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Caminhos de arquivos `.md` na conversa, nas ferramentas e no plano viram links que abrem o documento renderizado numa aba nova, só para leitura. A página acompanha as edições ao voltar para a aba e tem "Abrir no editor".
 - O texto digitado e as imagens anexadas na caixa de mensagem ficam salvos por conversa, mesmo ao trocar de sessão. O texto também sobrevive a recarregar a página; as imagens, não.
 - O modo "Sem perguntas" pode ser o padrão das conversas novas (Preferências) e ser escolhido na janela de nova conversa, sempre com confirmação ao escolher. O `defaultMode: bypassPermissions` do `settings.json` do CLI continua ignorado.
 
