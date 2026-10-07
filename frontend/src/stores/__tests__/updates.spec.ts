@@ -2,10 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { UpdateState } from '../../types/api'
 
-const getUpdates = vi.hoisted(() => vi.fn())
-vi.mock('../../api/http', () => ({ getUpdates }))
+const { applyUpdate, restartAgentd, getUpdates } = vi.hoisted(() => ({ applyUpdate: vi.fn(), restartAgentd: vi.fn(), getUpdates: vi.fn() }))
+vi.mock('../../api/http', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../api/http')>()),
+  applyUpdate, restartAgentd, getUpdates,
+}))
+import { ApiError } from '../../api/http'
 
-import { useUpdatesStore } from '../updates'
+import { pageReload, RESTART_TIMEOUT_MS, useUpdatesStore } from '../updates'
 
 function makeState(overrides: Partial<UpdateState> = {}): UpdateState {
   return {
@@ -22,9 +26,13 @@ function makeState(overrides: Partial<UpdateState> = {}): UpdateState {
 beforeEach(() => {
   setActivePinia(createPinia())
   localStorage.removeItem('maestro:update-dismissed')
-  getUpdates.mockReset()
+  localStorage.removeItem('maestro:update-result-seen')
+  localStorage.removeItem('maestro:agentd-notice-dismissed')
 })
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.resetAllMocks()
+})
 
 describe('store de versão', () => {
   it('carrega o estado e mostra o aviso quando há versão nova', async () => {
@@ -100,5 +108,83 @@ describe('store de versão', () => {
     expect(store.modalOpen).toBe(true)
     store.closeModal()
     expect(store.modalOpen).toBe(false)
+  })
+})
+
+const BASE = {
+  enabled: true, current: '0.1.0', available: true,
+  latest: { version: '0.2.0', url: 'u', notes: '', published_at: null },
+  checked_at: 1, releases_url: 'r',
+}
+const JOB = { state: 'running', step: 'fetch', rolling_back: false, lines: ['a'], error: null, log_path: '/d/update.log' }
+
+describe('atualização pelo app', () => {
+  it('evento app.update mescla em vez de apagar os campos do GET', () => {
+    const store = useUpdatesStore()
+    store.apply({ ...BASE, run_mode: { kind: 'terminal', unit: null, kill_mode: null } })
+    store.apply({ ...BASE, checked_at: 2 })
+    expect(store.state?.run_mode?.kind).toBe('terminal')
+    expect(store.state?.checked_at).toBe(2)
+  })
+
+  it('progresso entra no job', () => {
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    store.applyProgress(JOB)
+    expect(store.state?.job?.step).toBe('fetch')
+    store.applyProgress({ bobagem: true })
+    expect(store.state?.job?.step).toBe('fetch')
+  })
+
+  it('recarrega a página quando a versão muda', () => {
+    const reload = vi.spyOn(pageReload, 'reload').mockImplementation(() => {})
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    store.apply({ ...BASE, current: '0.1.0' })
+    expect(reload).not.toHaveBeenCalled()
+    store.apply({ ...BASE, current: '0.2.0' })
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
+  it('marca demora quando o app não volta em 60 s', () => {
+    vi.useFakeTimers()
+    try {
+      const store = useUpdatesStore()
+      store.apply(BASE)
+      store.applyProgress({ ...JOB, state: 'restarting', step: 'restart' })
+      vi.advanceTimersByTime(RESTART_TIMEOUT_MS - 1)
+      expect(store.restartTimedOut).toBe(false)
+      vi.advanceTimersByTime(1)
+      expect(store.restartTimedOut).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('startUpdate chama a API com a versão anunciada e guarda o erro', async () => {
+    const spy = applyUpdate.mockRejectedValueOnce(new ApiError(409, 'há arquivos alterados no clone', 'x'))
+    const store = useUpdatesStore()
+    store.apply(BASE)
+    await store.startUpdate()
+    expect(spy).toHaveBeenCalledWith('0.2.0', false)
+    expect(store.applyError).toBe('há arquivos alterados no clone')
+  })
+
+  it('aviso de atualizado aparece uma vez por versão', () => {
+    const store = useUpdatesStore()
+    store.apply({ ...BASE, last_result: { from: '0.1.0', to: '0.2.0', agentd_changed: false, at: 1 } })
+    expect(store.showUpdatedNotice).toBe(true)
+    store.dismissUpdatedNotice()
+    expect(store.showUpdatedNotice).toBe(false)
+    expect(localStorage.getItem('maestro:update-result-seen')).toBe('0.2.0')
+  })
+
+  it('aviso do agentd só com agentd ligado e mudança na versão', () => {
+    const store = useUpdatesStore()
+    store.apply({ ...BASE, last_result: { from: '0.1.0', to: '0.2.0', agentd_changed: true, at: 1 }, agentd: { enabled: true, live_children: 2 } })
+    expect(store.showAgentdNotice).toBe(true)
+    expect(store.agentdBusy).toBe(true)
+    store.dismissAgentdNotice()
+    expect(store.showAgentdNotice).toBe(false)
   })
 })

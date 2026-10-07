@@ -372,6 +372,39 @@ export interface ReleaseInfo {
   published_at: number | null
 }
 
+export type RunModeKind = 'service-systemd' | 'service-launchd' | 'terminal' | 'systemd' | 'launchd' | 'unknown'
+
+export interface RunModeInfo {
+  kind: RunModeKind
+  unit: string | null
+  kill_mode: string | null
+}
+
+export type UpdateStep = 'check' | 'fetch' | 'python' | 'frontend-deps' | 'build' | 'restart'
+export type UpdateJobState = 'running' | 'failed' | 'rolled-back-failed' | 'up-to-date' | 'restarting'
+
+export interface UpdateJob {
+  state: UpdateJobState
+  step: UpdateStep | null
+  rolling_back: boolean
+  lines: string[]
+  error: string | null
+  log_path: string
+}
+
+export interface UpdateResult {
+  from: string
+  to: string
+  agentd_changed: boolean
+  at: number
+}
+
+export interface SelfUpdateInfo {
+  can: boolean
+  reason: string | null
+  mode: 'pull' | 'tag' | null
+}
+
 export interface UpdateState {
   enabled: boolean
   current: string
@@ -379,6 +412,13 @@ export interface UpdateState {
   latest: ReleaseInfo | null
   checked_at: number | null
   releases_url: string
+  // Only in GET /api/updates (the `app.update` event carries the fields above): merged, never replaced.
+  run_mode?: RunModeInfo
+  self_update?: SelfUpdateInfo
+  job?: UpdateJob | null
+  last_result?: UpdateResult | null
+  agentd?: { enabled: boolean; live_children: number | null }
+  live_sessions?: number
 }
 
 // Subscription usage (GET /api/usage and the `app.usage` event)

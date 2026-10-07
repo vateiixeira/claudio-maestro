@@ -30,6 +30,7 @@ import type {
   SessionDigest,
   SessionGroup,
   SessionUpdate,
+  UpdateJob,
   UpdateState,
   UsageSnapshot,
 } from '../types/api'
@@ -116,6 +117,14 @@ export function getHealth(): Promise<{ status: string }> {
 
 export function getUpdates(): Promise<UpdateState> {
   return request('GET', '/api/updates')
+}
+
+export function applyUpdate(version: string, confirmSessionsDrop = false): Promise<{ job: UpdateJob | null }> {
+  return request('POST', '/api/updates/apply', { version, confirm_sessions_drop: confirmSessionsDrop })
+}
+
+export function restartAgentd(): Promise<{ restarted: boolean }> {
+  return request('POST', '/api/agentd/restart')
 }
 
 // Usage

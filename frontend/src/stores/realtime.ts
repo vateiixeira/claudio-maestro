@@ -57,6 +57,7 @@ export function bindRealtime(socket: EventSocket): () => void {
       useModelsStore().apply((event.data as { models?: unknown } | null)?.models)
     }),
     socket.on('app.update', (event) => useUpdatesStore().apply(event.data)),
+    socket.on('app.update.progress', (event) => useUpdatesStore().applyProgress(event.data)),
     socket.on('app.usage', (event) => useUsageStore().apply(event.data)),
     // The digest agent wrote a summary, or its state changed (both global events).
     socket.on('session.digest', (event) => useDigestStore().applyDigest(event.data)),
