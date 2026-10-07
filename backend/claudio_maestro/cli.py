@@ -1,6 +1,8 @@
 """The `claudio-maestro` command: build the frontend when needed and serve the app."""
 
 import argparse
+import getpass
+import os
 import shutil
 import socket
 import subprocess
@@ -8,6 +10,7 @@ import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
+from claudio_maestro import service
 from claudio_maestro.config import PortError, app_ports, backend_port, validate_port
 
 HOST = "127.0.0.1"
@@ -103,7 +106,24 @@ def main(
         description="Sobe o Cláudio Maestro em http://localhost:<porta>, compilando o frontend quando preciso.",
     )
     parser.add_argument("--port", help="porta do app (padrão: MAESTRO_PORT ou 6660)")
+    commands = parser.add_subparsers(dest="command")
+    svc = commands.add_parser("service", help="instala, remove ou mostra o serviço que mantém o app rodando")
+    svc.add_argument("action", choices=["install", "uninstall", "status"])
+    # Its own dest: a subparser default would overwrite the top-level --port.
+    svc.add_argument("--port", dest="service_port", help="porta do app (padrão: MAESTRO_PORT ou 6660)")
     args = parser.parse_args(argv)
+    if args.command == "service":
+        try:
+            env_port = backend_port()
+            raw = args.service_port if args.service_port is not None else args.port
+            port = validate_port(raw, "--port") if raw is not None else env_port
+        except PortError as exc:
+            print(f"claudio-maestro: {exc}", file=sys.stderr)
+            return 1
+        return service.run_service(
+            args.action, port=port, repo=REPO_ROOT, home=Path.home(), environ=os.environ,
+            port_free=port_free, user=getpass.getuser(),
+        )
     try:
         # Also checked with --port: serving imports the app, which reads MAESTRO_PORT again.
         env_port = backend_port()

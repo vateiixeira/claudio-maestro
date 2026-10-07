@@ -243,3 +243,31 @@ def test_frontend_is_found_from_the_package_not_the_current_folder(tmp_path: Pat
     assert cli.FRONTEND_DIR.is_absolute()
     assert (cli.FRONTEND_DIR / "package.json").is_file()
     assert cli.FRONTEND_DIR == cli.REPO_ROOT / "frontend"
+
+
+# service subcommand
+
+
+def test_service_subcommand_calls_run_service(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake(action, **kw):
+        seen.update(action=action, port=kw["port"])
+        return 0
+
+    monkeypatch.setattr(cli.service, "run_service", fake)
+    assert cli.main(["service", "install", "--port", "7100"], frontend=make_frontend(tmp_path)) == 0
+    assert seen == {"action": "install", "port": 7100}
+
+
+def test_service_subcommand_defaults_to_env_port(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(cli.service, "run_service", lambda action, **kw: seen.update(port=kw["port"]) or 0)
+    monkeypatch.setenv("MAESTRO_PORT", "7000")
+    cli.main(["service", "status"], frontend=make_frontend(tmp_path))
+    assert seen["port"] == 7000
+
+
+def test_service_subcommand_rejects_unknown_action(tmp_path):
+    with pytest.raises(SystemExit):
+        cli.main(["service", "explodir"], frontend=make_frontend(tmp_path))
