@@ -101,6 +101,25 @@ def no_real_usage_check(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_claude_cli(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The real `claude` is never run in tests: no system CLI is found, and
+    `claude update` refuses. test_claudecli.py runs the real runners on fake scripts."""
+    if request.node.path.name == "test_claudecli.py" and request.node.name.startswith(
+        ("test_run_version_command", "test_run_update_command")
+    ):
+        return
+
+    def no_version(path):
+        return None
+
+    async def no_update(argv, timeout):
+        raise RuntimeError("Os testes não podem rodar o claude real.")
+
+    monkeypatch.setattr("claudio_maestro.claudecli.run_version_command", no_version)
+    monkeypatch.setattr("claudio_maestro.claudecli.run_update_command", no_update)
+
+
+@pytest.fixture(autouse=True)
 def no_usage_background_check(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests that build `Settings(...)` by hand do not pass `usage_check=False`, so the
     periodic check and the end-of-turn refresh would run, log an error and publish
