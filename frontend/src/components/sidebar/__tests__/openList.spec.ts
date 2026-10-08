@@ -84,3 +84,17 @@ describe('marcações nas conversas abertas', () => {
     expect(ids(looseOpenSessions(all, 1, new Set()))).toEqual(['esp'])
   })
 })
+
+describe('sessões descartadas fora do menu lateral', () => {
+  it('não aparecem nas abertas, nas faixas nem nas soltas do projeto', () => {
+    const all = [
+      makeSession({ session_id: 'a', project_id: 1 }),
+      makeSession({ session_id: 'desc', project_id: 1, mark: 'discarded', display_state: 'waiting', unread: true, pending_kind: 'tool' }),
+      makeSession({ session_id: 'desc-roda', project_id: 1, mark: 'discarded', display_state: 'running' }),
+    ]
+    expect(ids(openSessions(all))).toEqual(['a'])
+    expect(ids(looseOpenSessions(all, 1, new Set()))).toEqual(['a'])
+    expect(ids(laneSessions(all, 'later'))).toEqual([])
+    expect(ids(laneSessions(all, 'review'))).toEqual([])
+  })
+})

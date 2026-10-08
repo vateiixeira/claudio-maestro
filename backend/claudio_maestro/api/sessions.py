@@ -131,7 +131,7 @@ class SessionOut(BaseModel):
     # A turn was running when the app stopped and the session has no client now.
     interrupted: bool = False
     # What the user plans to do with the session; None when unmarked.
-    mark: Literal["on_hold", "blocked", "review"] | None = None
+    mark: Literal["on_hold", "blocked", "review", "discarded"] | None = None
     mark_note: str | None = None
     # When a session on hold wakes up (seconds); None without a date.
     mark_until: int | None = None

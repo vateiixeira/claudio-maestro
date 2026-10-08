@@ -162,7 +162,7 @@ DisplayState = Literal["running", "waiting", "finished"]
 # States in which the session has a client of the app.
 _WITH_CLIENT: tuple[str, ...] = ("idle", "running", "awaiting_decision")
 DISPLAY_STATES: tuple[str, ...] = ("running", "waiting", "finished")
-MARKS: tuple[str, ...] = ("on_hold", "blocked", "review")
+MARKS: tuple[str, ...] = ("on_hold", "blocked", "review", "discarded")
 MARK_NOTE_MAX = 80
 
 Publish = Callable[[dict[str, Any]], None]
@@ -330,7 +330,7 @@ class SessionRecord:
     git_branch: str | None = None
     # A turn was running when the app last left this session (see INTERRUPTED_TEXT).
     turn_open: bool = False
-    # What the user plans to do with the session: "on_hold", "blocked", "review" or None.
+    # What the user plans to do with the session: "on_hold", "blocked", "review", "discarded" or None.
     mark: str | None = None
     # Short note of a blocked session.
     mark_note: str | None = None
@@ -2828,7 +2828,7 @@ class SessionManager:
 
     def search(self, query: str, limit: int = 50) -> list[dict[str, Any]]:
         """Sessions whose title, summary, first prompt or group name contain `query`, ignoring
-        case and accents. Includes finished and hidden ones; newest first."""
+        case and accents. Includes finished ones, not discarded ones; newest first."""
         needle = _strip_accents(" ".join(query.split()))
         if not needle:
             return []
@@ -2836,6 +2836,8 @@ class SessionManager:
             group_names = {group.id: group.name for group in groups.list_groups(conn)}
         result = []
         for item in self.list_sessions():
+            if item.get("mark") == "discarded":
+                continue
             haystack = " ".join(
                 [item.get(key) or "" for key in ("title", "summary", "first_prompt")]
                 + [group_names.get(item.get("group_id"), "")]
@@ -3201,8 +3203,8 @@ class SessionManager:
         if finished is True:
             # Finishing (even a session already finished) drops the mark and the priority.
             changes.update(mark=None, mark_note=None, mark_until=None, priority=False)
-        elif (changes.get("mark") or changes.get("priority")) and finished is not True:
-            # Marking a finished session reopens it, like "Reabrir".
+        elif (changes.get("mark") not in (None, "discarded") or changes.get("priority")) and finished is not True:
+            # Marking a finished session reopens it, like "Reabrir". Discarding does not: it only hides.
             if session.record.finished:
                 changes["finished"] = False
             if session.summary()["display_state"] == "finished":

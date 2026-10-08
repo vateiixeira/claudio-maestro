@@ -2,8 +2,10 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConversationRow from '../components/conversation/ConversationRow.vue'
+import { errorMessage } from '../api/http'
 import LoadStatus from '../components/LoadStatus.vue'
 import { groupByDate } from '../conversationList'
+import { isDiscarded } from '../conversation/marks'
 import { sortGroups } from '../groupList'
 import { useLoadState } from '../loadState'
 import { useGitStore } from '../stores/git'
@@ -14,9 +16,9 @@ import { useSessionsStore } from '../stores/sessions'
 import IconPlus from '../components/icons/IconPlus.vue'
 
 const PAGE = 100
-type StateFilter = 'ativas' | 'finalizadas' | 'em-espera' | 'bloqueadas' | 'para-revisar' | 'prioridade' | 'todas'
-const STATE_FILTERS: StateFilter[] = ['ativas', 'finalizadas', 'em-espera', 'bloqueadas', 'para-revisar', 'prioridade']
-const MARK_OF: Partial<Record<StateFilter, string>> = { 'em-espera': 'on_hold', bloqueadas: 'blocked', 'para-revisar': 'review' }
+type StateFilter = 'ativas' | 'finalizadas' | 'em-espera' | 'bloqueadas' | 'para-revisar' | 'prioridade' | 'descartadas' | 'todas'
+const STATE_FILTERS: StateFilter[] = ['ativas', 'finalizadas', 'em-espera', 'bloqueadas', 'para-revisar', 'prioridade', 'descartadas']
+const MARK_OF: Partial<Record<StateFilter, string>> = { 'em-espera': 'on_hold', bloqueadas: 'blocked', 'para-revisar': 'review', descartadas: 'discarded' }
 
 const route = useRoute()
 const router = useRouter()
@@ -63,12 +65,20 @@ function setProject(value: string) {
 }
 
 const error = ref<string | null>(null)
+async function discard(sessionId: string) {
+  try {
+    await sessions.setMark(sessionId, 'discarded')
+  } catch (e) {
+    error.value = errorMessage(e)
+  }
+}
 const limit = ref(PAGE)
 watch(() => route.query, () => { limit.value = PAGE })
 
 const filtered = computed(() => {
   const q = search.value.trim().toLocaleLowerCase('pt-BR')
   return sessions.all.filter((s) => {
+    if (state.value !== 'descartadas' && isDiscarded(s)) return false
     if (state.value === 'ativas' && s.display_state === 'finished') return false
     if (state.value === 'finalizadas' && s.display_state !== 'finished') return false
     const mark = MARK_OF[state.value]
@@ -110,6 +120,7 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
         <option value="bloqueadas">Bloqueadas</option>
         <option value="para-revisar">Para revisar</option>
         <option value="prioridade">Prioridade</option>
+        <option value="descartadas">Descartadas</option>
       </select>
     </div>
     <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
@@ -120,7 +131,11 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
         <div class="flex items-center gap-3 py-2">
           <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
         </div>
-        <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" @error="error = $event" />
+        <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" @error="error = $event">
+          <template v-if="!isDiscarded(s)" #actions>
+            <button type="button" data-test="row-discard" class="h-8 rounded-md px-2 text-xs text-fg-muted hover:bg-elevated hover:text-fg disabled:opacity-40" :aria-label="`Descartar ${s.title}`" @click="discard(s.session_id)">Descartar</button>
+          </template>
+        </ConversationRow>
       </section>
     </template>
     <button v-if="loadState === 'ready' && filtered.length > limit" type="button" data-test="show-more" class="h-10 self-center rounded-md border border-line-strong px-4 text-sm text-fg hover:bg-card" @click="limit += PAGE">Mostrar mais</button>

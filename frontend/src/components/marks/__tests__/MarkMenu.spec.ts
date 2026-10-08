@@ -153,3 +153,18 @@ describe('menu de marcação', () => {
     })
   })
 })
+
+describe('descartar', () => {
+  it('Descartar marca a sessão como descartada, sem data nem nota', async () => {
+    const spy = vi.spyOn(store, 'setMark').mockResolvedValue()
+    const w = mountMenu()
+    await w.find('[data-test="mark-discard"]').trigger('click')
+    expect(spy).toHaveBeenCalledWith('s1', 'discarded')
+    await vi.waitFor(() => expect(w.emitted('done')).toBeTruthy())
+  })
+  it('sessão já descartada não oferece Descartar, mas Remover marcação restaura', () => {
+    const w = mountMenu({ mark: 'discarded' })
+    expect(w.find('[data-test="mark-discard"]').exists()).toBe(false)
+    expect(w.find('[data-test="mark-clear"]').exists()).toBe(true)
+  })
+})

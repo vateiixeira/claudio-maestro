@@ -94,6 +94,7 @@ const item = 'w-full px-3 py-1.5 text-left text-sm hover:bg-elevated focus:bg-el
     </div>
     <button type="button" role="menuitemradio" data-test="mark-review" :aria-checked="session.mark === 'review'" :class="item" @click="mark('review')">Para revisar</button>
     <button v-if="session.mark" type="button" role="menuitem" data-test="mark-clear" :class="item" @click="mark(null)">Remover marcação</button>
+    <button v-if="session.mark !== 'discarded'" type="button" role="menuitem" data-test="mark-discard" :class="item" @click="mark('discarded')">Descartar</button>
     <div role="separator" class="my-1 border-t border-line" />
     <button type="button" role="menuitemcheckbox" data-test="mark-priority" :aria-checked="!!session.priority" :class="item" @click="run(() => sessions.setPriority(session.session_id, !session.priority))">
       {{ session.priority ? 'Tirar prioridade' : 'Prioridade' }}

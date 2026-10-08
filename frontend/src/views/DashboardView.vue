@@ -8,7 +8,7 @@ import ConversationRow from '../components/conversation/ConversationRow.vue'
 import DisplayStateIcon from '../components/DisplayStateIcon.vue'
 import BranchLabel from '../components/git/BranchLabel.vue'
 import { getActivity } from '../api/http'
-import { markLane } from '../conversation/marks'
+import { isDiscarded, markLane } from '../conversation/marks'
 import { needsYou } from '../conversation/needsYou'
 import { useLoadState } from '../loadState'
 import { changedCount, repoLabel, useGitStore } from '../stores/git'
@@ -23,7 +23,7 @@ const loadState = useLoadState()
 
 const NOW_LIMIT = 6
 // Only what is for now or for review gets a card; sessions on hold or blocked stay out.
-const active = computed(() => sessions.all.filter((s) => (s.display_state === 'running' || s.display_state === 'waiting') && markLane(s) !== 'later'))
+const active = computed(() => sessions.all.filter((s) => (s.display_state === 'running' || s.display_state === 'waiting') && markLane(s) !== 'later' && !isDiscarded(s)))
 // Pending requests first, then running, then the rest of the waiting ones; newest first inside each group.
 const nowRank = (s: Session) => (s.awaiting_decision || s.pending_kind != null ? 0 : s.display_state === 'running' ? 1 : 2)
 const nowCards = computed(() =>
@@ -32,7 +32,7 @@ const nowCards = computed(() =>
     .slice(0, NOW_LIMIT),
 )
 // "Running" is a fact, not a queue: it counts the ones on hold too.
-const running = computed(() => sessions.all.filter((s) => s.display_state === 'running').length)
+const running = computed(() => sessions.all.filter((s) => s.display_state === 'running' && !isDiscarded(s)).length)
 // Only the waits that need you count, the same rule as the sidebar.
 const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s) && markLane(s) === 'now'
 const waiting = computed(() => active.value.filter(isWaitingOnYou).length)
@@ -42,7 +42,7 @@ const finishedToday = computed(() => sessions.all.filter((s) => s.finished && (s
 const changedFiles = (projectId: number) => git.reposFor(projectId).reduce((sum, r) => sum + changedCount(r), 0)
 const projectsWithChanges = computed(() => projects.projects.filter((p) => changedFiles(p.id) > 0).length)
 const waitingIn = (projectId: number) => sessions.forProject(projectId).filter(isWaitingOnYou).length
-const recent = computed(() => sessions.all.slice(0, 8))
+const recent = computed(() => sessions.all.filter((s) => !isDiscarded(s)).slice(0, 8))
 
 const activity = ref<ActivityDay[]>([])
 const activityError = ref(false)

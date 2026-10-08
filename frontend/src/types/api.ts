@@ -65,7 +65,7 @@ export type SessionState =
   | 'error'
 
 /** What the user plans to do with a session. */
-export type SessionMark = 'on_hold' | 'blocked' | 'review'
+export type SessionMark = 'on_hold' | 'blocked' | 'review' | 'discarded'
 
 export interface Session {
   session_id: string

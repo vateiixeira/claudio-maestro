@@ -165,7 +165,7 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
     ],
     [
         # Marcações de sessão: what the user plans to do with the session ("on_hold",
-        # "blocked", "review"), the note of a blocked one, when one on hold wakes up,
+        # "blocked", "review", "discarded"), the note of a blocked one, when one on hold wakes up,
         # and the priority pin.
         "ALTER TABLE sessions ADD COLUMN mark TEXT",
         "ALTER TABLE sessions ADD COLUMN mark_note TEXT",

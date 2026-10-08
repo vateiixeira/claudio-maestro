@@ -230,3 +230,64 @@ describe('filtros de marcação', () => {
     expect(titles(wrapper)).toEqual(expected)
   })
 })
+
+describe('Conversas: sessões descartadas', () => {
+  const titles = (wrapper: { findAll: (sel: string) => { text: () => string }[] }) => wrapper.findAll('[data-test="row-link"]').map((r) => r.text())
+
+  it('ficam fora de Todas, Ativas e Finalizadas', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', title: 'Aberta', last_activity_at: now }),
+      makeSession({ session_id: 'fim', title: 'Feita', display_state: 'finished', last_activity_at: now }),
+      makeSession({ session_id: 'desc', title: 'Descartada', mark: 'discarded', last_activity_at: now }),
+      makeSession({ session_id: 'descfim', title: 'Descartada feita', mark: 'discarded', display_state: 'finished', last_activity_at: now }),
+    ])
+    expect(titles((await mountList('/sessions')).wrapper).sort()).toEqual(['Aberta', 'Feita'])
+    expect(titles((await mountList('/sessions?estado=ativas')).wrapper)).toEqual(['Aberta'])
+    expect(titles((await mountList('/sessions?estado=finalizadas')).wrapper)).toEqual(['Feita'])
+  })
+
+  it('a aba Descartadas lista só as descartadas, abertas ou não', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', title: 'Aberta', last_activity_at: now }),
+      makeSession({ session_id: 'desc', title: 'Descartada', mark: 'discarded', last_activity_at: now }),
+      makeSession({ session_id: 'descfim', title: 'Descartada feita', mark: 'discarded', display_state: 'finished', last_activity_at: now }),
+    ])
+    const { wrapper } = await mountList('/sessions?estado=descartadas')
+    expect(titles(wrapper).sort()).toEqual(['Descartada', 'Descartada feita'])
+  })
+})
+
+describe('Conversas: Descartar ao lado de Finalizar', () => {
+  it('cada conversa aberta tem Descartar logo antes de Finalizar', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', title: 'Aberta', last_activity_at: now })])
+    const { wrapper } = await mountList('/sessions')
+    const discard = wrapper.get('[data-test="row-discard"]')
+    expect(discard.text()).toBe('Descartar')
+    expect(discard.attributes('aria-label')).toBe('Descartar Aberta')
+    expect(discard.element.nextElementSibling?.getAttribute('data-test')).toBe('row-finish')
+  })
+
+  it('clicar em Descartar marca a conversa como descartada', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', title: 'Aberta', last_activity_at: now })])
+    const spy = vi.spyOn(useSessionsStore(pinia), 'setMark').mockResolvedValue()
+    const { wrapper } = await mountList('/sessions')
+    await wrapper.get('[data-test="row-discard"]').trigger('click')
+    expect(spy).toHaveBeenCalledWith('a', 'discarded')
+  })
+
+  it('falha ao descartar aparece como erro da lista', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', title: 'Aberta', last_activity_at: now })])
+    vi.spyOn(useSessionsStore(pinia), 'setMark').mockRejectedValue(new Error('Falhou aqui'))
+    const { wrapper } = await mountList('/sessions')
+    await wrapper.get('[data-test="row-discard"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Falhou aqui')
+  })
+
+  it('na aba Descartadas a conversa não oferece Descartar de novo', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'd', title: 'Descartada', mark: 'discarded', last_activity_at: now })])
+    const { wrapper } = await mountList('/sessions?estado=descartadas')
+    expect(wrapper.findAll('[data-test="row-link"]')).toHaveLength(1)
+    expect(wrapper.find('[data-test="row-discard"]').exists()).toBe(false)
+  })
+})

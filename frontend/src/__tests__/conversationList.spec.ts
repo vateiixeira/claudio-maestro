@@ -116,3 +116,10 @@ describe('Inbox com marcações', () => {
     expect(INBOX_TABS.map((t) => t.label)).toEqual(['Aguardando você', 'Não lidas', 'Em execução', 'Para revisar', 'Pode fechar', 'Depois', 'Todas'])
   })
 })
+
+describe('sessões descartadas', () => {
+  it('não entram em nenhuma aba da Inbox, nem em Todas', () => {
+    const s = makeSession({ mark: 'discarded', display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'tool', unread: true })
+    for (const tab of INBOX_TABS) expect(inInbox(s, tab.id)).toBe(false)
+  })
+})

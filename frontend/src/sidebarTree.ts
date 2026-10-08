@@ -26,7 +26,7 @@ export function projectTree(groups: SessionGroup[], sessions: Session[]): { acti
  */
 export function splitProjects(projects: Project[], sessions: Session[]): { active: Project[]; others: Project[] } {
   const withOpen = new Set<number>()
-  for (const s of sessions) if (s.display_state !== 'finished') withOpen.add(s.project_id)
+  for (const s of sessions) if (isActive(s)) withOpen.add(s.project_id)
   const active: Project[] = []
   const others: Project[] = []
   for (const p of projects) (withOpen.has(p.id) ? active : others).push(p)

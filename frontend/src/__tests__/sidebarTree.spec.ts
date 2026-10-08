@@ -68,3 +68,21 @@ describe('projetos do menu: em andamento e outros', () => {
     expect(splitProjects(projects, sessions).active.map((p) => p.id)).toEqual([1, 2])
   })
 })
+
+describe('sessões descartadas na árvore do menu', () => {
+  it('projeto só com descartadas não está em andamento', () => {
+    const projects = [makeProject({ id: 1 }), makeProject({ id: 2 })]
+    const sessions = [
+      makeSession({ session_id: 'd', project_id: 1, mark: 'discarded', display_state: 'running' }),
+      makeSession({ session_id: 'b', project_id: 2, display_state: 'running' }),
+    ]
+    expect(splitProjects(projects, sessions).active.map((p) => p.id)).toEqual([2])
+  })
+  it('grupo só com descartadas fica parado', () => {
+    const groups = [makeGroup({ id: 1, name: 'A' })]
+    const sessions = [makeSession({ session_id: 'd', group_id: 1, mark: 'discarded', display_state: 'running' })]
+    const tree = projectTree(groups, sessions)
+    expect(tree.active).toEqual([])
+    expect(tree.idle.map((g) => g.id)).toEqual([1])
+  })
+})

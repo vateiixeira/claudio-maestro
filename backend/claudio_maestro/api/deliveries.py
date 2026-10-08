@@ -40,7 +40,7 @@ def _read_day(app: Any, day: date, sessions: list[dict[str, Any]]) -> dict[str, 
          "project_name": names.get(s["project_id"], ""), "title": s.get("title") or "",
          "short": s.get("digest_short")}
         for s in sessions
-        if s["session_id"] in active and s["session_id"] not in delivered
+        if s["session_id"] in active and s["session_id"] not in delivered and s.get("mark") != "discarded"
     ]
     open_items.sort(key=lambda s: (s["project_name"].casefold(), s["title"].casefold()))
     return {

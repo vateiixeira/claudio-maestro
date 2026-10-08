@@ -14,6 +14,7 @@ import ClaudeUpdateNotice from '../updates/ClaudeUpdateNotice.vue'
 import UpdatedNotice from '../updates/UpdatedNotice.vue'
 import { looseOpenSessions } from './openList'
 import { sidebarItemClass } from './itemClass'
+import { isDiscarded } from '../../conversation/marks'
 import { needsYou } from '../../conversation/needsYou'
 import { useEventSocket } from '../../api/socket'
 import { isCollapsed, isSectionOpened, setCollapsed, setSectionOpened } from '../../sidebarCollapse'
@@ -76,13 +77,13 @@ function resetResize() {
 }
 
 // Only the waits that need you count; an ordinary wait with nothing new is not a reason to look.
-const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s)
+const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s) && !isDiscarded(s)
 const waitingCount = computed(() => sessions.all.filter(isWaitingOnYou).length)
 function waitingIn(projectId: number): number {
   return sessions.forProject(projectId).filter(isWaitingOnYou).length
 }
 function runningIn(projectId: number): boolean {
-  return sessions.forProject(projectId).some((s) => s.display_state === 'running')
+  return sessions.forProject(projectId).some((s) => s.display_state === 'running' && !isDiscarded(s))
 }
 // Open conversations of each project outside its groups, the ones waiting for you first; grouped ones show under their group.
 // Built once per change so the template reads it instead of recomputing per project.

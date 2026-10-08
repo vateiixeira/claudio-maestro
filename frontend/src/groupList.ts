@@ -1,8 +1,9 @@
+import { isDiscarded } from './conversation/marks'
 import type { Session, SessionGroup } from './types/api'
 
-/** Whether the session still counts as work in progress (not finished). */
+/** Whether the session still counts as work in progress (not finished, not discarded). */
 export function isActive(session: Session): boolean {
-  return session.display_state !== 'finished'
+  return session.display_state !== 'finished' && !isDiscarded(session)
 }
 
 /** Sessions of a group, newest activity first. */

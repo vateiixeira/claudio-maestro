@@ -11,7 +11,7 @@ import IconGroup from '../icons/IconGroup.vue'
 import NextNeedsYou from './NextNeedsYou.vue'
 import { errorMessage, openInEditor } from '../../api/http'
 import { behindCount, behindTitle } from '../../gitSync'
-import { markChipText } from '../../conversation/marks'
+import { isDiscarded, markChipText } from '../../conversation/marks'
 import { needsYou } from '../../conversation/needsYou'
 import { useMinuteClock } from '../../minuteClock'
 import { useConversationStore } from '../../stores/conversation'
@@ -74,6 +74,17 @@ function toggleMark(event: MouseEvent) {
 
 const error = ref<string | null>(null)
 const toggling = ref(false)
+async function discardSession() {
+  toggling.value = true
+  error.value = null
+  try {
+    await sessions.setMark(props.id, 'discarded')
+  } catch (e) {
+    error.value = errorMessage(e)
+  } finally {
+    toggling.value = false
+  }
+}
 async function toggleFinished() {
   toggling.value = true
   error.value = null
@@ -220,6 +231,14 @@ async function openProject() {
           :disabled="toggling"
           @click="toggleFinished"
         >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
+        <button
+          v-if="listed && !isDiscarded(listed)"
+          type="button"
+          data-test="header-discard"
+          class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
+          :disabled="toggling"
+          @click="discardSession"
+        >Descartar</button>
         <div ref="menuWrap" class="relative shrink-0">
           <button
             ref="menuButton"

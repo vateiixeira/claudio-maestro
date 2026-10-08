@@ -13,6 +13,7 @@ import { groupByDate } from '../conversationList'
 import { useGroupsStore } from '../stores/groups'
 import { useProjectsStore } from '../stores/projects'
 import { useNewConversationStore } from '../stores/newConversation'
+import { isDiscarded } from '../conversation/marks'
 import { useSessionsStore } from '../stores/sessions'
 import { readSplitPercent, writeSplitPercent } from '../projectSplitPref'
 import { useMediaQuery } from '../useMediaQuery'
@@ -55,7 +56,7 @@ function rowTarget(sessionId: string) {
 const project = computed(() => projects.byId(props.id))
 // The store keeps the order of the last listing, not of later `session.updated` events.
 const projectSessions = computed(() =>
-  [...sessions.forProject(props.id)].sort(
+  [...sessions.forProject(props.id)].filter((s) => !isDiscarded(s)).sort(
     (a, b) => b.last_activity_at - a.last_activity_at || b.created_at - a.created_at,
   ),
 )

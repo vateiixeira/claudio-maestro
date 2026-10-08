@@ -59,3 +59,14 @@ describe('markChipText', () => {
     expect(markChipText({ mark: null }, now)).toBeNull()
   })
 })
+
+describe('sessões descartadas', () => {
+  it('ficam numa faixa própria, mesmo com pedido do Claude ou rodando', () => {
+    expect(markLane(makeSession({ mark: 'discarded' }))).toBe('discarded')
+    expect(markLane(makeSession({ mark: 'discarded', pending_kind: 'tool' }))).toBe('discarded')
+    expect(markLane(makeSession({ mark: 'discarded', display_state: 'running' }))).toBe('discarded')
+  })
+  it('o chip da conversa diz Descartada', () => {
+    expect(markChipText({ mark: 'discarded' }, new Date())).toBe('Descartada')
+  })
+})

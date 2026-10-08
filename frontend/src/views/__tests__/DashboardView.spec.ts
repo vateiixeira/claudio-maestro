@@ -229,3 +229,16 @@ describe('Dashboard com marcações', () => {
     expect(wrapper.find('[data-test="stat-running"]').text()).toContain('2')
   })
 })
+
+describe('Dashboard: sessões descartadas', () => {
+  it('não entram em Agora, nem na contagem de rodando, nem em recentes', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', title: 'Comum', display_state: 'running', state: 'running', last_activity_at: now }),
+      makeSession({ session_id: 'b', title: 'Descartada', display_state: 'running', state: 'running', mark: 'discarded', last_activity_at: now }),
+    ])
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.findAll('[data-test="now-card"]').map((c) => c.find('a').text())).toEqual(['Comum'])
+    expect(wrapper.find('[data-test="stat-running"]').text()).toContain('1')
+    expect(wrapper.text()).not.toContain('Descartada')
+  })
+})

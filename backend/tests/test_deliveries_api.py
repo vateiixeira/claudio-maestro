@@ -94,3 +94,13 @@ def test_get_day_has_neighbor_days(api, home: Path) -> None:
     assert body["prev_day"] == "2026-10-02" and body["next_day"] == "2026-10-09"
     body = api.get("/api/deliveries?date=2026-10-09").json()
     assert body["prev_day"] == "2026-10-02" and body["next_day"] is None
+
+
+def test_discarded_session_is_not_in_progress(api, home: Path, monkeypatch) -> None:
+    project = make_project(api, home)
+    open_sid = new_session(api, project)
+    discarded_sid = new_session(api, project)
+    api.patch(f"/api/sessions/{discarded_sid}", json={"mark": "discarded"})
+    monkeypatch.setattr(api.app.state.activity, "sessions_on", lambda day: {open_sid, discarded_sid})
+    body = api.get(f"/api/deliveries?date={date.today().isoformat()}").json()
+    assert [x["session_id"] for x in body["in_progress"]] == [open_sid]

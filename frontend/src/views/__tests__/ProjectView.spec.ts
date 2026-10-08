@@ -57,6 +57,22 @@ describe('tela do projeto', () => {
     expect(rows[0]!.find('[data-test="row-link"]').attributes('href')).toBe('/sessions/a')
   })
 
+  it('não lista as conversas descartadas', async () => {
+    seed()
+    vi.stubGlobal(
+      'fetch',
+      routeFetch({
+        'GET /api/projects/1/sessions': () =>
+          jsonResponse([
+            makeSession({ session_id: 'a', title: 'Aberta', state: 'idle' }),
+            makeSession({ session_id: 'd', title: 'Sumida', state: 'idle', mark: 'discarded' }),
+          ]),
+      }),
+    )
+    const wrapper = await mountView()
+    expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Aberta'])
+  })
+
   it('ordena as conversas por última atividade mesmo com a lista fora de ordem', async () => {
     seed()
     const now = Math.floor(Date.now() / 1000)

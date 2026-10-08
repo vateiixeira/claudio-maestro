@@ -342,3 +342,27 @@ async def test_idle_sweep_wakes_due_marks(make_env, env_cleanup, monkeypatch):
         await env.manager.run_idle_sweep(0.01)
     assert env.manager.summary(session.session_id)["mark"] is None
     assert session_row(env.db_path, session.session_id)["mark"] is None
+
+
+def test_resolve_mark_discarded_takes_no_note_or_date():
+    assert resolve_mark(rec(), mark="discarded", mark_note=..., mark_until=..., now=NOW) == {
+        "mark": "discarded",
+    }
+
+
+def test_resolve_mark_discarded_drops_old_note_and_date():
+    record = rec(mark="blocked", mark_note="esperando CI")
+    assert resolve_mark(record, mark="discarded", mark_note=..., mark_until=..., now=NOW) == {
+        "mark": "discarded",
+        "mark_note": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{"mark_note": "x"}, {"mark_until": NOW + 60}],
+)
+def test_resolve_mark_discarded_rejects_note_and_date(extra):
+    kwargs = {"mark_note": ..., "mark_until": ..., **extra}
+    with pytest.raises(InvalidMarkError):
+        resolve_mark(rec(), mark="discarded", now=NOW, **kwargs)

@@ -356,3 +356,13 @@ describe('bindNotifications', () => {
     expect(fake.instances).toHaveLength(0)
   })
 })
+
+describe('sessão descartada não avisa', () => {
+  it('pedido de uma sessão descartada não dispara aviso, nem erro dela', () => {
+    expect(transitionKind(snapshotOf(running()), snapshotOf(asking({ mark: 'discarded' })))).toBeNull()
+    expect(transitionKind(snapshotOf(running()), snapshotOf(makeSession({ state: 'error', display_state: 'waiting', error: 'x', mark: 'discarded' })))).toBeNull()
+  })
+  it('restaurar uma sessão com pedido já visto não avisa de novo', () => {
+    expect(transitionKind(snapshotOf(asking({ mark: 'discarded' })), snapshotOf(asking()))).toBeNull()
+  })
+})

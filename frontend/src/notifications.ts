@@ -1,5 +1,5 @@
 import { ref, watch } from 'vue'
-import { hasRequest } from './conversation/marks'
+import { hasRequest, isDiscarded } from './conversation/marks'
 import { needsYou } from './conversation/needsYou'
 import { notificationPrefs, type NotificationPrefs } from './notificationPrefs'
 import type { Session } from './types/api'
@@ -52,6 +52,7 @@ export interface Snapshot {
   pending: string | null
   hasRequest: boolean
   needsYou: boolean
+  discarded: boolean
 }
 
 export function snapshotOf(session: Session): Snapshot {
@@ -60,12 +61,14 @@ export function snapshotOf(session: Session): Snapshot {
     pending: session.pending_kind ? `${session.pending_kind}:${session.pending_permission?.prompt_id ?? ''}` : null,
     hasRequest: hasRequest(session),
     needsYou: needsYou(session),
+    discarded: isDiscarded(session),
   }
 }
 
 /** The notification a session change deserves, or null. Without a previous snapshot nothing is known to have changed. */
 export function transitionKind(prev: Snapshot | undefined, next: Snapshot): NotifyKind | null {
-  if (!prev) return null
+  // A discarded session is hidden, so it does not notify (restoring it notifies nothing old).
+  if (!prev || next.discarded) return null
   if (next.pending && next.pending !== prev.pending) return KIND_OF_PENDING[next.pending.split(':', 1)[0]!] ?? null
   if (next.state === 'error' && prev.state !== 'error') return 'finished'
   if (next.needsYou && !prev.needsYou && !next.hasRequest) return 'finished'

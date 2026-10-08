@@ -60,6 +60,18 @@ describe('estrutura do app', () => {
     expect(document.title).toBe('(2) Cláudio Maestro')
   })
 
+  it('o título da aba ignora sessões descartadas', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', display_state: 'waiting', pending_kind: 'tool' }),
+      makeSession({ session_id: 'd', display_state: 'waiting', pending_kind: 'tool', mark: 'discarded' }),
+    ])
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias')
+    mount(App, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(document.title).toBe('(1) Cláudio Maestro')
+  })
+
   it('o título da aba ignora a conversa marcada não lida', async () => {
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 'a', display_state: 'waiting', unread: true, mark: 'on_hold' }),

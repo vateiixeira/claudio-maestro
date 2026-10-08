@@ -1,5 +1,5 @@
 import { shownVerdict } from './closure'
-import { markLane } from './conversation/marks'
+import { isDiscarded, markLane } from './conversation/marks'
 import { needsYou } from './conversation/needsYou'
 import type { Session } from './types/api'
 
@@ -29,8 +29,9 @@ export function isInboxTab(value: unknown): value is InboxTab {
   return INBOX_TABS.some((tab) => tab.id === value)
 }
 
-/** Whether a session shows in a Inbox tab. Finished sessions never do. */
+/** Whether a session shows in a Inbox tab. Finished and discarded sessions never do. */
 export function inInbox(session: Session, tab: InboxTab): boolean {
+  if (isDiscarded(session)) return false
   const waiting = session.display_state === 'waiting'
   const running = session.display_state === 'running'
   const open = session.display_state !== 'finished'

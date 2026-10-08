@@ -1,12 +1,13 @@
 import type { Session, SessionMark } from '../types/api'
 
-/** Where a session sits: now, waiting for a review, or later (on hold or blocked). */
-export type MarkLane = 'now' | 'review' | 'later'
+/** Where a session sits: now, waiting for a review, later (on hold or blocked), or discarded (out of every list). */
+export type MarkLane = 'now' | 'review' | 'later' | 'discarded'
 
 export const markLabels: Record<SessionMark, string> = {
   on_hold: 'Em espera',
   blocked: 'Bloqueada',
   review: 'Para revisar',
+  discarded: 'Descartada',
 }
 
 type LaneFields = Pick<Session, 'state'> & { mark?: SessionMark | null; pending_kind?: string | null }
@@ -16,8 +17,14 @@ export function hasRequest(s: Pick<Session, 'state'> & { pending_kind?: string |
   return Boolean(s.pending_kind) || s.state === 'awaiting_decision' || s.state === 'error'
 }
 
-/** A mark takes the session out of "now", unless Claude has a request. */
+/** A discarded session is out of the sidebar and the lists, whatever Claude is doing. */
+export function isDiscarded(s: { mark?: SessionMark | null }): boolean {
+  return s.mark === 'discarded'
+}
+
+/** A mark takes the session out of "now", unless Claude has a request. A discarded one is never "now". */
 export function markLane(s: LaneFields): MarkLane {
+  if (isDiscarded(s)) return 'discarded'
   if (!s.mark || hasRequest(s)) return 'now'
   return s.mark === 'review' ? 'review' : 'later'
 }
@@ -61,5 +68,6 @@ export function markChipText(
     return `Em espera até ${untilShort(s.mark_until, now)} ${pad(d.getHours())}:${pad(d.getMinutes())}`
   }
   if (s.mark === 'blocked') return s.mark_note ? `Bloqueada: ${s.mark_note}` : 'Bloqueada'
+  if (s.mark === 'discarded') return 'Descartada'
   return 'Para revisar'
 }

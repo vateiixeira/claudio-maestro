@@ -1,4 +1,4 @@
-import { markLane } from '../../conversation/marks'
+import { isDiscarded, markLane } from '../../conversation/marks'
 import { needsYou } from '../../conversation/needsYou'
 import type { Session } from '../../types/api'
 
@@ -10,11 +10,11 @@ function band(s: Session): number {
 }
 
 /**
- * Conversations not finished, in the order the sidebar lists them: first what waits for you, then what is
+ * Conversations not finished nor discarded, in the order the sidebar lists them: first what waits for you, then what is
  * marked as a priority, then what is running, then the rest. `all` comes newest first and the sort is stable, so each band keeps that order.
  */
 export function openSessions(all: Session[]): Session[] {
-  return all.filter((s) => s.display_state !== 'finished').sort((a, b) => band(a) - band(b))
+  return all.filter((s) => s.display_state !== 'finished' && !isDiscarded(s)).sort((a, b) => band(a) - band(b))
 }
 
 /** Open conversations of the "Para revisar" or "Depois" lane, in that order. */

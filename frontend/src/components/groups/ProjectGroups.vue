@@ -5,6 +5,7 @@ import GroupSection from './GroupSection.vue'
 import { errorMessage } from '../../api/http'
 import { sessionsOf, sortGroups } from '../../groupList'
 import { useGroupsStore } from '../../stores/groups'
+import { isDiscarded } from '../../conversation/marks'
 import { useSessionsStore } from '../../stores/sessions'
 import IconPlus from '../icons/IconPlus.vue'
 
@@ -20,7 +21,7 @@ const emit = defineEmits<{ error: [message: string] }>()
 const groups = useGroupsStore()
 const sessions = useSessionsStore()
 
-const projectSessions = computed(() => sessions.forProject(props.projectId))
+const projectSessions = computed(() => sessions.forProject(props.projectId).filter((s) => !isDiscarded(s)))
 const ordered = computed(() => sortGroups(groups.forProject(props.projectId), projectSessions.value))
 
 const creating = ref(false)

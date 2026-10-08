@@ -64,3 +64,28 @@ def test_patch_removes_mark_with_null(api, home):
     sid = new_sid(api, home)
     api.patch(f"/api/sessions/{sid}", json={"mark": "review"})
     assert api.patch(f"/api/sessions/{sid}", json={"mark": None}).json()["mark"] is None
+
+
+def test_patch_discarded_then_clear(api, home):
+    sid = new_sid(api, home)
+    body = api.patch(f"/api/sessions/{sid}", json={"mark": "discarded"}).json()
+    assert body["mark"] == "discarded" and body["mark_note"] is None and body["mark_until"] is None
+    assert body["finished"] is False
+    assert api.patch(f"/api/sessions/{sid}", json={"mark": None}).json()["mark"] is None
+
+
+def test_discarding_a_finished_session_keeps_it_finished(api, home):
+    sid = new_sid(api, home)
+    assert api.patch(f"/api/sessions/{sid}", json={"finished": True}).json()["finished"] is True
+    body = api.patch(f"/api/sessions/{sid}", json={"mark": "discarded"}).json()
+    assert body["mark"] == "discarded" and body["finished"] is True and body["display_state"] == "finished"
+    body = api.patch(f"/api/sessions/{sid}", json={"mark": None}).json()
+    assert body["mark"] is None and body["finished"] is True
+
+
+def test_discarded_session_is_out_of_search(api, home):
+    sid = new_sid(api, home)
+    api.patch(f"/api/sessions/{sid}", json={"title": "Procurada sumida"})
+    assert [s["session_id"] for s in api.get("/api/sessions/search?q=sumida").json()] == [sid]
+    api.patch(f"/api/sessions/{sid}", json={"mark": "discarded"})
+    assert api.get("/api/sessions/search?q=sumida").json() == []

@@ -752,3 +752,22 @@ describe('resumo ao voltar', () => {
     }
   })
 })
+
+describe('cabeçalho da conversa: Descartar ao lado de Finalizar', () => {
+  it('Descartar fica logo depois de Finalizar e marca a conversa como descartada', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    const discard = wrapper.get('[data-test="header-discard"]')
+    expect(discard.text()).toBe('Descartar')
+    expect(discard.element.previousElementSibling?.getAttribute('data-test')).toBe('toggle-finished')
+    const spy = vi.spyOn(useSessionsStore(pinia), 'setMark').mockResolvedValue()
+    await discard.trigger('click')
+    await flushPromises()
+    expect(spy).toHaveBeenCalledWith('s1', 'discarded')
+  })
+
+  it('conversa já descartada não oferece Descartar no cabeçalho', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting', mark: 'discarded' })])
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.find('[data-test="header-discard"]').exists()).toBe(false)
+  })
+})

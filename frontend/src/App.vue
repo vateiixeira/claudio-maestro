@@ -4,6 +4,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import AppSidebar from './components/sidebar/AppSidebar.vue'
 import { loadEverything } from './stores/realtime'
 import { useLayoutStore } from './stores/layout'
+import { isDiscarded } from './conversation/marks'
 import { needsYou } from './conversation/needsYou'
 import { documentTitle } from './documentTitle'
 import { useSessionsStore } from './stores/sessions'
@@ -18,7 +19,7 @@ import { useUpdatesStore } from './stores/updates'
 const layout = useLayoutStore()
 const sessions = useSessionsStore()
 
-const waiting = computed(() => sessions.all.filter((s) => s.display_state === 'waiting' && needsYou(s)).length)
+const waiting = computed(() => sessions.all.filter((s) => s.display_state === 'waiting' && needsYou(s) && !isDiscarded(s)).length)
 const route = useRoute()
 const router = useRouter()
 // The reader page (route meta `bare`) is the document alone: no shell, no live connection.
