@@ -15,6 +15,15 @@ const MODELS = [
   { value: 'haiku', displayName: 'Haiku', description: 'Rápido', supportsEffort: false },
 ]
 
+const CLAUDE_CLI = {
+  in_use: { source: 'system', version: '2.1.292' },
+  system: { path: '/opt/bin/claude', version: '2.1.292' },
+  bundled: { version: '2.1.284' },
+  forced_bundled: false,
+  can_update: true,
+  job: null,
+}
+
 let pinia: Pinia
 let patches: unknown[]
 
@@ -30,6 +39,7 @@ function setup(options: Record<string, unknown> = {}, patchStatus = 200) {
   } as never)
   const fetchMock = routeFetch({
     'GET /api/models': () => jsonResponse(MODELS),
+    'GET /api/claude-cli': () => jsonResponse(CLAUDE_CLI),
     'PATCH /api/sessions/s1': (init) => {
       const body = JSON.parse(init!.body as string)
       patches.push(body)
@@ -81,6 +91,25 @@ describe('seletores da sessão', () => {
     await body().findAll('[role="menuitemradio"]').find((i) => i.text().includes('Haiku'))!.trigger('click')
     await flushPromises()
     expect(document.activeElement).toBe(button(w, 'Modelo').element)
+  })
+
+  it('o menu de modelo tem o rodapé de atualização; raciocínio e permissões não', async () => {
+    const w = await mountControls()
+    await button(w, 'Modelo').trigger('click')
+    await flushPromises()
+    expect(body().find('[data-test="option-footer"]').exists()).toBe(true)
+    expect(body().find('[data-test="claude-cli-update"]').text()).toContain('Atualizar o Claude')
+    await body().find('[role="menu"]').trigger('keydown', { key: 'Escape' })
+    expect(body().find('[role="menu"]').exists()).toBe(false)
+
+    await button(w, 'Raciocínio').trigger('click')
+    expect(body().find('[role="menu"]').exists()).toBe(true)
+    expect(body().find('[data-test="option-footer"]').exists()).toBe(false)
+    await body().find('[role="menu"]').trigger('keydown', { key: 'Escape' })
+
+    await button(w, 'Permissões').trigger('click')
+    expect(body().find('[role="menu"]').exists()).toBe(true)
+    expect(body().find('[data-test="option-footer"]').exists()).toBe(false)
   })
 
   it('raciocínio só com os níveis do modelo e oculto se o modelo não suporta', async () => {

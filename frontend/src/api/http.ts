@@ -1,5 +1,7 @@
 import type {
   ActivityDay,
+  ClaudeCliInfo,
+  ClaudeCliUpdateResult,
   CommandInfo,
   DeliveriesDay,
   Delivery,
@@ -134,6 +136,16 @@ export function applyUpdate(version: string, confirmSessionsDrop = false): Promi
 
 export function restartAgentd(): Promise<{ restarted: boolean }> {
   return request('POST', '/api/agentd/restart')
+}
+
+// Claude CLI
+
+export function getClaudeCli(): Promise<ClaudeCliInfo> {
+  return request('GET', '/api/claude-cli')
+}
+
+export function updateClaudeCli(): Promise<ClaudeCliUpdateResult> {
+  return request('POST', '/api/claude-cli/update')
 }
 
 // Usage

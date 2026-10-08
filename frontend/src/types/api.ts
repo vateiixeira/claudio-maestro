@@ -480,3 +480,29 @@ export interface DeliveriesDay {
   prev_day: string | null
   next_day: string | null
 }
+
+export interface ClaudeCliInUse {
+  source: 'system' | 'bundled'
+  version: string
+}
+
+export interface ClaudeCliUpdateResult {
+  ok: boolean
+  before: string
+  after: string | null
+  in_use: ClaudeCliInUse
+  models_refreshed: boolean
+  output: string
+  message: string
+}
+
+export type ClaudeCliJob = { state: 'running' } | ({ state: 'done' | 'failed' } & ClaudeCliUpdateResult)
+
+export interface ClaudeCliInfo {
+  in_use: ClaudeCliInUse
+  system: { path: string; version: string } | null
+  bundled: { version: string }
+  forced_bundled: boolean
+  can_update: boolean
+  job: ClaudeCliJob | null
+}

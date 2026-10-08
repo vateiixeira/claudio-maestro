@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import MentionMirror from './conversation/MentionMirror.vue'
 import SuggestionMenu from './conversation/SuggestionMenu.vue'
 import BypassConfirmDialog from './session/BypassConfirmDialog.vue'
+import ClaudeCliFooter from './session/ClaudeCliFooter.vue'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
 import { errorMessage, getAppState, sendMessage, updateSession } from '../api/http'
 import { type DraftImage, IMAGE_TYPES, attachImages, base64Of, filesFrom, formatSize } from '../conversation/images'
@@ -512,7 +513,9 @@ function onKeydown(event: KeyboardEvent) {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
               Ditar
             </button>
-            <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)" />
+            <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)">
+              <template #footer><ClaudeCliFooter /></template>
+            </OptionMenu>
             <OptionMenu name="Raciocínio" :text="effortText" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
             <OptionMenu name="Modo" :text="modeText" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" :highlight="(draft.permissionMode ?? prefMode) === 'bypassPermissions'" @select="selectMode" />
           </div>

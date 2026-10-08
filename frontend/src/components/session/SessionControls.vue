@@ -8,6 +8,7 @@ import { useSessionsStore } from '../../stores/sessions'
 import type { Effort, PermissionMode, SessionUpdate } from '../../types/api'
 import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, modeLabel } from '../../sessionOptions'
 import BypassConfirmDialog from './BypassConfirmDialog.vue'
+import ClaudeCliFooter from './ClaudeCliFooter.vue'
 import OptionMenu, { type MenuOption } from './OptionMenu.vue'
 
 const props = defineProps<{ sessionId: string }>()
@@ -118,7 +119,9 @@ function confirmBypass() {
       :selected="modelValue"
       :disabled="saving"
       @select="(v) => apply({ model: v })"
-    />
+    >
+      <template #footer><ClaudeCliFooter /></template>
+    </OptionMenu>
     <OptionMenu
       v-if="effortLevels.length"
       :name="`Raciocínio: ${options.effort ? EFFORT_LABELS[options.effort] : 'padrão'}`"
