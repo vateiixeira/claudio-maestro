@@ -114,9 +114,9 @@ Para saber da versão nova, o app consulta a API do GitHub (`api.github.com`) um
 
 ### Versão do Claude e modelos novos
 
-O app usa o `claude` instalado no sistema quando ele é pelo menos tão novo quanto o que vem embutido no SDK. Assim, modelos novos aparecem no Maestro assim que o seu Claude se atualiza, sem esperar uma versão do Maestro. No menu de modelos, **Atualizar o Claude** roda `claude update` e renova a lista. As conversas abertas continuam com a versão com que começaram e passam para a nova quando reconectam.
+O app usa o `claude` instalado no sistema quando ele é pelo menos tão novo quanto o que vem embutido no SDK. Assim, modelos novos aparecem no Maestro assim que o seu Claude se atualiza, sem esperar uma versão do Maestro. No menu de modelos, **Atualizar o Claude** roda `claude update` e renova a lista. Se o Claude do sistema mudar por fora (o do terminal se atualizou sozinho, ou foi instalado ou removido), o app percebe em até 10 minutos e renova a lista de modelos sozinho. As conversas abertas continuam com a versão com que começaram e passam para a nova quando reconectam.
 
-Sem o `claude` no sistema, o app usa o embutido. Se você roda o app como serviço, ele guarda o `PATH` do momento do `service install`: se instalar o `claude` depois, em outra pasta, rode o `install` de novo. Para forçar o embutido, use `MAESTRO_CLAUDE_CLI=bundled`.
+Sem o `claude` no sistema, o app usa o embutido. Se você roda o app como serviço, ele guarda o `PATH` do momento do `service install`: se instalar o `claude` depois, em outra pasta, rode o `install` de novo. Para forçar o embutido, use `MAESTRO_CLAUDE_CLI=bundled`. No serviço, a variável só passa a valer rodando `service install` de novo com ela exportada.
 
 ## Autenticação
 
@@ -131,7 +131,6 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 | Variável | Para quê | Padrão |
 |---|---|---|
 | `MAESTRO_PORT` | Porta do app (e do backend, no desenvolvimento) | `6660` |
-| `MAESTRO_CLAUDE_CLI` | `bundled` faz o app usar sempre o Claude embutido no SDK, em vez do instalado no sistema | escolhe sozinho |
 | `MAESTRO_DEV_PORT` | Porta do Vite, no desenvolvimento | `6600` |
 | `MAESTRO_PREVIEW_PORT` | Porta de um segundo Vite, para ver uma worktree em desenvolvimento usando o mesmo backend (veja o `CONTRIBUTING.md`) | desligada |
 | `MAESTRO_HOME` | Limite do navegador de pastas; também muda a pasta de dados padrão (`$MAESTRO_HOME/.local/share/claudio-maestro`) | sua pasta pessoal |
@@ -139,6 +138,7 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 | `MAESTRO_AGENTD` | Com `0`, não inicia o agentd: as sessões novas só vivem enquanto o backend viver (as que já estão num agentd ativo continuam sendo religadas) | ligado |
 | `MAESTRO_UPDATE_CHECK` | Com `0`, o app não consulta o GitHub para saber se há versão nova | ligado |
 | `MAESTRO_USAGE_CHECK` | Com `0`, o app não consulta o consumo da assinatura | ligado |
+| `MAESTRO_CLAUDE_CLI` | `bundled` faz o app usar sempre o Claude embutido no SDK, em vez do instalado no sistema | escolhe sozinho |
 | `CLAUDE_CONFIG_DIR` | Pasta de configuração do Claude Code | `~/.claude` |
 
 As portas precisam estar entre 1024 e 65535, fora de 6665 a 6669 (os navegadores bloqueiam essas). O app escuta só em `127.0.0.1`, sempre.
