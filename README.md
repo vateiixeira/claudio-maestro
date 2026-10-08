@@ -112,6 +112,12 @@ Se a versão nova mudar o agentd e você atualizou pelo botão, um aviso no menu
 
 Para saber da versão nova, o app consulta a API do GitHub (`api.github.com`) um minuto depois de subir e uma vez por dia. A requisição só lê a última release; nada sobre seus projetos ou conversas é enviado. Para desligar, use `MAESTRO_UPDATE_CHECK=0`. Também dá para acompanhar pelo GitHub: **Watch → Custom → Releases**.
 
+### Versão do Claude e modelos novos
+
+O app usa o `claude` instalado no sistema quando ele é pelo menos tão novo quanto o que vem embutido no SDK. Assim, modelos novos aparecem no Maestro assim que o seu Claude se atualiza, sem esperar uma versão do Maestro. No menu de modelos, **Atualizar o Claude** roda `claude update` e renova a lista. As conversas abertas continuam com a versão com que começaram e passam para a nova quando reconectam.
+
+Sem o `claude` no sistema, o app usa o embutido. Se você roda o app como serviço, ele guarda o `PATH` do momento do `service install`: se instalar o `claude` depois, em outra pasta, rode o `install` de novo. Para forçar o embutido, use `MAESTRO_CLAUDE_CLI=bundled`.
+
 ## Autenticação
 
 O Cláudio Maestro não faz login e não guarda credenciais. Ele usa a autenticação que o Claude Code já tem na sua máquina, do mesmo jeito que o CLI usa.
@@ -125,6 +131,7 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 | Variável | Para quê | Padrão |
 |---|---|---|
 | `MAESTRO_PORT` | Porta do app (e do backend, no desenvolvimento) | `6660` |
+| `MAESTRO_CLAUDE_CLI` | `bundled` faz o app usar sempre o Claude embutido no SDK, em vez do instalado no sistema | escolhe sozinho |
 | `MAESTRO_DEV_PORT` | Porta do Vite, no desenvolvimento | `6600` |
 | `MAESTRO_PREVIEW_PORT` | Porta de um segundo Vite, para ver uma worktree em desenvolvimento usando o mesmo backend (veja o `CONTRIBUTING.md`) | desligada |
 | `MAESTRO_HOME` | Limite do navegador de pastas; também muda a pasta de dados padrão (`$MAESTRO_HOME/.local/share/claudio-maestro`) | sua pasta pessoal |

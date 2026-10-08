@@ -21,6 +21,8 @@ Defesas:
 
 O botão de atualização executa `git`, `uv` e `pnpm` só no clone onde o próprio app está, só para a versão que o app anunciou depois de consultar o GitHub, e só a pedido de quem usa (requisição `POST` protegida pelas mesmas regras de `Host`, `Origin` e `X-Maestro`). O `git` passa por `run_git`, sem pedir senha (`GIT_TERMINAL_PROMPT=0`, ssh em `BatchMode`); `uv sync --frozen` e `pnpm install --frozen-lockfile` instalam o que está travado nos lockfiles da versão. Isso significa baixar e rodar código da versão nova (a compilação do frontend e o build do pacote Python pelo uv), e só a partir de um remoto que casa com o repositório oficial no GitHub. O comando `service install` grava só em `~/.config/systemd/user` (Linux) ou `~/Library/LaunchAgents` (macOS, onde também cria o log em `~/Library/Logs`) e chama `systemctl`, `launchctl` e `loginctl` com argumentos em lista.
 
+O app inicia o `claude` instalado no sistema (o primeiro no `PATH` do processo) quando ele é pelo menos tão novo quanto o CLI embutido no SDK; senão, usa o embutido. Para descobrir a versão, roda `claude --version` ao subir e a cada 10 minutos. O botão **Atualizar o Claude**, no menu de modelos, roda `claude update` só a pedido de quem usa (requisição `POST` protegida pelas mesmas regras de `Host`, `Origin` e `X-Maestro`), com argumentos em lista, sem shell e com limite de 3 minutos. O `claude update` baixa a versão nova da Anthropic. `MAESTRO_CLAUDE_CLI=bundled` faz o app usar sempre o embutido.
+
 Fora do modelo: alguém com acesso à sua conta no sistema operacional, e expor o app na rede (não faça isso).
 
 ## Versões com suporte

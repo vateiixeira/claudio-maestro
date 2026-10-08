@@ -4,6 +4,11 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- O app usa o Claude instalado no sistema quando ele é mais novo que o embutido, então modelos novos aparecem sem esperar uma versão do Maestro. `MAESTRO_CLAUDE_CLI=bundled` volta para o embutido.
+- "Atualizar o Claude" no menu de modelos: roda `claude update` e renova a lista de modelos na hora.
+
 ## [0.5.0] - 2026-10-07
 
 Serviço oficial para rodar o Maestro no Linux e no macOS, e atualização pelo próprio app com um clique. Também chegam a tela de Entregas, a leitura de arquivos markdown e o rascunho por conversa.

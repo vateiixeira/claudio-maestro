@@ -69,7 +69,7 @@ O app executa comandos na máquina, então qualquer site aberto no navegador é 
 - Toda requisição a `/api/` precisa do cabeçalho `X-Maestro: 1`, que o cliente do frontend envia. Isso impede outros sites de dispararem leituras por `<img>`, formulário ou `fetch`.
 - Todo `git` passa por `run_git` em `backend/claudio_maestro/gitinfo.py`, que neutraliza fsmonitor, pager, hooks, diff externo, textconv, filtros e submódulos. Não chame `git` por outro caminho.
 - Todo caminho recebido precisa estar, depois de resolvido, dentro da pasta de um projeto registrado. A única exceção é uma worktree git ligada a um repositório que está dentro de um projeto, comprovada pelo ponteiro `.git` de ida e volta (com `realpath`) e pela saída de `git worktree list` desse repositório.
-- Execute git, o editor e o seletor de pastas com argumentos em lista, sem shell.
+- Execute git, o `claude`, o editor e o seletor de pastas com argumentos em lista, sem shell.
 
 ## Testes contra o SDK real
 
@@ -89,6 +89,6 @@ Testes manuais contra o SDK real consomem a assinatura ou os créditos de quem r
 Os revisores não alteram o repositório: não têm `Edit`, e o `Write` fica para reproduções no scratchpad. O `reviewer` roda em Sonnet; quando a tarefa toca uma área crítica, chame-o com `model: "opus"`. Áreas críticas:
 
 - `security.py` (Host, Origin, validação de caminhos) e todo código que recebe caminhos ou chama `resolve_within`/`is_within` (hoje `fs.py`, `filesearch.py`, `history.py`, `projects.py`, `api/fs.py`, `api/git.py`, `api/plans.py` e `api/editor.py`).
-- Todo código que inicia processos: `gitinfo.py` (o `run_git`), `gitfetch.py`, `worktree.py`, `picker.py`, `api/editor.py`, `cli.py`, `agent/` e `agentd/` (inclusive o socket e o ciclo de vida das sessões).
+- Todo código que inicia processos: `gitinfo.py` (o `run_git`), `gitfetch.py`, `worktree.py`, `picker.py`, `claudecli.py`, `api/claude_cli.py`, `api/editor.py`, `cli.py`, `agent/` e `agentd/` (inclusive o socket e o ciclo de vida das sessões).
 - `usage.py` e qualquer código que leia credenciais do CLI.
 - Migrações em `db.py` e tudo que escreve em `~/.claude/projects`.
