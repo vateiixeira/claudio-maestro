@@ -73,9 +73,14 @@ def clean_inherited_env() -> None:
 
 
 def build_sdk_options(
-    options: AgentOptions, stderr: Callable[[str], None] | None = None
+    options: AgentOptions,
+    stderr: Callable[[str], None] | None = None,
+    cli_path: str | None = None,
 ) -> ClaudeAgentOptions:
-    """Translate the app options into SDK options. Pure: starts nothing."""
+    """Translate the app options into SDK options. Pure: starts nothing.
+
+    `cli_path`: the `claude` to start; None lets the SDK use its bundled CLI.
+    """
     kwargs: dict[str, Any] = {
         "cwd": options.cwd,
         "include_partial_messages": True,
@@ -91,6 +96,8 @@ def build_sdk_options(
     }
     if stderr is not None:
         kwargs["stderr"] = stderr
+    if cli_path is not None:
+        kwargs["cli_path"] = cli_path
     if options.resume:
         kwargs["resume"] = options.session_id
     else:
@@ -148,10 +155,19 @@ class SdkAgentClient:
     `sdk_client` exists for tests: they pass a stub so no process is started.
     """
 
-    def __init__(self, options: AgentOptions, sdk_client: Any | None = None) -> None:
+    def __init__(
+        self,
+        options: AgentOptions,
+        sdk_client: Any | None = None,
+        cli_path: Callable[[], str | None] | None = None,
+    ) -> None:
         self.options = options
         self.stderr_lines: deque[str] = deque(maxlen=STDERR_LINES_KEPT)
-        self.sdk_options = build_sdk_options(options, stderr=self.stderr_lines.append)
+        self.sdk_options = build_sdk_options(
+            options,
+            stderr=self.stderr_lines.append,
+            cli_path=cli_path() if cli_path is not None else None,
+        )
         self._transport: AgentdTransport | None = None
         if sdk_client is None and options.agentd is not None:
             attach = options.attach
@@ -279,3 +295,14 @@ async def _single_user_message(
         "message": {"role": "user", "content": blocks},
         "parent_tool_use_id": None,
     }
+
+
+def sdk_agent_factory(
+    cli_path: Callable[[], str | None],
+) -> Callable[[AgentOptions], SdkAgentClient]:
+    """Agent factory of the real SDK that starts the `claude` chosen at each connect."""
+
+    def factory(options: AgentOptions) -> SdkAgentClient:
+        return SdkAgentClient(options, cli_path=cli_path)
+
+    return factory

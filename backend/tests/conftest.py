@@ -101,6 +101,32 @@ def no_real_usage_check(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def sdk_connect_attempts(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> list[object]:
+    """No test starts the real `claude` through the SDK. This covers both ways the app
+    builds the real client (`default_agent_factory` and `sdk_agent_factory`): it cuts the
+    SDK's own `connect`, which is what starts the process, and records each attempt.
+    Stubs injected as `sdk_client` never reach it. Three files connect the real client on
+    purpose, with the process replaced by a fake CLI or by a patched launch, so they are
+    left alone."""
+    attempts: list[object] = []
+    if request.node.path.name in (
+        "test_agent_spawn.py",
+        "test_sdk_over_agentd.py",
+        "test_sessions_restart.py",
+    ):
+        return attempts
+
+    async def no_real_connect(self, *args, **kwargs):
+        attempts.append(self)
+        raise RuntimeError("Os testes não podem conectar ao SDK real.")
+
+    monkeypatch.setattr("claude_agent_sdk.ClaudeSDKClient.connect", no_real_connect)
+    return attempts
+
+
+@pytest.fixture(autouse=True)
 def no_real_claude_cli(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """The real `claude` is never run in tests: no system CLI is found, and
     `claude update` refuses. test_claudecli.py runs the real runners on fake scripts."""

@@ -230,3 +230,13 @@ async def test_models_refresh_client_keeps_the_sdk_entrypoint(tmp_path):
     env = Env(tmp_path)
     await env.manager().refresh_models_if_stale()
     assert [c.options.entrypoint for c in env.factory.clients] == [None]
+
+
+@pytest.mark.anyio
+async def test_force_refresh_asks_even_when_fresh(tmp_path):
+    env = Env(tmp_path, info=NEW_INFO)
+    manager = env.manager()
+    assert await manager.refresh_models_if_stale() is True
+    assert await manager.refresh_models_if_stale() is False
+    assert await manager.refresh_models_if_stale(force=True) is True
+    assert env.calls() == 2

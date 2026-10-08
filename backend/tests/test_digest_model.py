@@ -55,6 +55,25 @@ def test_options_have_no_tools_and_no_user_settings(tmp_path: Path) -> None:
     assert options.output_format == {"type": "json_schema", "schema": DIGEST_SCHEMA}
 
 
+def test_options_pass_cli_path_when_given(tmp_path: Path) -> None:
+    options = build_digest_options(REQUEST, tmp_path, cli_path="/opt/bin/claude")
+    assert options.cli_path == "/opt/bin/claude"
+    assert build_digest_options(REQUEST, tmp_path).cli_path is None
+
+
+@pytest.mark.anyio
+async def test_model_asks_the_provider_on_each_call(tmp_path: Path) -> None:
+    path = {"value": "/a/claude"}
+    query, calls = stub_query(result())
+    model = SdkDigestModel(
+        tmp_path, query_fn=query, delete_fn=lambda s, d: None, cli_path=lambda: path["value"]
+    )
+    await model.summarize(REQUEST)
+    path["value"] = None
+    await model.summarize(REQUEST)
+    assert [options.cli_path for _, options in calls] == ["/a/claude", None]
+
+
 def test_options_cut_every_mcp_server(tmp_path: Path) -> None:
     options = build_digest_options(REQUEST, tmp_path)
     assert options.strict_mcp_config is True and not options.mcp_servers

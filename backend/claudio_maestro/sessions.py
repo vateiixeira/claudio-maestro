@@ -2537,11 +2537,11 @@ class SessionManager:
         if self._models_stale():
             await self._fetch_models(client)
 
-    async def refresh_models_if_stale(self) -> bool:
+    async def refresh_models_if_stale(self, force: bool = False) -> bool:
         """Ask the SDK for the models with a throwaway client, when the stored
-        list is missing or old. True when a new list was received; failures are
-        logged and leave the stored list as it is."""
-        if not self._models_stale():
+        list is missing or old (or always, with `force`). True when a new list
+        was received; failures are logged and leave the stored list as it is."""
+        if not force and not self._models_stale():
             return False
         client: AgentClient | None = None
         try:

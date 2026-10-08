@@ -17,6 +17,8 @@ from claudio_maestro.agent.base import AgentFactory
 from claudio_maestro.agent.sdk_client import clean_inherited_env
 from claudio_maestro.api import router
 from claudio_maestro.api.editor import SpawnEditor, spawn_detached
+from claudio_maestro.claudecli import CACHE_SECONDS as CLAUDE_CLI_CACHE_SECONDS
+from claudio_maestro.claudecli import ClaudeCliResolver
 from claudio_maestro.cliwatch import CliWatcher
 from claudio_maestro.commands import CommandCatalog
 from claudio_maestro.config import (
@@ -82,6 +84,7 @@ def create_app(
     restart: Callable[[], None] | None = None,
     run_mode: RunMode | None = None,
     self_updater: Callable[..., Any] | None = None,
+    claude_cli: ClaudeCliResolver | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -102,6 +105,8 @@ def create_app(
     `restart`: called to restart the app in place (the CLI passes it); None disables the update button.
     `run_mode`: where the app runs; None detects it.
     `self_updater`: factory of the updater, called with `publish`, `data_dir` and `restart` (tests pass fakes).
+    `claude_cli`: which `claude` the SDK starts; None builds the real resolver (it only reads the
+    machine when running the real agent).
     """
 
     @asynccontextmanager
@@ -169,10 +174,20 @@ def create_app(
         )
         # Sessions outlive a restart of the app only when new ones also go through the agentd.
         app.state.agentd_new_sessions = app.state.agentd is not None and new_through_agentd
+        app.state.claude_cli = claude_cli or ClaudeCliResolver()
+        real_agent = agent_factory is None
+        if real_agent:
+            # Up to 5 s if `claude --version` hangs; then the bundled CLI is used.
+            await app.state.claude_cli.refresh()
+            from claudio_maestro.agent.sdk_client import sdk_agent_factory
+
+            factory = sdk_agent_factory(app.state.claude_cli.cli_path)
+        else:
+            factory = agent_factory
         app.state.sessions = SessionManager(
             app.state.settings.db_path,
             app.state.hub.publish,
-            agent_factory=agent_factory,
+            agent_factory=factory,
             history_exists=history_exists,
             rename_session=rename_session,
             idle_timeout=app.state.settings.idle_timeout_seconds,
@@ -202,7 +217,7 @@ def create_app(
             app.state.settings.db_path,
             app.state.sessions,
             app.state.hub.publish,
-            digest_model or SdkDigestModel(agent_dir),
+            digest_model or SdkDigestModel(agent_dir, cli_path=app.state.claude_cli.cli_path),
         )
         app.state.history = history.HistoryIndex(
             app.state.settings.db_path,
@@ -258,6 +273,10 @@ def create_app(
                         app.state.settings.plan_sweep_interval_seconds
                     )
                 )
+            )
+        if real_agent:
+            tasks.append(
+                asyncio.create_task(app.state.claude_cli.run_periodic(CLAUDE_CLI_CACHE_SECONDS))
             )
         claude_projects = (
             app.state.settings.claude_projects_dir or claude_projects_dir()

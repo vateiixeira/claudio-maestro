@@ -20,6 +20,7 @@ from claudio_maestro.agent.sdk_client import (
     SdkAgentClient,
     build_sdk_options,
     clean_inherited_env,
+    sdk_agent_factory,
     to_agent_error,
 )
 from claudio_maestro.app import create_app
@@ -134,6 +135,35 @@ def test_build_options_passes_entrypoint_in_env(tmp_path):
 
 
 # clean_inherited_env -------------------------------------------------------
+
+
+def test_build_options_passes_cli_path_when_given(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path), cli_path="/opt/bin/claude")
+    assert sdk.cli_path == "/opt/bin/claude"
+
+
+def test_build_options_leaves_cli_path_to_the_sdk_by_default(tmp_path):
+    assert build_sdk_options(make_options(tmp_path)).cli_path is None
+
+
+def test_client_asks_the_provider_when_built(tmp_path):
+    calls = []
+
+    def provider():
+        calls.append(1)
+        return "/opt/bin/claude"
+
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=object(), cli_path=provider)
+    assert client.sdk_options.cli_path == "/opt/bin/claude"
+    assert calls == [1]
+
+
+def test_sdk_agent_factory_uses_the_current_path(tmp_path):
+    path = {"value": "/a/claude"}
+    factory = sdk_agent_factory(lambda: path["value"])
+    assert factory(make_options(tmp_path)).sdk_options.cli_path == "/a/claude"
+    path["value"] = None
+    assert factory(make_options(tmp_path)).sdk_options.cli_path is None
 
 
 def test_clean_inherited_env_removes_session_markers(monkeypatch):

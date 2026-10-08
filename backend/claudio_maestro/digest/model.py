@@ -75,7 +75,10 @@ class FakeDigestModel:
 
 
 def build_digest_options(
-    request: DigestRequest, cwd: Path, stderr: Callable[[str], None] | None = None
+    request: DigestRequest,
+    cwd: Path,
+    stderr: Callable[[str], None] | None = None,
+    cli_path: str | None = None,
 ) -> Any:
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -94,6 +97,8 @@ def build_digest_options(
     }
     if stderr is not None:
         kwargs["stderr"] = stderr
+    if cli_path is not None:
+        kwargs["cli_path"] = cli_path
     return ClaudeAgentOptions(**kwargs)
 
 
@@ -120,8 +125,10 @@ class SdkDigestModel:
         query_fn: Callable[..., Any] | None = None,
         delete_fn: Callable[[str, str], None] | None = None,
         on_init: Callable[[dict], None] | None = None,
+        cli_path: Callable[[], str | None] | None = None,
     ) -> None:
         self._cwd = cwd
+        self._cli_path = cli_path
         self._on_init = on_init
         self._query = query_fn or _sdk_query
         self._delete = delete_fn or _sdk_delete
@@ -144,7 +151,12 @@ class SdkDigestModel:
 
         self._cwd.mkdir(parents=True, exist_ok=True)
         stderr_lines: deque[str] = deque(maxlen=50)
-        options = build_digest_options(request, self._cwd, stderr_lines.append)
+        options = build_digest_options(
+            request,
+            self._cwd,
+            stderr_lines.append,
+            cli_path=self._cli_path() if self._cli_path is not None else None,
+        )
         session_id: str | None = None
         output: Any = None
         failure: str | None = None
