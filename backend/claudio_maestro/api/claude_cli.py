@@ -12,8 +12,8 @@ router = APIRouter()
 @router.get("/api/claude-cli")
 async def get_claude_cli(request: Request) -> dict[str, Any]:
     resolver = request.app.state.claude_cli
-    cli = await resolver.refresh()  # cached for 10 min
-    return {**cli.as_dict(), "job": resolver.job_state()}
+    await resolver.refresh()  # cached for 10 min
+    return resolver.state()
 
 
 @router.post("/api/claude-cli/update")

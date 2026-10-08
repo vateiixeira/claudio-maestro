@@ -116,6 +116,8 @@ Para saber da versão nova, o app consulta a API do GitHub (`api.github.com`) um
 
 O app usa o `claude` instalado no sistema quando ele é pelo menos tão novo quanto o que vem embutido no SDK. Assim, modelos novos aparecem no Maestro assim que o seu Claude se atualiza, sem esperar uma versão do Maestro. No menu de modelos, **Atualizar o Claude** roda `claude update` e renova a lista. Se o Claude do sistema mudar por fora (o do terminal se atualizou sozinho, ou foi instalado ou removido), o app percebe em até 10 minutos e renova a lista de modelos sozinho. As conversas abertas continuam com a versão com que começaram e passam para a nova quando reconectam.
 
+Para avisar quando sai um Claude novo, o app lê a última versão publicada (canal `latest`, ou `stable` se for o do seu `autoUpdatesChannel`) em `storage.googleapis.com` um minuto depois de subir e uma vez por dia, sem enviar nada seu. Se houver uma versão mais nova que a do seu sistema, o rodapé do menu lateral mostra o aviso, e um clique atualiza. Para desligar a consulta, use `MAESTRO_CLAUDE_CHECK=0`.
+
 Sem o `claude` no sistema, o app usa o embutido. Se você roda o app como serviço, ele guarda o `PATH` do momento do `service install`: se instalar o `claude` depois, em outra pasta, rode o `install` de novo. Para forçar o embutido, use `MAESTRO_CLAUDE_CLI=bundled`. No serviço, a variável só passa a valer rodando `service install` de novo com ela exportada.
 
 ## Autenticação
@@ -138,6 +140,7 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 | `MAESTRO_AGENTD` | Com `0`, não inicia o agentd: as sessões novas só vivem enquanto o backend viver (as que já estão num agentd ativo continuam sendo religadas) | ligado |
 | `MAESTRO_UPDATE_CHECK` | Com `0`, o app não consulta o GitHub para saber se há versão nova | ligado |
 | `MAESTRO_USAGE_CHECK` | Com `0`, o app não consulta o consumo da assinatura | ligado |
+| `MAESTRO_CLAUDE_CHECK` | Com `0`, o app não consulta qual é a última versão do Claude (o aviso no menu lateral some) | ligado |
 | `MAESTRO_CLAUDE_CLI` | `bundled` faz o app usar sempre o Claude embutido no SDK, em vez do instalado no sistema | escolhe sozinho |
 | `CLAUDE_CONFIG_DIR` | Pasta de configuração do Claude Code | `~/.claude` |
 

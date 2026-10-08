@@ -189,6 +189,8 @@ def create_app(
 
         if app.state.claude_cli.on_change is None:
             app.state.claude_cli.on_change = on_cli_change
+        if app.state.claude_cli.publish is None:
+            app.state.claude_cli.publish = app.state.hub.publish
         real_agent = agent_factory is None
         if real_agent:
             # Up to 5 s if `claude --version` hangs; then the bundled CLI is used.
@@ -293,6 +295,15 @@ def create_app(
             tasks.append(
                 asyncio.create_task(app.state.claude_cli.run_periodic(CLAUDE_CLI_CACHE_SECONDS))
             )
+            if app.state.settings.claude_check:
+                tasks.append(
+                    asyncio.create_task(
+                        app.state.claude_cli.run_latest_periodic(
+                            app.state.settings.claude_check_delay_seconds,
+                            app.state.settings.claude_check_interval_seconds,
+                        )
+                    )
+                )
         claude_projects = (
             app.state.settings.claude_projects_dir or claude_projects_dir()
         )

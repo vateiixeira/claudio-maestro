@@ -15,10 +15,14 @@ import shutil
 import signal
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal
+
+from claudio_maestro.config import read_user_claude_settings
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +34,15 @@ OUTPUT_LINES = 40
 OUTPUT_CHARS = 4096
 TIMEOUT_TEXT = "O comando passou do tempo limite."
 BUSY_TEXT = "Já há uma atualização do Claude em andamento."
+# Where the native installer reads the newest version of a channel: a text file with `X.Y.Z`.
+LATEST_BASE_URL = (
+    "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819"
+    "/claude-code-releases"
+)
+CHANNELS = ("latest", "stable")
+DEFAULT_CHANNEL = "latest"
+LATEST_TIMEOUT = 10
+LATEST_MAX_BYTES = 100
 MISSING_TEXT = "Não há Claude instalado no sistema para atualizar."
 FORCED_TEXT = "O app está usando o Claude embutido (MAESTRO_CLAUDE_CLI)."
 
@@ -39,6 +52,10 @@ _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
 Source = Literal["system", "bundled"]
 Which = Callable[[str], str | None]
 RunVersion = Callable[[str], str | None]
+FetchLatest = Callable[[str], str]  # channel -> version; blocking, raises LatestCheckError
+ReadChannel = Callable[[], str]
+Publish = Callable[[dict[str, Any]], None]
+Opener = Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -72,6 +89,10 @@ class CommandResult:
 
 RunUpdate = Callable[[list[str], float], Awaitable[CommandResult]]
 OnChange = Callable[[ClaudeCli, ClaudeCli], Awaitable[None]]
+
+
+class LatestCheckError(Exception):
+    """The newest version could not be read (network, odd answer): keep the last result."""
 
 
 class ClaudeCliBusy(Exception):
@@ -128,6 +149,56 @@ def clean_output(text: str) -> str:
         if parts:
             lines.append(parts[-1])
     return "\n".join(lines[-OUTPUT_LINES:])[-OUTPUT_CHARS:]
+
+
+def read_update_channel() -> str:
+    """`autoUpdatesChannel` of the CLI settings (`latest` or `stable`); `latest` otherwise."""
+    channel = read_user_claude_settings().get("autoUpdatesChannel")
+    return channel if isinstance(channel, str) and channel in CHANNELS else DEFAULT_CHANNEL
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """The answer must come from storage.googleapis.com: a redirect to elsewhere is refused
+    (it then surfaces as an `HTTPError`)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
+
+
+def request_latest_version(channel: str, opener: Opener = _opener.open) -> str:
+    """Blocking read of the newest version of `channel`. Nothing about the user is sent."""
+    request = urllib.request.Request(f"{LATEST_BASE_URL}/{channel}")
+    failure: str | None = None
+    raw = b""
+    try:
+        with opener(request, timeout=LATEST_TIMEOUT) as response:
+            raw = response.read(LATEST_MAX_BYTES)
+    except urllib.error.HTTPError as exc:  # before URLError: it is a subclass
+        failure = f"o servidor respondeu {exc.code}"
+    except (urllib.error.URLError, OSError):  # TimeoutError is an OSError
+        failure = "sem conexão"
+    except Exception:
+        failure = "consulta falhou"
+    if failure is not None:
+        raise LatestCheckError(failure)
+    text = raw.decode("utf-8", "replace").strip()
+    parsed = parse_version(text)
+    if parsed is None or _text(parsed) != text:
+        raise LatestCheckError("resposta inesperada")
+    return text
+
+
+def _get_latest_version(channel: str) -> str:
+    # Indirection so tests can replace the network call (see conftest).
+    return request_latest_version(channel)
+
+
+def _fetch_latest_in_thread(fetch: FetchLatest | None, read_channel: ReadChannel | None):
+    channel = (read_channel or read_update_channel)()
+    return channel, (fetch or _get_latest_version)(channel)
 
 
 def bundled_cli_version() -> str:
@@ -206,6 +277,14 @@ def resolve(
     )
 
 
+def _state_key(state: dict[str, Any]) -> dict[str, Any]:
+    """The state without `checked_at`: a new check with the same answer is not a change."""
+    latest = state["latest"]
+    if latest is not None:
+        latest = {k: v for k, v in latest.items() if k != "checked_at"}
+    return {**state, "latest": latest}
+
+
 def _message(ok: bool, before: str, after: str | None, models: bool, output: str) -> str:
     if not ok:
         last = output.splitlines()[-1] if output else ""
@@ -242,6 +321,10 @@ class ClaudeCliResolver:
         clock: Callable[[], float] = time.monotonic,
         cache_seconds: float = CACHE_SECONDS,
         on_change: OnChange | None = None,
+        fetch_latest: FetchLatest | None = None,
+        read_channel: ReadChannel | None = None,
+        wall_clock: Callable[[], float] = time.time,
+        publish: Publish | None = None,
     ) -> None:
         self._env = env
         self._which = which
@@ -260,6 +343,15 @@ class ClaudeCliResolver:
         self.on_change = on_change
         self._hold_change = False
         self._held_change: tuple[ClaudeCli, ClaudeCli] | None = None
+        # Newest published version (`check_latest`), as {"version", "channel", "checked_at"}.
+        self._fetch_latest = fetch_latest
+        self._read_channel = read_channel
+        self._wall_clock = wall_clock
+        self._latest: dict[str, Any] | None = None
+        # Called with the `claude_cli.state` event when the state a client sees changes (the
+        # app sets it to the hub's `publish`); `_published` is what was last sent or seen.
+        self.publish = publish
+        self._published: dict[str, Any] | None = None
 
     def _environ(self) -> Mapping[str, str]:
         return os.environ if self._env is None else self._env
@@ -307,12 +399,72 @@ class ClaudeCliResolver:
         first = self._resolved_at is None
         self._current = cli
         self._resolved_at = self._clock()
+        if first:
+            self._published = _state_key(self.state())  # nothing older to tell about
+        elif not self._hold_change:
+            self._emit()
         if not first and (old.path, old.version) != (cli.path, cli.version):
             if self._hold_change:
                 self._held_change = (self._held_change or (old, cli))[0], cli
             else:
                 await self._notify(old, cli)
         return cli
+
+    def _update_available(self) -> bool:
+        cli, latest = self._current, self._latest
+        if latest is None or cli.system_version is None or cli.forced_bundled:
+            return False
+        newest, system = parse_version(latest["version"]), parse_version(cli.system_version)
+        return newest is not None and system is not None and newest > system
+
+    def state(self) -> dict[str, Any]:
+        """What `GET /api/claude-cli` answers and the `claude_cli.state` event carries."""
+        return {
+            **self._current.as_dict(),
+            "latest": dict(self._latest) if self._latest is not None else None,
+            "update_available": self._update_available(),
+            "job": self.job_state(),
+        }
+
+    def _emit(self) -> None:
+        """Publish the state when it differs from the last one published (or first seen)."""
+        body = self.state()
+        key = _state_key(body)
+        if key == self._published:
+            return
+        self._published = key
+        if self.publish is None:
+            return
+        try:
+            self.publish({"session_id": None, "seq": 0, "type": "claude_cli.state", "data": body})
+        except Exception:
+            logger.exception("Falha ao publicar o estado do Claude")
+
+    async def check_latest(self) -> None:
+        """Read the newest published version of the user's channel; a failure keeps the last."""
+        try:
+            channel, version = await asyncio.to_thread(
+                _fetch_latest_in_thread, self._fetch_latest, self._read_channel
+            )
+        except LatestCheckError as error:
+            logger.warning("Não foi possível consultar a última versão do Claude: %s", error)
+            return
+        except Exception as error:
+            logger.warning("Falha ao consultar a última versão do Claude: %s", error)
+            return
+        self._latest = {"version": version, "channel": channel, "checked_at": self._wall_clock()}
+        self._emit()
+
+    async def run_latest_periodic(
+        self,
+        initial_delay: float,
+        interval: float,
+        sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+    ) -> None:
+        await sleep(initial_delay)
+        while True:
+            await self.check_latest()
+            await sleep(interval)
 
     async def _notify(self, old: ClaudeCli, new: ClaudeCli) -> None:
         if self.on_change is None:
@@ -349,6 +501,7 @@ class ClaudeCliResolver:
         self._hold_change = True
         self._held_change = None
         models_attempted = False
+        self._emit()  # other tabs see it running
         try:
             before = await self.refresh(force=True)
             if before.forced_bundled:
@@ -380,6 +533,7 @@ class ClaudeCliResolver:
         finally:
             self._updating = False
             self._hold_change = False
+            self._emit()
             held, self._held_change = self._held_change, None
             if held is not None and not models_attempted:
                 # The update stopped before renewing the models: the change still counts.

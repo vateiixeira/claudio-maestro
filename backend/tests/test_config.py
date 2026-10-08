@@ -84,3 +84,18 @@ def test_validate_port_names_its_source():
     with pytest.raises(config.PortError, match="--port"):
         config.validate_port("abc", "--port")
     assert config.validate_port("7000", "--port") == 7000
+
+
+def test_claude_check_is_on_by_default_and_off_with_zero(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("MAESTRO_CLAUDE_CHECK")
+    assert load_settings().claude_check is True
+    monkeypatch.setenv("MAESTRO_CLAUDE_CHECK", "1")
+    assert load_settings().claude_check is True
+    monkeypatch.setenv("MAESTRO_CLAUDE_CHECK", "0")
+    assert load_settings().claude_check is False
+
+
+def test_claude_check_timing_defaults():
+    settings = load_settings()
+    assert settings.claude_check_delay_seconds == 60
+    assert settings.claude_check_interval_seconds == 24 * 3600

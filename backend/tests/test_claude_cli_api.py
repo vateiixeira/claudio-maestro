@@ -2,6 +2,7 @@
 
 from conftest import APP_ORIGIN, BACKEND_URL
 from fastapi.testclient import TestClient
+from test_sessions_api import WS_URL
 
 from claudio_maestro.agent.fake import FakeAgentFactory
 from claudio_maestro.app import create_app
@@ -30,10 +31,19 @@ class Machine:
         return self.result
 
 
-def client_for(home, data_dir, machine: Machine, env=None) -> TestClient:
+class Latest:
+    def __init__(self, version: str = "2.1.296") -> None:
+        self.version = version
+
+    def fetch(self, channel):
+        return self.version
+
+
+def client_for(home, data_dir, machine: Machine, env=None, latest: Latest | None = None) -> TestClient:
+    extra = {} if latest is None else {"fetch_latest": latest.fetch, "read_channel": lambda: "stable"}
     resolver = ClaudeCliResolver(
         env=env or {}, which=machine.which, run_version=machine.run_version,
-        run_update=machine.run_update, bundled_version="2.1.284",
+        run_update=machine.run_update, bundled_version="2.1.284", **extra,
     )
     settings = Settings(home_dir=home, data_dir=data_dir, update_check=False, usage_check=False)
     app = create_app(settings=settings, agent_factory=FakeAgentFactory(), claude_cli=resolver)
@@ -49,6 +59,8 @@ def test_get_reports_system_cli(home, data_dir):
         "bundled": {"version": "2.1.284"},
         "forced_bundled": False,
         "can_update": True,
+        "latest": None,
+        "update_available": False,
         "job": None,
     }
 
@@ -131,3 +143,52 @@ def test_update_requires_maestro_header_and_origin(home, data_dir):
             "/api/claude-cli/update", headers={"origin": "https://evil.example"}
         ).status_code == 403
         assert client.get("/api/claude-cli", headers={"x-maestro": "0"}).status_code == 403
+
+
+def test_get_reports_the_latest_version_and_update_available(home, data_dir):
+    with client_for(home, data_dir, Machine(), latest=Latest("2.1.296")) as client:
+        client.portal.call(client.app.state.claude_cli.check_latest)
+        body = client.get("/api/claude-cli").json()
+    assert body["latest"]["version"] == "2.1.296"
+    assert body["latest"]["channel"] == "stable"
+    assert isinstance(body["latest"]["checked_at"], float)
+    assert body["update_available"] is True
+
+
+def test_get_without_a_newer_version(home, data_dir):
+    with client_for(home, data_dir, Machine(), latest=Latest("2.1.292")) as client:
+        client.portal.call(client.app.state.claude_cli.check_latest)
+        body = client.get("/api/claude-cli").json()
+    assert body["latest"]["version"] == "2.1.292"
+    assert body["update_available"] is False
+
+
+def test_update_to_the_latest_clears_update_available(home, data_dir):
+    machine = Machine()
+    machine.new_version = "2.1.296"
+    with client_for(home, data_dir, machine, latest=Latest("2.1.296")) as client:
+        client.portal.call(client.app.state.claude_cli.check_latest)
+        assert client.get("/api/claude-cli").json()["update_available"] is True
+        client.post("/api/claude-cli/update")
+        after = client.get("/api/claude-cli").json()
+    assert after["update_available"] is False
+    assert after["latest"]["version"] == "2.1.296"
+
+
+def test_events_reach_the_socket(home, data_dir):
+    machine = Machine()
+    machine.new_version = "2.1.296"
+    with client_for(home, data_dir, machine, latest=Latest("2.1.296")) as client:
+        client.portal.call(client.app.state.claude_cli.refresh)  # the startup reading
+        with client.websocket_connect(WS_URL, headers=HEADERS) as ws:
+            client.portal.call(client.app.state.claude_cli.check_latest)
+            client.post("/api/claude-cli/update")
+            events = []
+            while len(events) < 3:
+                message = ws.receive_json()
+                if message.get("type") == "claude_cli.state":
+                    events.append(message)
+    assert all(e["session_id"] is None and e["seq"] == 0 for e in events)
+    assert events[0]["data"]["update_available"] is True
+    assert [e["data"]["job"] and e["data"]["job"]["state"] for e in events[1:]] == ["running", "done"]
+    assert events[-1]["data"]["update_available"] is False

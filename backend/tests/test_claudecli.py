@@ -1,8 +1,12 @@
 """Which `claude` the app starts, and the `claude update` button."""
 
 import asyncio
+import io
 import os
 import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -559,3 +563,386 @@ async def test_on_change_still_runs_when_update_ends_before_the_models_refresh()
     with pytest.raises(ClaudeCliUnavailable):
         await resolver.update(refresh_models)
     assert [(o.source, n.source) for o, n in calls] == [("system", "bundled")]
+
+
+# the latest published version -------------------------------------------------------
+
+
+class _Body(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_request_latest_version_reads_the_channel_file():
+    seen = {}
+
+    class Body(_Body):
+        def read(self, size=-1):
+            seen["size"] = size
+            return super().read(size)
+
+    def opener(request, timeout):
+        seen["url"] = request.full_url
+        seen["timeout"] = timeout
+        seen["headers"] = dict(request.header_items())
+        return Body(b"2.1.294\n")
+
+    assert claudecli.request_latest_version("stable", opener) == "2.1.294"
+    assert seen["url"] == f"{claudecli.LATEST_BASE_URL}/stable"
+    assert seen["url"].startswith("https://storage.googleapis.com/")
+    assert seen["timeout"] == 10
+    assert seen["size"] == 100
+    assert set(seen["headers"]) <= {"User-agent"}  # nothing about the user is sent
+
+
+@pytest.mark.parametrize(
+    "body", [b"", b"<html>proxy</html>", b"latest", b"2.1", b"2.1.294 (Claude Code)", b"\xff\xfe"]
+)
+def test_request_latest_version_rejects_invalid_answers(body):
+    with pytest.raises(claudecli.LatestCheckError):
+        claudecli.request_latest_version("latest", lambda request, timeout: _Body(body))
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        urllib.error.HTTPError("u", 503, "down", {}, None),
+        urllib.error.URLError("offline"),
+        TimeoutError("slow"),
+    ],
+)
+def test_request_latest_version_failures_raise_check_error(error):
+    def opener(request, timeout):
+        raise error
+
+    with pytest.raises(claudecli.LatestCheckError):
+        claudecli.request_latest_version("latest", opener)
+
+
+def test_the_default_opener_refuses_redirects():
+    handler = claudecli._NoRedirect()
+    request = urllib.request.Request(f"{claudecli.LATEST_BASE_URL}/latest")
+    assert handler.redirect_request(request, None, 302, "Found", {}, "https://evil.example/x") is None
+
+
+def write_settings(content: str) -> None:
+    folder = Path(os.environ["CLAUDE_CONFIG_DIR"])
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "settings.json").write_text(content, encoding="utf-8")
+
+
+def test_channel_defaults_to_latest_without_settings():
+    assert claudecli.read_update_channel() == "latest"
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ('{"autoUpdatesChannel": "stable"}', "stable"),
+        ('{"autoUpdatesChannel": "latest"}', "latest"),
+        ('{"autoUpdatesChannel": "beta"}', "latest"),
+        ('{"autoUpdatesChannel": 3}', "latest"),
+        ('{"autoUpdatesChannel": "../stable"}', "latest"),
+        ('{"other": 1}', "latest"),
+        ("not json", "latest"),
+        ("[]", "latest"),
+    ],
+)
+def test_channel_comes_from_the_cli_settings(content, expected):
+    write_settings(content)
+    assert claudecli.read_update_channel() == expected
+
+
+def test_default_fetch_is_blocked_in_tests():
+    with pytest.raises(RuntimeError):
+        claudecli._get_latest_version("latest")
+
+
+class Latest:
+    """A fake source of the latest version."""
+
+    def __init__(self, version: str | None = "2.1.296", channel: str = "latest") -> None:
+        self.version = version
+        self.channel = channel
+        self.calls: list[str] = []
+        self.error: Exception | None = None
+
+    def read_channel(self) -> str:
+        return self.channel
+
+    def fetch(self, channel: str) -> str:
+        self.calls.append(channel)
+        if self.error is not None:
+            raise self.error
+        assert self.version is not None
+        return self.version
+
+
+def watched(machine: Machine, latest: Latest, env: dict[str, str] | None = None):
+    published: list[dict] = []
+    clock = Clock()
+    wall = Clock()
+    wall.now = 5000.0
+    resolver = ClaudeCliResolver(
+        env=env or {},
+        which=machine.which,
+        run_version=machine.run_version,
+        run_update=machine.run_update,
+        bundled_version=BUNDLED,
+        clock=clock,
+        fetch_latest=latest.fetch,
+        read_channel=latest.read_channel,
+        wall_clock=wall,
+        publish=published.append,
+    )
+    return resolver, published, clock, wall
+
+
+def state_events(published):
+    assert all(
+        e["session_id"] is None and e["seq"] == 0 and e["type"] == "claude_cli.state"
+        for e in published
+    )
+    return [e["data"] for e in published]
+
+
+@pytest.mark.anyio
+async def test_state_without_a_check_has_no_latest():
+    resolver, published, _, _ = watched(Machine(), Latest())
+    await resolver.refresh()
+    state = resolver.state()
+    assert state["latest"] is None
+    assert state["update_available"] is False
+    assert state["job"] is None
+    assert state["can_update"] is True
+    assert published == []
+
+
+@pytest.mark.anyio
+async def test_check_reports_a_newer_version_for_the_channel():
+    latest = Latest("2.1.296", channel="stable")
+    resolver, _, _, _ = watched(Machine("2.1.292"), latest)
+    await resolver.refresh()
+    await resolver.check_latest()
+    state = resolver.state()
+    assert latest.calls == ["stable"]
+    assert state["latest"] == {"version": "2.1.296", "channel": "stable", "checked_at": 5000.0}
+    assert state["update_available"] is True
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("latest_version", ["2.1.292", "2.1.100", "2.0.999"])
+async def test_same_or_older_latest_is_not_an_update(latest_version):
+    resolver, _, _, _ = watched(Machine("2.1.292"), Latest(latest_version))
+    await resolver.refresh()
+    await resolver.check_latest()
+    assert resolver.state()["update_available"] is False
+
+
+@pytest.mark.anyio
+async def test_numeric_comparison_not_text():
+    resolver, _, _, _ = watched(Machine("2.1.99"), Latest("2.1.100"))
+    await resolver.refresh()
+    await resolver.check_latest()
+    assert resolver.state()["update_available"] is True
+
+
+@pytest.mark.anyio
+async def test_no_system_claude_means_no_update_available():
+    resolver, _, _, _ = watched(Machine(path=None), Latest("2.1.296"))
+    await resolver.refresh()
+    await resolver.check_latest()
+    state = resolver.state()
+    assert state["latest"]["version"] == "2.1.296"
+    assert state["update_available"] is False
+
+
+@pytest.mark.anyio
+async def test_forced_bundled_means_no_update_available():
+    resolver, _, _, _ = watched(
+        Machine("2.1.292"), Latest("2.1.296"), env={"MAESTRO_CLAUDE_CLI": "bundled"}
+    )
+    await resolver.refresh()
+    await resolver.check_latest()
+    assert resolver.state()["update_available"] is False
+
+
+@pytest.mark.anyio
+async def test_check_publishes_only_when_the_result_changes():
+    latest = Latest("2.1.296")
+    resolver, published, _, wall = watched(Machine("2.1.292"), latest)
+    await resolver.refresh()
+    await resolver.check_latest()
+    assert len(published) == 1
+    wall.now += 86400
+    await resolver.check_latest()  # same version: only checked_at moved
+    assert len(published) == 1
+    assert resolver.state()["latest"]["checked_at"] == 5000.0 + 86400
+    latest.version = "2.1.297"
+    await resolver.check_latest()
+    events = state_events(published)
+    assert [e["latest"]["version"] for e in events] == ["2.1.296", "2.1.297"]
+    assert events[0]["update_available"] is True
+
+
+@pytest.mark.anyio
+async def test_check_publishes_when_the_channel_changes():
+    latest = Latest("2.1.296", channel="latest")
+    resolver, published, _, _ = watched(Machine("2.1.292"), latest)
+    await resolver.refresh()
+    await resolver.check_latest()
+    latest.channel = "stable"
+    await resolver.check_latest()
+    assert [e["latest"]["channel"] for e in state_events(published)] == ["latest", "stable"]
+
+
+@pytest.mark.anyio
+async def test_failed_check_keeps_the_last_result_and_logs_a_warning(caplog):
+    latest = Latest("2.1.296")
+    resolver, published, _, _ = watched(Machine("2.1.292"), latest)
+    await resolver.refresh()
+    await resolver.check_latest()
+    latest.error = claudecli.LatestCheckError("offline")
+    with caplog.at_level("WARNING", logger="claudio_maestro.claudecli"):
+        await resolver.check_latest()
+    assert resolver.state()["latest"]["version"] == "2.1.296"
+    assert len(published) == 1
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1 and "offline" in warnings[0].getMessage()
+    assert warnings[0].exc_info is None
+
+
+@pytest.mark.anyio
+async def test_unexpected_error_in_the_check_is_swallowed():
+    latest = Latest()
+    latest.error = ValueError("bug")
+    resolver, published, _, _ = watched(Machine(), latest)
+    await resolver.check_latest()
+    assert resolver.state()["latest"] is None
+    assert published == []
+
+
+@pytest.mark.anyio
+async def test_run_latest_periodic_waits_then_checks_every_interval():
+    latest = Latest()
+    resolver, _, _, _ = watched(Machine(), latest)
+    sleeps: list[float] = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 3:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await resolver.run_latest_periodic(60, 86400, sleep=sleep)
+    assert sleeps == [60, 86400, 86400]
+    assert len(latest.calls) == 2
+
+
+# the `claude_cli.state` event ---------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_a_cli_change_publishes_the_state():
+    machine = Machine("2.1.292")
+    resolver, published, _, _ = watched(machine, Latest())
+    await resolver.refresh()
+    assert published == []  # first reading: nobody has anything older
+    machine.version = "2.1.295"
+    await resolver.refresh(force=True)
+    events = state_events(published)
+    assert len(events) == 1
+    assert events[0]["in_use"] == {"source": "system", "version": "2.1.295"}
+    assert events[0] == resolver.state()
+
+
+@pytest.mark.anyio
+async def test_an_unchanged_reading_publishes_nothing():
+    resolver, published, _, _ = watched(Machine(), Latest())
+    await resolver.refresh()
+    await resolver.refresh(force=True)
+    await resolver.refresh(force=True)
+    assert published == []
+
+
+@pytest.mark.anyio
+async def test_a_system_version_change_publishes_even_if_the_choice_stays():
+    # The system claude is older than the bundled one: it is not in use, but it changed
+    # and "update_available" depends on it.
+    machine = Machine("2.1.200")
+    latest = Latest("2.1.296")
+    resolver, published, _, _ = watched(machine, latest)
+    await resolver.refresh()
+    await resolver.check_latest()
+    machine.version = "2.1.296"
+    await resolver.refresh(force=True)
+    events = state_events(published)
+    assert [e["update_available"] for e in events] == [True, False]
+
+
+@pytest.mark.anyio
+async def test_update_publishes_start_and_end_once_each():
+    machine = Machine("2.1.292")
+    machine.new_version = "2.1.296"
+    machine.gate = asyncio.Event()
+    resolver, published, _, _ = watched(machine, Latest("2.1.296"))
+    await resolver.refresh()
+    await resolver.check_latest()
+    published.clear()
+    task = asyncio.create_task(resolver.update(models_ok))
+    for _ in range(50):
+        if machine.update_calls:
+            break
+        await asyncio.sleep(0.01)
+    assert [e["job"]["state"] for e in state_events(published)] == ["running"]
+    machine.gate.set()
+    outcome = await task
+    events = state_events(published)
+    assert [e["job"]["state"] for e in events] == ["running", "done"]
+    assert events[-1]["update_available"] is False  # recomputed without another query
+    assert events[-1]["in_use"]["version"] == "2.1.296"
+    assert events[-1]["job"]["message"] == outcome.message
+    assert events[-1] == resolver.state()
+
+
+@pytest.mark.anyio
+async def test_failed_update_publishes_the_failure():
+    machine = Machine("2.1.292")
+    machine.update_result = CommandResult(1, "Erro: sem permissão")
+    resolver, published, _, _ = watched(machine, Latest("2.1.296"))
+    await resolver.refresh()
+    await resolver.check_latest()
+    published.clear()
+    await resolver.update(models_ok)
+    events = state_events(published)
+    assert [e["job"]["state"] for e in events] == ["running", "failed"]
+    assert events[-1]["update_available"] is True
+
+
+@pytest.mark.anyio
+async def test_refused_update_stops_showing_running():
+    resolver, published, _, _ = watched(Machine(path=None), Latest())
+    await resolver.refresh()
+    with pytest.raises(ClaudeCliUnavailable):
+        await resolver.update(models_ok)
+    assert [e["job"] for e in state_events(published)] == [{"state": "running"}, None]
+
+
+@pytest.mark.anyio
+async def test_a_publish_that_raises_does_not_break_anything():
+    machine = Machine("2.1.292")
+    resolver, _, _, _ = watched(machine, Latest())
+
+    def boom(event):
+        raise RuntimeError("socket")
+
+    resolver.publish = boom
+    await resolver.refresh()
+    machine.version = "2.1.295"
+    cli = await resolver.refresh(force=True)
+    assert cli.version == "2.1.295"
+    await resolver.check_latest()
+    assert resolver.state()["latest"] is not None

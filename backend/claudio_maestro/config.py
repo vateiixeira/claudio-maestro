@@ -95,6 +95,10 @@ class Settings:
     update_check: bool = True
     update_check_delay_seconds: float = 60
     update_check_interval_seconds: float = 24 * 3600
+    # Check the newest published `claude` version (`MAESTRO_CLAUDE_CHECK=0` turns it off).
+    claude_check: bool = True
+    claude_check_delay_seconds: float = 60
+    claude_check_interval_seconds: float = 24 * 3600
     # Read the subscription usage (`MAESTRO_USAGE_CHECK=0` turns it off): every
     # `usage_check_interval_seconds` and right after a turn, at most once a minute.
     usage_check: bool = True
@@ -200,6 +204,7 @@ def load_settings() -> Settings:
     `DataMigrationError` propagates when that cannot be done safely.
     `MAESTRO_UPDATE_CHECK=0` turns off the daily check for a newer release.
     `MAESTRO_USAGE_CHECK=0` turns off the read of the subscription usage.
+    `MAESTRO_CLAUDE_CHECK=0` turns off the daily read of the newest `claude` version.
     """
     home_env = os.environ.get("MAESTRO_HOME")
     home = Path(home_env) if home_env else Path.home()
@@ -214,6 +219,7 @@ def load_settings() -> Settings:
         claude_projects_dir=claude_projects_dir(),
         update_check=os.environ.get("MAESTRO_UPDATE_CHECK", "1") != "0",
         usage_check=os.environ.get("MAESTRO_USAGE_CHECK", "1") != "0",
+        claude_check=os.environ.get("MAESTRO_CLAUDE_CHECK", "1") != "0",
     )
 
 

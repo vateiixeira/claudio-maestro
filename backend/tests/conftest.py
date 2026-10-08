@@ -91,6 +91,16 @@ def no_real_update_check(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_claude_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The check of the latest `claude` version never reaches storage.googleapis.com in tests."""
+
+    def no_network(*args, **kwargs):
+        raise RuntimeError("Os testes não podem consultar a última versão do Claude.")
+
+    monkeypatch.setattr("claudio_maestro.claudecli._get_latest_version", no_network)
+
+
+@pytest.fixture(autouse=True)
 def no_real_usage_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """The usage check never reaches api.anthropic.com in tests."""
 
@@ -177,6 +187,8 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MAESTRO_AGENTD", "0")
     # The update check never runs by default in tests (no request to GitHub).
     monkeypatch.setenv("MAESTRO_UPDATE_CHECK", "0")
+    # The latest-claude check never runs by default in tests (no request to Google storage).
+    monkeypatch.setenv("MAESTRO_CLAUDE_CHECK", "0")
     # The usage check never runs by default in tests (no request to Anthropic).
     monkeypatch.setenv("MAESTRO_USAGE_CHECK", "0")
     # The CLI history watcher never looks at the real ~/.claude.

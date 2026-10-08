@@ -23,6 +23,7 @@ class FakeResolver(ClaudeCliResolver):
         )
         self.refreshes: list[bool] = []
         self.periodic: list[float] = []
+        self.latest_periodic: list[tuple[float, float]] = []
 
     async def refresh(self, force: bool = False):
         self.refreshes.append(force)
@@ -30,6 +31,9 @@ class FakeResolver(ClaudeCliResolver):
 
     async def run_periodic(self, interval, sleep=None):
         self.periodic.append(interval)
+
+    async def run_latest_periodic(self, initial_delay, interval, sleep=None):
+        self.latest_periodic.append((initial_delay, interval))
 
 
 def deny(*args, **kwargs):
@@ -56,6 +60,53 @@ def test_real_agent_reads_the_choice_at_startup_and_uses_it(home, data_dir):
         options = AgentOptions(cwd=home, session_id="x", resume=False, can_use_tool=deny)
         sdk_client = client.app.state.sessions.agent_factory(options)
         assert sdk_client.sdk_options.cli_path == "/opt/bin/claude"
+
+
+def test_real_agent_checks_the_latest_version_after_60s_then_daily(home, data_dir):
+    resolver = FakeResolver("/opt/bin/claude")
+    app = create_app(
+        settings=Settings(home_dir=home, data_dir=data_dir, update_check=False, usage_check=False),
+        claude_cli=resolver,
+        agentd=False,
+        refresh_models=False,
+        plan_sweep=False,
+    )
+    with TestClient(app, base_url=BACKEND_URL):
+        assert resolver.latest_periodic == [(60, 86400)]
+
+
+def test_the_latest_check_can_be_turned_off(home, data_dir):
+    resolver = FakeResolver("/opt/bin/claude")
+    app = create_app(
+        settings=Settings(
+            home_dir=home, data_dir=data_dir, update_check=False, usage_check=False, claude_check=False
+        ),
+        claude_cli=resolver,
+        agentd=False,
+        refresh_models=False,
+        plan_sweep=False,
+    )
+    with TestClient(app, base_url=BACKEND_URL):
+        assert resolver.latest_periodic == []
+        assert resolver.periodic == [600]  # the choice of the CLI is read all the same
+
+
+def test_fake_agent_does_not_check_the_latest_version(home, data_dir):
+    resolver = FakeResolver("/opt/bin/claude")
+    app = create_app(
+        settings=settings(home, data_dir), claude_cli=resolver, agent_factory=FakeAgentFactory()
+    )
+    with TestClient(app, base_url=BACKEND_URL):
+        assert resolver.latest_periodic == []
+
+
+def test_the_resolver_publishes_through_the_hub(home, data_dir):
+    resolver = FakeResolver("/opt/bin/claude")
+    app = create_app(
+        settings=settings(home, data_dir), claude_cli=resolver, agent_factory=FakeAgentFactory()
+    )
+    with TestClient(app, base_url=BACKEND_URL) as client:
+        assert resolver.publish == client.app.state.hub.publish
 
 
 def test_fake_agent_does_not_read_the_choice(home, data_dir):

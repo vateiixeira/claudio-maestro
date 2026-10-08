@@ -8,6 +8,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - O app usa o Claude instalado no sistema quando ele é mais novo que o embutido, então modelos novos aparecem sem esperar uma versão do Maestro, e a lista de modelos se renova sozinha quando o Claude em uso muda. `MAESTRO_CLAUDE_CLI=bundled` volta para o embutido.
 - "Atualizar o Claude" no menu de modelos: roda `claude update` e renova a lista de modelos na hora.
+- Aviso no menu lateral quando sai uma versão nova do Claude, com atualização num clique. `MAESTRO_CLAUDE_CHECK=0` desliga a consulta.
 
 ## [0.5.0] - 2026-10-07
 
