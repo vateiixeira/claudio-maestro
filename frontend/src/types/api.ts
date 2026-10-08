@@ -505,4 +505,7 @@ export interface ClaudeCliInfo {
   forced_bundled: boolean
   can_update: boolean
   job: ClaudeCliJob | null
+  /** Newest version published for the update channel; null until the backend has checked. */
+  latest: { version: string; channel: string; checked_at: number } | null
+  update_available: boolean
 }

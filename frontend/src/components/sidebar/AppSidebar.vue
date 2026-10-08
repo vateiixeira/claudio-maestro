@@ -10,6 +10,7 @@ import SidebarLane from './SidebarLane.vue'
 import SidebarSessionRow from './SidebarSessionRow.vue'
 import UsageMeter from './UsageMeter.vue'
 import AgentdNotice from '../updates/AgentdNotice.vue'
+import ClaudeUpdateNotice from '../updates/ClaudeUpdateNotice.vue'
 import UpdatedNotice from '../updates/UpdatedNotice.vue'
 import { looseOpenSessions } from './openList'
 import { sidebarItemClass } from './itemClass'
@@ -329,6 +330,7 @@ const itemClass = sidebarItemClass
         :title="`Versão instalada: ${updates.state.current}`"
       >v{{ updates.state.current }}</a>
     </div>
+    <ClaudeUpdateNotice />
     <ConnectionIndicator class="mx-2.5 mb-2.5" :status="socket.status.value" />
   </nav>
 </template>

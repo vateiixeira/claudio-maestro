@@ -39,7 +39,9 @@ function onUpdate(): void {
         <template v-if="store.busy">Atualizando o Claude…</template>
         <template v-else>
           <span>Atualizar o Claude</span>
-          <span class="text-fg-subtle">{{ versionText }}</span>
+          <span class="text-fg-subtle">
+            {{ versionText }}<span v-if="store.info.update_available && store.info.latest" class="text-secondary"> · {{ store.info.latest.version }} disponível</span>
+          </span>
         </template>
       </button>
     </template>

@@ -22,6 +22,8 @@ const CLAUDE_CLI = {
   forced_bundled: false,
   can_update: true,
   job: null,
+  latest: null,
+  update_available: false,
 }
 
 let pinia: Pinia

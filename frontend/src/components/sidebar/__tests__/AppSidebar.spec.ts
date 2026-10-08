@@ -17,6 +17,7 @@ import { useGroupsStore } from '../../../stores/groups'
 import { useNewConversationStore } from '../../../stores/newConversation'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
+import { useClaudeCliStore } from '../../../stores/claudeCli'
 import { useUpdatesStore } from '../../../stores/updates'
 import { useUsageStore } from '../../../stores/usage'
 import { setCollapsed, setSectionCollapsed, setSectionOpened } from '../../../sidebarCollapse'
@@ -660,5 +661,42 @@ describe('menu lateral: commits para baixar', () => {
     await w.get('[data-test="others-toggle"]').trigger('click')
     const row = w.get('[data-test="other-project"]')
     expect(row.get('[data-test="project-behind"]').attributes('title')).toBe('2 commits para baixar de origin/develop')
+  })
+})
+
+describe('aviso de versão nova do Claude no rodapé', () => {
+  const CLAUDE = {
+    in_use: { source: 'system', version: '2.1.294' },
+    system: { path: '/opt/bin/claude', version: '2.1.294' },
+    bundled: { version: '2.1.284' },
+    forced_bundled: false,
+    can_update: true,
+    job: null,
+    latest: { version: '2.1.296', channel: 'latest', checked_at: 5 },
+    update_available: true,
+  }
+
+  it('não aparece sem versão nova', async () => {
+    useClaudeCliStore(pinia).apply({ ...CLAUDE, update_available: false })
+    const wrapper = mountSidebar()
+    await nextTick()
+    expect(wrapper.find('[data-test="claude-update-notice"]').exists()).toBe(false)
+  })
+
+  it('aparece quando a store tem atualização, mesmo antes da versão do Maestro', async () => {
+    useClaudeCliStore(pinia).apply(CLAUDE)
+    const wrapper = mountSidebar()
+    await nextTick()
+    expect(wrapper.get('[data-test="claude-update-notice"]').text()).toBe('Claude 2.1.294 · 2.1.296 disponível')
+  })
+
+  it('o clique atualiza o Claude', async () => {
+    const store = useClaudeCliStore(pinia)
+    store.apply(CLAUDE)
+    store.update = vi.fn(async () => {})
+    const wrapper = mountSidebar()
+    await nextTick()
+    await wrapper.get('[data-test="claude-update-notice"]').trigger('click')
+    expect(store.update).toHaveBeenCalledOnce()
   })
 })

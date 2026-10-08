@@ -1,4 +1,5 @@
 import type { EventSocket } from '../api/socket'
+import { useClaudeCliStore } from './claudeCli'
 import { useClosureStore } from './closure'
 import { useDeliveriesStore } from './deliveries'
 import { useDigestStore } from './digest'
@@ -26,6 +27,8 @@ export async function loadEverything(): Promise<void> {
   void useUpdatesStore().load().catch(() => {})
   // The usage meter is secondary: a failure keeps the last numbers.
   void useUsageStore().load().catch(() => {})
+  // The "new Claude" notice is secondary: a failure only hides it.
+  void useClaudeCliStore().load().catch(() => {})
   // A failure leaves the menu without groups until the next load.
   void useGroupsStore().load().catch(() => {})
   await sessions.loadAll(projects.projects.map((p) => p.id))
@@ -58,6 +61,7 @@ export function bindRealtime(socket: EventSocket): () => void {
     }),
     socket.on('app.update', (event) => useUpdatesStore().apply(event.data)),
     socket.on('app.update.progress', (event) => useUpdatesStore().applyProgress(event.data)),
+    socket.on('claude_cli.state', (event) => useClaudeCliStore().apply(event.data)),
     socket.on('app.usage', (event) => useUsageStore().apply(event.data)),
     // The digest agent wrote a summary, or its state changed (both global events).
     socket.on('session.digest', (event) => useDigestStore().applyDigest(event.data)),

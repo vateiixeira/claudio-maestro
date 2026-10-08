@@ -9,6 +9,8 @@ const INFO = {
   forced_bundled: false,
   can_update: true,
   job: null,
+  latest: null,
+  update_available: false,
 }
 const RESULT = {
   ok: true, before: '2.1.292', after: '2.1.295', in_use: { source: 'system', version: '2.1.295' },
@@ -78,5 +80,51 @@ describe('claudeCli store', () => {
     void store.update()
     void store.update()
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  describe('apply', () => {
+    const NEWER = { ...INFO, latest: { version: '2.1.296', channel: 'latest', checked_at: 5 }, update_available: true }
+
+    it('replaces the info with a valid state', () => {
+      const store = useClaudeCliStore()
+      store.apply(NEWER)
+      expect(store.info?.update_available).toBe(true)
+      expect(store.info?.latest?.version).toBe('2.1.296')
+    })
+
+    it('ignores data that is not a state', () => {
+      const store = useClaudeCliStore()
+      store.apply(NEWER)
+      store.apply(null)
+      store.apply('x')
+      store.apply({ update_available: false })
+      store.apply({ ...NEWER, in_use: null })
+      expect(store.info?.update_available).toBe(true)
+    })
+
+    it('is busy when the event says the job is running', () => {
+      const store = useClaudeCliStore()
+      store.apply({ ...NEWER, job: { state: 'running' } })
+      expect(store.busy).toBe(true)
+    })
+
+    it('a slower GET started before an event does not overwrite it', async () => {
+      let release!: () => void
+      vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => { release = () => r(new Response(JSON.stringify(INFO), { status: 200 })) })))
+      const store = useClaudeCliStore()
+      const loading = store.load()
+      store.apply(NEWER)
+      release()
+      await loading
+      expect(store.info?.update_available).toBe(true)
+    })
+
+    it('a GET started after an event is applied', async () => {
+      vi.stubGlobal('fetch', vi.fn(() => respond(200, INFO)))
+      const store = useClaudeCliStore()
+      store.apply(NEWER)
+      await store.load()
+      expect(store.info?.update_available).toBe(false)
+    })
   })
 })

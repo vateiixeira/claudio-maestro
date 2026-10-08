@@ -14,6 +14,8 @@ const BASE = {
   forced_bundled: false,
   can_update: true,
   job: null,
+  latest: null,
+  update_available: false,
 }
 
 function serve(info: unknown) {
@@ -35,6 +37,21 @@ describe('ClaudeCliFooter', () => {
     const button = wrapper.get('[data-test="claude-cli-update"]')
     expect(button.text()).toContain('Atualizar o Claude')
     expect(button.text()).toContain('2.1.292')
+  })
+
+  it('shows the newer version next to the one in use', async () => {
+    serve({ ...BASE, latest: { version: '2.1.296', channel: 'latest', checked_at: 5 }, update_available: true })
+    const wrapper = await mountFooter()
+    const button = wrapper.get('[data-test="claude-cli-update"]')
+    expect(button.text()).toContain('2.1.292 · 2.1.296 disponível')
+    const highlighted = button.findAll('span').at(-1)
+    expect(highlighted?.classes()).toContain('text-secondary')
+  })
+
+  it('does not mention a newer version when there is none', async () => {
+    serve({ ...BASE, latest: { version: '2.1.292', channel: 'latest', checked_at: 5 }, update_available: false })
+    const wrapper = await mountFooter()
+    expect(wrapper.get('[data-test="claude-cli-update"]').text()).not.toContain('disponível')
   })
 
   it('marks the bundled CLI', async () => {

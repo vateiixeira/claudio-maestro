@@ -11,6 +11,7 @@ import { useGroupsStore } from '../groups'
 import { useDigestStore } from '../digest'
 import { useClosureStore } from '../closure'
 import { useDeliveriesStore } from '../deliveries'
+import { useClaudeCliStore } from '../claudeCli'
 import { jsonResponse, makeGroup, makeProject, makeSession } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
@@ -239,6 +240,41 @@ describe('bindRealtime', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/groups', expect.anything())
     expect(useGroupsStore().byId(3)).toBeDefined()
+  })
+
+  const CLAUDE_STATE = {
+    in_use: { source: 'system', version: '2.1.294' },
+    system: { path: '/opt/bin/claude', version: '2.1.294' },
+    bundled: { version: '2.1.284' },
+    forced_bundled: false,
+    can_update: true,
+    job: null,
+    latest: { version: '2.1.296', channel: 'latest', checked_at: 5 },
+    update_available: true,
+  }
+
+  it('claude_cli.state aplica o estado na store do Claude', () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    sockets[0]!.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type: 'claude_cli.state', data: CLAUDE_STATE }) })
+    expect(useClaudeCliStore().info?.update_available).toBe(true)
+    expect(useClaudeCliStore().info?.latest?.version).toBe('2.1.296')
+  })
+
+  it('loadEverything carrega o estado do Claude', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/claude-cli') return jsonResponse(CLAUDE_STATE)
+      if (url === '/api/projects') return jsonResponse([])
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await loadEverything()
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/claude-cli', expect.anything())
+    expect(useClaudeCliStore().info?.update_available).toBe(true)
   })
 
   it('leva project.git ao store git', () => {
