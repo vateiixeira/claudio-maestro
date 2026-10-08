@@ -18,7 +18,7 @@ from claudio_maestro.agent.sdk_client import clean_inherited_env
 from claudio_maestro.api import router
 from claudio_maestro.api.editor import SpawnEditor, spawn_detached
 from claudio_maestro.claudecli import CACHE_SECONDS as CLAUDE_CLI_CACHE_SECONDS
-from claudio_maestro.claudecli import ClaudeCliResolver
+from claudio_maestro.claudecli import ClaudeCli, ClaudeCliResolver
 from claudio_maestro.cliwatch import CliWatcher
 from claudio_maestro.commands import CommandCatalog
 from claudio_maestro.config import (
@@ -175,6 +175,20 @@ def create_app(
         # Sessions outlive a restart of the app only when new ones also go through the agentd.
         app.state.agentd_new_sessions = app.state.agentd is not None and new_through_agentd
         app.state.claude_cli = claude_cli or ClaudeCliResolver()
+
+        def cli_identity() -> dict[str, Any]:
+            cli = app.state.claude_cli.current()
+            return {"path": cli.path, "version": cli.version}
+
+        async def on_cli_change(old: ClaudeCli, new: ClaudeCli) -> None:
+            # The models list is stale now (it tells which CLI it came from). Fetching starts
+            # a client, so it does not hold the reading that noticed the change.
+            task = asyncio.create_task(app.state.sessions.refresh_models_if_stale())
+            app.state.background.add(task)
+            task.add_done_callback(app.state.background.discard)
+
+        if app.state.claude_cli.on_change is None:
+            app.state.claude_cli.on_change = on_cli_change
         real_agent = agent_factory is None
         if real_agent:
             # Up to 5 s if `claude --version` hangs; then the bundled CLI is used.
@@ -199,6 +213,7 @@ def create_app(
             on_finished=on_finished,
             agentd=app.state.agentd,
             agentd_new_sessions=new_through_agentd,
+            cli_identity=cli_identity,
         )
         try:
             await app.state.sessions.reattach_all()

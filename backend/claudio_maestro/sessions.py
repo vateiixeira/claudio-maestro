@@ -2414,7 +2414,11 @@ class SessionManager:
         read_context: ReadContext | None = None,
         agentd: Any | None = None,
         agentd_new_sessions: bool = True,
+        cli_identity: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
+        # `{"path", "version"}` of the `claude` in use now. The models list is saved with
+        # the one it came from and is stale when they differ (None: not checked).
+        self._cli_identity = cli_identity
         # Keeps `claude` processes across restarts; None runs them as children of this process.
         self._agentd = agentd
         self._agentd_new_sessions = agentd_new_sessions
@@ -2466,6 +2470,7 @@ class SessionManager:
         # with the last list. `_models_fetched_at` is when it was last confirmed.
         self._models: list[dict[str, Any]] | None = None
         self._models_fetched_at = 0.0
+        self._models_cli: dict[str, Any] | None = None
         self._load_models()
         # Short sentence and plan seal of the digest agent, by session (memory copy).
         self._digest_briefs: dict[str, tuple[str | None, bool]] = {}
@@ -2485,16 +2490,19 @@ class SessionManager:
             stored = json.loads(row["value"]) if row is not None else None
             models = normalize_models(stored)
             fetched_at = stored.get("fetched_at") if isinstance(stored, dict) else None
+            cli = stored.get("cli") if isinstance(stored, dict) else None
         except (sqlite3.Error, ValueError):
             logger.exception("Falha ao ler a lista de modelos guardada")
             return
         if models is not None and isinstance(fetched_at, int | float):
             self._models = models
             self._models_fetched_at = float(fetched_at)
+            self._models_cli = cli if isinstance(cli, dict) else None
 
     def _save_models(self) -> None:
         value = json.dumps(
-            {"models": self._models, "fetched_at": self._models_fetched_at}, ensure_ascii=False
+            {"models": self._models, "fetched_at": self._models_fetched_at, "cli": self._models_cli},
+            ensure_ascii=False,
         )
         try:
             with closing(db.connect(self._db_path)) as conn:
@@ -2507,10 +2515,11 @@ class SessionManager:
             logger.exception("Falha ao guardar a lista de modelos")
 
     def _models_stale(self) -> bool:
-        return (
-            self._models is None
-            or self._clock() - self._models_fetched_at >= MODELS_MAX_AGE
-        )
+        if self._models is None or self._clock() - self._models_fetched_at >= MODELS_MAX_AGE:
+            return True
+        # Another `claude` than the one that gave the list (the terminal's updated itself,
+        # it was installed or removed, or MAESTRO_CLAUDE_CLI changed across a restart).
+        return self._cli_identity is not None and self._models_cli != self._cli_identity()
 
     async def _fetch_models(self, client: AgentClient) -> bool:
         """Ask the client for the models. True when a valid list was received."""
@@ -2525,6 +2534,7 @@ class SessionManager:
         changed = models != self._models
         self._models = models
         self._models_fetched_at = self._clock()
+        self._models_cli = self._cli_identity() if self._cli_identity is not None else None
         self._save_models()
         if changed:
             self._publish({

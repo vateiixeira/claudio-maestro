@@ -71,6 +71,7 @@ class CommandResult:
 
 
 RunUpdate = Callable[[list[str], float], Awaitable[CommandResult]]
+OnChange = Callable[[ClaudeCli, ClaudeCli], Awaitable[None]]
 
 
 class ClaudeCliBusy(Exception):
@@ -180,6 +181,10 @@ def resolve(
     """Pick the CLI: the system one when it is at least as new as the bundled one."""
     forced = env.get(ENV_VAR, "").strip().lower() == "bundled"
     system_path = which("claude")
+    if system_path is not None:
+        # `which` answers "bin/claude" for a relative PATH entry. The agentd starts the CLI
+        # with the project as cwd, so a relative path would run `<project>/bin/claude`.
+        system_path = os.path.abspath(system_path)
     system_version: str | None = None
     if system_path is not None:
         parsed = parse_version(run_version(system_path))
@@ -236,6 +241,7 @@ class ClaudeCliResolver:
         bundled_version: str | None = None,
         clock: Callable[[], float] = time.monotonic,
         cache_seconds: float = CACHE_SECONDS,
+        on_change: OnChange | None = None,
     ) -> None:
         self._env = env
         self._which = which
@@ -248,6 +254,12 @@ class ClaudeCliResolver:
         self._resolved_at: float | None = None
         self._updating = False
         self._last: UpdateOutcome | None = None
+        # Called with (old, new) when a later reading finds another CLI in use (not on the
+        # first reading); the app sets it. `update()` holds it back: it always refreshes the
+        # models itself.
+        self.on_change = on_change
+        self._hold_change = False
+        self._held_change: tuple[ClaudeCli, ClaudeCli] | None = None
 
     def _environ(self) -> Mapping[str, str]:
         return os.environ if self._env is None else self._env
@@ -291,9 +303,24 @@ class ClaudeCliResolver:
             logger.info(
                 "Claude em uso: %s %s (%s)", cli.source, cli.version, cli.path or "embutido no SDK"
             )
+        old = self._current
+        first = self._resolved_at is None
         self._current = cli
         self._resolved_at = self._clock()
+        if not first and (old.path, old.version) != (cli.path, cli.version):
+            if self._hold_change:
+                self._held_change = (self._held_change or (old, cli))[0], cli
+            else:
+                await self._notify(old, cli)
         return cli
+
+    async def _notify(self, old: ClaudeCli, new: ClaudeCli) -> None:
+        if self.on_change is None:
+            return
+        try:
+            await self.on_change(old, new)
+        except Exception:
+            logger.exception("Falha ao tratar a troca do Claude em uso")
 
     async def run_periodic(
         self, interval: float, sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep
@@ -319,6 +346,9 @@ class ClaudeCliResolver:
         if self._updating:
             raise ClaudeCliBusy(BUSY_TEXT)
         self._updating = True
+        self._hold_change = True
+        self._held_change = None
+        models_attempted = False
         try:
             before = await self.refresh(force=True)
             if before.forced_bundled:
@@ -330,6 +360,7 @@ class ClaudeCliResolver:
             output = clean_output(result.output)
             after = await self.refresh(force=True)
             models = False
+            models_attempted = True
             try:
                 models = bool(await refresh_models())
             except Exception:
@@ -348,3 +379,8 @@ class ClaudeCliResolver:
             return outcome
         finally:
             self._updating = False
+            self._hold_change = False
+            held, self._held_change = self._held_change, None
+            if held is not None and not models_attempted:
+                # The update stopped before renewing the models: the change still counts.
+                await self._notify(*held)

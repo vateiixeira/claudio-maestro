@@ -109,6 +109,24 @@ def test_newer_system_wins():
     assert cli.bundled_version == BUNDLED
 
 
+def test_relative_which_result_becomes_absolute():
+    # PATH="bin:/usr/bin" makes `which` answer "bin/claude"; the agentd runs with the
+    # project as cwd, so a relative path would start `<project>/bin/claude`.
+    seen: list[str] = []
+
+    def run_version(path: str) -> str | None:
+        seen.append(path)
+        return "2.1.292 (Claude Code)\n"
+
+    cli = resolve(
+        env={}, which=lambda name: "bin/claude", run_version=run_version, bundled_version=BUNDLED
+    )
+    expected = os.path.abspath("bin/claude")
+    assert os.path.isabs(expected)
+    assert (cli.path, cli.system_path) == (expected, expected)
+    assert seen == [expected]
+
+
 def test_equal_system_wins():
     cli = resolved(Machine(BUNDLED))
     assert (cli.source, cli.path) == ("system", SYSTEM)
@@ -427,3 +445,117 @@ async def test_unavailable_does_not_leave_the_lock_taken():
 def test_default_runners_are_blocked_in_tests():
     # The autouse fixture in conftest.py keeps the real `claude` out of the tests.
     assert claudecli.run_version_command("/usr/bin/true") is None
+
+
+# on_change ----------------------------------------------------------------------
+
+
+def watching(machine: Machine, clock: Clock | None = None, fail: bool = False):
+    calls: list[tuple[claudecli.ClaudeCli, claudecli.ClaudeCli]] = []
+
+    async def on_change(old, new) -> None:
+        calls.append((old, new))
+        if fail:
+            raise RuntimeError("quebrou")
+
+    resolver = ClaudeCliResolver(
+        env={},
+        which=machine.which,
+        run_version=machine.run_version,
+        run_update=machine.run_update,
+        bundled_version=BUNDLED,
+        clock=clock or Clock(),
+        on_change=on_change,
+    )
+    return resolver, calls
+
+
+@pytest.mark.anyio
+async def test_on_change_runs_when_the_version_changes_after_the_cache():
+    machine, clock = Machine("2.1.292"), Clock()
+    resolver, calls = watching(machine, clock)
+    await resolver.refresh()
+    machine.version = "2.1.295"
+    clock.now += 601
+    await resolver.refresh()
+    assert len(calls) == 1
+    old, new = calls[0]
+    assert (old.version, new.version) == ("2.1.292", "2.1.295")
+    assert resolver.current() is new
+
+
+@pytest.mark.anyio
+async def test_on_change_runs_when_the_path_changes():
+    machine = Machine("2.1.292")
+    resolver, calls = watching(machine)
+    await resolver.refresh()
+    machine.path = None
+    await resolver.refresh(force=True)
+    assert [(o.source, n.source) for o, n in calls] == [("system", "bundled")]
+
+
+@pytest.mark.anyio
+async def test_on_change_does_not_run_on_the_first_resolution():
+    resolver, calls = watching(Machine())
+    await resolver.refresh()
+    assert calls == []
+
+
+@pytest.mark.anyio
+async def test_on_change_does_not_run_when_nothing_changes():
+    resolver, calls = watching(Machine())
+    await resolver.refresh()
+    await resolver.refresh(force=True)
+    await resolver.refresh(force=True)
+    assert calls == []
+
+
+@pytest.mark.anyio
+async def test_on_change_raising_does_not_break_refresh():
+    machine = Machine("2.1.292")
+    resolver, calls = watching(machine, fail=True)
+    await resolver.refresh()
+    machine.version = "2.1.295"
+    cli = await resolver.refresh(force=True)
+    assert cli.version == "2.1.295"
+    assert resolver.current() is cli
+    assert len(calls) == 1
+
+
+@pytest.mark.anyio
+async def test_on_change_is_not_duplicated_during_update():
+    machine = Machine("2.1.292")
+    machine.new_version = "2.1.295"
+    resolver, calls = watching(machine)
+    await resolver.refresh()
+    refreshed: list[bool] = []
+
+    async def refresh_models() -> bool:
+        refreshed.append(True)
+        return True
+
+    outcome = await resolver.update(refresh_models)
+    assert outcome.after == "2.1.295"
+    assert refreshed == [True]
+    assert calls == []
+    # Back to normal afterwards.
+    machine.version = "2.1.300"
+    await resolver.refresh(force=True)
+    assert len(calls) == 1
+
+
+@pytest.mark.anyio
+async def test_on_change_still_runs_when_update_ends_before_the_models_refresh():
+    # The terminal updated by itself and the install then vanished: the models of the
+    # old CLI must not stay just because the button was refused.
+    machine = Machine("2.1.292")
+    resolver, calls = watching(machine)
+    await resolver.refresh()
+    machine.path = None
+
+    async def refresh_models() -> bool:
+        raise AssertionError("not reached")
+
+    with pytest.raises(ClaudeCliUnavailable):
+        await resolver.update(refresh_models)
+    assert [(o.source, n.source) for o, n in calls] == [("system", "bundled")]

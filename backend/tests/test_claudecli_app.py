@@ -89,3 +89,60 @@ def test_real_agent_with_models_refresh_never_connects_to_the_real_sdk(
         while not sdk_connect_attempts and time.monotonic() < deadline:
             time.sleep(0.02)
     assert len(sdk_connect_attempts) == 1
+
+
+# The models list follows the CLI in use ------------------------------------------------
+
+
+class Machine:
+    def __init__(self, version: str = "2.1.292") -> None:
+        self.version = version
+
+    def which(self, name):
+        return "/opt/bin/claude"
+
+    def run_version(self, path):
+        return f"{self.version} (Claude Code)"
+
+
+def wait_for(condition, timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    return condition()
+
+
+def test_a_cli_change_renews_the_models_list(home, data_dir):
+    machine = Machine()
+    resolver = ClaudeCliResolver(
+        env={}, which=machine.which, run_version=machine.run_version, bundled_version="2.1.284"
+    )
+    factory = FakeAgentFactory()
+    app = create_app(
+        settings=settings(home, data_dir),
+        claude_cli=resolver,
+        agent_factory=factory,
+        refresh_models=False,
+    )
+    headers = {"origin": "http://localhost:6660", "x-maestro": "1"}
+
+    def calls() -> int:
+        return sum(c.server_info_calls for c in factory.clients)
+
+    with TestClient(app, base_url=BACKEND_URL, headers=headers) as client:
+        sessions = client.app.state.sessions
+        client.portal.call(resolver.refresh)  # first reading: nothing to renew
+        assert calls() == 0
+        # The first list is fetched and tied to version 2.1.292.
+        assert client.portal.call(sessions.refresh_models_if_stale) is True
+        assert calls() == 1
+        # The terminal's claude updated itself; the next reading notices.
+        machine.version = "2.1.295"
+        factory.server_info = {"models": [{"value": "opus-x", "displayName": "Opus X"}]}
+        client.portal.call(resolver.refresh, True)
+        assert wait_for(lambda: calls() == 2)
+        assert [m["value"] for m in sessions.list_models()] == ["opus-x"]
+        # Unchanged reading: no new fetch.
+        client.portal.call(resolver.refresh, True)
+        time.sleep(0.1)
+        assert calls() == 2

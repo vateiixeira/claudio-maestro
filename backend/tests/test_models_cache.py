@@ -29,9 +29,13 @@ class Env:
         self.events: list[dict] = []
         self.factory = FakeAgentFactory(server_info=info)
 
-    def manager(self) -> SessionManager:
+    def manager(self, cli_identity=None) -> SessionManager:
         return SessionManager(
-            self.db_path, self.events.append, agent_factory=self.factory, clock=self.clock
+            self.db_path,
+            self.events.append,
+            agent_factory=self.factory,
+            clock=self.clock,
+            cli_identity=cli_identity,
         )
 
     def updates(self) -> list[dict]:
@@ -240,3 +244,71 @@ async def test_force_refresh_asks_even_when_fresh(tmp_path):
     assert await manager.refresh_models_if_stale() is False
     assert await manager.refresh_models_if_stale(force=True) is True
     assert env.calls() == 2
+
+
+# The list follows the CLI it came from -----------------------------------------------
+
+
+class Identity:
+    def __init__(self, path: str | None = "/opt/bin/claude", version: str = "2.1.292") -> None:
+        self.value = {"path": path, "version": version}
+
+    def __call__(self) -> dict:
+        return dict(self.value)
+
+
+@pytest.mark.anyio
+async def test_list_from_another_cli_is_stale_at_startup(tmp_path):
+    env = Env(tmp_path)
+    await env.manager(Identity("/opt/bin/claude", "2.1.292")).refresh_models_if_stale()
+    env.factory.server_info = NEW_INFO
+    # Restart with MAESTRO_CLAUDE_CLI=bundled: the stored list came from the other CLI.
+    manager = env.manager(Identity(None, "2.1.284"))
+    assert await manager.refresh_models_if_stale() is True
+    assert [m["value"] for m in manager.list_models()] == ["opus-x"]
+    # Now it belongs to the bundled CLI and is fresh again.
+    assert await env.manager(Identity(None, "2.1.284")).refresh_models_if_stale() is False
+
+
+@pytest.mark.anyio
+async def test_list_from_the_same_cli_stays_fresh(tmp_path):
+    env = Env(tmp_path)
+    await env.manager(Identity()).refresh_models_if_stale()
+    assert await env.manager(Identity()).refresh_models_if_stale() is False
+    assert env.calls() == 1
+
+
+@pytest.mark.anyio
+async def test_new_version_of_the_same_path_is_stale(tmp_path):
+    env = Env(tmp_path)
+    await env.manager(Identity()).refresh_models_if_stale()
+    assert await env.manager(Identity(version="2.1.295")).refresh_models_if_stale() is True
+
+
+@pytest.mark.anyio
+async def test_cli_changing_while_running_makes_the_list_stale(tmp_path):
+    env = Env(tmp_path)
+    identity = Identity()
+    manager = env.manager(identity)
+    await manager.refresh_models_if_stale()
+    assert await manager.refresh_models_if_stale() is False
+    identity.value = {"path": "/opt/bin/claude", "version": "2.1.295"}
+    assert await manager.refresh_models_if_stale() is True
+    assert await manager.refresh_models_if_stale() is False
+
+
+@pytest.mark.anyio
+async def test_list_stored_without_cli_is_stale_when_the_cli_is_known(tmp_path):
+    env = Env(tmp_path)
+    await env.manager().refresh_models_if_stale()  # old format: no "cli" saved
+    assert await env.manager(Identity()).refresh_models_if_stale() is True
+
+
+@pytest.mark.anyio
+async def test_on_connected_refetches_when_the_cli_changed(tmp_path):
+    env = Env(tmp_path)
+    await env.manager(Identity()).refresh_models_if_stale()
+    manager = env.manager(Identity(version="2.1.295"))
+    client = env.factory(None)
+    await manager._on_connected(client)
+    assert client.server_info_calls == 1
