@@ -1,6 +1,6 @@
 [project]
 name = "claudio-maestro"
-version = "0.5.0"
+version = "0.6.0"
 description = "Cláudio Maestro: app web local para conduzir sessões do Claude em vários projetos numa tela só"
 license = "MIT"
 license-files = ["LICENSE"]
