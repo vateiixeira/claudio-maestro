@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue'
 
 export interface MenuOption {
   value: string
@@ -26,7 +26,13 @@ const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
 const menu = ref<HTMLElement | null>(null)
 
+const slots = useSlots()
+const footer = ref<HTMLElement | null>(null)
+
 const items = () => Array.from(menu.value?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [])
+
+const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+const footerTarget = () => footer.value?.querySelector<HTMLElement>(FOCUSABLE) ?? null
 
 const GAP = 4 // between the button and the panel
 const MARGIN = 8 // kept free at the viewport edges
@@ -138,6 +144,19 @@ function onMenuKey(event: KeyboardEvent) {
     hide()
     return
   } else if (event.key === 'Tab') {
+    const inFooter = !!footer.value?.contains(document.activeElement)
+    const target = footerTarget()
+    if (!event.shiftKey && !inFooter && target) {
+      event.preventDefault()
+      target.focus()
+      return
+    }
+    if (event.shiftKey && inFooter) {
+      event.preventDefault()
+      const index = Math.max(0, props.options.findIndex((o) => o.value === props.selected))
+      list[index]?.focus()
+      return
+    }
     // The panel lives in <body>, outside any dialog's focus trap: put the focus back
     // on the button (no preventDefault) so the native Tab continues from there.
     hide()
@@ -212,6 +231,15 @@ function choose(value: string) {
           <svg v-if="option.value === selected" data-test="option-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
         </span>
       </button>
+      <div
+        v-if="slots.footer"
+        ref="footer"
+        data-test="option-footer"
+        role="none"
+        class="mt-1 border-t border-line px-1 pt-1"
+      >
+        <slot name="footer" />
+      </div>
     </div>
     </Teleport>
   </div>

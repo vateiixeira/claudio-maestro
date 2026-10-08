@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { DOMWrapper, enableAutoUnmount, mount } from '@vue/test-utils'
 import OptionMenu from '../OptionMenu.vue'
 
@@ -18,11 +19,12 @@ function rect(left: number, top: number, width = 100, height = 36): DOMRect {
   return { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) } as DOMRect
 }
 
-function mountMenu(buttonRect: DOMRect, extra: Record<string, unknown> = {}) {
+function mountMenu(buttonRect: DOMRect, extra: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const wrapper = mount(OptionMenu, {
     props: { name: 'Modelo', text: 'Beta', options: OPTIONS, selected: 'b', ...extra },
+    slots,
     attachTo: host,
   })
   const trigger = wrapper.find('button[aria-label="Modelo"]')
@@ -354,5 +356,65 @@ describe('OptionMenu', () => {
     const beta = menuEl()!.querySelectorAll<HTMLElement>('[role="menuitemradio"]')[1]!
     expect(beta.querySelector('[data-test="option-label"]')!.textContent).toBe('Beta')
     expect(beta.querySelector('[data-test="option-description"]')!.textContent).toBe('Segunda')
+  })
+})
+
+describe('footer', () => {
+  const FOOTER = '<button type="button" data-test="foot-btn">Ação</button><p>texto</p>'
+
+  it('renders nothing extra without the slot', async () => {
+    const { trigger } = mountMenu(rect(50, 700))
+    await trigger.trigger('click')
+    expect(body().find('[data-test="option-footer"]').exists()).toBe(false)
+  })
+
+  it('renders the slot after the options, outside the arrow navigation', async () => {
+    const { trigger } = mountMenu(rect(50, 700), {}, { footer: FOOTER })
+    await trigger.trigger('click')
+    const footer = body().find('[data-test="option-footer"]')
+    expect(footer.exists()).toBe(true)
+    expect(footer.text()).toContain('texto')
+    // ArrowUp from the first option wraps to the last option, not to the footer.
+    const items = body().findAll('[role="menuitemradio"]')
+    ;(items[0].element as HTMLElement).focus()
+    await menuEl()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    expect(document.activeElement).toBe(items[2].element)
+  })
+
+  it('Tab from an option focuses the footer, Shift+Tab goes back, Tab again closes', async () => {
+    const { trigger } = mountMenu(rect(50, 700), {}, { footer: FOOTER })
+    await trigger.trigger('click')
+    const footerButton = () => document.body.querySelector<HTMLElement>('[data-test="foot-btn"]')
+    menuEl()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(document.activeElement).toBe(footerButton())
+    footerButton()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    await nextTick()
+    expect((document.activeElement as HTMLElement).getAttribute('aria-checked')).toBe('true')
+    menuEl()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    await nextTick()
+    footerButton()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(menuEl()).toBeNull()
+    expect(document.activeElement).toBe(trigger.element)
+  })
+
+  it('Tab skips a footer with nothing focusable and closes', async () => {
+    const { trigger } = mountMenu(rect(50, 700), {}, { footer: '<p>só texto</p>' })
+    await trigger.trigger('click')
+    menuEl()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(menuEl()).toBeNull()
+  })
+
+  it('clicking the footer keeps the menu open and selects nothing', async () => {
+    const { wrapper, trigger } = mountMenu(rect(50, 700), {}, { footer: FOOTER })
+    await trigger.trigger('click')
+    const button = document.body.querySelector<HTMLElement>('[data-test="foot-btn"]')!
+    button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    button.click()
+    await nextTick()
+    expect(menuEl()).not.toBeNull()
+    expect(wrapper.emitted('select')).toBeUndefined()
   })
 })
