@@ -10,6 +10,7 @@ checks=(
   "uv run pytest -q"
   "pnpm --dir frontend test"
   "pnpm --dir frontend build"
+  "pnpm --dir frontend e2e"
 )
 
 failed=()
