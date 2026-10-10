@@ -9,6 +9,7 @@ node_modules/
 frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
+.playwright-cli/
 
 # Dados locais
 *.sqlite3
