@@ -26,9 +26,12 @@ function lock(el: Element) {
 .collapse-grid {
   display: grid;
   grid-template-rows: 1fr;
+  /* Not the implicit `auto` column: it would grow to the content and keep long rows from truncating. */
+  grid-template-columns: minmax(0, 1fr);
 }
 .collapse-inner {
   min-height: 0;
+  min-width: 0;
 }
 .collapse-enter-active,
 .collapse-leave-active {

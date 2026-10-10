@@ -107,6 +107,17 @@ describe('WorkHeader: conteúdo', () => {
     expect(tag.classes()).toEqual(expect.arrayContaining(['rounded-full', 'bg-elevated', 'font-mono', 'text-[0.6875rem]']))
   })
 
+  it('em linha estreita a descrição cede primeiro (base 0), depois o tag; o modelo e o estado não encolhem', () => {
+    const w = mountHeader({ tag: 'superpowers:code-reviewer-extra-long', model: 'claude-opus-4-7[1m]', status: 'running' })
+    const tag = w.find('[data-test="work-tag"]')
+    expect(tag.classes()).toEqual(expect.arrayContaining(['min-w-0', 'max-w-[10rem]', 'truncate']))
+    expect(tag.classes()).not.toContain('shrink-0')
+    expect(w.find('[data-test="work-desc"]').classes()).toEqual(expect.arrayContaining(['min-w-0', 'grow', 'basis-0', 'truncate']))
+    expect(w.find('[data-test="model-chip"]').classes()).toContain('shrink-0')
+    expect(w.find('[data-test="work-status"]').classes()).toContain('shrink-0')
+    expect(w.find('[data-test="model-chip"]').text()).toBe('Opus 4.7 (1M)')
+  })
+
   it('model é um chip discreto depois do tag, com o id completo na dica; sem model, nada', () => {
     expect(mountHeader({ tag: 'Explore' }).find('[data-test="model-chip"]').exists()).toBe(false)
     expect(mountHeader({ tag: 'Explore', model: null }).find('[data-test="model-chip"]').exists()).toBe(false)
@@ -114,7 +125,8 @@ describe('WorkHeader: conteúdo', () => {
     const chip = w.find('[data-test="model-chip"]')
     expect(chip.text()).toBe('Sonnet 5.5')
     expect(chip.attributes('title')).toBe('claude-sonnet-5-5')
-    expect(chip.classes()).toEqual(expect.arrayContaining(['shrink-0', 'rounded-full', 'font-mono']))
+    expect(chip.classes()).toEqual(expect.arrayContaining(['shrink-0', 'max-w-[8rem]', 'truncate', 'rounded-full', 'font-mono']))
+    expect(chip.classes()).not.toContain('min-w-0')
     const order = [...w.element.children].map((el) => el.getAttribute('data-test'))
     expect(order.indexOf('model-chip')).toBe(order.indexOf('work-tag') + 1)
   })

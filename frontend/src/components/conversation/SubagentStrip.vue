@@ -99,9 +99,9 @@ async function stopAll() {
               <svg v-else-if="entry.status === 'failed'" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="text-diff-del-fg" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" /><line x1="12" y1="10" x2="12" y2="14" /></svg>
               <svg v-else width="13" height="13" viewBox="0 0 24 24" class="text-fg-subtle" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" /></svg>
             </span>
-            <span v-if="entry.kind" class="shrink-0 rounded-full bg-elevated px-2 py-px font-mono text-[0.6875rem] text-fg-muted">{{ entry.kind }}</span>
+            <span v-if="entry.kind" data-test="subagent-kind" :title="entry.kind" class="min-w-0 max-w-[10rem] truncate rounded-full bg-elevated px-2 py-px font-mono text-[0.6875rem] text-fg-muted">{{ entry.kind }}</span>
             <ModelChip v-if="entry.type === 'agent'" :model="entry.model" />
-            <span class="min-w-0 grow truncate text-xs">{{ entry.description }}</span>
+            <span data-test="subagent-desc" class="min-w-0 grow basis-0 truncate text-xs">{{ entry.description }}</span>
             <span
               v-if="clockOf(entry)"
               data-test="subagent-time"
@@ -109,7 +109,7 @@ async function stopAll() {
               :class="clockOf(entry)!.stale ? 'text-secondary-soft' : 'text-fg-subtle'"
               :title="clockOf(entry)!.stale ? 'Sem atividade há algum tempo' : undefined"
             >{{ clockOf(entry)!.text }}</span>
-            <span class="shrink-0 text-[0.6875rem]" :class="entry.status === 'failed' ? 'text-diff-del-fg' : entry.status === 'running' ? 'text-secondary-soft' : 'text-fg-subtle'">{{ stateLabel(entry) }}</span>
+            <span data-test="subagent-state" class="shrink-0 text-[0.6875rem]" :class="entry.status === 'failed' ? 'text-diff-del-fg' : entry.status === 'running' ? 'text-secondary-soft' : 'text-fg-subtle'">{{ stateLabel(entry) }}</span>
           </span>
           <span v-if="entry.lastAction" data-test="subagent-last-action" class="block truncate pl-[21px] font-mono text-[0.6875rem] text-fg-subtle">{{ entry.lastAction }}</span>
         </button>

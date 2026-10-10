@@ -36,6 +36,27 @@ describe('faixa de subagentes', () => {
     expect(chip.attributes('title')).toBe('claude-sonnet-5-5')
   })
 
+  it('em coluna estreita a descrição cede primeiro, depois o tipo; o modelo, o tempo e o estado não encolhem', () => {
+    const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', {
+      kind: 'superpowers:code-reviewer-extra-long', model: 'claude-opus-4-7[1m]', startedAt: 1000, lastActivityAt: 1000,
+    })] } })
+    const row = rows(w)[0]!
+    const kind = row.find('[data-test="subagent-kind"]')
+    const chip = row.find('[data-test="model-chip"]')
+    const desc = row.find('[data-test="subagent-desc"]')
+    // A description with a base of 0 only gets what the others leave, so the chips shrink after it is gone.
+    expect(desc.classes()).toEqual(expect.arrayContaining(['min-w-0', 'grow', 'basis-0', 'truncate']))
+    expect(kind.classes()).toEqual(expect.arrayContaining(['min-w-0', 'max-w-[10rem]', 'truncate']))
+    expect(kind.classes()).not.toContain('shrink-0')
+    expect(chip.classes()).toEqual(expect.arrayContaining(['shrink-0', 'max-w-[8rem]', 'truncate']))
+    expect(kind.attributes('title')).toBe('superpowers:code-reviewer-extra-long')
+    expect(chip.attributes('title')).toBe('claude-opus-4-7[1m]')
+    expect(chip.text()).toBe('Opus 4.7 (1M)')
+    expect(row.find('[data-test="subagent-time"]').classes()).toContain('shrink-0')
+    expect(row.find('[data-test="subagent-state"]').classes()).toContain('shrink-0')
+    expect(row.find('[data-test="subagent-state"]').text()).toBe('Rodando')
+  })
+
   it('sem modelo não desenha o chip', () => {
     const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running')] } })
     expect(w.find('[data-test="model-chip"]').exists()).toBe(false)

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import Collapse from '../Collapse.vue'
@@ -65,5 +68,21 @@ describe('Collapse avisa quando começa a abrir', () => {
     const w = mountCollapse(false, false)
     await w.setProps({ open: true })
     expect(w.find('[data-test="inside"]').exists()).toBe(true)
+  })
+})
+
+// jsdom does no layout, so the rule that keeps long rows from stretching the block is checked in the source:
+// the grid's single column must be `minmax(0, 1fr)`, or its `auto` track grows to the content's width and
+// nothing inside (a truncated description, a chip) ever gets narrower than that.
+describe('Collapse: largura', () => {
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../Collapse.vue'), 'utf8')
+  const rule = (selector: string) => new RegExp(`${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`).exec(source)?.[1] ?? ''
+
+  it('a coluna da grade é minmax(0, 1fr), para o conteúdo poder encolher', () => {
+    expect(rule('.collapse-grid')).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/)
+  })
+
+  it('o conteúdo pode ficar mais estreito que o seu tamanho natural', () => {
+    expect(rule('.collapse-inner')).toMatch(/min-width:\s*0/)
   })
 })

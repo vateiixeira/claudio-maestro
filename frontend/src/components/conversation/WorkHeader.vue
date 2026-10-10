@@ -70,9 +70,9 @@ const rowClass = computed(() => [
   <component :is="as" :type="clickable ? 'button' : undefined" data-test="work-header" :data-kind="kind" :class="rowClass">
     <IconWorkKind data-test="work-icon" :kind="kind" :size="13" :class="iconTone" />
     <span class="cap w-[5.5rem] shrink-0" :class="tone.text">{{ label ?? LABEL[kind] }}</span>
-    <span v-if="tag" data-test="work-tag" class="shrink-0 rounded-full bg-elevated px-2 py-0.5 font-mono text-[0.6875rem] text-fg-muted">{{ tag }}</span>
+    <span v-if="tag" data-test="work-tag" :title="tag" class="min-w-0 max-w-[10rem] truncate rounded-full bg-elevated px-2 py-0.5 font-mono text-[0.6875rem] text-fg-muted">{{ tag }}</span>
     <ModelChip :model="model" />
-    <span data-test="work-desc" class="min-w-0 grow truncate text-[0.8125rem] text-fg" :class="{ 'font-mono': mono }"><slot name="desc">{{ desc }}</slot></span>
+    <span data-test="work-desc" class="min-w-0 grow basis-0 truncate text-[0.8125rem] text-fg" :class="{ 'font-mono': mono }"><slot name="desc">{{ desc }}</slot></span>
     <slot name="trail" />
     <slot name="status"><WorkStatus :status="status" :meta="meta" :elapsed="elapsed" /></slot>
     <slot name="actions" />
