@@ -44,13 +44,13 @@ pnpm --dir frontend e2e        # testes de ponta a ponta no navegador
 scripts/check.sh               # tudo acima de uma vez, como na CI
 ```
 
-A CI roda tudo isso em cada pull request, no Linux e no macOS.
+A CI roda tudo isso em cada pull request: o backend no Linux e no macOS; o frontend e o E2E no Linux.
 
 ### Testes de ponta a ponta (E2E)
 
-Os specs ficam em `frontend/e2e/` e usam o Playwright com o Google Chrome instalado na máquina (não baixam navegador). `pnpm --dir frontend e2e` sobe sozinho um backend descartável (`scripts/e2e_server.py`) na porta 6620, com projetos e conversas de exemplo num diretório temporário: nada toca em `~/.claude`, no seu banco ou no SDK. `MAESTRO_E2E_PORT` troca a porta (nunca a dos serviços nem a do preview). Rode uma execução por vez.
+Os specs ficam em `frontend/e2e/` e usam o Playwright com o Google Chrome instalado na máquina (não baixam navegador). Sem o Google Chrome, rode `pnpm --dir frontend exec playwright install chrome`. `pnpm --dir frontend e2e` sobe sozinho um backend descartável (`scripts/e2e_server.py`), com projetos e conversas de exemplo num diretório temporário: nada toca em `~/.claude`, no seu banco ou no SDK. A porta vai de 6620 a 6659, uma por worktree (calculada a partir da pasta), então execuções de worktrees diferentes não colidem; `MAESTRO_E2E_PORT` força uma (nunca a dos serviços nem a do preview). Numa mesma worktree, rode uma execução por vez.
 
-Para explorar uma tela à mão, suba `uv run python scripts/e2e_server.py` e abra `http://127.0.0.1:6620`. Com o Claude Code, o agente `e2e-tester` faz isso e escreve os specs (o [Playwright CLI](https://github.com/microsoft/playwright-cli) ajuda a descobrir seletores).
+Para explorar uma tela à mão, rode `uv run python scripts/e2e_server.py` de dentro da worktree (ele recusa se o `uv run` servir outro checkout) e abra `http://127.0.0.1:6620`, a porta padrão do servidor manual; pare-o antes de rodar o `pnpm --dir frontend e2e`. Com o Claude Code, o agente `e2e-tester` faz isso e escreve os specs (o [Playwright CLI](https://github.com/microsoft/playwright-cli) ajuda a descobrir seletores).
 
 ## agentd
 
