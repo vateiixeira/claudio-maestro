@@ -66,3 +66,36 @@ describe('formatRunningTime', () => {
     expect(formatRunningTime(-3)).toBe('0 s')
   })
 })
+
+describe('formatModelName', () => {
+  it('família e versão, sem o prefixo claude', async () => {
+    const { formatModelName } = await import('../format')
+    expect(formatModelName('claude-sonnet-5-5')).toBe('Sonnet 5.5')
+    expect(formatModelName('claude-opus-4-7')).toBe('Opus 4.7')
+    expect(formatModelName('claude-sonnet-5')).toBe('Sonnet 5')
+  })
+  it('ignora o sufixo de data e o de contexto', async () => {
+    const { formatModelName } = await import('../format')
+    expect(formatModelName('claude-haiku-4-5-20251001')).toBe('Haiku 4.5')
+    expect(formatModelName('claude-haiku-4-5-20251001')).toBe('Haiku 4.5')
+    expect(formatModelName('claude-opus-4-7[1m]')).toBe('Opus 4.7 (1M)')
+    expect(formatModelName('opus[1m]')).toBe('Opus (1M)')
+  })
+  it('versões antigas com o número antes da família', async () => {
+    const { formatModelName } = await import('../format')
+    expect(formatModelName('claude-3-5-sonnet-20241022')).toBe('Sonnet 3.5')
+    expect(formatModelName('claude-3-opus-20240229')).toBe('Opus 3')
+  })
+  it('apelidos viram só a família', async () => {
+    const { formatModelName } = await import('../format')
+    expect(formatModelName('sonnet')).toBe('Sonnet')
+    expect(formatModelName('opus')).toBe('Opus')
+    expect(formatModelName('haiku')).toBe('Haiku')
+    expect(formatModelName('Sonnet')).toBe('Sonnet')
+  })
+  it('modelo desconhecido volta como veio', async () => {
+    const { formatModelName } = await import('../format')
+    expect(formatModelName('gpt-5')).toBe('gpt-5')
+    expect(formatModelName('inherit')).toBe('inherit')
+  })
+})

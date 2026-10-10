@@ -288,6 +288,7 @@ class ConversationBuilder:
         entry_times: dict[str, int] | None = None,
         task_endings: dict[str, dict[str, Any]] | None = None,
         task_resumes: dict[str, int] | None = None,
+        subagent_models: dict[str, str] | None = None,
     ) -> None:
         """Rebuild items from a saved conversation (`get_session_messages`).
 
@@ -318,6 +319,8 @@ class ConversationBuilder:
         ({task_id: epoch seconds}) lists the SendMessage resumes: one later than the
         subagent's notification means it is running again (live only, as in the stream).
         Cards still running take their real start as the base of SUBAGENT_MAX_SECONDS.
+        `subagent_models` ({tool_use_id: model}, from the subagents' own transcripts) gives
+        the cards the model they ran on, over the one the Agent call asked for.
         """
         tool_results = tool_results or {}
         tool_times = tool_times or {}
@@ -372,6 +375,9 @@ class ConversationBuilder:
                 times = tool_times.get(item.tool_use_id) or {}
                 item.subagent["started_at"] = times.get("started_at")
                 item.subagent["last_activity_at"] = times.get("ended_at")
+                model = (subagent_models or {}).get(item.tool_use_id)
+                if model:
+                    item.subagent["model"] = model
         self._apply_task_endings(task_endings or {}, task_resumes or {}, live)
         for item in self.items:
             if not isinstance(item, ToolItem) or item.subagent is None:
@@ -557,6 +563,9 @@ class ConversationBuilder:
                 "last_activity": None,
                 "usage": None,
                 "summary": None,
+                # The model it runs on: the one the Agent call asked for until its first
+                # message names the real one.
+                "model": None,
                 "started_at": now,
                 "last_activity_at": now,
             }
@@ -566,6 +575,11 @@ class ConversationBuilder:
             sub["subagent_type"] = item.input["subagent_type"]
         if sub["description"] is None and isinstance(item.input.get("description"), str):
             sub["description"] = item.input["description"]
+        if sub["model"] is None:
+            asked = item.input.get("model")
+            # "inherit" (the default) names no model: wait for the subagent's own messages.
+            if isinstance(asked, str) and asked.strip() and asked.strip().lower() != "inherit":
+                sub["model"] = asked.strip()
         return sub
 
     def _notice(self, level: NoticeLevel, text: str) -> Event:
@@ -671,6 +685,7 @@ class ConversationBuilder:
         events: list[Event] = []
         if parent is not None:
             events.extend(self._note_alive(parent))
+            events.extend(self._note_model(parent, message.model))
         for block in message.content:
             if (
                 stream is not None
@@ -685,6 +700,17 @@ class ConversationBuilder:
             self._next_index[message_id] = max(self._next_index.get(message_id, 0), index + 1)
             events.extend(self._apply_block(block, f"{message_id}:{index}", parent))
         return events
+
+    def _note_model(self, tool_use_id: str, model: str) -> list[Event]:
+        """A message of the subagent names the model it really runs on."""
+        state = self._subagents.get(tool_use_id)
+        tool = self._tool_item(tool_use_id)
+        if state is None or tool is None or not model or model == "<synthetic>":
+            return []
+        if state["model"] == model:
+            return []
+        state["model"] = model
+        return [self._put(tool)]
 
     def _apply_block(self, block: Any, item_id: str, parent: str | None) -> list[Event]:
         if isinstance(block, TextBlock):

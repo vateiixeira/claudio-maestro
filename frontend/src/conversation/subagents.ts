@@ -3,7 +3,7 @@ import type { ConversationItem, SubagentStatus, ToolItem } from '../types/conver
 import { formatElapsedShort } from '../format'
 import { backgroundState } from './background'
 import { AGENT_TOOLS } from './turns'
-import { str, toolLabel } from './tool'
+import { askedModel, str, toolLabel } from './tool'
 
 /** Where the user asked to go from the subagent strip: the card and the cards to open on the way. */
 export interface SubagentFocus {
@@ -24,6 +24,8 @@ export interface SubagentEntry {
   /** Unix seconds; null for a command and when the history does not say. */
   startedAt: number | null
   lastActivityAt: number | null
+  /** The model of a subagent (id or alias); null for a command and when unknown. */
+  model?: string | null
 }
 
 /** A running subagent with no activity for this long is flagged. */
@@ -120,6 +122,7 @@ export function deriveSubagents(items: ConversationItem[], sessionActive: boolea
         lastAction: action ? describeAction(action) : item.subagent?.last_activity ?? '',
         startedAt: item.subagent?.started_at ?? null,
         lastActivityAt: item.subagent?.last_activity_at ?? null,
+        model: item.subagent?.model || askedModel(item.input),
       })
       return
     }
@@ -135,6 +138,7 @@ export function deriveSubagents(items: ConversationItem[], sessionActive: boolea
       lastAction: '',
       startedAt: null,
       lastActivityAt: null,
+      model: null,
     })
   })
   return entries

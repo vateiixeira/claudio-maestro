@@ -116,6 +116,23 @@ describe('WorkBlock: linhas', () => {
   })
 })
 
+describe('WorkBlock: modelo do subagente', () => {
+  it('a linha do subagente mostra o modelo ao lado do tipo', () => {
+    const sub = { task_id: 't', subagent_type: 'Explore', description: 'achar', status: 'completed' as const, last_activity: null, usage: null, summary: null, model: 'claude-haiku-4-5-20251001' }
+    const w = mountBlock({ items: [tool('a', 'Agent', {}, { subagent: sub }), tool('r', 'Read', { file_path: '/p/a.py' })] })
+    const [agent, read] = rows(w)
+    expect(agent!.find('[data-test="model-chip"]').text()).toBe('Haiku 4.5')
+    expect(read!.find('[data-test="model-chip"]').exists()).toBe(false)
+  })
+})
+
+describe('WorkBlock: modelo "inherit"', () => {
+  it('a linha do subagente não mostra chip para o modelo "inherit" da chamada', () => {
+    const w = mountBlock({ items: [tool('a', 'Agent', { model: 'inherit' }), tool('r', 'Read', { file_path: '/p/a.py' })] })
+    expect(w.find('[data-test="model-chip"]').exists()).toBe(false)
+  })
+})
+
 describe('WorkBlock: card aberto de cada tipo', () => {
   const sub = { task_id: 't', subagent_type: 'Explore', description: 'achar o bug', status: 'completed' as const, last_activity: null, usage: null, summary: 'achei' }
   it.each([

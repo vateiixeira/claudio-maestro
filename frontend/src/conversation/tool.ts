@@ -31,6 +31,15 @@ export function str(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+/**
+ * The model an Agent call asked for, as the fallback until the subagent's own messages name the
+ * real one. "inherit" (the default) says nothing, so it gives null.
+ */
+export function askedModel(input: Record<string, unknown>): string | null {
+  const model = str(input.model).trim()
+  return model && model.toLowerCase() !== 'inherit' ? model : null
+}
+
 /** "servidor · ferramenta" for MCP tools (`mcp__server__tool`); other names unchanged. */
 export function toolLabel(name: string): string {
   const match = /^mcp__(.+?)__(.+)$/.exec(name)

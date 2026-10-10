@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import sqlite3
+import stat
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import closing
@@ -68,6 +69,9 @@ class Transcript:
     task_endings: dict[str, dict[str, Any]] = field(default_factory=dict)
     # {task_id: epoch seconds} of the latest SendMessage that resumed that subagent.
     task_resumes: dict[str, int] = field(default_factory=dict)
+    # {tool_use_id: model} of the subagents, from the files next to the session file
+    # (`<session>/subagents/agent-*.jsonl` and `.meta.json`).
+    subagent_models: dict[str, str] = field(default_factory=dict)
 
 
 # read_transcript(session_id, directory) -> Transcript, or None when there is no file.
@@ -349,11 +353,130 @@ def _lines(path: Path):
                 yield line, complete
 
 
-def read_transcript_file(path: Path) -> Transcript:
+SUBAGENT_MODEL_SCAN_LINES = 200
+# Limits for reading the files of a subagent folder, which the CLI writes but anything can change.
+SUBAGENT_FILES_MAX = 500
+SUBAGENT_META_MAX_BYTES = 64 * 1024
+SUBAGENT_TRANSCRIPT_BUDGET = 1024 * 1024
+SUBAGENT_LINE_MAX_BYTES = 64 * 1024
+
+
+def _open_regular(path: Path) -> int | None:
+    """File descriptor of a regular file, never following a symlink (nor waiting on a FIFO);
+    None for anything else. Checked after opening, so the file cannot change in between."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            return None
+    except OSError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def _is_real_dir(path: Path) -> bool:
+    try:
+        return stat.S_ISDIR(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
+def _read_small_json(path: Path) -> Any:
+    """The JSON of a regular file of at most SUBAGENT_META_MAX_BYTES; None otherwise."""
+    fd = _open_regular(path)
+    if fd is None:
+        return None
+    with os.fdopen(fd, "rb") as file:
+        data = file.read(SUBAGENT_META_MAX_BYTES + 1)
+    if len(data) > SUBAGENT_META_MAX_BYTES:
+        return None
+    return json.loads(data.decode("utf-8", errors="replace"))
+
+
+def _first_assistant_model(path: Path) -> str | None:
+    """Model of the first real assistant message of a subagent's transcript, or None.
+    Reads at most SUBAGENT_MODEL_SCAN_LINES lines and SUBAGENT_TRANSCRIPT_BUDGET bytes; a line
+    longer than SUBAGENT_LINE_MAX_BYTES is skipped."""
+    fd = _open_regular(path)
+    if fd is None:
+        return None
+    spent = 0
+    lines = 0
+    with os.fdopen(fd, "rb") as file:
+        while lines < SUBAGENT_MODEL_SCAN_LINES and spent < SUBAGENT_TRANSCRIPT_BUDGET:
+            chunk = file.readline(SUBAGENT_LINE_MAX_BYTES + 1)
+            if not chunk:
+                break
+            spent += len(chunk)
+            if not chunk.endswith(b"\n") and len(chunk) > SUBAGENT_LINE_MAX_BYTES:
+                # Too long: drop the rest of this line.
+                while spent < SUBAGENT_TRANSCRIPT_BUDGET:
+                    rest = file.readline(SUBAGENT_LINE_MAX_BYTES)
+                    spent += len(rest)
+                    if not rest or rest.endswith(b"\n"):
+                        break
+                lines += 1
+                continue
+            lines += 1
+            if b'"assistant"' not in chunk:
+                continue
+            try:
+                entry = json.loads(chunk.decode("utf-8", errors="replace"))
+            except ValueError:
+                continue
+            if not isinstance(entry, dict) or entry.get("type") != "assistant":
+                continue
+            message = entry.get("message")
+            model = message.get("model") if isinstance(message, dict) else None
+            if isinstance(model, str) and model and model != "<synthetic>":
+                return model
+    return None
+
+
+def read_subagent_models(session_file: Path) -> dict[str, str]:
+    """{tool_use_id: model} of the subagents of a session. The model of the first message the
+    subagent wrote wins; the `model` of its `.meta.json` (often an alias like "sonnet") is the
+    fallback. Symlinks, special files, oversized files and odd content are left out, and no
+    failure here reaches the caller: the history loads without the models."""
+    models: dict[str, str] = {}
+    session_dir = session_file.parent / session_file.stem
+    folder = session_dir / "subagents"
+    if not _is_real_dir(session_dir) or not _is_real_dir(folder):
+        return models
+    try:
+        with os.scandir(folder) as it:
+            metas = sorted(
+                entry.name for entry in it
+                if entry.name.startswith("agent-") and entry.name.endswith(".meta.json")
+            )[:SUBAGENT_FILES_MAX]
+    except OSError:
+        return models
+    for name in metas:
+        try:
+            meta = _read_small_json(folder / name)
+            tool_use_id = meta.get("toolUseId") if isinstance(meta, dict) else None
+            if not isinstance(tool_use_id, str) or not tool_use_id:
+                continue
+            model = _first_assistant_model(folder / (name.removesuffix(".meta.json") + ".jsonl"))
+            if model is None and isinstance(meta.get("model"), str) and meta["model"]:
+                model = meta["model"]
+            if model is not None:
+                models[tool_use_id] = model
+        except Exception:  # noqa: BLE001  (RecursionError, bad bytes...: never drop the history)
+            logger.warning("Não foi possível ler o subagente %s", folder / name, exc_info=True)
+    return models
+
+
+def read_transcript_file(path: Path, *, with_subagents: bool = False) -> Transcript:
     """Messages, tool results, corrupt lines and compact summaries in one pass.
 
     The main chain is built with the SDK's own helpers, so the messages match
-    `get_session_messages`.
+    `get_session_messages`. `with_subagents` also reads the models of the subagents (the folder
+    next to the file); the digest, which does not show them, leaves it off.
     """
     from claude_agent_sdk._internal.sessions import (
         _build_conversation_chain,
@@ -400,14 +523,15 @@ def read_transcript_file(path: Path) -> Transcript:
         entry_times=entry_times,
         task_endings=endings,
         task_resumes=resumes,
+        subagent_models=read_subagent_models(path) if with_subagents else {},
     )
 
 
-def read_transcript_at(path: Path | None) -> Transcript | None:
+def read_transcript_at(path: Path | None, *, with_subagents: bool = False) -> Transcript | None:
     if path is None:
         return None
     try:
-        return read_transcript_file(path)
+        return read_transcript_file(path, with_subagents=with_subagents)
     except FileNotFoundError:
         return None
 
@@ -428,7 +552,7 @@ def sdk_read_transcript(session_id: str, directory: str) -> Transcript | None:
         path = None
     if path is None:
         return _public_transcript(session_id, directory)
-    return read_transcript_at(path)
+    return read_transcript_at(path, with_subagents=True)
 
 
 def _public_transcript(session_id: str, directory: str) -> Transcript:

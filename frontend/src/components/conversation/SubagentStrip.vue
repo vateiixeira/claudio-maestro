@@ -6,6 +6,7 @@ import { subagentClock, summarizeSubagents, type SubagentEntry } from '../../con
 import { useMinuteClock } from '../../minuteClock'
 import type { SubagentStatus } from '../../types/conversation'
 import IconChevron from '../icons/IconChevron.vue'
+import ModelChip from './ModelChip.vue'
 
 // Strip above the message field while a subagent or background command runs. Above this many, only a summary.
 const LIST_LIMIT = 3
@@ -99,6 +100,7 @@ async function stopAll() {
               <svg v-else width="13" height="13" viewBox="0 0 24 24" class="text-fg-subtle" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" /></svg>
             </span>
             <span v-if="entry.kind" class="shrink-0 rounded-full bg-elevated px-2 py-px font-mono text-[0.6875rem] text-fg-muted">{{ entry.kind }}</span>
+            <ModelChip v-if="entry.type === 'agent'" :model="entry.model" />
             <span class="min-w-0 grow truncate text-xs">{{ entry.description }}</span>
             <span
               v-if="clockOf(entry)"

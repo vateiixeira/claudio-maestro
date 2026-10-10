@@ -60,3 +60,25 @@ export function formatRunningTime(seconds: number): string {
   const minutes = Math.floor((total % 3600) / 60)
   return minutes ? `${Math.floor(total / 3600)} h ${minutes} min` : `${Math.floor(total / 3600)} h`
 }
+
+const MODEL_FAMILIES = ['sonnet', 'opus', 'haiku']
+const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
+
+/**
+ * A model id as people say it: "claude-sonnet-5-5" -> "Sonnet 5.5", "claude-haiku-4-5-20251001"
+ * -> "Haiku 4.5", "claude-opus-4-7[1m]" -> "Opus 4.7 (1M)", the alias "opus" -> "Opus".
+ * An id it does not recognize comes back as it is.
+ */
+export function formatModelName(model: string): string {
+  const context = /\[(\d+m)\]$/i.exec(model.trim())
+  const suffix = context ? ` (${context[1]!.toUpperCase()})` : ''
+  const id = model.trim().toLowerCase().replace(/\[[^\]]*\]$/, '').replace(/^claude-/, '').replace(/-\d{8}$/, '')
+  if (MODEL_FAMILIES.includes(id)) return capitalize(id) + suffix
+  // "sonnet-5-5", "opus-4-7"
+  const current = /^(sonnet|opus|haiku)-(\d+)(?:-(\d+))?$/.exec(id)
+  if (current) return `${capitalize(current[1]!)} ${current[3] ? `${current[2]}.${current[3]}` : current[2]}${suffix}`
+  // "3-5-sonnet", "3-opus"
+  const legacy = /^(\d+)(?:-(\d+))?-(sonnet|opus|haiku)$/.exec(id)
+  if (legacy) return `${capitalize(legacy[3]!)} ${legacy[2] ? `${legacy[1]}.${legacy[2]}` : legacy[1]}${suffix}`
+  return model
+}

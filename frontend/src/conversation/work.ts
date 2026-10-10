@@ -2,7 +2,7 @@ import type { ToolItem } from '../types/conversation'
 import { backgroundState } from './background'
 import { diffCounts, toolDiff } from './diff'
 import { agentStatus } from './subagents'
-import { countLines, resultText, str, toolLabel } from './tool'
+import { askedModel, countLines, resultText, str, toolLabel } from './tool'
 import { AGENT_TOOLS, EDIT_TOOLS, SEARCH_TOOLS, toolRunning, type NodeKind } from './turns'
 
 // What a work block (the actions between two statements) says about each of its actions.
@@ -48,6 +48,8 @@ export interface WorkRow {
   label?: string
   /** Chip before the description: the search tool, the subagent type. */
   tag?: string
+  /** The model of a subagent, shown in a chip after the tag. */
+  model?: string | null
   desc: string
   /** The description is a path or a command: monospaced. */
   mono: boolean
@@ -105,6 +107,7 @@ export function workRow(item: ToolItem, sessionActive: boolean, waiting?: Readon
     if (description && command) row.command = command
   } else if (kind === 'agent') {
     row.tag = item.subagent?.subagent_type || str(input.subagent_type) || undefined
+    row.model = item.subagent?.model || askedModel(input)
     row.desc = item.subagent?.description || str(input.description)
     row.mono = false
   } else {

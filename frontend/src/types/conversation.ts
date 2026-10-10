@@ -70,6 +70,8 @@ export interface Subagent {
   /** When the subagent started and when it was last active (Unix seconds); null when the history does not say. */
   started_at?: number | null
   last_activity_at?: number | null
+  /** The model it runs on (an id like "claude-sonnet-5-5", or the alias the call asked for); null until known. */
+  model?: string | null
 }
 
 export interface NoticeItem {

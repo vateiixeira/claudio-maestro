@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import IconChevron from '../icons/IconChevron.vue'
+import ModelChip from './ModelChip.vue'
 import IconWorkKind from '../icons/IconWorkKind.vue'
 import WorkStatus from './WorkStatus.vue'
 
@@ -14,6 +15,8 @@ const props = withDefaults(
     label?: string
     /** A small chip before the description (the subagent type, the search tool). */
     tag?: string
+    /** The model of a subagent, in a smaller chip after the tag. */
+    model?: string | null
     desc: string
     status: 'ok' | 'running' | 'waiting' | 'error' | 'stopped' | 'idle'
     meta?: string
@@ -68,6 +71,7 @@ const rowClass = computed(() => [
     <IconWorkKind data-test="work-icon" :kind="kind" :size="13" :class="iconTone" />
     <span class="cap w-[5.5rem] shrink-0" :class="tone.text">{{ label ?? LABEL[kind] }}</span>
     <span v-if="tag" data-test="work-tag" class="shrink-0 rounded-full bg-elevated px-2 py-0.5 font-mono text-[0.6875rem] text-fg-muted">{{ tag }}</span>
+    <ModelChip :model="model" />
     <span data-test="work-desc" class="min-w-0 grow truncate text-[0.8125rem] text-fg" :class="{ 'font-mono': mono }"><slot name="desc">{{ desc }}</slot></span>
     <slot name="trail" />
     <slot name="status"><WorkStatus :status="status" :meta="meta" :elapsed="elapsed" /></slot>

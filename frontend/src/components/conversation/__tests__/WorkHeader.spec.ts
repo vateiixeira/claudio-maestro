@@ -9,6 +9,7 @@ type Props = {
   status: 'ok' | 'running' | 'error' | 'stopped' | 'idle'
   label?: string
   tag?: string
+  model?: string | null
   meta?: string
   elapsed?: string
   open?: boolean
@@ -104,6 +105,18 @@ describe('WorkHeader: conteúdo', () => {
     const tag = mountHeader({ tag: 'Explore' }).find('[data-test="work-tag"]')
     expect(tag.text()).toBe('Explore')
     expect(tag.classes()).toEqual(expect.arrayContaining(['rounded-full', 'bg-elevated', 'font-mono', 'text-[0.6875rem]']))
+  })
+
+  it('model é um chip discreto depois do tag, com o id completo na dica; sem model, nada', () => {
+    expect(mountHeader({ tag: 'Explore' }).find('[data-test="model-chip"]').exists()).toBe(false)
+    expect(mountHeader({ tag: 'Explore', model: null }).find('[data-test="model-chip"]').exists()).toBe(false)
+    const w = mountHeader({ tag: 'Explore', model: 'claude-sonnet-5-5' })
+    const chip = w.find('[data-test="model-chip"]')
+    expect(chip.text()).toBe('Sonnet 5.5')
+    expect(chip.attributes('title')).toBe('claude-sonnet-5-5')
+    expect(chip.classes()).toEqual(expect.arrayContaining(['shrink-0', 'rounded-full', 'font-mono']))
+    const order = [...w.element.children].map((el) => el.getAttribute('data-test'))
+    expect(order.indexOf('model-chip')).toBe(order.indexOf('work-tag') + 1)
   })
 
   it('o estado fica à direita e recebe meta e tempo', () => {

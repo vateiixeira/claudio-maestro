@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
 import { agentStatus, SUBAGENT_FOCUS_KEY } from '../../conversation/subagents'
-import { str } from '../../conversation/tool'
+import { askedModel, str } from '../../conversation/tool'
 import type { SubagentStatus, ToolItem } from '../../types/conversation'
 import IconChevron from '../icons/IconChevron.vue'
 import WorkHeader from './WorkHeader.vue'
@@ -21,6 +21,7 @@ const sub = computed(() => props.item.subagent ?? null)
 const status = computed<SubagentStatus>(() => agentStatus(props.item, props.sessionActive ?? false))
 const headerStatus = computed(() => HEADER_STATUS[status.value])
 const kind = computed(() => sub.value?.subagent_type || str(props.item.input.subagent_type))
+const model = computed(() => sub.value?.model || askedModel(props.item.input))
 const description = computed(() => sub.value?.description || str(props.item.input.description))
 
 // Collapsed by default, running or not; only the user (or the strip) opens it.
@@ -68,7 +69,7 @@ const metrics = computed(() => {
       highlighted ? 'ring-2 ring-primary' : '',
     ]"
   >
-    <WorkHeader v-if="!headless" kind="agent" :tag="kind || undefined" :desc="description" :status="headerStatus" :tint="false" />
+    <WorkHeader v-if="!headless" kind="agent" :tag="kind || undefined" :model="model" :desc="description" :status="headerStatus" :tint="false" />
     <div v-if="(status === 'running' && sub?.last_activity) || metrics.length || sub?.summary" class="flex flex-col gap-1.5 px-3 pb-2.5" :class="{ 'pt-2.5': headless }">
       <p v-if="status === 'running' && sub?.last_activity" class="m-0 truncate font-mono text-xs text-secondary-soft">{{ sub.last_activity }}</p>
       <p v-if="metrics.length" class="m-0 font-mono text-xs text-fg-subtle">{{ metrics.join(' · ') }}</p>

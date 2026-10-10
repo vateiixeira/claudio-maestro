@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- Cada subagente mostra o modelo que está usando (por exemplo, "Sonnet 5.5"), ao lado do tipo, no cartão e na faixa de subagentes em execução. No histórico, o modelo aparece quando a conversa guardou o transcrito do subagente.
+
 ## [0.6.0] - 2026-10-08
 
 Claude do sistema com atualização pelo próprio app, aviso de versão nova do Claude no menu lateral e a marcação Descartar para tirar conversas das listas.

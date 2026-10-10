@@ -40,6 +40,31 @@ describe('deriveSubagents', () => {
     expect(without).toMatchObject({ startedAt: null, lastActivityAt: null })
   })
 
+  it('leva o modelo do subagente; sem dado, null', () => {
+    const modeled = agent('a', 'running', { subagent: sub('running', { model: 'claude-sonnet-5-5' }) })
+    const [withModel, without] = deriveSubagents([user('u'), modeled, agent('b', 'running')], true)
+    expect(withModel!.model).toBe('claude-sonnet-5-5')
+    expect(without!.model).toBeNull()
+  })
+
+  it('sem o objeto do subagente, usa o modelo pedido na chamada', () => {
+    const asked = agent('a', null, { input: { subagent_type: 'reviewer', description: 'x', model: 'haiku' } })
+    expect(deriveSubagents([user('u'), asked], true)[0]!.model).toBe('haiku')
+  })
+
+  it.each(['inherit', 'INHERIT', ''])('o modelo "%s" da chamada não vira chip', (value) => {
+    const asked = agent('a', null, { input: { subagent_type: 'reviewer', description: 'x', model: value } })
+    expect(deriveSubagents([user('u'), asked], true)[0]!.model).toBeNull()
+  })
+
+  it('comando em background não tem modelo nem tempo', () => {
+    const bg: ToolItem = {
+      type: 'tool', id: 'c', tool_use_id: 'tu-c', name: 'Bash', input: { command: 'sleep 9', run_in_background: true },
+      result: null, streaming: false, parent_tool_use_id: null, background: { task_id: 't', status: 'running', summary: null },
+    }
+    expect(deriveSubagents([user('u'), bg], true)[0]).toMatchObject({ type: 'command', model: null })
+  })
+
   it('comando em background não tem tempo', () => {
     const bg: ToolItem = {
       type: 'tool', id: 'c', tool_use_id: 'tu-c', name: 'Bash', input: { command: 'sleep 9', run_in_background: true },

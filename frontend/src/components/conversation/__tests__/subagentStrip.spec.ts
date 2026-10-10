@@ -6,7 +6,7 @@ import SubagentStrip from '../SubagentStrip.vue'
 import type { SubagentEntry } from '../../../conversation/subagents'
 
 const entry = (id: string, status: SubagentEntry['status'], extra: Partial<SubagentEntry> = {}): SubagentEntry => ({
-  id, type: 'agent', kind: 'reviewer', description: `desc ${id}`, status, lastAction: `Read ${id}.py`, startedAt: null, lastActivityAt: null, ...extra,
+  id, type: 'agent', kind: 'reviewer', description: `desc ${id}`, status, lastAction: `Read ${id}.py`, startedAt: null, lastActivityAt: null, model: null, ...extra,
 })
 const rows = (w: ReturnType<typeof mount>) => w.findAll('[data-test="subagent-row"]')
 
@@ -27,6 +27,23 @@ describe('faixa de subagentes', () => {
     expect(first.find('[data-status="running"]').attributes('aria-label')).toBe('Rodando')
     expect(rows(w)[1]!.find('[data-status="completed"]').attributes('aria-label')).toBe('Concluído')
     expect(rows(w)[2]!.find('[data-status="failed"]').attributes('aria-label')).toBe('Com erro')
+  })
+
+  it('mostra o modelo ao lado do tipo, com o id completo na dica', () => {
+    const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { model: 'claude-sonnet-5-5' })] } })
+    const chip = rows(w)[0]!.find('[data-test="model-chip"]')
+    expect(chip.text()).toBe('Sonnet 5.5')
+    expect(chip.attributes('title')).toBe('claude-sonnet-5-5')
+  })
+
+  it('sem modelo não desenha o chip', () => {
+    const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running')] } })
+    expect(w.find('[data-test="model-chip"]').exists()).toBe(false)
+  })
+
+  it('comando não leva chip de modelo', () => {
+    const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { type: 'command', kind: 'Comando', model: 'sonnet' })] } })
+    expect(w.find('[data-test="model-chip"]').exists()).toBe(false)
   })
 
   it('estado parado tem rótulo próprio', () => {

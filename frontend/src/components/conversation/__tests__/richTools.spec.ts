@@ -38,6 +38,25 @@ describe('subagente', () => {
     expect(header.find('[data-test="work-desc"]').text()).toBe('Mapear rotas')
   })
 
+  it('o cartão mostra o modelo do subagente ao lado do tipo; sem modelo, sem chip', () => {
+    const w = mount(ConversationBlock, { props: { item: tool('Agent', { description: 'x' }, { subagent: sub({ model: 'claude-opus-4-7' }) }) } })
+    const chip = w.find('[data-test="subagent-card"] [data-test="model-chip"]')
+    expect(chip.text()).toBe('Opus 4.7')
+    expect(chip.attributes('title')).toBe('claude-opus-4-7')
+    const bare = mount(ConversationBlock, { props: { item: tool('Agent', { description: 'x' }, { subagent: sub() }) } })
+    expect(bare.find('[data-test="model-chip"]').exists()).toBe(false)
+  })
+
+  it('sem o objeto do subagente, usa o modelo pedido na chamada', () => {
+    const w = mount(ConversationBlock, { props: { item: tool('Agent', { description: 'x', model: 'haiku' }) } })
+    expect(w.find('[data-test="subagent-card"] [data-test="model-chip"]').text()).toBe('Haiku')
+  })
+
+  it('o modelo "inherit" da chamada não vira chip', () => {
+    const w = mount(ConversationBlock, { props: { item: tool('Agent', { description: 'x', model: 'inherit' }) } })
+    expect(w.find('[data-test="model-chip"]').exists()).toBe(false)
+  })
+
   it('mostra tipo, descrição, atividade, métricas e resumo', () => {
     const w = mount(ConversationBlock, { props: { item: tool('Task', {}, { subagent: sub({ status: 'completed', summary: 'Achei 3 rotas' }) }) } })
     const t = w.text()

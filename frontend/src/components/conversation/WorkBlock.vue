@@ -88,6 +88,7 @@ watch(focus, (target) => {
             :kind="row.kind"
             :label="row.label"
             :tag="row.tag"
+            :model="row.model"
             :desc="row.desc"
             :mono="row.mono"
             :status="row.status"
