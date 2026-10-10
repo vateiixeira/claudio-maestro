@@ -7,6 +7,8 @@ __pycache__/
 # Node
 node_modules/
 frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
 
 # Dados locais
 *.sqlite3
