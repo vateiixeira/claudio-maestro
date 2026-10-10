@@ -297,3 +297,74 @@ def test_sigterm_becomes_keyboard_interrupt():
             signal.raise_signal(signal.SIGTERM)
     finally:
         signal.signal(signal.SIGTERM, previous)
+
+
+# check_same_checkout -----------------------------------------------------------
+
+
+def test_same_checkout_refuses_a_different_repo_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(e2e.cli, "REPO_ROOT", tmp_path)
+
+    with pytest.raises(e2e.E2EError, match="checkout diferente"):
+        e2e.check_same_checkout()
+
+
+def test_same_checkout_accepts_the_script_repo_root(monkeypatch):
+    monkeypatch.setattr(e2e.cli, "REPO_ROOT", SCRIPT.parents[1])
+
+    e2e.check_same_checkout()
+
+
+def test_same_checkout_compares_resolved_paths(tmp_path, monkeypatch):
+    link = tmp_path / "link"
+    link.symlink_to(SCRIPT.parents[1])
+    monkeypatch.setattr(e2e.cli, "REPO_ROOT", link)
+
+    e2e.check_same_checkout()
+
+
+# main ----------------------------------------------------------------------------
+
+
+def test_main_refuses_a_different_checkout_before_building(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(e2e.cli, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        e2e.cli, "needs_build", lambda frontend: pytest.fail("compilou o frontend")
+    )
+
+    assert e2e.main() == 1
+    assert "checkout diferente" in capsys.readouterr().err
+
+
+def test_main_handles_sigterm_before_seeding(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(e2e, "check_same_checkout", lambda: None)
+    monkeypatch.setattr(e2e.cli, "needs_build", lambda frontend: False)
+    monkeypatch.setattr(e2e, "stop_on_sigterm", lambda: calls.append("sigterm"))
+    monkeypatch.setattr(e2e, "seed", lambda root: calls.append("seed"))
+    monkeypatch.setattr(e2e, "serve", lambda port: calls.append("serve"))
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+
+    assert e2e.main() == 0
+    assert calls == ["sigterm", "seed", "serve"]
+
+
+def test_main_cleans_the_temporary_folder_when_interrupted_while_seeding(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "maestro-e2e-fake"
+    root.mkdir()
+    monkeypatch.setattr(e2e, "check_same_checkout", lambda: None)
+    monkeypatch.setattr(e2e.cli, "needs_build", lambda frontend: False)
+    monkeypatch.setattr(e2e.tempfile, "mkdtemp", lambda prefix: str(root))
+    monkeypatch.setattr(e2e, "stop_on_sigterm", lambda: None)
+    monkeypatch.setattr(e2e, "serve", lambda port: pytest.fail("serviu depois de interrompido"))
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+
+    def interrupted(path):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(e2e, "seed", interrupted)
+
+    assert e2e.main() == 1
+    assert not root.exists()

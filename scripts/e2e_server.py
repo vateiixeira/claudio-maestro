@@ -3,7 +3,9 @@
 
 Cria um diretório temporário, aponta home, dados e conversas para dentro dele, semeia
 projetos e conversas gravadas e serve o frontend compilado numa porta própria (6620 por
-padrão, `MAESTRO_E2E_PORT` troca). Nada toca em `~/.claude`, no banco real ou no SDK.
+padrão quando chamado à mão; `MAESTRO_E2E_PORT` troca). O Playwright (`pnpm --dir frontend e2e`)
+escolhe uma porta de 6620 a 6659 por worktree e a passa por essa variável. Nada toca em
+`~/.claude`, no banco real ou no SDK.
 
     uv run python scripts/e2e_server.py
 """
@@ -77,6 +79,21 @@ SCENARIO = [
 
 class E2EError(Exception):
     """A problem explained to the user (in Portuguese)."""
+
+
+def check_same_checkout() -> None:
+    """Refuse to run when the installed `claudio_maestro` serves another checkout.
+
+    The server compiles and serves the frontend of `cli.REPO_ROOT`; started from a worktree
+    whose `uv run` resolves to the main checkout, it would test the wrong code.
+    """
+    script_root = Path(__file__).resolve().parents[1]
+    if Path(cli.REPO_ROOT).resolve() != script_root:
+        raise E2EError(
+            "O servidor de E2E foi chamado de um checkout diferente do que o `claudio_maestro` "
+            f"instalado serve ({cli.REPO_ROOT} em vez de {script_root}). "
+            "Rode `uv run` de dentro da pasta do script."
+        )
 
 
 def e2e_port(environ: Mapping[str, str]) -> int:
@@ -305,6 +322,7 @@ def serve(port: int) -> None:
 
 def main() -> int:
     try:
+        check_same_checkout()
         port = e2e_port(os.environ)
     except E2EError as exc:
         print(f"e2e_server: {exc}", file=sys.stderr)
@@ -319,15 +337,17 @@ def main() -> int:
         return 1
     root = Path(tempfile.mkdtemp(prefix="maestro-e2e-")).resolve()
     try:
+        stop_on_sigterm()  # before the seed, so a SIGTERM while seeding still cleans `root`
         env = isolated_env(os.environ, root, port)
         os.environ.clear()
         os.environ.update(env)
         seed(root)
-        stop_on_sigterm()
         serve(port)
         return 0
     except E2EError as exc:
         print(f"e2e_server: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
         return 1
     finally:
         shutil.rmtree(root, ignore_errors=True)
