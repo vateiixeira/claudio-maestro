@@ -43,13 +43,14 @@ uv run pytest                                                                   
 uv run ruff check                                                                                   # lint do backend
 pnpm --dir frontend test                                                                            # testes do frontend
 pnpm --dir frontend build                                                                           # compilação do frontend
+pnpm --dir frontend e2e                                                                             # testes E2E no navegador (Playwright, Chrome do sistema, backend isolado na 6620)
 scripts/check.sh                                                                                    # tudo o que a CI roda: lint, testes e compilação
 uv run python scripts/sdk_smoke.py                                                                  # teste manual contra o SDK real (consome assinatura ou créditos)
 ```
 
 ## Regras
 
-- Escreva os testes antes do código que eles cobrem.
+- Escreva os testes antes do código que eles cobrem. Fluxo novo de tela ganha também um spec em `frontend/e2e/`.
 - No frontend use só `pnpm` (`pnpm --dir frontend test`, `pnpm --dir frontend exec vitest ...`). Nunca `npx` nem `yarn`: o `npx` já criou arquivos do Yarn PnP em `frontend/` e quebrou a compilação.
 - Textos da interface e documentação em português brasileiro. Código e identificadores em inglês.
 - Não use a marca "Claude Code" na interface.
@@ -84,11 +85,11 @@ Testes manuais contra o SDK real consomem a assinatura ou os créditos de quem r
 
 ## Agentes
 
-`.claude/agents/` tem três agentes para quem contribui com o Claude Code: `implementer` (implementa com testes antes), `reviewer` (revisa uma tarefa) e `milestone-reviewer` (revisão profunda de um conjunto de mudanças). Subagentes não fazem commit.
+`.claude/agents/` tem quatro agentes para quem contribui com o Claude Code: `implementer` (implementa com testes antes), `reviewer` (revisa uma tarefa), `milestone-reviewer` (revisão profunda de um conjunto de mudanças) e `e2e-tester` (testa o frontend no navegador, escreve os specs de `frontend/e2e/` e devolve APROVADO ou REPROVADO). Subagentes não fazem commit.
 
 Os revisores não alteram o repositório: não têm `Edit`, e o `Write` fica para reproduções no scratchpad. O `reviewer` roda em Sonnet; quando a tarefa toca uma área crítica, chame-o com `model: "opus"`. Áreas críticas:
 
 - `security.py` (Host, Origin, validação de caminhos) e todo código que recebe caminhos ou chama `resolve_within`/`is_within` (hoje `fs.py`, `filesearch.py`, `history.py`, `projects.py`, `api/fs.py`, `api/git.py`, `api/plans.py` e `api/editor.py`).
-- Todo código que inicia processos: `gitinfo.py` (o `run_git`), `gitfetch.py`, `worktree.py`, `picker.py`, `claudecli.py`, `api/claude_cli.py`, `api/editor.py`, `cli.py`, `agent/` e `agentd/` (inclusive o socket e o ciclo de vida das sessões).
+- Todo código que inicia processos: `gitinfo.py` (o `run_git`), `gitfetch.py`, `worktree.py`, `picker.py`, `claudecli.py`, `api/claude_cli.py`, `api/editor.py`, `cli.py`, `scripts/e2e_server.py` (garante que o E2E não toque nos dados reais), `agent/` e `agentd/` (inclusive o socket e o ciclo de vida das sessões).
 - `usage.py` e qualquer código que leia credenciais do CLI.
 - Migrações em `db.py` e tudo que escreve em `~/.claude/projects`.

@@ -40,10 +40,17 @@ uv run pytest                  # backend
 uv run ruff check              # lint do backend
 pnpm --dir frontend test       # frontend
 pnpm --dir frontend build      # compilação e checagem de tipos
+pnpm --dir frontend e2e        # testes de ponta a ponta no navegador
 scripts/check.sh               # tudo acima de uma vez, como na CI
 ```
 
 A CI roda tudo isso em cada pull request, no Linux e no macOS.
+
+### Testes de ponta a ponta (E2E)
+
+Os specs ficam em `frontend/e2e/` e usam o Playwright com o Google Chrome instalado na máquina (não baixam navegador). `pnpm --dir frontend e2e` sobe sozinho um backend descartável (`scripts/e2e_server.py`) na porta 6620, com projetos e conversas de exemplo num diretório temporário: nada toca em `~/.claude`, no seu banco ou no SDK. `MAESTRO_E2E_PORT` troca a porta (nunca a dos serviços nem a do preview). Rode uma execução por vez.
+
+Para explorar uma tela à mão, suba `uv run python scripts/e2e_server.py` e abra `http://127.0.0.1:6620`. Com o Claude Code, o agente `e2e-tester` faz isso e escreve os specs (o [Playwright CLI](https://github.com/microsoft/playwright-cli) ajuda a descobrir seletores).
 
 ## agentd
 
