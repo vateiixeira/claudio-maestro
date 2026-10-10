@@ -1,10 +1,21 @@
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@playwright/test'
 
-// Same variable the server script reads (scripts/e2e_server.py).
-const port = Number(process.env.MAESTRO_E2E_PORT || 6620)
+// Same variable the server script reads (scripts/e2e_server.py). Without it, each worktree gets
+// its own port in 6620..6659 (a stable hash of this folder), so runs from different worktrees
+// do not collide. It is written back to the environment so the server and the workers, which
+// load this file again, land on the same value.
+if (!process.env.MAESTRO_E2E_PORT) {
+  const dir = dirname(fileURLToPath(import.meta.url))
+  const hash = [...dir].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7)
+  process.env.MAESTRO_E2E_PORT = String(6620 + (hash % 40))
+}
+const port = Number(process.env.MAESTRO_E2E_PORT)
 
 export default defineConfig({
   testDir: './e2e',
+  forbidOnly: !!process.env.CI,
   // `.e2e.ts` keeps Vitest (which looks for *.test.ts and *.spec.ts) away from these files.
   testMatch: '**/*.e2e.ts',
   // One seeded database, so one worker and no parallel files.
