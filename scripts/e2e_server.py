@@ -61,6 +61,17 @@ SCENARIO = [
                 "prompt": "Liste as tarefas pendentes",
                 "reply": "Não há tarefas pendentes.",
             },
+            {
+                # Three `Agent` calls in the same answer; the specs read their model chips.
+                # "model" goes in the subagent's transcript, "meta_model" in its meta file.
+                "prompt": "Investigue o módulo de pagamentos",
+                "reply": "Os três subagentes terminaram.",
+                "subagents": [
+                    {"description": "Mapear as rotas", "model": "claude-sonnet-5-5"},
+                    {"description": "Ler os testes", "meta_model": "haiku"},
+                    {"description": "Conferir a documentação"},
+                ],
+            },
         ],
     },
     {
@@ -141,29 +152,119 @@ def _stamp(moment: datetime) -> str:
     return moment.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
+def _write_subagents(
+    session_file: Path, subagents: list[dict[str, str]], started: datetime
+) -> list[str]:
+    """Write the files the CLI keeps next to a session for its subagents and return the id of
+    the `Agent` call of each one: `<session>/subagents/agent-<n>.meta.json` and `.jsonl`."""
+    folder = session_file.parent / session_file.stem / "subagents"
+    folder.mkdir(parents=True, exist_ok=True)
+    tool_use_ids = []
+    for number, subagent in enumerate(subagents, start=1):
+        tool_use_id = f"toolu_e2e_agent_{number}"
+        tool_use_ids.append(tool_use_id)
+        meta = {
+            "agentType": "Explore", "description": subagent["description"],
+            "toolUseId": tool_use_id,
+        }
+        if "meta_model" in subagent:
+            meta["model"] = subagent["meta_model"]
+        (folder / f"agent-e2e{number}.meta.json").write_text(
+            json.dumps(meta, ensure_ascii=False), encoding="utf-8"
+        )
+        lines = [
+            {
+                "type": "user", "isSidechain": True, "timestamp": _stamp(started),
+                "message": {"role": "user", "content": subagent["description"]},
+            }
+        ]
+        if "model" in subagent:
+            lines.append(
+                {
+                    "type": "assistant", "isSidechain": True,
+                    "timestamp": _stamp(started + timedelta(seconds=2)),
+                    "message": {
+                        "role": "assistant", "model": subagent["model"],
+                        "content": [{"type": "text", "text": "Feito."}],
+                    },
+                }
+            )
+        (folder / f"agent-e2e{number}.jsonl").write_text(
+            "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
+            encoding="utf-8",
+        )
+    return tool_use_ids
+
+
 def _write_conversation(
-    folder: Path, project_dir: Path, prompt: str, reply: str, started: datetime
+    folder: Path, project_dir: Path, prompt: str, reply: str, started: datetime,
+    subagents: list[dict[str, str]] | None = None,
 ) -> None:
-    """A minimal transcript: one user message and one assistant answer."""
+    """A minimal transcript: one user message and one assistant answer. With `subagents`, the
+    answer first calls an `Agent` for each one (with its result) and the files of the subagents
+    are written next to the session."""
     session_id, user_id, assistant_id = (str(uuid.uuid4()) for _ in range(3))
+    folder.mkdir(parents=True, exist_ok=True)
+    session_file = folder / f"{session_id}.jsonl"
+    base = {"isSidechain": False, "sessionId": session_id, "cwd": str(project_dir)}
     lines = [
         {
-            "parentUuid": None, "isSidechain": False, "type": "user", "uuid": user_id,
-            "sessionId": session_id, "cwd": str(project_dir), "timestamp": _stamp(started),
+            **base, "parentUuid": None, "type": "user", "uuid": user_id,
+            "timestamp": _stamp(started),
             "message": {"role": "user", "content": prompt},
-        },
+        }
+    ]
+    parent = user_id
+    if subagents:
+        call_ids = _write_subagents(session_file, subagents, started)
+        calls_id, results_id = str(uuid.uuid4()), str(uuid.uuid4())
+        lines.append(
+            {
+                **base, "parentUuid": parent, "type": "assistant", "uuid": calls_id,
+                "timestamp": _stamp(started + timedelta(seconds=2)),
+                "message": {
+                    "id": "msg_e2e_agents", "role": "assistant", "model": "claude-haiku",
+                    "content": [
+                        {
+                            "type": "tool_use", "id": call_id, "name": "Agent",
+                            "input": {
+                                "description": subagent["description"],
+                                "subagent_type": "Explore", "prompt": subagent["description"],
+                            },
+                        }
+                        for call_id, subagent in zip(call_ids, subagents, strict=True)
+                    ],
+                },
+            }
+        )
+        lines.append(
+            {
+                **base, "parentUuid": calls_id, "type": "user", "uuid": results_id,
+                "timestamp": _stamp(started + timedelta(seconds=4)),
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result", "tool_use_id": call_id,
+                            "content": [{"type": "text", "text": "Concluído."}],
+                        }
+                        for call_id in call_ids
+                    ],
+                },
+            }
+        )
+        parent = results_id
+    lines.append(
         {
-            "parentUuid": user_id, "isSidechain": False, "type": "assistant",
-            "uuid": assistant_id, "sessionId": session_id, "cwd": str(project_dir),
+            **base, "parentUuid": parent, "type": "assistant", "uuid": assistant_id,
             "timestamp": _stamp(started + timedelta(seconds=5)),
             "message": {
                 "role": "assistant", "model": "claude-haiku",
                 "content": [{"type": "text", "text": reply}],
             },
-        },
-    ]
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / f"{session_id}.jsonl").write_text(
+        }
+    )
+    session_file.write_text(
         "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
         encoding="utf-8",
     )
@@ -202,7 +303,7 @@ def seed(root: Path) -> None:
                 started = now - timedelta(minutes=10 * (position * 3 + index + 1))
                 _write_conversation(
                     folder, Path(project.path), conversation["prompt"], conversation["reply"],
-                    started,
+                    started, conversation.get("subagents"),
                 )
 
 

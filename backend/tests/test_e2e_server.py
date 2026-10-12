@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import json
 import os
 import signal
 import subprocess
@@ -125,6 +126,37 @@ def test_seed_makes_conversations_readable_by_the_sdk(tmp_path, monkeypatch):
         assert sorted(s.first_prompt for s in found) == sorted(
             c["prompt"] for c in project["conversations"]
         )
+
+
+def test_seed_writes_the_subagents_of_the_scenario_next_to_the_session(tmp_path, monkeypatch):
+    apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
+
+    e2e.seed(tmp_path)
+
+    projects_dir = load_settings().claude_projects_dir.resolve()
+    [session] = [
+        path for path in projects_dir.glob("*/*.jsonl")
+        if "Investigue o módulo de pagamentos" in path.read_text(encoding="utf-8")
+    ]
+    transcript = history.read_transcript_file(session, with_subagents=True)
+    # Transcript model, alias only in the meta file, no model at all.
+    assert transcript.subagent_models == {
+        "toolu_e2e_agent_1": "claude-sonnet-5-5",
+        "toolu_e2e_agent_2": "haiku",
+    }
+    calls = [
+        block
+        for line in session.read_text(encoding="utf-8").splitlines()
+        for block in (json.loads(line).get("message", {}).get("content") or [])
+        if isinstance(block, dict) and block.get("type") == "tool_use"
+    ]
+    assert [c["name"] for c in calls] == ["Agent"] * 3
+    assert [c["id"] for c in calls] == [f"toolu_e2e_agent_{n}" for n in (1, 2, 3)]
+    # Everything the seed wrote is inside the temporary root.
+    assert all(
+        path.resolve().is_relative_to(tmp_path.resolve())
+        for path in projects_dir.rglob("*")
+    )
 
 
 def test_seed_refuses_paths_outside_root(tmp_path, monkeypatch):
