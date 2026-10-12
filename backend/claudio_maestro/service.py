@@ -14,6 +14,7 @@ import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+from claudio_maestro.cpulimit import CpuLimitError, CpuLimits, cpu_limits
 from claudio_maestro.runmode import LAUNCHD_LABEL, OFFICIAL_UNIT
 
 MARK = "Gerado por claudio-maestro service install"
@@ -46,6 +47,13 @@ def service_env(environ: Mapping[str, str]) -> dict[str, str]:
     return env
 
 
+def _cpu_limits(environ: Mapping[str, str]) -> CpuLimits:
+    try:
+        return cpu_limits(environ, os.cpu_count() or 1)
+    except CpuLimitError as exc:
+        raise ServiceError(str(exc)) from exc
+
+
 def systemd_quote(text: str, *, dollar: bool = True) -> str:
     """Quote one word for a systemd setting. `dollar` doubles `$`, which only command lines
     (ExecStart=) expand; Environment= does not, so there `$` must stay as it is."""
@@ -70,10 +78,17 @@ def _command(uv: str, repo: Path, port: int) -> list[str]:
     return [uv, "run", "--frozen", "--project", str(repo), "claudio-maestro", "--port", str(port)]
 
 
-def systemd_unit(uv: str, repo: Path, port: int, env: Mapping[str, str]) -> str:
+def systemd_unit(uv: str, repo: Path, port: int, env: Mapping[str, str],
+                 limits: CpuLimits | None = None) -> str:
     environment = [f"Environment={systemd_quote(f'{k}={v}', dollar=False)}" for k, v in env.items()]
     environment.append(f"Environment={systemd_quote('MAESTRO_RUN_MODE=systemd', dollar=False)}")
     exec_start = " ".join(systemd_quote(arg) for arg in _command(uv, repo, port))
+    cpu: list[str] = []
+    if limits is not None:
+        cpu.append("# Limite de CPU das sessões: MAESTRO_CPU_WEIGHT e MAESTRO_CPU_QUOTA.")
+        cpu.append(f"CPUWeight={limits.weight}")
+        if limits.quota_percent is not None:
+            cpu.append(f"CPUQuota={limits.quota_percent}%")
     return "\n".join([
         f"# {MARK}. Não edite: rode o install de novo.",
         "[Unit]",
@@ -91,6 +106,7 @@ def systemd_unit(uv: str, repo: Path, port: int, env: Mapping[str, str]) -> str:
         "TimeoutStopSec=15",
         "# O `uv run` sai com 143 (SIGTERM) ao parar: não é falha.",
         "SuccessExitStatus=143",
+        *cpu,
         "",
         "[Install]",
         "WantedBy=default.target",
@@ -231,6 +247,7 @@ def _systemd(action, *, port, repo, home, environ, port_free, run, which, user, 
         out("Serviço removido.")
         return
     uv = _require(which, "uv", "Instale o uv (https://docs.astral.sh/uv/) e rode de novo.")
+    limits = _cpu_limits(environ)
     foreign = _foreign_systemd_unit(run, systemctl)
     if foreign is not None:
         raise ServiceError(
@@ -240,7 +257,7 @@ def _systemd(action, *, port, repo, home, environ, port_free, run, which, user, 
     active = _run(run, [systemctl, "--user", "is-active", OFFICIAL_UNIT]).stdout.strip() == "active"
     _port_check(active, port, port_free)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(systemd_unit(uv, repo, port, service_env(environ)), encoding="utf-8")
+    path.write_text(systemd_unit(uv, repo, port, service_env(environ), limits), encoding="utf-8")
     _checked(run, [systemctl, "--user", "daemon-reload"])
     _checked(run, [systemctl, "--user", "enable", OFFICIAL_UNIT])
     _checked(run, [systemctl, "--user", "restart", OFFICIAL_UNIT])

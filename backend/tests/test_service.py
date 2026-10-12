@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from claudio_maestro import service
+from claudio_maestro.cpulimit import CpuLimits
 from claudio_maestro.service import (
     MARK,
     launchd_plist,
@@ -98,10 +99,10 @@ def which(name):
     return f"/usr/bin/{name}" if name != "uv" else UV
 
 
-def call(action, tmp_path, *, platform="linux", run=None, free=True, out=None, which_fn=which):
+def call(action, tmp_path, *, platform="linux", run=None, free=True, out=None, which_fn=which, environ=None):
     lines = [] if out is None else out
     code = run_service(
-        action, port=6660, repo=REPO, home=tmp_path, environ={"PATH": "/usr/bin"},
+        action, port=6660, repo=REPO, home=tmp_path, environ={"PATH": "/usr/bin"} if environ is None else environ,
         port_free=lambda port: free, platform=platform, run=run or Run(), which=which_fn,
         uid=501, user="fulano", out=lines.append,
     )
@@ -367,3 +368,53 @@ def test_install_macos_ignores_other_agents_and_unreadable_plists(tmp_path):
     (tmp_path / "Library/LaunchAgents/broken.plist").write_text("not a plist")
     code, _ = call("install", tmp_path, platform="darwin", run=Run({("print",): (113, "")}))
     assert code == 0
+
+
+# -- CPU limits in the unit -------------------------------------------------------------------
+
+
+def test_systemd_unit_writes_the_cpu_limits():
+    lines = systemd_unit(UV, REPO, 6660, {}, limits=CpuLimits(weight=20, quota_percent=900, session_nice=10)).splitlines()
+    assert "CPUWeight=20" in lines
+    assert "CPUQuota=900%" in lines
+    assert lines.index("[Service]") < lines.index("CPUWeight=20") < lines.index("[Install]")
+
+
+def test_systemd_unit_without_a_ceiling_has_no_quota_line():
+    text = systemd_unit(UV, REPO, 6660, {}, limits=CpuLimits(weight=50, quota_percent=None, session_nice=10))
+    assert "CPUWeight=50" in text.splitlines()
+    assert "CPUQuota" not in text
+
+
+def test_systemd_unit_without_limits_has_no_cpu_lines():
+    text = systemd_unit(UV, REPO, 6660, {})
+    assert "CPUWeight" not in text
+    assert "CPUQuota" not in text
+
+
+def test_install_linux_writes_the_cpu_limits(tmp_path, monkeypatch):
+    monkeypatch.setattr(service.os, "cpu_count", lambda: 16)
+    run = Run({("--user", "is-active"): (3, "inactive\n"), ("show-user",): (0, "yes\n")})
+    code, _ = call("install", tmp_path, run=run)
+    assert code == 0
+    lines = (tmp_path / UNIT).read_text().splitlines()
+    assert "CPUWeight=20" in lines
+    assert "CPUQuota=900%" in lines
+
+
+def test_install_linux_uses_the_cpu_variables_of_the_environment(tmp_path):
+    environ = {"PATH": "/usr/bin", "MAESTRO_CPU_WEIGHT": "50", "MAESTRO_CPU_QUOTA": "off"}
+    run = Run({("--user", "is-active"): (3, "inactive\n"), ("show-user",): (0, "yes\n")})
+    code, _ = call("install", tmp_path, run=run, environ=environ)
+    assert code == 0
+    text = (tmp_path / UNIT).read_text()
+    assert "CPUWeight=50" in text.splitlines()
+    assert "CPUQuota" not in text
+
+
+def test_install_linux_refuses_an_invalid_cpu_variable_without_writing(tmp_path):
+    run = Run({("--user", "is-active"): (3, "inactive\n")})
+    code, lines = call("install", tmp_path, run=run, environ={"PATH": "/usr/bin", "MAESTRO_CPU_QUOTA": "abc"})
+    assert code == 1
+    assert any("MAESTRO_CPU_QUOTA" in line for line in lines)
+    assert not (tmp_path / UNIT).exists()
