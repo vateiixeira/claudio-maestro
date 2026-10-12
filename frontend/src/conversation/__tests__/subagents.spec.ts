@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentStatus, deriveSubagents, subagentClock, stripSubagents, summarizeSubagents, waitingText } from '../subagents'
+import { agentStatus, buildItemTree, deriveSubagents, subagentClock, stripSubagents, summarizeSubagents, waitingText } from '../subagents'
 import type { ConversationItem, Subagent, ToolItem } from '../../types/conversation'
 
 const sub = (status: Subagent['status'], extra: Partial<Subagent> = {}): Subagent => ({
@@ -218,5 +218,86 @@ describe('subagentClock', () => {
   })
   it('um subagente que terminou em menos de um minuto também mostra "<1 min"', () => {
     expect(subagentClock(entry('completed', 1000, 1020), 5000 * 1000)?.text).toBe('<1 min')
+  })
+})
+
+describe('buildItemTree', () => {
+  const edit = (id: string, parent: string | null, name = 'Edit') => tool(id, name, { file_path: `/p/${id}.py` }, parent)
+  const ids = (items: ConversationItem[]) => items.map((i) => i.id)
+
+  it('promove as escritas de um subagente à linha de cima, na ordem em que chegaram, e as mantém no cartão', () => {
+    const ag = agent('a', 'running')
+    const items: ConversationItem[] = [
+      user('u'), ag, edit('w1', 'tu-a', 'Write'), tool('r1', 'Read', { file_path: '/p/x' }, 'tu-a'), edit('e1', 'tu-a'), edit('m1', null, 'MultiEdit'),
+    ]
+    const tree = buildItemTree(items)
+    expect(ids(tree.top)).toEqual(['u', 'a', 'w1', 'e1', 'm1'])
+    expect(ids(tree.childrenOf('tu-a'))).toEqual(['w1', 'r1', 'e1'])
+  })
+
+  it('não promove comandos, leituras, buscas nem texto de subagente', () => {
+    const items: ConversationItem[] = [
+      agent('a', 'running'),
+      tool('b1', 'Bash', { command: 'ls' }, 'tu-a'),
+      tool('g1', 'Grep', { pattern: 'x' }, 'tu-a'),
+      { type: 'text', id: 't1', text: 'oi', streaming: false, parent_tool_use_id: 'tu-a' },
+    ]
+    const tree = buildItemTree(items)
+    expect(ids(tree.top)).toEqual(['a'])
+    expect(ids(tree.childrenOf('tu-a'))).toEqual(['b1', 'g1', 't1'])
+  })
+
+  it('subagente dentro de subagente: a escrita vai ao topo e fica no cartão do pai imediato', () => {
+    const outer = agent('o', 'running')
+    const inner = tool('i', 'Agent', { subagent_type: 'coder', description: 'codar' }, 'tu-o')
+    const items: ConversationItem[] = [outer, inner, edit('w', 'tu-i', 'Write')]
+    const tree = buildItemTree(items)
+    expect(ids(tree.top)).toEqual(['o', 'w'])
+    expect(ids(tree.childrenOf('tu-o'))).toEqual(['i'])
+    expect(ids(tree.childrenOf('tu-i'))).toEqual(['w'])
+  })
+
+  it('escrita cujo pai não existe continua no topo, sem duplicar', () => {
+    const tree = buildItemTree([edit('w', 'tu-fantasma')])
+    expect(ids(tree.top)).toEqual(['w'])
+    expect(tree.childrenOf('tu-fantasma')).toEqual([])
+  })
+
+  it('arruma os pensamentos dentro do subagente como antes', () => {
+    const t = (id: string, text: string): ConversationItem => ({ type: 'thinking', id, text, streaming: false, parent_tool_use_id: 'tu-a' })
+    const tree = buildItemTree([agent('a', 'running'), t('t1', 'um'), t('t2', 'dois')])
+    expect(tree.childrenOf('tu-a')).toHaveLength(1)
+  })
+
+  describe('originOf', () => {
+    it('devolve o tipo do subagente de origem', () => {
+      const ag = agent('a', 'running')
+      const w = edit('w', 'tu-a', 'Write')
+      expect(buildItemTree([ag, w]).originOf(w)).toBe('reviewer')
+    })
+
+    it('sem tipo no subagente, usa o do input e depois a descrição', () => {
+      const noSub = agent('a', null, { input: { subagent_type: 'planner', description: 'planejar' } })
+      const w = edit('w', 'tu-a')
+      expect(buildItemTree([noSub, w]).originOf(w)).toBe('planner')
+      const onlyDesc = agent('b', 'running', { input: { description: 'fazer X' }, subagent: sub('running', { subagent_type: '', description: 'fazer X' }) })
+      const w2 = edit('w2', 'tu-b')
+      expect(buildItemTree([onlyDesc, w2]).originOf(w2)).toBe('fazer X')
+    })
+
+    it('aninhado, usa o pai imediato', () => {
+      const outer = agent('o', 'running')
+      const inner = tool('i', 'Agent', { subagent_type: 'coder' }, 'tu-o')
+      const w = edit('w', 'tu-i')
+      expect(buildItemTree([outer, inner, w]).originOf(w)).toBe('coder')
+    })
+
+    it('item sem pai, ou de pai desconhecido, não tem origem', () => {
+      const top = edit('t', null)
+      const orphan = edit('o', 'tu-fantasma')
+      const tree = buildItemTree([top, orphan])
+      expect(tree.originOf(top)).toBeUndefined()
+      expect(tree.originOf(orphan)).toBeUndefined()
+    })
   })
 })

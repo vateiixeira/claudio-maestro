@@ -20,9 +20,11 @@ const props = withDefaults(
     /** `tool_use_id`s of the requests the user has yet to answer: those actions wait for the user. */
     waitingIds?: ReadonlySet<string>
     childrenOf?: (toolUseId: string) => ConversationItem[]
+    /** The subagent a file write came from (a subagent's write shown as a row of its own); undefined for an action of the main agent. */
+    originOf?: (item: ToolItem) => string | undefined
     taskList?: { tasks: TaskEntry[]; lastItemId: string | null } | null
   }>(),
-  { sessionActive: false, waitingIds: undefined, childrenOf: () => [], taskList: null },
+  { sessionActive: false, waitingIds: undefined, childrenOf: () => [], originOf: undefined, taskList: null },
 )
 const emit = defineEmits<{ toggle: [] }>()
 
@@ -33,7 +35,7 @@ const summaryChanged = ref(false)
 watch(summary, () => { summaryChanged.value = true })
 // While the block is closed and something runs, one line says what.
 const activity = computed(() => workActivity(props.items, props.sessionActive, props.waitingIds))
-const rows = computed(() => props.items.map((item) => ({ item, ...workRow(item, props.sessionActive, props.waitingIds) })))
+const rows = computed(() => props.items.map((item) => ({ item, ...workRow(item, props.sessionActive, props.waitingIds, props.originOf?.(item)) })))
 
 // The time of a running action ("12 s"). One clock for the whole app, on only while the block is open and
 // an action with a known start runs in it.

@@ -103,6 +103,19 @@ describe('turnSummary', () => {
     const turn = buildTurns([user('u'), tool('e1', 'Edit', { file_path: '/p/a.py' }), tool('w1', 'Write', { file_path: '/p/c.py' }), text('x'), agent])[0]!
     expect(turnSummary(turn, (id) => kids[id] ?? [])).toEqual({ actions: 5, files: 2 })
   })
+
+  it('uma escrita de subagente que aparece no topo e no cartão conta uma vez só', () => {
+    const agent = tool('ag', 'Agent')
+    const hoisted = tool('k1', 'Write', { file_path: '/p/a.py' }, { parent_tool_use_id: 'tu-ag' })
+    const kids: Record<string, ConversationItem[]> = {
+      'tu-ag': [hoisted, tool('k2', 'Read', { file_path: '/p/b.py' }, { parent_tool_use_id: 'tu-ag' })],
+    }
+    const turn = buildTurns([user('u'), agent, hoisted])[0]!
+    expect(turnSummary(turn, (id) => kids[id] ?? [])).toEqual({ actions: 3, files: 1 })
+    // Also when the hoisted write comes before its card (a block of its own).
+    const turn2 = buildTurns([user('u'), hoisted, text('x'), agent])[0]!
+    expect(turnSummary(turn2, (id) => kids[id] ?? [])).toEqual({ actions: 3, files: 1 })
+  })
 })
 
 describe('nodeKind', () => {

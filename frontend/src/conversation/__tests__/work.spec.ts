@@ -192,3 +192,21 @@ describe('ferramenta esperando o usuário', () => {
     expect(workActivity([pending()], true, waiting)).toBe('Comando · rm -rf x')
   })
 })
+
+describe('workRow de escrita feita por subagente', () => {
+  it('mostra a origem no chip', () => {
+    const row = workRow(tool('w', 'Write', { file_path: '/p/a.py', content: 'x' }, { parent_tool_use_id: 'tu-ag' }), false, undefined, 'reviewer')
+    expect(row.kind).toBe('edit')
+    expect(row.label).toBe('Escrita')
+    expect(row.tag).toBe('reviewer')
+    expect(row.desc).toBe('/p/a.py')
+  })
+
+  it('sem origem, a edição não tem chip', () => {
+    expect(workRow(tool('e', 'Edit', { file_path: '/p/a.py' }), false).tag).toBeUndefined()
+  })
+
+  it('a origem só vale para edição', () => {
+    expect(workRow(tool('r', 'Read', { file_path: '/p/a.py' }), false, undefined, 'reviewer').tag).toBeUndefined()
+  })
+})

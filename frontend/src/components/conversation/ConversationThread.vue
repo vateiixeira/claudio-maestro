@@ -12,8 +12,8 @@ import RailNode from './RailNode.vue'
 import { railAlign } from '../../conversation/railAlign'
 import SubagentStrip from './SubagentStrip.vue'
 import UserMessage from './UserMessage.vue'
-import { deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
-import { buildTurns, nodeKind, summaryText, tidyThinking, turnSummary } from '../../conversation/turns'
+import { buildItemTree, deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
+import { buildTurns, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
 import { groupNodeKind, workStatus } from '../../conversation/work'
 import { COLLAPSE_OPENING_KEY } from '../../conversation/collapseActivity'
 import { entryKey, isNearEnd, promptKey, turnKeys } from '../../conversation/liveItems'
@@ -21,7 +21,7 @@ import WorkBlock from './WorkBlock.vue'
 import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
-import type { ConversationItem, ToolItem } from '../../types/conversation'
+import type { ToolItem } from '../../types/conversation'
 import { isBareShortcut } from '../../keyboardShortcutGuard'
 
 const props = withDefaults(defineProps<{ id: string; visible?: boolean }>(), { visible: true })
@@ -134,24 +134,9 @@ onBeforeUnmount(() => {
   leave(props.id)
 })
 
-// Items with a parent tool are shown inside that tool's block (subagent card or indent).
-const tree = computed(() => {
-  const items = conv.value?.items ?? []
-  const toolIds = new Set(items.flatMap((i) => (i.type === 'tool' ? [i.tool_use_id] : [])))
-  const children = new Map<string, ConversationItem[]>()
-  const top: ConversationItem[] = []
-  for (const item of items) {
-    const parent = 'parent_tool_use_id' in item ? item.parent_tool_use_id : null
-    if (parent && toolIds.has(parent)) {
-      const list = children.get(parent) ?? []
-      list.push(item)
-      children.set(parent, list)
-    } else top.push(item)
-  }
-  // Inside a subagent the thinking is tidied the same way as in the turns.
-  for (const [parent, list] of children) children.set(parent, tidyThinking(list))
-  return { top, childrenOf: (toolUseId: string) => children.get(toolUseId) ?? [] }
-})
+// Items with a parent tool are shown inside that tool's block (subagent card or indent); a subagent's
+// file writes also show up as rows of the thread, with the subagent's name.
+const tree = computed(() => buildItemTree(conv.value?.items ?? []))
 const rows = computed(() => tree.value.top)
 const sessionActive = computed(() => conv.value?.state === 'running' || conv.value?.state === 'awaiting_decision')
 // Subagents and background commands still running, in conversation order. When the main turn
@@ -506,6 +491,7 @@ function resolvePrompt(promptId: string) {
                       :session-active="sessionActive"
                       :waiting-ids="waitingIds"
                       :children-of="tree.childrenOf"
+                      :origin-of="tree.originOf"
                       :task-list="taskList"
                       @toggle="groupChoice.set(entry.id, !blockOpen(entry, done))"
                     />

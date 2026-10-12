@@ -7,6 +7,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 ### Adicionado
 
 - Cada subagente mostra o modelo que está usando (por exemplo, "Sonnet 5.5"), ao lado do tipo, no cartão e na faixa de subagentes em execução. No histórico, o modelo aparece quando a conversa guardou o transcrito do subagente.
+- Escritas de arquivo feitas por subagentes (Edit, Write e MultiEdit) aparecem na conversa como ações novas, com o nome do subagente, na ordem em que acontecem. Elas continuam também no cartão do subagente e entram uma vez só na contagem do fim do turno.
 
 ## [0.6.0] - 2026-10-08
 

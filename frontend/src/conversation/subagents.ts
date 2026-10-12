@@ -2,7 +2,7 @@ import type { InjectionKey, Ref } from 'vue'
 import type { ConversationItem, SubagentStatus, ToolItem } from '../types/conversation'
 import { formatElapsedShort } from '../format'
 import { backgroundState } from './background'
-import { AGENT_TOOLS } from './turns'
+import { AGENT_TOOLS, EDIT_TOOLS, tidyThinking } from './turns'
 import { askedModel, str, toolLabel } from './tool'
 
 /** Where the user asked to go from the subagent strip: the card and the cards to open on the way. */
@@ -26,6 +26,45 @@ export interface SubagentEntry {
   lastActivityAt: number | null
   /** The model of a subagent (id or alias); null for a command and when unknown. */
   model?: string | null
+}
+
+export interface ItemTree {
+  /** The top-level rows: items with no parent tool in the conversation, plus the file writes of subagents. */
+  top: ConversationItem[]
+  /** Items whose `parent_tool_use_id` is the given tool call: all of a subagent's actions, writes included. */
+  childrenOf: (toolUseId: string) => ConversationItem[]
+  /** The subagent a (promoted) action came from: its type, else its description; undefined for a top-level item. */
+  originOf: (item: ConversationItem) => string | undefined
+}
+
+/**
+ * Splits the flat items into the thread's rows and the content of each subagent card. A subagent's
+ * actions live in its card; its file writes (`EDIT_TOOLS`) also go to `top`, where they arrived, so
+ * whoever follows the conversation sees them as actions of their own. The same item is then in two
+ * places: count by `id` (see `turnSummary`).
+ */
+export function buildItemTree(items: ConversationItem[]): ItemTree {
+  const byToolUse = new Map<string, ToolItem>()
+  for (const item of items) if (item.type === 'tool') byToolUse.set(item.tool_use_id, item)
+  const children = new Map<string, ConversationItem[]>()
+  const top: ConversationItem[] = []
+  for (const item of items) {
+    const parent = 'parent_tool_use_id' in item ? item.parent_tool_use_id : null
+    if (parent && byToolUse.has(parent)) {
+      const list = children.get(parent) ?? []
+      list.push(item)
+      children.set(parent, list)
+      if (item.type === 'tool' && EDIT_TOOLS.has(item.name)) top.push(item)
+    } else top.push(item)
+  }
+  // Inside a subagent the thinking is tidied the same way as in the turns.
+  for (const [parent, list] of children) children.set(parent, tidyThinking(list))
+  const originOf = (item: ConversationItem): string | undefined => {
+    const parent = 'parent_tool_use_id' in item && item.parent_tool_use_id ? byToolUse.get(item.parent_tool_use_id) : undefined
+    if (!parent) return undefined
+    return parent.subagent?.subagent_type || str(parent.input?.subagent_type) || parent.subagent?.description || str(parent.input?.description) || undefined
+  }
+  return { top, childrenOf: (toolUseId) => children.get(toolUseId) ?? [], originOf }
 }
 
 /** A running subagent with no activity for this long is flagged. */

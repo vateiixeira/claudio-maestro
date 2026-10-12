@@ -104,8 +104,11 @@ export interface TurnSummary {
 export function turnSummary(turn: Turn, childrenOf: (toolUseId: string) => ConversationItem[]): TurnSummary {
   let actions = 0
   const files = new Set<string>()
+  // A subagent's file write is both a row of the turn and an action in the subagent's card.
+  const seen = new Set<string>()
   const visit = (item: ConversationItem) => {
-    if (item.type !== 'tool') return
+    if (item.type !== 'tool' || seen.has(item.id)) return
+    seen.add(item.id)
     actions++
     const path = item.input.file_path
     if (EDIT_TOOLS.has(item.name) && typeof path === 'string' && path) files.add(path)

@@ -77,8 +77,8 @@ function editDiff(item: ToolItem): WorkRow['diff'] {
   return counts
 }
 
-/** The compact line of one action in a work block. */
-export function workRow(item: ToolItem, sessionActive: boolean, waiting?: ReadonlySet<string>): WorkRow {
+/** The compact line of one action in a work block. `origin` is the subagent a file write came from: it becomes the chip. */
+export function workRow(item: ToolItem, sessionActive: boolean, waiting?: ReadonlySet<string>, origin?: string): WorkRow {
   const kind = workKind(item)
   const status = workStatus(item, sessionActive, waiting)
   const input = item.input ?? {}
@@ -99,6 +99,7 @@ export function workRow(item: ToolItem, sessionActive: boolean, waiting?: Readon
     if (item.name === 'Write') row.label = 'Escrita'
     row.desc = str(input.file_path) || str(input.notebook_path)
     row.diff = editDiff(item)
+    if (origin) row.tag = origin
   } else if (kind === 'bash') {
     const command = str(input.command).split('\n', 1)[0] ?? ''
     const description = str(input.description)
