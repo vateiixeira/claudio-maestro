@@ -6,7 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
-- Temas da interface: em Preferências → Geral o usuário escolhe entre Maestro (o atual), Dracula e os seis filtros do Monokai Pro (Pro, Machine, Octagon, Ristretto, Spectrum e Classic). A troca vale na hora, só neste navegador. Nos temas novos os blocos de código ganham o realce colorido do tema; o Maestro continua sóbrio.
+- Temas da interface: em Preferências → Geral o usuário escolhe entre Maestro (o atual), Dracula e os seis filtros do Monokai Pro (Pro, Machine, Octagon, Ristretto, Spectrum e Classic). A troca vale na hora, só neste navegador. Nos temas novos os blocos de código ganham o realce colorido do tema; o Maestro continua sóbrio. Uma prévia de uma sessão aberta, logo abaixo, mostra o tema do cartão sob o mouse ou em foco antes de você escolher.
 - Cada subagente mostra o modelo que está usando (por exemplo, "Sonnet 5.5"), ao lado do tipo, no cartão e na faixa de subagentes em execução. No histórico, o modelo aparece quando a conversa guardou o transcrito do subagente.
 - Escritas de arquivo feitas por subagentes (Edit, Write e MultiEdit) aparecem na conversa como ações novas, com o nome do subagente, na ordem em que acontecem. Elas continuam também no cartão do subagente e entram uma vez só na contagem do fim do turno.
 

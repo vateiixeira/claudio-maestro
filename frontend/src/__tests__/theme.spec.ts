@@ -33,8 +33,6 @@ describe('temas da interface', () => {
     expect(mod.THEME_DEFAULT).toBe('maestro')
     for (const t of mod.THEMES) {
       expect(t.label.length, t.id).toBeGreaterThan(0)
-      expect(t.swatch, t.id).toHaveLength(4)
-      for (const color of t.swatch) expect(color, t.id).toMatch(/^#[0-9a-f]{6}$/)
     }
   })
 

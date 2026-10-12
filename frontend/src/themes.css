@@ -1,10 +1,56 @@
-/* Temas escuros da interface. Cada bloco redefine as mesmas variáveis --color-* do @theme de style.css (o tema Maestro, padrão).
-   O frontend/src/__tests__/themes.spec.ts confere que todos definem o conjunto completo e que os pares de texto passam de 4,5:1 (WCAG AA).
+/* Temas escuros da interface. Cada bloco redefine as mesmas variáveis --color-* do @theme de style.css (o tema Maestro, padrão, que também tem um bloco aqui).
+   O frontend/src/__tests__/themes.spec.ts confere que todos definem o conjunto completo e que os pares de texto dos temas novos passam de 4,5:1 (WCAG AA).
    Degraus de superfície, tons de tipo, diffs e tons suaves são derivados dos acentos oficiais de cada paleta. */
+
+/* Os tints derivam de primary e secondary: recalculados dentro de qualquer elemento com tema, porque um var()
+   guardado no :root não mudaria dentro de um trecho da tela com outro data-theme. */
+[data-theme] {
+  --color-primary-tint: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --color-secondary-tint: color-mix(in srgb, var(--color-secondary) 12%, transparent);
+}
+
+/* Maestro (padrão): os mesmos valores do @theme de style.css, para que um elemento com data-theme="maestro"
+   (cartão e prévia de temas) mostre o padrão mesmo dentro de outro tema. O themes.spec.ts confere que são iguais. */
+[data-theme='maestro'] {
+  --color-bg: #0b0b0c;
+  --color-surface: #131315;
+  --color-panel: #19191c;
+  --color-card: #1f1f23;
+  --color-elevated: #26262b;
+  --color-line: #2a2a30;
+  --color-line-strong: #3b3b43;
+  --color-fg: #f4f4f5;
+  --color-fg-muted: #a1a1aa;
+  --color-fg-subtle: #94949d;
+  --color-code-fg: #e4e4e7;
+  --color-syntax-keyword: #f4f4f5;
+  --color-syntax-string: #c9b8e0;
+  --color-syntax-function: #f4f4f5;
+  --color-syntax-number: #e4e4e7;
+  --color-syntax-type: #f4f4f5;
+  --color-syntax-comment: #94949d;
+  --color-primary: #4ade80;
+  --color-primary-fg: #052e14;
+  --color-primary-soft: #86efac;
+  --color-secondary: #fb923c;
+  --color-secondary-fg: #2a1200;
+  --color-secondary-soft: #fdba74;
+  --color-diff-add-bg: #0f2a1a;
+  --color-diff-add-fg: #86efac;
+  --color-diff-del-bg: #2d1215;
+  --color-diff-del-fg: #fca5a5;
+  --color-info: #60a5fa;
+  --color-info-soft: #93c5fd;
+  --color-type-command: #95c3eb;
+  --color-type-file: #8bd6c1;
+  --color-type-agent: #cbafed;
+  --color-type-think: #dfc48b;
+  --syntax-weight: 600;
+}
 
 /* Dracula — paleta: github.com/dracula/visual-studio-code (src/dracula.yml).
    Desvios por contraste AA: syntax-comment era #6272a4 (comment); fg-muted e fg-subtle são derivados do fg, porque a paleta não tem tons intermediários. */
-:root[data-theme='dracula'] {
+[data-theme='dracula'] {
   --color-bg: #21222c;
   --color-surface: #252631;
   --color-panel: #282a36;
@@ -44,7 +90,7 @@
 
 /* Monokai Pro — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
    Desvios por contraste AA: syntax-comment era #727072 (dimmed3); fg-subtle era #939293 (dimmed2). */
-:root[data-theme='monokai-pro'] {
+[data-theme='monokai-pro'] {
   --color-bg: #221f22;
   --color-surface: #282528;
   --color-panel: #2d2a2e;
@@ -84,7 +130,7 @@
 
 /* Monokai Machine — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
    Desvios por contraste AA: syntax-comment era #6b7678 (dimmed3); fg-subtle era #8b9798 (dimmed2). */
-:root[data-theme='monokai-machine'] {
+[data-theme='monokai-machine'] {
   --color-bg: #1d2528;
   --color-surface: #222b2f;
   --color-panel: #273136;
@@ -124,7 +170,7 @@
 
 /* Monokai Octagon — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
    Desvios por contraste AA: syntax-comment era #696d77 (dimmed3); fg-subtle era #888d94 (dimmed2). */
-:root[data-theme='monokai-octagon'] {
+[data-theme='monokai-octagon'] {
   --color-bg: #1e1f2b;
   --color-surface: #232533;
   --color-panel: #282a3a;
@@ -164,7 +210,7 @@
 
 /* Monokai Ristretto — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
    Desvios por contraste AA: syntax-comment era #72696a (dimmed3); fg-subtle era #948a8b (dimmed2). */
-:root[data-theme='monokai-ristretto'] {
+[data-theme='monokai-ristretto'] {
   --color-bg: #211c1c;
   --color-surface: #272121;
   --color-panel: #2c2525;
@@ -204,7 +250,7 @@
 
 /* Monokai Spectrum — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
    Desvios por contraste AA: syntax-comment era #69676c (dimmed3); fg-subtle era #8b888f (dimmed2). */
-:root[data-theme='monokai-spectrum'] {
+[data-theme='monokai-spectrum'] {
   --color-bg: #191919;
   --color-surface: #1e1e1e;
   --color-panel: #222222;
@@ -244,7 +290,7 @@
 
 /* Monokai Classic — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
    Desvios por contraste AA: syntax-comment era #6e7066 (dimmed3); fg-subtle era #919288 (dimmed2); syntax-keyword era #f92672 (accent1). */
-:root[data-theme='monokai-classic'] {
+[data-theme='monokai-classic'] {
   --color-bg: #1d1e19;
   --color-surface: #22231e;
   --color-panel: #272822;

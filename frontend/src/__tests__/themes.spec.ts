@@ -11,7 +11,7 @@ const read = (file: string) => readFileSync(resolve(srcDir, file), 'utf8')
 const style = read('style.css')
 const themesCss = read('themes.css')
 
-const IDS = [
+const NEW_IDS = [
   'dracula',
   'monokai-pro',
   'monokai-machine',
@@ -20,6 +20,7 @@ const IDS = [
   'monokai-spectrum',
   'monokai-classic',
 ]
+const IDS = ['maestro', ...NEW_IDS]
 // Derived with color-mix from other tokens, so a theme does not redefine them.
 const DERIVED = ['primary-tint', 'secondary-tint']
 
@@ -28,7 +29,7 @@ const declarations = (block: string) =>
 
 const maestro = declarations(style.match(/@theme\s*\{([^}]*)\}/)?.[1] ?? '')
 const themes = new Map(
-  [...themesCss.matchAll(/:root\[data-theme='([\w-]+)'\]\s*\{([^}]*)\}/g)].map((m) => [m[1], declarations(m[2])] as const),
+  [...themesCss.matchAll(/\[data-theme='([\w-]+)'\]\s*\{([^}]*)\}/g)].map((m) => [m[1], declarations(m[2])] as const),
 )
 
 const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
@@ -45,7 +46,7 @@ const tint = (fg: string, surface: string, amount: number) =>
   channels(fg).map((c, i) => c * amount + channels(surface)[i] * (1 - amount))
 
 describe('temas escuros: estrutura', () => {
-  it('há um bloco para cada tema novo, e só esses', () => {
+  it('há um bloco para cada tema, o Maestro primeiro, e só esses', () => {
     expect([...themes.keys()]).toEqual(IDS)
   })
 
@@ -64,12 +65,24 @@ describe('temas escuros: estrutura', () => {
     for (const [name, value] of themes.get(id)!) expect(value, name).toMatch(/^#[0-9a-f]{6}$/)
   })
 
-  it('todo tema novo tira o negrito do realce de código', () => {
-    expect(themesCss.match(/--syntax-weight:\s*400;/g)).toHaveLength(IDS.length)
+  it('os temas novos tiram o negrito do realce de código e o Maestro mantém', () => {
+    expect(themesCss.match(/--syntax-weight:\s*400;/g)).toHaveLength(NEW_IDS.length)
+    expect(themesCss).toMatch(/\[data-theme='maestro'\][^}]*--syntax-weight:\s*600;/)
+  })
+
+  it('o bloco do Maestro tem os mesmos valores do @theme', () => {
+    const block = themes.get('maestro')!
+    for (const [name, value] of block) expect(value, name).toBe(maestro.get(name))
+  })
+
+  it('os tints são recalculados dentro de qualquer elemento com data-theme', () => {
+    const rule = themesCss.match(/\[data-theme\]\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(rule).toMatch(/--color-primary-tint:\s*color-mix\(/)
+    expect(rule).toMatch(/--color-secondary-tint:\s*color-mix\(/)
   })
 })
 
-describe.each(IDS)('contraste de %s', (id) => {
+describe.each(NEW_IDS)('contraste de %s', (id) => {
   const t = themes.get(id)!
   const c = (name: string) => t.get(name)!
   const SURFACES = ['bg', 'surface', 'panel', 'card']
