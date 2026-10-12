@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.7.0] - 2026-10-12
+
+Temas Dracula e Monokai para a interface, limite de CPU das sessões e o modelo de cada subagente à vista na conversa.
+
 ### Adicionado
 
 - Temas da interface: em Preferências → Geral o usuário escolhe entre Maestro (o atual), Dracula e os seis filtros do Monokai Pro (Pro, Machine, Octagon, Ristretto, Spectrum e Classic). A troca vale na hora, só neste navegador. Nos temas novos os blocos de código ganham o realce colorido do tema; o Maestro continua sóbrio. Uma prévia de uma sessão aberta, logo abaixo, mostra o tema do cartão sob o mouse ou em foco antes de você escolher.
