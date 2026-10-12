@@ -61,24 +61,37 @@ export function formatRunningTime(seconds: number): string {
   return minutes ? `${Math.floor(total / 3600)} h ${minutes} min` : `${Math.floor(total / 3600)} h`
 }
 
-const MODEL_FAMILIES = ['sonnet', 'opus', 'haiku']
+/** Short aliases the CLI accepts; they are the only families recognized without the "claude-" prefix. */
+const MODEL_ALIASES = ['sonnet', 'opus', 'haiku', 'fable']
 const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 
 /**
  * A model id as people say it: "claude-sonnet-5-5" -> "Sonnet 5.5", "claude-haiku-4-5-20251001"
  * -> "Haiku 4.5", "claude-opus-4-7[1m]" -> "Opus 4.7 (1M)", the alias "opus" -> "Opus".
- * An id it does not recognize comes back as it is.
+ *
+ * The family is any lowercase word, so a new one ("claude-fable-5-1" -> "Fable 5.1") needs no
+ * change here. To keep unrelated ids intact, a family outside the known aliases (sonnet, opus,
+ * haiku, fable) is only accepted when the id starts with "claude-" AND carries a version:
+ * "claude-foo" or "claude-foo-20251001" (no version), "gpt-5", "my-model-1" and "gpt-4o" (no
+ * "claude-") all come back as they are, and so do "", "inherit" and "<synthetic>".
  */
 export function formatModelName(model: string): string {
   const context = /\[(\d+m)\]$/i.exec(model.trim())
   const suffix = context ? ` (${context[1]!.toUpperCase()})` : ''
-  const id = model.trim().toLowerCase().replace(/\[[^\]]*\]$/, '').replace(/^claude-/, '').replace(/-\d{8}$/, '')
-  if (MODEL_FAMILIES.includes(id)) return capitalize(id) + suffix
-  // "sonnet-5-5", "opus-4-7"
-  const current = /^(sonnet|opus|haiku)-(\d+)(?:-(\d+))?$/.exec(id)
-  if (current) return `${capitalize(current[1]!)} ${current[3] ? `${current[2]}.${current[3]}` : current[2]}${suffix}`
+  const lowered = model.trim().toLowerCase().replace(/\[[^\]]*\]$/, '')
+  const claudePrefixed = lowered.startsWith('claude-')
+  const id = lowered.replace(/^claude-/, '').replace(/-\d{8}$/, '')
+  const accepts = (family: string) => claudePrefixed || MODEL_ALIASES.includes(family)
+  if (MODEL_ALIASES.includes(id)) return capitalize(id) + suffix
+  // "sonnet-5-5", "fable-5-1"
+  const current = /^([a-z]+)-(\d+)(?:-(\d+))?$/.exec(id)
+  if (current && accepts(current[1]!)) {
+    return `${capitalize(current[1]!)} ${current[3] ? `${current[2]}.${current[3]}` : current[2]}${suffix}`
+  }
   // "3-5-sonnet", "3-opus"
-  const legacy = /^(\d+)(?:-(\d+))?-(sonnet|opus|haiku)$/.exec(id)
-  if (legacy) return `${capitalize(legacy[3]!)} ${legacy[2] ? `${legacy[1]}.${legacy[2]}` : legacy[1]}${suffix}`
+  const legacy = /^(\d+)(?:-(\d+))?-([a-z]+)$/.exec(id)
+  if (legacy && accepts(legacy[3]!)) {
+    return `${capitalize(legacy[3]!)} ${legacy[2] ? `${legacy[1]}.${legacy[2]}` : legacy[1]}${suffix}`
+  }
   return model
 }
