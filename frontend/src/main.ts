@@ -7,6 +7,7 @@ import { createAppRouter } from './router'
 import { useEventSocket } from './api/socket'
 import { bindRealtime } from './stores/realtime'
 import { applyUiScale, uiScale } from './uiScale'
+import { applyTheme, theme } from './theme'
 import { bindNotifications } from './notifications'
 import { useSessionsStore } from './stores/sessions'
 import { startLive } from './liveStart'
@@ -25,4 +26,5 @@ void startLive(router, () => {
 })
 
 applyUiScale(uiScale.value)
+applyTheme(theme.value)
 app.mount('#app')

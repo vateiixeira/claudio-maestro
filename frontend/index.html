@@ -5,6 +5,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cláudio Maestro</title>
+    <script>
+      // Applies the saved theme before the first paint (theme.ts does the same once the app loads).
+      // The ids are the non-default themes of src/theme.ts; theme.spec.ts keeps both lists equal.
+      try {
+        var t = localStorage.getItem('maestro:theme')
+        if (/^(dracula|monokai-pro|monokai-machine|monokai-octagon|monokai-ristretto|monokai-spectrum|monokai-classic)$/.test(t)) {
+          document.documentElement.setAttribute('data-theme', t)
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>
