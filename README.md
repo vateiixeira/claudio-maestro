@@ -79,7 +79,7 @@ uv run claudio-maestro service uninstall          # para e remove
 
 O serviço guarda o `PATH` e as variáveis `MAESTRO_*` do momento do install, exceto `MAESTRO_PORT`, `MAESTRO_DEV_PORT` e `MAESTRO_PREVIEW_PORT`: a porta do serviço vem de `--port` (ou de `MAESTRO_PORT`, no momento do install), e as outras duas são de desenvolvimento. Se instalar o Node ou o uv em outro lugar, ou mudar uma variável, rode o `install` de novo: ele reescreve o arquivo e reinicia o app, e as sessões continuam rodando. Elas sobrevivem ao reinício porque o serviço já vem configurado para isso (`KillMode=process` no systemd, `AbandonProcessGroup` no launchd). O comando só mexe no arquivo que ele mesmo criou; se já existir outro com o mesmo nome, ele recusa e avisa.
 
-No Linux, a unit também limita a CPU das sessões, para um teste pesado ou um loop de subagentes não travar a máquina: `CPUWeight` baixo (o desktop tem prioridade em disputa) e `CPUQuota` com o teto de 60% dos núcleos. Ajuste com `MAESTRO_CPU_WEIGHT` e `MAESTRO_CPU_QUOTA` e rode o `install` de novo; quem já tinha o serviço instalado precisa fazer isso uma vez. O `MAESTRO_SESSION_NICE` é lido pelo agentd, que só passa a usar o valor novo depois de reiniciar (`kill $(cat ~/.local/share/claudio-maestro/agentd-v1.lock)` derruba as sessões em andamento).
+No Linux, a unit também limita a CPU das sessões, para um teste pesado ou um loop de subagentes não travar a máquina: `CPUWeight` baixo (o desktop tem prioridade em disputa) e `CPUQuota` com o teto de 60% dos núcleos. Ajuste com `MAESTRO_CPU_WEIGHT` e `MAESTRO_CPU_QUOTA` e rode o `install` de novo; quem já tinha o serviço instalado precisa fazer isso uma vez. O `MAESTRO_SESSION_NICE` é lido pelo agentd, que só passa a usar o valor novo depois de reiniciar (`kill $(cat ~/.local/share/claudio-maestro/agentd-v1.lock)` derruba as sessões em andamento; com `MAESTRO_DATA_DIR`, o arquivo fica nessa pasta).
 
 Antes de instalar, feche o Maestro que estiver rodando no terminal: a porta precisa estar livre. Se o terminal usa outra porta (`--port 7000`), passe a mesma ao `install`.
 
@@ -147,7 +147,7 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 | `MAESTRO_CLAUDE_CLI` | `bundled` faz o app usar sempre o Claude embutido no SDK, em vez do instalado no sistema | escolhe sozinho |
 | `MAESTRO_CPU_WEIGHT` | Peso de CPU do serviço systemd, de 1 a 10000: em disputa, o desktop e o navegador passam à frente das sessões. Só vale no serviço, depois de rodar `service install` | `20` |
 | `MAESTRO_CPU_QUOTA` | Teto de CPU de todas as sessões somadas, no serviço systemd: `auto` (60% dos núcleos, no mínimo 1), `off` ou um percentual (`800` = 8 núcleos) | `auto` |
-| `MAESTRO_SESSION_NICE` | Prioridade (`nice`, de 0 a 19) de cada processo do Claude; `0` desliga. Vale também fora do systemd e no macOS | `10` |
+| `MAESTRO_SESSION_NICE` | Incremento de `nice` sobre a prioridade com que o agentd roda, limitado a 19, para cada processo do Claude (se o backend já roda com `Nice=5`, as sessões ficam em 15); `0` desliga. Vale também fora do systemd e no macOS | `10` |
 | `CLAUDE_CONFIG_DIR` | Pasta de configuração do Claude Code | `~/.claude` |
 
 As portas precisam estar entre 1024 e 65535, fora de 6665 a 6669 (os navegadores bloqueiam essas). O app escuta só em `127.0.0.1`, sempre.
