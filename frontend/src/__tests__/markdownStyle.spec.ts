@@ -46,6 +46,7 @@ describe('estilo do markdown', () => {
   describe('realce de sintaxe', () => {
     const hljs = (cls: string) => rule(cls)
     const color = (decl: string) => decl.match(/color:\s*([^;]+);/)?.[1].trim()
+    const token = (name: string) => css.match(new RegExp(`--color-${name}:\\s*(#[0-9a-fA-F]{6})`))?.[1]
     // Contrast ratio (WCAG) of a #rrggbb color on the page background.
     const luminance = (hex: string) => {
       const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
@@ -57,34 +58,39 @@ describe('estilo do markdown', () => {
       return (hi + 0.05) / (lo + 0.05)
     }
 
-    it('não usa cores com significado (laranja, verde, vermelho, azul) fora dos blocos de diff', () => {
-      const neutral = [
-        '.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta',
-        '.hljs-string, .hljs-attr, .hljs-regexp',
-        '.hljs-comment, .hljs-quote',
-        '.hljs-number, .hljs-literal',
-        '.hljs-title, .hljs-type',
-      ]
-      for (const selector of neutral) {
+    it('cada classe usa o token de sintaxe do tema, nunca as cores de sinal (laranja, verde, vermelho, azul)', () => {
+      const expected: Record<string, string> = {
+        '.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta': 'syntax-keyword',
+        '.hljs-string, .hljs-attr, .hljs-regexp': 'syntax-string',
+        '.hljs-comment, .hljs-quote': 'syntax-comment',
+        '.hljs-number, .hljs-literal': 'syntax-number',
+        '.hljs-title': 'syntax-function',
+        '.hljs-type': 'syntax-type',
+      }
+      for (const [selector, name] of Object.entries(expected)) {
         const decl = hljs(selector)
-        expect(decl, selector).not.toBe('')
+        expect(color(decl), selector).toBe(`var(--color-${name})`)
         expect(decl, selector).not.toMatch(/--color-(primary|secondary|info|diff)/)
       }
     })
 
-    it('strings usam um token próprio com contraste AA sobre o fundo', () => {
-      expect(hljs('.hljs-string, .hljs-attr, .hljs-regexp')).toMatch(/color:\s*var\(--color-code-string\)/)
-      const token = css.match(/--color-code-string:\s*(#[0-9a-fA-F]{6})/)?.[1]
-      expect(token).toBeDefined()
-      expect(contrast(token!, '#0b0b0c')).toBeGreaterThanOrEqual(4.5)
+    it('no tema Maestro o realce continua sóbrio: neutros e o lilás das strings', () => {
+      for (const name of ['keyword', 'function', 'type']) expect(token(`syntax-${name}`), name).toBe(token('fg'))
+      expect(token('syntax-number')).toBe(token('code-fg'))
+      expect(token('syntax-comment')).toBe(token('fg-subtle'))
+      expect(token('syntax-string')).toBe('#c9b8e0')
     })
 
-    it('keywords e títulos em peso 600; comentários em itálico e fg-subtle', () => {
-      expect(hljs('.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta')).toMatch(/font-weight:\s*600/)
-      expect(hljs('.hljs-title, .hljs-type')).toMatch(/font-weight:\s*600/)
-      const comment = hljs('.hljs-comment, .hljs-quote')
-      expect(color(comment)).toBe('var(--color-fg-subtle)')
-      expect(comment).toMatch(/font-style:\s*italic/)
+    it('strings do Maestro têm contraste AA sobre o fundo', () => {
+      expect(contrast(token('syntax-string')!, '#0b0b0c')).toBeGreaterThanOrEqual(4.5)
+    })
+
+    it('keywords e títulos usam o peso da variável (600 no Maestro); comentários em itálico', () => {
+      expect(css.match(/:root\s*\{([^}]*)\}/)?.[1]).toMatch(/--syntax-weight:\s*600/)
+      for (const selector of ['.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta', '.hljs-title', '.hljs-type']) {
+        expect(hljs(selector), selector).toMatch(/font-weight:\s*var\(--syntax-weight\)/)
+      }
+      expect(hljs('.hljs-comment, .hljs-quote')).toMatch(/font-style:\s*italic/)
     })
 
     it('linhas de diff mantêm verde e vermelho', () => {

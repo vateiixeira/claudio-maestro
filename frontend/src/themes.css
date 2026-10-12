@@ -1,0 +1,283 @@
+/* Temas escuros da interface. Cada bloco redefine as mesmas variáveis --color-* do @theme de style.css (o tema Maestro, padrão).
+   O frontend/src/__tests__/themes.spec.ts confere que todos definem o conjunto completo e que os pares de texto passam de 4,5:1 (WCAG AA).
+   Degraus de superfície, tons de tipo, diffs e tons suaves são derivados dos acentos oficiais de cada paleta. */
+
+/* Dracula — paleta: github.com/dracula/visual-studio-code (src/dracula.yml).
+   Desvios por contraste AA: syntax-comment era #6272a4 (comment); fg-muted e fg-subtle são derivados do fg, porque a paleta não tem tons intermediários. */
+:root[data-theme='dracula'] {
+  --color-bg: #21222c;
+  --color-surface: #252631;
+  --color-panel: #282a36;
+  --color-card: #353743;
+  --color-elevated: #424450;
+  --color-line: #464959;
+  --color-line-strong: #4d5066;
+  --color-fg: #f8f8f2;
+  --color-fg-muted: #c9cad3;
+  --color-fg-subtle: #9ea0b1;
+  --color-code-fg: #c9cad3;
+  --color-primary: #50fa7b;
+  --color-primary-fg: #191a21;
+  --color-primary-soft: #8bf9a5;
+  --color-secondary: #ffb86c;
+  --color-secondary-fg: #191a21;
+  --color-secondary-soft: #fdce9b;
+  --color-info: #8be9fd;
+  --color-info-soft: #aceefa;
+  --color-diff-add-bg: #2e4b41;
+  --color-diff-add-fg: #82f99f;
+  --color-diff-del-bg: #4a313b;
+  --color-diff-del-fg: #fd8684;
+  --color-type-command: #8be9fd;
+  --color-type-file: #6ef2bc;
+  --color-type-agent: #cbabf7;
+  --color-type-think: #f1fa8c;
+  --color-syntax-keyword: #ff79c6;
+  --color-syntax-string: #f1fa8c;
+  --color-syntax-function: #50fa7b;
+  --color-syntax-number: #bd93f9;
+  --color-syntax-type: #8be9fd;
+  --color-syntax-comment: #7d8ab2;
+  /* Realce sem negrito: o negrito de keyword e título é só do Maestro. */
+  --syntax-weight: 400;
+}
+
+/* Monokai Pro — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
+   Desvios por contraste AA: syntax-comment era #727072 (dimmed3); fg-subtle era #939293 (dimmed2). */
+:root[data-theme='monokai-pro'] {
+  --color-bg: #221f22;
+  --color-surface: #282528;
+  --color-panel: #2d2a2e;
+  --color-card: #373438;
+  --color-elevated: #403e41;
+  --color-line: #4b494c;
+  --color-line-strong: #5b595c;
+  --color-fg: #fcfcfa;
+  --color-fg-muted: #c1c0c0;
+  --color-fg-subtle: #9e9d9d;
+  --color-code-fg: #c1c0c0;
+  --color-primary: #a9dc76;
+  --color-primary-fg: #19181a;
+  --color-primary-soft: #c6e7a4;
+  --color-secondary: #fc9867;
+  --color-secondary-fg: #19181a;
+  --color-secondary-soft: #fcbb9a;
+  --color-info: #78dce8;
+  --color-info-soft: #a0e6ed;
+  --color-diff-add-bg: #41463a;
+  --color-diff-add-fg: #c2e69e;
+  --color-diff-del-bg: #4f333c;
+  --color-diff-del-fg: #fe90aa;
+  --color-type-command: #78dce8;
+  --color-type-file: #91dcaf;
+  --color-type-agent: #b8acf3;
+  --color-type-think: #ffd866;
+  --color-syntax-keyword: #ff6188;
+  --color-syntax-string: #ffd866;
+  --color-syntax-function: #a9dc76;
+  --color-syntax-number: #ab9df2;
+  --color-syntax-type: #78dce8;
+  --color-syntax-comment: #888688;
+  /* Realce sem negrito: o negrito de keyword e título é só do Maestro. */
+  --syntax-weight: 400;
+}
+
+/* Monokai Machine — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
+   Desvios por contraste AA: syntax-comment era #6b7678 (dimmed3); fg-subtle era #8b9798 (dimmed2). */
+:root[data-theme='monokai-machine'] {
+  --color-bg: #1d2528;
+  --color-surface: #222b2f;
+  --color-panel: #273136;
+  --color-card: #313b40;
+  --color-elevated: #3a4449;
+  --color-line: #444f53;
+  --color-line-strong: #545f62;
+  --color-fg: #f2fffc;
+  --color-fg-muted: #b8c4c3;
+  --color-fg-subtle: #99a6a6;
+  --color-code-fg: #b8c4c3;
+  --color-primary: #a2e57b;
+  --color-primary-fg: #161b1e;
+  --color-primary-soft: #beeea8;
+  --color-secondary: #ffb270;
+  --color-secondary-fg: #161b1e;
+  --color-secondary-soft: #facda1;
+  --color-info: #7cd5f1;
+  --color-info-soft: #9fe2f4;
+  --color-diff-add-bg: #3b4e41;
+  --color-diff-add-fg: #baeda2;
+  --color-diff-del-bg: #4a3b42;
+  --color-diff-del-fg: #fb99a4;
+  --color-type-command: #7cd5f1;
+  --color-type-file: #8fddb6;
+  --color-type-agent: #c4b1f9;
+  --color-type-think: #ffed72;
+  --color-syntax-keyword: #ff6d7e;
+  --color-syntax-string: #ffed72;
+  --color-syntax-function: #a2e57b;
+  --color-syntax-number: #baa0f8;
+  --color-syntax-type: #7cd5f1;
+  --color-syntax-comment: #818c8d;
+  /* Realce sem negrito: o negrito de keyword e título é só do Maestro. */
+  --syntax-weight: 400;
+}
+
+/* Monokai Octagon — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
+   Desvios por contraste AA: syntax-comment era #696d77 (dimmed3); fg-subtle era #888d94 (dimmed2). */
+:root[data-theme='monokai-octagon'] {
+  --color-bg: #1e1f2b;
+  --color-surface: #232533;
+  --color-panel: #282a3a;
+  --color-card: #313443;
+  --color-elevated: #3a3d4b;
+  --color-line: #444755;
+  --color-line-strong: #535763;
+  --color-fg: #eaf2f1;
+  --color-fg-muted: #b2b9bd;
+  --color-fg-subtle: #989da3;
+  --color-code-fg: #b2b9bd;
+  --color-primary: #bad761;
+  --color-primary-fg: #161821;
+  --color-primary-soft: #cbe093;
+  --color-secondary: #ff9b5e;
+  --color-secondary-fg: #161821;
+  --color-secondary-soft: #f8b991;
+  --color-info: #9cd1bb;
+  --color-info-soft: #b3dbcb;
+  --color-diff-add-bg: #3f4640;
+  --color-diff-add-fg: #c8df8c;
+  --color-diff-del-bg: #4a3344;
+  --color-diff-del-fg: #f98f9e;
+  --color-type-command: #9cd1bb;
+  --color-type-file: #abd48e;
+  --color-type-agent: #caaad0;
+  --color-type-think: #ffd76d;
+  --color-syntax-keyword: #ff657a;
+  --color-syntax-string: #ffd76d;
+  --color-syntax-function: #bad761;
+  --color-syntax-number: #c39ac9;
+  --color-syntax-type: #9cd1bb;
+  --color-syntax-comment: #83888f;
+  /* Realce sem negrito: o negrito de keyword e título é só do Maestro. */
+  --syntax-weight: 400;
+}
+
+/* Monokai Ristretto — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
+   Desvios por contraste AA: syntax-comment era #72696a (dimmed3); fg-subtle era #948a8b (dimmed2). */
+:root[data-theme='monokai-ristretto'] {
+  --color-bg: #211c1c;
+  --color-surface: #272121;
+  --color-panel: #2c2525;
+  --color-card: #362f2f;
+  --color-elevated: #403838;
+  --color-line: #4b4343;
+  --color-line-strong: #5b5353;
+  --color-fg: #fff1f3;
+  --color-fg-muted: #c3b7b8;
+  --color-fg-subtle: #a19697;
+  --color-code-fg: #c3b7b8;
+  --color-primary: #adda78;
+  --color-primary-fg: #191515;
+  --color-primary-soft: #cae2a3;
+  --color-secondary: #f38d70;
+  --color-secondary-fg: #191515;
+  --color-secondary-soft: #f7b09e;
+  --color-info: #85dacc;
+  --color-info-soft: #aae1d8;
+  --color-diff-add-bg: #414232;
+  --color-diff-add-fg: #c6e19d;
+  --color-diff-del-bg: #4d3034;
+  --color-diff-del-fg: #fe91a5;
+  --color-type-command: #85dacc;
+  --color-type-file: #99daa2;
+  --color-type-agent: #a8a9eb;
+  --color-type-think: #f9cc6c;
+  --color-syntax-keyword: #fd6883;
+  --color-syntax-string: #f9cc6c;
+  --color-syntax-function: #adda78;
+  --color-syntax-number: #a8a9eb;
+  --color-syntax-type: #85dacc;
+  --color-syntax-comment: #8e8485;
+  /* Realce sem negrito: o negrito de keyword e título é só do Maestro. */
+  --syntax-weight: 400;
+}
+
+/* Monokai Spectrum — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
+   Desvios por contraste AA: syntax-comment era #69676c (dimmed3); fg-subtle era #8b888f (dimmed2). */
+:root[data-theme='monokai-spectrum'] {
+  --color-bg: #191919;
+  --color-surface: #1e1e1e;
+  --color-panel: #222222;
+  --color-card: #2c2c2d;
+  --color-elevated: #363537;
+  --color-line: #414042;
+  --color-line-strong: #525053;
+  --color-fg: #f7f1ff;
+  --color-fg-muted: #bab6c0;
+  --color-fg-subtle: #96939a;
+  --color-code-fg: #bab6c0;
+  --color-primary: #7bd88f;
+  --color-primary-fg: #131313;
+  --color-primary-soft: #a6e1b6;
+  --color-secondary: #fd9353;
+  --color-secondary-fg: #131313;
+  --color-secondary-soft: #fbb48f;
+  --color-info: #5ad4e6;
+  --color-info-soft: #89ddee;
+  --color-diff-add-bg: #303f33;
+  --color-diff-add-fg: #a0e0b1;
+  --color-diff-del-bg: #452c33;
+  --color-diff-del-fg: #fa8caf;
+  --color-type-command: #5ad4e6;
+  --color-type-file: #6bd6bb;
+  --color-type-agent: #a89fe9;
+  --color-type-think: #fce566;
+  --color-syntax-keyword: #fc618d;
+  --color-syntax-string: #fce566;
+  --color-syntax-function: #7bd88f;
+  --color-syntax-number: #948ae3;
+  --color-syntax-type: #5ad4e6;
+  --color-syntax-comment: #838086;
+  /* Realce sem negrito: o negrito de keyword e título é só do Maestro. */
+  --syntax-weight: 400;
+}
+
+/* Monokai Classic — paleta: github.com/loctvl842/monokai-pro.nvim (lua/monokai-pro/palette).
+   Desvios por contraste AA: syntax-comment era #6e7066 (dimmed3); fg-subtle era #919288 (dimmed2); syntax-keyword era #f92672 (accent1). */
+:root[data-theme='monokai-classic'] {
+  --color-bg: #1d1e19;
+  --color-surface: #22231e;
+  --color-panel: #272822;
+  --color-card: #31322c;
+  --color-elevated: #3b3c35;
+  --color-line: #46473f;
+  --color-line-strong: #57584f;
+  --color-fg: #fdfff1;
+  --color-fg-muted: #c0c1b5;
+  --color-fg-subtle: #9a9b90;
+  --color-code-fg: #c0c1b5;
+  --color-primary: #a6e22e;
+  --color-primary-fg: #161613;
+  --color-primary-soft: #c4ec72;
+  --color-secondary: #fd971f;
+  --color-secondary-fg: #161613;
+  --color-secondary-soft: #fdbb69;
+  --color-info: #66d9ef;
+  --color-info-soft: #93e4f0;
+  --color-diff-add-bg: #3b4624;
+  --color-diff-add-fg: #c0eb69;
+  --color-diff-del-bg: #49282f;
+  --color-diff-del-fg: #fa6798;
+  --color-type-command: #66d9ef;
+  --color-type-file: #86de8f;
+  --color-type-agent: #c19ffc;
+  --color-type-think: #e6db74;
+  --color-syntax-keyword: #f92f77;
+  --color-syntax-string: #e6db74;
+  --color-syntax-function: #a6e22e;
+  --color-syntax-number: #ae81ff;
+  --color-syntax-type: #66d9ef;
+  --color-syntax-comment: #85877c;
+  /* Realce sem negrito: o negrito de keyword e título é só do Maestro. */
+  --syntax-weight: 400;
+}

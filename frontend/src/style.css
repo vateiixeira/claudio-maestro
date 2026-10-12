@@ -1,5 +1,6 @@
 @import './fonts.css';
 @import 'tailwindcss';
+@import './themes.css';
 
 :root {
   --chat-width: 1120px;
@@ -7,6 +8,8 @@
   --motion-state: 160ms;
   --motion-enter: 200ms;
   --ease-maestro: cubic-bezier(.2, .8, .2, 1);
+  /* Peso de keyword e título no realce de código: 600 no Maestro; os temas novos usam 400 (veja themes.css). */
+  --syntax-weight: 600;
 }
 
 @keyframes maestro-enter {
@@ -44,7 +47,13 @@
   --color-fg-muted: #a1a1aa;
   --color-fg-subtle: #94949d;
   --color-code-fg: #e4e4e7;
-  --color-code-string: #c9b8e0;
+  /* Realce de código. No Maestro continua sóbrio (neutros + o lilás das strings); os temas novos colorem tudo. */
+  --color-syntax-keyword: #f4f4f5;
+  --color-syntax-string: #c9b8e0;
+  --color-syntax-function: #f4f4f5;
+  --color-syntax-number: #e4e4e7;
+  --color-syntax-type: #f4f4f5;
+  --color-syntax-comment: #94949d;
   --color-primary: #4ade80;
   --color-primary-fg: #052e14;
   --color-primary-soft: #86efac;
@@ -57,8 +66,8 @@
   --color-diff-del-fg: #fca5a5;
   --color-info: #60a5fa;
   --color-info-soft: #93c5fd;
-  --color-primary-tint: rgb(74 222 128 / 0.10);
-  --color-secondary-tint: rgb(251 146 60 / 0.12);
+  --color-primary-tint: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --color-secondary-tint: color-mix(in srgb, var(--color-secondary) 12%, transparent);
   /* Type tones of conversation actions: icon, `cap` label, rail ring and a 9% header fill only. Never for state or body text. */
   --color-type-command: #95c3eb;
   --color-type-file: #8bd6c1;
@@ -115,7 +124,7 @@ body {
 .markdown a {
   color: var(--color-info-soft);
   text-decoration: underline;
-  text-decoration-color: rgb(147 197 253 / 0.4);
+  text-decoration-color: color-mix(in srgb, var(--color-info-soft) 40%, transparent);
   text-underline-offset: 2px;
 }
 .markdown a:hover { color: var(--color-fg); text-decoration-color: currentColor; }
@@ -205,11 +214,12 @@ body {
 .markdown-doc h1, .markdown-doc h2, .markdown-doc h3, .markdown-doc h4 { scroll-margin-top: 5rem; }
 .markdown hr { border: none; border-top: 1px solid var(--color-line); }
 
-.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta { color: var(--color-fg); font-weight: 600; }
-.hljs-string, .hljs-attr, .hljs-regexp { color: var(--color-code-string); }
-.hljs-comment, .hljs-quote { color: var(--color-fg-subtle); font-style: italic; }
-.hljs-number, .hljs-literal { color: var(--color-code-fg); }
-.hljs-title, .hljs-type { color: var(--color-fg); font-weight: 600; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta { color: var(--color-syntax-keyword); font-weight: var(--syntax-weight); }
+.hljs-string, .hljs-attr, .hljs-regexp { color: var(--color-syntax-string); }
+.hljs-comment, .hljs-quote { color: var(--color-syntax-comment); font-style: italic; }
+.hljs-number, .hljs-literal { color: var(--color-syntax-number); }
+.hljs-title { color: var(--color-syntax-function); font-weight: var(--syntax-weight); }
+.hljs-type { color: var(--color-syntax-type); font-weight: var(--syntax-weight); }
 .hljs-addition { color: var(--color-diff-add-fg); }
 .hljs-deletion { color: var(--color-diff-del-fg); }
 
