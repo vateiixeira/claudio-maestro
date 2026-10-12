@@ -262,8 +262,11 @@ async def test_subagent_end_announces_waiting(make_env, env_cleanup):
 
     turn = text_turn(sid, "o subagente terminou")
     client.push([task_notification_message(sid, "task-1", "toolu_agent"), init_message(sid), *turn[2:]])
-    await wait_until(lambda: session.state == "idle" and not session.subagents_running)
-    await asyncio.sleep(0.02)
+    await wait_until(
+        lambda: session.state == "idle"
+        and not session.subagents_running
+        and _updates(env, sid)[-1]["display_state"] == "waiting"
+    )
 
     assert env.manager.summary(sid)["display_state"] == "waiting"
     later = _updates(env, sid)[before:]
@@ -291,8 +294,15 @@ async def test_subagent_end_before_autonomous_turn_does_not_flash_waiting(make_e
     assert all(u["display_state"] != "waiting" for u in _updates(env, sid)[before:])
 
     pause.release.set()
-    await wait_until(lambda: session.state == "idle" and not session._autonomous_turn)
-    await asyncio.sleep(0.02)
+    # Idle with no autonomous turn is also true right now, before the reader resumes,
+    # so wait for the turn itself: its text arrived and the last announcement is the
+    # settled one.
+    await wait_until(
+        lambda: any(i["type"] == "text" and i["text"] == "o subagente terminou"
+                    for i in session.snapshot()["items"])
+        and session.state == "idle"
+        and _updates(env, sid)[-1]["display_state"] == "waiting"
+    )
 
     later = _updates(env, sid)[before:]
     assert later[-1]["display_state"] == "waiting"
