@@ -12,6 +12,7 @@ import { DEFAULT_FINISHED_AFTER_DAYS, useLayoutStore } from '../../stores/layout
 import { UI_SCALES, setUiScale, uiScale } from '../../uiScale'
 import { formatActivity } from '../../format'
 import { useUpdatesStore } from '../../stores/updates'
+import ThemePicker from './ThemePicker.vue'
 
 const MIN_DAYS = 1
 const MAX_DAYS = 365
@@ -171,6 +172,7 @@ onMounted(load)
     </div>
 
     <div class="flex flex-col gap-7 px-7 py-6" :aria-busy="loading">
+      <ThemePicker />
       <fieldset class="m-0 flex min-w-0 flex-col gap-2 border-0 p-0" aria-describedby="pref-ui-scale-help">
         <legend class="mb-2 p-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Tamanho do texto</legend>
         <div class="flex flex-wrap gap-1.5">
