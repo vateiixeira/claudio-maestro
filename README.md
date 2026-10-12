@@ -29,6 +29,7 @@ Se você não lê português, o tradutor do navegador dá conta, e o próprio Cl
 - **Controles por conversa.** Modelo, nível de raciocínio, modo de permissão, imagens coladas, comandos `/` e menções `@`.
 - **Resumo das conversas.** Um agente do próprio app pode resumir em fases o que cada conversa em andamento já fez.
 - **Resumo ao voltar.** Ao reabrir uma conversa depois de um tempo, um card mostra o que aconteceu enquanto você estava fora e o que falta.
+- **Temas.** Maestro (o padrão), Dracula e os filtros do Monokai, escolhidos em Preferências → Geral → Tema, com uma prévia de uma sessão aberta. Veja os [Créditos](#créditos).
 
 O que ele não é, de propósito: IDE, terminal embutido, editor de código ou árvore de arquivos.
 
@@ -163,6 +164,15 @@ Não exponha o app na rede. Detalhes e como relatar uma falha em [SECURITY.md](S
 ## Contribuindo
 
 Veja [CONTRIBUTING.md](CONTRIBUTING.md). O que pode vir pela frente está no [ROADMAP.md](ROADMAP.md), e o que mudou em cada versão no [CHANGELOG.md](CHANGELOG.md).
+
+## Créditos
+
+Os temas de cores da interface usam as paletas de outros projetos. O Cláudio Maestro não é afiliado, endossado nem patrocinado por eles, e os nomes pertencem aos seus donos.
+
+- **[Dracula](https://draculatheme.com/)**: paleta do tema Dracula, criado por Zeno Rocha e mantido pela comunidade Dracula, sob licença MIT. Os valores foram conferidos em [dracula/visual-studio-code](https://github.com/dracula/visual-studio-code).
+- **[Monokai](https://monokai.pro/)**: os filtros Pro, Machine, Octagon, Ristretto e Spectrum do Monokai Pro e o Monokai Classic, criados por Wimer Hazenberg. O Monokai Pro é um produto da Monokai; este projeto usa só os valores de cor das paletas, sem copiar arquivos do tema. Os valores foram conferidos em [loctvl842/monokai-pro.nvim](https://github.com/loctvl842/monokai-pro.nvim) (licença MIT).
+
+Alguns tons de texto secundário foram clareados para manter o contraste mínimo de 4,5:1 (WCAG AA). Os desvios estão comentados em `frontend/src/themes.css`.
 
 ## Licença
 
