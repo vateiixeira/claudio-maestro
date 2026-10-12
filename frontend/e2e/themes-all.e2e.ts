@@ -80,3 +80,80 @@ for (const label of ['Monokai Ristretto', 'Monokai Spectrum']) {
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth)
   })
 }
+
+const THEME_IDS = THEMES.map((t) => t.id)
+const card = (page: import('@playwright/test').Page, id: string) =>
+  page.locator(`[data-test="theme-option"][data-theme="${id}"]`)
+
+test('a marca Ativo aparece só no cartão do tema ativo e os cartões são distintos', async ({ page }) => {
+  await page.goto('/preferencias')
+  for (const id of ['dracula', 'monokai-classic', 'maestro']) {
+    await card(page, id).click()
+    await expect(page.locator('[data-test="theme-active"]')).toHaveCount(1)
+    await expect(card(page, id).locator('[data-test="theme-active"]')).toHaveText('Ativo')
+  }
+  const looks = await page.locator('[data-test="theme-option"]').evaluateAll((els) =>
+    els.map((el) => {
+      const code = el.querySelector('span[style]') as HTMLElement
+      return `${getComputedStyle(el).backgroundColor}|${getComputedStyle(code).color}`
+    }),
+  )
+  expect(new Set(looks).size).toBe(THEME_IDS.length)
+})
+
+test('os nomes dos cartões não são cortados nem quebram em 1100 px', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 800 })
+  await page.goto('/preferencias')
+  const names = await page.locator('[data-test="theme-name"]').evaluateAll((els) =>
+    els.map((el) => {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      return { truncated: el.scrollWidth > el.clientWidth, lines: range.getClientRects().length }
+    }),
+  )
+  expect(names).toHaveLength(THEME_IDS.length)
+  for (const n of names) expect(n).toEqual({ truncated: false, lines: 1 })
+})
+
+test('a prévia segue o foco do teclado, fica inerte e a legenda é lida', async ({ page }) => {
+  await page.goto('/preferencias')
+  const preview = page.locator('[data-test="theme-preview"]')
+  await card(page, 'maestro').locator('input').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(preview).toHaveAttribute('data-theme', 'dracula')
+  await expect(page.locator('[data-test="theme-preview-caption"]')).toHaveText('Prévia: Dracula')
+  await expect(preview).toHaveAttribute('aria-hidden', 'true')
+  await expect(preview).toHaveAttribute('inert', '')
+  // O foco do teclado não entra na prévia: o link e os botões dela são só desenho.
+  await expect(page.getByText('Prévia: Dracula')).toBeVisible()
+  expect(await preview.evaluate((el) => el.contains(document.activeElement))).toBe(false)
+  // Depois de escolher, a prévia mostra o novo ativo.
+  await page.mouse.move(0, 0)
+  await expect(preview).toHaveAttribute('data-theme', 'dracula')
+})
+
+test('nenhuma cor do tema ativo vaza para dentro da prévia de outro tema', async ({ page }) => {
+  await page.goto('/preferencias')
+  const preview = page.locator('[data-test="theme-preview"]')
+  const signature = () =>
+    preview.evaluate((root) =>
+      [root, ...root.querySelectorAll('*')].map((el) => {
+        const s = getComputedStyle(el)
+        return [s.color, s.backgroundColor, s.borderTopColor, s.borderBottomColor, s.fill, s.stroke].join('|')
+      }),
+    )
+  // Referência: a prévia do Maestro com o Maestro ativo.
+  await card(page, 'maestro').hover()
+  const reference = await signature()
+  await card(page, 'dracula').click()
+  await card(page, 'maestro').hover()
+  await expect(preview).toHaveAttribute('data-theme', 'maestro')
+  expect(await signature()).toEqual(reference)
+  // E o inverso: a prévia do Dracula é a mesma com o Maestro ativo.
+  await card(page, 'dracula').hover()
+  const dracula = await signature()
+  await card(page, 'maestro').click()
+  await card(page, 'dracula').hover()
+  await expect(preview).toHaveAttribute('data-theme', 'dracula')
+  expect(await signature()).toEqual(dracula)
+})
