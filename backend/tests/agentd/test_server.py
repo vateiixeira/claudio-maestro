@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import shutil
 import signal
@@ -509,3 +510,64 @@ async def test_kill_twice_is_harmless(agentd, tmp_path):
     reply = await conn.call("kill", id=child)
     assert reply["ok"] or reply["error"] == "unknown child"
     await conn.close()
+
+
+async def _spawned_priority(tmp_path, **options) -> int:
+    server = Agentd(tmp_path, idle_exit=60, orphan_timeout=60, **options)
+    task = asyncio.create_task(server.serve())
+    await asyncio.wait_for(server.ready.wait(), 5)
+    try:
+        conn = await Conn.open(socket_path(tmp_path))
+        child_id = await spawn(conn, tmp_path)
+        # The reply to `spawn` can beat the exec of `claude` (behind `nice`): wait for it to answer.
+        await conn.call("subscribe", id=child_id, **{"from": 0})
+        await conn.call("write", id=child_id, data=user("oi"))
+        await lines_until(conn, lambda m: m["type"] == "result")
+        priority = os.getpriority(os.PRIO_PROCESS, server.children[child_id].proc.pid)
+        await conn.close()
+        return priority
+    finally:
+        await server.stop()
+        await asyncio.wait_for(task, 10)
+
+
+@pytest.mark.anyio
+async def test_session_nice_is_applied_to_the_child(tmp_path):
+    base = os.getpriority(os.PRIO_PROCESS, 0)
+    if base >= 19:
+        pytest.skip("already at the lowest priority")
+    assert await _spawned_priority(tmp_path, session_nice=7) == min(19, base + 7)
+
+
+@pytest.mark.anyio
+async def test_session_nice_zero_leaves_the_priority_alone(tmp_path):
+    assert await _spawned_priority(tmp_path) == os.getpriority(os.PRIO_PROCESS, 0)
+
+
+@pytest.mark.anyio
+async def test_a_missing_nice_does_not_stop_the_session(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr("claudio_maestro.agentd.server.shutil.which", lambda _name: None)
+    with caplog.at_level(logging.WARNING, logger="claudio_maestro.agentd"):
+        priority = await _spawned_priority(tmp_path, session_nice=7)
+    # The child starts anyway, with the priority it inherited.
+    assert priority == os.getpriority(os.PRIO_PROCESS, 0)
+    assert "nice" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_a_relative_nice_path_is_made_absolute(tmp_path, monkeypatch):
+    # `which` answers "bin/nice" for a relative PATH entry; the child starts with the project as
+    # cwd, so a relative path would run `<project>/bin/nice`.
+    monkeypatch.setattr("claudio_maestro.agentd.server.shutil.which", lambda _name: "bin/nice")
+    started: list[tuple] = []
+
+    async def record(*args, **_kwargs):
+        started.append(args)
+        raise OSError("not started on purpose")
+
+    monkeypatch.setattr("claudio_maestro.agentd.server.asyncio.create_subprocess_exec", record)
+    server = Agentd(tmp_path, idle_exit=60, orphan_timeout=60, session_nice=7)
+    with pytest.raises(OSError):
+        await server._spawn("s1", FAKE_CLI, str(tmp_path), dict(os.environ))
+    assert os.path.isabs(started[0][0])
+    assert started[0][:3] == (os.path.abspath("bin/nice"), "-n", "7")

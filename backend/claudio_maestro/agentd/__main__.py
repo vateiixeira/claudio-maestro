@@ -12,6 +12,17 @@ from pathlib import Path
 from claudio_maestro.agentd import LOG_NAME
 from claudio_maestro.agentd.paths import private_dir
 from claudio_maestro.agentd.server import Agentd, LockedError
+from claudio_maestro.cpulimit import CpuLimitError, session_nice_from_env
+
+
+def _session_nice() -> int:
+    """The nice of the sessions. A bad value must not stop the agentd (it keeps the sessions
+    alive): log it and leave the priority alone. `service install` is what refuses it."""
+    try:
+        return session_nice_from_env(os.environ)
+    except CpuLimitError as exc:
+        logging.getLogger(__name__).warning("%s Usando a prioridade normal nas sessões.", exc)
+        return 0
 
 
 async def _run(agentd: Agentd) -> None:
@@ -32,7 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     handler = RotatingFileHandler(args.data_dir / LOG_NAME, maxBytes=1024 * 1024, backupCount=2)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logging.basicConfig(level=logging.INFO, handlers=[handler])
-    agentd = Agentd(args.data_dir, idle_exit=args.idle_exit, orphan_timeout=args.orphan_timeout)
+    agentd = Agentd(args.data_dir, idle_exit=args.idle_exit, orphan_timeout=args.orphan_timeout,
+                    session_nice=_session_nice())
     try:
         asyncio.run(_run(agentd))
     except LockedError:

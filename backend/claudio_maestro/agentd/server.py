@@ -11,6 +11,7 @@ import fcntl
 import json
 import logging
 import os
+import shutil
 import signal
 import time
 import uuid
@@ -101,8 +102,10 @@ def _peek(line: str) -> dict[str, Any] | None:
 
 
 class Agentd:
-    def __init__(self, data_dir: Path, *, idle_exit: float, orphan_timeout: float) -> None:
+    def __init__(self, data_dir: Path, *, idle_exit: float, orphan_timeout: float,
+                 session_nice: int = 0) -> None:
         self.data_dir = data_dir
+        self.session_nice = session_nice
         self.idle_exit = idle_exit
         self.orphan_timeout = orphan_timeout
         self.children: dict[str, Child] = {}
@@ -272,6 +275,17 @@ class Agentd:
 
     async def _spawn(self, session_id: str, cmd: list[str], cwd: str | None,
                      env: dict[str, str]) -> Child:
+        if self.session_nice > 0:
+            # `nice` execs the `claude` (same pid, cwd and env), so the priority holds for all of
+            # its threads from the start.
+            nice_bin = shutil.which("nice")
+            if nice_bin:
+                # `which` answers "bin/nice" for a relative PATH entry, and the child starts with
+                # the project as cwd: a relative path would run `<project>/bin/nice`.
+                cmd = [os.path.abspath(nice_bin), "-n", str(self.session_nice), *cmd]
+            else:
+                logger.warning("Sessão %s: o comando `nice` não foi encontrado; a sessão sobe "
+                               "sem prioridade reduzida.", session_id)
         proc = await asyncio.create_subprocess_exec(
             *cmd, cwd=cwd, env=env, stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
