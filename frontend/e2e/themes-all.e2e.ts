@@ -62,3 +62,21 @@ test('o tema troca pelo teclado, com as setas', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dracula')
   await expect(page.locator('[data-test="theme-option"]', { hasText: 'Dracula' }).locator('input')).toBeChecked()
 })
+
+for (const label of ['Monokai Ristretto', 'Monokai Spectrum']) {
+  test(`o nome ${label} aparece inteiro no cartão ativo`, async ({ page }) => {
+    // Viewport estreito: os cartões ficam na largura mínima da grade, o pior caso para o nome.
+    await page.setViewportSize({ width: 560, height: 800 })
+    await page.goto('/preferencias')
+    const option = page.locator('[data-test="theme-option"]', { hasText: label })
+    await option.click()
+    await expect(option.locator('input')).toBeChecked()
+    const name = option.locator('[data-test="theme-name"]')
+    await expect(name).toHaveText(label)
+    const { scrollWidth, clientWidth } = await name.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }))
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth)
+  })
+}

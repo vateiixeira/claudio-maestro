@@ -13,7 +13,7 @@ const previewLabel = computed(() => THEMES.find((t) => t.id === previewId.value)
 <template>
   <fieldset class="m-0 flex min-w-0 flex-col gap-2 border-0 p-0" aria-describedby="pref-theme-help">
     <legend class="mb-2 p-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Tema</legend>
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(12.5rem,1fr))] gap-2">
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-2">
       <!-- Each card is painted with its own theme (data-theme scopes the variables to the card). -->
       <label
         v-for="item in THEMES"
