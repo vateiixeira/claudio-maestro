@@ -10,9 +10,11 @@ be recognised (`describe_failure`).
 import asyncio
 import os
 import re
+import stat
 import weakref
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -326,6 +328,224 @@ async def commit(repo: Path, message: str) -> str:
         await _checked(repo, "add", "-A")
         if await _nothing_staged(repo):
             raise InvalidRequestError(NOTHING_TO_COMMIT)
+    await _checked(
+        repo, "commit", "--quiet", "--no-verify", "--cleanup=whitespace", "-F", "-",
+        input=(text + "\n").encode("utf-8"),
+    )
+    return (await _checked(repo, "rev-parse", "HEAD")).strip()
+
+
+# Branches and merge -----------------------------------------------------------------
+
+MAX_BRANCH_NAME = 255
+MARKER_READ_LIMIT = 8 * 1024 * 1024
+
+BRANCH_EMPTY = "Escreva o nome da branch."
+BRANCH_INVALID = "Nome de branch inválido: {name}."
+BRANCH_SPACE = "Nome de branch não pode ter espaço. Por exemplo: {example}."
+BRANCH_EXISTS = "Já existe uma branch {name}."
+BRANCH_BLOCKED_BY = "Já existe uma branch chamada {other}, que impede criar {name}."
+BRANCH_BLOCKS = "Já existem branches dentro de {name}/, o que impede criar {name}."
+REMOTE_UNKNOWN = "Esta branch remota não pertence a nenhum remoto configurado."
+NOT_MERGING = "Não há merge em andamento neste repositório."
+STILL_CONFLICTED = "Ainda há arquivos em conflito. Resolva e marque cada um antes de concluir o merge."
+NOT_CONFLICTED = "O arquivo {path} não está em conflito."
+MARKERS_LEFT = (
+    "O arquivo {path} ainda tem marcas de conflito (<<<<<<< ou >>>>>>>). Resolva antes de marcar."
+)
+_MARKER = re.compile(rb"^(?:<{7} |>{7} )", re.MULTILINE)
+_SWITCH = ("switch", "--no-guess", "--no-recurse-submodules")
+
+
+@dataclass(frozen=True)
+class MergeResult:
+    conflicts: bool
+
+
+async def check_branch_name(repo: Path, name: str) -> str:
+    """`name` trimmed, if git accepts it as a new branch; never something that reads as an option."""
+    text = name.strip()
+    if not text:
+        raise InvalidRequestError(BRANCH_EMPTY)
+    if " " in text:
+        raise InvalidRequestError(BRANCH_SPACE.format(example=re.sub(r" +", "-", text)))
+    if (
+        len(text) > MAX_BRANCH_NAME or text.startswith("-") or text == "HEAD" or "@{" in text
+        or gitinfo._has_control(text)
+    ):
+        raise InvalidRequestError(BRANCH_INVALID.format(name=text))
+    code, out, _ = await _git(repo, "check-ref-format", "--branch", text)
+    if code != 0 or out.strip() != text:
+        raise InvalidRequestError(BRANCH_INVALID.format(name=text))
+    return text
+
+
+async def _verify(repo: Path, ref: str) -> str:
+    try:
+        return await gitinfo.verify_branch_ref(repo, ref, timeout=LOCAL_TIMEOUT)
+    except gitinfo.RefNotFoundError as exc:
+        raise NotFoundError(gitinfo.BRANCH_NOT_FOUND) from exc
+    except gitinfo.GitError as exc:
+        raise GitOpError(str(exc)) from exc
+
+
+async def _ref_exists(repo: Path, ref: str) -> bool:
+    code, _, _ = await _git(repo, "show-ref", "--verify", "-q", ref)
+    return code == 0
+
+
+async def _local_name(repo: Path, ref: str) -> str:
+    """`refs/remotes/<remote>/<name>` → `<name>`, with the longest remote that matches."""
+    short = ref.removeprefix("refs/remotes/")
+    try:
+        remotes = await gitinfo.remote_names(repo, timeout=LOCAL_TIMEOUT)
+    except gitinfo.GitError as exc:
+        raise GitOpError(str(exc)) from exc
+    for remote in sorted(remotes, key=len, reverse=True):
+        if short.startswith(f"{remote}/") and len(short) > len(remote) + 1:
+            return short[len(remote) + 1:]
+    raise InvalidRequestError(REMOTE_UNKNOWN)
+
+
+async def _refuse_merging(repo: Path) -> None:
+    if await _merging(repo):
+        raise GitOpError(MERGING_MESSAGE)
+
+
+async def _refuse_clash(repo: Path, name: str) -> None:
+    """A branch `a` and `a/b` cannot both exist (git stores refs as files)."""
+    parts = name.split("/")
+    for end in range(1, len(parts)):
+        other = "/".join(parts[:end])
+        if await _ref_exists(repo, f"refs/heads/{other}"):
+            raise InvalidRequestError(BRANCH_BLOCKED_BY.format(other=other, name=name))
+    out = await _checked(repo, "for-each-ref", "--count=1", "--format=%(refname)", f"refs/heads/{name}/")
+    if out.strip():
+        raise InvalidRequestError(BRANCH_BLOCKS.format(name=name))
+
+
+async def switch(repo: Path, ref: str) -> None:
+    """Check out a branch, carrying the changes (git refuses if they would be overwritten).
+
+    A remote branch becomes a local one that tracks it, unless the local one already exists.
+    """
+    await _ensure_writable(repo)
+    await _refuse_merging(repo)
+    await _verify(repo, ref)
+    if ref.startswith("refs/heads/"):
+        name = ref.removeprefix("refs/heads/")
+        await _checked(repo, *_SWITCH, "--end-of-options", name, target=name)
+        return
+    name = await _local_name(repo, ref)
+    if await _ref_exists(repo, f"refs/heads/{name}"):
+        await _checked(repo, *_SWITCH, "--end-of-options", name, target=name)
+        return
+    name = await check_branch_name(repo, name)
+    await _refuse_clash(repo, name)
+    await _checked(repo, *_SWITCH, "--track", "-c", name, "--end-of-options", ref, target=name)
+
+
+async def create_branch(repo: Path, name: str) -> str:
+    """A new branch from HEAD, already checked out; the changes go with it."""
+    await _ensure_writable(repo)
+    await _refuse_merging(repo)
+    name = await check_branch_name(repo, name)
+    if await _ref_exists(repo, f"refs/heads/{name}"):
+        raise InvalidRequestError(BRANCH_EXISTS.format(name=name))
+    await _refuse_clash(repo, name)
+    if await _has_head(repo):
+        await _checked(repo, *_SWITCH, "-c", name, target=name)
+    else:  # no commit yet: only HEAD's name changes
+        await _checked(repo, "symbolic-ref", "HEAD", f"refs/heads/{name}")
+    return name
+
+
+def _merge_subject(ref: str) -> str:
+    short = gitinfo._short_ref(ref) or ref
+    if ref.startswith("refs/remotes/"):
+        return f"Merge remote-tracking branch '{short}'"
+    return f"Merge branch '{short}'"
+
+
+async def _merge_ref(repo: Path, ref: str, *, upstream: str | None = None) -> MergeResult:
+    """`git merge` of a verified ref. A conflict is a result, not an error: the merge stays."""
+    target = gitinfo._short_ref(ref) or ref
+    code, out, err = await _git(
+        repo, "merge", "--no-edit", "--no-stat", "--no-progress", "--no-verify",
+        # The repository's `branch.<name>.mergeOptions` and `merge.ff` must not change what runs
+        # (signing runs `gpg.program`; --squash and --ff-only would break the flow).
+        "--no-gpg-sign", "--no-verify-signatures", "--no-squash", "--commit", "--ff",
+        "-m", _merge_subject(ref), "--end-of-options", ref,
+    )
+    if code == 0:
+        return MergeResult(conflicts=False)
+    if await _merging(repo):
+        return MergeResult(conflicts=True)
+    text = err or out
+    raise GitOpError(describe_failure(text, target=target, upstream=upstream), clean_output(text))
+
+
+async def merge(repo: Path, ref: str) -> MergeResult:
+    policy = await _ensure_writable(repo)
+    if policy["no_merge"]:
+        raise ReadOnlyError(policy["no_merge"])
+    await _refuse_merging(repo)
+    await _verify(repo, ref)
+    return await _merge_ref(repo, ref)
+
+
+async def _conflicts(repo: Path) -> list[str]:
+    try:
+        return await gitinfo.conflicted_files(repo, timeout=LOCAL_TIMEOUT)
+    except gitinfo.GitError as exc:
+        raise GitOpError(str(exc)) from exc
+
+
+async def _require_merging(repo: Path) -> None:
+    if not await _merging(repo):
+        raise InvalidRequestError(NOT_MERGING)
+
+
+async def merge_abort(repo: Path) -> None:
+    await _ensure_writable(repo)
+    await _require_merging(repo)
+    await _checked(repo, "merge", "--abort")
+
+
+def _has_markers(path: Path) -> bool:
+    """Conflict markers at the start of a line. A link is not followed; a missing file has none."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return False  # deleted, a link (ELOOP) or unreadable
+    with os.fdopen(fd, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            return False
+        return _MARKER.search(handle.read(MARKER_READ_LIMIT)) is not None
+
+
+async def mark_resolved(repo: Path, paths: list[str]) -> None:
+    await _ensure_writable(repo)
+    await _require_merging(repo)
+    conflicts = set(await _conflicts(repo))
+    for path in paths:
+        if path not in conflicts:
+            raise InvalidRequestError(NOT_CONFLICTED.format(path=path))
+        if await asyncio.to_thread(_has_markers, repo / path):
+            raise InvalidRequestError(MARKERS_LEFT.format(path=path))
+    await _checked(repo, "add", "-A", "--", *paths)
+
+
+async def merge_continue(repo: Path, message: str) -> str:
+    """The merge commit, once nothing is left in conflict. Returns its sha."""
+    text = message.strip()
+    if not text:
+        raise InvalidRequestError(EMPTY_MESSAGE)
+    await _ensure_writable(repo)
+    await _require_merging(repo)
+    await _ensure_identity(repo)
+    if await _conflicts(repo):
+        raise GitOpError(STILL_CONFLICTED)
     await _checked(
         repo, "commit", "--quiet", "--no-verify", "--cleanup=whitespace", "-F", "-",
         input=(text + "\n").encode("utf-8"),

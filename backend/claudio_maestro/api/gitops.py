@@ -210,3 +210,54 @@ async def git_commit_action(project_id: int, body: CommitBody, request: Request,
     root, path = await project_repo(conn, project_id, body.repo)
     await _run(request, project_id, root, path, lambda: gitops.commit(path, body.message))
     return await _repo_answer(request, project_id, root, path)
+
+
+class RefBody(RepoBody):
+    ref: Annotated[str, Field(min_length=1, max_length=1024, pattern=r"^refs/(heads|remotes)/.")]
+
+
+class BranchBody(RepoBody):
+    name: Annotated[str, Field(min_length=1, max_length=1024)]
+
+
+@router.post("/projects/{project_id}/git/switch")
+async def git_switch(project_id: int, body: RefBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    await _run(request, project_id, root, path, lambda: gitops.switch(path, body.ref))
+    return await _repo_answer(request, project_id, root, path)
+
+
+@router.post("/projects/{project_id}/git/branch")
+async def git_branch(project_id: int, body: BranchBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    await _run(request, project_id, root, path, lambda: gitops.create_branch(path, body.name))
+    return await _repo_answer(request, project_id, root, path)
+
+
+@router.post("/projects/{project_id}/git/merge")
+async def git_merge(project_id: int, body: RefBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    result = await _run(request, project_id, root, path, lambda: gitops.merge(path, body.ref))
+    return await _repo_answer(request, project_id, root, path, conflicts=result.conflicts)
+
+
+@router.post("/projects/{project_id}/git/merge-abort")
+async def git_merge_abort(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    await _run(request, project_id, root, path, lambda: gitops.merge_abort(path))
+    return await _repo_answer(request, project_id, root, path)
+
+
+@router.post("/projects/{project_id}/git/merge-continue")
+async def git_merge_continue(project_id: int, body: CommitBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    await _run(request, project_id, root, path, lambda: gitops.merge_continue(path, body.message))
+    return await _repo_answer(request, project_id, root, path)
+
+
+@router.post("/projects/{project_id}/git/resolve")
+async def git_resolve(project_id: int, body: PathsBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    paths = _paths(path, body.paths)
+    await _run(request, project_id, root, path, lambda: gitops.mark_resolved(path, paths))
+    return await _repo_answer(request, project_id, root, path)

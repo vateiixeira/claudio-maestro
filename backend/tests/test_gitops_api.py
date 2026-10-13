@@ -123,3 +123,67 @@ def test_repo_outside_the_project_is_refused(api, home, git_home, tmp_path):
     project, _ = project_with_repo(api, home)
     outside = make_repo(tmp_path / "fora")
     assert post(api, project, "stage", repo=str(outside), paths=["README.md"]).status_code == 403
+
+
+def conflicting(root):
+    git(root, "switch", "-q", "-c", "feat")
+    (root / "README.md").write_text("feat\n")
+    git(root, "commit", "-q", "-am", "feat")
+    git(root, "switch", "-q", "main")
+    (root / "README.md").write_text("main\n")
+    git(root, "commit", "-q", "-am", "main")
+
+
+def test_switch_and_branch_routes(api, home, git_home):
+    project, root = project_with_repo(api, home)
+    git(root, "branch", "feat")
+    response = post(api, project, "switch", repo=str(root), ref="refs/heads/feat")
+    assert response.status_code == 200, response.text
+    assert response.json()["repo"]["branch"] == "feat"
+    response = post(api, project, "branch", repo=str(root), name="fix/frete")
+    assert response.status_code == 200, response.text
+    assert response.json()["repo"]["branch"] == "fix/frete"
+
+
+def test_switch_route_refuses_other_refs(api, home, git_home):
+    project, root = project_with_repo(api, home)
+    assert post(api, project, "switch", repo=str(root), ref="main").status_code == 422
+    assert post(api, project, "switch", repo=str(root), ref="refs/tags/v1").status_code == 422
+    response = post(api, project, "switch", repo=str(root), ref="refs/heads/nao-existe")
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "not_found"
+
+
+def test_branch_route_with_space_is_400(api, home, git_home):
+    project, root = project_with_repo(api, home)
+    response = post(api, project, "branch", repo=str(root), name="fix carrinho")
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == "Nome de branch não pode ter espaço. Por exemplo: fix-carrinho."
+
+
+def test_merge_flow_through_the_routes(api, home, git_home):
+    project, root = project_with_repo(api, home)
+    conflicting(root)
+    response = post(api, project, "merge", repo=str(root), ref="refs/heads/feat")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["conflicts"] is True
+    assert body["repo"]["state"]["conflicts"] == ["README.md"]
+    assert {(f["path"], f["status"]) for f in body["repo"]["files"]} >= {("README.md", "conflict")}
+    (root / "README.md").write_text("os dois\n")
+    assert post(api, project, "resolve", repo=str(root), paths=["README.md"]).status_code == 200
+    response = post(api, project, "merge-continue", repo=str(root), message="Merge branch 'feat'")
+    assert response.status_code == 200, response.text
+    assert response.json()["repo"]["state"]["merging"] is False
+
+
+def test_merge_abort_route(api, home, git_home):
+    project, root = project_with_repo(api, home)
+    conflicting(root)
+    post(api, project, "merge", repo=str(root), ref="refs/heads/feat")
+    response = post(api, project, "merge-abort", repo=str(root))
+    assert response.status_code == 200, response.text
+    assert response.json()["repo"]["state"]["merging"] is False
+    response = post(api, project, "merge-abort", repo=str(root))
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == gitops.NOT_MERGING
