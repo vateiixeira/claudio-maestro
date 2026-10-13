@@ -25,6 +25,15 @@ O app inicia o `claude` instalado no sistema (o primeiro no `PATH` do processo) 
 
 Fora do modelo: alguém com acesso à sua conta no sistema operacional, e expor o app na rede (não faça isso).
 
+### Ações de escrita no git
+
+A tela do projeto prepara, commita, descarta, troca de branch, mescla, baixa e envia. Essas ações passam pelas mesmas proteções das leituras (`run_git`, caminhos dentro do projeto, cabeçalho `X-Maestro` e origem do app) e mais estas:
+
+- Nenhum hook roda: o app usa `core.hooksPath=/dev/null` e `--no-verify`. O commit sai sem assinatura, nenhum editor abre e nenhum programa de `gpg.program`, `core.editor` ou driver de merge do repositório roda. Repositório com driver de merge próprio não mescla nem baixa pelo app; repositório com Git LFS ou outro filtro fica só para leitura.
+- O envio funciona como o fetch: roda num repositório temporário que só compartilha os objetos, com a URL lida e conferida (só https e ssh), sem ler o resto da configuração do repositório (`receivepack`, `credential.helper`, `core.sshCommand`, `insteadOf`). Nunca há `--force`; um envio recusado pede para sincronizar, e uma branch que acompanha um remoto com outro nome (como `feat/x` acompanhando `origin/main`) não é enviada.
+- Uma ação de escrita por repositório de cada vez. O fetch automático não pega essa trava e pode rodar junto; por isso o ref de rastreio é movido com `update-ref` em compare-and-swap, e um valor mais novo nunca é sobrescrito. Cada ação tem tempo limite (30 s locais, 120 s de rede). Nas ações locais, ao estourar, o git recebe SIGTERM e, 2 s depois, SIGKILL; o envio e o fetch, que rodam em grupo de processos próprio, levam SIGKILL no grupo inteiro (git e ssh) na hora. O app nunca apaga `index.lock`.
+- A saída do git mostrada na tela passa por um filtro que tira usuário e senha de URLs.
+
 ## Versões com suporte
 
 Só a versão mais recente, na branch `main`.

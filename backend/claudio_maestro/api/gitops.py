@@ -261,3 +261,38 @@ async def git_resolve(project_id: int, body: PathsBody, request: Request, conn: 
     paths = _paths(path, body.paths)
     await _run(request, project_id, root, path, lambda: gitops.mark_resolved(path, paths))
     return await _repo_answer(request, project_id, root, path)
+
+
+@router.post("/projects/{project_id}/git/pull")
+async def git_pull(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    result = await _run(request, project_id, root, path, lambda: gitops.pull(path))
+    return await _repo_answer(request, project_id, root, path, conflicts=result.conflicts)
+
+
+@router.post("/projects/{project_id}/git/push")
+async def git_push(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    await _run(request, project_id, root, path, lambda: gitops.push(path))
+    return await _repo_answer(request, project_id, root, path)
+
+
+@router.post("/projects/{project_id}/git/sync")
+async def git_sync(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    result = await _run(request, project_id, root, path, lambda: gitops.sync(path))
+    return await _repo_answer(request, project_id, root, path, conflicts=result.conflicts)
+
+
+@router.post("/projects/{project_id}/git/publish")
+async def git_publish(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    remote = await _run(request, project_id, root, path, lambda: gitops.publish(path))
+    return await _repo_answer(request, project_id, root, path, remote=remote)
+
+
+@router.post("/projects/{project_id}/git/fetch-repo")
+async def git_fetch_repo(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
+    root, path = await project_repo(conn, project_id, body.repo)
+    await _run(request, project_id, root, path, lambda: gitops.fetch_repo(path))
+    return await _repo_answer(request, project_id, root, path)

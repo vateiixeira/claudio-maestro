@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from claudio_maestro import gitinfo
+from claudio_maestro import gitfetch, gitinfo
 from claudio_maestro.security import PathNotAllowedError, resolve_within
 
 LOCAL_TIMEOUT = 30.0
@@ -95,8 +95,8 @@ _OVERWRITE = re.compile(
 )
 _SSH_HOST = re.compile(r"^(?:[\w.+-]+@)?([\w.-]+): Permission denied", re.MULTILINE)
 _SSH_FAILURES = (
-    "Permission denied (publickey", "Host key verification failed",
-    "Could not read from remote repository", "ssh: Could not resolve hostname",
+    # Not "Could not read from remote repository": git also says it for a missing local path.
+    "Permission denied (publickey", "Host key verification failed", "ssh: Could not resolve hostname",
 )
 
 
@@ -551,3 +551,148 @@ async def merge_continue(repo: Path, message: str) -> str:
         input=(text + "\n").encode("utf-8"),
     )
     return (await _checked(repo, "rev-parse", "HEAD")).strip()
+
+
+# Network -----------------------------------------------------------------------------
+
+PULL_FAILED = "Não foi possível baixar do remoto: {error}"
+PUSH_FAILED = "O envio não foi feito."
+NO_URL_MESSAGE = "O remoto {remote} não tem endereço (URL) configurado."
+REJECTED_MESSAGE = (
+    "O envio não foi feito: {upstream} recebeu {commits} que você ainda não tem. "
+    "Sincronize para baixar e enviar."
+)
+
+
+async def _upstream(repo: Path) -> gitinfo.Upstream:
+    try:
+        upstream = await gitinfo.upstream_of(repo)
+        if upstream is not None:
+            return upstream
+        detached = await gitinfo._read(repo, "symbolic-ref", "-q", "HEAD") is None
+    except gitinfo.GitError as exc:
+        raise GitOpError(str(exc)) from exc
+    raise GitOpError(gitinfo.DETACHED_MESSAGE if detached else gitinfo.NO_UPSTREAM_MESSAGE)
+
+
+def _remote_failure(exc: gitinfo.GitError, fallback: str, upstream: str | None = None) -> GitOpError:
+    output = getattr(exc, "output", "")
+    message = describe_failure(output, upstream=upstream) if output else GENERIC_MESSAGE
+    if message == GENERIC_MESSAGE:
+        message = fallback
+    return GitOpError(message, clean_output(output))
+
+
+async def _fetch(repo: Path) -> bool:
+    """Fetch the upstream through the registry (never two at once). True when something came."""
+    caught: list[gitinfo.GitError] = []
+
+    async def run() -> bool:
+        try:
+            return await gitinfo.fetch_upstream(repo, timeout=NETWORK_TIMEOUT)
+        except gitinfo.GitError as exc:
+            caught.append(exc)
+            raise
+
+    result = await gitfetch.registry.fetch(repo, run)
+    if result != "failed":
+        return result == "fetched"
+    error = gitfetch.registry.fields(repo)["fetch_error"] or gitfetch.GENERIC_ERROR
+    if caught:
+        raise _remote_failure(caught[0], PULL_FAILED.format(error=error))
+    raise GitOpError(PULL_FAILED.format(error=error))
+
+
+def _short(upstream: gitinfo.Upstream) -> str:
+    return upstream.tracking.removeprefix("refs/remotes/")
+
+
+async def _behind(repo: Path, upstream: gitinfo.Upstream) -> int:
+    try:
+        return await gitinfo.count_between(repo, "HEAD", upstream.tracking, timeout=LOCAL_TIMEOUT)
+    except gitinfo.GitError as exc:
+        raise GitOpError(str(exc)) from exc
+
+
+async def _ahead(repo: Path, upstream: gitinfo.Upstream) -> int:
+    try:
+        return await gitinfo.count_between(repo, upstream.tracking, "HEAD", timeout=LOCAL_TIMEOUT)
+    except gitinfo.GitError as exc:
+        raise GitOpError(str(exc)) from exc
+
+
+async def pull(repo: Path) -> MergeResult:
+    """Fetch the upstream and merge it (like the VS Code pull with merge)."""
+    policy = await _ensure_writable(repo)
+    if policy["no_merge"]:
+        raise ReadOnlyError(policy["no_merge"])
+    await _refuse_merging(repo)
+    upstream = await _upstream(repo)
+    if not await _fetch(repo):
+        # The upstream exists, so nothing was fetched only because the remote has no URL.
+        # Merging the old tracking ref without saying so would look like a pull.
+        raise GitOpError(NO_URL_MESSAGE.format(remote=upstream.remote))
+    if await _behind(repo, upstream) == 0:
+        return MergeResult(conflicts=False)
+    return await _merge_ref(repo, upstream.tracking, upstream=_short(upstream))
+
+
+async def push(repo: Path) -> None:
+    await _ensure_writable(repo)
+    await _refuse_merging(repo)
+    upstream = await _upstream(repo)
+    try:
+        await gitinfo.push_upstream(repo, timeout=NETWORK_TIMEOUT)
+    except gitinfo.RemoteError as exc:
+        failure = _remote_failure(exc, PUSH_FAILED, _short(upstream))
+        if "[rejected]" in exc.output:
+            await _count_rejection(repo, upstream, failure)
+        raise failure from exc
+    except gitinfo.GitError as exc:
+        raise GitOpError(str(exc)) from exc
+
+
+async def _count_rejection(repo: Path, upstream: gitinfo.Upstream, failure: GitOpError) -> None:
+    """After a refused push, fetch so the message (and the repository's row) shows how many
+    commits came in. If the fetch fails too, the message stays without the count."""
+    try:
+        await _fetch(repo)
+        behind = await _behind(repo, upstream)
+    except GitOpError:
+        return
+    if behind > 0:
+        commits = "1 commit" if behind == 1 else f"{behind} commits"
+        failure.message = REJECTED_MESSAGE.format(upstream=_short(upstream), commits=commits)
+        failure.args = (failure.message,)
+
+
+async def sync(repo: Path) -> MergeResult:
+    """Pull, then push what is left to send; a conflict stops before the push."""
+    await _ensure_writable(repo)
+    try:
+        gitinfo.check_same_name(await _upstream(repo))  # before the pull changes anything
+    except gitinfo.GitError as exc:
+        raise GitOpError(str(exc)) from exc
+    result = await pull(repo)
+    if result.conflicts:
+        return result
+    upstream = await _upstream(repo)
+    if await _ahead(repo, upstream) > 0:
+        await push(repo)
+    return result
+
+
+async def publish(repo: Path) -> str:
+    await _ensure_writable(repo)
+    await _refuse_merging(repo)
+    try:
+        return await gitinfo.publish_branch(repo, timeout=NETWORK_TIMEOUT)
+    except gitinfo.RemoteError as exc:
+        raise _remote_failure(exc, PUSH_FAILED) from exc
+    except gitinfo.GitError as exc:
+        raise GitOpError(str(exc)) from exc
+
+
+async def fetch_repo(repo: Path) -> None:
+    """"Buscar no remoto": fetch only. Allowed in read-only repositories (no file changes)."""
+    await _fetch(repo)

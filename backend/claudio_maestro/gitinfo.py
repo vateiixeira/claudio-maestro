@@ -66,6 +66,14 @@ class GitError(Exception):
     """A git command failed; the message is shown to the user."""
 
 
+class RemoteError(GitError):
+    """A fetch or push that git refused; `output` is git's own text, without credentials."""
+
+    def __init__(self, message: str, output: str = "") -> None:
+        super().__init__(message)
+        self.output = output
+
+
 class FileGoneError(GitError):
     """The file disappeared while its diff was being read."""
 
@@ -1397,9 +1405,12 @@ FETCH_SCRATCH_ROOT: Path | None = None
 # Ref, in the throwaway repository, that tells the server what the local branch has.
 _HAVE_REF = "refs/maestro/have"
 
-PARTIAL_CLONE_MESSAGE = "Clone parcial: a verificação automática não suporta."
-SHALLOW_MESSAGE = "Repositório raso (shallow): a verificação automática não suporta."
-URL_MESSAGE = "O remoto usa um endereço que a verificação automática não aceita (só https e ssh)."
+# These also reach the user from the manual pull and push, so they do not say "automática".
+PARTIAL_CLONE_MESSAGE = "Clone parcial (partial clone): o app não baixa nem envia assim. Use o terminal."
+SHALLOW_MESSAGE = "Repositório raso (shallow): o app não baixa nem envia assim. Use o terminal."
+URL_MESSAGE = (
+    "O app só baixa e envia por https e ssh; este remoto usa outro protocolo. Use o terminal."
+)
 INVALID_REF_MESSAGE = "A branch de acompanhamento tem um nome de referência inválido."
 
 _URL_CREDENTIALS = re.compile(r"(?<=://)[^/\s@]*@")
@@ -1468,10 +1479,44 @@ async def _read(repo: Path, *args: str, env: dict[str, str | None] | None = None
     return out.strip() if code == 0 else None
 
 
-async def _fetch_upstream(repo: Path, timeout: float) -> bool:
+PUSH_TIMEOUT = 120.0
+# On top of FETCH_CONFIG: never sign, never push tags or submodules, never set an upstream.
+PUSH_CONFIG: tuple[tuple[str, str], ...] = (
+    *FETCH_CONFIG,
+    ("push.gpgSign", "false"),
+    ("push.recurseSubmodules", "no"),
+    ("push.followTags", "false"),
+    ("push.autoSetupRemote", "false"),
+    ("push.negotiate", "false"),
+)
+NO_UPSTREAM_MESSAGE = "Esta branch não acompanha nenhuma branch de um remoto."
+DETACHED_MESSAGE = "HEAD destacado: troque para uma branch antes de enviar ou baixar."
+NO_COMMITS_MESSAGE = "Esta branch ainda não tem commits para publicar."
+NO_REMOTE_MESSAGE = "Este repositório não tem remoto configurado."
+RENAMED_UPSTREAM_MESSAGE = (
+    "Esta branch acompanha {upstream}, que tem outro nome. Envie pelo terminal."
+)
+HAS_UPSTREAM_MESSAGE = "Esta branch já acompanha {upstream}. Use Enviar."
+MANY_REMOTES_MESSAGE = (
+    "Há vários remotos e nenhum se chama origin. Publique esta branch pelo terminal."
+)
+
+
+@dataclass(frozen=True)
+class Upstream:
+    head_ref: str  # refs/heads/<branch>
+    branch: str
+    tracking: str  # refs/remotes/<remote>/<name>
+    remote: str
+    merge: str  # the branch on the remote, refs/heads/<name>
+    head_sha: str
+
+
+async def upstream_of(repo: Path) -> Upstream | None:
+    """The current branch and its remote branch; None when detached, unborn or without one."""
     head_ref = await _read(repo, "symbolic-ref", "-q", "HEAD")
     if head_ref is None:
-        return False
+        return None
     listed = await _read(
         repo, "for-each-ref",
         "--format=%(upstream)%00%(upstream:remotename)%00%(upstream:remoteref)%00%(objectname)",
@@ -1479,18 +1524,31 @@ async def _fetch_upstream(repo: Path, timeout: float) -> bool:
     )
     parts = (listed or "").split("\0")
     if len(parts) != 4:
-        return False
+        return None
     tracking, remote, merge, head_sha = parts
     if (
-        not tracking.startswith("refs/remotes/")
+        not head_sha
+        or not tracking.startswith("refs/remotes/")
         or not merge.startswith("refs/")
         or remote in ("", ".")
         or remote.startswith("-")
     ):
-        return False
+        return None
     for ref in (tracking, merge):
         if await _read(repo, "check-ref-format", ref) is None:
             raise GitError(INVALID_REF_MESSAGE)
+    return Upstream(head_ref, head_ref.removeprefix("refs/heads/"), tracking, remote, merge, head_sha)
+
+
+def check_same_name(upstream: Upstream) -> None:
+    """Like `push.default=simple`: a branch never goes to a remote branch with another name."""
+    if upstream.merge != upstream.head_ref:
+        raise GitError(
+            RENAMED_UPSTREAM_MESSAGE.format(upstream=upstream.tracking.removeprefix("refs/remotes/"))
+        )
+
+
+async def _remote_checks(repo: Path, remote: str) -> None:
     if await _read(repo, "rev-parse", "--is-shallow-repository") == "true":
         raise GitError(SHALLOW_MESSAGE)
     if (
@@ -1498,25 +1556,47 @@ async def _fetch_upstream(repo: Path, timeout: float) -> bool:
         or await _read(repo, "config", "--bool", "--get", f"remote.{remote}.promisor") == "true"
     ):
         raise GitError(PARTIAL_CLONE_MESSAGE)
-    urls = await _read(repo, "config", "--get-all", f"remote.{remote}.url")
-    if not urls:
-        return False
-    url = urls.splitlines()[0]  # a fetch uses the first one
-    _check_fetch_url(url)
+
+
+async def _remote_url(repo: Path, remote: str, *, push: bool) -> str | None:
+    """The first URL git would use; for a push, `pushurl` comes first. Checked."""
+    keys = (f"remote.{remote}.pushurl", f"remote.{remote}.url") if push else (f"remote.{remote}.url",)
+    for key in keys:
+        urls = await _read(repo, "config", "--get-all", key)
+        if urls:
+            url = urls.splitlines()[0]
+            _check_fetch_url(url)
+            return url
+    return None
+
+
+async def _objects(repo: Path) -> tuple[str, str]:
     objects = await _read(repo, "rev-parse", "--path-format=absolute", "--git-path", "objects")
     object_format = await _read(repo, "rev-parse", "--show-object-format")
     if not objects or object_format not in ("sha1", "sha256"):
         raise GitError("Não foi possível ler o formato dos objetos do repositório.")
-    old = await _read(repo, "rev-parse", "--verify", "-q", tracking)
+    return objects, object_format
 
+
+async def _fetch_upstream(repo: Path, timeout: float) -> bool:
+    upstream = await upstream_of(repo)
+    if upstream is None:
+        return False
+    await _remote_checks(repo, upstream.remote)
+    url = await _remote_url(repo, upstream.remote, push=False)
+    if url is None:
+        return False
+    objects, object_format = await _objects(repo)
+    old = await _read(repo, "rev-parse", "--verify", "-q", upstream.tracking)
     scratch = Path(tempfile.mkdtemp(prefix="maestro-fetch-", dir=FETCH_SCRATCH_ROOT))
     try:
         new = await _fetch_in_scratch(
-            scratch, url, merge, tracking, objects, object_format, old, head_sha, timeout
+            scratch, url, upstream.merge, upstream.tracking, objects, object_format, old,
+            upstream.head_sha, timeout,
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
-    await _move_tracking_ref(repo, tracking, old, new)
+    await _move_tracking_ref(repo, upstream.tracking, old, new)
     return True
 
 
@@ -1550,7 +1630,7 @@ async def _fetch_in_scratch(
         timeout=timeout, config=[*protocols, *FETCH_CONFIG], env=env, own_group=True,
     )
     if code != 0:
-        raise GitError(_fetch_failure(err))
+        raise RemoteError(_fetch_failure(err), strip_credentials(err).strip())
     new = await _read(scratch, "rev-parse", "--verify", "-q", tracking, env=env)
     if not new:
         raise GitError("O remoto não devolveu a branch esperada.")
@@ -1572,3 +1652,101 @@ async def _move_tracking_ref(repo: Path, tracking: str, old: str | None, new: st
     if current != old and current is not None:
         return  # someone else got there first
     raise GitError(_failure(err))
+
+
+# Pushing -------------------------------------------------------------------------------
+
+
+async def _scratch_env(scratch: Path, objects: str, object_format: str) -> dict[str, str | None]:
+    code, _, err = await run_git(
+        scratch, "init", "-q", "--bare", "--template=", f"--object-format={object_format}"
+    )
+    if code != 0:
+        raise GitError(_failure(err))
+    _, protocol_env = _fetch_protocol_settings()
+    return {**FETCH_ENV, **protocol_env, "GIT_DIR": str(scratch), "GIT_OBJECT_DIRECTORY": objects}
+
+
+async def _push_from_scratch(repo: Path, url: str, sha: str, target: str, timeout: float) -> None:
+    """`git push url sha:target` from a throwaway repository sharing `repo`'s objects.
+
+    Never forced (no `+`), never with hooks, tags, submodules or signing. The receiving
+    program is named explicitly, so no `remote.<name>.receivepack` can choose it.
+    """
+    objects, object_format = await _objects(repo)
+    scratch = Path(tempfile.mkdtemp(prefix="maestro-push-", dir=FETCH_SCRATCH_ROOT))
+    try:
+        env = await _scratch_env(scratch, objects, object_format)
+        protocols, _ = _fetch_protocol_settings()
+        code, _, err = await run_git(
+            scratch, "push", "--quiet", "--no-verify", "--no-signed", "--no-follow-tags",
+            "--recurse-submodules=no", "--receive-pack=git-receive-pack",
+            "--", url, f"{sha}:{target}",
+            timeout=timeout, config=[*protocols, *PUSH_CONFIG], env=env, own_group=True,
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    if code != 0:
+        raise RemoteError(_fetch_failure(err), strip_credentials(err).strip())
+
+
+async def push_upstream(repo: Path, *, timeout: float = PUSH_TIMEOUT) -> None:
+    """Send the current branch to its remote branch, then move the tracking ref (CAS)."""
+    return await _within(timeout, _push_upstream(repo, timeout))
+
+
+async def _push_upstream(repo: Path, timeout: float) -> None:
+    if await _read(repo, "symbolic-ref", "-q", "HEAD") is None:
+        raise GitError(DETACHED_MESSAGE)
+    upstream = await upstream_of(repo)
+    if upstream is None:
+        raise GitError(NO_UPSTREAM_MESSAGE)
+    check_same_name(upstream)
+    await _remote_checks(repo, upstream.remote)
+    url = await _remote_url(repo, upstream.remote, push=True)
+    if url is None:
+        raise GitError(NO_REMOTE_MESSAGE)
+    old = await _read(repo, "rev-parse", "--verify", "-q", upstream.tracking)
+    await _push_from_scratch(repo, url, upstream.head_sha, upstream.merge, timeout)
+    await _move_tracking_ref(repo, upstream.tracking, old, upstream.head_sha)
+
+
+async def publish_branch(repo: Path, *, timeout: float = PUSH_TIMEOUT) -> str:
+    """Push a branch without upstream to `origin` (or the only remote) and track it."""
+    return await _within(timeout, _publish_branch(repo, timeout))
+
+
+async def _publish_branch(repo: Path, timeout: float) -> str:
+    head_ref = await _read(repo, "symbolic-ref", "-q", "HEAD")
+    if head_ref is None:
+        raise GitError(DETACHED_MESSAGE)
+    head_sha = await _read(repo, "rev-parse", "--verify", "-q", "HEAD")
+    if head_sha is None:
+        raise GitError(NO_COMMITS_MESSAGE)
+    current = await upstream_of(repo)
+    if current is not None:
+        raise GitError(
+            HAS_UPSTREAM_MESSAGE.format(upstream=current.tracking.removeprefix("refs/remotes/"))
+        )
+    remotes = [name for name in await remote_names(repo) if not name.startswith("-")]
+    if not remotes:
+        raise GitError(NO_REMOTE_MESSAGE)
+    remote = "origin" if "origin" in remotes else (remotes[0] if len(remotes) == 1 else None)
+    if remote is None:
+        raise GitError(MANY_REMOTES_MESSAGE)
+    branch = head_ref.removeprefix("refs/heads/")
+    tracking = f"refs/remotes/{remote}/{branch}"
+    if await _read(repo, "check-ref-format", tracking) is None:
+        raise GitError(INVALID_REF_MESSAGE)
+    await _remote_checks(repo, remote)
+    url = await _remote_url(repo, remote, push=True)
+    if url is None:
+        raise GitError(NO_REMOTE_MESSAGE)
+    old = await _read(repo, "rev-parse", "--verify", "-q", tracking)
+    await _push_from_scratch(repo, url, head_sha, head_ref, timeout)
+    for key, value in ((f"branch.{branch}.remote", remote), (f"branch.{branch}.merge", head_ref)):
+        code, _, err = await run_git(repo, "config", "--local", key, value)
+        if code != 0:
+            raise GitError(_failure(err))
+    await _move_tracking_ref(repo, tracking, old, head_sha)
+    return remote

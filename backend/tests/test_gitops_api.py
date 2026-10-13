@@ -1,7 +1,15 @@
 """POST routes of the write actions: validation, answers and errors."""
 
+import subprocess
+
 import pytest
-from git_helpers import git, git_home, make_repo, set_identity  # noqa: F401 (fixture)
+from git_helpers import (  # noqa: F401 (fixture)
+    GIT_ENV,
+    git,
+    git_home,
+    make_repo,
+    set_identity,
+)
 from test_git_api import (  # noqa: F401 (fixtures)
     add_project,
     api,
@@ -9,6 +17,7 @@ from test_git_api import (  # noqa: F401 (fixtures)
     factory,
     spawn,
 )
+from test_gitinfo_fetch import LOCAL_OK, push_from_elsewhere
 
 from claudio_maestro import gitinfo, gitops
 
@@ -187,3 +196,52 @@ def test_merge_abort_route(api, home, git_home):
     response = post(api, project, "merge-abort", repo=str(root))
     assert response.status_code == 400
     assert response.json()["detail"]["message"] == gitops.NOT_MERGING
+
+
+@pytest.fixture
+def local_remotes(monkeypatch):
+    monkeypatch.setattr(gitinfo, "FETCH_ALLOWED_PROTOCOLS", LOCAL_OK)
+
+
+def project_with_clone(api, home, tmp_path):
+    remote = tmp_path / "remoto.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True, env=GIT_ENV)
+    root = make_repo(home / "proj")
+    set_identity(root)
+    git(root, "remote", "add", "origin", str(remote))
+    git(root, "push", "-q", "-u", "origin", "main")
+    return add_project(api, root), root, remote
+
+
+def test_network_routes(api, home, git_home, tmp_path, local_remotes):
+    project, root, remote = project_with_clone(api, home, tmp_path)
+    (root / "a.txt").write_text("a\n")
+    git(root, "add", "a.txt")
+    git(root, "commit", "-q", "-m", "A")
+    response = post(api, project, "push", repo=str(root))
+    assert response.status_code == 200, response.text
+    assert response.json()["repo"]["ahead"] == 0
+    push_from_elsewhere(tmp_path, remote)
+    response = post(api, project, "pull", repo=str(root))
+    assert response.status_code == 200, response.text
+    assert response.json()["conflicts"] is False and response.json()["repo"]["behind"] == 0
+    assert post(api, project, "sync", repo=str(root)).json()["conflicts"] is False
+    assert post(api, project, "fetch-repo", repo=str(root)).status_code == 200
+    git(root, "switch", "-q", "-c", "feat")
+    response = post(api, project, "publish", repo=str(root))
+    assert response.status_code == 200, response.text
+    assert response.json()["remote"] == "origin"
+    assert response.json()["repo"]["upstream"] == "origin/feat"
+
+
+def test_push_rejection_is_409_with_output(api, home, git_home, tmp_path, local_remotes):
+    project, root, remote = project_with_clone(api, home, tmp_path)
+    push_from_elsewhere(tmp_path, remote)
+    (root / "b.txt").write_text("b\n")
+    git(root, "add", "b.txt")
+    git(root, "commit", "-q", "-m", "B")
+    response = post(api, project, "push", repo=str(root))
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "git" and detail["message"].startswith("O envio não foi feito")
+    assert "[rejected]" in detail["output"]
