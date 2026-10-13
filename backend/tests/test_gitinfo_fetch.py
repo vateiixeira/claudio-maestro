@@ -211,10 +211,10 @@ async def test_fetch_command_and_environment(tmp_path: Path, local_remotes, monk
     seen: list[tuple[tuple[str, ...], dict[str, str], Path]] = []
     real = gitinfo._exec_now
 
-    async def spy(repo, args, timeout, extra_config, limit, extra_env=None, own_group=False):
+    async def spy(repo, args, timeout, extra_config, limit, extra_env=None, own_group=False, input=None, grace=0.0):
         seen.append((args, gitinfo._env(extra_config, extra_env), repo))
         assert own_group is (args[0] == "fetch")  # only the fetch gets its own process group
-        return await real(repo, args, timeout, extra_config, limit, extra_env, own_group)
+        return await real(repo, args, timeout, extra_config, limit, extra_env, own_group, input, grace)
 
     monkeypatch.setattr(gitinfo, "_exec_now", spy)
     await gitinfo.fetch_upstream(clone)

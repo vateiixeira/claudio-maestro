@@ -209,6 +209,8 @@ async def run_git(
     config: list[tuple[str, str]] | None = None,
     env: dict[str, str | None] | None = None,
     own_group: bool = False,
+    input: bytes | None = None,
+    grace: float = 0.0,
 ) -> tuple[int, str, str]:
     """Run git in `repo` with every configured program disabled.
 
@@ -216,10 +218,14 @@ async def run_git(
     one); both win over the repository's own config. Raises GitError when it cannot
     start, times out, or the repository defines a filter whose name cannot be
     neutralised. With `own_group` git starts its own process group, and a timeout or
-    cancellation kills the whole group (ssh, remote helpers), not just git.
+    cancellation kills the whole group (ssh, remote helpers), not just git. `input` is
+    written to git's standard input. With `grace`, a timeout or cancellation first sends
+    SIGTERM (so git can remove its `index.lock`) and SIGKILL only `grace` seconds later.
     """
     filters = await _disabled_filters(repo, timeout)
-    return await _exec(repo, args, timeout, [*filters, *(config or [])], limit, env, own_group)
+    return await _exec(
+        repo, args, timeout, [*filters, *(config or [])], limit, env, own_group, input, grace
+    )
 
 
 async def _within(timeout: float, operation):
@@ -240,17 +246,22 @@ async def _exec(
     limit: int | None = None,
     extra_env: dict[str, str | None] | None = None,
     own_group: bool = False,
+    input: bytes | None = None,
+    grace: float = 0.0,
 ) -> tuple[int, str, str]:
     async with _slots():
         budget = _budget.get()
         if budget is None:
-            return await _exec_now(repo, args, timeout, extra_config, limit, extra_env, own_group)
+            return await _exec_now(
+                repo, args, timeout, extra_config, limit, extra_env, own_group, input, grace
+            )
         if budget.left <= 0:
             raise GitError(f"O git passou do tempo limite de {budget.total:g} s.")
         started = time.monotonic()
         try:
             return await _exec_now(
-                repo, args, min(timeout, budget.left), extra_config, limit, extra_env, own_group
+                repo, args, min(timeout, budget.left), extra_config, limit, extra_env, own_group,
+                input, grace,
             )
         except GitError as exc:
             if budget.left - (time.monotonic() - started) <= 0:
@@ -271,6 +282,32 @@ async def _read_limited(stream: asyncio.StreamReader, limit: int | None) -> byte
     return bytes(data)
 
 
+def _signal(process: asyncio.subprocess.Process, own_group: bool, signum: int) -> None:
+    with suppress(ProcessLookupError, PermissionError):
+        if own_group:
+            os.killpg(process.pid, signum)
+        else:
+            process.send_signal(signum)
+
+
+async def _stop(process: asyncio.subprocess.Process, own_group: bool, grace: float) -> None:
+    """SIGTERM and, after `grace` seconds, SIGKILL; straight SIGKILL without grace."""
+    if grace > 0:
+        _signal(process, own_group, signal.SIGTERM)
+        try:
+            await asyncio.shield(asyncio.wait_for(process.wait(), grace))
+            return
+        except Exception:
+            pass  # the grace ran out
+        except BaseException:
+            # Cancelled again while waiting: git must still not outlive us.
+            _signal(process, own_group, signal.SIGKILL)
+            raise
+    _signal(process, own_group, signal.SIGKILL)
+    with suppress(Exception):
+        await asyncio.shield(process.wait())
+
+
 async def _exec_now(
     repo: Path,
     args: tuple[str, ...],
@@ -279,11 +316,15 @@ async def _exec_now(
     limit: int | None,
     extra_env: dict[str, str | None] | None = None,
     own_group: bool = False,
+    input: bytes | None = None,
+    grace: float = 0.0,
 ) -> tuple[int, str, str]:
+    if input is not None and limit is not None:
+        raise ValueError("input and limit cannot be used together")
     try:
         process = await asyncio.create_subprocess_exec(
             GIT_BINARY, "-C", str(repo), *args,
-            stdin=asyncio.subprocess.DEVNULL,
+            stdin=asyncio.subprocess.PIPE if input is not None else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=_env(extra_config, extra_env),
@@ -293,7 +334,7 @@ async def _exec_now(
         raise GitError(f"Não foi possível executar o git: {exc}") from exc
     try:
         if limit is None:
-            out, err = await asyncio.wait_for(process.communicate(), timeout)
+            out, err = await asyncio.wait_for(process.communicate(input), timeout)
         else:
             assert process.stdout is not None and process.stderr is not None
             out, err, _ = await asyncio.wait_for(
@@ -305,13 +346,7 @@ async def _exec_now(
                 timeout,
             )
     except (TimeoutError, asyncio.CancelledError) as exc:
-        with suppress(ProcessLookupError, PermissionError):
-            if own_group:
-                os.killpg(process.pid, signal.SIGKILL)
-            else:
-                process.kill()
-        with suppress(Exception):
-            await asyncio.shield(process.wait())
+        await _stop(process, own_group, grace)
         if isinstance(exc, asyncio.CancelledError):
             raise
         raise GitError(f"O git passou do tempo limite de {timeout:g} s.") from exc
@@ -1402,8 +1437,13 @@ def _check_fetch_url(url: str) -> None:
         raise GitError(URL_MESSAGE)
 
 
+def strip_credentials(text: str) -> str:
+    """`text` without the `user:password@` part of any URL in it."""
+    return _URL_CREDENTIALS.sub("", text)
+
+
 def _fetch_failure(stderr: str) -> str:
-    return _URL_CREDENTIALS.sub("", _failure(stderr))
+    return strip_credentials(_failure(stderr))
 
 
 FetchUpstream = Callable[..., Awaitable[bool]]

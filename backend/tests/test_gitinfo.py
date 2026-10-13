@@ -303,7 +303,7 @@ async def test_concurrent_git_processes_limited(monkeypatch):
     class FakeProcess:
         returncode = 0
 
-        async def communicate(self):
+        async def communicate(self, input=None):
             nonlocal running
             await asyncio.sleep(0.01)
             running -= 1
