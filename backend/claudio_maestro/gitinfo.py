@@ -557,14 +557,17 @@ async def _file_diff(repo: Path, file: str, timeout: float) -> FileDiff:
 
 # Details: changed files and recent commits ---------------------------------------
 
-_STATUS_ORDER = {"staged": 0, "unstaged": 1, "untracked": 2}
+_STATUS_ORDER = {"staged": 0, "unstaged": 1, "untracked": 2, "conflict": 3}
+# Letter shown next to a file: porcelain v2 XY codes, T (type change) shows as M and C as A.
+_KIND = {"M": "M", "T": "M", "A": "A", "D": "D", "R": "R", "C": "A"}
 
 
 def _parse_files(
     output: str, summary: RepoStatus | None = None
-) -> tuple[list[tuple[str, str]], bool]:
-    """(path, status) pairs from `status --porcelain=v2 -z`, and whether the output
-    was cut short (the last, possibly partial, entry is dropped then).
+) -> tuple[list[tuple[str, str, str]], bool]:
+    """(path, status, kind) triples from `status --porcelain=v2 -z`, and whether the output
+    was cut short (the last, possibly partial, entry is dropped then). `kind` is M, A, D
+    or R (U for a conflict, whose status is "conflict").
 
     Entries that end in `/` are dropped: a nested repository that is not ignored
     shows up as `sub/`, and it is not a file. With `summary` (for output that also
@@ -577,7 +580,7 @@ def _parse_files(
     cut = len(output.encode("utf-8", "replace")) > FILES_READ_LIMIT
     if cut:
         fields = fields[:-1]
-    entries: list[tuple[str, str]] = []
+    entries: list[tuple[str, str, str]] = []
     index = 0
     while index < len(fields):
         entry = fields[index]
@@ -591,17 +594,17 @@ def _parse_files(
             if renamed:
                 index += 1  # the original path follows
             if entry[2] != ".":
-                entries.append((path, "staged"))
+                entries.append((path, "staged", _KIND.get(entry[2], "M")))
             if entry[3] != ".":
-                entries.append((path, "unstaged"))
+                entries.append((path, "unstaged", _KIND.get(entry[3], "M")))
         elif entry.startswith("u "):
-            entries.append((entry.split(" ", 10)[10], "unstaged"))
+            entries.append((entry.split(" ", 10)[10], "conflict", "U"))
         elif entry.startswith("? "):
-            entries.append((entry[2:], "untracked"))
+            entries.append((entry[2:], "untracked", "A"))
     entries = [entry for entry in entries if not entry[0].endswith("/")]
     if summary is not None:
-        for _, status in entries:
-            summary.changed[status] += 1
+        for _, status, _kind in entries:
+            summary.changed["unstaged" if status == "conflict" else status] += 1
     return entries, cut
 
 
@@ -658,7 +661,7 @@ async def _repo_files(
 
     counts: dict[str, dict[str, tuple[int | None, int | None]]] = {}
     for status, extra in (("unstaged", ()), ("staged", ("--cached",))):
-        if not any(entry_status == status for _, entry_status in entries):
+        if not any(entry_status == status for _, entry_status, _ in entries):
             continue
         code, out, err = await run_git(
             repo, "diff", *extra, "--numstat", "-z", "--no-color", "--no-ext-diff",
@@ -669,9 +672,11 @@ async def _repo_files(
         counts[status] = _parse_numstat(out)
 
     files = []
-    for path, status in entries:
+    for path, status, kind in entries:
         added, removed = counts.get(status, {}).get(path, (None, None))
-        files.append({"path": path, "status": status, "added": added, "removed": removed})
+        files.append({
+            "path": path, "status": status, "kind": kind, "added": added, "removed": removed,
+        })
     return files, truncated
 
 
@@ -737,6 +742,9 @@ async def repo_details(
         commits = await repo_commits(
             repo, has_upstream=status.upstream is not None, timeout=timeout
         )
+        code, out, _ = await run_git(repo, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+        head_sha = out.strip() if code == 0 else None
+        state = await repo_state(repo, timeout=timeout)
     except GitError as exc:
         return _detail(status, error=str(exc))
     except Exception:
@@ -744,16 +752,19 @@ async def repo_details(
         fresh = RepoStatus(path=str(repo), rel_path=status.rel_path)
         fetch_registry.fill(fresh)
         return _detail(fresh, error="Falha ao ler o repositório.")
-    return _detail(status, files=files, truncated=truncated, commits=commits)
+    return _detail(
+        status, files=files, truncated=truncated, commits=commits, head_sha=head_sha, state=state
+    )
 
 
 def _detail(
     status: RepoStatus, *, error: str | None = None, files: list[dict[str, Any]] | None = None,
     truncated: bool = False, commits: list[dict[str, Any]] | None = None,
+    head_sha: str | None = None, state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         **status.to_dict(), "error": error, "files": files or [], "files_truncated": truncated,
-        "commits": commits or [],
+        "commits": commits or [], "head_sha": head_sha, "state": state,
     }
 
 
@@ -764,6 +775,541 @@ async def project_details_scan(
     paths, limit_reached = await asyncio.to_thread(discover_scan, root)
     repos = await asyncio.gather(*(repo_details(path, root, timeout=timeout) for path in paths))
     return list(repos), limit_reached
+
+
+# History, commits and branches ----------------------------------------------------
+
+SHA_RE = re.compile(r"^[0-9a-f]{7,64}$")
+LOG_PAGE = 30
+MAX_LOG_LIMIT = 300
+MAX_LOG_SKIP = 100_000
+MAX_INCOMING = 100
+MAX_BRANCHES = 500
+MAX_MERGE_MESSAGE = 10_000
+# Fields split by US (0x1f); `-z` ends each commit with NUL, which a message cannot hold.
+LOG_FORMAT = "%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b"
+LOG_COMMON = ("-z", "--no-color", "--no-show-signature", "--no-notes")
+DIFF_TREE_COMMON = ("-r", "-z", "-M", "--no-color", "--no-ext-diff", "--no-textconv", DIFF_SUBMODULES)
+BRANCH_FORMAT = "%(refname)%00%(objectname)%00%(committerdate:iso-strict)%00%(upstream)%00%(symref)"
+
+BRANCH_NOT_FOUND = "Branch não encontrada."
+COMMIT_NOT_FOUND = "Commit não encontrado."
+FILE_NOT_IN_COMMIT = "O arquivo não faz parte deste commit."
+
+
+class RefNotFoundError(GitError):
+    """The branch, commit or file asked for does not exist."""
+
+
+def _short_ref(ref: str | None) -> str | None:
+    if ref is None:
+        return None
+    for prefix in ("refs/heads/", "refs/remotes/"):
+        if ref.startswith(prefix):
+            return ref[len(prefix):]
+    return ref
+
+
+def _parse_log(output: str, pushed: bool | None = None) -> list[dict[str, Any]]:
+    commits = []
+    for record in output.split("\0"):
+        record = record.lstrip("\n")
+        if not record:
+            continue
+        parts = record.split("\x1f", 6)
+        if len(parts) != 7:
+            continue
+        full, parents, author, email, date, subject, body = parts
+        commits.append({
+            "hash": full[:7], "full_hash": full, "parents": parents.split(),
+            "subject": subject, "body": body.strip(), "author": author, "email": email,
+            "date": date, "pushed": pushed,
+        })
+    return commits
+
+
+async def verify_branch_ref(repo: Path, ref: str, *, timeout: float = GIT_TIMEOUT) -> str:
+    """Full sha of `ref`, a full local or remote-tracking branch name that exists."""
+    if (
+        not ref.startswith(("refs/heads/", "refs/remotes/"))
+        or len(ref) > 512 or _has_control(ref) or ".." in ref or "^" in ref or "~" in ref
+        or ":" in ref or "@{" in ref
+    ):
+        raise RefNotFoundError(BRANCH_NOT_FOUND)
+    code, _, _ = await run_git(repo, "check-ref-format", ref, timeout=timeout)
+    if code != 0:
+        raise RefNotFoundError(BRANCH_NOT_FOUND)
+    code, _, _ = await run_git(repo, "show-ref", "--verify", "-q", ref, timeout=timeout)
+    if code != 0:
+        raise RefNotFoundError(BRANCH_NOT_FOUND)
+    code, out, _ = await run_git(
+        repo, "rev-parse", "--verify", "-q", "--end-of-options", f"{ref}^{{commit}}", timeout=timeout
+    )
+    if code != 0:
+        raise RefNotFoundError(BRANCH_NOT_FOUND)
+    return out.strip()
+
+
+async def _rev_count(repo: Path, revision_range: str, timeout: float) -> int:
+    code, out, err = await run_git(
+        repo, "rev-list", "--count", "--end-of-options", revision_range, "--", timeout=timeout
+    )
+    if code != 0:
+        raise GitError(_failure(err))
+    return int(out.strip() or 0)
+
+
+async def count_between(repo: Path, base: str, ref: str, *, timeout: float = GIT_TIMEOUT) -> int:
+    """Commits in `ref` that `base` does not have."""
+    return await _within(timeout, _rev_count(repo, f"{base}..{ref}", timeout))
+
+
+async def _log(repo: Path, target: str, timeout: float, *extra: str) -> str:
+    code, out, err = await run_git(
+        repo, "log", *LOG_COMMON, f"--format={LOG_FORMAT}", *extra, "--end-of-options", target, "--",
+        timeout=timeout, limit=FILES_READ_LIMIT,
+    )
+    if code != 0:
+        raise GitError(_failure(err))
+    return out
+
+
+async def repo_log(
+    repo: Path, ref: str | None = None, *, skip: int = 0, limit: int = LOG_PAGE,
+    timeout: float = GIT_TIMEOUT,
+) -> dict[str, Any]:
+    """`limit` commits of `ref` (a full branch ref; None follows HEAD) after skipping `skip`.
+
+    With an upstream, `pushed` tells which commits it has, `outgoing_count`/`incoming_count`
+    how many each side lacks and, on the first page, `incoming` lists up to MAX_INCOMING of
+    the upstream's commits that `ref` lacks. Raises RefNotFoundError for an unknown ref.
+    """
+    return await _within(timeout, _repo_log(repo, ref, skip, limit, timeout))
+
+
+async def _repo_log(
+    repo: Path, ref: str | None, skip: int, limit: int, timeout: float
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ref": None, "branch": None, "upstream": None, "upstream_sha": None, "commits": [],
+        "has_more": False, "incoming": [], "incoming_count": None, "outgoing_count": None,
+    }
+    if ref is None:
+        code, out, _ = await run_git(repo, "symbolic-ref", "-q", "HEAD", timeout=timeout)
+        head_ref = out.strip() if code == 0 else None
+        code, out, _ = await run_git(repo, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+        head_sha = out.strip() if code == 0 else None
+        result["ref"] = head_ref
+        result["branch"] = _short_ref(head_ref) if head_ref else (head_sha or "")[:7] or None
+        if head_sha is None:
+            return result  # no commits yet
+        target = head_ref or head_sha
+    else:
+        await verify_branch_ref(repo, ref, timeout=timeout)
+        target = ref
+        result["ref"], result["branch"] = ref, _short_ref(ref)
+
+    commits = _parse_log(await _log(repo, target, timeout, f"--skip={skip}", "-n", str(limit + 1)))
+    result["has_more"] = len(commits) > limit
+    result["commits"] = commits[:limit]
+
+    upstream = None
+    if result["ref"] and result["ref"].startswith("refs/heads/"):
+        code, out, _ = await run_git(
+            repo, "for-each-ref", "--format=%(upstream)", result["ref"], timeout=timeout
+        )
+        candidate = out.strip() if code == 0 else ""
+        if candidate.startswith("refs/remotes/"):
+            code, out, _ = await run_git(
+                repo, "rev-parse", "--verify", "-q", "--end-of-options", f"{candidate}^{{commit}}",
+                timeout=timeout,
+            )
+            if code == 0:
+                upstream = candidate
+                result["upstream_sha"] = out.strip()
+    if upstream is None:
+        return result
+    result["upstream"] = _short_ref(upstream)
+    code, out, _ = await run_git(
+        repo, "rev-list", "--max-count=1000", "--end-of-options", f"{upstream}..{target}", "--",
+        timeout=timeout,
+    )
+    unpushed = set(out.split()) if code == 0 else set()
+    for commit in result["commits"]:
+        commit["pushed"] = commit["full_hash"] not in unpushed
+    result["outgoing_count"] = await _rev_count(repo, f"{upstream}..{target}", timeout)
+    result["incoming_count"] = await _rev_count(repo, f"{target}..{upstream}", timeout)
+    if skip == 0 and result["incoming_count"]:
+        result["incoming"] = _parse_log(
+            await _log(repo, f"{target}..{upstream}", timeout, "-n", str(MAX_INCOMING)), pushed=True
+        )
+    return result
+
+
+async def _resolve_commit(repo: Path, sha: str, timeout: float) -> str:
+    if not SHA_RE.match(sha):
+        raise RefNotFoundError(COMMIT_NOT_FOUND)
+    code, out, _ = await run_git(
+        repo, "rev-parse", "--verify", "-q", "--end-of-options", f"{sha}^{{commit}}", timeout=timeout
+    )
+    if code != 0:
+        raise RefNotFoundError(COMMIT_NOT_FOUND)
+    return out.strip()
+
+
+async def _commit_base(repo: Path, full: str, timeout: float) -> str:
+    """First parent, or the empty tree for a root commit (right for sha1 and sha256)."""
+    code, out, _ = await run_git(repo, "rev-parse", "--verify", "-q", f"{full}^1", timeout=timeout)
+    if code == 0:
+        return out.strip()
+    code, out, err = await run_git(repo, "hash-object", "-t", "tree", "--stdin", timeout=timeout)
+    if code != 0:
+        raise GitError(_failure(err))
+    return out.strip()
+
+
+def _parse_name_status(output: str) -> list[dict[str, Any]]:
+    fields = output.split("\0")
+    files: list[dict[str, Any]] = []
+    index = 0
+    while index < len(fields):
+        code = fields[index]
+        index += 1
+        if not code:
+            continue
+        letter = code[0]
+        if letter in "RC":
+            if index + 1 >= len(fields):
+                break
+            old, new = fields[index], fields[index + 1]
+            index += 2
+            files.append({"path": new, "old_path": old, "status": letter})
+        else:
+            if index >= len(fields):
+                break
+            files.append({"path": fields[index], "old_path": None, "status": "M" if letter == "T" else letter})
+            index += 1
+    return files
+
+
+async def commit_detail(repo: Path, sha: str, *, timeout: float = GIT_TIMEOUT) -> dict[str, Any]:
+    """A commit, with its files compared to the first parent (empty tree for a root commit)."""
+    return await _within(timeout, _commit_detail(repo, sha, timeout))
+
+
+async def _commit_detail(repo: Path, sha: str, timeout: float) -> dict[str, Any]:
+    full = await _resolve_commit(repo, sha, timeout)
+    info = _parse_log(await _log(repo, full, timeout, "-n", "1"))
+    if not info:
+        raise RefNotFoundError(COMMIT_NOT_FOUND)
+    base = await _commit_base(repo, full, timeout)
+    code, names, err = await run_git(
+        repo, "diff-tree", *DIFF_TREE_COMMON, "--name-status", base, full, "--",
+        timeout=timeout, limit=FILES_READ_LIMIT,
+    )
+    if code != 0:
+        raise GitError(_failure(err))
+    code, numbers, err = await run_git(
+        repo, "diff-tree", *DIFF_TREE_COMMON, "--numstat", base, full, "--",
+        timeout=timeout, limit=FILES_READ_LIMIT,
+    )
+    if code != 0:
+        raise GitError(_failure(err))
+    files = _parse_name_status(names)
+    counts = _parse_numstat(numbers)
+    truncated = len(files) > MAX_FILES
+    files = files[:MAX_FILES]
+    for item in files:
+        item["added"], item["removed"] = counts.get(item["path"], (None, None))
+    return {**info[0], "files": files, "files_truncated": truncated}
+
+
+async def commit_file_diff(
+    repo: Path, sha: str, file: str, *, timeout: float = GIT_TIMEOUT
+) -> FileDiff:
+    """Diff of one file of a commit against its first parent. The file must be in the commit."""
+    return await _within(timeout, _commit_file_diff(repo, sha, file, timeout))
+
+
+async def _commit_file_diff(repo: Path, sha: str, file: str, timeout: float) -> FileDiff:
+    detail = await _commit_detail(repo, sha, timeout)
+    match = next((item for item in detail["files"] if item["path"] == file), None)
+    if match is None:
+        raise RefNotFoundError(FILE_NOT_IN_COMMIT)
+    base = await _commit_base(repo, detail["full_hash"], timeout)
+    paths = [match["old_path"], file] if match["old_path"] else [file]
+    code, out, err = await run_git(
+        repo, "diff", "--no-color", "--no-ext-diff", "--no-textconv", DIFF_SUBMODULES, "-M",
+        base, detail["full_hash"], "--", *paths, timeout=timeout, limit=DIFF_READ_LIMIT,
+    )
+    if code != 0:
+        raise GitError(_failure(err))
+    if len(out) > DIFF_LIMIT:
+        return FileDiff(out[:DIFF_LIMIT], True)
+    return FileDiff(out, False)
+
+
+async def branches(repo: Path, *, timeout: float = GIT_TIMEOUT) -> dict[str, Any]:
+    """Local and remote-tracking branches, newest commit first; `current` is HEAD's ref."""
+    return await _within(timeout, _branches(repo, timeout))
+
+
+async def _branches(repo: Path, timeout: float) -> dict[str, Any]:
+    code, out, _ = await run_git(repo, "symbolic-ref", "-q", "HEAD", timeout=timeout)
+    result: dict[str, Any] = {"current": out.strip() if code == 0 else None, "local": [], "remote": []}
+    for kind, pattern in (("local", "refs/heads"), ("remote", "refs/remotes")):
+        code, out, err = await run_git(
+            repo, "for-each-ref", f"--format={BRANCH_FORMAT}", "--sort=-committerdate",
+            f"--count={MAX_BRANCHES}", pattern, timeout=timeout, limit=FILES_READ_LIMIT,
+        )
+        if code != 0:
+            raise GitError(_failure(err))
+        for line in out.split("\n"):
+            parts = line.split("\0")
+            if len(parts) != 5 or parts[4]:  # symbolic refs such as origin/HEAD are left out
+                continue
+            ref, sha, date, upstream, _ = parts
+            result[kind].append({
+                "name": _short_ref(ref), "ref": ref, "sha": sha[:7], "date": date,
+                "upstream": _short_ref(upstream) if upstream.startswith("refs/remotes/") else None,
+            })
+    return result
+
+
+# State and policy of a repository ----------------------------------------------------
+
+LFS_READ_ONLY = (
+    "Este repositório usa Git LFS. O app só mostra aqui: commit, troca de branch, merge e "
+    "sincronização ficam com o terminal, porque sem os filtros do LFS o app gravaria os "
+    "arquivos errados."
+)
+FILTER_READ_ONLY = (
+    "Este repositório usa o filtro {name} do git. O app só mostra aqui: commit, troca de "
+    "branch, merge e sincronização ficam com o terminal, porque sem o filtro o app gravaria "
+    "os arquivos errados."
+)
+MERGE_DRIVER_MESSAGE = (
+    "Este repositório tem um driver de merge próprio ({name}). Mesclar e baixar ficam com o "
+    "terminal, porque o app não roda programas do repositório."
+)
+# The app's own overrides (SAFE_CONFIG) come in the "command" scope; reading each file scope
+# on its own leaves them out.
+# `--worktree` reads `config.worktree` (extensions.worktreeConfig); without the extension it
+# is the same as `--local`. It comes first because it wins over the repository's own config.
+CONFIG_SCOPES = ("--worktree", "--local", "--global", "--system")
+POLICY_KEYS = (
+    r"^(core\.hookspath|core\.attributesfile|commit\.gpgsign|user\.email"
+    r"|filter\..+\.(clean|smudge|process)|merge\..+\.driver)$"
+)
+POLICY_TTL = 30.0
+ATTRIBUTE_READ_LIMIT = 1024 * 1024
+MAX_ATTRIBUTE_FILES = 200
+_ATTR_FILTER = re.compile(r"(?:^|\s)filter=(\S+)", re.MULTILINE)
+_ATTR_MERGE = re.compile(r"(?:^|\s)merge=(\S+)", re.MULTILINE)
+_MERGE_SUBJECT = re.compile(r"^Merge (?:remote-tracking )?branch(?:es)? '([^']+)'")
+_TRUE = ("true", "yes", "on", "1")
+
+_policy_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def clear_policy_cache() -> None:
+    _policy_cache.clear()
+
+
+async def _scope_entries(repo: Path, scope: str, timeout: float) -> list[tuple[str, str | None]]:
+    """(key, value) pairs of POLICY_KEYS set in one config file scope (includes followed)."""
+    code, out, _ = await run_git(
+        repo, "config", scope, "--includes", "-z", "--get-regexp", POLICY_KEYS, timeout=timeout
+    )
+    if code != 0:
+        return []
+    entries: list[tuple[str, str | None]] = []
+    for item in out.split("\0"):
+        if not item:
+            continue
+        key, newline, value = item.partition("\n")
+        entries.append((key, value if newline else None))
+    return entries
+
+
+def _dir_has_hooks(folder: Path) -> bool:
+    try:
+        with os.scandir(folder) as found:
+            return any(entry.is_file() and not entry.name.endswith(".sample") for entry in found)
+    except OSError:
+        return False
+
+
+async def remote_names(repo: Path, *, timeout: float = GIT_TIMEOUT) -> list[str]:
+    code, out, _ = await run_git(
+        repo, "config", "-z", "--name-only", "--get-regexp", r"^remote\..+\.url$", timeout=timeout
+    )
+    if code != 0:
+        return []
+    names = []
+    for key in out.split("\0"):
+        if key.startswith("remote.") and key.endswith(".url"):
+            name = key[len("remote."):-len(".url")]
+            if name and name not in names and not _has_control(name):
+                names.append(name)
+    return names
+
+
+async def _attribute_texts(repo: Path, attributes_file: str | None, timeout: float) -> str:
+    """Text of every attributes file that applies to the repository (tracked or not).
+
+    The files git reads from outside the work tree (`core.attributesFile`, the user's
+    `attributes`, `info/attributes`) are followed through links, as git does; a
+    `.gitattributes` inside the tree that is a link is skipped, as git does since 2.32.
+    """
+    outside: list[Path] = []
+    code, out, _ = await run_git(
+        repo, "rev-parse", "--path-format=absolute", "--git-path", "info/attributes", timeout=timeout
+    )
+    if code == 0 and out.strip():
+        outside.append(Path(out.strip()))
+    if attributes_file:
+        outside.append(repo / os.path.expanduser(attributes_file))  # relative: from the repo root
+    else:
+        config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+        outside.append(Path(config_home) / "git" / "attributes")
+    tracked: list[Path] = []
+    code, out, _ = await run_git(
+        repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard",
+        "--", ":(glob)**/.gitattributes",
+        timeout=timeout, limit=FILES_READ_LIMIT, env={"GIT_LITERAL_PATHSPECS": None},
+    )
+    if code == 0:
+        tracked.extend(repo / rel for rel in out.split("\0") if rel)
+    texts = []
+    # The files outside the tree go first so that the cap never drops them.
+    candidates = [(p, False) for p in outside] + [(p, True) for p in tracked]
+    for path, in_tree in candidates[:MAX_ATTRIBUTE_FILES]:
+        try:
+            if in_tree and path.is_symlink():
+                continue
+            with open(path, "rb") as handle:
+                texts.append(handle.read(ATTRIBUTE_READ_LIMIT).decode("utf-8", "replace"))
+        except OSError:
+            continue
+    return "\n".join(texts)
+
+
+async def repo_policy(
+    repo: Path, *, timeout: float = GIT_TIMEOUT, cached: bool = True
+) -> dict[str, Any]:
+    """What the app may do in the repository and what to warn about.
+
+    `read_only`: a filter (LFS or other) is defined and used, so writing without it would
+    store the wrong files. `no_merge`: a merge driver (a program) could run on merge, so
+    merging and pulling stay with the terminal; a driver in the repository's own config
+    always counts, one in the user's config only when an attributes file uses it.
+    Cached for POLICY_TTL seconds; the write actions always ask with `cached=False`.
+    """
+    key = os.path.realpath(repo)
+    hit = _policy_cache.get(key)
+    if cached and hit is not None and time.monotonic() - hit[0] < POLICY_TTL:
+        return dict(hit[1])
+    policy = await _within(timeout, _repo_policy(repo, timeout))
+    _policy_cache[key] = (time.monotonic(), policy)
+    return dict(policy)
+
+
+async def _repo_policy(repo: Path, timeout: float) -> dict[str, Any]:
+    scopes = {scope: await _scope_entries(repo, scope, timeout) for scope in CONFIG_SCOPES}
+
+    def first(name: str) -> str | None:
+        for scope in CONFIG_SCOPES:  # worktree wins over local, local over global, global over system
+            for key, value in scopes[scope]:
+                if key == name:
+                    return value if value is not None else "true"
+        return None
+
+    filters = _filter_names("\0".join(key for entries in scopes.values() for key, _ in entries))
+    local_drivers = {
+        key[len("merge."):-len(".driver")]
+        for scope in ("--worktree", "--local") for key, _ in scopes[scope]
+        if key.startswith("merge.") and key.endswith(".driver")
+    }
+    user_drivers = {
+        key[len("merge."):-len(".driver")]
+        for scope in ("--global", "--system") for key, _ in scopes[scope]
+        if key.startswith("merge.") and key.endswith(".driver")
+    }
+
+    hooks_path = first("core.hookspath")
+    if hooks_path:
+        folder = Path(os.path.expanduser(hooks_path))
+        has_hooks = _dir_has_hooks(folder if folder.is_absolute() else repo / folder)
+    else:
+        code, out, _ = await run_git(
+            repo, "rev-parse", "--path-format=absolute", "--git-common-dir", timeout=timeout
+        )
+        has_hooks = code == 0 and _dir_has_hooks(Path(out.strip()) / "hooks")
+
+    read_only = no_merge = None
+    if filters or user_drivers:
+        text = await _attribute_texts(repo, first("core.attributesfile"), timeout)
+        used_filters = set(_ATTR_FILTER.findall(text)) & filters
+        if used_filters:
+            name = "lfs" if "lfs" in used_filters else sorted(used_filters)[0]
+            read_only = LFS_READ_ONLY if name == "lfs" else FILTER_READ_ONLY.format(name=name)
+        user_drivers &= set(_ATTR_MERGE.findall(text))
+    drivers = sorted(local_drivers | user_drivers)
+    if drivers:
+        no_merge = MERGE_DRIVER_MESSAGE.format(name=drivers[0])
+
+    gpgsign = (first("commit.gpgsign") or "").lower() in _TRUE
+    return {
+        "has_hooks": has_hooks, "read_only": read_only, "no_merge": no_merge,
+        "gpgsign": gpgsign, "user_email": first("user.email"),
+        "remotes": await remote_names(repo, timeout=timeout),
+    }
+
+
+async def conflicted_files(repo: Path, *, timeout: float = GIT_TIMEOUT) -> list[str]:
+    code, out, err = await run_git(
+        repo, "diff", "--name-only", "-z", "--diff-filter=U", "--no-ext-diff", DIFF_SUBMODULES,
+        timeout=timeout, limit=FILES_READ_LIMIT,
+    )
+    if code != 0:
+        raise GitError(_failure(err))
+    return [path for path in out.split("\0") if path][:MAX_FILES]
+
+
+async def _merge_info(repo: Path, timeout: float) -> dict[str, Any]:
+    info: dict[str, Any] = {
+        "merging": False, "merge_head": None, "merge_branch": None, "merge_message": None,
+        "conflicts": [],
+    }
+    code, out, _ = await run_git(repo, "rev-parse", "--verify", "-q", "MERGE_HEAD", timeout=timeout)
+    if code != 0:
+        return info
+    info["merging"], info["merge_head"] = True, out.strip()
+    code, out, _ = await run_git(
+        repo, "rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG", timeout=timeout
+    )
+    message = ""
+    if code == 0 and out.strip():
+        try:
+            with open(out.strip(), "rb") as handle:
+                message = handle.read(MAX_MERGE_MESSAGE).decode("utf-8", "replace")
+        except OSError:
+            message = ""
+    message = "\n".join(line for line in message.splitlines() if not line.startswith("#")).strip()
+    info["merge_message"] = message or None
+    found = _MERGE_SUBJECT.match(message)
+    info["merge_branch"] = found.group(1) if found else info["merge_head"][:7]
+    info["conflicts"] = await conflicted_files(repo, timeout=timeout)
+    return info
+
+
+async def repo_state(
+    repo: Path, *, timeout: float = GIT_TIMEOUT, cached: bool = True
+) -> dict[str, Any]:
+    policy = await repo_policy(repo, timeout=timeout, cached=cached)
+    merge = await _within(timeout, _merge_info(repo, timeout))
+    return {**policy, **merge}
 
 
 # Fetching the upstream ------------------------------------------------------------

@@ -115,9 +115,9 @@ async def test_files_statuses_and_counts(tmp_path: Path):
     files, truncated = await gitinfo.repo_files(repo)
     assert truncated is False
     assert by_key(files) == {
-        ("README.md", "unstaged"): {"path": "README.md", "status": "unstaged", "added": 2, "removed": 1},
-        ("novo.txt", "staged"): {"path": "novo.txt", "status": "staged", "added": 3, "removed": 0},
-        ("solto.txt", "untracked"): {"path": "solto.txt", "status": "untracked", "added": None, "removed": None},
+        ("README.md", "unstaged"): {"path": "README.md", "status": "unstaged", "kind": "M", "added": 2, "removed": 1},
+        ("novo.txt", "staged"): {"path": "novo.txt", "status": "staged", "kind": "A", "added": 3, "removed": 0},
+        ("solto.txt", "untracked"): {"path": "solto.txt", "status": "untracked", "kind": "A", "added": None, "removed": None},
     }
 
 
@@ -139,7 +139,7 @@ async def test_file_deleted(tmp_path: Path):
     repo = make_repo(tmp_path / "r")
     (repo / "README.md").unlink()
     files, _ = await gitinfo.repo_files(repo)
-    assert files == [{"path": "README.md", "status": "unstaged", "added": 0, "removed": 2}]
+    assert files == [{"path": "README.md", "status": "unstaged", "kind": "D", "added": 0, "removed": 2}]
 
 
 @pytest.mark.anyio
@@ -147,7 +147,7 @@ async def test_file_renamed_uses_new_path(tmp_path: Path):
     repo = make_repo(tmp_path / "r")
     git(repo, "mv", "README.md", "LEIAME.md")
     files, _ = await gitinfo.repo_files(repo)
-    assert files == [{"path": "LEIAME.md", "status": "staged", "added": 0, "removed": 0}]
+    assert files == [{"path": "LEIAME.md", "status": "staged", "kind": "R", "added": 0, "removed": 0}]
 
 
 @pytest.mark.anyio
@@ -321,7 +321,7 @@ async def test_repo_details_combines(tmp_path: Path):
     detail = await gitinfo.repo_details(clone)
     assert detail["branch"] == "main" and detail["ahead"] == 1
     assert detail["files"] == [
-        {"path": "solto.txt", "status": "untracked", "added": None, "removed": None}
+        {"path": "solto.txt", "status": "untracked", "kind": "A", "added": None, "removed": None}
     ]
     assert detail["files_truncated"] is False
     assert [c["pushed"] for c in detail["commits"]] == [False, True]
@@ -361,11 +361,11 @@ def test_details_route_shape(api, home):  # noqa: F811
     assert set(api_repo) == {
         "path", "rel_path", "branch", "detached", "head", "changed", "upstream",
         "ahead", "behind", "error", "files", "files_truncated", "commits",
-        "fetched_at", "fetch_error", "fetching",
+        "fetched_at", "fetch_error", "fetching", "head_sha", "state",
     }
     assert api_repo["branch"] == "dev" and api_repo["upstream"] is None
     assert api_repo["files"] == [
-        {"path": "README.md", "status": "unstaged", "added": 1, "removed": 1}
+        {"path": "README.md", "status": "unstaged", "kind": "M", "added": 1, "removed": 1}
     ]
     assert set(api_repo["commits"][0]) == {
         "hash", "full_hash", "subject", "author", "date", "pushed",

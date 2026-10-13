@@ -12,6 +12,7 @@ from claudio_maestro.api import (
     editor,
     fs,
     git,
+    gitops,
     groups,
     health,
     labels,
@@ -39,6 +40,7 @@ router.include_router(labels.router)
 router.include_router(activity.router)
 router.include_router(app_state.router)
 router.include_router(git.router)
+router.include_router(gitops.router)
 router.include_router(editor.router)
 router.include_router(suggestions.router)
 router.include_router(updates.router)
