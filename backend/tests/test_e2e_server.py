@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from claude_agent_sdk import list_sessions
 from fastapi.testclient import TestClient
+from git_helpers import git
 
 from claudio_maestro import db, history, projects
 from claudio_maestro.agent.base import AgentError, AgentOptions
@@ -110,9 +111,54 @@ def test_seed_registers_the_scenario_projects(tmp_path, monkeypatch):
 
     with closing(db.connect(load_settings().db_path)) as conn:
         registered = projects.list_projects(conn)
-    assert [p.name for p in registered] == [p["name"] for p in e2e.SCENARIO]
+    assert [p.name for p in registered] == [p["name"] for p in (*e2e.SCENARIO, *e2e.GIT_SCENARIO)]
     assert all(Path(p.path).is_dir() for p in registered)
     assert all(Path(p.path).is_relative_to(tmp_path) for p in registered)
+
+
+def _seeded(tmp_path, monkeypatch) -> Path:
+    """Seed in an isolated environment; returns the fake HOME, where the projects are."""
+    apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
+    e2e.seed(tmp_path)
+    return Path(os.environ["MAESTRO_HOME"]).resolve()
+
+
+def test_seed_creates_the_history_project(tmp_path, monkeypatch):
+    home = _seeded(tmp_path, monkeypatch)
+    api = home / "projetos" / "historico-demo" / "api"
+    log = git(api, "log", "--format=%s", "main").splitlines()
+    assert len(log) == 35 and log[0] == "Ajustar a rota 35"
+    assert git(api, "rev-list", "--left-right", "--count", "main...origin/main").split() == ["2", "1"]
+    assert set(git(api, "branch", "--format=%(refname:short)").split()) == {"main", "feat/relatorios"}
+    assert (home / "projetos" / "historico-demo" / "web" / ".git").is_dir()
+    for path in (api, tmp_path / "remotes"):
+        assert path.resolve().is_relative_to(tmp_path.resolve())
+
+
+def test_seed_ignores_the_git_config_of_whoever_runs_it(tmp_path, monkeypatch):
+    xdg = tmp_path / "xdg"
+    (xdg / "git").mkdir(parents=True)
+    (xdg / "git" / "config").write_text(
+        "[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = /nao/existe/gpg\n"
+    )
+    root = tmp_path / "root"
+    root.mkdir()
+    apply_env(monkeypatch, e2e.isolated_env({}, root, 6620))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+
+    e2e.seed(root)
+
+    api = Path(os.environ["MAESTRO_HOME"]) / "projetos" / "historico-demo" / "api"
+    assert len(git(api, "log", "--format=%s", "main").splitlines()) == 35
+
+
+def test_seed_turns_a_git_error_into_an_e2e_error(tmp_path, monkeypatch):
+    async def broken(*args, **kwargs):
+        raise e2e.gitinfo.GitError("tempo esgotado")
+
+    monkeypatch.setattr(e2e.gitinfo, "run_git", broken)
+    with pytest.raises(e2e.E2EError, match="git status falhou.*tempo esgotado"):
+        e2e._git(tmp_path, "status")
 
 
 def test_seed_makes_conversations_readable_by_the_sdk(tmp_path, monkeypatch):

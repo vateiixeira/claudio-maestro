@@ -353,6 +353,7 @@ describe('tela do projeto', () => {
     expect(repo.text()).toContain('1 não commitados')
     expect(repo.text()).toContain('src/a.py')
     expect(repo.text()).toContain('Ajustar o carrinho')
+    expect(wrapper.find('[data-test="commits-section"]').exists()).toBe(true)
   })
 
   it('sem repositório git não monta a visão de detalhes', async () => {
@@ -364,6 +365,7 @@ describe('tela do projeto', () => {
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = await mountView()
     expect(wrapper.find('[data-test="repos"]').text()).toContain('sem repositório git')
+    expect(wrapper.find('[data-test="commits-section"]').exists()).toBe(false)
     expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/git/details'))).toBe(false)
   })
 })

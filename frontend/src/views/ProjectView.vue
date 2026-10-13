@@ -7,6 +7,7 @@ import ProjectGroups from '../components/groups/ProjectGroups.vue'
 import SplitDivider from '../components/SplitDivider.vue'
 import ConversationView from './ConversationView.vue'
 import ProjectGitOverview from '../components/git/ProjectGitOverview.vue'
+import CommitsSection from '../components/git/commits/CommitsSection.vue'
 import { useGitStore } from '../stores/git'
 import { errorMessage, openInEditor } from '../api/http'
 import { groupByDate } from '../conversationList'
@@ -313,6 +314,7 @@ async function remove(): Promise<void> {
           Mais de 50 repositórios; só os 50 primeiros são acompanhados.
         </p>
       </section>
+      <CommitsSection v-if="git.isLoaded(id) && repos.length > 0 && project?.available" :project-id="id" />
 
       <section
         v-if="confirmingRemove"

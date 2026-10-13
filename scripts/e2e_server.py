@@ -10,6 +10,7 @@ escolhe uma porta de 6620 a 6659 por worktree e a passa por essa variável. Nada
     uv run python scripts/e2e_server.py
 """
 
+import asyncio
 import json
 import os
 import re
@@ -25,7 +26,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from claudio_maestro import cli, db, projects
+from claudio_maestro import cli, db, gitinfo, projects
 from claudio_maestro.agent.base import AgentClient, AgentError, AgentOptions
 from claudio_maestro.claudecli import ClaudeCliResolver, CommandResult
 from claudio_maestro.config import (
@@ -85,6 +86,13 @@ SCENARIO = [
             },
         ],
     },
+]
+
+
+# Git projects the specs in frontend/e2e/git-*.e2e.ts expect. Each one is used by one spec
+# only, because the specs change them (commit, merge, push) and the server lives for the run.
+GIT_SCENARIO = [
+    {"name": "Histórico Demo", "slug": "historico-demo", "color": "#d29922", "git": "history"},
 ]
 
 
@@ -270,8 +278,92 @@ def _write_conversation(
     )
 
 
+# The seed must not depend on who runs it: no user or system git config (signing, hooks path...).
+_GIT_ENV = {"XDG_CONFIG_HOME": None, "GIT_CONFIG_NOSYSTEM": "1"}
+_GIT_CONFIG = [("commit.gpgsign", "false")]
+
+
+def _git(repo: Path, *args: str) -> str:
+    """git through the app's own runner (hooks and filters off). Raises E2EError on failure."""
+    try:
+        code, out, err = asyncio.run(
+            gitinfo.run_git(repo, *args, timeout=30, env=_GIT_ENV, config=_GIT_CONFIG)
+        )
+    except gitinfo.GitError as exc:
+        raise E2EError(f"git {args[0]} falhou ao preparar {repo.name}: {exc}") from exc
+    if code != 0:
+        raise E2EError(f"git {args[0]} falhou ao preparar {repo.name}: {err.strip()}")
+    return out
+
+
+def _new_repo(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q", "-b", "main")
+    _git(path, "config", "user.name", "Pessoa Demo")
+    _git(path, "config", "user.email", "demo@example.com")
+    return path
+
+
+def _commit(repo: Path, name: str, message: str, text: str | None = None) -> None:
+    target = repo / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text if text is not None else f"{message}\n")
+    _git(repo, "add", "--", name)
+    _git(repo, "commit", "-q", "-m", message)
+
+
+def _bare(root: Path, name: str) -> Path:
+    remotes = root / "remotes"
+    remotes.mkdir(exist_ok=True)
+    bare = remotes / f"{name}.git"
+    _git(remotes, "init", "-q", "--bare", "-b", "main", str(bare))
+    return bare
+
+
+def _seed_history(project_dir: Path, root: Path) -> None:
+    """`api`: 35 commits on main, 2 not pushed, 1 on the remote to pull, branch feat/relatorios.
+    `web`: 3 commits and no remote."""
+    bare = _bare(root, "historico-api")
+    api = _new_repo(project_dir / "api")
+    for number in range(1, 34):
+        _commit(api, f"rotas/rota{number}.txt", f"Ajustar a rota {number}")
+    _git(api, "remote", "add", "origin", str(bare))
+    _git(api, "push", "-q", "-u", "origin", "main")
+    _git(api, "switch", "-q", "-c", "feat/relatorios")
+    _commit(api, "relatorio.txt", "Criar o relatório de vendas", "vendas por dia\n")
+    _git(api, "switch", "-q", "main")
+    for number in (34, 35):
+        _commit(api, f"rotas/rota{number}.txt", f"Ajustar a rota {number}")
+    other = root / "remotes" / "historico-outro"
+    _git(root / "remotes", "clone", "-q", str(bare), str(other))
+    _git(other, "config", "user.name", "Outra Pessoa")
+    _git(other, "config", "user.email", "outra@example.com")
+    _commit(other, "cabecalho.txt", "Corrigir o cabeçalho no remoto")
+    _git(other, "push", "-q", "origin", "main")
+    _git(api, "fetch", "-q", "origin")
+    web = _new_repo(project_dir / "web")
+    for number in range(1, 4):
+        _commit(web, f"pagina{number}.html", f"Montar a página {number}")
+
+
+GIT_SEEDERS = {"history": _seed_history}
+
+
+def seed_git(root: Path, home: Path, conn) -> None:
+    for entry in GIT_SCENARIO:
+        project_dir = home / "projetos" / entry["slug"]
+        if not project_dir.resolve().is_relative_to(root):
+            raise E2EError(f"A pasta {project_dir} está fora de {root}; nada foi gravado.")
+        project_dir.mkdir(parents=True, exist_ok=True)
+        GIT_SEEDERS[entry["git"]](project_dir, root)
+        projects.create_project(
+            conn, name=entry["name"], path=str(project_dir), color=entry["color"], home=home
+        )
+
+
 def seed(root: Path) -> None:
-    """Create the database, the projects and the conversations of `SCENARIO`.
+    """Create the database, the projects and the conversations of `SCENARIO`, and the git
+    projects of `GIT_SCENARIO`.
 
     Reads the environment (see `isolated_env`) and refuses to write anything when a folder
     it would use is not inside `root`.
@@ -305,6 +397,7 @@ def seed(root: Path) -> None:
                     folder, Path(project.path), conversation["prompt"], conversation["reply"],
                     started, conversation.get("subagents"),
                 )
+        seed_git(root, settings.home_dir, conn)
 
 
 def refuse_agent(options: AgentOptions) -> AgentClient:

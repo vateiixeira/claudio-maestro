@@ -250,13 +250,15 @@ export interface GitRepo {
   error: string | null
 }
 
-export type RepoFileStatus = 'staged' | 'unstaged' | 'untracked'
+export type RepoFileStatus = 'staged' | 'unstaged' | 'untracked' | 'conflict'
 
 /** Changed file of a repository; a file both staged and unstaged shows up twice. */
 export interface RepoFile {
   /** Relative to the repository. */
   path: string
   status: RepoFileStatus
+  /** Letter of the change; U for a conflict. Absent on an older backend. */
+  kind?: 'M' | 'A' | 'D' | 'R' | 'U'
   /** Null for untracked and binary files. */
   added: number | null
   removed: number | null
@@ -273,10 +275,94 @@ export interface RepoCommit {
   pushed: boolean | null
 }
 
+/** What the app may do in a repository and what is going on in it. */
+export interface RepoState {
+  merging: boolean
+  merge_head: string | null
+  /** Branch being merged in ("feat/x"), or the short hash. */
+  merge_branch: string | null
+  /** Message git prepared for the merge commit, without comment lines. */
+  merge_message: string | null
+  conflicts: string[]
+  /** The repository has hooks, which the app never runs. */
+  has_hooks: boolean
+  /** Why the app only shows this repository (LFS or another filter); null when it can write. */
+  read_only: string | null
+  /** Why merging and pulling stay with the terminal (a merge driver); null otherwise. */
+  no_merge: string | null
+  /** The git config asks for signed commits; the app's commits go out unsigned. */
+  gpgsign: boolean
+  user_email: string | null
+  remotes: string[]
+}
+
+export interface LogCommit {
+  hash: string
+  full_hash: string
+  parents: string[]
+  subject: string
+  body: string
+  author: string
+  email: string
+  /** ISO 8601. */
+  date: string
+  /** Null without upstream. */
+  pushed: boolean | null
+}
+
+export interface RepoLog {
+  /** Full ref shown ("refs/heads/main"); null for a detached HEAD. */
+  ref: string | null
+  /** Short name shown ("main", "origin/feat"), or the short hash when detached. */
+  branch: string | null
+  upstream: string | null
+  upstream_sha: string | null
+  commits: LogCommit[]
+  has_more: boolean
+  /** Upstream commits the branch lacks (first page only, up to 100). */
+  incoming: LogCommit[]
+  incoming_count: number | null
+  outgoing_count: number | null
+}
+
+export type CommitFileStatus = 'A' | 'M' | 'D' | 'R' | 'C'
+
+export interface CommitFile {
+  path: string
+  old_path: string | null
+  status: CommitFileStatus
+  added: number | null
+  removed: number | null
+}
+
+export interface CommitDetail extends LogCommit {
+  files: CommitFile[]
+  files_truncated: boolean
+}
+
+export interface BranchRef {
+  name: string
+  ref: string
+  sha: string
+  date: string
+  upstream: string | null
+}
+
+export interface BranchList {
+  /** HEAD's ref; null when detached. */
+  current: string | null
+  local: BranchRef[]
+  remote: BranchRef[]
+}
+
 export interface RepoDetails extends GitRepo {
   files: RepoFile[]
   files_truncated: boolean
   commits: RepoCommit[]
+  /** Full sha of HEAD; null without commits. Absent on an older backend. */
+  head_sha?: string | null
+  /** Null when the repository could not be read. Absent on an older backend. */
+  state?: RepoState | null
 }
 
 export interface ProjectGitDetails {

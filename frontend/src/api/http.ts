@@ -1,8 +1,10 @@
 import type {
   ActivityDay,
+  BranchList,
   ClaudeCliInfo,
   ClaudeCliUpdateResult,
   CommandInfo,
+  CommitDetail,
   DeliveriesDay,
   Delivery,
   FileMatch,
@@ -22,6 +24,7 @@ import type {
   ModelInfo,
   MarkdownFile,
   PlanState,
+  RepoLog,
   Project,
   ProjectCreate,
   ProjectGitDetails,
@@ -358,6 +361,34 @@ export function getProjectGitDetails(projectId: number, signal?: AbortSignal): P
 /** Current diff of a file against the last commit. `file` is relative to the repository. */
 export function getFileDiff(projectId: number, repo: string, file: string, signal?: AbortSignal): Promise<FileDiff> {
   return request('GET', `/api/projects/${projectId}/diff?${new URLSearchParams({ repo, file })}`, undefined, signal)
+}
+
+/** History of a branch (null: HEAD), `limit` commits after `skip`. */
+export function getRepoLog(
+  projectId: number, repo: string, ref: string | null = null, skip = 0, limit?: number, signal?: AbortSignal,
+): Promise<RepoLog> {
+  const query = new URLSearchParams({ repo, skip: String(skip) })
+  if (ref) query.set('ref', ref)
+  if (limit !== undefined) query.set('limit', String(limit))
+  return request('GET', `/api/projects/${projectId}/git/log?${query}`, undefined, signal)
+}
+
+export function getCommit(projectId: number, repo: string, sha: string): Promise<CommitDetail> {
+  return request('GET', `/api/projects/${projectId}/git/commit?${new URLSearchParams({ repo, sha })}`)
+}
+
+/** Diff of one file of a commit against its first parent. */
+export function getCommitDiff(projectId: number, repo: string, sha: string, file: string): Promise<FileDiff> {
+  return request('GET', `/api/projects/${projectId}/git/commit/diff?${new URLSearchParams({ repo, sha, file })}`)
+}
+
+export function getBranches(projectId: number, repo: string): Promise<BranchList> {
+  return request('GET', `/api/projects/${projectId}/git/branches?${new URLSearchParams({ repo })}`)
+}
+
+/** Commits of `ref` that HEAD does not have. */
+export function compareBranch(projectId: number, repo: string, ref: string): Promise<{ incoming: number }> {
+  return request('GET', `/api/projects/${projectId}/git/compare?${new URLSearchParams({ repo, ref })}`)
 }
 
 export function getSessionChanges(sessionId: string, signal?: AbortSignal): Promise<{ repos: ChangesGroup[] }> {

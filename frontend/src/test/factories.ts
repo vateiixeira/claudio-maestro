@@ -104,7 +104,11 @@ export function makeGitRepo(overrides: Partial<import('../types/api').GitRepo> =
 export function makeRepoDetails(
   overrides: Partial<import('../types/api').RepoDetails> = {},
 ): import('../types/api').RepoDetails {
-  return { ...makeGitRepo(), files: [], files_truncated: false, commits: [], ...overrides }
+  return {
+    ...makeGitRepo(), files: [], files_truncated: false, commits: [],
+    head_sha: 'abc1234abc1234abc1234abc1234abc1234abc12', state: makeRepoState(),
+    ...overrides,
+  }
 }
 
 export function makeRepoCommit(
@@ -119,4 +123,53 @@ export function makeRepoCommit(
     pushed: true,
     ...overrides,
   }
+}
+
+export function makeRepoState(overrides: Partial<import('../types/api').RepoState> = {}): import('../types/api').RepoState {
+  return {
+    merging: false, merge_head: null, merge_branch: null, merge_message: null, conflicts: [],
+    has_hooks: false, read_only: null, no_merge: null, gpgsign: false,
+    user_email: 'eu@example.com', remotes: ['origin'],
+    ...overrides,
+  }
+}
+
+export function makeLogCommit(overrides: Partial<import('../types/api').LogCommit> = {}): import('../types/api').LogCommit {
+  const full = overrides.full_hash ?? 'abc1234abc1234abc1234abc1234abc1234abc12'
+  return {
+    hash: full.slice(0, 7), full_hash: full, parents: ['0000000000000000000000000000000000000000'],
+    subject: 'Ajustar o carrinho', body: '', author: 'Fulano', email: 'fulano@example.com',
+    date: '2026-09-30T12:00:00-03:00', pushed: true,
+    ...overrides,
+  }
+}
+
+export function makeRepoLog(overrides: Partial<import('../types/api').RepoLog> = {}): import('../types/api').RepoLog {
+  return {
+    ref: 'refs/heads/main', branch: 'main', upstream: 'origin/main', upstream_sha: null,
+    commits: [], has_more: false, incoming: [], incoming_count: 0, outgoing_count: 0,
+    ...overrides,
+  }
+}
+
+export function makeBranchList(overrides: Partial<import('../types/api').BranchList> = {}): import('../types/api').BranchList {
+  return {
+    current: 'refs/heads/main',
+    local: [
+      { name: 'main', ref: 'refs/heads/main', sha: 'abc1234', date: '2026-09-30T12:00:00-03:00', upstream: 'origin/main' },
+      { name: 'feat/relatorios', ref: 'refs/heads/feat/relatorios', sha: 'def5678', date: '2026-09-29T12:00:00-03:00', upstream: null },
+    ],
+    remote: [
+      { name: 'origin/main', ref: 'refs/remotes/origin/main', sha: 'abc1234', date: '2026-09-30T12:00:00-03:00', upstream: null },
+    ],
+    ...overrides,
+  }
+}
+
+/** Key of `routeFetch` for GET /git/log, in the order `getRepoLog` builds the query. */
+export function logUrl(projectId: number, repo: string, skip = 0, ref: string | null = null, limit?: number): string {
+  const query = new URLSearchParams({ repo, skip: String(skip) })
+  if (ref) query.set('ref', ref)
+  if (limit !== undefined) query.set('limit', String(limit))
+  return `GET /api/projects/${projectId}/git/log?${query}`
 }
