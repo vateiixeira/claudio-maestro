@@ -154,6 +154,8 @@ def test_events_for_catalog_and_for_session(api, home: Path):
         assert updated["data"]["label_ids"] == [label["id"]]
         api.patch(f"/api/labels/{label['id']}", json={"color": "#00ff00"})
         next_of_type(ws, "labels.changed")
+        assert api.delete(f"/api/labels/{label['id']}").status_code == 204
+        next_of_type(ws, "labels.changed")
 
 
 def test_deleting_a_label_unlinks_sessions_and_announces_each(api, home: Path):
@@ -173,6 +175,28 @@ def test_deleting_a_label_unlinks_sessions_and_announces_each(api, home: Path):
             seen[event["data"]["session_id"]] = event["data"]["label_ids"]
     assert seen == {a_session["session_id"]: [keep["id"]], b_session["session_id"]: []}
     assert api.get(f"/api/sessions/{b_session['session_id']}").json()["label_ids"] == []
+
+
+def test_deleting_a_label_announces_a_session_that_is_not_in_memory(api, home: Path):
+    project = make_project(api, home)
+    live = new_session(api, project["id"])
+    stored = new_session(api, project["id"])
+    gone = create_label(api, "gone", "#222222")
+    put_labels(api, live["session_id"], [gone["id"]])
+    put_labels(api, stored["session_id"], [gone["id"]])
+    # Only the database row is left: this is the `outside` branch of remove_label.
+    assert api.app.state.sessions._sessions.pop(stored["session_id"]) is not None
+
+    with connect_ws(api) as ws:
+        assert api.delete(f"/api/labels/{gone['id']}").status_code == 204
+        seen = {}
+        while len(seen) < 2:
+            event = next_of_type(ws, "session.updated")
+            seen[event["data"]["session_id"]] = event["data"]["label_ids"]
+    assert seen == {live["session_id"]: [], stored["session_id"]: []}
+    listed = {item["session_id"]: item["label_ids"] for item in api.get("/api/sessions").json()}
+    assert listed[stored["session_id"]] == []
+    assert listed[live["session_id"]] == []
 
 
 def test_search_finds_a_session_by_the_slug_of_its_label(api, home: Path):
