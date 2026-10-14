@@ -222,3 +222,108 @@ test('repositório em dia desliga Baixar e Enviar com o motivo', async ({ page }
   await expect(site.getByTestId('repo-pull')).toHaveAttribute('title', 'Nada para baixar')
   await expect(site.getByTestId('repo-push')).toHaveAttribute('title', 'Nada para enviar')
 })
+
+/** Counts the git requests the page sends from now on; `mutating` ignores the plain reads. */
+function watchGitPosts(page: Page): string[] {
+  const posts: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/git\//.test(request.url())) posts.push(new URL(request.url()).pathname)
+  })
+  return posts
+}
+
+/** Leaves `loja` with one commit to send and one to pull, fetched, and returns the bare remote. */
+async function divergeLoja(page: Page, file: string): Promise<{ local: string; bare: string }> {
+  const loja = repo(page, 'loja')
+  const local = await lojaPath(page)
+  commitOnRemote(local, `${file}-remoto.md`)
+  commitLocal(local, `${file}-local.md`)
+  await loja.getByTestId('repo-more').click()
+  await page.getByTestId('menu-fetch').click()
+  await expect(loja.getByTestId('primary-action')).toHaveText('Sincronizar 1↓ 1↑')
+  return { local, bare: git(local, 'remote', 'get-url', 'origin') }
+}
+
+async function syncLoja(page: Page): Promise<void> {
+  const loja = repo(page, 'loja')
+  await loja.getByTestId('primary-action').click()
+  await expect(loja.getByTestId('sync-counts')).toHaveText('em dia')
+}
+
+test('o ícone Baixar só baixa: faz o merge e não envia nada', async ({ page }) => {
+  await openProject(page)
+  const loja = repo(page, 'loja')
+  const { local, bare } = await divergeLoja(page, 'icone-baixar')
+  const remoteBefore = git(bare, 'rev-parse', 'main')
+  const posts = watchGitPosts(page)
+
+  await expect(loja.getByTestId('repo-pull')).toBeEnabled()
+  await loja.getByTestId('repo-pull').click()
+  // The merge brings the remote commit in; the local one (and the merge itself) are still to send.
+  await expect(loja.getByTestId('primary-action')).toHaveText(/^Enviar 2 commits$/)
+  expect(posts).toContain(`/api/projects/${new URL(page.url()).pathname.split('/')[2]}/git/pull`)
+  expect(posts.filter((path) => /\/git\/(sync|push)$/.test(path))).toEqual([])
+  expect(git(bare, 'rev-parse', 'main')).toBe(remoteBefore)
+  const commits = page.getByTestId('commits-repo').filter({ hasText: 'loja' })
+  if (await commits.getByTestId('group-outgoing').count() === 0) await commits.getByTestId('commits-repo-toggle').click()
+  await expect(commits.getByTestId('group-outgoing')).toContainText('Para subir — 2 commits')
+  expect(git(local, 'log', '--format=%s', 'origin/main..HEAD')).toContain('Local: icone-baixar-local.md')
+
+  await syncLoja(page)
+  expect(git(bare, 'rev-parse', 'main')).toBe(git(local, 'rev-parse', 'HEAD'))
+})
+
+test('Ctrl+Enter no campo de mensagem não faz nada de rede, em Sincronizar, Baixar, Enviar', async ({ page }) => {
+  await openProject(page)
+  const loja = repo(page, 'loja')
+  const { local, bare } = await divergeLoja(page, 'atalho')
+  const message = loja.getByTestId('commit-message')
+  const posts = watchGitPosts(page)
+  const remoteBefore = git(bare, 'rev-parse', 'main')
+  const headBefore = git(local, 'rev-parse', 'HEAD')
+
+  await message.fill('mensagem que não vira commit')
+  await message.press('Control+Enter')
+  await expect(loja.getByTestId('primary-action')).toHaveText('Sincronizar 1↓ 1↑')
+
+  // Baixar: after the pull the wide button offers Enviar; Ctrl+Enter must not push it.
+  await loja.getByTestId('repo-pull').click()
+  await expect(loja.getByTestId('primary-action')).toHaveText('Enviar 2 commits')
+  const afterPull = posts.length
+  await message.press('Control+Enter')
+  await expect(loja.getByTestId('primary-action')).toHaveText('Enviar 2 commits')
+  expect(posts.length).toBe(afterPull)
+  expect(git(bare, 'rev-parse', 'main')).toBe(remoteBefore)
+  expect(git(local, 'rev-parse', 'HEAD')).not.toBe(headBefore)
+  await expect(message).toHaveValue('mensagem que não vira commit')
+  expect(posts.filter((path) => /\/git\/(sync|push|publish)$/.test(path))).toEqual([])
+
+  await message.fill('')
+  await syncLoja(page)
+})
+
+test('Ctrl+Enter ainda commita com arquivo preparado', async ({ page }) => {
+  await openProject(page)
+  const loja = repo(page, 'loja')
+  const local = await lojaPath(page)
+  writeFileSync(join(local, 'atalho-commit.md'), 'x\n')
+  git(local, 'add', 'atalho-commit.md')
+  await loja.getByTestId('repo-refresh').click()
+  await expect(loja.getByTestId('primary-action')).toHaveText('Commitar 1 preparado')
+  const message = loja.getByTestId('commit-message')
+  await message.fill('Commit pelo atalho')
+  await message.press('Control+Enter')
+  await expect(loja.getByTestId('primary-action')).toHaveText('Enviar 1 commit')
+  expect(git(local, 'log', '-1', '--format=%s')).toBe('Commit pelo atalho')
+  await syncLoja(page)
+})
+
+test('ícones desligados mostram o motivo na dica', async ({ page }) => {
+  await openProject(page)
+  const loja = repo(page, 'loja')
+  await expect(loja.getByTestId('sync-counts')).toHaveText('em dia')
+  await expect(loja.getByTestId('repo-commit')).toBeDisabled()
+  await expect(loja.getByTestId('repo-commit')).toHaveAttribute('title', 'Não há alterações para commitar')
+  await expect(loja.getByTestId('repo-merge')).toBeEnabled()
+  await expect(loja.getByTestId('branch-chip')).toHaveAttribute('title', 'Trocar de branch')
+})

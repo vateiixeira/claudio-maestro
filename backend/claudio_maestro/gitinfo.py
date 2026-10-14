@@ -1310,14 +1310,18 @@ async def _repo_policy(repo: Path, timeout: float) -> dict[str, Any]:
     }
 
 
-async def conflicted_files(repo: Path, *, timeout: float = GIT_TIMEOUT) -> list[str]:
+async def conflicted_files(
+    repo: Path, *, timeout: float = GIT_TIMEOUT, complete: bool = False
+) -> list[str]:
+    """Paths in conflict, cut at MAX_FILES for display; `complete` reads all of them, for a check."""
     code, out, err = await run_git(
         repo, "diff", "--name-only", "-z", "--diff-filter=U", "--no-ext-diff", DIFF_SUBMODULES,
-        timeout=timeout, limit=FILES_READ_LIMIT,
+        timeout=timeout, limit=None if complete else FILES_READ_LIMIT,
     )
     if code != 0:
         raise GitError(_failure(err))
-    return [path for path in out.split("\0") if path][:MAX_FILES]
+    paths = [path for path in out.split("\0") if path]
+    return paths if complete else paths[:MAX_FILES]
 
 
 async def _merge_info(repo: Path, timeout: float) -> dict[str, Any]:

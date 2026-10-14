@@ -190,6 +190,16 @@ describe('branches e merge no repositório', () => {
     ])
   })
 
+  it('Ctrl+Enter conclui o merge quando não falta resolver nada', async () => {
+    const done = merging([], [staged('src/a.vue'), staged('src/c.ts')])
+    const { wrapper, fetchMock } = mountRepo(done, {
+      'POST /api/projects/1/git/merge-continue': () => jsonResponse({ repo: makeRepoDetails({ path: PATH }) }),
+    })
+    await wrapper.find('[data-test="commit-message"]').trigger('keydown', { key: 'Enter', ctrlKey: true })
+    await flushPromises()
+    expect(posts(fetchMock)).toEqual([['merge-continue', { repo: PATH, message: "Merge branch 'feat/agente' into develop" }]])
+  })
+
   it('arquivo em conflito não oferece Preparar nem Descartar comuns, nem no grupo', () => {
     const { wrapper } = mountRepo(merging(['src/a.vue', 'src/b.ts'], [conflict('src/a.vue'), conflict('src/b.ts'), staged('src/c.ts')]))
     const group = wrapper.find('[data-test="scm-group"][data-group="conflict"]')

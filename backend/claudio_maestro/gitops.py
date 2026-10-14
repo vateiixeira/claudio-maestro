@@ -57,6 +57,7 @@ EMPTY_MESSAGE = "Escreva a mensagem do commit."
 NOTHING_TO_COMMIT = "Não há alterações para commitar."
 MERGING_MESSAGE = "Há um merge em andamento neste repositório. Conclua ou aborte o merge antes."
 PATH_MESSAGE = "O arquivo precisa estar dentro do repositório."
+CONFLICT_MESSAGE = "Arquivo em conflito: resolva e use Marcar como resolvido."
 NOT_CHANGED_MESSAGE = "O arquivo {path} não tem alterações para descartar."
 
 
@@ -208,7 +209,11 @@ async def _checked(
 
 
 async def _ensure_writable(repo: Path) -> dict[str, Any]:
-    policy = await gitinfo.repo_policy(repo, cached=False)
+    try:
+        policy = await gitinfo.repo_policy(repo, cached=False)
+    except gitinfo.GitError as exc:
+        # A timeout or an invalid filter: a message for the user, not a 500.
+        raise GitOpError(gitinfo.strip_credentials(str(exc)).strip() or GENERIC_MESSAGE) from exc
     if policy["read_only"]:
         raise ReadOnlyError(policy["read_only"])
     return policy
@@ -232,8 +237,20 @@ async def _untracked(repo: Path, paths: list[str]) -> set[str]:
 # Stage, unstage, discard, commit -------------------------------------------------------
 
 
+async def _refuse_conflicted(repo: Path, paths: list[str]) -> None:
+    """`git add` would mark a conflicted file as resolved, markers and all; `restore` would lose
+    both sides. A folder counts when a conflicted file is inside it."""
+    # The whole list: one cut at MAX_FILES would let a folder through with conflicts past it.
+    conflicts = await _conflicts(repo, complete=True)
+    for path in paths:
+        prefix = "" if path in ("", ".") else path.rstrip("/") + "/"
+        if any(c == path or c.startswith(prefix) for c in conflicts):
+            raise InvalidRequestError(CONFLICT_MESSAGE)
+
+
 async def stage(repo: Path, paths: list[str]) -> None:
     await _ensure_writable(repo)
+    await _refuse_conflicted(repo, paths)
     await _checked(repo, "add", "-A", "--", *paths)
 
 
@@ -272,6 +289,7 @@ async def unstage(repo: Path, paths: list[str]) -> None:
 async def discard(repo: Path, paths: list[str]) -> None:
     """Back to the last commit. Only files that have changes; a new file is deleted."""
     await _ensure_writable(repo)
+    await _refuse_conflicted(repo, paths)
     try:
         dirty = await gitinfo.dirty_files(repo, timeout=LOCAL_TIMEOUT)
     except gitinfo.GitError as exc:
@@ -494,9 +512,9 @@ async def merge(repo: Path, ref: str) -> MergeResult:
     return await _merge_ref(repo, ref)
 
 
-async def _conflicts(repo: Path) -> list[str]:
+async def _conflicts(repo: Path, *, complete: bool = False) -> list[str]:
     try:
-        return await gitinfo.conflicted_files(repo, timeout=LOCAL_TIMEOUT)
+        return await gitinfo.conflicted_files(repo, timeout=LOCAL_TIMEOUT, complete=complete)
     except gitinfo.GitError as exc:
         raise GitOpError(str(exc)) from exc
 

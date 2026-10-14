@@ -95,6 +95,34 @@ def test_errors_carry_code_message_and_output(api, home, git_home, monkeypatch):
     assert response.json()["detail"] == {"code": "busy", "message": gitops.BUSY_MESSAGE, "output": ""}
 
 
+@pytest.mark.parametrize("action", ["stage", "discard"])
+def test_policy_failure_is_a_409_with_a_message_not_a_500(api, home, git_home, monkeypatch, action):
+    project, root = project_with_repo(api, home)
+    (root / "README.md").write_text("mudou\n")
+
+    async def broken(repo, cached=True):
+        raise gitinfo.GitError("O git demorou demais para responder.")
+
+    monkeypatch.setattr(gitinfo, "repo_policy", broken)
+    response = post(api, project, action, repo=str(root), paths=["README.md"])
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "git"
+    assert detail["message"] == "O git demorou demais para responder."
+
+
+def test_policy_failure_message_has_no_credentials(api, home, git_home, monkeypatch):
+    project, root = project_with_repo(api, home)
+
+    async def broken(repo, cached=True):
+        raise gitinfo.GitError("falhou em https://user:segredo@example.com/x.git")
+
+    monkeypatch.setattr(gitinfo, "repo_policy", broken)
+    response = post(api, project, "stage", repo=str(root), paths=["README.md"])
+    assert response.status_code == 409
+    assert "segredo" not in response.text
+
+
 def test_empty_commit_message_is_400(api, home, git_home):
     project, root = project_with_repo(api, home)
     (root / "a.txt").write_text("a\n")

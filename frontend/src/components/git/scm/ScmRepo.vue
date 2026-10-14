@@ -356,10 +356,35 @@ function runPrimary(): void {
 function onMessageKeydown(event: KeyboardEvent): void {
   if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) {
     event.preventDefault()
-    if (action.value.kind === 'commit') void commit()
-    else runPrimary()
+    // Only the commit and the end of a merge: pull, push, sync and publish go through the
+    // network, and a shortcut typed into the message field must not reach out to the remote.
+    if (action.value.kind === 'commit' || action.value.kind === 'merge-continue') runPrimary()
   }
 }
+
+// The tooltips of the icons that can be off say why. An action in progress comes after the
+// read-only reason, which does not go away when the action ends.
+const branchTitle = computed(() => {
+  if (readOnly.value) return readOnly.value
+  if (merging.value) return 'Conclua ou aborte o merge antes de trocar de branch'
+  if (busy.value) return busy.value
+  return 'Trocar de branch'
+})
+const mergeTitle = computed(() => {
+  if (readOnly.value) return readOnly.value
+  if (busy.value) return busy.value
+  if (merging.value) return 'Já há um merge em andamento'
+  if (state.value?.no_merge) return state.value.no_merge
+  if (!props.repo.head) return 'Ainda não há commits.'
+  return `Mesclar uma branch em ${branchName.value}`
+})
+const commitTitle = computed(() => {
+  if (readOnly.value) return readOnly.value
+  if (busy.value) return busy.value
+  if (action.value.kind === 'merge-continue') return 'Conclua o merge com Concluir merge'
+  if (action.value.kind !== 'commit') return 'Nada para commitar'
+  return action.value.disabled ? (action.value.reason ?? 'Commitar') : 'Commitar'
+})
 
 const iconButton = 'flex size-6 items-center justify-center rounded text-fg-muted hover:bg-card hover:text-fg disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent'
 
@@ -382,7 +407,7 @@ defineExpose({ ask, act, handlers })
           type="button"
           data-test="branch-chip"
           :disabled="!!readOnly || !!busyKind || preparingMerge || merging"
-          :title="merging ? 'Conclua ou aborte o merge antes de trocar de branch' : 'Trocar de branch'"
+          :title="branchTitle"
           class="max-w-48 truncate rounded px-1.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg disabled:hover:bg-transparent"
           @click="menu = 'switch'"
         ><span data-test="scm-branch" :title="repo.detached ? 'HEAD solto' : undefined">{{ branchName }}{{ dirty ? '*' : '' }}</span></button>
@@ -409,7 +434,7 @@ defineExpose({ ask, act, handlers })
           :class="iconButton"
           :disabled="!!readOnly || !!busyKind || preparingMerge || merging || !!state?.no_merge || !repo.head"
           aria-label="Mesclar uma branch"
-          :title="readOnly ?? state?.no_merge ?? (merging ? 'Já há um merge em andamento' : `Mesclar uma branch em ${branchName}`)"
+          :title="mergeTitle"
           @click="menu = 'merge'"
         ><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" /></svg></button>
         <button
@@ -418,7 +443,7 @@ defineExpose({ ask, act, handlers })
           :class="iconButton"
           :disabled="!!readOnly || !!busyKind || action.kind !== 'commit' || action.disabled"
           aria-label="Commitar"
-          :title="readOnly ?? (action.kind === 'commit' && !action.disabled ? 'Commitar' : (action.reason ?? 'Commitar'))"
+          :title="commitTitle"
           @click="commit"
         ><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg></button>
         <button
@@ -428,7 +453,7 @@ defineExpose({ ask, act, handlers })
           :disabled="!!busyKind || !canPull"
           aria-label="Baixar"
           :title="pullTitle"
-          @click="bringIn((repo.ahead ?? 0) > 0 ? 'sync' : 'pull')"
+          @click="bringIn('pull')"
         ><IconArrowDown :size="14" /></button>
         <button
           type="button"

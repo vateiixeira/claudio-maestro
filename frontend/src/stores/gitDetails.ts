@@ -86,11 +86,14 @@ export const useGitDetailsStore = defineStore('gitDetails', () => {
     const index = current.repos.findIndex((r) => r.path === repo.path)
     if (index < 0) return
     // A reread that started before the action would bring back the state from before it.
+    const rereading = controllers.has(projectId)
     generations.set(projectId, (generations.get(projectId) ?? 0) + 1)
     abortPending(projectId)
     loading.value[projectId] = false
     current.repos.splice(index, 1, repo)
     revisions.value[projectId] = revisionFor(projectId) + 1
+    // The reread that was dropped also carried the other repositories of the project: ask again.
+    if (rereading) notifyChanged(projectId)
   }
 
   function clearTimer(projectId: number): void {

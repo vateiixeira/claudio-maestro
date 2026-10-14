@@ -276,4 +276,37 @@ describe('store de detalhes do git', () => {
     expect(details.reposFor(1)[0].branch).toBe('da-acao')
     expect(details.errorFor(1)).toBeNull()
   })
+
+  it('o replaceRepo que aborta uma releitura agenda outra, para os demais repositórios não ficarem velhos', async () => {
+    const answers: Array<() => Response | Promise<Response>> = [
+      () => new Promise<Response>(() => {}),
+      () => jsonResponse({ repos: [makeRepoDetails({ path: '/a', branch: 'da-acao' }), makeRepoDetails({ path: '/b', branch: 'b-novo' })], limit_reached: false }),
+    ]
+    const fetchMock = routeFetch({ [URL]: () => answers.shift()!() })
+    vi.stubGlobal('fetch', fetchMock)
+    const details = useGitDetailsStore()
+    details.byProject[1] = { repos: [makeRepoDetails({ path: '/a', branch: 'inicial' }), makeRepoDetails({ path: '/b', branch: 'b-velho' })], limit_reached: false }
+    details.open(1)
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    details.replaceRepo(1, makeRepoDetails({ path: '/a', branch: 'da-acao' }))
+    expect(details.reposFor(1).map((r) => r.branch)).toEqual(['da-acao', 'b-velho'])
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(details.reposFor(1).map((r) => r.branch)).toEqual(['da-acao', 'b-novo'])
+  })
+
+  it('o replaceRepo sem releitura em andamento não agenda outra', async () => {
+    const fetchMock = routeFetch({ [URL]: () => jsonResponse({ repos: [], limit_reached: false }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const details = useGitDetailsStore()
+    details.byProject[1] = { repos: [makeRepoDetails({ path: '/a', branch: 'inicial' })], limit_reached: false }
+    details.open(1)
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    details.replaceRepo(1, makeRepoDetails({ path: '/a', branch: 'da-acao' }))
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })

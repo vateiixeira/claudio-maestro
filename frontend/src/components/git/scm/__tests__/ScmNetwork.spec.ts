@@ -163,17 +163,17 @@ describe('rede no repositório', () => {
     outside.remove()
   })
 
-  it('o ícone Baixar com commits para enviar sincroniza, e pergunta "Sincronizar agora?" com sessão rodando', async () => {
+  it('o ícone Baixar com commits para enviar e para baixar só baixa, e pergunta "Baixar agora?" com sessão rodando', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ title: 'Chatbot', cwd: PATH, display_state: 'running' })])
     const { wrapper, fetchMock } = mountRepo(makeRepoDetails({ path: PATH, ahead: 1, behind: 2 }), {
-      'POST /api/projects/1/git/sync': () => jsonResponse({ repo: makeRepoDetails({ path: PATH }), conflicts: false }),
+      'POST /api/projects/1/git/pull': () => jsonResponse({ repo: makeRepoDetails({ path: PATH }), conflicts: false }),
     })
     await wrapper.find('[data-test="repo-pull"]').trigger('click')
     const dialog = wrapper.find('[role="dialog"]')
-    expect(dialog.text()).toContain('Sincronizar agora?')
+    expect(dialog.text()).toContain('Baixar agora?')
     await dialog.find('[data-test="confirm-ok"]').trigger('click')
     await flushPromises()
-    expect(kinds(fetchMock)).toEqual(['sync'])
+    expect(kinds(fetchMock)).toEqual(['pull'])
   })
 
   it('Buscar no remoto continua disponível num repositório só leitura', async () => {
@@ -223,13 +223,56 @@ describe('rede no repositório', () => {
     expect(kinds(fetchMock)).toEqual([])
   })
 
-  it('Ctrl+Enter com Enviar ligado envia', async () => {
-    const { wrapper, fetchMock } = mountRepo(makeRepoDetails({ path: PATH, ahead: 1, behind: 0 }), {
-      'POST /api/projects/1/git/push': () => jsonResponse({ repo: makeRepoDetails({ path: PATH }) }),
-    })
+  it.each([
+    ['Enviar', { ahead: 1, behind: 0 }],
+    ['Baixar', { ahead: 0, behind: 2 }],
+    ['Sincronizar', { ahead: 1, behind: 2 }],
+    ['Publicar', { upstream: null, ahead: null, behind: null, state: makeRepoState({ remotes: ['origin'] }) }],
+  ] as const)('Ctrl+Enter com %s ligado não faz nada: só o clique dispara a rede', async (_label, overrides) => {
+    const { wrapper, fetchMock } = mountRepo(makeRepoDetails({ path: PATH, ...overrides } as Partial<RepoDetails>))
+    expect(wrapper.find('[data-test="primary-action"]').attributes('disabled')).toBeUndefined()
     await wrapper.find('[data-test="commit-message"]').trigger('keydown', { key: 'Enter', ctrlKey: true })
     await flushPromises()
-    expect(kinds(fetchMock)).toEqual(['push'])
+    expect(kinds(fetchMock)).toEqual([])
+  })
+
+  it.each([
+    ['sem alterações e com commits para enviar', { ahead: 1, behind: 0 }, 'Nada para commitar'],
+    ['sem alterações e sem nada a fazer', { ahead: 0, behind: 0 }, 'Não há alterações para commitar'],
+    ['com alterações e sem mensagem', { files: [{ path: 'a.ts', status: 'unstaged', kind: 'M', added: 1, removed: 0 }] }, 'Escreva a mensagem do commit'],
+    ['em merge', { state: makeRepoState({ merging: true, merge_branch: 'feat', conflicts: [] }) }, 'Conclua o merge com Concluir merge'],
+  ] as const)('o título do ícone Commitar diz por que está desligado: %s', (_label, overrides, title) => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, ...overrides } as Partial<RepoDetails>))
+    expect(wrapper.find('[data-test="repo-commit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="repo-commit"]').attributes('title')).toBe(title)
+  })
+
+  it('sem commits o ícone Mesclar diz "Ainda não há commits."', () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, head: null, branch: 'main', upstream: null, ahead: null, behind: null }))
+    expect(wrapper.find('[data-test="repo-merge"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="repo-merge"]').attributes('title')).toBe('Ainda não há commits.')
+  })
+
+  it('o chip de branch em repositório só leitura diz o motivo', () => {
+    const reason = 'Este repositório usa LFS.'
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, state: makeRepoState({ read_only: reason }) }))
+    expect(wrapper.find('[data-test="branch-chip"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="branch-chip"]').attributes('title')).toBe(reason)
+  })
+
+  it('com uma ação em andamento, Commitar, Mesclar e o chip de branch dizem o rótulo de ocupado', async () => {
+    let release!: () => void
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, ahead: 0, behind: 3 }), {
+      'POST /api/projects/1/git/pull': () => new Promise<Response>((r) => { release = () => r(jsonResponse({ repo: makeRepoDetails({ path: PATH }), conflicts: false })) }),
+    })
+    await wrapper.find('[data-test="primary-action"]').trigger('click')
+    await flushPromises()
+    for (const test of ['repo-commit', 'repo-merge', 'branch-chip']) {
+      expect(wrapper.find(`[data-test="${test}"]`).attributes('disabled'), test).toBeDefined()
+      expect(wrapper.find(`[data-test="${test}"]`).attributes('title'), test).toBe('Baixando 3 commits…')
+    }
+    release()
+    await flushPromises()
   })
 
   it('o erro da operação aparece com o repositório recolhido e pode ser fechado', async () => {

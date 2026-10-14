@@ -306,6 +306,62 @@ async def test_mark_resolved_refuses_files_with_markers_or_not_in_conflict(tmp_p
 
 
 @pytest.mark.anyio
+async def test_stage_refuses_files_in_conflict_and_a_folder_that_holds_one(tmp_path: Path, git_home):
+    repo = writable_repo(tmp_path / "r")
+    diverged(repo)
+    await gitops.merge(repo, "refs/heads/feat")
+    (repo / "outro.txt").write_text("novo\n")
+    for paths in (["README.md"], ["outro.txt", "README.md"], ["."]):
+        with pytest.raises(gitops.InvalidRequestError) as caught:
+            await gitops.stage(repo, paths)
+        assert str(caught.value) == gitops.CONFLICT_MESSAGE
+    # Still in conflict: `git add` did not run, not even for the file that was fine.
+    assert (await gitinfo.repo_state(repo, cached=False))["conflicts"] == ["README.md"]
+    assert not any(f["path"] == "outro.txt" and f["status"] == "staged" for f in await _files(repo))
+    await gitops.stage(repo, ["outro.txt"])
+
+
+@pytest.mark.anyio
+async def test_stage_a_folder_checks_conflicts_past_the_display_limit(tmp_path: Path, git_home, monkeypatch):
+    repo = writable_repo(tmp_path / "r")
+    names = ["a", "b", "c"]
+    for name in names:
+        commit_file(repo, f"{name}/f.txt", "base\n", f"Base {name}")
+    git(repo, "switch", "-q", "-c", "feat")
+    for name in names:
+        commit_file(repo, f"{name}/f.txt", "feat\n", f"Feat {name}")
+    git(repo, "switch", "-q", "main")
+    for name in names:
+        commit_file(repo, f"{name}/f.txt", "main\n", f"Main {name}")
+    await gitops.merge(repo, "refs/heads/feat")
+    monkeypatch.setattr(gitinfo, "MAX_FILES", 2)
+    # What the screen shows is cut: c/f.txt is past the limit.
+    assert await gitinfo.conflicted_files(repo) == ["a/f.txt", "b/f.txt"]
+    with pytest.raises(gitops.InvalidRequestError) as caught:
+        await gitops.stage(repo, ["c"])
+    assert str(caught.value) == gitops.CONFLICT_MESSAGE
+    # Nothing was marked as resolved.
+    assert git(repo, "diff", "--name-only", "--diff-filter=U").split() == ["a/f.txt", "b/f.txt", "c/f.txt"]
+
+
+@pytest.mark.anyio
+async def test_discard_refuses_files_in_conflict(tmp_path: Path, git_home):
+    repo = writable_repo(tmp_path / "r")
+    diverged(repo)
+    await gitops.merge(repo, "refs/heads/feat")
+    before = (repo / "README.md").read_text()
+    with pytest.raises(gitops.InvalidRequestError) as caught:
+        await gitops.discard(repo, ["README.md"])
+    assert str(caught.value) == gitops.CONFLICT_MESSAGE
+    assert (repo / "README.md").read_text() == before
+    assert (await gitinfo.repo_state(repo, cached=False))["conflicts"] == ["README.md"]
+
+
+async def _files(repo: Path) -> list[dict]:
+    return (await gitinfo.repo_details(repo, None))["files"]
+
+
+@pytest.mark.anyio
 async def test_resolve_and_finish_the_merge(tmp_path: Path, git_home):
     repo = writable_repo(tmp_path / "r")
     diverged(repo)

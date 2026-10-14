@@ -136,7 +136,7 @@ def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, st
     env = {
         key: value
         for key, value in base.items()
-        if not key.startswith(("MAESTRO_", "CLAUDE"))
+        if not key.startswith(("MAESTRO_", "CLAUDE", "GIT_CONFIG")) and key != "XDG_CONFIG_HOME"
     }
     env.update(
         {
@@ -149,6 +149,11 @@ def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, st
             "MAESTRO_UPDATE_CHECK": "0",
             "MAESTRO_USAGE_CHECK": "0",
             "MAESTRO_CLAUDE_CHECK": "0",
+            # The personal git config stays out because of the fake HOME (no ~/.gitconfig) and the
+            # dropped XDG_CONFIG_HOME. This variable does not reach the server's git: `run_git`
+            # removes every GIT_* variable, so /etc/gitconfig still applies there (SAFE_CONFIG
+            # neutralises what matters). It only covers git run directly from this process.
+            "GIT_CONFIG_NOSYSTEM": "1",
         }
     )
     return env

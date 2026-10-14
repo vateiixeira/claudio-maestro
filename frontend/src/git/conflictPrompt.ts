@@ -1,11 +1,19 @@
 import type { RepoDetails } from '../types/api'
 
+const CONTROL = /[\u0000-\u001f\u007f]/
+
 /** What "Pedir ao Claude para resolver" sends to the new session. */
 export function conflictPrompt(repo: RepoDetails, repoName: string): string {
   const state = repo.state
   const incoming = state?.merge_branch ?? 'a outra branch'
   const current = repo.branch ?? repo.head ?? 'a branch atual'
-  const files = (state?.conflicts ?? []).map((path) => `- ${path}`).join('\n')
+  // A path with a control character (newline, escape) could pass for an instruction in the prompt.
+  const all = state?.conflicts ?? []
+  const safe = all.filter((path) => !CONTROL.test(path))
+  const left = all.length - safe.length
+  const list = safe.map((path) => `- ${path}`)
+  if (left > 0) list.push(left === 1 ? '(1 arquivo com nome estranho não listado; veja `git status`)' : `(${left} arquivos com nome estranho não listados; veja \`git status\`)`)
+  const files = list.join('\n')
   return [
     `No repositório ${repo.path} (${repoName}), o merge de ${incoming} em ${current} parou com conflito nestes arquivos:`,
     '',

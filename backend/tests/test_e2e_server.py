@@ -92,6 +92,29 @@ def test_isolated_env_drops_inherited_variables(tmp_path):
     assert env["MAESTRO_HOME"] != "/home/real"
 
 
+def test_isolated_env_keeps_the_git_config_of_whoever_runs_it_out(tmp_path):
+    base = {
+        "XDG_CONFIG_HOME": "/home/real/.config",
+        "GIT_CONFIG_GLOBAL": "/home/real/.gitconfig",
+        "GIT_CONFIG_SYSTEM": "/etc/real-gitconfig",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "core.hooksPath",
+        "GIT_CONFIG_VALUE_0": "/home/real/hooks",
+        "GIT_AUTHOR_NAME": "Real",
+    }
+
+    env = e2e.isolated_env(base, tmp_path, 6620)
+
+    assert "XDG_CONFIG_HOME" not in env
+    # Only for git run straight from the process: run_git drops GIT_* variables, so the server's
+    # git still reads /etc/gitconfig. The personal config is out because of HOME and XDG above.
+    assert env["GIT_CONFIG_NOSYSTEM"] == "1"
+    for dropped in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"):
+        assert dropped not in env
+    # The global config git reads then is the one in the fake HOME, which does not exist.
+    assert Path(env["HOME"]).is_relative_to(tmp_path)
+
+
 def test_isolated_env_turns_off_outside_work(tmp_path):
     env = e2e.isolated_env({}, tmp_path, 6620)
 

@@ -64,12 +64,36 @@ test('merge com conflito mostra o bloco e aborta', async ({ page, consoleErrors 
   await conflict.locator('[data-test="file-open"]').click()
   await expect(repo.locator('[data-marker="ours"]')).toContainText('main (sua branch)')
   await expect(repo.locator('[data-marker="theirs"]')).toContainText('feat/cupom (a que entra)')
+  // While the merge is open the disabled icons say why.
+  await expect(repo.getByTestId('repo-commit')).toHaveAttribute('title', 'Conclua o merge com Concluir merge')
+  await expect(repo.getByTestId('repo-merge')).toHaveAttribute('title', 'Já há um merge em andamento')
+  await expect(repo.getByTestId('branch-chip')).toHaveAttribute('title', 'Conclua ou aborte o merge antes de trocar de branch')
+  // The API refuses to stage or discard a file in conflict, even though the screen does not offer it.
+  const refusals = await page.evaluate(async (repoPath) => {
+    const projectId = location.pathname.split('/')[2]
+    const out: Array<{ status: number; message: string }> = []
+    for (const action of ['stage', 'discard']) {
+      const response = await fetch(`/api/projects/${projectId}/git/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Maestro': '1' },
+        body: JSON.stringify({ repo: repoPath, paths: ['src/frete.ts'] }),
+      })
+      const body = await response.json()
+      out.push({ status: response.status, message: body.detail?.message ?? JSON.stringify(body) })
+    }
+    return out
+  }, (await repo.getAttribute('data-repo')) as string)
+  for (const refusal of refusals) {
+    expect(refusal.status).toBeGreaterThanOrEqual(400)
+    expect(refusal.message).toBe('Arquivo em conflito: resolva e use Marcar como resolvido.')
+  }
+  await expect(conflict.locator('[data-test="scm-file"]')).toHaveCount(1)
   // Resolving a file that still has the markers is refused, with the reason on screen.
   await conflict.locator('[data-test="scm-file"]').hover()
   await conflict.getByTestId('file-resolve').click()
   await expect(repo.getByRole('alert')).toContainText('ainda tem marcas de conflito')
   // The browser logs the refused request (400) as a console error: it is the expected one.
-  expect(consoleErrors.filter((m) => !m.includes('400'))).toEqual([])
+  expect(consoleErrors.filter((m) => !m.includes('400') && !m.includes('409'))).toEqual([])
   consoleErrors.length = 0
   await expect(banner).toBeVisible()
   // The branch button is off while the merge is open.
@@ -160,7 +184,7 @@ test('criar branch: o erro do servidor aparece no diálogo e some ao editar o no
   await dialog.getByTestId('confirm-ok').click()
   await expect(dialog.getByTestId('branch-error')).toContainText('feat')
   // The browser logs the refused request as a console error: it is the expected one.
-  expect(consoleErrors.filter((m) => !m.includes('400'))).toEqual([])
+  expect(consoleErrors.filter((m) => !m.includes('400') && !m.includes('409'))).toEqual([])
   consoleErrors.length = 0
   await dialog.getByTestId('branch-name').fill('feat-ok')
   await expect(dialog.getByTestId('branch-error')).toHaveCount(0)
