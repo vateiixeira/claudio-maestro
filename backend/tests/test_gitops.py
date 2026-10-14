@@ -1,6 +1,7 @@
 """Write actions of `gitops`: lock, stage, unstage, discard and commit, on real repositories."""
 
 import asyncio
+import os
 import stat
 import subprocess
 from pathlib import Path
@@ -83,10 +84,17 @@ async def test_without_grace_the_process_is_killed(tmp_path: Path, monkeypatch):
 
 
 def _process_alive(pid: int) -> bool:
+    """`kill 0` answers everywhere; on Linux, /proc also tells a zombie apart (macOS has no /proc)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
     try:
         state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-    except (FileNotFoundError, ProcessLookupError):
-        return False
+    except FileNotFoundError:
+        return True
     return state != "Z"
 
 

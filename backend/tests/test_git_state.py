@@ -124,7 +124,8 @@ async def test_other_filter_of_the_repository_makes_it_read_only(tmp_path: Path,
 @pytest.mark.anyio
 async def test_attribute_without_a_defined_filter_is_not_read_only(tmp_path: Path, git_home):
     repo = make_repo(tmp_path / "r")
-    (repo / ".gitattributes").write_text("*.psd filter=lfs\n")
+    # Not `lfs`: CI runners define `filter.lfs` in the system config, which the policy reads.
+    (repo / ".gitattributes").write_text("*.psd filter=filtro-que-ninguem-definiu\n")
     assert (await gitinfo.repo_policy(repo))["read_only"] is None
 
 
