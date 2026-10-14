@@ -417,6 +417,7 @@ describe('etiquetas na linha de conversa', () => {
     const w = mountRow(makeSession({ label_ids: [2] }), 'inbox')
     expect(labelsOf(w)).toEqual(['et2'])
     expect(w.get('[data-test="row-title"]').find('[data-test="label-badges"]').exists()).toBe(true)
+    expect(w.get('[data-test="row-title"]').classes()).toContain('overflow-hidden')
   })
 
   it('sem etiquetas não mostra nada', () => {

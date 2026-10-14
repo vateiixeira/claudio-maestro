@@ -90,8 +90,8 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     <DisplayStateIcon :display="session.display_state" :quiet="!wantsYou" />
     <span v-if="session.mark" data-test="row-mark" role="img" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
     <span v-if="session.priority" data-test="row-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" /></span>
-    <!-- Not positioned, so the link's stretched ::after still covers the whole row. -->
-    <div data-test="row-title" class="flex grow items-center gap-2" :class="compact ? 'min-w-24 overflow-hidden' : 'min-w-0'">
+    <!-- Not positioned, so the link's stretched ::after still covers the whole row (overflow-hidden only clips descendants whose containing block is inside it, and the ::after's is the row). -->
+    <div data-test="row-title" class="flex grow items-center gap-2" :class="compact ? 'min-w-24 overflow-hidden' : 'min-w-0 overflow-hidden'">
       <RouterLink
         data-test="row-link"
         :to="target"

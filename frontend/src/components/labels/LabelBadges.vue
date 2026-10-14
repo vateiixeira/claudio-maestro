@@ -18,7 +18,7 @@ const hidden = computed(() => known.value.slice(limit.value))
 </script>
 
 <template>
-  <span v-if="known.length" data-test="label-badges" class="flex min-w-0 shrink-0 items-center gap-1">
+  <span v-if="known.length" data-test="label-badges" class="flex min-w-0 shrink items-center gap-1 overflow-hidden">
     <LabelBadge v-for="label in shown" :key="label.id" :label="label" :compact="compact" />
     <span
       v-if="hidden.length"

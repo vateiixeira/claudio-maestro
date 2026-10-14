@@ -217,8 +217,10 @@ onBeforeUnmount(() => {
               >
                 <span data-test="delivery-time" class="w-11 shrink-0 pt-0.5 text-xs text-fg-subtle tabular-nums">{{ formatTime(d.finished_at) }}</span>
                 <div class="min-w-0 flex-1">
-                  <RouterLink v-if="d.session_id" :to="`/sessions/${d.session_id}`" class="block break-words text-sm font-medium text-fg no-underline hover:underline">{{ deliveryTitle(d) }}</RouterLink>
-                  <LabelBadges v-if="d.session_id" :ids="sessionsStore.find(d.session_id)?.label_ids" class="mt-1" />
+                  <template v-if="d.session_id">
+                    <RouterLink :to="`/sessions/${d.session_id}`" class="block break-words text-sm font-medium text-fg no-underline hover:underline">{{ deliveryTitle(d) }}</RouterLink>
+                    <LabelBadges :ids="sessionsStore.find(d.session_id)?.label_ids" class="mt-1" />
+                  </template>
                   <span v-else class="block break-words text-sm font-medium text-fg">{{ deliveryTitle(d) }}</span>
                   <ul v-if="d.bullets.length" class="m-0 mt-1.5 list-disc space-y-1 break-words pl-4 text-[13px] leading-5 text-fg-muted marker:text-fg-subtle">
                     <li v-for="(b, j) in visibleBullets(d)" :key="j">{{ b }}</li>

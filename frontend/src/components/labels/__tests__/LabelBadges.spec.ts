@@ -55,4 +55,10 @@ describe('badges de etiquetas', () => {
     expect(w.findAll('[data-test="label-badge"]')).toHaveLength(1)
     expect(w.find('[data-test="label-more"]').text()).toBe('+2')
   })
+
+  it('o contêiner encolhe e corta o excesso em vez de empurrar a linha', () => {
+    const classes = mountBadges({ ids: [1, 2, 3] }).get('[data-test="label-badges"]').classes()
+    expect(classes).toEqual(expect.arrayContaining(['min-w-0', 'shrink', 'overflow-hidden']))
+    expect(classes).not.toContain('shrink-0')
+  })
 })
