@@ -40,7 +40,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
-from claudio_maestro import db, groups
+from claudio_maestro import db, groups, labels
 from claudio_maestro import history as history_module
 from claudio_maestro.agent.agentd_client import AgentdUnavailable
 from claudio_maestro.agent.base import (
@@ -539,6 +539,7 @@ def describe(
     plan_done: bool = False,
     closure_verdict: str | None = None,
     subagents_running: bool = False,
+    label_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`.
 
@@ -581,6 +582,7 @@ def describe(
         "digest_short": digest_short,
         "plan_done": plan_done,
         "closure_verdict": closure_verdict,
+        "label_ids": list(label_ids or []),
         "interrupted": bool(record.turn_open) and state in ("closed", "error"),
     }
 
@@ -2479,6 +2481,9 @@ class SessionManager:
         # Closure verdict and check time of the digest agent, by session (memory copy).
         self._closure_briefs: dict[str, tuple[str | None, int | None]] = {}
         self._load_digest_briefs()
+        # Label ids of each session, kept in memory so listings and events never query them.
+        self._label_ids: dict[str, list[int]] = {}
+        self._load_label_ids()
 
     def list_models(self) -> list[dict[str, Any]]:
         return [dict(m) for m in (self._models or FALLBACK_MODELS)]
@@ -2828,14 +2833,57 @@ class SessionManager:
                 self._publish_closed_update(_record(row))
         return group
 
+    async def set_labels(self, session_id: str, label_ids: list[int]) -> dict[str, Any]:
+        """Make `label_ids` the labels of the session and announce it."""
+        session = self.get(session_id)
+        try:
+            with closing(db.connect(self._db_path)) as conn:
+                final = labels.set_session_labels(conn, session_id, label_ids)
+        except sqlite3.IntegrityError as exc:
+            # The session was deleted between the check above and the write.
+            raise SessionNotFoundError("Sessão não encontrada.") from exc
+        if final:
+            self._label_ids[session_id] = final
+        else:
+            self._label_ids.pop(session_id, None)
+        session.emit_updated()
+        return session.summary()
+
+    def remove_label(self, label_id: int) -> labels.Label:
+        """Delete a label; every session that had it is announced without it."""
+        with closing(db.connect(self._db_path)) as conn:
+            label, released = labels.delete_label(conn, label_id)
+        outside = []
+        for session_id in released:
+            remaining = [i for i in self._label_ids.get(session_id, []) if i != label_id]
+            if remaining:
+                self._label_ids[session_id] = remaining
+            else:
+                self._label_ids.pop(session_id, None)
+            session = self._sessions.get(session_id)
+            if session is None:
+                outside.append(session_id)
+            else:
+                session.emit_updated()
+        if outside:
+            marks = ", ".join("?" * len(outside))
+            with closing(db.connect(self._db_path)) as conn:
+                rows = conn.execute(
+                    f"SELECT {_COLUMNS} FROM sessions WHERE session_id IN ({marks})", outside
+                ).fetchall()
+            for row in rows:
+                self._publish_closed_update(_record(row))
+        return label
+
     def search(self, query: str, limit: int = 50) -> list[dict[str, Any]]:
-        """Sessions whose title, summary, first prompt or group name contain `query`, ignoring
+        """Sessions whose title, summary, first prompt, group name or label slug contain `query`, ignoring
         case and accents. Includes finished ones, not discarded ones; newest first."""
         needle = _strip_accents(" ".join(query.split()))
         if not needle:
             return []
         with closing(db.connect(self._db_path)) as conn:
             group_names = {group.id: group.name for group in groups.list_groups(conn)}
+            label_slugs = {label.id: label.slug for label in labels.list_labels(conn)}
         result = []
         for item in self.list_sessions():
             if item.get("mark") == "discarded":
@@ -2843,6 +2891,7 @@ class SessionManager:
             haystack = " ".join(
                 [item.get(key) or "" for key in ("title", "summary", "first_prompt")]
                 + [group_names.get(item.get("group_id"), "")]
+                + [label_slugs.get(label_id, "") for label_id in item.get("label_ids", [])]
             )
             if needle in _strip_accents(haystack):
                 result.append(item)
@@ -2923,7 +2972,8 @@ class SessionManager:
             return {"context": None, "pending_permission": None, "last_action": None,
                     "pending_kind": None, "plan": plan, "cli_running": cli_running,
                     "digest_short": short, "plan_done": plan_done,
-                    "closure_verdict": verdict, "subagents_running": False}
+                    "closure_verdict": verdict, "subagents_running": False,
+                    "label_ids": self._label_ids.get(record.session_id, [])}
         return {
             "context": active.context,
             "pending_permission": active.pending_permission,
@@ -2935,6 +2985,7 @@ class SessionManager:
             "plan_done": plan_done,
             "closure_verdict": verdict,
             "subagents_running": active.subagents_running,
+            "label_ids": self._label_ids.get(record.session_id, []),
         }
 
     def _load_digest_briefs(self) -> None:
@@ -2944,6 +2995,13 @@ class SessionManager:
                 self._closure_briefs = closure_briefs(conn)
         except sqlite3.Error:
             logger.exception("Falha ao ler os resumos do agente")
+
+    def _load_label_ids(self) -> None:
+        try:
+            with closing(db.connect(self._db_path)) as conn:
+                self._label_ids = labels.session_label_ids(conn)
+        except sqlite3.Error:
+            logger.exception("Falha ao ler as etiquetas das sessões")
 
     async def set_digest_brief(self, session_id: str, short: str | None, plan_done: bool) -> None:
         """The digest agent wrote a new summary: show its sentence and seal in the lists."""

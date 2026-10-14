@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from claudio_maestro import groups, projects, sessions
+from claudio_maestro import groups, labels, projects, sessions
 from claudio_maestro.api.deps import DbDep
 
 router = APIRouter(prefix="/api")
@@ -136,6 +136,8 @@ class SessionOut(BaseModel):
     # When a session on hold wakes up (seconds); None without a date.
     mark_until: int | None = None
     priority: bool = False
+    # Labels applied (ids of `GET /api/labels`), ordered by id.
+    label_ids: list[int] = []
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -208,6 +210,17 @@ _GROUP_STATUS = {
 
 def group_http_error(exc: groups.GroupError) -> HTTPException:
     return HTTPException(status_code=_GROUP_STATUS[type(exc)], detail=str(exc))
+
+
+_LABEL_STATUS = {
+    labels.LabelNotFoundError: status.HTTP_404_NOT_FOUND,
+    labels.InvalidLabelError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    labels.DuplicateLabelError: status.HTTP_409_CONFLICT,
+}
+
+
+def label_http_error(exc: labels.LabelError) -> HTTPException:
+    return HTTPException(status_code=_LABEL_STATUS[type(exc)], detail=str(exc))
 
 
 def _get_session(manager: sessions.SessionManager, session_id: str) -> sessions.ActiveSession:
