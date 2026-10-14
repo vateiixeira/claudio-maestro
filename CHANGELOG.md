@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- Etiquetas nas conversas: cada etiqueta tem um slug e uma cor, vale para todos os projetos e aparece como badge em toda lista de conversas (menu lateral, Conversas, Caixa de entrada, Painel, Entregas, busca e cabeçalho). Aplique no painel de detalhes da conversa (Etiquetas → Editar, onde também dá para criar uma nova) e renomeie, troque a cor ou apague em Preferências → Etiquetas. A busca de conversas também acha pelo slug.
+
 ## [0.7.0] - 2026-10-12
 
 Temas Dracula e Monokai para a interface, limite de CPU das sessões e o modelo de cada subagente à vista na conversa.
