@@ -89,7 +89,7 @@ Testes manuais contra o SDK real consomem a assinatura ou os créditos de quem r
 
 Os revisores não alteram o repositório: não têm `Edit`, e o `Write` fica para reproduções no scratchpad. O `reviewer` roda em Sonnet; quando a tarefa toca uma área crítica, chame-o com `model: "opus"`. Áreas críticas:
 
-- `security.py` (Host, Origin, validação de caminhos) e todo código que recebe caminhos ou chama `resolve_within`/`is_within` (hoje `fs.py`, `filesearch.py`, `history.py`, `projects.py`, `api/fs.py`, `api/git.py`, `api/plans.py` e `api/editor.py`).
-- Todo código que inicia processos: `gitinfo.py` (o `run_git`), `gitfetch.py`, `worktree.py`, `picker.py`, `claudecli.py`, `api/claude_cli.py`, `api/editor.py`, `cli.py`, `scripts/e2e_server.py` (garante que o E2E não toque nos dados reais), `agent/` e `agentd/` (inclusive o socket e o ciclo de vida das sessões).
+- `security.py` (Host, Origin, validação de caminhos) e todo código que recebe caminhos ou chama `resolve_within`/`is_within` (hoje `fs.py`, `filesearch.py`, `history.py`, `projects.py`, `api/fs.py`, `api/git.py`, `api/gitops.py`, `api/plans.py` e `api/editor.py`).
+- Todo código que inicia processos: `gitinfo.py` (o `run_git`), `gitops.py`, `gitfetch.py`, `worktree.py`, `picker.py`, `claudecli.py`, `api/claude_cli.py`, `api/editor.py`, `cli.py`, `scripts/e2e_server.py` (garante que o E2E não toque nos dados reais), `agent/` e `agentd/` (inclusive o socket e o ciclo de vida das sessões).
 - `usage.py` e qualquer código que leia credenciais do CLI.
 - Migrações em `db.py` e tudo que escreve em `~/.claude/projects`.

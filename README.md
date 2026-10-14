@@ -24,7 +24,7 @@ Se você não lê português, o tradutor do navegador dá conta, e o próprio Cl
 - **Você decide pela interface.** Permissões (permitir uma vez, sempre ou negar), perguntas do Claude e aprovação de planos. O pedido para editar mostra o diff, e "Permitir sempre" diz a regra que vai ser gravada.
 - **Triagem pelo teclado.** Na Inbox, `j`/`k` movem, `Enter` abre, `a` permite e `d` nega, sem abrir cada conversa.
 - **Notificações do sistema.** O navegador avisa quando uma conversa pede permissão, faz uma pergunta ou traz um plano (ligue em Preferências → Notificações).
-- **Git sempre à vista.** A branch de cada repositório do projeto, inclusive worktrees, e as alterações de cada conversa. O app busca a branch remota a cada 5 minutos e avisa quando há commits para baixar.
+- **Git sem sair do app.** Na tela do projeto, o painel de controle de versão do VS Code para todos os repositórios de uma vez: preparar, commitar, descartar, trocar e criar branch, mesclar (com o conflito à vista e o Claude para resolver), baixar, enviar e publicar. Ao lado, o histórico de commits no estilo do GitLens. A branch de cada repositório, inclusive worktrees, aparece no menu lateral, e o app busca a branch remota a cada 5 minutos.
 - **Continuidade com o CLI.** As conversas ficam em `~/.claude/projects`, como no CLI e na extensão. Dá para retomar no Maestro uma conversa começada no terminal, e vice-versa.
 - **Controles por conversa.** Modelo, nível de raciocínio, modo de permissão, imagens coladas, comandos `/` e menções `@`.
 - **Resumo das conversas.** Um agente do próprio app pode resumir em fases o que cada conversa em andamento já fez.
@@ -165,6 +165,7 @@ Não exponha o app na rede. Detalhes e como relatar uma falha em [SECURITY.md](S
 - Interface só em português.
 - Windows não testado.
 - Acesso só local, por uma pessoa.
+- O painel de git não roda hooks do repositório nem assina commits, e fica só para leitura em repositórios com Git LFS ou outro filtro. Rebase, stash e envio forçado ficam com o terminal.
 
 ## Contribuindo
 

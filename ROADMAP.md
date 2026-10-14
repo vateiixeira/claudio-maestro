@@ -14,4 +14,4 @@ O que o Cláudio Maestro já faz está no [README](README.md). Aqui fica o que p
 
 - Virar IDE: terminal embutido, editor de código, árvore de arquivos.
 - Acesso pela rede ou várias pessoas na mesma instalação.
-- Commit e troca de branch pela interface.
+- Git além do dia a dia: rebase, stash, cherry-pick, tags e envio forçado ficam com o terminal.
