@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { Project, Session, SessionGroup } from '../types/api'
+import type { Label, Project, Session, SessionGroup } from '../types/api'
 
 export function makeProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -37,6 +37,10 @@ export function makeSession(overrides: Partial<Session> = {}): Session {
 
 export function makeGroup(overrides: Partial<SessionGroup> = {}): SessionGroup {
   return { id: 1, project_id: 1, name: 'Checkout', created_at: 1_790_000_000, ...overrides }
+}
+
+export function makeLabel(overrides: Partial<Label> = {}): Label {
+  return { id: 1, slug: 'urgente', color: '#ef4444', created_at: 1_790_000_000, ...overrides }
 }
 
 type Handler = (init: RequestInit | undefined) => Response | Promise<Response>

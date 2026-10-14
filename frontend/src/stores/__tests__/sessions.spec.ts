@@ -1,12 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSessionsStore } from '../sessions'
-import { makeEvent, makeSession } from '../../test/factories'
+import { jsonResponse, makeEvent, makeSession, routeFetch } from '../../test/factories'
 
 beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => vi.unstubAllGlobals())
 
 describe('store de sessões', () => {
+  it('setLabels envia a lista completa e aplica a resposta', async () => {
+    const store = useSessionsStore()
+    store.setForProject(1, [makeSession({ session_id: 's1' })])
+    const fetchMock = routeFetch({
+      'PUT /api/sessions/s1/labels': () => jsonResponse(makeSession({ session_id: 's1', label_ids: [1, 2] })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await store.setLabels('s1', [1, 2])
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ label_ids: [1, 2] })
+    expect(store.find('s1')?.label_ids).toEqual([1, 2])
+  })
+
   it('aplica session.state à sessão certa', () => {
     const store = useSessionsStore()
     store.setForProject(1, [makeSession({ session_id: 'a' }), makeSession({ session_id: 'b' })])

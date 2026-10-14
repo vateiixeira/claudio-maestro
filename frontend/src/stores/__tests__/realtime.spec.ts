@@ -8,11 +8,12 @@ import { useProjectsStore } from '../projects'
 import { useGitStore } from '../git'
 import { useModelsStore } from '../models'
 import { useGroupsStore } from '../groups'
+import { useLabelsStore } from '../labels'
 import { useDigestStore } from '../digest'
 import { useClosureStore } from '../closure'
 import { useDeliveriesStore } from '../deliveries'
 import { useClaudeCliStore } from '../claudeCli'
-import { jsonResponse, makeGroup, makeProject, makeSession } from '../../test/factories'
+import { jsonResponse, makeGroup, makeLabel, makeProject, makeSession } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
   onopen: ((ev: unknown) => void) | null = null
@@ -240,6 +241,33 @@ describe('bindRealtime', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/groups', expect.anything())
     expect(useGroupsStore().byId(3)).toBeDefined()
+  })
+
+  it('labels.changed recarrega o catálogo de etiquetas', async () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    const fetchMock = vi.fn(async () => jsonResponse([makeLabel({ id: 7, slug: 'urgente' })]))
+    vi.stubGlobal('fetch', fetchMock)
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    sockets[0]!.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type: 'labels.changed', data: {} }) })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/labels', expect.anything())
+    expect(useLabelsStore().byId(7)?.slug).toBe('urgente')
+  })
+
+  it('loadEverything também carrega as etiquetas', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/projects') return jsonResponse([makeProject({ id: 1 })])
+      if (url === '/api/labels') return jsonResponse([makeLabel({ id: 3 })])
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await loadEverything()
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/labels', expect.anything())
+    expect(useLabelsStore().byId(3)).toBeDefined()
   })
 
   const CLAUDE_STATE = {

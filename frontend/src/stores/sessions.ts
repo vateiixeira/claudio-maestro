@@ -139,6 +139,13 @@ export const useSessionsStore = defineStore('sessions', () => {
     await patch(sessionId, { group_id: groupId })
   }
 
+  async function setLabels(sessionId: string, labelIds: number[]): Promise<void> {
+    const sentAt = ++clock
+    const session = await api.setSessionLabels(sessionId, labelIds)
+    if ((lastEventAt.get(sessionId) ?? 0) > sentAt) return
+    upsert(session)
+  }
+
   async function setMark(
     sessionId: string,
     mark: SessionMark | null,
@@ -211,6 +218,6 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   return {
     byProject, loaded, all, forProject, find, setForProject, forgetProject,
-    loadForProject, loadAll, sync, create, setFinished, rename, setGroup, setMark, setPriority, applyEvent,
+    loadForProject, loadAll, sync, create, setFinished, rename, setGroup, setLabels, setMark, setPriority, applyEvent,
   }
 })

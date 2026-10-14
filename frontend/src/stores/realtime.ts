@@ -6,6 +6,7 @@ import { useDigestStore } from './digest'
 import { useGitStore } from './git'
 import { useGitDetailsStore } from './gitDetails'
 import { useGroupsStore } from './groups'
+import { useLabelsStore } from './labels'
 import { useLayoutStore } from './layout'
 import { useModelsStore } from './models'
 import { useProjectsStore } from './projects'
@@ -31,6 +32,8 @@ export async function loadEverything(): Promise<void> {
   void useClaudeCliStore().load().catch(() => {})
   // A failure leaves the menu without groups until the next load.
   void useGroupsStore().load().catch(() => {})
+  // A failure leaves the labels out of the badges until the next load.
+  void useLabelsStore().load().catch(() => {})
   await sessions.loadAll(projects.projects.map((p) => p.id))
 }
 
@@ -54,6 +57,10 @@ export function bindRealtime(socket: EventSocket): () => void {
     // Created, renamed or removed in some project: the list is small, reload it all.
     socket.on('groups.changed', () => {
       useGroupsStore().load().catch(() => {})
+    }),
+    // Created, recolored, renamed or removed: the catalog is small, reload it all.
+    socket.on('labels.changed', () => {
+      useLabelsStore().load().catch(() => {})
     }),
     socket.on('project.git', (event) => useGitStore().applyEvent(event)),
     socket.on('models.updated', (event) => {

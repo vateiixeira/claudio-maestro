@@ -130,7 +130,8 @@ describe('nenhuma cor fixa escapa do tema', () => {
 
   it('nenhum componente ou módulo usa hex ou rgb() literal', () => {
     // NewProjectView.vue: cores de projeto escolhidas pelo usuário. theme.ts: amostras dos cartões de tema.
-    const allowed = ['NewProjectView.vue', 'theme.ts']
+    // labelColor.ts: cores de etiqueta escolhidas pelo usuário (texto preto/branco e cinza de reserva).
+    const allowed = ['NewProjectView.vue', 'theme.ts', 'labelColor.ts']
     const files = (readdirSync(srcDir, { recursive: true }) as string[]).filter(
       (f) =>
         /\.(vue|ts)$/.test(f) &&

@@ -18,6 +18,7 @@ import type {
   FoundRepos,
   GitRepo,
   ImageInput,
+  Label,
   ModelInfo,
   MarkdownFile,
   PlanState,
@@ -234,6 +235,28 @@ export function renameGroup(id: number, name: string): Promise<SessionGroup> {
 
 export function deleteGroup(id: number): Promise<void> {
   return request('DELETE', `/api/groups/${id}`)
+}
+
+// Labels
+
+export function listLabels(): Promise<Label[]> {
+  return request('GET', '/api/labels')
+}
+
+export function createLabel(slug: string, color: string): Promise<Label> {
+  return request('POST', '/api/labels', { slug, color })
+}
+
+export function updateLabel(id: number, changes: { slug?: string; color?: string }): Promise<Label> {
+  return request('PATCH', `/api/labels/${id}`, changes)
+}
+
+export function deleteLabel(id: number): Promise<void> {
+  return request('DELETE', `/api/labels/${id}`)
+}
+
+export function setSessionLabels(sessionId: string, labelIds: number[]): Promise<Session> {
+  return request('PUT', `/api/sessions/${encodeURIComponent(sessionId)}/labels`, { label_ids: labelIds })
 }
 
 export function getSession(sessionId: string): Promise<SessionSnapshot> {

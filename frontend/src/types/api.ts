@@ -128,6 +128,8 @@ export interface Session {
   mark_until?: number | null
   /** Pinned above the others. */
   priority?: boolean
+  /** Ids of the labels applied (`GET /api/labels`), ordered by id. */
+  label_ids?: number[]
 }
 
 /** Group of related sessions inside a project (`GET /api/groups`). Only the app knows it. */
@@ -135,6 +137,14 @@ export interface SessionGroup {
   id: number
   project_id: number
   name: string
+  created_at: number
+}
+
+/** Global label: slug + hex color (`GET /api/labels`). */
+export interface Label {
+  id: number
+  slug: string
+  color: string
   created_at: number
 }
 
