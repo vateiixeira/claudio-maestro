@@ -121,6 +121,25 @@ describe('propriedade Etiquetas', () => {
     expect(wrapper.find('[data-test="label-error"]').text()).toContain('Marque-a na lista')
   })
 
+  it('não apaga o que a pessoa digitou enquanto o pedido de criar rodava', async () => {
+    let finishPost!: () => void
+    const post = new Promise<Response>((resolve) => {
+      finishPost = () => resolve(jsonResponse(makeLabel({ id: 3, slug: 'nova', color: '#00ff00' }), 201))
+    })
+    const { wrapper } = mountProperty({
+      'POST /api/labels': () => post,
+      'PUT /api/sessions/s1/labels': () => jsonResponse(makeSession({ session_id: 's1', label_ids: [3] })),
+    })
+    await wrapper.find('[data-test="label-toggle"]').trigger('click')
+    const slugInput = wrapper.find('[data-test="label-new-slug"]')
+    await slugInput.setValue('nova')
+    await wrapper.find('[data-test="label-new-save"]').trigger('click')
+    await slugInput.setValue('proxima')
+    finishPost()
+    await flushPromises()
+    expect((slugInput.element as HTMLInputElement).value).toBe('proxima')
+  })
+
   it('aria-controls só existe com o painel aberto', async () => {
     const { wrapper } = mountProperty()
     expect(wrapper.find('[data-test="label-toggle"]').attributes('aria-controls')).toBeUndefined()

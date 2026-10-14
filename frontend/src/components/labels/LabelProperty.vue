@@ -51,10 +51,13 @@ async function createAndApply() {
   busy.value = true
   error.value = null
   try {
-    const label = await labels.create(slug.value, color.value)
+    const sentSlug = slug.value
+    const sentColor = color.value
+    const label = await labels.create(sentSlug, sentColor)
     // The label exists from here on: clear the form so sending it again does not collide.
-    slug.value = ''
-    color.value = DEFAULT_COLOR
+    // A field edited while the request ran keeps what the person typed.
+    if (slug.value === sentSlug) slug.value = ''
+    if (color.value === sentColor) color.value = DEFAULT_COLOR
     try {
       await sessions.setLabels(props.sessionId, [...selected.value, label.id])
     } catch (e) {
