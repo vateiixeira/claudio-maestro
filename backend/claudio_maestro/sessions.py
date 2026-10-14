@@ -2793,8 +2793,44 @@ class SessionManager:
             logger.exception("Falha ao ler as edições da sessão %s", session_id)
             return []
 
+    def reconcile_label_ids(self) -> None:
+        """Make the in-memory labels match the database after `sessions` rows went away.
+
+        Removing a project or a conversation whose file vanished deletes `session_labels`
+        by cascade, behind this cache's back. Sessions whose labels changed are announced
+        (when they still exist), so no screen keeps a label nobody applied.
+        """
+        try:
+            with closing(db.connect(self._db_path)) as conn:
+                fresh = labels.session_label_ids(conn)
+        except sqlite3.Error:
+            logger.exception("Falha ao ler as etiquetas das sessões")
+            return
+        stale = self._label_ids
+        self._label_ids = fresh
+        outside = []
+        for session_id in stale.keys() | fresh.keys():
+            if stale.get(session_id) == fresh.get(session_id):
+                continue
+            session = self._sessions.get(session_id)
+            if session is None:
+                outside.append(session_id)
+            else:
+                session.emit_updated()
+        if outside:
+            marks = ", ".join("?" * len(outside))
+            with closing(db.connect(self._db_path)) as conn:
+                rows = conn.execute(
+                    f"SELECT {_COLUMNS} FROM sessions WHERE session_id IN ({marks})", outside
+                ).fetchall()
+            for row in rows:
+                self._publish_closed_update(_record(row))
+
     def refresh_records(self, session_ids: set[str]) -> None:
         """Reload records changed by the history sync for sessions kept in memory."""
+        # Only a session that has labels can leave a stale cache behind when its row goes.
+        if not session_ids.isdisjoint(self._label_ids):
+            self.reconcile_label_ids()
         cached = [self._sessions[sid] for sid in session_ids if sid in self._sessions]
         if not cached:
             return

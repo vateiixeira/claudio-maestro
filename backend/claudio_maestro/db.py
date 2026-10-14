@@ -222,10 +222,11 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
     ],
     [
         # Etiquetas: catálogo global (slug + cor hex) e a ligação N:M com as conversas.
-        # Apagar a etiqueta ou a conversa remove só a ligação.
+        # Apagar a etiqueta ou a conversa remove só a ligação. O id nunca é reaproveitado
+        # (AUTOINCREMENT): um id antigo não pode voltar como outra etiqueta.
         """
         CREATE TABLE labels (
-          id          INTEGER PRIMARY KEY,
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
           slug        TEXT NOT NULL UNIQUE,
           color       TEXT NOT NULL,
           created_at  INTEGER NOT NULL

@@ -188,6 +188,18 @@ def test_removing_session_or_label_removes_the_link(tmp_path: Path):
         assert conn.execute("SELECT COUNT(*) FROM session_labels").fetchone()[0] == 0
 
 
+def test_label_ids_are_never_reused(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        db.migrate(conn)
+        conn.execute("INSERT INTO labels (slug, color, created_at) VALUES ('a', '#000000', 0)")
+        conn.execute("INSERT INTO labels (slug, color, created_at) VALUES ('b', '#000000', 0)")
+        highest = conn.execute("SELECT MAX(id) FROM labels").fetchone()[0]
+        conn.execute("DELETE FROM labels WHERE id = ?", (highest,))
+        conn.execute("INSERT INTO labels (slug, color, created_at) VALUES ('c', '#000000', 0)")
+        new_id = conn.execute("SELECT id FROM labels WHERE slug = 'c'").fetchone()[0]
+        assert new_id > highest
+
+
 def test_label_slug_is_unique(tmp_path: Path):
     with open_db(tmp_path / "test.db") as conn:
         db.migrate(conn)

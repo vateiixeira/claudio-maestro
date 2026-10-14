@@ -1,11 +1,13 @@
 """Label routes, label_ids of a session, events and search. Uses the scripted fake agent."""
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from history_fakes import FakeHistory, info
 from test_groups_api import new_session, next_of_type, without_header
 from test_sessions_api import (  # noqa: F401
     api,
@@ -15,7 +17,8 @@ from test_sessions_api import (  # noqa: F401
     receive,
 )
 
-from claudio_maestro import labels
+from claudio_maestro import db, labels
+from claudio_maestro.history import HistoryIndex
 
 
 def create_label(api: TestClient, slug: str = "urgente", color: str = "#ff0000") -> dict[str, Any]:
@@ -222,3 +225,90 @@ def test_put_converts_an_integrity_error_from_the_write_into_404(api, home: Path
     response = put_labels(api, session["session_id"], [label["id"]])
     assert response.status_code == 404
     assert response.json()["detail"] == "Sessão não encontrada."
+
+
+def history_for(api: TestClient, fake: FakeHistory) -> HistoryIndex:
+    """A history index over the app's database that tells the manager what changed."""
+    return HistoryIndex(
+        api.app.state.settings.db_path,
+        fake.list_sessions,
+        on_change=api.app.state.sessions.refresh_records,
+        file_exists=lambda session_id, cwd: False,
+    )
+
+
+def listed_label_ids(api: TestClient) -> dict[str, list[int]]:
+    return {item["session_id"]: item["label_ids"] for item in api.get("/api/sessions").json()}
+
+
+def link_rows(api: TestClient) -> int:
+    with closing(db.connect(api.app.state.settings.db_path)) as conn:
+        return conn.execute("SELECT COUNT(*) FROM session_labels").fetchone()[0]
+
+
+@pytest.mark.anyio
+async def test_removing_and_readding_a_project_leaves_no_ghost_label(api, home: Path):
+    project = make_project(api, home)
+    fake = FakeHistory()
+    fake.add(project["path"], info("old-chat", project["path"], first_prompt="oi"))
+    index = history_for(api, fake)
+    await index.sync_all()
+    urgent = create_label(api, "urgente", "#ff0000")
+    assert put_labels(api, "old-chat", [urgent["id"]]).status_code == 200
+    manager = api.app.state.sessions
+
+    assert api.delete(f"/api/projects/{project['id']}").status_code == 204
+    assert link_rows(api) == 0
+    assert manager._label_ids == {}
+
+    again = api.post(
+        "/api/projects", json={"name": "app", "path": project["path"], "color": "#ff8800"}
+    ).json()
+    fake.by_directory[again["path"]] = [info("old-chat", again["path"], first_prompt="oi")]
+    await index.sync_all()
+    assert listed_label_ids(api)["old-chat"] == []
+
+    # Deleting the label does not leave a ghost, and its id is not handed to a new label.
+    assert api.delete(f"/api/labels/{urgent['id']}").status_code == 204
+    other = create_label(api, "outra", "#00ff00")
+    assert other["id"] != urgent["id"]
+    assert listed_label_ids(api)["old-chat"] == []
+    assert put_labels(api, "old-chat", [urgent["id"]]).status_code == 404
+
+
+def test_removing_a_project_keeps_the_labels_of_other_projects(api, home: Path):
+    first = make_project(api, home, "one")
+    second = make_project(api, home, "two")
+    keep = new_session(api, second["id"])
+    doomed = new_session(api, first["id"])
+    label = create_label(api)
+    put_labels(api, keep["session_id"], [label["id"]])
+    put_labels(api, doomed["session_id"], [label["id"]])
+
+    assert api.delete(f"/api/projects/{first['id']}").status_code == 204
+
+    assert api.app.state.sessions._label_ids == {keep["session_id"]: [label["id"]]}
+    assert listed_label_ids(api)[keep["session_id"]] == [label["id"]]
+
+
+@pytest.mark.anyio
+async def test_history_sync_that_deletes_a_session_clears_its_labels_in_memory(api, home: Path):
+    project = make_project(api, home)
+    fake = FakeHistory()
+    fake.add(project["path"], info("vanishing", project["path"], first_prompt="oi"))
+    index = history_for(api, fake)
+    await index.sync_all()
+    label = create_label(api, "urgente", "#ff0000")
+    assert put_labels(api, "vanishing", [label["id"]]).status_code == 200
+    manager = api.app.state.sessions
+    assert manager._label_ids == {"vanishing": [label["id"]]}
+
+    fake.by_directory[project["path"]] = []  # the conversation file is gone
+    await index.sync_all()
+    assert link_rows(api) == 0
+    assert manager._label_ids == {}
+
+    # The same conversation comes back later: it must not be born labelled.
+    fake.add(project["path"], info("vanishing", project["path"], first_prompt="oi"))
+    await index.sync_all()
+    assert listed_label_ids(api)["vanishing"] == []

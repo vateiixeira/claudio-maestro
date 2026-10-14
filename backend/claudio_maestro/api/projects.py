@@ -134,4 +134,6 @@ async def delete_project(project_id: int, conn: DbDep, request: Request) -> Resp
         projects.delete_project(conn, project_id)
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
+    # The cascade took the project's sessions, and their labels, out of the database.
+    request.app.state.sessions.reconcile_label_ids()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
