@@ -243,4 +243,37 @@ describe('store de detalhes do git', () => {
       expect(signals['2']!.aborted).toBe(false)
     })
   })
+
+  it('replaceRepo troca só o repositório da resposta e sobe a revisão', () => {
+    const details = useGitDetailsStore()
+    details.byProject[1] = { repos: [makeRepoDetails({ path: '/a', branch: 'a' }), makeRepoDetails({ path: '/b', branch: 'b' })], limit_reached: false }
+    const before = details.revisionFor(1)
+    details.replaceRepo(1, makeRepoDetails({ path: '/b', branch: 'nova' }))
+    expect(details.reposFor(1).map((r) => r.branch)).toEqual(['a', 'nova'])
+    expect(details.revisionFor(1)).toBe(before + 1)
+    details.replaceRepo(1, makeRepoDetails({ path: '/fora', branch: 'x' }))
+    details.replaceRepo(2, makeRepoDetails({ path: '/a', branch: 'x' }))
+    expect(details.reposFor(1)).toHaveLength(2)
+    expect(details.isLoaded(2)).toBe(false)
+  })
+
+  it('uma releitura que começou antes do replaceRepo não grava o estado antigo por cima', async () => {
+    let release!: () => void
+    vi.stubGlobal('fetch', routeFetch({
+      [URL]: () => new Promise<Response>((resolve) => {
+        release = () => resolve(jsonResponse({ repos: [makeRepoDetails({ path: '/a', branch: 'antiga' })], limit_reached: false }))
+      }),
+    }))
+    const details = useGitDetailsStore()
+    details.byProject[1] = { repos: [makeRepoDetails({ path: '/a', branch: 'inicial' })], limit_reached: false }
+    const reading = details.load(1)
+    expect(details.isLoading(1)).toBe(true)
+    details.replaceRepo(1, makeRepoDetails({ path: '/a', branch: 'da-acao' }))
+    expect(details.isLoading(1)).toBe(false)
+    release()
+    await reading
+    await flushPromises()
+    expect(details.reposFor(1)[0].branch).toBe('da-acao')
+    expect(details.errorFor(1)).toBeNull()
+  })
 })

@@ -135,6 +135,14 @@ def test_seed_creates_the_history_project(tmp_path, monkeypatch):
         assert path.resolve().is_relative_to(tmp_path.resolve())
 
 
+def test_seed_creates_the_changes_project(tmp_path, monkeypatch):
+    home = _seeded(tmp_path, monkeypatch)
+    repo = home / "projetos" / "alteracoes-demo"
+    status = git(repo, "status", "--porcelain=v1", "--untracked-files=all")
+    assert sorted(status.splitlines()) == sorted([" M src/carrinho.ts", "?? src/cupom.ts", " M README.md"])
+    assert git(repo, "config", "user.email").strip() == "demo@example.com"
+
+
 def test_seed_ignores_the_git_config_of_whoever_runs_it(tmp_path, monkeypatch):
     xdg = tmp_path / "xdg"
     (xdg / "git").mkdir(parents=True)

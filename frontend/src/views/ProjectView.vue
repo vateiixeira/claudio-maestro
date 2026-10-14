@@ -6,7 +6,7 @@ import ConversationRow from '../components/conversation/ConversationRow.vue'
 import ProjectGroups from '../components/groups/ProjectGroups.vue'
 import SplitDivider from '../components/SplitDivider.vue'
 import ConversationView from './ConversationView.vue'
-import ProjectGitOverview from '../components/git/ProjectGitOverview.vue'
+import ScmSection from '../components/git/scm/ScmSection.vue'
 import CommitsSection from '../components/git/commits/CommitsSection.vue'
 import { useGitStore } from '../stores/git'
 import { errorMessage, openInEditor } from '../api/http'
@@ -306,15 +306,16 @@ async function remove(): Promise<void> {
         {{ editorError }}
       </p>
 
-      <section v-if="git.isLoaded(id)" data-test="repos" aria-labelledby="repos-title" class="flex flex-col gap-2">
-        <h2 id="repos-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Repositórios nesta pasta</h2>
+      <section v-if="git.isLoaded(id)" data-test="repos" class="flex flex-col gap-3">
         <p v-if="repos.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
-        <ProjectGitOverview v-else :project-id="id" />
+        <template v-else>
+          <ScmSection :project-id="id" />
+          <CommitsSection v-if="project?.available" :project-id="id" />
+        </template>
         <p v-if="git.limitReached(id)" data-test="repo-limit" class="m-0 text-xs text-fg-muted">
           Mais de 50 repositórios; só os 50 primeiros são acompanhados.
         </p>
       </section>
-      <CommitsSection v-if="git.isLoaded(id) && repos.length > 0 && project?.available" :project-id="id" />
 
       <section
         v-if="confirmingRemove"

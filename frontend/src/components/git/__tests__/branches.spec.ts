@@ -121,12 +121,12 @@ describe('tela do projeto', () => {
         limit_reached: false,
       }),
     })
-    const rows = w.findAll('[data-test="repo"]')
+    const rows = w.findAll('[data-test="scm-repo"]')
     expect(rows).toHaveLength(2)
-    expect(rows[0]!.text()).toContain('main')
-    expect(rows[0]!.text()).toContain('2 não commitados')
-    expect(rows[1]!.text()).toContain('HEAD solto · abc1234')
-    expect(rows[1]!.text()).toContain('limpo')
+    expect(rows[0]!.find('[data-test="scm-branch"]').text()).toBe('main*')
+    expect(rows[0]!.findAll('[data-test="scm-file"]')).toHaveLength(2)
+    expect(rows[1]!.find('[data-test="scm-branch"]').text()).toBe('abc1234')
+    expect(rows[1]!.find('[data-test="scm-body"]').exists()).toBe(false)
   })
 
   it('sem git avisa', async () => {

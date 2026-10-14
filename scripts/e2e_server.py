@@ -93,6 +93,7 @@ SCENARIO = [
 # only, because the specs change them (commit, merge, push) and the server lives for the run.
 GIT_SCENARIO = [
     {"name": "Histórico Demo", "slug": "historico-demo", "color": "#d29922", "git": "history"},
+    {"name": "Alterações Demo", "slug": "alteracoes-demo", "color": "#a371f7", "git": "changes"},
 ]
 
 
@@ -346,7 +347,17 @@ def _seed_history(project_dir: Path, root: Path) -> None:
         _commit(web, f"pagina{number}.html", f"Montar a página {number}")
 
 
-GIT_SEEDERS = {"history": _seed_history}
+def _seed_changes(project_dir: Path, root: Path) -> None:
+    """One repository (the project folder itself): two modified files and one new one."""
+    repo = _new_repo(project_dir)
+    _commit(repo, "README.md", "Criar o leia-me", "# Loja\n")
+    _commit(repo, "src/carrinho.ts", "Criar o carrinho", "export const total = 0\n")
+    (repo / "README.md").write_text("# Loja\n\nComo rodar.\n")
+    (repo / "src" / "carrinho.ts").write_text("export const total = 10\n")
+    (repo / "src" / "cupom.ts").write_text("export const cupom = 'NATAL'\n")
+
+
+GIT_SEEDERS = {"history": _seed_history, "changes": _seed_changes}
 
 
 def seed_git(root: Path, home: Path, conn) -> None:

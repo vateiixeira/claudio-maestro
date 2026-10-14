@@ -365,6 +365,19 @@ export interface RepoDetails extends GitRepo {
   state?: RepoState | null
 }
 
+export type GitOpKind =
+  | 'stage' | 'unstage' | 'discard' | 'commit' | 'switch' | 'branch' | 'merge' | 'merge-abort'
+  | 'merge-continue' | 'resolve' | 'pull' | 'push' | 'publish' | 'sync' | 'fetch-repo'
+
+/** Answer of a Git action: the repository as it is now. */
+export interface GitOpAnswer {
+  repo: RepoDetails
+  /** Merge, pull and sync: the merge stopped with conflicts. */
+  conflicts?: boolean
+  /** Publish: the remote the branch went to. */
+  remote?: string
+}
+
 export interface ProjectGitDetails {
   repos: RepoDetails[]
   limit_reached: boolean

@@ -274,7 +274,9 @@ describe('tela do projeto', () => {
     const wrapper = await mountView()
     expect(wrapper.find('[data-test="repo-limit"]').exists()).toBe(false)
     expect(useGitStore(pinia).limitReached(1)).toBe(false)
-    expect(wrapper.find('[data-test="repo"]').text()).toContain('HEAD solto · abc1234')
+    const branch = wrapper.find('[data-test="scm-repo"] [data-test="scm-branch"]')
+    expect(branch.text()).toBe('abc1234')
+    expect(branch.attributes('title')).toBe('HEAD solto')
   })
 
   it('a lista por data mostra só as conversas sem agrupador e ganha o título "Sem agrupador"', async () => {
@@ -347,12 +349,12 @@ describe('tela do projeto', () => {
       }),
     }))
     const wrapper = await mountView()
-    const repo = wrapper.find('[data-test="repos"] [data-test="repo"]')
+    const repo = wrapper.find('[data-test="repos"] [data-test="scm-repo"]')
     expect(repo.text()).toContain('loja-online')
-    expect(repo.text()).toContain('1 para subir')
-    expect(repo.text()).toContain('1 não commitados')
-    expect(repo.text()).toContain('src/a.py')
-    expect(repo.text()).toContain('Ajustar o carrinho')
+    expect(repo.find('[data-test="sync-counts"]').attributes('aria-label')).toBe('0 para baixar, 1 para subir')
+    expect(repo.find('[data-test="scm-branch"]').text()).toBe('main*')
+    expect(repo.find('[data-test="scm-file"]').text()).toContain('a.py')
+    expect(wrapper.find('[data-test="scm-section"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="commits-section"]').exists()).toBe(true)
   })
 

@@ -18,6 +18,8 @@ import type {
   DisplayState,
   FileDiff,
   FoundRepos,
+  GitOpAnswer,
+  GitOpKind,
   GitRepo,
   ImageInput,
   Label,
@@ -356,6 +358,11 @@ export function fetchProjectGit(projectId: number): Promise<{ repos: GitRepo[]; 
 /** Files and latest commits of each repository of the project. */
 export function getProjectGitDetails(projectId: number, signal?: AbortSignal): Promise<ProjectGitDetails> {
   return request('GET', `/api/projects/${projectId}/git/details`, undefined, signal)
+}
+
+/** A write action of the Git panel. `body` carries `repo` and the action's fields. */
+export function gitOp(projectId: number, kind: GitOpKind, body: Record<string, unknown>): Promise<GitOpAnswer> {
+  return request('POST', `/api/projects/${projectId}/git/${kind}`, body)
 }
 
 /** Current diff of a file against the last commit. `file` is relative to the repository. */

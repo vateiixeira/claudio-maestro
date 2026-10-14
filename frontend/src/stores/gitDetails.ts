@@ -79,6 +79,20 @@ export const useGitDetailsStore = defineStore('gitDetails', () => {
     }
   }
 
+  /** An action answered with the repository as it is now: show it without rereading all. */
+  function replaceRepo(projectId: number, repo: RepoDetails): void {
+    const current = byProject.value[projectId]
+    if (!current) return
+    const index = current.repos.findIndex((r) => r.path === repo.path)
+    if (index < 0) return
+    // A reread that started before the action would bring back the state from before it.
+    generations.set(projectId, (generations.get(projectId) ?? 0) + 1)
+    abortPending(projectId)
+    loading.value[projectId] = false
+    current.repos.splice(index, 1, repo)
+    revisions.value[projectId] = revisionFor(projectId) + 1
+  }
+
   function clearTimer(projectId: number): void {
     const timer = timers.get(projectId)
     if (timer !== undefined) clearTimeout(timer)
@@ -120,5 +134,5 @@ export const useGitDetailsStore = defineStore('gitDetails', () => {
     openCount.forEach((_count, projectId) => void load(projectId))
   }
 
-  return { byProject, reposFor, isLoaded, errorFor, revisionFor, isLoading, load, open, close, notifyChanged, reloadOpen }
+  return { byProject, reposFor, isLoaded, errorFor, revisionFor, isLoading, load, replaceRepo, open, close, notifyChanged, reloadOpen }
 })
