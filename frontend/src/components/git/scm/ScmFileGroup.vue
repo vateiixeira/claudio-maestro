@@ -15,6 +15,8 @@ const props = defineProps<{
   revision: number
   readOnly: boolean
   disabled: boolean
+  /** Names of the two branches in the conflict markers of the diff. */
+  conflictLabels?: { ours: string; theirs: string } | null
 }>()
 const emit = defineEmits<{
   stage: [paths: string[]]; unstage: [paths: string[]]; discard: [files: RepoFile[]]; editor: [file: RepoFile]
@@ -47,7 +49,9 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
         <span data-test="scm-group-title"><slot name="title">{{ title }}</slot></span>
       </button>
       <span v-if="!readOnly" class="flex shrink-0 items-center w-0 overflow-hidden opacity-0 group-hover:w-auto group-hover:opacity-100 group-focus-within:w-auto group-focus-within:opacity-100">
-        <slot name="group-actions">
+        <!-- A provided slot may render nothing (no actions at all); only an absent one gets the defaults. -->
+        <slot v-if="$slots['group-actions']" name="group-actions" />
+        <template v-else>
           <button v-if="group !== 'staged'" type="button" data-test="group-discard-all" :class="iconButton" :disabled="disabled" aria-label="Descartar todas" title="Descartar todas" @click="emit('discard', files)">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
           </button>
@@ -57,10 +61,11 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
           <button v-else type="button" data-test="group-stage-all" :class="iconButton" :disabled="disabled" aria-label="Preparar todas" title="Preparar todas" @click="emit('stage', paths)">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           </button>
-        </slot>
+        </template>
       </span>
       <span data-test="scm-group-count" class="min-w-[18px] rounded-full bg-card px-1.5 text-center font-mono text-[0.6875rem] text-fg-muted">{{ paths.length }}</span>
     </div>
+    <slot v-if="open" name="note" />
     <ul v-if="open" class="m-0 flex list-none flex-col p-0 pl-4">
       <li v-for="f in files" :key="keyOf(f)" class="flex flex-col">
         <ScmFileRow
@@ -77,7 +82,7 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
           <template v-if="$slots['file-actions']" #actions><slot name="file-actions" :file="f" /></template>
         </ScmFileRow>
         <div v-if="expanded[keyOf(f)]" class="my-0.5 rounded-md border border-line bg-bg px-2 py-1">
-          <FileDiffView :project-id="projectId" :group="diffGroup" :file="changedFile(f)" :revision="revision" />
+          <FileDiffView :project-id="projectId" :group="diffGroup" :file="changedFile(f)" :revision="revision" :conflict-labels="conflictLabels" />
         </div>
       </li>
     </ul>

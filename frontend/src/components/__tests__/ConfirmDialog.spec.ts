@@ -51,4 +51,11 @@ describe('ConfirmDialog', () => {
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     expect(wrapper.emitted('cancel')).toBeUndefined()
   })
+
+  it('sem autofocus não foca e o confirmar pode ficar desligado', async () => {
+    const wrapper = mount(ConfirmDialog, { props: { title: 'T', confirmLabel: 'Ok', confirmDisabled: true, autofocus: false }, attachTo: document.body })
+    await flushPromises()
+    expect(document.activeElement?.getAttribute('data-test')).not.toBe('confirm-cancel')
+    expect(wrapper.get('[data-test="confirm-ok"]').attributes('disabled')).toBeDefined()
+  })
 })

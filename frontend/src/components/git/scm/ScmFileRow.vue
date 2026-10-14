@@ -27,7 +27,8 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
       </button>
       <template v-if="!readOnly">
-        <slot name="actions">
+        <slot v-if="$slots.actions" name="actions" />
+        <template v-else>
           <button type="button" data-test="file-discard" :class="iconButton" :disabled="disabled" aria-label="Descartar alterações" title="Descartar alterações" @click="emit('discard')">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
           </button>
@@ -37,7 +38,7 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
           <button v-else type="button" data-test="file-stage" :class="iconButton" :disabled="disabled" aria-label="Preparar" title="Preparar" @click="emit('stage')">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           </button>
-        </slot>
+        </template>
       </template>
     </span>
     <span data-test="file-letter" class="w-3 shrink-0 text-center font-mono text-xs font-semibold" :class="LETTER_CLASS[letter()]" :title="file.status === 'conflict' ? 'Em conflito' : undefined">{{ letter() }}</span>

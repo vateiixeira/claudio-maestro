@@ -17,6 +17,11 @@ describe('primaryAction', () => {
     expect(primaryAction(repo, '  ').disabled).toBe(true)
   })
 
+  it('conflito fora de um merge (rebase, cherry-pick) desliga o Commitar, com o motivo', () => {
+    const repo = makeRepoDetails({ files: [file('a', 'conflict'), file('b', 'staged')] })
+    expect(primaryAction(repo, 'msg')).toMatchObject({ kind: 'commit', disabled: true, reason: 'Resolva os conflitos pelo terminal' })
+  })
+
   it('preparados contam arquivos distintos', () => {
     const repo = makeRepoDetails({ files: [file('a', 'staged'), file('a', 'unstaged'), file('b', 'staged')] })
     expect(primaryAction(repo, 'x')).toMatchObject({ kind: 'commit', label: 'Commitar 2 preparados', disabled: false })

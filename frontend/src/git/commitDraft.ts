@@ -21,3 +21,23 @@ export function writeDraft(repoPath: string, text: string): void {
 export function clearDraft(repoPath: string): void {
   writeDraft(repoPath, '')
 }
+
+const MERGE_PREFIX = 'maestro.mergeMessage:'
+
+/** The merge message the app put in the field itself, to tell it from what the user typed. */
+export function readMergeMessage(repoPath: string): string | null {
+  try {
+    return localStorage.getItem(MERGE_PREFIX + repoPath)
+  } catch {
+    return null
+  }
+}
+
+export function writeMergeMessage(repoPath: string, text: string | null): void {
+  try {
+    if (text) localStorage.setItem(MERGE_PREFIX + repoPath, text)
+    else localStorage.removeItem(MERGE_PREFIX + repoPath)
+  } catch {
+    // Same as the draft: without storage it is just not kept.
+  }
+}

@@ -1,15 +1,20 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import ScmFileGroup from './ScmFileGroup.vue'
 import ScmPrimaryButton from './ScmPrimaryButton.vue'
 import ScmConfirm from './ScmConfirm.vue'
+import BranchMenu from './BranchMenu.vue'
+import CreateBranchDialog from './CreateBranchDialog.vue'
+import MergeBanner from './MergeBanner.vue'
 import IconArrowDown from '../../icons/IconArrowDown.vue'
 import IconArrowUp from '../../icons/IconArrowUp.vue'
 import IconChevron from '../../icons/IconChevron.vue'
 import IconClose from '../../icons/IconClose.vue'
-import { errorMessage, openInEditor } from '../../../api/http'
+import { compareBranch, errorMessage, openInEditor, sendMessage } from '../../../api/http'
 import { busyLabel } from '../../../git/busyLabel'
-import { clearDraft, readDraft, writeDraft } from '../../../git/commitDraft'
+import { conflictPrompt } from '../../../git/conflictPrompt'
+import { clearDraft, readDraft, readMergeMessage, writeDraft, writeMergeMessage } from '../../../git/commitDraft'
 import { runningLine, type Confirmation } from '../../../git/confirmation'
 import { primaryAction, type PrimaryKind } from '../../../git/primaryAction'
 import { repoLabel, syncCounts } from '../../../git/repoLabel'
@@ -18,7 +23,8 @@ import { useGitDetailsStore } from '../../../stores/gitDetails'
 import { useGitOpsStore } from '../../../stores/gitOps'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
-import type { GitOpAnswer, GitOpKind, RepoDetails, RepoFile } from '../../../types/api'
+import { useMediaQuery } from '../../../useMediaQuery'
+import type { BranchRef, GitOpAnswer, GitOpKind, RepoDetails, RepoFile } from '../../../types/api'
 
 const props = defineProps<{ projectId: number; repo: RepoDetails; collapseAll: number; startOpen: boolean }>()
 
@@ -37,7 +43,9 @@ const readOnly = computed(() => state.value?.read_only ?? null)
 const sync = computed(() => syncCounts(props.repo))
 const running = computed(() => runningSessionIn(sessions.all, props.repo.path))
 const busyKind = computed(() => ops.busyFor(props.repo.path))
-const busy = computed(() => (busyKind.value ? busyLabel(busyKind.value, props.repo) : null))
+// Between choosing the branch and the dialog, while the commits that would come in are counted.
+const preparingMerge = ref(false)
+const busy = computed(() => (busyKind.value ? busyLabel(busyKind.value, props.repo) : preparingMerge.value ? 'Mesclando…' : null))
 const error = computed(() => ops.errorFor(props.repo.path))
 const showOutput = ref(false)
 watch(error, () => { showOutput.value = false })
@@ -50,7 +58,30 @@ watch(message, (text) => writeDraft(props.repo.path, text))
 const action = computed(() => primaryAction(props.repo, message.value))
 
 const staged = computed(() => props.repo.files.filter((f) => f.status === 'staged'))
-const changes = computed(() => props.repo.files.filter((f) => f.status !== 'staged'))
+// Files in conflict never go through the plain stage and discard: `git add` would mark them as
+// resolved even with the markers still in.
+const conflictFiles = computed(() => props.repo.files.filter((f) => f.status === 'conflict'))
+const changes = computed(() => props.repo.files.filter((f) => f.status !== 'staged' && f.status !== 'conflict'))
+const merging = computed(() => state.value?.merging === true)
+const conflictLabels = computed(() => ({ ours: branchName.value, theirs: state.value?.merge_branch ?? '' }))
+const changedPaths = computed(() => new Set(props.repo.files.map((f) => f.path)).size)
+
+// The merge message git prepared fills the field when a merge starts, and leaves with it. What
+// the app put there is kept apart from the draft, so that it can be told from what the person
+// typed even after the component was mounted again.
+watch(merging, (now) => {
+  if (now) {
+    if (message.value.trim()) return
+    const text = state.value?.merge_message ?? `Merge branch '${state.value?.merge_branch ?? ''}'`
+    writeMergeMessage(props.repo.path, text)
+    message.value = text
+    return
+  }
+  const known = readMergeMessage(props.repo.path)
+  if (known === null) return
+  if (message.value === known) message.value = ''
+  writeMergeMessage(props.repo.path, null)
+}, { immediate: true })
 
 // Confirmation dialog: `ask` resolves with the answer.
 const pending = ref<{ value: Confirmation; resolve: (ok: boolean) => void } | null>(null)
@@ -76,6 +107,7 @@ async function commit(): Promise<void> {
   if (done && message.value === sent) {
     message.value = ''
     clearDraft(props.repo.path)
+    writeMergeMessage(props.repo.path, null)
   }
 }
 
@@ -85,6 +117,7 @@ async function discard(files: RepoFile[]): Promise<void> {
   const lines = one
     ? ['O arquivo volta ao último commit. Não dá para desfazer pelo app.']
     : ['Os arquivos voltam ao último commit. Não dá para desfazer pelo app.']
+  if (merging.value) lines.push(one ? 'Também desfaz o que o merge trouxe para este arquivo.' : 'Também desfaz o que o merge trouxe para estes arquivos.')
   if (files.some((f) => f.status === 'untracked')) lines.push('Num arquivo novo, ainda fora do git, descartar apaga o arquivo.')
   if (running.value) lines.unshift(runningLine('discard'))
   const ok = await ask({
@@ -97,6 +130,131 @@ async function discard(files: RepoFile[]): Promise<void> {
     file: one ? { path: one.path, kind: one.kind ?? 'M', added: one.added, removed: one.removed, untracked: one.status === 'untracked' } : undefined,
   })
   if (ok) await act('discard', { paths })
+}
+
+const router = useRouter()
+const wideScreen = useMediaQuery('(min-width: 1200px)')
+const chip = ref<HTMLButtonElement | null>(null)
+const menu = ref<'switch' | 'merge' | null>(null)
+const creating = ref<{ initial: string; error: string | null } | null>(null)
+
+/** Back to the branch button after a menu or dialog closes without acting. */
+function focusChip(): void {
+  void nextTick(() => chip.value?.focus())
+}
+function closeMenu(restoreFocus = true): void {
+  menu.value = null
+  if (restoreFocus) focusChip()
+}
+function closeCreating(): void {
+  creating.value = null
+  focusChip()
+}
+
+async function switchTo(branch: BranchRef): Promise<void> {
+  menu.value = null
+  const target = branch.ref.startsWith('refs/remotes/') ? branch.name.slice(branch.name.indexOf('/') + 1) : branch.name
+  if (running.value) {
+    const ok = await ask({
+      title: `Trocar para ${target}?`, confirmLabel: 'Trocar mesmo assim', tone: 'warn',
+      running: running.value, repoName: name.value, lines: [runningLine('switch')],
+    })
+    if (!ok) return focusChip()
+  }
+  await act('switch', { ref: branch.ref })
+}
+
+async function mergeIn(branch: BranchRef): Promise<void> {
+  menu.value = null
+  if (preparingMerge.value || busyKind.value) return
+  let incoming: number | null = null
+  preparingMerge.value = true
+  try {
+    incoming = (await compareBranch(props.projectId, props.repo.path, branch.ref)).incoming
+  } catch {
+    incoming = null
+  } finally {
+    preparingMerge.value = false
+  }
+  const count = incoming == null ? `Entram os commits de ${branch.name}.`
+    : incoming === 0 ? `Não entra nenhum commit de ${branch.name}: ${branchName.value} já tem tudo.`
+    : incoming === 1 ? `Entra 1 commit de ${branch.name}.` : `Entram ${incoming} commits de ${branch.name}.`
+  const lines = [
+    `${count} Se as duas branches mexeram nas mesmas linhas, o merge para em conflito e o bloco mostra o que resolver.`,
+    `${branchName.value} continua sendo a branch atual.`,
+    'Nada é enviado ao remoto.',
+  ]
+  if (running.value) lines.unshift(runningLine('merge'))
+  const ok = await ask({
+    title: `Mesclar ${branch.name} em ${branchName.value}?`,
+    confirmLabel: running.value ? 'Mesclar mesmo assim' : 'Mesclar',
+    tone: running.value ? 'warn' : 'primary',
+    running: running.value, repoName: name.value, lines,
+  })
+  if (!ok) return focusChip()
+  const done = await act('merge', { ref: branch.ref })
+  if (done) open.value = true
+}
+
+async function createBranch(newName: string): Promise<void> {
+  if (!creating.value) return
+  creating.value.error = null
+  const done = await act('branch', { name: newName })
+  if (done) {
+    creating.value = null
+    return
+  }
+  // The error belongs to the dialog, not to the repository's line.
+  if (creating.value) creating.value.error = ops.errorFor(props.repo.path)?.message ?? null
+  ops.dismiss(props.repo.path)
+}
+
+async function abortMerge(): Promise<void> {
+  const ok = await ask({
+    title: 'Abortar o merge?', confirmLabel: 'Abortar merge', tone: 'danger', running: running.value, repoName: name.value,
+    lines: ['Os arquivos voltam a como estavam antes do merge. O que você já resolveu se perde.', 'Não dá para desfazer pelo app.'],
+  })
+  if (ok && await act('merge-abort')) {
+    message.value = ''
+    clearDraft(props.repo.path)
+    writeMergeMessage(props.repo.path, null)
+  }
+}
+
+async function finishMerge(): Promise<void> {
+  if (action.value.kind !== 'merge-continue' || action.value.disabled || busyKind.value) return
+  if (await act('merge-continue', { message: message.value })) {
+    message.value = ''
+    clearDraft(props.repo.path)
+    writeMergeMessage(props.repo.path, null)
+  }
+}
+
+const asking = ref(false)
+const claudeError = ref<string | null>(null)
+// The session made for this merge: a failed send is retried in it, not in a new one.
+let askSessionId: string | null = null
+watch(merging, (now) => {
+  if (!now) {
+    claudeError.value = null
+    askSessionId = null
+  }
+})
+async function askClaude(): Promise<void> {
+  asking.value = true
+  claudeError.value = null
+  try {
+    askSessionId ??= (await sessions.create(props.projectId)).session_id
+    const id = askSessionId
+    await sendMessage(id, conflictPrompt(props.repo, name.value))
+    await router.push(wideScreen.value
+      ? { name: 'project', params: { id: String(props.projectId) }, query: { sessao: id } }
+      : { name: 'session', params: { id } })
+  } catch (e) {
+    claudeError.value = errorMessage(e)
+  } finally {
+    asking.value = false
+  }
 }
 
 const editorError = ref<string | null>(null)
@@ -112,6 +270,7 @@ async function editor(file: RepoFile): Promise<void> {
 /** What the wide button does; a kind without a handler leaves the button off. */
 const handlers: Partial<Record<PrimaryKind, () => void>> = {
   commit: () => void commit(),
+  'merge-continue': () => void finishMerge(),
 }
 function runPrimary(): void {
   handlers[action.value.kind]?.()
@@ -132,7 +291,7 @@ defineExpose({ ask, act, handlers })
 </script>
 
 <template>
-  <li data-test="scm-repo" :data-repo="repo.path" class="flex flex-col">
+  <li data-test="scm-repo" :data-repo="repo.path" class="relative flex flex-col">
     <div class="flex h-7 items-center gap-1.5 rounded pr-1 hover:bg-elevated">
       <button type="button" data-test="scm-repo-toggle" :aria-expanded="open" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left" @click="open = !open">
         <IconChevron :open="open" :size="12" class="text-fg-subtle" />
@@ -141,7 +300,16 @@ defineExpose({ ask, act, handlers })
         <span v-if="readOnly" data-test="read-only-tag" class="ml-1 text-xs text-fg-subtle">só leitura</span>
       </button>
       <slot name="branch" :branch="branchName" :dirty="dirty">
-        <span data-test="scm-branch" :title="repo.detached ? 'HEAD solto' : undefined" class="max-w-48 truncate px-1.5 font-mono text-xs text-fg-muted">{{ branchName }}{{ dirty ? '*' : '' }}</span>
+        <button
+          ref="chip"
+          type="button"
+          data-test="branch-chip"
+          :disabled="!!readOnly || !!busyKind || preparingMerge || merging"
+          :title="merging ? 'Conclua ou aborte o merge antes de trocar de branch' : 'Trocar de branch'"
+          class="max-w-48 truncate rounded px-1.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg disabled:hover:bg-transparent"
+          @click="menu = 'switch'"
+        ><span data-test="scm-branch" :title="repo.detached ? 'HEAD solto' : undefined">{{ branchName }}{{ dirty ? '*' : '' }}</span></button>
+        <span v-if="merging" data-test="merging-tag" class="flex shrink-0 items-center gap-1 text-xs text-secondary"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>merge em andamento</span>
       </slot>
       <span
         data-test="sync-counts"
@@ -160,6 +328,16 @@ defineExpose({ ask, act, handlers })
         <button
           v-if="!readOnly"
           type="button"
+          data-test="repo-merge"
+          :class="iconButton"
+          :disabled="!!busyKind || preparingMerge || merging || !!state?.no_merge || !repo.head"
+          aria-label="Mesclar uma branch"
+          :title="state?.no_merge ?? (merging ? 'Já há um merge em andamento' : `Mesclar uma branch em ${branchName}`)"
+          @click="menu = 'merge'"
+        ><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" /></svg></button>
+        <button
+          v-if="!readOnly"
+          type="button"
           data-test="repo-commit"
           :class="iconButton"
           :disabled="!!busyKind || action.kind !== 'commit' || action.disabled"
@@ -173,17 +351,32 @@ defineExpose({ ask, act, handlers })
       </template>
     </div>
 
+    <BranchMenu
+      v-if="menu"
+      :project-id="projectId"
+      :repo="repo"
+      :mode="menu"
+      :can-merge="!state?.no_merge && !!repo.head"
+      @close="(restore) => closeMenu(restore !== false)"
+      @switch="switchTo"
+      @merge="mergeIn"
+      @create="(initial) => { menu = null; creating = { initial, error: null } }"
+    />
+
     <p v-if="repo.error" data-test="scm-repo-error" role="alert" class="m-0 pl-5 text-xs text-diff-del-fg">{{ repo.error }}</p>
     <div v-else-if="open" data-test="scm-body" class="flex flex-col gap-1.5 pt-1 pb-2 pl-5">
       <p v-if="readOnly" data-test="read-only-note" class="m-0 text-xs leading-normal text-fg-subtle">{{ readOnly }}</p>
       <template v-else>
-        <slot name="merge-banner" />
+        <slot name="merge-banner">
+          <MergeBanner v-if="merging" :repo="repo" :busy="!!busyKind" :asking="asking" @ask="askClaude" @abort="abortMerge" />
+          <p v-if="claudeError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ claudeError }}</p>
+        </slot>
         <input
           v-model="message"
           type="text"
           data-test="commit-message"
           :aria-label="`Mensagem do commit em ${name}`"
-          :placeholder="`Mensagem (Ctrl+Enter commita em ${branchName})`"
+          :placeholder="merging ? 'Mensagem do commit do merge' : `Mensagem (Ctrl+Enter commita em ${branchName})`"
           class="h-[26px] w-full rounded-md border border-line-strong bg-surface px-2 text-[0.8125rem] text-fg placeholder:text-fg-subtle focus:border-fg-muted focus:outline-none"
           @keydown="onMessageKeydown"
         >
@@ -200,11 +393,37 @@ defineExpose({ ask, act, handlers })
       <pre v-if="error && showOutput" data-test="scm-error-output" class="m-0 max-h-48 overflow-auto rounded-md border border-line bg-bg p-2 font-mono text-[0.6875rem] whitespace-pre-wrap text-fg-muted">{{ error.output }}</pre>
       <p v-if="editorError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ editorError }}</p>
       <slot name="groups" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :discard="discard" :editor="editor">
-        <ScmFileGroup v-if="staged.length" :project-id="projectId" :repo="repo" group="staged" title="Preparados" :files="staged" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" @stage="(p) => act('stage', { paths: p })" @unstage="(p) => act('unstage', { paths: p })" @discard="discard" @editor="editor" />
+        <ScmFileGroup v-if="conflictFiles.length" :project-id="projectId" :repo="repo" group="conflict" title="Em conflito" :files="conflictFiles" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :conflict-labels="conflictLabels" @editor="editor">
+          <template #group-actions />
+          <template v-if="!merging" #note>
+            <p data-test="conflict-outside-note" class="m-0 pl-5 text-xs leading-normal text-fg-subtle">Há conflitos fora de um merge. Resolva pelo terminal.</p>
+          </template>
+          <template #file-actions="{ file }">
+            <button v-if="merging" type="button" data-test="file-resolve" class="flex size-[22px] items-center justify-center rounded text-fg-muted hover:bg-card hover:text-fg disabled:opacity-50" :disabled="!!busyKind" aria-label="Marcar como resolvido" title="Marcar como resolvido" @click="act('resolve', { paths: [file.path] })">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+            </button>
+          </template>
+        </ScmFileGroup>
+        <!-- During a merge, what is staged is the merge itself: unstaging or discarding it would undo the resolution. -->
+        <ScmFileGroup v-if="staged.length" :project-id="projectId" :repo="repo" :group="merging ? 'ready' : 'staged'" :title="merging ? 'Prontos para o merge' : 'Preparados'" :files="staged" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" @stage="(p) => act('stage', { paths: p })" @unstage="(p) => act('unstage', { paths: p })" @discard="discard" @editor="editor">
+          <template v-if="merging" #group-actions />
+          <template v-if="merging" #file-actions />
+        </ScmFileGroup>
         <ScmFileGroup v-if="changes.length" :project-id="projectId" :repo="repo" group="changes" title="Alterações" :files="changes" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" @stage="(p) => act('stage', { paths: p })" @unstage="(p) => act('unstage', { paths: p })" @discard="discard" @editor="editor" />
       </slot>
       <p v-if="repo.files_truncated" class="m-0 text-xs text-fg-muted">Há mais arquivos alterados do que a lista mostra.</p>
     </div>
     <ScmConfirm v-if="pending" :confirmation="pending.value" @confirm="answer(true)" @cancel="answer(false)" />
+    <CreateBranchDialog
+      v-if="creating"
+      :from="branchName"
+      :sha="repo.head"
+      :changes="changedPaths"
+      :initial="creating.initial"
+      :error="creating.error"
+      :busy="busyKind === 'branch'"
+      @submit="createBranch"
+      @cancel="closeCreating"
+    />
   </li>
 </template>

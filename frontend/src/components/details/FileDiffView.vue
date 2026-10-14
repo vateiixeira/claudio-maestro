@@ -6,7 +6,7 @@ import DiffLines from '../conversation/DiffLines.vue'
 import type { ChangedFile, ChangesGroup } from '../../types/api'
 
 // `revision` changes when the file may have changed on disk: the same file is reread in place.
-const props = defineProps<{ projectId: number; group: ChangesGroup; file: ChangedFile; revision?: number }>()
+const props = defineProps<{ projectId: number; group: ChangesGroup; file: ChangedFile; revision?: number; conflictLabels?: { ours: string; theirs: string } | null }>()
 
 const lines = ref<DiffLine[]>([])
 const note = ref<string | null>(null)
@@ -88,7 +88,7 @@ onBeforeUnmount(() => {
     <p v-else-if="!loaded" data-test="diff-loading" class="m-0 text-sm text-fg-muted">Carregando…</p>
     <div v-else class="overflow-hidden rounded-lg border border-line bg-panel">
       <p v-if="lines.length === 0" class="m-0 px-3 py-2 text-sm text-fg-muted">{{ note ?? 'Sem alterações' }}</p>
-      <DiffLines :lines="lines" />
+      <DiffLines :lines="lines" :conflict-labels="conflictLabels" />
       <p v-if="truncated" class="m-0 border-t border-line px-3 py-2 text-xs text-fg-muted">Diff cortado por ser grande demais.</p>
     </div>
   </div>

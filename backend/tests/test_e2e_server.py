@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from claude_agent_sdk import list_sessions
 from fastapi.testclient import TestClient
-from git_helpers import git
+from git_helpers import GIT_ENV, git
 
 from claudio_maestro import db, history, projects
 from claudio_maestro.agent.base import AgentError, AgentOptions
@@ -141,6 +141,25 @@ def test_seed_creates_the_changes_project(tmp_path, monkeypatch):
     status = git(repo, "status", "--porcelain=v1", "--untracked-files=all")
     assert sorted(status.splitlines()) == sorted([" M src/carrinho.ts", "?? src/cupom.ts", " M README.md"])
     assert git(repo, "config", "user.email").strip() == "demo@example.com"
+
+
+def test_seed_creates_the_merge_project(tmp_path, monkeypatch):
+    home = _seeded(tmp_path, monkeypatch)
+    repo = home / "projetos" / "merge-demo"
+    branches = git(repo, "branch", "--format=%(refname:short)").split()
+    assert set(branches) == {"main", "feat/cupom", "feat/docs", "feat/limpeza"}
+    assert git(repo, "status", "--porcelain=v1") == ""
+
+    def merge_tree(other: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", str(repo), "merge-tree", "--write-tree", "main", other],
+            capture_output=True, text=True, env=GIT_ENV,
+        )
+
+    assert merge_tree("feat/cupom").returncode == 1  # conflicts with main, with markers
+    assert merge_tree("feat/docs").returncode == 0
+    deleted = merge_tree("feat/limpeza")
+    assert deleted.returncode == 1 and "docs/antigo.md" in deleted.stdout
 
 
 def test_seed_ignores_the_git_config_of_whoever_runs_it(tmp_path, monkeypatch):

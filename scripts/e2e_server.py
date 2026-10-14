@@ -94,6 +94,7 @@ SCENARIO = [
 GIT_SCENARIO = [
     {"name": "Histórico Demo", "slug": "historico-demo", "color": "#d29922", "git": "history"},
     {"name": "Alterações Demo", "slug": "alteracoes-demo", "color": "#a371f7", "git": "changes"},
+    {"name": "Merge Demo", "slug": "merge-demo", "color": "#3fb950", "git": "merge"},
 ]
 
 
@@ -357,7 +358,26 @@ def _seed_changes(project_dir: Path, root: Path) -> None:
     (repo / "src" / "cupom.ts").write_text("export const cupom = 'NATAL'\n")
 
 
-GIT_SEEDERS = {"history": _seed_history, "changes": _seed_changes}
+def _seed_merge(project_dir: Path, root: Path) -> None:
+    """One repository. `feat/cupom` conflicts with main in src/frete.ts (with markers);
+    `feat/limpeza` deletes docs/antigo.md, which main changed (a conflict without markers, so
+    the E2E can mark it resolved without editing files); `feat/docs` merges clean."""
+    repo = _new_repo(project_dir)
+    _commit(repo, "src/frete.ts", "Criar o frete", "export const frete = 10\n")
+    _commit(repo, "docs/antigo.md", "Criar a página antiga", "# Antigo\n")
+    _git(repo, "switch", "-q", "-c", "feat/limpeza")
+    _git(repo, "rm", "-q", "--", "docs/antigo.md")
+    _git(repo, "commit", "-q", "-m", "Apagar a página antiga")
+    _git(repo, "switch", "-q", "-c", "feat/cupom", "main")
+    _commit(repo, "src/frete.ts", "Dar desconto no frete com cupom", "export const frete = 5\n")
+    _git(repo, "switch", "-q", "-c", "feat/docs", "main")
+    _commit(repo, "docs/frete.md", "Documentar o frete", "# Frete\n")
+    _git(repo, "switch", "-q", "main")
+    _commit(repo, "src/frete.ts", "Subir o frete fixo", "export const frete = 12\n")
+    _commit(repo, "docs/antigo.md", "Revisar a página antiga", "# Antigo, revisado\n")
+
+
+GIT_SEEDERS = {"history": _seed_history, "changes": _seed_changes, "merge": _seed_merge}
 
 
 def seed_git(root: Path, home: Path, conn) -> None:

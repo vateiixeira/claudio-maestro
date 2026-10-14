@@ -40,6 +40,11 @@ export function primaryAction(repo: RepoDetails, message: string): PrimaryAction
     return { kind: 'merge-continue', label: 'Concluir merge', disabled: empty, reason: messageReason }
   }
 
+  // A conflict outside a merge (rebase, cherry-pick, stash pop): committing would take the markers along.
+  if (repo.files.some((f) => f.status === 'conflict')) {
+    return { kind: 'commit', label: 'Commitar', disabled: true, reason: 'Resolva os conflitos pelo terminal' }
+  }
+
   const staged = new Set(repo.files.filter((f) => f.status === 'staged').map((f) => f.path)).size
   if (staged > 0) {
     const label = staged === 1 ? 'Commitar 1 preparado' : `Commitar ${staged} preparados`

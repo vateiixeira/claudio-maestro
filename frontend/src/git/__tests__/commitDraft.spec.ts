@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { clearDraft, readDraft, writeDraft } from '../commitDraft'
+import { clearDraft, readDraft, readMergeMessage, writeDraft, writeMergeMessage } from '../commitDraft'
 
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
 
@@ -18,5 +18,14 @@ describe('rascunho da mensagem de commit', () => {
     expect(localStorage.length).toBe(0)
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('bloqueado') })
     expect(readDraft('/a')).toBe('')
+  })
+  it('a mensagem de merge preenchida pelo app fica guardada à parte, por repositório', () => {
+    writeMergeMessage('/a', "Merge branch 'x'")
+    expect(readMergeMessage('/a')).toBe("Merge branch 'x'")
+    expect(readMergeMessage('/b')).toBeNull()
+    expect(readDraft('/a')).toBe('')
+    writeMergeMessage('/a', null)
+    expect(readMergeMessage('/a')).toBeNull()
+    expect(localStorage.length).toBe(0)
   })
 })

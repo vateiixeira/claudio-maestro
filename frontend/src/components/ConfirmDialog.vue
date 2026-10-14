@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 
-const props = withDefaults(defineProps<{ title: string; confirmLabel: string; tone?: 'danger' | 'warn' | 'primary' }>(), { tone: 'primary' })
+const props = withDefaults(
+  defineProps<{ title: string; confirmLabel: string; tone?: 'danger' | 'warn' | 'primary'; confirmDisabled?: boolean; autofocus?: boolean }>(),
+  { tone: 'primary', confirmDisabled: false, autofocus: true },
+)
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
 
 const titleId = useId()
@@ -14,7 +17,7 @@ onMounted(async () => {
   // On the document, not on the panel: a click on the text sends focus to the body, and Esc and Tab must still work.
   document.addEventListener('keydown', onKeydown)
   await nextTick()
-  cancelButton.value?.focus()
+  if (props.autofocus) cancelButton.value?.focus()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
@@ -66,7 +69,7 @@ function onKeydown(event: KeyboardEvent): void {
       <slot />
       <div class="flex justify-end gap-2">
         <button ref="cancelButton" type="button" data-test="confirm-cancel" class="h-9 rounded-lg border border-line-strong px-3.5 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="emit('cancel')">Cancelar</button>
-        <button type="button" data-test="confirm-ok" class="h-9 rounded-lg px-3.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-primary" :class="confirmClass" @click="emit('confirm')">{{ confirmLabel }}</button>
+        <button type="button" data-test="confirm-ok" :disabled="confirmDisabled" class="h-9 rounded-lg px-3.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50" :class="confirmClass" @click="emit('confirm')">{{ confirmLabel }}</button>
       </div>
     </section>
   </div>
