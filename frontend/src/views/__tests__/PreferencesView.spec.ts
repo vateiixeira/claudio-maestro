@@ -4,7 +4,8 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import PreferencesView from '../PreferencesView.vue'
 import { createAppRouter } from '../../router'
-import { jsonResponse, routeFetch } from '../../test/factories'
+import { jsonResponse, makeLabel, routeFetch } from '../../test/factories'
+import { useLabelsStore } from '../../stores/labels'
 import { useLayoutStore } from '../../stores/layout'
 
 enableAutoUnmount(afterEach)
@@ -83,7 +84,7 @@ describe('tela de preferências', () => {
     expect(w.find('#pref-editor').exists()).toBe(false)
   })
 
-  it('a aba Notificações abre pela URL e tem a ordem Geral, Agente, Notificações nas setas', async () => {
+  it('a aba Notificações abre pela URL e tem a ordem Geral, Agente, Execução, Notificações, Etiquetas nas setas', async () => {
     stub({ preferences: {} })
     vi.stubGlobal('Notification', undefined)
     const router = createAppRouter(createMemoryHistory())
@@ -99,10 +100,33 @@ describe('tela de preferências', () => {
     expect(w.find('#pref-editor').exists()).toBe(false)
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()
+    expect(w.find('[data-test="tab-labels"]').attributes('aria-selected')).toBe('true')
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
+    await flushPromises()
     expect(w.find('[data-test="tab-general"]').attributes('aria-selected')).toBe('true')
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
     await flushPromises()
+    expect(router.currentRoute.value.query.aba).toBe('etiquetas')
+  })
+
+  it('a aba Etiquetas abre pela URL, mostra o catálogo e entra na navegação por setas', async () => {
+    stub({ preferences: {} })
+    vi.stubGlobal('Notification', undefined)
+    useLabelsStore(pinia).labels = [makeLabel({ id: 1, slug: 'urgente' })]
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias?aba=etiquetas')
+    const w = mount(PreferencesView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="tab-labels"]').text()).toBe('Etiquetas')
+    expect(w.find('[data-test="tab-labels"]').attributes('aria-selected')).toBe('true')
+    expect(w.find('[data-test="label-row"]').attributes('data-slug')).toBe('urgente')
+    expect(w.find('#pref-editor').exists()).toBe(false)
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
+    await flushPromises()
     expect(router.currentRoute.value.query.aba).toBe('notificacoes')
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
+    await flushPromises()
+    expect(router.currentRoute.value.query.aba).toBe('etiquetas')
   })
 
   it('a aba ativa vem da URL e as setas trocam de aba', async () => {

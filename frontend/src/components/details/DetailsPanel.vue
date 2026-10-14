@@ -6,6 +6,7 @@ import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import DiffLines from '../conversation/DiffLines.vue'
 import GroupProperty from '../groups/GroupProperty.vue'
+import LabelProperty from '../labels/LabelProperty.vue'
 import PlanProperty from '../plan/PlanProperty.vue'
 import PlanStrip from '../plan/PlanStrip.vue'
 import { planVisible } from '../plan/planText'
@@ -240,6 +241,7 @@ function resetWidth() {
                 <span v-else class="text-fg-muted">Desconhecido</span>
               </dd>
               <GroupProperty v-if="projectId != null" :session-id="sessionId" :project-id="projectId" />
+              <LabelProperty v-if="session" :session-id="sessionId" />
             </dl>
           </div>
         </section>

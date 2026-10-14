@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import DigestAgentPreferences from '../components/preferences/DigestAgentPreferences.vue'
 import ExecutionPreferences from '../components/preferences/ExecutionPreferences.vue'
 import GeneralPreferences from '../components/preferences/GeneralPreferences.vue'
+import LabelPreferences from '../components/preferences/LabelPreferences.vue'
 import NotificationPreferences from '../components/preferences/NotificationPreferences.vue'
 
 const TABS = [
@@ -11,6 +12,7 @@ const TABS = [
   { id: 'agente', label: 'Agente de resumos', test: 'tab-agent' },
   { id: 'execucao', label: 'Execução', test: 'tab-execution' },
   { id: 'notificacoes', label: 'Notificações', test: 'tab-notifications' },
+  { id: 'etiquetas', label: 'Etiquetas', test: 'tab-labels' },
 ] as const
 type Tab = (typeof TABS)[number]['id']
 
@@ -61,7 +63,8 @@ function onKey(event: KeyboardEvent) {
         <GeneralPreferences v-if="tab === 'geral'" />
         <DigestAgentPreferences v-else-if="tab === 'agente'" />
         <ExecutionPreferences v-else-if="tab === 'execucao'" />
-        <NotificationPreferences v-else />
+        <NotificationPreferences v-else-if="tab === 'notificacoes'" />
+        <LabelPreferences v-else />
       </section>
     </div>
   </div>

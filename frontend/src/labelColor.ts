@@ -1,5 +1,8 @@
 const FALLBACK = '#6b7280'
 
+/** Color suggested for a new label (a user choice, so it may be a literal). */
+export const DEFAULT_LABEL_COLOR = '#6366f1'
+
 /** `#abc` → `#aabbcc`; lower case. `null` when it is not a hex color. */
 function normalize(hex: string): string | null {
   const value = hex.trim().toLowerCase()

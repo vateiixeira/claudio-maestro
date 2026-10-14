@@ -63,15 +63,16 @@ describe('painel Detalhes', () => {
     expect(classes).not.toContain('border-line')
   })
 
-  it('a linha Plano saiu das propriedades: ficam Agrupador por último e os botões do plano na seção Plano', async () => {
+  it('a linha Plano saiu das propriedades: ficam Agrupador e Etiquetas por último e os botões do plano na seção Plano', async () => {
     const wrapper = await mountPanel()
 
     const props = wrapper.find('[data-test="details-properties"]')
     expect(props.find('[data-test="prop-plan"]').exists()).toBe(false)
     const labels = props.findAll('dt').map((dt) => dt.text())
     expect(labels).not.toContain('Plano')
-    expect(labels.slice(-1)).toEqual(['Agrupador'])
+    expect(labels.slice(-2)).toEqual(['Agrupador', 'Etiquetas'])
     expect(props.find('[data-test="prop-group"]').exists()).toBe(true)
+    expect(props.find('[data-test="prop-labels"]').exists()).toBe(true)
   })
 
   it('divide as propriedades em sessão e ambiente, nessa ordem', async () => {
@@ -80,7 +81,7 @@ describe('painel Detalhes', () => {
     const groups = wrapper.find('[data-test="details-properties"]').findAll('dl')
     expect(groups).toHaveLength(2)
     expect(groups[0].findAll('dt').map((dt) => dt.text())).toEqual(['Estado', 'Turnos', 'Início', 'Última atividade'])
-    expect(groups[1].findAll('dt').map((dt) => dt.text())).toEqual(['Projeto', 'Branch', 'Contexto', 'Agrupador'])
+    expect(groups[1].findAll('dt').map((dt) => dt.text())).toEqual(['Projeto', 'Branch', 'Contexto', 'Agrupador', 'Etiquetas'])
     expect(groups[0].find('[data-test="prop-state"]').exists()).toBe(true)
     expect(groups[1].find('[data-test="prop-group"]').exists()).toBe(true)
   })
