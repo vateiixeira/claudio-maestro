@@ -166,3 +166,31 @@ def test_removing_project_removes_its_groups(tmp_path: Path):
         )
         conn.execute("DELETE FROM projects WHERE id = 1")
         assert conn.execute("SELECT COUNT(*) FROM session_groups").fetchone()[0] == 0
+
+
+def test_migration_creates_labels_tables(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        db.migrate(conn)
+        assert {"labels", "session_labels"} <= table_names(conn)
+
+
+def test_removing_session_or_label_removes_the_link(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        db.migrate(conn)
+        insert_project(conn)
+        insert_session(conn, "a")
+        insert_session(conn, "b")
+        conn.execute("INSERT INTO labels (id, slug, color, created_at) VALUES (1, 'x', '#000000', 0)")
+        conn.execute("INSERT INTO session_labels (session_id, label_id) VALUES ('a', 1), ('b', 1)")
+        conn.execute("DELETE FROM sessions WHERE session_id = 'a'")
+        assert conn.execute("SELECT COUNT(*) FROM session_labels").fetchone()[0] == 1
+        conn.execute("DELETE FROM labels WHERE id = 1")
+        assert conn.execute("SELECT COUNT(*) FROM session_labels").fetchone()[0] == 0
+
+
+def test_label_slug_is_unique(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        db.migrate(conn)
+        conn.execute("INSERT INTO labels (slug, color, created_at) VALUES ('x', '#000000', 0)")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO labels (slug, color, created_at) VALUES ('x', '#000000', 0)")

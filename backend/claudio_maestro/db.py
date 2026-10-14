@@ -220,6 +220,26 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         "CREATE INDEX deliveries_day ON deliveries(day)",
         "CREATE INDEX deliveries_session ON deliveries(session_id)",
     ],
+    [
+        # Etiquetas: catálogo global (slug + cor hex) e a ligação N:M com as conversas.
+        # Apagar a etiqueta ou a conversa remove só a ligação.
+        """
+        CREATE TABLE labels (
+          id          INTEGER PRIMARY KEY,
+          slug        TEXT NOT NULL UNIQUE,
+          color       TEXT NOT NULL,
+          created_at  INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE session_labels (
+          session_id  TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+          label_id    INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+          PRIMARY KEY (session_id, label_id)
+        )
+        """,
+        "CREATE INDEX session_labels_label_id ON session_labels(label_id)",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)
