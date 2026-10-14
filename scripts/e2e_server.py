@@ -95,6 +95,7 @@ GIT_SCENARIO = [
     {"name": "Histórico Demo", "slug": "historico-demo", "color": "#d29922", "git": "history"},
     {"name": "Alterações Demo", "slug": "alteracoes-demo", "color": "#a371f7", "git": "changes"},
     {"name": "Merge Demo", "slug": "merge-demo", "color": "#3fb950", "git": "merge"},
+    {"name": "Sincronia Demo", "slug": "sincronia-demo", "color": "#58a6ff", "git": "sync"},
 ]
 
 
@@ -377,7 +378,34 @@ def _seed_merge(project_dir: Path, root: Path) -> None:
     _commit(repo, "docs/antigo.md", "Revisar a página antiga", "# Antigo, revisado\n")
 
 
-GIT_SEEDERS = {"history": _seed_history, "changes": _seed_changes, "merge": _seed_merge}
+def _seed_sync(project_dir: Path, root: Path) -> None:
+    """`loja`: 1 commit to send and 1 to pull, no conflict. `site`: a branch never published."""
+    bare = _bare(root, "sincronia-loja")
+    loja = _new_repo(project_dir / "loja")
+    _commit(loja, "README.md", "Criar a loja", "# Loja\n")
+    _git(loja, "remote", "add", "origin", str(bare))
+    _git(loja, "push", "-q", "-u", "origin", "main")
+    other = _new_repo(root / "outro-clone-loja")
+    _git(other, "remote", "add", "origin", str(bare))
+    _git(other, "fetch", "-q", "origin")
+    _git(other, "reset", "-q", "--hard", "origin/main")
+    _commit(other, "frete.md", "Documentar o frete", "frete\n")
+    _git(other, "push", "-q", "origin", "main")
+    _git(loja, "fetch", "-q", "origin")
+    _commit(loja, "carrinho.md", "Documentar o carrinho", "carrinho\n")
+
+    site_bare = _bare(root, "sincronia-site")
+    site = _new_repo(project_dir / "site")
+    _commit(site, "index.html", "Criar o site", "<h1>Loja</h1>\n")
+    _git(site, "remote", "add", "origin", str(site_bare))
+    _git(site, "push", "-q", "-u", "origin", "main")
+    _git(site, "switch", "-q", "-c", "feat/nova")
+    _commit(site, "nova.html", "Criar a página nova", "<p>nova</p>\n")
+
+
+GIT_SEEDERS = {
+    "history": _seed_history, "changes": _seed_changes, "merge": _seed_merge, "sync": _seed_sync,
+}
 
 
 def seed_git(root: Path, home: Path, conn) -> None:
@@ -526,11 +554,20 @@ def stop_on_sigterm() -> None:
     signal.signal(signal.SIGTERM, handler)
 
 
+def restrict_git_remotes() -> None:
+    """The E2E remotes are folders inside the temporary root: allow only the file transport.
+
+    https and ssh stay off, so nothing the tests do can reach a real remote.
+    """
+    gitinfo.FETCH_ALLOWED_PROTOCOLS = ("file",)
+
+
 def serve(port: int) -> None:
     """Run uvicorn on 127.0.0.1 until it stops (SIGINT or SIGTERM). No restart."""
     import uvicorn
 
     try:
+        restrict_git_remotes()
         if not cli.port_available(port):
             raise E2EError(f"A porta {port} já está em uso. Escolha outra em MAESTRO_E2E_PORT.")
         config = uvicorn.Config(

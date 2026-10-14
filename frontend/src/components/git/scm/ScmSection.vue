@@ -2,17 +2,31 @@
 import { computed, ref, watch } from 'vue'
 import ScmRepo from './ScmRepo.vue'
 import { syncCounts } from '../../../git/repoLabel'
+import { useGitOpsStore } from '../../../stores/gitOps'
 import { useGitDetailsStore } from '../../../stores/gitDetails'
 import type { RepoDetails } from '../../../types/api'
 
 const props = defineProps<{ projectId: number }>()
 const details = useGitDetailsStore()
+const ops = useGitOpsStore()
 const repos = computed(() => details.reposFor(props.projectId))
 const loaded = computed(() => details.isLoaded(props.projectId))
 const error = computed(() => details.errorFor(props.projectId))
 const refreshing = computed(() => details.isLoading(props.projectId))
 const collapseAll = ref(0)
 const countText = computed(() => (repos.value.length === 1 ? '1 repositório' : `${repos.value.length} repositórios`))
+
+const fetchingAll = ref(false)
+/** Fetches the repositories that have an upstream; a failure shows on the repository's own row. */
+async function fetchAll(): Promise<void> {
+  fetchingAll.value = true
+  try {
+    const targets = repos.value.filter((r) => !r.error && r.upstream != null && !ops.busyFor(r.path))
+    await Promise.all(targets.map((r) => ops.run(props.projectId, r.path, 'fetch-repo')))
+  } finally {
+    fetchingAll.value = false
+  }
+}
 
 watch(
   () => props.projectId,
@@ -37,6 +51,9 @@ function startOpen(repo: RepoDetails): boolean {
       <span v-if="loaded" data-test="scm-count" class="text-xs text-fg-subtle">{{ countText }}</span>
       <span class="grow" />
       <slot name="header-actions" />
+      <button type="button" data-test="scm-fetch-all" aria-label="Buscar em todos" title="Buscar em todos" :aria-busy="fetchingAll" :disabled="fetchingAll || !loaded" class="flex size-6 items-center justify-center rounded text-fg-muted hover:bg-elevated hover:text-fg disabled:opacity-60" @click="fetchAll">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :class="{ 'motion-safe:animate-pulse': fetchingAll }"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+      </button>
       <button type="button" data-test="scm-refresh" aria-label="Atualizar" title="Reler o estado git" :aria-busy="refreshing" :disabled="refreshing" class="flex size-6 items-center justify-center rounded text-fg-muted hover:bg-elevated hover:text-fg disabled:opacity-60" @click="details.load(projectId)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :class="{ 'motion-safe:animate-spin': refreshing }"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
       </button>

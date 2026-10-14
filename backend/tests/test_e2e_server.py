@@ -15,7 +15,7 @@ from claude_agent_sdk import list_sessions
 from fastapi.testclient import TestClient
 from git_helpers import GIT_ENV, git
 
-from claudio_maestro import db, history, projects
+from claudio_maestro import db, gitinfo, history, projects
 from claudio_maestro.agent.base import AgentError, AgentOptions
 from claudio_maestro.claudecli import ClaudeCliUnavailable
 from claudio_maestro.config import load_settings
@@ -141,6 +141,18 @@ def test_seed_creates_the_changes_project(tmp_path, monkeypatch):
     status = git(repo, "status", "--porcelain=v1", "--untracked-files=all")
     assert sorted(status.splitlines()) == sorted([" M src/carrinho.ts", "?? src/cupom.ts", " M README.md"])
     assert git(repo, "config", "user.email").strip() == "demo@example.com"
+
+
+def test_seed_creates_the_sync_project(tmp_path, monkeypatch):
+    home = _seeded(tmp_path, monkeypatch)
+    loja = home / "projetos" / "sincronia-demo" / "loja"
+    assert git(loja, "rev-list", "--left-right", "--count", "main...origin/main").split() == ["1", "1"]
+    site = home / "projetos" / "sincronia-demo" / "site"
+    assert git(site, "symbolic-ref", "--short", "HEAD").strip() == "feat/nova"
+    assert subprocess.run(["git", "-C", str(site), "rev-parse", "@{upstream}"], capture_output=True, env=GIT_ENV).returncode != 0
+    for path in (loja, site):
+        url = git(path, "remote", "get-url", "origin").strip()
+        assert Path(url).resolve().is_relative_to(tmp_path.resolve())
 
 
 def test_seed_creates_the_merge_project(tmp_path, monkeypatch):
@@ -382,6 +394,8 @@ def test_claude_resolver_runs_nothing_from_the_system(monkeypatch):
 
 def test_serve_returns_cleanly_when_a_signal_arrives_while_building(tmp_path, monkeypatch):
     apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
+    # `serve` swaps this global; the line makes monkeypatch restore it afterwards.
+    monkeypatch.setattr(gitinfo, "FETCH_ALLOWED_PROTOCOLS", gitinfo.FETCH_ALLOWED_PROTOCOLS)
 
     def interrupted(port):
         raise KeyboardInterrupt
@@ -390,6 +404,21 @@ def test_serve_returns_cleanly_when_a_signal_arrives_while_building(tmp_path, mo
     monkeypatch.setattr(e2e.cli, "port_available", lambda port: True)
 
     e2e.serve(6620)  # returns instead of raising
+
+
+def test_serve_limits_git_remotes_to_local_folders(tmp_path, monkeypatch):
+    apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
+    monkeypatch.setattr(gitinfo, "FETCH_ALLOWED_PROTOCOLS", gitinfo.FETCH_ALLOWED_PROTOCOLS)  # restored after
+    seen = []
+
+    def interrupted(port):
+        seen.append(gitinfo.FETCH_ALLOWED_PROTOCOLS)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(e2e, "build_app", interrupted)
+    monkeypatch.setattr(e2e.cli, "port_available", lambda port: True)
+    e2e.serve(6620)
+    assert seen == [("file",)]
 
 
 def test_sigterm_becomes_keyboard_interrupt():

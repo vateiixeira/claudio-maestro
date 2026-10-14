@@ -7,6 +7,7 @@ import ScmConfirm from './ScmConfirm.vue'
 import BranchMenu from './BranchMenu.vue'
 import CreateBranchDialog from './CreateBranchDialog.vue'
 import MergeBanner from './MergeBanner.vue'
+import ScmRepoMenu from './ScmRepoMenu.vue'
 import IconArrowDown from '../../icons/IconArrowDown.vue'
 import IconArrowUp from '../../icons/IconArrowUp.vue'
 import IconChevron from '../../icons/IconChevron.vue'
@@ -267,12 +268,88 @@ async function editor(file: RepoFile): Promise<void> {
   }
 }
 
+const moreOpen = ref(false)
+const moreButton = ref<HTMLButtonElement | null>(null)
+const hasUpstream = computed(() => props.repo.upstream != null)
+/** Why Baixar or Enviar is off, in the same words as Mesclar; null when it is on. */
+function networkReason(verb: 'baixar' | 'enviar', nothing: string): string | null {
+  if (readOnly.value) return readOnly.value
+  if (merging.value) return `Conclua ou aborte o merge antes de ${verb}`
+  if (props.repo.detached) return `O HEAD está solto: não há branch para ${verb}.`
+  if (!hasUpstream.value) {
+    return (state.value?.remotes.length ?? 0) > 0 ? 'Esta branch não acompanha nenhuma branch remota. Use Publicar.' : 'Este repositório não tem remoto.'
+  }
+  if (verb === 'baixar' && state.value?.no_merge) return state.value.no_merge
+  return (verb === 'baixar' ? (props.repo.behind ?? 0) : (props.repo.ahead ?? 0)) > 0 ? null : nothing
+}
+const pullReason = computed(() => networkReason('baixar', 'Nada para baixar'))
+const pushReason = computed(() => networkReason('enviar', 'Nada para enviar'))
+const canPull = computed(() => pullReason.value === null)
+const canPush = computed(() => pushReason.value === null)
+const pullTitle = computed(() => pullReason.value ?? 'Baixar (pull)')
+const pushTitle = computed(() => pushReason.value ?? 'Enviar (push)')
+const syncTitle = computed(() => (sync.value.kind === 'diverged' ? `${sync.value.behind} para baixar, ${sync.value.ahead} para subir` : undefined))
+
+/** Pull and sync change the files: a running session is asked about first. */
+async function bringIn(kind: 'pull' | 'sync'): Promise<void> {
+  if (busyKind.value) return
+  if (running.value) {
+    const ok = await ask({
+      title: kind === 'pull' ? 'Baixar agora?' : 'Sincronizar agora?',
+      confirmLabel: kind === 'pull' ? 'Baixar mesmo assim' : 'Sincronizar mesmo assim',
+      tone: 'warn', running: running.value, repoName: name.value, lines: [runningLine(kind)],
+    })
+    if (!ok) return
+  }
+  const done = await act(kind)
+  if (done?.conflicts) open.value = true
+}
+
+async function pushNow(): Promise<void> {
+  if (!busyKind.value) await act('push')
+}
+
+async function publishNow(): Promise<void> {
+  if (!busyKind.value && !action.value.disabled) await act('publish')
+}
+
+/** Back to the "…" button after the menu closes. */
+function closeMore(restoreFocus = true): void {
+  moreOpen.value = false
+  if (restoreFocus) void nextTick(() => moreButton.value?.focus())
+}
+
+async function fetchNow(): Promise<void> {
+  closeMore()
+  await act('fetch-repo')
+}
+
+async function copyPath(): Promise<void> {
+  closeMore()
+  try {
+    await navigator.clipboard.writeText(props.repo.path)
+  } catch {
+    // Without clipboard access nothing is copied.
+  }
+}
+
+function abortFromMenu(): void {
+  closeMore()
+  void abortMerge()
+}
+
 /** What the wide button does; a kind without a handler leaves the button off. */
 const handlers: Partial<Record<PrimaryKind, () => void>> = {
   commit: () => void commit(),
   'merge-continue': () => void finishMerge(),
+  pull: () => void bringIn('pull'),
+  sync: () => void bringIn('sync'),
+  push: () => void pushNow(),
+  publish: () => void publishNow(),
 }
 function runPrimary(): void {
+  // Ctrl+Enter reaches here too: an action that is off (or busy) does nothing, of any kind.
+  if (action.value.disabled || busyKind.value) return
   handlers[action.value.kind]?.()
 }
 
@@ -316,6 +393,7 @@ defineExpose({ ask, act, handlers })
         class="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs"
         :role="sync.kind === 'diverged' ? 'img' : undefined"
         :aria-label="sync.kind === 'diverged' ? `${sync.behind} para baixar, ${sync.ahead} para subir` : undefined"
+        :title="syncTitle"
       >
         <span v-if="sync.kind === 'none'" class="text-fg-subtle">sem upstream</span>
         <span v-else-if="sync.kind === 'synced'" class="text-fg-subtle">em dia</span>
@@ -326,27 +404,46 @@ defineExpose({ ask, act, handlers })
       </span>
       <template v-if="!repo.error">
         <button
-          v-if="!readOnly"
           type="button"
           data-test="repo-merge"
           :class="iconButton"
-          :disabled="!!busyKind || preparingMerge || merging || !!state?.no_merge || !repo.head"
+          :disabled="!!readOnly || !!busyKind || preparingMerge || merging || !!state?.no_merge || !repo.head"
           aria-label="Mesclar uma branch"
-          :title="state?.no_merge ?? (merging ? 'Já há um merge em andamento' : `Mesclar uma branch em ${branchName}`)"
+          :title="readOnly ?? state?.no_merge ?? (merging ? 'Já há um merge em andamento' : `Mesclar uma branch em ${branchName}`)"
           @click="menu = 'merge'"
         ><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" /></svg></button>
         <button
-          v-if="!readOnly"
           type="button"
           data-test="repo-commit"
           :class="iconButton"
-          :disabled="!!busyKind || action.kind !== 'commit' || action.disabled"
+          :disabled="!!readOnly || !!busyKind || action.kind !== 'commit' || action.disabled"
           aria-label="Commitar"
-          :title="action.kind === 'commit' && !action.disabled ? 'Commitar' : (action.reason ?? 'Commitar')"
+          :title="readOnly ?? (action.kind === 'commit' && !action.disabled ? 'Commitar' : (action.reason ?? 'Commitar'))"
           @click="commit"
         ><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg></button>
+        <button
+          type="button"
+          data-test="repo-pull"
+          :class="iconButton"
+          :disabled="!!busyKind || !canPull"
+          aria-label="Baixar"
+          :title="pullTitle"
+          @click="bringIn((repo.ahead ?? 0) > 0 ? 'sync' : 'pull')"
+        ><IconArrowDown :size="14" /></button>
+        <button
+          type="button"
+          data-test="repo-push"
+          :class="iconButton"
+          :disabled="!!busyKind || !canPush"
+          aria-label="Enviar"
+          :title="pushTitle"
+          @click="pushNow"
+        ><IconArrowUp :size="14" /></button>
         <button type="button" data-test="repo-refresh" :class="iconButton" :disabled="!!busyKind" aria-label="Atualizar" title="Reler o estado git" @click="details.load(projectId)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
+        </button>
+        <button ref="moreButton" type="button" data-test="repo-more" :class="iconButton" aria-haspopup="menu" :aria-expanded="moreOpen" aria-label="Mais ações" title="Mais ações" @click="moreOpen = !moreOpen">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
         </button>
       </template>
     </div>
@@ -362,6 +459,19 @@ defineExpose({ ask, act, handlers })
       @merge="mergeIn"
       @create="(initial) => { menu = null; creating = { initial, error: null } }"
     />
+
+    <ScmRepoMenu v-if="moreOpen" :merging="merging && !readOnly" :can-fetch="hasUpstream && !busyKind" @close="(restore) => closeMore(restore !== false)" @fetch="fetchNow" @copy="copyPath" @abort="abortFromMenu" />
+
+    <!-- Outside the body: the error of a fetch must show with the repository collapsed too. -->
+    <div v-if="error" data-test="scm-error-area" class="flex flex-col gap-1.5 pt-1 pl-5">
+      <div data-test="scm-error" role="alert" class="flex items-start gap-1.5 text-xs leading-normal text-diff-del-fg">
+        <span class="min-w-0 grow">{{ error.message }}
+          <button v-if="error.output" type="button" data-test="show-output" class="border-0 bg-transparent p-0 text-xs text-fg-muted underline" @click="showOutput = !showOutput">{{ showOutput ? 'Esconder saída do git' : 'Ver saída do git' }}</button>
+        </span>
+        <button type="button" data-test="dismiss-error" class="flex size-5 shrink-0 items-center justify-center rounded text-fg-muted hover:bg-card" aria-label="Fechar aviso" @click="ops.dismiss(repo.path)"><IconClose :size="12" /></button>
+      </div>
+      <pre v-if="showOutput" data-test="scm-error-output" class="m-0 max-h-48 overflow-auto rounded-md border border-line bg-bg p-2 font-mono text-[0.6875rem] whitespace-pre-wrap text-fg-muted">{{ error.output }}</pre>
+    </div>
 
     <p v-if="repo.error" data-test="scm-repo-error" role="alert" class="m-0 pl-5 text-xs text-diff-del-fg">{{ repo.error }}</p>
     <div v-else-if="open" data-test="scm-body" class="flex flex-col gap-1.5 pt-1 pb-2 pl-5">
@@ -384,13 +494,6 @@ defineExpose({ ask, act, handlers })
         <p v-if="state?.has_hooks" data-test="hooks-note" class="m-0 text-xs text-fg-subtle">Este repositório tem hooks. O commit feito pelo app não os executa.</p>
         <p v-if="state?.gpgsign" data-test="gpg-note" class="m-0 text-xs text-fg-subtle">Seu git pede commits assinados. O commit feito pelo app sai sem assinatura.</p>
       </template>
-      <div v-if="error" data-test="scm-error" role="alert" class="flex items-start gap-1.5 text-xs leading-normal text-diff-del-fg">
-        <span class="min-w-0 grow">{{ error.message }}
-          <button v-if="error.output" type="button" data-test="show-output" class="border-0 bg-transparent p-0 text-xs text-fg-muted underline" @click="showOutput = !showOutput">{{ showOutput ? 'Esconder saída do git' : 'Ver saída do git' }}</button>
-        </span>
-        <button type="button" data-test="dismiss-error" class="flex size-5 shrink-0 items-center justify-center rounded text-fg-muted hover:bg-card" aria-label="Fechar aviso" @click="ops.dismiss(repo.path)"><IconClose :size="12" /></button>
-      </div>
-      <pre v-if="error && showOutput" data-test="scm-error-output" class="m-0 max-h-48 overflow-auto rounded-md border border-line bg-bg p-2 font-mono text-[0.6875rem] whitespace-pre-wrap text-fg-muted">{{ error.output }}</pre>
       <p v-if="editorError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ editorError }}</p>
       <slot name="groups" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :discard="discard" :editor="editor">
         <ScmFileGroup v-if="conflictFiles.length" :project-id="projectId" :repo="repo" group="conflict" title="Em conflito" :files="conflictFiles" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :conflict-labels="conflictLabels" @editor="editor">
