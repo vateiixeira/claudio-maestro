@@ -32,8 +32,14 @@ async function run(call: () => Promise<void>): Promise<boolean> {
   }
 }
 
+// While a request runs the controls stay enabled (a control that turns `disabled` loses the keyboard
+// focus). Changes made in that window are ignored instead.
 async function toggle(id: number, event: Event) {
   const target = event.target as HTMLInputElement
+  if (busy.value) {
+    target.checked = selected.value.includes(id)
+    return
+  }
   const next = target.checked ? [...selected.value, id] : selected.value.filter((x) => x !== id)
   const ok = await run(() => sessions.setLabels(props.sessionId, next))
   // Vue does not repatch :checked when the saved state did not change: put the box back by hand.
@@ -41,6 +47,7 @@ async function toggle(id: number, event: Event) {
 }
 
 async function createAndApply() {
+  if (busy.value || !slug.value.trim()) return
   busy.value = true
   error.value = null
   try {
@@ -63,7 +70,7 @@ async function createAndApply() {
 
 <template>
   <dt class="text-fg-muted">Etiquetas</dt>
-  <dd data-test="prop-labels" class="m-0 flex min-w-0 flex-col gap-1.5">
+  <dd data-test="prop-labels" :aria-busy="busy ? 'true' : undefined" class="m-0 flex min-w-0 flex-col gap-1.5">
     <span class="flex min-w-0 flex-wrap items-center gap-1.5">
       <LabelBadges v-if="selected.length" :ids="selected" :max="selected.length" />
       <span v-else class="text-fg-muted">Nenhuma</span>
@@ -88,7 +95,6 @@ async function createAndApply() {
         <input
           type="checkbox"
           :checked="selected.includes(label.id)"
-          :disabled="busy"
           @change="toggle(label.id, $event)"
         />
         <span class="size-2.5 shrink-0 rounded-[3px]" :style="{ backgroundColor: label.color }" aria-hidden="true" />
@@ -100,7 +106,6 @@ async function createAndApply() {
           type="color"
           data-test="label-new-color"
           aria-label="Cor da nova etiqueta"
-          :disabled="busy"
           class="size-8 shrink-0 cursor-pointer rounded-md border border-line-strong bg-elevated p-0.5"
         />
         <input
@@ -109,14 +114,14 @@ async function createAndApply() {
           aria-label="Slug da nova etiqueta"
           placeholder="nova-etiqueta"
           maxlength="32"
-          :disabled="busy"
           class="h-8 min-w-0 grow rounded-md border border-line-strong bg-elevated px-2 font-mono text-xs text-fg outline-none focus:border-fg-muted"
         />
         <button
           type="submit"
           data-test="label-new-save"
-          :disabled="busy || !slug.trim()"
-          class="h-8 shrink-0 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-fg disabled:opacity-60"
+          :disabled="!slug.trim()"
+          :aria-disabled="busy ? 'true' : undefined"
+          class="h-8 shrink-0 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-fg disabled:opacity-60 aria-disabled:opacity-60"
         >Criar</button>
       </form>
       <p v-if="error" data-test="label-error" role="alert" class="m-0 text-xs text-diff-del-fg">{{ error }}</p>

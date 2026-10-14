@@ -128,6 +128,94 @@ describe('propriedade Etiquetas', () => {
     expect(wrapper.find('[data-test="label-toggle"]').attributes('aria-controls')).toBe('labels-panel-s1')
   })
 
+  describe('durante um pedido em andamento', () => {
+    function pendingPut() {
+      let finish!: (label_ids: number[]) => void
+      const response = new Promise<Response>((resolve) => {
+        finish = (label_ids) => resolve(jsonResponse(makeSession({ session_id: 's1', label_ids })))
+      })
+      return { response, finish }
+    }
+    const panel = (wrapper: ReturnType<typeof mountProperty>['wrapper']) => wrapper.find('[data-test="prop-labels"]')
+
+    it('as caixas e os campos não ficam disabled (o foco não pode se perder) e o contêiner marca aria-busy', async () => {
+      const put = pendingPut()
+      const { wrapper } = mountProperty({ 'PUT /api/sessions/s1/labels': () => put.response }, [1])
+      await wrapper.find('[data-test="label-toggle"]').trigger('click')
+      expect(panel(wrapper).attributes('aria-busy')).toBeUndefined()
+      await wrapper.findAll('[data-test="label-option"]')[1].find('input').setValue(true)
+      await flushPromises()
+      expect(panel(wrapper).attributes('aria-busy')).toBe('true')
+      for (const input of wrapper.findAll('[data-test="label-option"] input')) {
+        expect(input.attributes('disabled')).toBeUndefined()
+      }
+      expect(wrapper.find('[data-test="label-new-slug"]').attributes('disabled')).toBeUndefined()
+      expect(wrapper.find('[data-test="label-new-color"]').attributes('disabled')).toBeUndefined()
+      put.finish([1, 2])
+      await flushPromises()
+      expect(panel(wrapper).attributes('aria-busy')).toBeUndefined()
+    })
+
+    it('a caixa marcada mantém o foco durante e depois do pedido', async () => {
+      const put = pendingPut()
+      const { wrapper } = mountProperty({ 'PUT /api/sessions/s1/labels': () => put.response }, [1])
+      await wrapper.find('[data-test="label-toggle"]').trigger('click')
+      const input = wrapper.findAll('[data-test="label-option"]')[1].find('input')
+      ;(input.element as HTMLInputElement).focus()
+      await input.setValue(true)
+      await flushPromises()
+      expect(document.activeElement).toBe(input.element)
+      put.finish([1, 2])
+      await flushPromises()
+      expect(document.activeElement).toBe(input.element)
+    })
+
+    it('uma segunda mudança durante o pedido é ignorada e a caixa volta ao estado salvo', async () => {
+      const put = pendingPut()
+      const { wrapper, fetchMock } = mountProperty({ 'PUT /api/sessions/s1/labels': () => put.response }, [1])
+      await wrapper.find('[data-test="label-toggle"]').trigger('click')
+      const inputs = wrapper.findAll('[data-test="label-option"] input')
+      await inputs[1].setValue(true)
+      await flushPromises()
+      await inputs[0].setValue(false) // ignored: a request is still running
+      await flushPromises()
+      expect(bodies(fetchMock, 'PUT /api/sessions/s1/labels')).toEqual([{ label_ids: [1, 2] }])
+      expect((inputs[0].element as HTMLInputElement).checked).toBe(true)
+      put.finish([1, 2])
+      await flushPromises()
+      expect(bodies(fetchMock, 'PUT /api/sessions/s1/labels')).toHaveLength(1)
+      expect(panel(wrapper).attributes('aria-busy')).toBeUndefined()
+    })
+
+    it('o botão Criar usa aria-disabled durante o pedido e ignora um segundo envio', async () => {
+      let finish!: () => void
+      const post = new Promise<Response>((resolve) => {
+        finish = () => resolve(jsonResponse(makeLabel({ id: 3, slug: 'nova' }), 201))
+      })
+      const { wrapper, fetchMock } = mountProperty({
+        'POST /api/labels': () => post,
+        'PUT /api/sessions/s1/labels': () => jsonResponse(makeSession({ session_id: 's1', label_ids: [1, 3] })),
+      }, [1])
+      await wrapper.find('[data-test="label-toggle"]').trigger('click')
+      const save = wrapper.find('[data-test="label-new-save"]')
+      expect(save.attributes('aria-disabled')).toBeUndefined()
+      await wrapper.find('[data-test="label-new-slug"]').setValue('nova')
+      await save.trigger('click')
+      await flushPromises()
+      expect(save.attributes('disabled')).toBeUndefined()
+      expect(save.attributes('aria-disabled')).toBe('true')
+      expect(panel(wrapper).attributes('aria-busy')).toBe('true')
+      await wrapper.find('form').trigger('submit') // Enter in the field: ignored too
+      await flushPromises()
+      expect(bodies(fetchMock, 'POST /api/labels')).toHaveLength(1)
+      finish()
+      await flushPromises()
+      expect(bodies(fetchMock, 'POST /api/labels')).toHaveLength(1)
+      expect(save.attributes('aria-disabled')).toBeUndefined()
+      expect(panel(wrapper).attributes('aria-busy')).toBeUndefined()
+    })
+  })
+
   it('não cria com o slug vazio', async () => {
     const { wrapper, fetchMock } = mountProperty()
     await wrapper.find('[data-test="label-toggle"]').trigger('click')
