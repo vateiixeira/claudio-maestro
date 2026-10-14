@@ -7,9 +7,10 @@ import IconGroup from '../../icons/IconGroup.vue'
 import { createAppRouter } from '../../../router'
 import { useGitStore } from '../../../stores/git'
 import { useGroupsStore } from '../../../stores/groups'
+import { useLabelsStore } from '../../../stores/labels'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
-import { makeGitRepo, makeGroup, makeProject, makeSession } from '../../../test/factories'
+import { makeGitRepo, makeGroup, makeLabel, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -270,5 +271,23 @@ describe('etiqueta de commits para baixar', () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias' })])
     const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
     expect(wrapper.find('[data-test="header-behind"]').exists()).toBe(false)
+  })
+})
+
+describe('etiquetas no cabeçalho', () => {
+  it('mostra as etiquetas ao lado do título, vindas da sessão da lista', () => {
+    useLabelsStore(pinia).labels = [makeLabel({ id: 1, slug: 'urgente' }), makeLabel({ id: 2, slug: 'backend' })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', label_ids: [1, 2] })])
+    const w = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    const title = w.get('[data-test="header-title"]')
+    expect(title.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['urgente', 'backend'])
+    const html = title.html()
+    expect(html.indexOf('data-test="conversation-title"')).toBeLessThan(html.indexOf('data-test="label-badges"'))
+  })
+
+  it('sem etiquetas, ou sem a sessão na lista, não mostra nada', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', label_ids: [] })])
+    expect(mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } }).find('[data-test="label-badges"]').exists()).toBe(false)
+    expect(mount(ConversationHeader, { props: { id: 'desconhecida' }, global: { plugins: [pinia, router] } }).find('[data-test="label-badges"]').exists()).toBe(false)
   })
 })

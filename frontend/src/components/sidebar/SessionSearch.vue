@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import LabelBadges from '../labels/LabelBadges.vue'
 import { needsYou } from '../../conversation/needsYou'
 import { errorMessage, searchSessions } from '../../api/http'
 import { formatActivity } from '../../format'
@@ -120,7 +121,10 @@ onBeforeUnmount(() => {
         class="flex min-h-11 w-full cursor-pointer flex-col gap-0.5 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
         @click="open(session)"
       >
-        <span class="w-full truncate text-[0.8125rem] font-medium">{{ session.title }}</span>
+        <span class="flex w-full min-w-0 items-center gap-1.5">
+          <span class="min-w-0 truncate text-[0.8125rem] font-medium">{{ session.title }}</span>
+          <LabelBadges :ids="session.label_ids" compact />
+        </span>
         <span class="flex w-full items-center gap-1.5 text-xs text-fg-muted">
           <span
             class="size-2 shrink-0 rounded-[2px]"

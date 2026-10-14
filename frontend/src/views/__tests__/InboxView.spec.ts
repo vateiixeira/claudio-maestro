@@ -4,9 +4,10 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import InboxView from '../InboxView.vue'
 import { createAppRouter } from '../../router'
+import { useLabelsStore } from '../../stores/labels'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import { jsonResponse, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { jsonResponse, makeLabel, makeProject, makeSession, routeFetch } from '../../test/factories'
 
 vi.mock('../../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
 import { loadEverything } from '../../stores/realtime'
@@ -479,3 +480,13 @@ describe('Inbox: triagem pelo teclado', () => {
   })
 })
 
+describe('etiquetas na Caixa de entrada', () => {
+  it('a linha de triagem mostra as etiquetas da conversa', async () => {
+    useLabelsStore(pinia).labels = [makeLabel({ id: 7, slug: 'urgente' })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'w1', title: 'Espera 1', display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question', last_activity_at: now, label_ids: [7] }),
+    ])
+    const { wrapper } = await mountInbox()
+    expect(wrapper.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['urgente'])
+  })
+})

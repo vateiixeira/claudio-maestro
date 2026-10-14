@@ -4,10 +4,11 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import SidebarSessionRow from '../SidebarSessionRow.vue'
 import { createAppRouter } from '../../../router'
+import { useLabelsStore } from '../../../stores/labels'
 import { useProjectsStore } from '../../../stores/projects'
 import { clockNow } from '../../../minuteClock'
 import { tomorrowAt9 } from '../../../conversation/marks'
-import { makeProject, makeSession } from '../../../test/factories'
+import { makeLabel, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 afterEach(() => vi.useRealTimers())
@@ -192,5 +193,20 @@ describe('clique direito', () => {
     const popover = document.body.querySelector<HTMLElement>('[data-test="mark-popover"]')!
     expect(popover.style.left).toBe('30px')
     expect(popover.style.top).toBe('50px')
+  })
+})
+
+describe('etiquetas na linha do menu', () => {
+  it('mostra 1 etiqueta e "+N" ao lado do título', async () => {
+    useLabelsStore(pinia).labels = [1, 2, 3].map((id) => makeLabel({ id, slug: `et${id}` }))
+    const row = await mountRow({ label_ids: [1, 2, 3] })
+    expect(row.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['et1'])
+    expect(row.get('[data-test="label-more"]').text()).toBe('+2')
+    const html = row.html()
+    expect(html.indexOf('data-test="row-title"')).toBeLessThan(html.indexOf('data-test="label-badges"'))
+  })
+
+  it('sem etiquetas não mostra nada', async () => {
+    expect((await mountRow({ label_ids: [] })).find('[data-test="label-badges"]').exists()).toBe(false)
   })
 })

@@ -6,8 +6,10 @@ import DeliveriesView from '../DeliveriesView.vue'
 import { createAppRouter } from '../../router'
 import { formatDayLong, formatTime, localDay, projectMarkdown, shiftDay } from '../../deliveries'
 import { useDeliveriesStore } from '../../stores/deliveries'
+import { useLabelsStore } from '../../stores/labels'
 import { useProjectsStore } from '../../stores/projects'
-import { jsonResponse, makeProject, routeFetch } from '../../test/factories'
+import { useSessionsStore } from '../../stores/sessions'
+import { jsonResponse, makeLabel, makeProject, makeSession, routeFetch } from '../../test/factories'
 import type { DeliveriesDay, Delivery } from '../../types/api'
 
 vi.mock('../../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
@@ -676,5 +678,30 @@ describe('Entregas', () => {
     wrapper.unmount()
     expect(store.date).toBeNull()
     expect(store.day?.deliveries).toHaveLength(1)
+  })
+})
+
+describe('etiquetas nas Entregas', () => {
+  it('mostra as etiquetas da conversa da entrega e das em andamento; sem sessão conhecida, não mostra', async () => {
+    useLabelsStore(pinia).labels = [makeLabel({ id: 1, slug: 'urgente' }), makeLabel({ id: 2, slug: 'backend' })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 's1', label_ids: [1, 2] }),
+      makeSession({ session_id: 'andamento', label_ids: [2] }),
+    ])
+    const { wrapper } = await mountAt('/entregas', {
+      [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, {
+        deliveries: [
+          delivery({ id: 1, session_id: 's1' }),
+          delivery({ id: 2, session_id: null, title: 'Antiga' }),
+          delivery({ id: 3, session_id: 'sumiu', title: 'Outra' }),
+        ],
+        in_progress: [{ session_id: 'andamento', project_id: 1, project_name: 'app', title: 'Rodando', short: null }],
+      })),
+    })
+    const rows = wrapper.findAll('[data-test="delivery"]')
+    expect(rows[0]!.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['urgente', 'backend'])
+    expect(rows[1]!.find('[data-test="label-badges"]').exists()).toBe(false)
+    expect(rows[2]!.find('[data-test="label-badges"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="in-progress"]').findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['backend'])
   })
 })

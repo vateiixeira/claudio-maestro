@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import ClosureBadge from '../ClosureBadge.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import LabelBadges from '../labels/LabelBadges.vue'
 import MarkIcon from '../MarkIcon.vue'
 import MarkPopover from '../marks/MarkPopover.vue'
 import { contextPoint } from '../marks/menuPoint'
@@ -40,6 +41,7 @@ const rowClass = computed(() => (props.nested ? sidebarNestedItemClass(active.va
   >
     <DisplayStateIcon :display="session.display_state" :size="nested ? 10 : 11" :quiet="isQuietSession(session)" />
     <span data-test="row-title" :class="['min-w-0 grow truncate', nested ? 'text-[0.78125rem]' : 'text-[0.8125rem]']">{{ session.title }}</span>
+    <LabelBadges :ids="session.label_ids" compact />
     <span
       v-if="age"
       data-test="row-age"

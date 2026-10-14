@@ -6,8 +6,9 @@ import ConversationRow from '../ConversationRow.vue'
 import { createAppRouter } from '../../../router'
 import { useGitStore } from '../../../stores/git'
 import { useGroupsStore } from '../../../stores/groups'
+import { useLabelsStore } from '../../../stores/labels'
 import { useProjectsStore } from '../../../stores/projects'
-import { jsonResponse, makeGitRepo, makeGroup, makeProject, makeSession, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeGitRepo, makeGroup, makeLabel, makeProject, makeSession, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -391,5 +392,35 @@ describe('marcações na linha de conversa', () => {
     expect(wrapper.find('[data-test="row-actions"] [data-test="extra"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="decided"]').text()).toBe('Negado')
     expect(wrapper.find('[data-test="waiting-reason"]').exists()).toBe(false)
+  })
+})
+
+describe('etiquetas na linha de conversa', () => {
+  const labelsOf = (w: ReturnType<typeof mountRow>) => w.findAll('[data-test="label-badge"]').map((b) => b.text())
+  beforeEach(() => {
+    useLabelsStore(pinia).labels = [1, 2, 3, 4].map((id) => makeLabel({ id, slug: `et${id}` }))
+  })
+
+  it('a lista normal mostra até 3 etiquetas e soma o resto', () => {
+    const w = mountRow(makeSession({ label_ids: [1, 2, 3, 4] }))
+    expect(labelsOf(w)).toEqual(['et1', 'et2', 'et3'])
+    expect(w.get('[data-test="label-more"]').text()).toBe('+1')
+  })
+
+  it('a variante compact mostra 1 etiqueta e "+N"', () => {
+    const w = mountRow(makeSession({ label_ids: [1, 2, 3] }), 'compact')
+    expect(labelsOf(w)).toEqual(['et1'])
+    expect(w.get('[data-test="label-more"]').text()).toBe('+2')
+  })
+
+  it('a variante inbox também mostra, ao lado do título', () => {
+    const w = mountRow(makeSession({ label_ids: [2] }), 'inbox')
+    expect(labelsOf(w)).toEqual(['et2'])
+    expect(w.get('[data-test="row-title"]').find('[data-test="label-badges"]').exists()).toBe(true)
+  })
+
+  it('sem etiquetas não mostra nada', () => {
+    expect(mountRow(makeSession({ label_ids: [] })).find('[data-test="label-badges"]').exists()).toBe(false)
+    expect(mountRow(makeSession()).find('[data-test="label-badges"]').exists()).toBe(false)
   })
 })

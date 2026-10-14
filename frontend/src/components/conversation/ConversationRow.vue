@@ -8,6 +8,7 @@ import { contextPoint } from '../marks/menuPoint'
 import ClosureBadge from '../ClosureBadge.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import GroupTag from '../groups/GroupTag.vue'
+import LabelBadges from '../labels/LabelBadges.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import PlanBadge from '../plan/PlanBadge.vue'
 import { errorMessage, markSessionSeen } from '../../api/http'
@@ -101,6 +102,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
       >{{ session.title }}</RouterLink>
       <PlanBadge v-if="!compact" :session="session" />
       <GroupTag v-if="!compact" :group-id="session.group_id" />
+      <LabelBadges :ids="session.label_ids" :compact="compact" />
       <span
         v-if="session.plan_done && !compact"
         data-test="row-plan-done"

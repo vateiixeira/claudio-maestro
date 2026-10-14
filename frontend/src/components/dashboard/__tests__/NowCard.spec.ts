@@ -4,7 +4,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import NowCard from '../NowCard.vue'
 import { createAppRouter } from '../../../router'
-import { makeSession } from '../../../test/factories'
+import { useLabelsStore } from '../../../stores/labels'
+import { makeLabel, makeSession } from '../../../test/factories'
 import type { PlanSummary } from '../../../types/api'
 
 enableAutoUnmount(afterEach)
@@ -31,5 +32,19 @@ describe('cartão Agora', () => {
     expect(mountCard({ plan: null }).find('[data-test="now-plan"]').exists()).toBe(false)
     expect(mountCard({ plan: { ...plan, done: 12, current: null } }).find('[data-test="now-plan"]').exists()).toBe(false)
     expect(mountCard({ display_state: 'finished', finished: true, plan }).find('[data-test="now-plan"]').exists()).toBe(false)
+  })
+})
+
+describe('etiquetas no cartão Agora', () => {
+  it('mostra as etiquetas junto do título', () => {
+    useLabelsStore().labels = [makeLabel({ id: 1, slug: 'urgente' }), makeLabel({ id: 2, slug: 'backend' })]
+    const wrapper = mountCard({ title: 'Construir', label_ids: [1, 2] })
+    expect(wrapper.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['urgente', 'backend'])
+    const html = wrapper.html()
+    expect(html.indexOf('Construir')).toBeLessThan(html.indexOf('data-test="label-badges"'))
+  })
+
+  it('sem etiquetas não mostra nada', () => {
+    expect(mountCard({ label_ids: [] }).find('[data-test="label-badges"]').exists()).toBe(false)
   })
 })

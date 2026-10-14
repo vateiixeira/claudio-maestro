@@ -8,6 +8,7 @@ import MarkIcon from '../MarkIcon.vue'
 import MarkPopover from '../marks/MarkPopover.vue'
 import IconArrowDown from '../icons/IconArrowDown.vue'
 import IconGroup from '../icons/IconGroup.vue'
+import LabelBadges from '../labels/LabelBadges.vue'
 import NextNeedsYou from './NextNeedsYou.vue'
 import { errorMessage, openInEditor } from '../../api/http'
 import { behindCount, behindTitle } from '../../gitSync'
@@ -212,6 +213,7 @@ async function openProject() {
             @click="startRename"
           >{{ title }}</button>
         </h1>
+        <LabelBadges :ids="listed?.label_ids" />
       </div>
       <!-- Quebram linha numa coluna estreita: shrink-0 em fila única vazava e fazia a página rolar. -->
       <div data-test="header-actions" class="flex min-w-0 flex-wrap items-center justify-end gap-3">

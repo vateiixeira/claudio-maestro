@@ -4,8 +4,9 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory, type Router } from 'vue-router'
 import AppSidebar from '../AppSidebar.vue'
 import { createAppRouter } from '../../../router'
+import { useLabelsStore } from '../../../stores/labels'
 import { useProjectsStore } from '../../../stores/projects'
-import { jsonResponse, makeProject, makeSession } from '../../../test/factories'
+import { jsonResponse, makeLabel, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 
@@ -85,6 +86,22 @@ describe('busca no menu lateral', () => {
     expect(results[0]!.find('svg').attributes('width')).toBe('11')
     expect(results[0]!.text()).toContain('Sua vez')
     expect(results[1]!.text()).toContain('Aguardando você')
+  })
+
+  it('cada resultado mostra as etiquetas da sessão', async () => {
+    useLabelsStore(pinia).labels = [1, 2].map((id) => makeLabel({ id, slug: `et${id}` }))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Com etiquetas', label_ids: [1, 2] }),
+      makeSession({ session_id: 'b', title: 'Sem etiquetas', label_ids: [] }),
+    ])))
+    const w = mountSidebar()
+    await type(w, 'x')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    const [first, second] = w.findAll('[data-test="search-result"]')
+    expect(first!.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['et1'])
+    expect(first!.get('[data-test="label-more"]').text()).toBe('+1')
+    expect(second!.find('[data-test="label-badges"]').exists()).toBe(false)
   })
 
   it('descarta respostas antigas', async () => {

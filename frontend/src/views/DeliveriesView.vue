@@ -7,18 +7,21 @@ import IconAlert from '../components/icons/IconAlert.vue'
 import IconCheck from '../components/icons/IconCheck.vue'
 import IconChevron from '../components/icons/IconChevron.vue'
 import IconCopy from '../components/icons/IconCopy.vue'
+import LabelBadges from '../components/labels/LabelBadges.vue'
 import LoadStatus from '../components/LoadStatus.vue'
 import { deliveriesMarkdown, deliveryTitle, formatDayLong, formatTime, groupByProject, localDay, parseDay, projectMarkdown, shiftDay } from '../deliveries'
 import { readDeliveriesDetail, writeDeliveriesDetail } from '../deliveriesDetailPref'
 import { deliveriesShortcut } from '../deliveriesShortcut'
 import { useDeliveriesStore } from '../stores/deliveries'
 import { useProjectsStore } from '../stores/projects'
+import { useSessionsStore } from '../stores/sessions'
 import type { Delivery } from '../types/api'
 
 const route = useRoute()
 const router = useRouter()
 const store = useDeliveriesStore()
 const projects = useProjectsStore()
+const sessionsStore = useSessionsStore()
 
 // Only a real date, today or earlier; anything else in `?dia=` falls back to today.
 const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && localDay(parseDay(v)) === v && v <= localDay()
@@ -215,6 +218,7 @@ onBeforeUnmount(() => {
                 <span data-test="delivery-time" class="w-11 shrink-0 pt-0.5 text-xs text-fg-subtle tabular-nums">{{ formatTime(d.finished_at) }}</span>
                 <div class="min-w-0 flex-1">
                   <RouterLink v-if="d.session_id" :to="`/sessions/${d.session_id}`" class="block break-words text-sm font-medium text-fg no-underline hover:underline">{{ deliveryTitle(d) }}</RouterLink>
+                  <LabelBadges v-if="d.session_id" :ids="sessionsStore.find(d.session_id)?.label_ids" class="mt-1" />
                   <span v-else class="block break-words text-sm font-medium text-fg">{{ deliveryTitle(d) }}</span>
                   <ul v-if="d.bullets.length" class="m-0 mt-1.5 list-disc space-y-1 break-words pl-4 text-[13px] leading-5 text-fg-muted marker:text-fg-subtle">
                     <li v-for="(b, j) in visibleBullets(d)" :key="j">{{ b }}</li>
@@ -254,6 +258,7 @@ onBeforeUnmount(() => {
         <div class="scroll-thin flex min-h-0 flex-1 flex-col gap-1 px-2 pb-2 md:overflow-y-auto">
           <RouterLink v-for="s in shown.in_progress" :key="s.session_id" :to="`/sessions/${s.session_id}`" :title="s.short ?? undefined" class="flex min-w-0 flex-col gap-0.5 rounded-lg px-3 py-2 no-underline hover:bg-card">
             <span class="break-words text-sm text-fg">{{ s.title }}</span>
+            <LabelBadges :ids="sessionsStore.find(s.session_id)?.label_ids" class="self-start" />
             <span class="flex items-center gap-1.5 text-xs text-fg-subtle">
               <span class="size-2 shrink-0 rounded-[2px]" :class="colorOf(s.project_id) ? '' : 'bg-fg-subtle'" :style="colorOf(s.project_id) ? { backgroundColor: colorOf(s.project_id) } : undefined" />
               <span class="min-w-0 truncate">{{ s.project_name }}</span>
