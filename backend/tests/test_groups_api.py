@@ -234,6 +234,17 @@ def test_removing_origin_project_releases_sessions_of_other_projects(api, home: 
     assert api.get(f"/api/projects/{other['id']}/sessions").json()[0]["group_id"] is None
 
 
+def test_removing_project_without_foreign_sessions_does_not_publish_groups_changed(api, home: Path):
+    gone = make_project(api, home, "gone")
+    other = make_project(api, home, "other")
+    create_group(api, gone["id"])
+    with connect_ws(api) as ws:
+        assert api.delete(f"/api/projects/{gone['id']}").status_code == 204
+        create_group(api, other["id"], "Novo")
+        # The first groups.changed is the one from the new group, not from the removed project.
+        assert next_of_type(ws, "groups.changed")["data"] == {"project_id": other["id"]}
+
+
 def test_removing_origin_project_releases_session_not_in_memory(api, home: Path):
     origin = make_project(api, home, "origin")
     other = make_project(api, home, "other")

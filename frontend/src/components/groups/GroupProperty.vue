@@ -29,7 +29,8 @@ const members = computed(() =>
 
 const confirming = ref(false)
 const removeButton = ref<HTMLButtonElement | null>(null)
-watch(currentGroup, () => {
+// Watch the id only: a groups reload rebuilds the objects and must not close the confirmation.
+watch(() => currentGroup.value?.id, () => {
   confirming.value = false
 })
 async function cancelRemove() {

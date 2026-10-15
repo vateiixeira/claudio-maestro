@@ -56,7 +56,7 @@ const groupFilter = computed(() => {
   return projectGroups.value.some((g) => String(g.id) === v) ? v : ''
 })
 
-// Changing the project also drops the group filter, since its ids belong to the old project.
+// Changing the project also drops the group filter, since the visible groups change with the project.
 function setProject(value: string) {
   navigation = navigation
     .then(() => router.replace({ query: { ...route.query, projeto: value || undefined, agrupador: undefined } }))

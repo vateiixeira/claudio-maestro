@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import GroupProperty from '../GroupProperty.vue'
@@ -81,6 +82,34 @@ describe('propriedade Agrupador', () => {
     await flushPromises()
     expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/groups/2' && init?.method === 'DELETE')).toBe(true)
     expect(useGroupsStore(pinia).byId(2)).toBeUndefined()
+  })
+
+  it('recarregar a lista de agrupadores não fecha a confirmação de remoção', async () => {
+    const { wrapper } = mountProperty({}, 2)
+    await wrapper.find('[data-test="prop-group-remove"]').trigger('click')
+    expect(wrapper.find('[data-test="group-confirm-remove"]').exists()).toBe(true)
+
+    // A groups.changed reload builds new objects with the same ids.
+    useGroupsStore(pinia).groups = [
+      makeGroup({ id: 1, name: 'A', project_id: 1, created_at: 200 }),
+      makeGroup({ id: 2, name: 'B2', project_id: 1, created_at: 100 }),
+      makeGroup({ id: 3, name: 'X', project_id: 2 }),
+    ]
+    await nextTick()
+    await flushPromises()
+    expect(wrapper.find('[data-test="group-confirm-remove"]').exists()).toBe(true)
+  })
+
+  it('trocar a sessão para outro agrupador fecha a confirmação de remoção', async () => {
+    const { wrapper } = mountProperty({}, 2)
+    await wrapper.find('[data-test="prop-group-remove"]').trigger('click')
+    expect(wrapper.find('[data-test="group-confirm-remove"]').exists()).toBe(true)
+
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', group_id: 1 })])
+    await nextTick()
+    await flushPromises()
+    expect(wrapper.find('[data-test="group-confirm-remove"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="prop-group-remove"]').exists()).toBe(true)
   })
 
   it('move a sessão e tira do agrupador', async () => {
