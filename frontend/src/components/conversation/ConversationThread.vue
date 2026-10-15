@@ -12,6 +12,7 @@ import RailNode from './RailNode.vue'
 import { railAlign } from '../../conversation/railAlign'
 import SubagentStrip from './SubagentStrip.vue'
 import UserMessage from './UserMessage.vue'
+import { findLastMessage, MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { buildItemTree, deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
 import { buildTurns, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
 import { groupNodeKind, workStatus } from '../../conversation/work'
@@ -24,8 +25,8 @@ import { useProjectsStore } from '../../stores/projects'
 import type { ToolItem } from '../../types/conversation'
 import { isBareShortcut } from '../../keyboardShortcutGuard'
 
-const props = withDefaults(defineProps<{ id: string; visible?: boolean }>(), { visible: true })
-const emit = defineEmits<{ missing: [] }>()
+const props = withDefaults(defineProps<{ id: string; visible?: boolean; find?: string }>(), { visible: true })
+const emit = defineEmits<{ missing: []; 'find-done': [] }>()
 
 const conversations = useConversationStore()
 const changesPanel = useChangesPanelStore()
@@ -62,6 +63,8 @@ async function reload() {
     if (unmounted || id !== props.id || !loaded) return
     loadError.value = null
     markSeenSoon()
+    historyLoaded.value = true
+    if (pendingFind.value !== null) void applyFind()
   } catch (e) {
     if (unmounted || id !== props.id) return
     if (e instanceof ApiError && e.status === 404) {
@@ -246,6 +249,42 @@ async function goToSubagent(id: string) {
   }
   focusTimer = setTimeout(() => { subagentFocus.value = null }, HIGHLIGHT_MS)
 }
+// A search result opens the conversation with the term: once the history is in, the last message of
+// the main conversation that has it is scrolled to the middle and marked for a moment.
+const messageFocus = ref<string | null>(null)
+provide(MESSAGE_FOCUS_KEY, messageFocus)
+const pendingFind = ref<string | null>(null)
+const findMissed = ref(false)
+const historyLoaded = ref(false)
+let findTimer: ReturnType<typeof setTimeout> | null = null
+onBeforeUnmount(() => { if (findTimer) clearTimeout(findTimer) })
+watch(() => props.find, (term) => {
+  if (!term) return
+  pendingFind.value = term
+  if (historyLoaded.value) void applyFind()
+}, { immediate: true })
+async function applyFind() {
+  const term = pendingFind.value
+  if (term === null) return
+  pendingFind.value = null
+  findMissed.value = false
+  const id = findLastMessage(conv.value?.items ?? [], term)
+  emit('find-done')
+  if (id === null) { findMissed.value = true; return }
+  await nextTick()
+  if (unmounted) return
+  const target = Array.from(scroller.value?.querySelectorAll<HTMLElement>('[data-item-id]') ?? []).find((el) => el.dataset.itemId === id)
+  if (!target) { findMissed.value = true; return }
+  // The thread stays where the message is: the follow-the-end rules must not pull it back.
+  atBottom.value = false
+  unseen.value = null
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  target.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+  target.focus({ preventScroll: true })
+  messageFocus.value = id
+  if (findTimer) clearTimeout(findTimer)
+  findTimer = setTimeout(() => { messageFocus.value = null }, HIGHLIGHT_MS)
+}
 // Open/closed chosen by the user per work block (by id); unset follows `blockOpen`.
 const groupChoice = reactive(new Map<string, boolean>())
 // By default a block is open while its turn runs, when one of its actions failed (the row opens by itself)
@@ -398,7 +437,8 @@ watch(
     // The first load (before is undefined) is not news: the history goes to the end at once.
     const arrived = itemsBefore !== undefined && promptsBefore !== undefined
       && ((items ?? 0) > itemsBefore || (prompts ?? 0) > promptsBefore)
-    if (el) scrollToEnd(el, arrived)
+    // A search result may have taken the thread elsewhere while this waited for the DOM.
+    if (el && atBottom.value) scrollToEnd(el, arrived)
   },
 )
 
@@ -464,6 +504,11 @@ function resolvePrompt(promptId: string) {
             data-test="history-truncated"
             class="m-0 rounded-md border border-line bg-card px-3 py-1.5 text-center text-xs text-fg-muted"
           >Mostrando as mensagens mais recentes.</p>
+          <p
+            v-if="findMissed"
+            data-test="find-missed"
+            class="m-0 rounded-md border border-line bg-card px-3 py-1.5 text-center text-xs text-fg-muted"
+          >A mensagem buscada não está no trecho carregado da conversa.</p>
           <p v-if="rows.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>

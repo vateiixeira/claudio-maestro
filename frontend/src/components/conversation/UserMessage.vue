@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, inject, ref } from 'vue'
+import { MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { localImagesFor } from '../../conversation/localImages'
 import type { Attachment, UserItem } from '../../types/conversation'
 
 const props = defineProps<{ item: UserItem }>()
 // Thumbnails exist only for images sent from this tab; the history keeps type and size.
 const previews = computed(() => localImagesFor(props.item.id))
+// The search took the user here: the message is marked for a moment.
+const focus = inject(MESSAGE_FOCUS_KEY, ref<string | null>(null))
+const highlighted = computed(() => focus.value === props.item.id)
 
 function subtype(mediaType: string | null): string {
   return (mediaType ?? '').split('/')[1]?.split('+')[0] ?? ''
@@ -31,7 +35,11 @@ function label(attachment: Attachment): string {
   <div data-test="user-message-row" class="flex w-full justify-end pl-10">
     <div
       data-test="user-message-card"
-      class="flex max-w-[72ch] min-w-0 flex-col items-end gap-2 rounded-2xl rounded-br-md border border-primary/25 bg-primary-tint px-3.5 py-2.5"
+      :data-item-id="item.id"
+      tabindex="-1"
+      :data-highlighted="highlighted ? 'true' : undefined"
+      class="flex max-w-[72ch] min-w-0 flex-col items-end gap-2 rounded-2xl rounded-br-md border border-primary/25 bg-primary-tint px-3.5 py-2.5 outline-none"
+      :class="highlighted ? 'ring-2 ring-primary' : ''"
     >
       <span class="sr-only">Você:</span>
       <div

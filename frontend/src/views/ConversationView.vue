@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AwaySummary from '../components/conversation/AwaySummary.vue'
 import ConversationHeader from '../components/conversation/ConversationHeader.vue'
 import ConversationThread from '../components/conversation/ConversationThread.vue'
@@ -16,6 +16,18 @@ import { useSessionsStore } from '../stores/sessions'
 // `embedded`: shown beside the project list. `projectId` is the project that list belongs to: "Fechar"
 // goes back to it, even if `?sessao=` points at a conversation of another project or one that is gone.
 const props = defineProps<{ id: string; embedded?: boolean; projectId?: number }>()
+
+const route = useRoute()
+const router = useRouter()
+// A search result opens the conversation with `?find=<term>`; the thread shows that message and the
+// term leaves the address so that reloading or going back does not scroll again. Not in the column
+// beside the project list, which the search never opens.
+const findTerm = computed(() => (!props.embedded && typeof route.query.find === 'string' ? route.query.find : undefined))
+function clearFind() {
+  if (route.query.find === undefined) return
+  const { find: _gone, ...rest } = route.query
+  void router.replace({ query: rest })
+}
 
 const sessions = useSessionsStore()
 const conversations = useConversationStore()
@@ -201,7 +213,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
             />
           </div>
         </div>
-        <ConversationThread :key="id" :id="id" @missing="missing = true" />
+        <ConversationThread :key="id" :id="id" :find="findTerm" @missing="missing = true" @find-done="clearFind" />
       </template>
     </div>
     <DetailsPanel v-if="!missing && sidePanel && sideOpen" :session-id="id" />

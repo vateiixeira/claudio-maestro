@@ -3,6 +3,7 @@ import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { onCodeCopyClick } from '../../conversation/codeCopy'
 import { renderMarkdown } from '../../conversation/markdown'
 import { useSmoothText } from '../../conversation/useSmoothText'
+import { MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { SESSION_ID_KEY } from '../../stores/changesPanel'
 import type { TextItem } from '../../types/conversation'
 
@@ -17,6 +18,9 @@ const emit = defineEmits<{ reveal: [] }>()
 const shown = useSmoothText(() => props.item.text, () => props.item.streaming)
 // Paths to .md files in the text link to the reader page of this conversation (none outside a column).
 const sessionId = inject(SESSION_ID_KEY, null)
+// The search took the user here: the block is marked for a moment.
+const messageFocus = inject(MESSAGE_FOCUS_KEY, ref<string | null>(null))
+const highlighted = computed(() => messageFocus.value === props.item.id)
 const html = computed(() => renderMarkdown(shown.value, { sessionId: sessionId?.value }))
 // After the DOM has the new text; nothing is said at mount, history appears whole.
 watch(shown, () => emit('reveal'), { flush: 'post' })
@@ -38,7 +42,13 @@ onBeforeUnmount(() => clearTimeout(timer))
 </script>
 
 <template>
-  <div class="group/text">
+  <div
+    :data-item-id="item.id"
+    tabindex="-1"
+    :data-highlighted="highlighted ? 'true' : undefined"
+    class="group/text rounded-lg outline-none"
+    :class="highlighted ? 'ring-2 ring-primary' : ''"
+  >
     <div class="markdown max-w-[72ch] text-[0.9375rem] leading-[1.65]">
       <div @click="onCodeCopyClick" v-html="html" />
       <span

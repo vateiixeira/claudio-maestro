@@ -388,6 +388,24 @@ describe('página da conversa', () => {
     })
   })
 
+  it('abre na mensagem achada pela busca e tira o ?find= do endereço', async () => {
+    Element.prototype.scrollIntoView = vi.fn()
+    const { wrapper, router } = await mountAt('/sessions/s1?find=jornada', {
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({
+        title: 'Corrigir login',
+        items: [
+          { type: 'user', id: 'u1', text: 'oi' },
+          { type: 'text', id: 'a1', text: 'A jornada do funil', streaming: false, parent_tool_use_id: null },
+        ] as never,
+      })),
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-item-id="a1"]').attributes('data-highlighted')).toBe('true')
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(router.currentRoute.value.params.id).toBe('s1')
+  })
+
   it('ao trocar de conversa, a renomeação em curso de uma não vaza para a outra', async () => {
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting' }),
