@@ -2615,7 +2615,7 @@ class SessionManager:
             )
             # Same transaction: the group cannot vanish between the check and the insert.
             if group_id is not None:
-                groups.check_group_for(conn, group_id, project.id)
+                groups.get_group(conn, group_id)
             conn.execute(
                 f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -3241,7 +3241,7 @@ class SessionManager:
     ) -> dict[str, Any]:
         """Finish, reopen, rename or change options (model, effort, permission mode).
 
-        `group_id` moves the session to a group of its project; `None` takes it out,
+        `group_id` moves the session to a group (of any project); `None` takes it out,
         `...` keeps it. `bypassPermissions` needs `confirm_bypass`. Emits `session.updated` when
         something changed, and `session.options` when an option changed. `mark`,
         `mark_note` and `mark_until` follow `resolve_mark`; finishing drops them and the
@@ -3250,7 +3250,7 @@ class SessionManager:
         session = self.get(session_id)
         if group_id is not ... and group_id is not None:
             with closing(db.connect(self._db_path)) as conn:
-                groups.check_group_for(conn, group_id, session.record.project_id)
+                groups.get_group(conn, group_id)
         if effort is not None and effort not in EFFORTS:
             raise InvalidDecisionError("Nível de raciocínio inválido.")
         if model is not None and not MODEL_PATTERN.match(model):

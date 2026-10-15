@@ -90,10 +90,8 @@ def test_delete_returns_released_sessions(conn):
         groups.delete_group(conn, g.id)
 
 
-def test_check_group_for(conn):
+def test_get_group(conn):
     g = groups.create_group(conn, 1, "a")
-    assert groups.check_group_for(conn, g.id, 1) == g
-    with pytest.raises(groups.GroupProjectMismatchError, match="outro projeto"):
-        groups.check_group_for(conn, g.id, 2)
+    assert groups.get_group(conn, g.id) == g
     with pytest.raises(groups.GroupNotFoundError):
-        groups.check_group_for(conn, 999, 1)
+        groups.get_group(conn, 999)

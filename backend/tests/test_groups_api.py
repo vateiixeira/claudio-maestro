@@ -138,17 +138,15 @@ def test_move_change_and_release_session(api, home: Path):
     assert api.patch(url, json={"group_id": None}).json()["group_id"] is None
 
 
-def test_move_to_group_of_another_project_or_missing(api, home: Path):
+def test_move_to_group_of_another_project_and_missing(api, home: Path):
     one = make_project(api, home, "one")
     two = make_project(api, home, "two")
-    foreign = create_group(api, two["id"], "X")
+    shared = create_group(api, two["id"], "X")
     session = new_session(api, one["id"])
     url = f"/api/sessions/{session['session_id']}"
-    response = api.patch(url, json={"group_id": foreign["id"]})
-    assert response.status_code == 422
-    assert response.json()["detail"] == "O agrupador é de outro projeto."
+    assert api.patch(url, json={"group_id": shared["id"]}).json()["group_id"] == shared["id"]
     assert api.patch(url, json={"group_id": 999}).status_code == 404
-    assert api.get(f"/api/projects/{one['id']}/sessions").json()[0]["group_id"] is None
+    assert api.get(f"/api/projects/{one['id']}/sessions").json()[0]["group_id"] == shared["id"]
 
 
 def test_create_session_inside_group(api, home: Path):
@@ -159,8 +157,11 @@ def test_create_session_inside_group(api, home: Path):
     # Without a body (what the frontend sent before) it still works.
     assert new_session(api, project["id"])["group_id"] is None
     other = make_project(api, home, "other")
-    response = api.post(f"/api/projects/{other['id']}/sessions", json={"group_id": group["id"]})
-    assert response.status_code == 422
+    shared = new_session(api, other["id"], {"group_id": group["id"]})
+    assert shared["group_id"] == group["id"]
+    assert shared["project_id"] == other["id"]
+    response = api.post(f"/api/projects/{other['id']}/sessions", json={"group_id": 999})
+    assert response.status_code == 404
 
 
 def test_events(api, home: Path):

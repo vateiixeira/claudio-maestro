@@ -260,7 +260,7 @@ async def test_session_belongs_to_most_specific_project(env):
 
 
 @pytest.mark.anyio
-async def test_session_moving_to_new_nested_project_leaves_its_group(env):
+async def test_session_moving_to_new_nested_project_keeps_its_group(env):
     db_path, fake, index, changed, home = env
     outer = home / "outer"
     outer_id = add_project(db_path, outer, "outer")
@@ -283,7 +283,7 @@ async def test_session_moving_to_new_nested_project_leaves_its_group(env):
 
     row = rows(db_path)["s1"]
     assert row["project_id"] == inner_id
-    assert row["group_id"] is None
+    assert row["group_id"] == group.id
 
 
 # Raw transcript reading ----------------------------------------------------

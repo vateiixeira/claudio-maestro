@@ -35,10 +35,6 @@ class DuplicateGroupNameError(GroupError):
     pass
 
 
-class GroupProjectMismatchError(GroupError):
-    pass
-
-
 _COLUMNS = "id, project_id, name, created_at"
 
 
@@ -81,14 +77,6 @@ def get_group(conn: sqlite3.Connection, group_id: int) -> Group:
     if row is None:
         raise GroupNotFoundError("Agrupador não encontrado.")
     return _from_row(row)
-
-
-def check_group_for(conn: sqlite3.Connection, group_id: int, project_id: int) -> Group:
-    """The group, if it belongs to the project."""
-    group = get_group(conn, group_id)
-    if group.project_id != project_id:
-        raise GroupProjectMismatchError("O agrupador é de outro projeto.")
-    return group
 
 
 def _check_unique(

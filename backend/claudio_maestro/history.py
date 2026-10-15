@@ -1158,7 +1158,7 @@ class HistoryIndex:
         branch = getattr(info, "git_branch", None)
         decided, found = worktree
         row = conn.execute(
-            "SELECT project_id, group_id, title, title_custom, summary, first_prompt,"
+            "SELECT project_id, title, title_custom, summary, first_prompt,"
             " last_activity_at, file_modified_at, history_dir, git_branch, worktree_name,"
             " worktree_path FROM sessions WHERE session_id = ?",
             (info.session_id,),
@@ -1182,9 +1182,6 @@ class HistoryIndex:
             "last_activity_at": max(row["last_activity_at"], modified),
             "history_dir": history_dir,
         }
-        if row["project_id"] != project_id:
-            # A group belongs to one project: moving to another one leaves it.
-            changes["group_id"] = None
         if branch:
             changes["git_branch"] = branch
         if decided:
