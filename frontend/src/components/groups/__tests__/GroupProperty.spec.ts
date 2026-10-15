@@ -3,8 +3,9 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import GroupProperty from '../GroupProperty.vue'
 import { useGroupsStore } from '../../../stores/groups'
+import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
-import { jsonResponse, makeGroup, makeSession, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeGroup, makeProject, makeSession, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -18,6 +19,7 @@ beforeEach(() => {
     makeGroup({ id: 2, name: 'B', project_id: 1, created_at: 100 }),
     makeGroup({ id: 3, name: 'X', project_id: 2 }),
   ]
+  useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja' }), makeProject({ id: 2, name: 'api' })]
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -38,10 +40,10 @@ const bodies = (fetchMock: ReturnType<typeof routeFetch>, key: string) =>
     .map(([, init]) => JSON.parse(String(init?.body)))
 
 describe('propriedade Agrupador', () => {
-  it('lista Nenhum, os agrupadores do projeto e Novo agrupador', () => {
+  it('lista Nenhum, os agrupadores do projeto, os dos outros projetos e Novo agrupador', () => {
     const { wrapper } = mountProperty()
     const labels = wrapper.findAll('[data-test="prop-group"] option').map((o) => o.text())
-    expect(labels).toEqual(['Nenhum', 'A', 'B', 'Novo agrupador…'])
+    expect(labels).toEqual(['Nenhum', 'A', 'B', 'X · api', 'Novo agrupador…'])
   })
 
   it('seleciona o agrupador da sessão e ignora um desconhecido', () => {
@@ -52,11 +54,33 @@ describe('propriedade Agrupador', () => {
     expect((unknown.wrapper.find('[data-test="prop-group"]').element as HTMLSelectElement).value).toBe('')
   })
 
-  it('agrupador de outro projeto cai em Nenhum, sem deixar o select em branco', () => {
+  it('seleciona o agrupador de outro projeto', () => {
     const { wrapper } = mountProperty({}, 3)
     const select = wrapper.find('[data-test="prop-group"]').element as HTMLSelectElement
-    expect(select.value).toBe('')
-    expect(select.selectedOptions[0]?.text).toBe('Nenhum')
+    expect(select.value).toBe('3')
+    expect(select.selectedOptions[0]?.text).toBe('X · api')
+  })
+
+  it('sem agrupador na sessão não oferece Remover', () => {
+    const { wrapper } = mountProperty({}, null)
+    expect(wrapper.find('[data-test="prop-group-remove"]').exists()).toBe(false)
+  })
+
+  it('Remover agrupador pede confirmação, devolve o foco ao cancelar e remove ao confirmar', async () => {
+    const { wrapper, fetchMock } = mountProperty({ 'DELETE /api/groups/2': () => new Response(null, { status: 204 }) }, 2)
+    await wrapper.find('[data-test="prop-group-remove"]').trigger('click')
+    expect(wrapper.find('[data-test="group-confirm-remove"]').text()).toContain('Remover o agrupador B?')
+
+    await wrapper.find('[data-test="group-confirm-cancel"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="group-confirm-remove"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.find('[data-test="prop-group-remove"]').element)
+
+    await wrapper.find('[data-test="prop-group-remove"]').trigger('click')
+    await wrapper.find('[data-test="group-confirm-ok"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/groups/2' && init?.method === 'DELETE')).toBe(true)
+    expect(useGroupsStore(pinia).byId(2)).toBeUndefined()
   })
 
   it('move a sessão e tira do agrupador', async () => {

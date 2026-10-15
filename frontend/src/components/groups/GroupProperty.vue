@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { errorMessage } from '../../api/http'
-import { sortGroups } from '../../groupList'
+import { isDiscarded } from '../../conversation/marks'
+import { groupOptionLabel, selectorGroups, sessionsOf } from '../../groupList'
 import { useGroupsStore } from '../../stores/groups'
+import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import GroupRemoveConfirm from './GroupRemoveConfirm.vue'
 
 const props = defineProps<{ sessionId: string; projectId: number }>()
 
@@ -11,12 +14,29 @@ const NEW = '__new__'
 const groups = useGroupsStore()
 const sessions = useSessionsStore()
 
-const options = computed(() => sortGroups(groups.forProject(props.projectId), sessions.forProject(props.projectId)))
+const projects = useProjectsStore()
+
+// Every group is an option: a conversation may sit in a group created in another project.
+const options = computed(() => selectorGroups(groups.groups, sessions.all, props.projectId))
 const current = computed(() => {
   const id = sessions.find(props.sessionId)?.group_id
-  // Only a group of this project is an option; any other one reads as "Nenhum".
   return id != null && options.value.some((g) => g.id === id) ? String(id) : ''
 })
+const currentGroup = computed(() => options.value.find((g) => String(g.id) === current.value))
+const members = computed(() =>
+  currentGroup.value ? sessionsOf(currentGroup.value.id, sessions.all.filter((s) => !isDiscarded(s))) : [],
+)
+
+const confirming = ref(false)
+const removeButton = ref<HTMLButtonElement | null>(null)
+watch(currentGroup, () => {
+  confirming.value = false
+})
+async function cancelRemove() {
+  confirming.value = false
+  await nextTick()
+  removeButton.value?.focus()
+}
 
 const busy = ref(false)
 const error = ref<string | null>(null)
@@ -80,9 +100,11 @@ async function createAndMove() {
       @change="onChange"
     >
       <option value="">Nenhum</option>
-      <option v-for="g in options" :key="g.id" :value="String(g.id)">{{ g.name }}</option>
+      <option v-for="g in options" :key="g.id" :value="String(g.id)">{{ groupOptionLabel(g, projectId, projects.projects) }}</option>
       <option :value="NEW">Novo agrupador…</option>
     </select>
+    <button v-if="currentGroup && !confirming" ref="removeButton" type="button" data-test="prop-group-remove" class="self-start text-xs text-fg-muted underline hover:text-fg" @click="confirming = true">Remover agrupador</button>
+    <GroupRemoveConfirm v-if="currentGroup && confirming" :group="currentGroup" :sessions="members" @cancel="cancelRemove" @removed="confirming = false" @error="error = $event" />
     <input
       v-if="creating"
       ref="nameInput"
