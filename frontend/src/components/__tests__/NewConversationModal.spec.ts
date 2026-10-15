@@ -492,13 +492,14 @@ describe('modal de nova conversa: agrupador', () => {
     seedGroups()
     const { wrapper } = await openModal(1, {}, 2)
     expect(groupValue(wrapper)).toBe('2')
-    expect(wrapper.find('[data-test="nc-group"]').findAll('option').map((o) => o.text())).toEqual(['Nenhum', 'Checkout'])
+    expect(wrapper.find('[data-test="nc-group"]').findAll('option').map((o) => o.text())).toEqual(['Nenhum', 'Checkout', 'Outro · b'])
   })
 
-  it('ignora o agrupador pedido de outro projeto', async () => {
+  it('aceita o agrupador pedido de outro projeto', async () => {
     seedGroups()
     const { wrapper } = await openModal(1, {}, 5)
-    expect(groupText(wrapper)).toBe('Nenhum')
+    expect(groupValue(wrapper)).toBe('5')
+    expect(groupText(wrapper)).toBe('Outro · b')
   })
 
   it('não mostra o seletor quando o projeto não tem agrupadores', async () => {

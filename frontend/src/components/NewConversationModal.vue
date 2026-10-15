@@ -12,7 +12,7 @@ import { useDictation } from '../conversation/dictation'
 import { useComposerSuggestions } from '../conversation/useComposerSuggestions'
 import { rememberSentImages } from '../conversation/localImages'
 import { setPendingDraft } from '../conversation/pendingDrafts'
-import { sortGroups } from '../groupList'
+import { groupOptionLabel, selectorGroups } from '../groupList'
 import { clearDraft, loadDraft, loadLastProject, saveDraft, saveLastProject, type ConversationDraft } from '../newConversationDraft'
 import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, ALL_MODES } from '../sessionOptions'
 import { useGroupsStore } from '../stores/groups'
@@ -74,12 +74,13 @@ function pickProject() {
   const wanted = [store.presetProjectId, draft.value.projectId, lastProject].find((id) => id != null && ids.includes(id))
   draft.value.projectId = wanted ?? ids[0] ?? null
 }
-// The groups of the chosen project, most recently active first.
+// Every group is an option, the ones visible in the chosen project first: a conversation may start in a group
+// created in another project.
 const projectGroups = computed(() =>
-  draft.value.projectId == null ? [] : sortGroups(groups.forProject(draft.value.projectId), sessions.forProject(draft.value.projectId)),
+  draft.value.projectId == null ? [] : selectorGroups(groups.groups, sessions.all, draft.value.projectId),
 )
-// The group: the one asked for (`null` = none, whatever the draft says), else the draft's, when it belongs to
-// the chosen project. While the groups are still loading nothing is known, so the choice is kept as it is and
+// The group: the one asked for (`null` = none, whatever the draft says), else the draft's, when it exists.
+// While the groups are still loading nothing is known, so the choice is kept as it is and
 // picked again once they arrive.
 function pickGroup() {
   const wanted = store.presetGroupId === undefined ? draft.value.groupId : store.presetGroupId
@@ -433,7 +434,7 @@ function onKeydown(event: KeyboardEvent) {
             agrupador
             <select v-model="draft.groupId" data-test="nc-group" aria-label="Agrupador" :disabled="createdId !== null" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg">
               <option :value="null">Nenhum</option>
-              <option v-for="g in projectGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
+              <option v-for="g in projectGroups" :key="g.id" :value="g.id">{{ groupOptionLabel(g, draft.projectId!, projects.projects) }}</option>
             </select>
           </label>
           <input v-model="draft.title" data-test="nc-title" placeholder="Título (opcional)" aria-label="Título (opcional)" maxlength="200" class="h-10 rounded-md border border-line-strong bg-elevated px-3 text-base font-semibold text-fg outline-none focus:border-fg-muted" />

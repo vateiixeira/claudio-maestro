@@ -158,6 +158,17 @@ describe('Conversas', () => {
       expect(options).toEqual(['Todos os agrupadores', 'Sem agrupador', 'A', 'B'])
     })
 
+    it('o filtro inclui o agrupador de outro projeto que tem conversa do projeto escolhido', async () => {
+      useGroupsStore(pinia).groups = [makeGroup({ id: 1, project_id: 1, name: 'A' }), makeGroup({ id: 9, project_id: 2, name: 'Compartilhado' })]
+      useSessionsStore(pinia).setForProject(1, [
+        makeSession({ session_id: 'a', title: 'Em A', group_id: 1, last_activity_at: now }),
+        makeSession({ session_id: 'x', title: 'No compartilhado', group_id: 9, last_activity_at: now - 1 }),
+      ])
+      const { wrapper } = await mountList('/sessions?projeto=1&agrupador=9')
+      expect(wrapper.findAll('[data-test="conversations-group"] option').map((o) => o.text())).toEqual(['Todos os agrupadores', 'Sem agrupador', 'A', 'Compartilhado'])
+      expect(titles(wrapper)).toEqual(['No compartilhado'])
+    })
+
     it('não mostra o filtro quando o projeto não tem agrupadores', async () => {
       seedGroups()
       const { wrapper } = await mountList('/sessions?projeto=2')

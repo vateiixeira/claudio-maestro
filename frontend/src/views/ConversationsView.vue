@@ -47,10 +47,9 @@ function setQuery(key: string, value: string) {
 
 const projectGroups = computed(() => {
   if (!projectId.value) return []
-  const id = Number(projectId.value)
-  return sortGroups(groupStore.forProject(id), sessions.forProject(id))
+  return sortGroups(groupStore.visibleIn(Number(projectId.value), sessions.all), sessions.all)
 })
-// '' = all, 'sem' = loose ones, else a group of the chosen project (any other id counts as '').
+// '' = all, 'sem' = loose ones, else a group shown in the chosen project (any other id counts as '').
 const groupFilter = computed(() => {
   const v = text(route.query.agrupador)
   if (v === 'sem') return v
