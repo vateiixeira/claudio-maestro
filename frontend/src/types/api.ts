@@ -67,6 +67,18 @@ export type SessionState =
 /** What the user plans to do with a session. */
 export type SessionMark = 'on_hold' | 'blocked' | 'review' | 'discarded'
 
+/** One piece of a search snippet; `hit` marks the text that matched. */
+export interface SearchMatchPart {
+  text: string
+  hit: boolean
+}
+
+/** Where the term was found inside the conversation: the snippet and when the message was written. */
+export interface SearchMatch {
+  parts: SearchMatchPart[]
+  at: number | null
+}
+
 export interface Session {
   session_id: string
   project_id: number
@@ -131,6 +143,9 @@ export interface Session {
   /** Ids of the labels applied (`GET /api/labels`), ordered by id. */
   label_ids?: number[]
 }
+
+/** A session found by the search; `match` is present when the term is in the text of its messages. */
+export type SearchResult = Session & { match?: SearchMatch | null }
 
 /** Group of related sessions inside a project (`GET /api/groups`). Only the app knows it. */
 export interface SessionGroup {

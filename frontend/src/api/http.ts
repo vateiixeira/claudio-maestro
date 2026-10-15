@@ -27,6 +27,7 @@ import type {
   MarkdownFile,
   PlanState,
   RepoLog,
+  SearchResult,
   Project,
   ProjectCreate,
   ProjectGitDetails,
@@ -210,8 +211,8 @@ export function listAllSessions(filter: { projectId?: number; state?: DisplaySta
   return request('GET', `/api/sessions${query ? '?' + query : ''}`)
 }
 
-/** Sessions of every project whose title, summary or first prompt match, newest first. */
-export function searchSessions(q: string, limit = 50): Promise<Session[]> {
+/** Sessions of every project whose title, summary, first prompt or messages match, metadata first, newest first. */
+export function searchSessions(q: string, limit = 50): Promise<SearchResult[]> {
   return request('GET', `/api/sessions/search?${new URLSearchParams({ q, limit: String(limit) })}`)
 }
 
