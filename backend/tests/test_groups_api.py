@@ -217,3 +217,31 @@ def test_removing_project_removes_groups(api, home: Path):
     create_group(api, project["id"])
     assert api.delete(f"/api/projects/{project['id']}").status_code == 204
     assert api.get("/api/groups").json() == []
+
+
+def test_removing_origin_project_releases_sessions_of_other_projects(api, home: Path):
+    origin = make_project(api, home, "origin")
+    other = make_project(api, home, "other")
+    group = create_group(api, origin["id"])
+    session = new_session(api, other["id"], {"group_id": group["id"]})
+    with connect_ws(api) as ws:
+        assert api.delete(f"/api/projects/{origin['id']}").status_code == 204
+        released = next_of_type(ws, "session.updated")
+        assert released["session_id"] == session["session_id"]
+        assert released["data"]["group_id"] is None
+        assert next_of_type(ws, "groups.changed")["data"] == {"project_id": origin["id"]}
+    assert api.get("/api/groups").json() == []
+    assert api.get(f"/api/projects/{other['id']}/sessions").json()[0]["group_id"] is None
+
+
+def test_removing_origin_project_releases_session_not_in_memory(api, home: Path):
+    origin = make_project(api, home, "origin")
+    other = make_project(api, home, "other")
+    group = create_group(api, origin["id"])
+    session = new_session(api, other["id"], {"group_id": group["id"]})
+    api.app.state.sessions._sessions.pop(session["session_id"], None)
+    with connect_ws(api) as ws:
+        api.delete(f"/api/projects/{origin['id']}")
+        released = next_of_type(ws, "session.updated")
+        assert released["session_id"] == session["session_id"]
+        assert released["data"]["group_id"] is None

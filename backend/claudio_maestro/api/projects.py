@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from claudio_maestro import projects
+from claudio_maestro import groups, projects
 from claudio_maestro.api.deps import DbDep, SettingsDep
 
 logger = logging.getLogger(__name__)
@@ -128,12 +128,20 @@ def update_project(project_id: int, body: ProjectUpdate, conn: DbDep) -> project
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(project_id: int, conn: DbDep, request: Request) -> Response:
     """Close the project's active sessions (pending prompts cancelled), then delete it."""
+    manager = request.app.state.sessions
     try:
         projects.get_project(conn, project_id)
-        await request.app.state.sessions.close_project(project_id)
+        await manager.close_project(project_id)
+        # Their groups die with the project: remember who sat in them from other projects.
+        released = groups.foreign_members(conn, project_id)
         projects.delete_project(conn, project_id)
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
     # The cascade took the project's sessions, and their labels, out of the database.
-    request.app.state.sessions.reconcile_label_ids()
+    manager.reconcile_label_ids()
+    if released:
+        manager.announce_group_released(released)
+        request.app.state.hub.publish(
+            {"session_id": None, "seq": 0, "type": "groups.changed", "data": {"project_id": project_id}}
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

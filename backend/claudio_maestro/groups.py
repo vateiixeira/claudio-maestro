@@ -124,3 +124,13 @@ def delete_group(conn: sqlite3.Connection, group_id: int) -> tuple[Group, list[s
         ]
         conn.execute("DELETE FROM session_groups WHERE id = ?", (group_id,))
     return group, released
+
+
+def foreign_members(conn: sqlite3.Connection, project_id: int) -> list[str]:
+    """Sessions of other projects that sit in groups created in `project_id`."""
+    rows = conn.execute(
+        "SELECT s.session_id FROM sessions s JOIN session_groups g ON g.id = s.group_id"
+        " WHERE g.project_id = ? AND s.project_id != ?",
+        (project_id, project_id),
+    ).fetchall()
+    return [row["session_id"] for row in rows]

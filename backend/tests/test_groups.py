@@ -95,3 +95,12 @@ def test_get_group(conn):
     assert groups.get_group(conn, g.id) == g
     with pytest.raises(groups.GroupNotFoundError):
         groups.get_group(conn, 999)
+
+
+def test_foreign_members_lists_sessions_of_other_projects(conn):
+    g = groups.create_group(conn, 1, "A")
+    add_session(conn, "own", project_id=1, group_id=g.id)
+    add_session(conn, "foreign", project_id=2, group_id=g.id)
+    add_session(conn, "loose", project_id=2)
+    assert groups.foreign_members(conn, 1) == ["foreign"]
+    assert groups.foreign_members(conn, 2) == []

@@ -2851,8 +2851,15 @@ class SessionManager:
         """Delete a group; its sessions become loose, and each gets a `session.updated`."""
         with closing(db.connect(self._db_path)) as conn:
             group, released = groups.delete_group(conn, group_id)
+        self.announce_group_released(released)
+        return group
+
+    def announce_group_released(self, session_ids: list[str]) -> None:
+        """Announce sessions whose group is gone (the database already dropped it).
+
+        Loaded sessions drop it in memory; the others are read back and announced as closed."""
         outside = []
-        for session_id in released:
+        for session_id in session_ids:
             session = self._sessions.get(session_id)
             if session is None:
                 outside.append(session_id)
@@ -2867,7 +2874,6 @@ class SessionManager:
                 ).fetchall()
             for row in rows:
                 self._publish_closed_update(_record(row))
-        return group
 
     async def set_labels(self, session_id: str, label_ids: list[int]) -> dict[str, Any]:
         """Make `label_ids` the labels of the session and announce it."""
