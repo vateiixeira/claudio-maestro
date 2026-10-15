@@ -63,9 +63,10 @@ const projectSessions = computed(() =>
 )
 
 const groups = useGroupsStore()
-const hasGroups = computed(() => groups.forProject(props.id).length > 0)
-// A group this project does not know (not loaded, removed, or from another project) counts as none.
-const knownGroupIds = computed(() => new Set(groups.forProject(props.id).map((g) => g.id)))
+const visibleGroupsHere = computed(() => groups.visibleIn(props.id, sessions.all))
+const hasGroups = computed(() => visibleGroupsHere.value.length > 0)
+// A group this project does not show (not loaded, or removed) counts as none.
+const knownGroupIds = computed(() => new Set(visibleGroupsHere.value.map((g) => g.id)))
 const ungrouped = computed(() =>
   projectSessions.value.filter((s) => s.group_id == null || !knownGroupIds.value.has(s.group_id)),
 )

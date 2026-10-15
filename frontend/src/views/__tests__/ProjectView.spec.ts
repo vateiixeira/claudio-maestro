@@ -296,7 +296,7 @@ describe('tela do projeto', () => {
     expect(wrapper.find('[data-test="group-section"]').text()).toContain('Agrupada')
   })
 
-  it('conversa com agrupador desconhecido ou de outro projeto conta como sem agrupador', async () => {
+  it('conversa com agrupador desconhecido conta como sem agrupador; o de outro projeto aparece no agrupador', async () => {
     seed()
     useGroupsStore(pinia).groups = [
       makeGroup({ id: 1, project_id: 1, name: 'Checkout' }),
@@ -311,9 +311,12 @@ describe('tela do projeto', () => {
 
     const dated = wrapper.findAll('[data-test="date-group"]').map((g) => g.element.closest('section')!)
     expect(dated).toHaveLength(1)
-    expect(dated[0]!.textContent).toContain('Alheia')
     expect(dated[0]!.textContent).toContain('Fantasma')
     expect(dated[0]!.textContent).not.toContain('Agrupada')
+    expect(dated[0]!.textContent).not.toContain('Alheia')
+    const sections = wrapper.findAll('[data-test="group-section"]').map((s) => s.text())
+    expect(sections.some((t) => t.includes('Agrupada'))).toBe(true)
+    expect(sections.some((t) => t.includes('De outro') && t.includes('Alheia'))).toBe(true)
   })
 
   it('sem os agrupadores carregados as conversas agrupadas continuam na lista', async () => {

@@ -21,8 +21,8 @@ const emit = defineEmits<{ error: [message: string] }>()
 const groups = useGroupsStore()
 const sessions = useSessionsStore()
 
-const projectSessions = computed(() => sessions.forProject(props.projectId).filter((s) => !isDiscarded(s)))
-const ordered = computed(() => sortGroups(groups.forProject(props.projectId), projectSessions.value))
+const allSessions = computed(() => sessions.all.filter((s) => !isDiscarded(s)))
+const ordered = computed(() => sortGroups(groups.visibleIn(props.projectId, allSessions.value), allSessions.value))
 
 const creating = ref(false)
 const newName = ref('')
@@ -63,7 +63,8 @@ async function create() {
       v-for="group in ordered"
       :key="group.id"
       :group="group"
-      :sessions="sessionsOf(group.id, projectSessions)"
+      :project-id="projectId"
+      :sessions="sessionsOf(group.id, allSessions)"
       :available="available"
       :row-target="rowTarget"
       :active-id="activeId"

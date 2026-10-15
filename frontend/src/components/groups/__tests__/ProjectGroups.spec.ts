@@ -20,6 +20,32 @@ function mountGroups(available = true) {
 }
 
 describe('agrupadores na tela do projeto', () => {
+  it('mostra o agrupador criado em outro projeto que tem conversa deste, com as conversas de todos os projetos', () => {
+    useGroupsStore().groups = [makeGroup({ id: 7, project_id: 2, name: 'Pagamento' })]
+    useSessionsStore().setForProject(1, [makeSession({ session_id: 'a', project_id: 1, group_id: 7, title: 'Backend' })])
+    useSessionsStore().setForProject(2, [makeSession({ session_id: 'b', project_id: 2, group_id: 7, title: 'Frontend' })])
+    const w = mountGroups()
+    expect(w.findAll('[data-test="group-name"]').map((n) => n.text())).toEqual(['Pagamento'])
+    expect(w.findAll('[data-test="row-link"]').map((l) => l.text()).sort()).toEqual(['Backend', 'Frontend'])
+    expect(w.find('[data-test="group-count"]').text()).toBe('2 conversas · 2 ativas')
+  })
+
+  it('agrupador de outro projeto sem conversa deste não aparece', () => {
+    useGroupsStore().groups = [makeGroup({ id: 7, project_id: 2, name: 'Pagamento' })]
+    useSessionsStore().setForProject(2, [makeSession({ session_id: 'b', project_id: 2, group_id: 7 })])
+    expect(mountGroups().find('[data-test="groups-empty"]').exists()).toBe(true)
+  })
+
+  it('o botão Conversa de um agrupador de outro projeto abre a conversa neste projeto', async () => {
+    useGroupsStore().groups = [makeGroup({ id: 7, project_id: 2, name: 'Pagamento' })]
+    useSessionsStore().setForProject(1, [makeSession({ session_id: 'a', project_id: 1, group_id: 7 })])
+    const w = mountGroups()
+    await w.find('[data-test="group-new-session"]').trigger('click')
+    const store = useNewConversationStore()
+    expect(store.presetProjectId).toBe(1)
+    expect(store.presetGroupId).toBe(7)
+  })
+
   it('sem agrupadores mostra o botão e a explicação', () => {
     const w = mountGroups()
     expect(w.find('[data-test="groups-empty"]').exists()).toBe(true)
