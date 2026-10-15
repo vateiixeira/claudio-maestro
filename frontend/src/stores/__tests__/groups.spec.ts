@@ -72,4 +72,12 @@ describe('store de agrupadores', () => {
     await sessions.create(1)
     expect(init).toHaveBeenCalledWith(undefined)
   })
+
+  it('visibleIn usa a origem e as conversas do projeto', () => {
+    const store = useGroupsStore()
+    store.groups = [makeGroup({ id: 1, project_id: 1 }), makeGroup({ id: 2, project_id: 2 }), makeGroup({ id: 3, project_id: 2 })]
+    const sessions = [makeSession({ session_id: 'a', project_id: 1, group_id: 2 })]
+    expect(store.visibleIn(1, sessions).map((g) => g.id)).toEqual([1, 2])
+    expect(store.visibleIn(2, sessions).map((g) => g.id)).toEqual([2, 3])
+  })
 })

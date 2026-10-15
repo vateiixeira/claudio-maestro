@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as api from '../api/http'
-import type { SessionGroup } from '../types/api'
+import { visibleGroups } from '../groupList'
+import type { Session, SessionGroup } from '../types/api'
 
 /** Groups of every project, reloaded on `groups.changed` and after reconnecting. */
 export const useGroupsStore = defineStore('groups', () => {
@@ -12,6 +13,11 @@ export const useGroupsStore = defineStore('groups', () => {
 
   function forProject(projectId: number): SessionGroup[] {
     return groups.value.filter((g) => g.project_id === projectId)
+  }
+
+  /** Groups shown in a project: the ones created in it and the ones holding one of its conversations. */
+  function visibleIn(projectId: number, sessions: Session[]): SessionGroup[] {
+    return visibleGroups(groups.value, sessions, projectId)
   }
 
   function byId(id: number): SessionGroup | undefined {
@@ -53,5 +59,5 @@ export const useGroupsStore = defineStore('groups', () => {
     groups.value = groups.value.filter((g) => g.project_id !== projectId)
   }
 
-  return { groups, loaded, forProject, byId, load, create, rename, remove, forgetProject }
+  return { groups, loaded, forProject, visibleIn, byId, load, create, rename, remove, forgetProject }
 })
