@@ -18,6 +18,15 @@ describe('árvore do menu', () => {
     expect(tree.idle.map((g) => g.id).sort()).toEqual([2, 3])
   })
 
+  it('lista as conversas de todos os projetos que estão no agrupador', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', project_id: 1, group_id: 1, display_state: 'running' }),
+      makeSession({ session_id: 'b', project_id: 2, group_id: 1, display_state: 'running' }),
+    ]
+    const tree = projectTree([makeGroup({ id: 1 })], sessions)
+    expect(tree.active[0]!.sessions.map((s) => s.session_id).sort()).toEqual(['a', 'b'])
+  })
+
   it('conta como aguardando só quem precisa de você', () => {
     const sessions = [
       makeSession({ session_id: 'q', group_id: 1, display_state: 'waiting', unread: false }),

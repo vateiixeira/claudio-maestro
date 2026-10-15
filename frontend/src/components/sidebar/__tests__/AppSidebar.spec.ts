@@ -391,6 +391,29 @@ describe('menu lateral em árvore', () => {
     expect(Boolean(block.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
   })
 
+  it('agrupador criado em outro projeto aparece nos dois, com a conversa dentro dele e não solta', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'api' }), makeProject({ id: 2, name: 'web' })]
+    useGroupsStore(pinia).groups = [makeGroup({ id: 3, project_id: 2 })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'x', project_id: 1, group_id: 3, display_state: 'running', title: 'Backend' }),
+    ])
+    // an open conversation keeps project 2 in "Em andamento"; projects without one are only links under "Outros projetos"
+    useSessionsStore(pinia).setForProject(2, [makeSession({ session_id: 'y', project_id: 2, group_id: null, title: 'Do web' })])
+    const w = mountSidebar()
+    expect(w.findAll('[data-test="sidebar-group"]')).toHaveLength(2)
+    const projects = w.findAll('[data-test="project"]')
+    const groups = w.findAll('[data-test="sidebar-group"]')
+    const after = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    // one group under each project, in the order: api, its group, web, its group
+    expect(after(projects[0]!.element, groups[0]!.element)).toBe(true)
+    expect(after(groups[0]!.element, projects[1]!.element)).toBe(true)
+    expect(after(projects[1]!.element, groups[1]!.element)).toBe(true)
+    expect(groups[0]!.text()).toContain('Backend')
+    const loose = w.findAll('[data-test="project-sessions"]')
+    expect(loose.every((b) => !b.text().includes('Backend'))).toBe(true)
+    expect(loose.map((b) => b.text()).join(' ')).toContain('Do web')
+  })
+
   it('conversa que passa a esperar você sobe dentro do projeto', async () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     const sessions = useSessionsStore(pinia)

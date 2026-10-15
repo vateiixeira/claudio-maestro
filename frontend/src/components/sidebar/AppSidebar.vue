@@ -28,7 +28,7 @@ import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useUpdatesStore } from '../../stores/updates'
-import type { GitRepo, Project, Session } from '../../types/api'
+import type { GitRepo, Project, Session, SessionGroup } from '../../types/api'
 import IconArrowDown from '../icons/IconArrowDown.vue'
 import IconChat from '../icons/IconChat.vue'
 import IconChevron from '../icons/IconChevron.vue'
@@ -85,17 +85,23 @@ function waitingIn(projectId: number): number {
 function runningIn(projectId: number): boolean {
   return sessions.forProject(projectId).some((s) => s.display_state === 'running' && !isDiscarded(s))
 }
+// Groups shown under each project: those created in it and those holding one of its conversations.
+const groupsByProject = computed(() => {
+  const map = new Map<number, SessionGroup[]>()
+  for (const p of projects.projects) map.set(p.id, groups.visibleIn(p.id, sessions.all))
+  return map
+})
 // Open conversations of each project outside its groups, the ones waiting for you first; grouped ones show under their group.
 // Built once per change so the template reads it instead of recomputing per project.
 const looseByProject = computed(() => {
   const map = new Map<number, Session[]>()
   for (const p of projects.projects) {
-    map.set(p.id, looseOpenSessions(sessions.all, p.id, new Set(groups.forProject(p.id).map((g) => g.id))))
+    map.set(p.id, looseOpenSessions(sessions.all, p.id, new Set((groupsByProject.value.get(p.id) ?? []).map((g) => g.id))))
   }
   return map
 })
 function hasChildren(projectId: number): boolean {
-  return groups.forProject(projectId).length > 0 || (looseByProject.value.get(projectId)?.length ?? 0) > 0
+  return (groupsByProject.value.get(projectId)?.length ?? 0) > 0 || (looseByProject.value.get(projectId)?.length ?? 0) > 0
 }
 // "Em andamento": projects with an open conversation. "Outros projetos": the rest, kept in one folded line.
 const split = computed(() => splitProjects(projects.projects, sessions.all))
@@ -248,7 +254,7 @@ const itemClass = sidebarItemClass
             <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="ml-[14px] flex flex-col gap-px border-l border-line pl-2">
               <SidebarSessionRow v-for="s in looseByProject.get(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project nested />
             </div>
-            <SidebarGroups v-if="groups.forProject(project.id).length" :project-id="project.id" />
+            <SidebarGroups v-if="groupsByProject.get(project.id)?.length" :project-id="project.id" />
           </template>
         </template>
       </section>
