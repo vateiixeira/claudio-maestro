@@ -182,6 +182,60 @@ describe('busca no menu lateral', () => {
     expect(push).toHaveBeenLastCalledWith({ name: 'session', params: { id: 'b' } })
   })
 
+  const withMatch = (overrides = {}) => ({
+    ...makeSession({ session_id: 'a', title: 'Criar tarefa em card parado', ...overrides }),
+    match: {
+      at: 1760474500,
+      parts: [
+        { text: '…o sistema cria uma ', hit: false },
+        { text: 'tarefa <b>automaticamente</b>', hit: true },
+        { text: ' para o responsável…', hit: false },
+      ],
+    },
+  })
+
+  it('mostra o trecho achado na conversa, com o termo em <mark> e sem interpretar HTML', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([withMatch()])))
+    const w = mountSidebar()
+    await type(w, 'tarefa')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+
+    const snippet = w.get('[data-test="search-snippet"]')
+    expect(snippet.text()).toBe('…o sistema cria uma tarefa <b>automaticamente</b> para o responsável…')
+    expect(snippet.findAll('mark').map((m) => m.text())).toEqual(['tarefa <b>automaticamente</b>'])
+    expect(snippet.find('b').exists()).toBe(false)
+    expect(snippet.classes()).toContain('line-clamp-2')
+  })
+
+  it('resultado só por título não tem trecho', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([makeSession({ session_id: 'a', title: 'Cupom expirado' })])))
+    const w = mountSidebar()
+    await type(w, 'cupom')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+
+    expect(w.find('[data-test="search-snippet"]').exists()).toBe(false)
+  })
+
+  it('clicar ou apertar Enter num resultado com trecho leva o termo buscado para a conversa', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([withMatch(), makeSession({ session_id: 'b', title: 'Outra' })])))
+    const push = vi.spyOn(router, 'push')
+    const w = mountSidebar()
+    await type(w, '  tarefa auto ')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+
+    await w.find('[data-test="search-input"]').trigger('keydown', { key: 'Enter' })
+    expect(push).toHaveBeenLastCalledWith({ name: 'session', params: { id: 'a' }, query: { find: 'tarefa auto' } })
+
+    await w.findAll('[data-test="search-result"]')[0]!.trigger('click')
+    expect(push).toHaveBeenLastCalledWith({ name: 'session', params: { id: 'a' }, query: { find: 'tarefa auto' } })
+
+    await w.findAll('[data-test="search-result"]')[1]!.trigger('click')
+    expect(push).toHaveBeenLastCalledWith({ name: 'session', params: { id: 'b' } })
+  })
+
   it('Esc limpa o campo e os resultados', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([makeSession({ title: 'Achada' })])))
     const w = mountSidebar()

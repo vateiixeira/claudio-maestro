@@ -8,7 +8,7 @@ import { errorMessage, searchSessions } from '../../api/http'
 import { formatActivity } from '../../format'
 import { displayStateLabel } from '../../sessionState'
 import { useProjectsStore } from '../../stores/projects'
-import type { Session } from '../../types/api'
+import type { SearchResult } from '../../types/api'
 
 const DELAY = 250
 
@@ -16,7 +16,9 @@ const projects = useProjectsStore()
 const router = useRouter()
 
 const query = ref('')
-const results = ref<Session[]>([])
+const results = ref<SearchResult[]>([])
+// The term the current results answer to.
+const foundFor = ref('')
 const searched = ref(false)
 const error = ref<string | null>(null)
 const input = ref<HTMLInputElement | null>(null)
@@ -30,6 +32,7 @@ function reset(): void {
   timer = null
   ticket++
   results.value = []
+  foundFor.value = ''
   searched.value = false
   error.value = null
 }
@@ -48,6 +51,7 @@ async function run(q: string): Promise<void> {
     const found = await searchSessions(q)
     if (mine !== ticket) return
     results.value = found
+    foundFor.value = q
     error.value = null
   } catch (e) {
     if (mine !== ticket) return
@@ -57,8 +61,10 @@ async function run(q: string): Promise<void> {
   searched.value = true
 }
 
-function open(session: Session): void {
-  void router.push({ name: 'session', params: { id: session.session_id } })
+// A result found inside the conversation opens it at that message: the term goes along as `?find=`.
+function open(result: SearchResult): void {
+  const to = { name: 'session', params: { id: result.session_id } }
+  void router.push(result.match ? { ...to, query: { find: foundFor.value } } : to)
 }
 
 function clear(): void {
@@ -137,6 +143,12 @@ onBeforeUnmount(() => {
           <span class="shrink-0">{{ displayStateLabel(session) }}</span>
           <span class="grow" />
           <span class="shrink-0 font-mono">{{ formatActivity(session.last_activity_at) }}</span>
+        </span>
+        <span v-if="session.match" data-test="search-snippet" class="block w-full min-w-0 text-xs leading-snug break-words text-fg-muted line-clamp-2">
+          <template v-for="(part, index) in session.match.parts" :key="index">
+            <mark v-if="part.hit" class="rounded-[2px] bg-secondary/25 px-px text-fg">{{ part.text }}</mark>
+            <template v-else>{{ part.text }}</template>
+          </template>
         </span>
       </button>
     </div>
