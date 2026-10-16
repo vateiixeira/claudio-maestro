@@ -3,7 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import { createAppRouter } from '../../../router'
-import { jsonResponse, makeProject, makeSnapshot, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeEvent, makeProject, makeSnapshot, routeFetch } from '../../../test/factories'
 import { useProjectsStore } from '../../../stores/projects'
 
 const fake = vi.hoisted(() => ({ session: new Map<string, (e: unknown) => void>() }))
@@ -131,5 +131,66 @@ describe('abrir a conversa na mensagem buscada', () => {
 
     expect(w.get('[data-item-id="u2"]').attributes('data-highlighted')).toBe('true')
     expect(w.emitted('find-done')).toHaveLength(1)
+  })
+
+  it('o aviso fica fora da área rolável, anunciado como status, para aparecer sem rolar', async () => {
+    const w = await mountThread(items, { find: 'inexistente' })
+
+    const notice = w.get('[data-test="find-missed"]')
+    expect(notice.attributes('role')).toBe('status')
+    expect(w.get('[data-test="conversation-scroller"]').element.contains(notice.element)).toBe(false)
+    // Same column as the message field, above it.
+    const composer = w.get('[data-test="chat-composer-column"]')
+    expect(composer.element.contains(notice.element)).toBe(true)
+  })
+
+  it('o aviso some quando uma nova busca acha a mensagem', async () => {
+    const w = await mountThread(items, { find: 'inexistente' })
+    expect(w.find('[data-test="find-missed"]').exists()).toBe(true)
+
+    await w.setProps({ find: 'obrigado' })
+    await flushPromises()
+
+    expect(w.find('[data-test="find-missed"]').exists()).toBe(false)
+  })
+})
+
+describe('corrida entre o salto e o acompanhamento do fim', () => {
+  const upsert = (id: string, seq: number) => fake.session.get('s1')!(makeEvent('item.upsert', text(id, `texto ${id}`), seq))
+  function shapeScroller(w: Awaited<ReturnType<typeof mountThread>>, top: number) {
+    const el = w.get('[data-test="conversation-scroller"]').element as HTMLElement
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, value: 2000 })
+    Object.defineProperty(el, 'clientHeight', { configurable: true, value: 400 })
+    el.scrollTop = top
+    return el
+  }
+
+  it('um evento de rolagem perto do fim logo depois do salto não devolve o acompanhamento do fim', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true })
+    const w = await mountThread(items, { find: 'jornada' })
+    // The smooth scroll has just left the end: the first scroll event is still within 80 px of it.
+    const el = shapeScroller(w, 1550)
+    await w.get('[data-test="conversation-scroller"]').trigger('scroll')
+
+    upsert('a3', 2)
+    await flushPromises()
+
+    // Still where the jump left it; the new reply is announced instead of pulling the thread down.
+    expect(el.scrollTop).toBe(1550)
+    expect(w.find('[data-test="jump-to-end"]').exists()).toBe(true)
+  })
+
+  it('passada a janela do salto, perto do fim o acompanhamento volta', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true })
+    const w = await mountThread(items, { find: 'jornada' })
+    const el = shapeScroller(w, 1550)
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await w.get('[data-test="conversation-scroller"]').trigger('scroll')
+    upsert('a3', 2)
+    await flushPromises()
+
+    expect(el.scrollTop).toBe(2000)
+    expect(w.find('[data-test="jump-to-end"]').exists()).toBe(false)
   })
 })

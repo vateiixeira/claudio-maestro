@@ -257,6 +257,10 @@ const pendingFind = ref<string | null>(null)
 const findMissed = ref(false)
 const historyLoaded = ref(false)
 let findTimer: ReturnType<typeof setTimeout> | null = null
+// The jump starts a smooth scroll from the end: its first scroll events are still near the end and
+// must not hand the thread back to the follow-the-end rules (see onScroll).
+const FIND_WINDOW_MS = 1000
+let findUntil = 0
 onBeforeUnmount(() => { if (findTimer) clearTimeout(findTimer) })
 watch(() => props.find, (term) => {
   if (!term) return
@@ -278,6 +282,8 @@ async function applyFind() {
   // The thread stays where the message is: the follow-the-end rules must not pull it back.
   atBottom.value = false
   unseen.value = null
+  findUntil = Date.now() + FIND_WINDOW_MS
+  smoothUntil = 0
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   target.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
   target.focus({ preventScroll: true })
@@ -354,7 +360,7 @@ function onScroll() {
   if (!el) return
   const movedDown = el.scrollTop > lastTop
   lastTop = el.scrollTop
-  atBottom.value = isNearEnd(el) || (Date.now() < smoothUntil && movedDown)
+  atBottom.value = (isNearEnd(el) && Date.now() >= findUntil) || (Date.now() < smoothUntil && movedDown)
   if (atBottom.value) unseen.value = null
   scheduleTurnUpdate()
 }
@@ -504,11 +510,6 @@ function resolvePrompt(promptId: string) {
             data-test="history-truncated"
             class="m-0 rounded-md border border-line bg-card px-3 py-1.5 text-center text-xs text-fg-muted"
           >Mostrando as mensagens mais recentes.</p>
-          <p
-            v-if="findMissed"
-            data-test="find-missed"
-            class="m-0 rounded-md border border-line bg-card px-3 py-1.5 text-center text-xs text-fg-muted"
-          >A mensagem buscada não está no trecho carregado da conversa.</p>
           <p v-if="rows.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
@@ -638,6 +639,13 @@ function resolvePrompt(promptId: string) {
           >
             {{ conv.error || 'A sessão parou com erro.' }} Você pode enviar de novo.
           </p>
+          <!-- Outside the scroller: the thread is at its end by then, a notice at the top would go unseen. -->
+          <p
+            v-if="findMissed"
+            data-test="find-missed"
+            role="status"
+            class="m-0 rounded-md border border-line bg-card px-3 py-1.5 text-center text-xs text-fg-muted"
+          >A mensagem buscada não está no trecho carregado da conversa.</p>
           <p v-if="loadError" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg">{{ loadError }}</p>
           <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
           <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
