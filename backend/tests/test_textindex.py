@@ -464,12 +464,11 @@ def test_a_corruption_error_of_the_main_database_leaves_the_index_alone(env):
     assert env.rows() == [("s1", "um")]
 
 
-def test_a_real_corruption_found_while_writing_rebuilds_the_file(env):
+def test_a_real_corruption_found_while_writing_rebuilds_the_file(env, caplog):
     env.add("s1", [user(f"mensagem {n} com um texto um pouco maior", uuid=f"u{n}") for n in range(300)])
     env.index.refresh()
     with closing(sqlite3.connect(env.index_path)) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    inode = env.index_path.stat().st_ino
     # Breaks the pages after the first ones: the file still opens, the reads and writes fail.
     size = env.index_path.stat().st_size
     with env.index_path.open("r+b") as file:
@@ -477,13 +476,15 @@ def test_a_real_corruption_found_while_writing_rebuilds_the_file(env):
         file.write(os.urandom(size - 8192))
     env.add("s2", [user("dois")])
 
-    with suppress(sqlite3.DatabaseError):
+    with caplog.at_level("WARNING"):
+        with suppress(sqlite3.DatabaseError):
+            env.index.refresh()
         env.index.refresh()
-    env.index.refresh()
 
     assert len(env.rows()) == 301
     assert env.rows()[-1] == ("s2", "dois")
-    assert env.index_path.stat().st_ino != inode
+    # Not the inode: the filesystem may give the new file the number of the deleted one.
+    assert any("será refeito" in record.getMessage() for record in caplog.records)
 
 
 def test_a_lock_is_not_a_reason_to_rebuild(env):
