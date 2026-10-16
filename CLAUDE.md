@@ -54,7 +54,7 @@ uv run python scripts/sdk_smoke.py                                              
 - No frontend use só `pnpm` (`pnpm --dir frontend test`, `pnpm --dir frontend exec vitest ...`). Nunca `npx` nem `yarn`: o `npx` já criou arquivos do Yarn PnP em `frontend/` e quebrou a compilação.
 - Textos da interface e documentação em português brasileiro. Código e identificadores em inglês.
 - Não use a marca "Claude Code" na interface.
-- As conversas ficam em `~/.claude/projects`, compatíveis com o CLI. O SQLite guarda só metadados.
+- As conversas ficam em `~/.claude/projects`, compatíveis com o CLI. O SQLite guarda só metadados. A busca no conteúdo usa um índice à parte, `search.db` na pasta de dados: é só um cache descartável do texto das conversas, reconstruído a partir de `~/.claude/projects`.
 - Commits: `[Tipo] Título` em português, verbo no infinitivo, até 72 caracteres, sem ponto final. Tipos: Feat, Bugfix, Refactor, UI, Docs, Test, Chore, Release. Um commit por unidade lógica.
 - Mudanças que o usuário percebe entram no `CHANGELOG.md`, em "Não lançado".
 - Ao relatar, separe o que você rodou e viu passar do que só escreveu.

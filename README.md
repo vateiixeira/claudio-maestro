@@ -19,6 +19,7 @@ Se você não lê português, o tradutor do navegador dá conta, e o próprio Cl
 ## O que ele faz
 
 - **Todos os projetos numa tela.** Menu lateral com cada projeto, suas branches e suas conversas.
+- **Busca no conteúdo.** A busca (Ctrl K) também procura no texto das conversas e abre na mensagem achada.
 - **Estado de relance.** Cada conversa está rodando, esperando você ou finalizada, com ícone próprio além da cor. O que pede a sua atenção aparece primeiro.
 - **Leitura confortável.** Respostas em markdown, o diff de cada edição, comandos com a saída, tabelas e blocos de código legíveis.
 - **Você decide pela interface.** Permissões (permitir uma vez, sempre ou negar), perguntas do Claude e aprovação de planos. O pedido para editar mostra o diff, e "Permitir sempre" diz a regra que vai ser gravada.

@@ -11,6 +11,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - Seção **Commits**, no estilo do GitLens e só para leitura: o histórico de cada repositório em páginas, com os grupos "Para subir" e "Para baixar", a escolha de outra branch sem trocar, e cada commit com seus arquivos, diff e os botões de copiar hash e mensagem.
 - Agrupadores entre projetos: uma conversa pode ficar num agrupador criado em outro projeto, para juntar, por exemplo, o backend e o frontend do mesmo trabalho. O agrupador aparece na tela e na barra lateral de todo projeto que tem conversa nele (e sempre no projeto onde foi criado), com as conversas de todos; as de outro projeto levam o nome do projeto. Os seletores de agrupador (detalhes da conversa, nova conversa e filtro de Conversas) passam a oferecer os de qualquer projeto, com "Nome · Projeto" para os de fora. Remover o projeto onde o agrupador foi criado apaga o agrupador e solta as conversas dos outros projetos.
 - O botão de remover agrupador também aparece na barra lateral (ao passar o mouse ou focar a linha) e no painel de detalhes da conversa, sempre com confirmação; nenhuma conversa é apagada.
+- A busca de conversas (Ctrl K) também procura no texto das mensagens, mostra o trecho achado e abre a conversa na mensagem.
 - Antes de trocar de branch, mesclar, baixar ou descartar num repositório onde uma sessão está em execução (aberta nele ou numa pasta acima, como a raiz do projeto), o app pede confirmação e diz qual sessão é.
 
 ### Segurança
