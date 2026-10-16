@@ -96,6 +96,13 @@ SCENARIO = [
                 ),
                 "filler_turns": 20,
             },
+            {
+                # More than the 500 items the chat loads: the term lives only in the first turn,
+                # which is out of the loaded stretch (the "find-missed" notice).
+                "prompt": "Registre o código xilofone-arquivado no histórico antigo",
+                "reply": "Registrado.",
+                "filler_turns": 260,
+            },
         ],
     },
 ]
