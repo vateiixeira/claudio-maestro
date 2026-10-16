@@ -84,6 +84,18 @@ SCENARIO = [
                 "prompt": "Resuma o último commit",
                 "reply": "O último commit ajusta o gráfico semanal.",
             },
+            {
+                # The phrase of the content search: in the middle of an answer, followed by many
+                # short turns so that the page has to scroll to reach it.
+                "prompt": "Como configuro a jornada do funil?",
+                "reply": (
+                    "Na jornada do funil você monta uma regra assim:\n\n"
+                    "Se o card não responder:\n\n"
+                    "Se a pessoa não responder, o sistema cria uma tarefa automaticamente "
+                    "para o responsável do card."
+                ),
+                "filler_turns": 20,
+            },
         ],
     },
 ]
@@ -214,11 +226,12 @@ def _write_subagents(
 
 def _write_conversation(
     folder: Path, project_dir: Path, prompt: str, reply: str, started: datetime,
-    subagents: list[dict[str, str]] | None = None,
+    subagents: list[dict[str, str]] | None = None, filler_turns: int = 0,
 ) -> None:
     """A minimal transcript: one user message and one assistant answer. With `subagents`, the
     answer first calls an `Agent` for each one (with its result) and the files of the subagents
-    are written next to the session."""
+    are written next to the session. With `filler_turns`, that many short question and answer
+    turns follow the answer."""
     session_id, user_id, assistant_id = (str(uuid.uuid4()) for _ in range(3))
     folder.mkdir(parents=True, exist_ok=True)
     session_file = folder / f"{session_id}.jsonl"
@@ -280,6 +293,28 @@ def _write_conversation(
             },
         }
     )
+    parent = assistant_id
+    for number in range(1, filler_turns + 1):
+        question_id, answer_id = str(uuid.uuid4()), str(uuid.uuid4())
+        moment = started + timedelta(seconds=5 + number * 10)
+        lines.append(
+            {
+                **base, "parentUuid": parent, "type": "user", "uuid": question_id,
+                "timestamp": _stamp(moment),
+                "message": {"role": "user", "content": f"Continue ({number})"},
+            }
+        )
+        lines.append(
+            {
+                **base, "parentUuid": question_id, "type": "assistant", "uuid": answer_id,
+                "timestamp": _stamp(moment + timedelta(seconds=2)),
+                "message": {
+                    "role": "assistant", "model": "claude-haiku",
+                    "content": [{"type": "text", "text": f"Resposta de enchimento {number}."}],
+                },
+            }
+        )
+        parent = answer_id
     session_file.write_text(
         "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
         encoding="utf-8",
@@ -459,7 +494,7 @@ def seed(root: Path) -> None:
                 started = now - timedelta(minutes=10 * (position * 3 + index + 1))
                 _write_conversation(
                     folder, Path(project.path), conversation["prompt"], conversation["reply"],
-                    started, conversation.get("subagents"),
+                    started, conversation.get("subagents"), conversation.get("filler_turns", 0),
                 )
         seed_git(root, settings.home_dir, conn)
 

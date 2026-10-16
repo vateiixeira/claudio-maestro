@@ -236,6 +236,25 @@ def test_seed_makes_conversations_readable_by_the_sdk(tmp_path, monkeypatch):
         )
 
 
+def test_seed_writes_the_phrase_conversation_with_turns_after_it(tmp_path, monkeypatch):
+    apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
+
+    e2e.seed(tmp_path)
+
+    projects_dir = load_settings().claude_projects_dir.resolve()
+    [session] = [
+        path for path in projects_dir.glob("*/*.jsonl")
+        if "tarefa automaticamente" in path.read_text(encoding="utf-8")
+    ]
+    lines = [json.loads(line) for line in session.read_text(encoding="utf-8").splitlines()]
+    text = session.read_text(encoding="utf-8")
+    # The phrase comes before the 20 filler turns, and the file is one linear chain.
+    assert text.index("tarefa automaticamente") < text.index("Resposta de enchimento 1.")
+    assert "Resposta de enchimento 20." in text
+    uuids = {line["uuid"] for line in lines}
+    assert all(line["parentUuid"] is None or line["parentUuid"] in uuids for line in lines)
+
+
 def test_seed_writes_the_subagents_of_the_scenario_next_to_the_session(tmp_path, monkeypatch):
     apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
 
