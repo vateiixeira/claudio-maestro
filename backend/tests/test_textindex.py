@@ -41,13 +41,13 @@ class Env:
             self.db_path, self.index_path, session_file=lambda sid, directory: self.files.get(sid)
         )
 
-    def register(self, session_id: str, path: Path) -> None:
+    def register(self, session_id: str, path: Path, modified: int | None = 1) -> None:
         self.files[session_id] = path
         with closing(db.connect(self.db_path)) as conn:
             conn.execute(
                 "INSERT INTO sessions (session_id, project_id, cwd, title, created_at,"
-                " last_activity_at) VALUES (?, 1, ?, ?, 0, 0)",
-                (session_id, str(self.root / "proj"), session_id),
+                " last_activity_at, file_modified_at) VALUES (?, 1, ?, ?, 0, 0, ?)",
+                (session_id, str(self.root / "proj"), session_id, modified),
             )
 
     def add(self, session_id: str, entries: list[dict] | None = None) -> Path:
@@ -189,6 +189,21 @@ def test_a_line_over_the_limit_is_skipped_and_the_next_ones_are_read(env, monkey
     assert env.texts() == ["antes", "depois"]
 
 
+def test_a_loose_surrogate_is_replaced_and_the_session_is_indexed(env):
+    path = env.root / "s1.jsonl"
+    lines = [
+        json.dumps(user("antes \ud800 depois")),
+        json.dumps(assistant("resposta \udfff boa")),
+        json.dumps(user("fim")),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    env.register("s1", path)
+
+    env.index.refresh()
+
+    assert env.texts() == ["antes ? depois", "resposta ? boa", "fim"]
+
+
 # Keeping it up to date ------------------------------------------------------------
 
 
@@ -261,6 +276,31 @@ def test_a_missing_file_takes_its_rows_away(env):
     env.index.refresh()
 
     assert env.rows() == []
+
+
+def test_a_session_whose_file_is_not_registered_yet_is_not_looked_up(env):
+    env.add("s1", [user("um")])
+    path = env.root / "s2.jsonl"
+    write(path, [user("dois")])
+    env.register("s2", path, modified=None)
+    asked: list[str] = []
+    real = env.index._session_file
+
+    def spy(session_id, directory):
+        asked.append(session_id)
+        return real(session_id, directory)
+
+    env.index._session_file = spy
+    env.index.refresh()
+
+    assert asked == ["s1"]
+    assert env.rows() == [("s1", "um")]
+
+    with closing(db.connect(env.db_path)) as conn:
+        conn.execute("UPDATE sessions SET file_modified_at = 5 WHERE session_id = 's2'")
+    env.index.refresh()
+
+    assert env.rows() == [("s1", "um"), ("s2", "dois")]
 
 
 def test_a_symlink_is_not_followed(env, tmp_path):
@@ -340,6 +380,12 @@ def test_without_the_tokenizer_the_index_turns_itself_off(env, monkeypatch, capl
     assert len([r for r in caplog.records if "desligada" in r.getMessage()]) == 1
 
 
+def sqlite_error(kind: type[sqlite3.DatabaseError], message: str, code: int):
+    exc = kind(message)
+    exc.sqlite_errorcode = code
+    return exc
+
+
 def test_a_damaged_file_in_the_middle_of_a_pass_is_rebuilt(env, caplog):
     env.add("s1", [user("um")])
     env.index.refresh()
@@ -350,7 +396,8 @@ def test_a_damaged_file_in_the_middle_of_a_pass_is_rebuilt(env, caplog):
     def finder(session_id, directory):
         calls["n"] += 1
         if calls["n"] == 1:
-            raise sqlite3.DatabaseError("database disk image is malformed")
+            # 267 is SQLITE_CORRUPT_VTAB: the base code is in the low byte.
+            raise sqlite_error(sqlite3.DatabaseError, "database disk image is malformed", 267)
         return real(session_id, directory)
 
     env.index._session_file = finder
@@ -361,23 +408,82 @@ def test_a_damaged_file_in_the_middle_of_a_pass_is_rebuilt(env, caplog):
     assert any("refeito" in r.getMessage() for r in caplog.records)
 
 
-def test_a_real_corruption_found_while_writing_rebuilds_the_file(env):
+@pytest.mark.parametrize(
+    ("kind", "message", "code"),
+    [
+        (sqlite3.IntegrityError, "UNIQUE constraint failed", sqlite3.SQLITE_CONSTRAINT),
+        (sqlite3.ProgrammingError, "bad", sqlite3.SQLITE_MISUSE),
+        (sqlite3.OperationalError, "disk I/O error", sqlite3.SQLITE_IOERR),
+        (sqlite3.OperationalError, "database or disk is full", sqlite3.SQLITE_FULL),
+    ],
+)
+def test_an_error_that_is_not_corruption_keeps_the_file(env, kind, message, code):
     env.add("s1", [user("um")])
+    env.index.refresh()
+    inode = env.index_path.stat().st_ino
+    env.add("s2", [user("dois")])
+    real = env.index._session_file
+
+    def finder(session_id, directory):
+        if session_id == "s1":
+            raise sqlite_error(kind, message, code)
+        return real(session_id, directory)
+
+    env.index._session_file = finder
+    env.index.refresh()
+
+    assert env.index_path.stat().st_ino == inode
+    assert env.rows() == [("s1", "um"), ("s2", "dois")]
+
+
+def test_an_unreadable_main_database_leaves_the_index_alone(env):
+    env.add("s1", [user("um")])
+    env.index.refresh()
+    inode = env.index_path.stat().st_ino
+    env.db_path.write_bytes(b"isto nao e um banco sqlite" * 100)
+
+    env.index.refresh()
+    env.index.refresh()
+
+    assert env.index_path.stat().st_ino == inode
+    assert env.rows() == [("s1", "um")]
+
+
+def test_a_corruption_error_of_the_main_database_leaves_the_index_alone(env):
+    env.add("s1", [user("um")])
+    env.index.refresh()
+    inode = env.index_path.stat().st_ino
+
+    def broken():
+        raise sqlite_error(sqlite3.DatabaseError, "database disk image is malformed", 11)
+
+    env.index._sessions = broken
+    env.index.refresh()
+
+    assert env.index_path.stat().st_ino == inode
+    assert env.rows() == [("s1", "um")]
+
+
+def test_a_real_corruption_found_while_writing_rebuilds_the_file(env):
+    env.add("s1", [user(f"mensagem {n} com um texto um pouco maior", uuid=f"u{n}") for n in range(300)])
     env.index.refresh()
     with closing(sqlite3.connect(env.index_path)) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    # Breaks the pages after the header: the file still opens, the writes then fail.
+    inode = env.index_path.stat().st_ino
+    # Breaks the pages after the first ones: the file still opens, the reads and writes fail.
     size = env.index_path.stat().st_size
     with env.index_path.open("r+b") as file:
-        file.seek(4096)
-        file.write(b"\xff" * (size - 4096))
+        file.seek(8192)
+        file.write(os.urandom(size - 8192))
     env.add("s2", [user("dois")])
 
     with suppress(sqlite3.DatabaseError):
         env.index.refresh()
     env.index.refresh()
 
-    assert env.rows() == [("s1", "um"), ("s2", "dois")]
+    assert len(env.rows()) == 301
+    assert env.rows()[-1] == ("s2", "dois")
+    assert env.index_path.stat().st_ino != inode
 
 
 def test_a_lock_is_not_a_reason_to_rebuild(env):

@@ -102,8 +102,15 @@ def _flat(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
-def _is_lock(exc: sqlite3.Error) -> bool:
-    return "locked" in str(exc) or "busy" in str(exc)
+def _is_corrupt(exc: sqlite3.Error) -> bool:
+    """The file is damaged (SQLITE_CORRUPT or SQLITE_NOTADB, with or without extended bits).
+    Anything else (lock, full disk, I/O error, constraint) says nothing about the file."""
+    code = getattr(exc, "sqlite_errorcode", None)
+    return code is not None and code & 0xFF in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB)
+
+
+class _OldSchema(sqlite3.DatabaseError):
+    """The file was written by another version of the index."""
 
 
 def build_match(text: str, term: str, at: int | None) -> Match:
@@ -157,7 +164,9 @@ def extract_text(entry: Any) -> str:
         if raw.strip():
             texts.append(raw)
     # Whitespace runs become one space, as in the search term: a phrase crosses line breaks.
-    return _flat("\n".join(texts)).strip()[:MAX_TEXT]
+    text = _flat("\n".join(texts)).strip()[:MAX_TEXT]
+    # A loose surrogate (invalid UTF-16 in the JSON) would make SQLite refuse the whole batch.
+    return text.encode("utf-8", "replace").decode("utf-8")
 
 
 def _read_messages(
@@ -251,7 +260,7 @@ class TextIndex:
             if version == 0:
                 self._create(conn)
             elif version != SCHEMA_VERSION:
-                raise sqlite3.DatabaseError(f"esquema {version}, esperado {SCHEMA_VERSION}")
+                raise _OldSchema(f"esquema {version}, esperado {SCHEMA_VERSION}")
             conn.execute("SELECT COUNT(*) FROM files").fetchone()  # a damaged file fails here
             return conn
         except BaseException:
@@ -274,15 +283,8 @@ class TextIndex:
                 self._disabled = True
                 logger.warning("Busca no conteúdo das conversas desligada: %s", exc)
                 return None
-            except sqlite3.OperationalError as exc:
-                if _is_lock(exc):
-                    raise
-                if attempt == 2:
-                    raise
-                logger.warning("O índice de busca será refeito.", exc_info=True)
-                self._reset()
-            except sqlite3.DatabaseError:
-                if attempt == 2:
+            except sqlite3.DatabaseError as exc:
+                if not (_is_corrupt(exc) or isinstance(exc, _OldSchema)) or attempt == 2:
                     raise
                 logger.warning("O índice de busca será refeito.", exc_info=True)
                 self._reset()
@@ -294,26 +296,35 @@ class TextIndex:
         with closing(db.connect(self._db_path)) as conn:
             rows = conn.execute(
                 "SELECT session_id, COALESCE(NULLIF(history_dir, ''), cwd) FROM sessions"
+                # No file registered yet: nothing to read, and looking it up is not free.
+                " WHERE file_modified_at IS NOT NULL"
             ).fetchall()
         return [(row[0], row[1]) for row in rows]
 
     def refresh(self) -> None:
         """One pass over every session of the main database. Blocking: run it in a thread.
-        A damaged file, found at any point of the pass, is deleted and built again."""
+        A file found damaged, at any point of the pass, is deleted and built again."""
         with self._lock:
+            # Read first: a problem in the main database only aborts the pass and never
+            # touches the index.
+            try:
+                sessions = self._sessions()
+            except Exception:
+                logger.exception("Não foi possível ler as sessões para o índice de busca")
+                return
             for attempt in (1, 2):
                 try:
-                    self._pass()
+                    self._pass(sessions)
                     return
                 except sqlite3.DatabaseError as exc:
-                    if _is_lock(exc):
+                    if not _is_corrupt(exc):
                         raise
                     logger.warning("O índice de busca será refeito.", exc_info=True)
                     self._reset()
                     if attempt == 2:
                         raise
 
-    def _pass(self) -> None:
+    def _pass(self, sessions: list[tuple[str, str]]) -> None:
         conn = self._ensure()
         if conn is None:
             return
@@ -325,12 +336,12 @@ class TextIndex:
                 )
             }
             current: set[str] = set()
-            for session_id, directory in self._sessions():
+            for session_id, directory in sessions:
                 current.add(session_id)
                 try:
                     self._refresh_session(conn, session_id, directory, known.get(session_id))
                 except sqlite3.DatabaseError as exc:
-                    if not _is_lock(exc):
+                    if _is_corrupt(exc):
                         raise
                     logger.exception("Falha ao indexar a sessão %s", session_id)
                 except Exception:
