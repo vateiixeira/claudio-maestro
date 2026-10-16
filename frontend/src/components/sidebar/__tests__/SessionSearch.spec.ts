@@ -206,6 +206,8 @@ describe('busca no menu lateral', () => {
     expect(snippet.findAll('mark').map((m) => m.text())).toEqual(['tarefa <b>automaticamente</b>'])
     expect(snippet.find('b').exists()).toBe(false)
     expect(snippet.classes()).toContain('line-clamp-2')
+    // `block` would override the `display: -webkit-box` that line-clamp needs (jsdom cannot measure lines).
+    expect(snippet.classes()).not.toContain('block')
   })
 
   it('resultado só por título não tem trecho', async () => {

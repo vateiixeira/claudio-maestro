@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
           <span class="grow" />
           <span class="shrink-0 font-mono">{{ formatActivity(session.last_activity_at) }}</span>
         </span>
-        <span v-if="session.match" data-test="search-snippet" class="block w-full min-w-0 text-xs leading-snug break-words text-fg-muted line-clamp-2">
+        <span v-if="session.match" data-test="search-snippet" class="w-full min-w-0 text-xs leading-snug break-words text-fg-muted line-clamp-2">
           <template v-for="(part, index) in session.match.parts" :key="index">
             <mark v-if="part.hit" class="rounded-[2px] bg-secondary/25 px-px text-fg">{{ part.text }}</mark>
             <template v-else>{{ part.text }}</template>
