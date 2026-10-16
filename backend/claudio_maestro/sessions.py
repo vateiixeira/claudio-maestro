@@ -22,7 +22,7 @@ from contextlib import closing, suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import EllipsisType
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -70,8 +70,18 @@ from claudio_maestro.plans import (
 )
 from claudio_maestro.projects import Project
 from claudio_maestro.projects import project_roots as registered_project_roots
+from claudio_maestro.textindex import Match
 
 logger = logging.getLogger(__name__)
+
+
+class TextSearch(Protocol):
+    """The content index the manager asks (see `textindex.TextIndex`)."""
+
+    def matching(self, query: str) -> dict[str, int]: ...
+
+    def match_for(self, query: str, rowid: int) -> Match | None: ...
+
 
 DEFAULT_TITLE = history_module.DEFAULT_APP_TITLE
 TITLE_MAX_LENGTH = 80
@@ -2419,10 +2429,12 @@ class SessionManager:
         agentd: Any | None = None,
         agentd_new_sessions: bool = True,
         cli_identity: Callable[[], dict[str, Any]] | None = None,
+        text_index: TextSearch | None = None,
     ) -> None:
         # `{"path", "version"}` of the `claude` in use now. The models list is saved with
         # the one it came from and is stale when they differ (None: not checked).
         self._cli_identity = cli_identity
+        self._text_index = text_index
         # Keeps `claude` processes across restarts; None runs them as children of this process.
         self._agentd = agentd
         self._agentd_new_sessions = agentd_new_sessions
@@ -2918,15 +2930,24 @@ class SessionManager:
         return label
 
     def search(self, query: str, limit: int = 50) -> list[dict[str, Any]]:
-        """Sessions whose title, summary, first prompt, group name or label slug contain `query`, ignoring
-        case and accents. Includes finished ones, not discarded ones; newest first."""
+        """Sessions whose title, summary, first prompt, group name or label slug contain `query`,
+        then those whose messages do (with a `match` snippet), ignoring case and accents. Includes
+        finished ones, not discarded ones; each group newest first, `limit` for both together."""
         needle = _strip_accents(" ".join(query.split()))
         if not needle:
             return []
         with closing(db.connect(self._db_path)) as conn:
             group_names = {group.id: group.name for group in groups.list_groups(conn)}
             label_slugs = {label.id: label.slug for label in labels.list_labels(conn)}
-        result = []
+        by_content: dict[str, int] = {}
+        if self._text_index is not None:
+            try:
+                by_content = self._text_index.matching(query)
+            except Exception:
+                # No message text in the log: only that the index failed.
+                logger.exception("Falha ao procurar no conteúdo das conversas")
+        by_metadata: list[dict[str, Any]] = []
+        by_text: list[dict[str, Any]] = []
         for item in self.list_sessions():
             if item.get("mark") == "discarded":
                 continue
@@ -2936,9 +2957,21 @@ class SessionManager:
                 + [label_slugs.get(label_id, "") for label_id in item.get("label_ids", [])]
             )
             if needle in _strip_accents(haystack):
-                result.append(item)
-                if len(result) >= limit:
-                    break
+                by_metadata.append(item)
+            elif item["session_id"] in by_content:
+                by_text.append(item)
+        result = [*by_metadata, *by_text][:limit]
+        for item in result:
+            rowid = by_content.get(item["session_id"])
+            if rowid is None or self._text_index is None:
+                continue
+            try:
+                match = self._text_index.match_for(query, rowid)
+            except Exception:
+                logger.exception("Falha ao montar o trecho da sessão %s", item["session_id"])
+                continue
+            if match is not None:
+                item["match"] = asdict(match)
         return result
 
     def hidden_counts(self) -> dict[int, int]:

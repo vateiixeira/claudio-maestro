@@ -140,6 +140,22 @@ class SessionOut(BaseModel):
     label_ids: list[int] = []
 
 
+class MatchPartOut(BaseModel):
+    text: str
+    hit: bool
+
+
+class MatchOut(BaseModel):
+    parts: list[MatchPartOut]
+    at: int | None = None
+
+
+class SearchResultOut(SessionOut):
+    # The snippet of the last message with the term; None when the session matched by title,
+    # summary, first prompt, group or label only.
+    match: MatchOut | None = None
+
+
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
@@ -272,7 +288,7 @@ async def list_all_sessions(
     return manager.list_sessions(project_id=project_id, display_state=state)
 
 
-@router.get("/sessions/search", response_model=list[SessionOut])
+@router.get("/sessions/search", response_model=list[SearchResultOut])
 async def search_sessions(
     manager: ManagerDep,
     q: Annotated[str, Query(max_length=200)] = "",

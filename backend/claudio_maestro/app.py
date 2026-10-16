@@ -45,6 +45,7 @@ from claudio_maestro.security import (
     allowed_origins,
 )
 from claudio_maestro.sessions import HistoryExists, RenameSession, SessionManager
+from claudio_maestro.textindex import INDEX_FILENAME, TextIndex
 from claudio_maestro.updates import FetchRelease, UpdateChecker, fetch_latest_release
 from claudio_maestro.usage import FetchUsage, UsageChecker
 from claudio_maestro.usage import fetch_usage as default_fetch_usage
@@ -200,6 +201,9 @@ def create_app(
             factory = sdk_agent_factory(app.state.claude_cli.cli_path)
         else:
             factory = agent_factory
+        app.state.textindex = TextIndex(
+            app.state.settings.db_path, app.state.settings.data_dir / INDEX_FILENAME, session_file
+        )
         app.state.sessions = SessionManager(
             app.state.settings.db_path,
             app.state.hub.publish,
@@ -216,6 +220,7 @@ def create_app(
             agentd=app.state.agentd,
             agentd_new_sessions=new_through_agentd,
             cli_identity=cli_identity,
+            text_index=app.state.textindex,
         )
         try:
             await app.state.sessions.reattach_all()
@@ -236,10 +241,16 @@ def create_app(
             app.state.hub.publish,
             digest_model or SdkDigestModel(agent_dir, cli_path=app.state.claude_cli.cli_path),
         )
+
+        def on_history_change(session_ids: set[str]) -> None:
+            app.state.sessions.refresh_records(session_ids)
+            # New sessions are in the database now: index their text without waiting for the interval.
+            app.state.textindex.kick()
+
         app.state.history = history.HistoryIndex(
             app.state.settings.db_path,
             list_sessions or history.sdk_list_sessions,
-            on_change=app.state.sessions.refresh_records,
+            on_change=on_history_change,
             on_projects_changed=lambda ids: publish_synced(app.state.hub.publish, ids),
             is_in_use=app.state.sessions.in_use,
             ignored_dirs=[agent_dir, legacy_agent_dir],
@@ -250,6 +261,9 @@ def create_app(
             ),
             asyncio.create_task(
                 app.state.history.run_periodic(app.state.settings.history_sync_interval_seconds)
+            ),
+            asyncio.create_task(
+                app.state.textindex.run_periodic(app.state.settings.history_sync_interval_seconds)
             ),
             asyncio.create_task(
                 app.state.git_monitor.run_periodic(
