@@ -30,6 +30,7 @@ from claudio_maestro.agent.fake import (
     PermissionStep,
     init_message,
     response_messages,
+    result_message,
     text_turn,
     tool_turn,
 )
@@ -955,3 +956,154 @@ async def test_connect_fails_when_project_folder_is_gone(make_env, env_cleanup):
     assert session.state == "error"
     assert session.error == f"A pasta do projeto não existe mais: {env.project.path}"
     assert env.factory.clients == []
+
+
+# Output tokens of the running turn ------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_snapshot_and_events_carry_the_output_tokens_of_the_running_turn(
+    make_env, env_cleanup
+):
+    pause = PauseStep()
+
+    def turn(sid):
+        first = response_messages(sid, [TextBlock(text="parcial")], output_tokens=1600)
+        return [init_message(sid), *first, pause, result_message(sid)]
+
+    script, ids = by_session(turn)
+    env = make_env(script=script)
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    ids.append(session.session_id)
+    assert session.snapshot()["turn_output_tokens"] == 0
+
+    await session.send("oi")
+    with anyio.fail_after(WAIT):
+        await pause.reached.wait()
+
+    assert session.snapshot()["turn_output_tokens"] == 1600
+    sent = [e["data"]["output_tokens"] for e in env.recorder.of(session.session_id, "turn.tokens")]
+    assert sent == [1600]
+
+    pause.release.set()
+    await wait_until(lambda: session.state == "idle")
+
+    assert session.snapshot()["turn_output_tokens"] == 0
+    sent = [e["data"]["output_tokens"] for e in env.recorder.of(session.session_id, "turn.tokens")]
+    assert sent == [1600, 0]
+
+
+# Start of the open turn ------------------------------------------------------
+
+
+def turn_started(env, session) -> list[int]:
+    return [e["data"]["started_at"] for e in env.recorder.of(session.session_id, "turn.started")]
+
+
+@pytest.mark.anyio
+async def test_turn_start_is_recorded_when_the_session_goes_from_idle_to_running(
+    make_env, env_cleanup
+):
+    pause = PauseStep()
+
+    def turn(sid):
+        return [init_message(sid), pause, *text_turn(sid, "ok")[2:]]
+
+    script, ids = by_session(turn, lambda sid: text_turn(sid, "depois"))
+    env = make_env(script=script)
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    ids.append(session.session_id)
+    assert session.snapshot()["turn_started_at"] is None
+    session._wall_clock = lambda: 5000.4
+
+    await session.send("oi")
+    with anyio.fail_after(WAIT):
+        await pause.reached.wait()
+
+    assert session.snapshot()["turn_started_at"] == 5000
+    assert turn_started(env, session) == [5000]
+    # The start reaches the client before the state that shows it running.
+    events = [
+        e["type"] if e["type"] != "session.state" else e["data"]["state"]
+        for e in env.recorder.of(session.session_id)
+    ]
+    assert events.index("turn.started") < events.index("running")
+
+    # A message sent in the middle of the turn does not restart the clock.
+    session._wall_clock = lambda: 5100.0
+    await session.send("mais uma coisa")
+    assert session.snapshot()["turn_started_at"] == 5000
+    assert turn_started(env, session) == [5000]
+
+    pause.release.set()
+    await wait_until(lambda: session.state == "idle")
+    assert session.snapshot()["turn_started_at"] is None
+
+
+@pytest.mark.anyio
+async def test_queued_message_gets_a_new_start_when_its_turn_begins(make_env, env_cleanup):
+    first, second = PauseStep(), PauseStep()
+
+    def one(sid):
+        return [init_message(sid), first, *text_turn(sid, "um")[2:]]
+
+    def two(sid):
+        return [init_message(sid), second, *text_turn(sid, "dois")[2:]]
+
+    script, ids = by_session(one, two)
+    env = make_env(script=script)
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    ids.append(session.session_id)
+    session._wall_clock = lambda: 100.0
+
+    await session.send("um")
+    with anyio.fail_after(WAIT):
+        await first.reached.wait()
+    await session.send("dois")
+    session._wall_clock = lambda: 200.0
+    first.release.set()
+    with anyio.fail_after(WAIT):
+        await second.reached.wait()
+
+    assert turn_started(env, session) == [100, 200]
+    assert session.snapshot()["turn_started_at"] == 200
+
+    second.release.set()
+    await wait_until(lambda: session.state == "idle")
+    assert session.snapshot()["turn_started_at"] is None
+
+
+@pytest.mark.anyio
+async def test_turn_opened_by_the_agent_has_its_own_start(make_env, env_cleanup):
+    auto = PauseStep()
+    script, ids = by_session(lambda sid: text_turn(sid, "primeiro"))
+    env = make_env(script=script)
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    ids.append(session.session_id)
+    session._wall_clock = lambda: 1000.0
+    await session.send("oi")
+    await wait_until(lambda: session.state == "idle")
+    assert session.snapshot()["turn_started_at"] is None
+    user_at = next(i["at"] for i in session.snapshot()["items"] if i["type"] == "user")
+
+    # The CLI opens a turn on its own, a long time after the last message of the user.
+    session._wall_clock = lambda: 9000.0
+    sid = session.session_id
+    messages = response_messages(sid, [TextBlock(text="sozinho")])
+    env.factory.clients[0].push([messages[0], auto, *messages[1:], result_message(sid)])
+    with anyio.fail_after(WAIT):
+        await auto.reached.wait()
+
+    snapshot = session.snapshot()
+    assert snapshot["state"] == "running"
+    assert snapshot["turn_started_at"] == 9000
+    assert snapshot["turn_started_at"] != user_at
+    assert turn_started(env, session) == [1000, 9000]
+
+    auto.release.set()
+    await wait_until(lambda: session.state == "idle")
+    assert session.snapshot()["turn_started_at"] is None

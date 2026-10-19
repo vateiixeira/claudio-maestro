@@ -389,8 +389,12 @@ def response_messages(
     model: str = DEFAULT_MODEL,
     parent_tool_use_id: str | None = None,
     stop_reason: str = "end_turn",
+    output_tokens: int | None = None,
 ) -> list[Message]:
-    """One assistant response streamed block by block, as the SDK emits it."""
+    """One assistant response streamed block by block, as the SDK emits it.
+
+    With `output_tokens`, the `message_delta` carries `usage` like the real API (the
+    cumulative output tokens of the message); without it, no usage is sent."""
     message_id = message_id or new_message_id()
     parent = parent_tool_use_id
     out: list[Message] = [
@@ -439,13 +443,10 @@ def response_messages(
         out.append(
             _stream(session_id, {"type": "content_block_stop", "index": index}, parent)
         )
-    out.append(
-        _stream(
-            session_id,
-            {"type": "message_delta", "delta": {"stop_reason": stop_reason}},
-            parent,
-        )
-    )
+    final: dict[str, Any] = {"type": "message_delta", "delta": {"stop_reason": stop_reason}}
+    if output_tokens is not None:
+        final["usage"] = {"output_tokens": output_tokens}
+    out.append(_stream(session_id, final, parent))
     out.append(_stream(session_id, {"type": "message_stop"}, parent))
     return out
 
@@ -517,6 +518,7 @@ def text_turn(
     thinking: str | None = None,
     model: str = DEFAULT_MODEL,
     message_id: str | None = None,
+    output_tokens: int | None = None,
 ) -> list[Message]:
     """init, status, one response (optional thinking, then text), result."""
     blocks: list[ContentBlock] = []
@@ -526,7 +528,9 @@ def text_turn(
     return [
         init_message(session_id, model),
         status_message(session_id),
-        *response_messages(session_id, blocks, message_id=message_id, model=model),
+        *response_messages(
+            session_id, blocks, message_id=message_id, model=model, output_tokens=output_tokens
+        ),
         result_message(session_id, result=text),
     ]
 
@@ -544,9 +548,10 @@ def tool_turn(
     ask_permission: bool = False,
     suggestions: list[PermissionUpdate] | None = None,
     model: str = DEFAULT_MODEL,
+    output_tokens: int | None = None,
 ) -> list[Step]:
     """init, status, a response with one tool use, [permission], the tool result,
-    a second response with text, result."""
+    a second response with text, result. `output_tokens` is the usage of each response."""
     tool_use_id = tool_use_id or new_tool_use_id()
     tool_input = tool_input if tool_input is not None else {}
     steps: list[Step] = [
@@ -557,6 +562,7 @@ def tool_turn(
             [ToolUseBlock(id=tool_use_id, name=tool_name, input=tool_input)],
             model=model,
             stop_reason="tool_use",
+            output_tokens=output_tokens,
         ),
     ]
     if ask_permission:
@@ -568,7 +574,11 @@ def tool_turn(
             tool_use_id, result_content, is_error=is_error, tool_use_result=tool_use_result
         )
     )
-    steps.extend(response_messages(session_id, [TextBlock(text=final_text)], model=model))
+    steps.extend(
+        response_messages(
+            session_id, [TextBlock(text=final_text)], model=model, output_tokens=output_tokens
+        )
+    )
     steps.append(result_message(session_id, result=final_text))
     return steps
 

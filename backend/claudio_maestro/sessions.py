@@ -897,6 +897,14 @@ class ActiveSession:
         self._context_calls: set[asyncio.Future[Any]] = set()
         # A turn the CLI opened by itself (no send pending) is running.
         self._autonomous_turn = False
+        # When the open turn began (epoch seconds), None while no turn is open. It is the
+        # moment the session went from idle to running, by a message or by the CLI itself; a
+        # message sent in the middle of the turn does not restart it, but a queued message
+        # whose own turn begins after the result does (see `_read`). After the backend
+        # restarts and reattaches to a turn still running, it counts from the reattachment.
+        self.turn_started_at: int | None = None
+        # Wall clock, in epoch seconds (a test replaces it).
+        self._wall_clock: Callable[[], float] = time.time
         # Messages sent during an autonomous turn: the CLI answers them in the turn
         # that follows it (`_followup_owed`), or, if none starts within the grace
         # period (`_followup_task`), it answered them inside the autonomous one.
@@ -1061,6 +1069,11 @@ class ActiveSession:
         turn_open = self.pending_turns > 0 or self._autonomous_turn
         if turn_open:
             self._exit_note = None  # a new turn: the old death is history
+            if self.turn_started_at is None:
+                self.turn_started_at = int(self._wall_clock())
+                self._emit("turn.started", {"started_at": self.turn_started_at})
+        else:
+            self.turn_started_at = None
         if not self._final and turn_open != self.record.turn_open:
             try:
                 self.save(turn_open=turn_open)
@@ -1098,6 +1111,8 @@ class ActiveSession:
             "init": asdict(init) if init is not None else None,
             "history_truncated": self.history_truncated or cut,
             "external_activity": self.external_activity,
+            "turn_output_tokens": self.builder.turn_output_tokens,
+            "turn_started_at": self.turn_started_at,
         }
 
     @property
@@ -1672,6 +1687,8 @@ class ActiveSession:
                         self._autonomous_turn = False
                     else:
                         self.pending_turns = max(0, self.pending_turns - 1)
+                    # A message still queued gets a turn of its own: its clock starts anew.
+                    self.turn_started_at = None
                     # Whatever is still pending may have been folded into the turn that
                     # just ended (the CLI sends no result of its own for those), or may
                     # get a turn of its own: the grace period tells them apart.

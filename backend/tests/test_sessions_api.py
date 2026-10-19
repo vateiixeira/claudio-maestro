@@ -176,6 +176,8 @@ def test_snapshot_of_new_session(api, home):
         "init": None,
         "history_truncated": False,
         "external_activity": False,
+        "turn_output_tokens": 0,
+        "turn_started_at": None,
     }
 
 

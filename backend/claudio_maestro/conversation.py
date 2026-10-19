@@ -236,11 +236,21 @@ class ConversationBuilder:
         self._skipped_streams: set[str | None] = set()
         # Set by `load_history(live=True)`: a replay may start in the middle of a message.
         self._live = False
+        # Output tokens of the running turn, by message id. Only the main agent's messages
+        # count (`parent_tool_use_id is None`): a subagent's work is reported by its own card.
+        # Zeroed when the turn ends. The value is a total per message, never a sum of deltas,
+        # so a replayed stream cannot count a message twice.
+        self._turn_tokens: dict[str, int] = {}
         self.init: SessionInit | None = None
         self.last_result: TurnResult | None = None
         self.rate_limit: RateLimit | None = None
 
     # Public API ------------------------------------------------------------
+
+    @property
+    def turn_output_tokens(self) -> int:
+        """Output tokens the main agent generated in the running turn, as far as it is known."""
+        return sum(self._turn_tokens.values())
 
     def get(self, item_id: str) -> Item | None:
         position = self._positions.get(item_id)
@@ -328,6 +338,9 @@ class ConversationBuilder:
         compact_uuids = compact_uuids or set()
         self._live = self._live or live
         self._loading = True
+        # Live only: the output tokens the saved messages of the open turn already generated
+        # (those after the last message of the user), by message id.
+        saved_tokens: dict[str, int] = {}
         for entry in entries:
             self._entry_time = entry_times.get(getattr(entry, "uuid", None) or "")
             if live:
@@ -337,6 +350,12 @@ class ConversationBuilder:
                 message_id = raw_message.get("id")
                 if entry.type == "assistant" and message_id:
                     self._history_message_ids.add(message_id)
+                    usage = raw_message.get("usage")
+                    tokens = usage.get("output_tokens") if isinstance(usage, dict) else None
+                    if isinstance(tokens, int) and not isinstance(tokens, bool):
+                        saved_tokens[message_id] = max(saved_tokens.get(message_id, 0), tokens)
+                elif entry.type == "user" and _is_user_prompt(raw_message.get("content")):
+                    saved_tokens.clear()
             message = entry.message if isinstance(entry.message, dict) else {}
             content = message.get("content")
             if entry.type == "user" and getattr(entry, "uuid", None) in compact_uuids:
@@ -356,6 +375,11 @@ class ConversationBuilder:
         self._loading = False
         self._entry_time = None
         self.close_open_items()
+        # After `close_open_items`, which zeroes the count. Limitation: a turn the CLI opened by
+        # itself has no message of the user to mark its start, so the closing messages of the
+        # turn before it are counted too; and the saved usage of a message still being written
+        # may be lower than the final one.
+        self._turn_tokens = dict(saved_tokens) if live else {}
         for item in self.items:
             if not isinstance(item, ToolItem):
                 continue
@@ -612,6 +636,12 @@ class ConversationBuilder:
             # reply twice. Skip the stream; the complete message still creates the item.
             self._skipped_streams.add(parent)
             return []
+        if kind == "message_delta" and parent is None:
+            stream = self._streams.get(parent)
+            usage = event.get("usage")
+            if stream is not None and stream.message_id is not None and isinstance(usage, dict):
+                return self._note_tokens(stream.message_id, usage.get("output_tokens"))
+            return []
         if kind == "content_block_start":
             return self._on_block_start(parent, event)
         if kind == "content_block_delta":
@@ -621,6 +651,18 @@ class ConversationBuilder:
             if stream is not None and stream.open_index == event.get("index"):
                 stream.open_index = None
         return []
+
+    def _note_tokens(self, message_id: str, tokens: Any) -> list[Event]:
+        """The message generated `tokens` output tokens so far (cumulative, never lowers)."""
+        if (
+            not isinstance(tokens, int)
+            or isinstance(tokens, bool)
+            or tokens <= self._turn_tokens.get(message_id, 0)
+            or message_id in self._history_message_ids
+        ):
+            return []
+        self._turn_tokens[message_id] = tokens
+        return [Event("turn.tokens", {"output_tokens": self.turn_output_tokens})]
 
     def _on_block_start(self, parent: str | None, event: dict[str, Any]) -> list[Event]:
         stream = self._streams.setdefault(parent, _Stream())
@@ -686,6 +728,8 @@ class ConversationBuilder:
         if parent is not None:
             events.extend(self._note_alive(parent))
             events.extend(self._note_model(parent, message.model))
+        elif message.usage:
+            events.extend(self._note_tokens(message_id, message.usage.get("output_tokens")))
         for block in message.content:
             if (
                 stream is not None
@@ -1033,6 +1077,9 @@ class ConversationBuilder:
                 item.streaming = False  # type: ignore[union-attr]
                 events.append(self._put(item))
         self._streams.clear()
+        if self._turn_tokens:
+            self._turn_tokens.clear()
+            events.append(Event("turn.tokens", {"output_tokens": 0}))
         return events
 
     def _on_result(self, message: ResultMessage) -> list[Event]:
@@ -1114,6 +1161,15 @@ INTERRUPTED_TEXT = "Interrompido."
 COMPACTED_TEXT = "Conversa compactada"
 # How the CLI opens the summary it writes when a conversation is compacted.
 COMPACT_SUMMARY_PREFIX = "This session is being continued from a previous conversation"
+
+
+def _is_user_prompt(content: Any) -> bool:
+    """A user entry the person wrote (text or image), not one that only carries tool results."""
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list):
+        return any(isinstance(b, dict) and b.get("type") in ("text", "image") for b in content)
+    return False
 
 
 def _classify_user_text(text: str) -> tuple[str, str | None]:
