@@ -42,15 +42,12 @@ async function mountGroups(path = '/projects/1', attach = false) {
 }
 
 describe('agrupadores no menu', () => {
-  it('mostra o ativo e o parado, e o parado leva à tela do projeto', async () => {
+  it('mostra só o agrupador com conversa ativa e oculta o parado', async () => {
     const wrapper = await mountGroups()
     expect(wrapper.findAll('[data-test="sidebar-group"]')).toHaveLength(1)
-    const idle = wrapper.findAll('[data-test="sidebar-group-idle"]')
-    expect(idle).toHaveLength(1)
-    expect(idle[0]!.attributes('href')).toBe('/projects/1')
-    expect(idle[0]!.text()).toContain('Parado')
-    expect(idle[0]!.classes()).toContain('text-fg-subtle')
-    expect(idle[0]!.classes()).not.toContain('opacity-50')
+    expect(wrapper.find('[data-test="sidebar-group-idle"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Checkout')
+    expect(wrapper.text()).not.toContain('Parado')
   })
 
   it('lista só as sessões ativas, com o caminho de cada uma', async () => {
@@ -162,16 +159,16 @@ describe('agrupadores no menu', () => {
     expect(useGroupsStore(pinia).byId(1)).toBeUndefined()
   })
 
-  it('o agrupador parado também tem o botão, e Esc cancela devolvendo o foco', async () => {
+  it('Esc cancela a remoção devolvendo o foco ao botão da linha', async () => {
     const w = await mountGroups('/projects/1', true)
     const buttons = w.findAll('[data-test="sidebar-group-remove"]')
-    expect(buttons).toHaveLength(2)
-    await buttons[1]!.trigger('click')
-    expect(w.find('[data-test="group-confirm-remove"]').text()).toContain('Remover o agrupador Parado?')
+    expect(buttons).toHaveLength(1)
+    await buttons[0]!.trigger('click')
+    expect(w.find('[data-test="group-confirm-remove"]').text()).toContain('Remover o agrupador Checkout?')
     await w.find('[data-test="group-confirm-remove"]').trigger('keydown', { key: 'Escape' })
     await flushPromises()
     expect(w.find('[data-test="group-confirm-remove"]').exists()).toBe(false)
-    expect(document.activeElement).toBe(w.findAll('[data-test="sidebar-group-remove"]')[1]!.element)
+    expect(document.activeElement).toBe(w.findAll('[data-test="sidebar-group-remove"]')[0]!.element)
   })
 
   it('mostra o erro quando a remoção falha: a confirmação fecha e o agrupador fica', async () => {

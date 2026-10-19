@@ -8,16 +8,14 @@ export interface ActiveGroup {
   waiting: number
 }
 
-/** Groups of one project for the sidebar: those with active sessions (only those listed) and the idle rest. */
-export function projectTree(groups: SessionGroup[], sessions: Session[]): { active: ActiveGroup[]; idle: SessionGroup[] } {
+/** Groups of one project for the sidebar: only those with active sessions, listing only those sessions. A group with none is left out. */
+export function projectTree(groups: SessionGroup[], sessions: Session[]): ActiveGroup[] {
   const active: ActiveGroup[] = []
-  const idle: SessionGroup[] = []
   for (const group of sortGroups(groups, sessions)) {
     const open = sessionsOf(group.id, sessions).filter(isActive)
-    if (open.length === 0) idle.push(group)
-    else active.push({ group, sessions: open, waiting: open.filter((s) => s.display_state === 'waiting' && needsYou(s)).length })
+    if (open.length > 0) active.push({ group, sessions: open, waiting: open.filter((s) => s.display_state === 'waiting' && needsYou(s)).length })
   }
-  return { active, idle }
+  return active
 }
 
 /**

@@ -53,7 +53,7 @@ const rowClass = 'flex min-h-[30px] items-center gap-2 rounded-lg px-2 no-underl
 <template>
   <div class="flex flex-col gap-0.5 pl-6">
     <p v-if="removeError" role="alert" class="m-0 px-2 py-1 text-xs text-diff-del-fg">{{ removeError }}</p>
-    <div v-for="item in tree.active" :key="item.group.id" data-test="sidebar-group" class="flex flex-col">
+    <div v-for="item in tree" :key="item.group.id" data-test="sidebar-group" class="flex flex-col">
       <div class="group/row flex items-center">
         <button
           type="button"
@@ -100,29 +100,6 @@ const rowClass = 'flex min-h-[30px] items-center gap-2 rounded-lg px-2 no-underl
           >{{ formatElapsedShort(s.last_activity_at, now) }}</span>
         </RouterLink>
       </template>
-    </div>
-    <div v-for="g in tree.idle" :key="g.id" class="flex flex-col">
-      <div class="group/row flex items-center">
-        <RouterLink
-          data-test="sidebar-group-idle"
-          :to="{ name: 'project', params: { id: projectId } }"
-          :title="`${g.name}: sem conversas ativas`"
-          :class="[rowClass, 'min-w-0 grow text-fg-subtle hover:text-fg']"
-        >
-          <span aria-hidden="true" class="w-3" />
-          <IconGroup :size="12" class="shrink-0" />
-          <span class="min-w-0 grow truncate text-[0.8125rem]">{{ g.name }}</span>
-        </RouterLink>
-        <button
-          :ref="(el) => (removeButtons[g.id] = el as HTMLButtonElement | null)"
-          type="button"
-          data-test="sidebar-group-remove"
-          :aria-label="`Remover o agrupador ${g.name}`"
-          :class="removeClass"
-          @click="openRemove(g.id)"
-        ><IconClose :size="12" /></button>
-      </div>
-      <GroupRemoveConfirm v-if="confirmingId === g.id" class="mx-1 my-1" :group="g" :sessions="membersOf(g)" @cancel="cancelRemove(g.id)" @error="removeError = $event" @removed="confirmingId = null" />
     </div>
   </div>
 </template>

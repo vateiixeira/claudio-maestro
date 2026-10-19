@@ -20,7 +20,7 @@ import { useEventSocket } from '../../api/socket'
 import { isCollapsed, isSectionOpened, setCollapsed, setSectionOpened } from '../../sidebarCollapse'
 import { behindCount, behindSrText, behindTitle } from '../../gitSync'
 import { useMinuteClock } from '../../minuteClock'
-import { splitProjects } from '../../sidebarTree'
+import { projectTree, splitProjects } from '../../sidebarTree'
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_KEY_STEP, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, clampSidebarWidth, sidebarWidth, writeSidebarWidth } from '../../sidebarWidthPref'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
@@ -85,10 +85,16 @@ function waitingIn(projectId: number): number {
 function runningIn(projectId: number): boolean {
   return sessions.forProject(projectId).some((s) => s.display_state === 'running' && !isDiscarded(s))
 }
-// Groups shown under each project: those created in it and those holding one of its conversations.
+// Groups under each project: those created in it and those holding one of its conversations.
 const groupsByProject = computed(() => {
   const map = new Map<number, SessionGroup[]>()
   for (const p of projects.projects) map.set(p.id, groups.visibleIn(p.id, sessions.all))
+  return map
+})
+// The ones the sidebar actually lists: a group without an open conversation is hidden, so it does not count as a child.
+const listedGroupsByProject = computed(() => {
+  const map = new Map<number, number>()
+  for (const [id, list] of groupsByProject.value) map.set(id, projectTree(list, sessions.all).length)
   return map
 })
 // Open conversations of each project outside its groups, the ones waiting for you first; grouped ones show under their group.
@@ -101,7 +107,7 @@ const looseByProject = computed(() => {
   return map
 })
 function hasChildren(projectId: number): boolean {
-  return (groupsByProject.value.get(projectId)?.length ?? 0) > 0 || (looseByProject.value.get(projectId)?.length ?? 0) > 0
+  return (listedGroupsByProject.value.get(projectId) ?? 0) > 0 || (looseByProject.value.get(projectId)?.length ?? 0) > 0
 }
 // "Em andamento": projects with an open conversation. "Outros projetos": the rest, kept in one folded line.
 const split = computed(() => splitProjects(projects.projects, sessions.all))
@@ -254,7 +260,7 @@ const itemClass = sidebarItemClass
             <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="ml-[14px] flex flex-col gap-px border-l border-line pl-2">
               <SidebarSessionRow v-for="s in looseByProject.get(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project nested />
             </div>
-            <SidebarGroups v-if="groupsByProject.get(project.id)?.length" :project-id="project.id" />
+            <SidebarGroups v-if="listedGroupsByProject.get(project.id)" :project-id="project.id" />
           </template>
         </template>
       </section>

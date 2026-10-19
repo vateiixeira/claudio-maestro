@@ -443,6 +443,17 @@ describe('menu lateral em árvore', () => {
     expect(toggle.attributes('aria-label')).toBe('Expandir loja-online')
   })
 
+  it('oculta o agrupador sem conversa ativa, e o projeto fica sem seta se não restou nada', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
+    useGroupsStore(pinia).groups = [makeGroup({ id: 1, project_id: 1, name: 'Parado' })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ group_id: 1, display_state: 'finished' })])
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="sidebar-group"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="sidebar-group-idle"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Parado')
+    expect(wrapper.find('[data-test="project-toggle"]').exists()).toBe(false)
+  })
+
   it('o nome do projeto continua levando à tela do projeto', async () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     useGroupsStore(pinia).groups = [makeGroup({ id: 1, project_id: 1 })]

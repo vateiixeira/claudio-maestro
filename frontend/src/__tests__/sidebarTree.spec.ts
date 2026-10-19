@@ -3,7 +3,7 @@ import { projectTree, splitProjects } from '../sidebarTree'
 import { makeGroup, makeProject, makeSession } from '../test/factories'
 
 describe('árvore do menu', () => {
-  it('separa agrupadores com sessão ativa dos parados e só lista as ativas', () => {
+  it('só inclui agrupadores com sessão ativa, e lista só as ativas', () => {
     const groups = [makeGroup({ id: 1, name: 'A' }), makeGroup({ id: 2, name: 'B' }), makeGroup({ id: 3, name: 'Vazio' })]
     const sessions = [
       makeSession({ session_id: 'a1', group_id: 1, last_activity_at: 10, display_state: 'waiting', unread: true }),
@@ -12,10 +12,9 @@ describe('árvore do menu', () => {
       makeSession({ session_id: 'b1', group_id: 2, display_state: 'finished' }),
     ]
     const tree = projectTree(groups, sessions)
-    expect(tree.active.map((g) => g.group.id)).toEqual([1])
-    expect(tree.active[0]!.sessions.map((s) => s.session_id)).toEqual(['a3', 'a1'])
-    expect(tree.active[0]!.waiting).toBe(1)
-    expect(tree.idle.map((g) => g.id).sort()).toEqual([2, 3])
+    expect(tree.map((g) => g.group.id)).toEqual([1])
+    expect(tree[0]!.sessions.map((s) => s.session_id)).toEqual(['a3', 'a1'])
+    expect(tree[0]!.waiting).toBe(1)
   })
 
   it('lista as conversas de todos os projetos que estão no agrupador', () => {
@@ -24,7 +23,7 @@ describe('árvore do menu', () => {
       makeSession({ session_id: 'b', project_id: 2, group_id: 1, display_state: 'running' }),
     ]
     const tree = projectTree([makeGroup({ id: 1 })], sessions)
-    expect(tree.active[0]!.sessions.map((s) => s.session_id).sort()).toEqual(['a', 'b'])
+    expect(tree[0]!.sessions.map((s) => s.session_id).sort()).toEqual(['a', 'b'])
   })
 
   it('conta como aguardando só quem precisa de você', () => {
@@ -34,7 +33,7 @@ describe('árvore do menu', () => {
       makeSession({ session_id: 'p', group_id: 1, display_state: 'waiting', pending_kind: 'plan' }),
       makeSession({ session_id: 'e', group_id: 1, display_state: 'waiting', state: 'error' }),
     ]
-    expect(projectTree([makeGroup({ id: 1 })], sessions).active[0]!.waiting).toBe(3)
+    expect(projectTree([makeGroup({ id: 1 })], sessions)[0]!.waiting).toBe(3)
   })
 
   it('não conta como aguardando a sessão marcada sem pedido real', () => {
@@ -42,7 +41,7 @@ describe('árvore do menu', () => {
       makeSession({ session_id: 'm', group_id: 1, display_state: 'waiting', unread: true, mark: 'on_hold' }),
       makeSession({ session_id: 'r', group_id: 1, display_state: 'waiting', unread: true, mark: 'blocked', pending_kind: 'tool' }),
     ]
-    expect(projectTree([makeGroup({ id: 1 })], sessions).active[0]!.waiting).toBe(1)
+    expect(projectTree([makeGroup({ id: 1 })], sessions)[0]!.waiting).toBe(1)
   })
 })
 
@@ -87,11 +86,10 @@ describe('sessões descartadas na árvore do menu', () => {
     ]
     expect(splitProjects(projects, sessions).active.map((p) => p.id)).toEqual([2])
   })
-  it('grupo só com descartadas fica parado', () => {
+  it('grupo só com descartadas fica de fora', () => {
     const groups = [makeGroup({ id: 1, name: 'A' })]
     const sessions = [makeSession({ session_id: 'd', group_id: 1, mark: 'discarded', display_state: 'running' })]
     const tree = projectTree(groups, sessions)
-    expect(tree.active).toEqual([])
-    expect(tree.idle.map((g) => g.id)).toEqual([1])
+    expect(tree).toEqual([])
   })
 })
