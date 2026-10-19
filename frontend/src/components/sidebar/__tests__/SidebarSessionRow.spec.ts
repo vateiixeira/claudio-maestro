@@ -197,16 +197,53 @@ describe('clique direito', () => {
 })
 
 describe('etiquetas na linha do menu', () => {
-  it('mostra 1 etiqueta e "+N" ao lado do título', async () => {
-    useLabelsStore(pinia).labels = [1, 2, 3].map((id) => makeLabel({ id, slug: `et${id}` }))
-    const row = await mountRow({ label_ids: [1, 2, 3] })
-    expect(row.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['et1'])
-    expect(row.get('[data-test="label-more"]').text()).toBe('+2')
+  it('mostra até 3 etiquetas e "+N" numa segunda linha, abaixo do título', async () => {
+    useLabelsStore(pinia).labels = [1, 2, 3, 4].map((id) => makeLabel({ id, slug: `et${id}` }))
+    const row = await mountRow({ label_ids: [1, 2, 3, 4] })
+    const labels = row.get('[data-test="row-labels"]')
+    expect(labels.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['et1', 'et2', 'et3'])
+    expect(labels.get('[data-test="label-more"]').text()).toBe('+1')
+    // Not on the title line, and after it.
+    expect(row.get('[data-test="row-title"]').element.closest('[data-test="row-labels"]')).toBeNull()
+    expect(labels.find('[data-test="row-title"]').exists()).toBe(false)
     const html = row.html()
-    expect(html.indexOf('data-test="row-title"')).toBeLessThan(html.indexOf('data-test="label-badges"'))
+    expect(html.indexOf('data-test="row-title"')).toBeLessThan(html.indexOf('data-test="row-labels"'))
+    // The only badges in the row are the ones in the second line.
+    expect(row.findAll('[data-test="label-badges"]')).toHaveLength(1)
   })
 
-  it('sem etiquetas não mostra nada', async () => {
-    expect((await mountRow({ label_ids: [] })).find('[data-test="label-badges"]').exists()).toBe(false)
+  it('sem etiquetas (ou com ids que o store não conhece) não cria a segunda linha', async () => {
+    useLabelsStore(pinia).labels = [makeLabel({ id: 1, slug: 'et1' })]
+    for (const label_ids of [[], [99]]) {
+      const row = await mountRow({ label_ids })
+      expect(row.find('[data-test="row-labels"]').exists()).toBe(false)
+      expect(row.find('[data-test="label-badges"]').exists()).toBe(false)
+    }
+  })
+
+  it('a linha sem etiquetas mantém as classes de antes (sem padding extra)', async () => {
+    const row = await mountRow({ label_ids: [] })
+    expect(row.get('a').classes()).toContain('items-center')
+    expect(row.get('a').classes()).not.toContain('py-1')
+  })
+
+  it('alinha a segunda linha com o título nos dois tamanhos', async () => {
+    useLabelsStore(pinia).labels = [makeLabel({ id: 1, slug: 'et1' })]
+    for (const nested of [false, true]) {
+      const row = await mountRow({ label_ids: [1] }, '/inbox', { nested })
+      const line = row.get('[data-test="row-line"]')
+      const labels = row.get('[data-test="row-labels"]')
+      // Two columns: the state icon on its own, the title line and the labels line share the second one.
+      expect(row.get('a').classes()).toContain('grid-cols-[auto_minmax(0,1fr)]')
+      expect(row.get('a').classes()).toContain('py-1')
+      expect(line.classes()).not.toContain('contents')
+      expect(line.element.parentElement).toBe(row.get('a').element)
+      expect(labels.element.parentElement).toBe(row.get('a').element)
+      expect(labels.classes()).toContain('col-start-2')
+      expect(labels.classes()).toContain('overflow-hidden')
+      expect(labels.classes()).toContain('whitespace-nowrap')
+      expect(row.get('a').classes()).toContain(nested ? 'gap-x-2' : 'gap-x-2.5')
+      expect(row.get('[data-test="row-title"]').element.closest('[data-test="row-line"]')).not.toBeNull()
+    }
   })
 })

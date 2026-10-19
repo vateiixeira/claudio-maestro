@@ -99,9 +99,26 @@ describe('busca no menu lateral', () => {
     await vi.advanceTimersByTimeAsync(300)
     await flushPromises()
     const [first, second] = w.findAll('[data-test="search-result"]')
-    expect(first!.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['et1'])
-    expect(first!.get('[data-test="label-more"]').text()).toBe('+1')
+    const labels = first!.get('[data-test="search-labels"]')
+    expect(labels.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['et1', 'et2'])
+    // On its own line: after the title, before the project/state line.
+    const html = first!.html()
+    expect(html.indexOf('Com etiquetas')).toBeLessThan(html.indexOf('data-test="search-labels"'))
+    expect(html.indexOf('data-test="search-labels"')).toBeLessThan(html.indexOf('loja-online'))
+    expect(second!.find('[data-test="search-labels"]').exists()).toBe(false)
     expect(second!.find('[data-test="label-badges"]').exists()).toBe(false)
+  })
+
+  it('mostra até 3 etiquetas e "+N" na linha própria', async () => {
+    useLabelsStore(pinia).labels = [1, 2, 3, 4].map((id) => makeLabel({ id, slug: `et${id}` }))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([makeSession({ session_id: 'a', label_ids: [1, 2, 3, 4] })])))
+    const w = mountSidebar()
+    await type(w, 'x')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    const labels = w.get('[data-test="search-labels"]')
+    expect(labels.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['et1', 'et2', 'et3'])
+    expect(labels.get('[data-test="label-more"]').text()).toBe('+1')
   })
 
   it('descarta respostas antigas', async () => {

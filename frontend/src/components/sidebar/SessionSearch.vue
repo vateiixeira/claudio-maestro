@@ -7,12 +7,14 @@ import { needsYou } from '../../conversation/needsYou'
 import { errorMessage, searchSessions } from '../../api/http'
 import { formatActivity } from '../../format'
 import { displayStateLabel } from '../../sessionState'
+import { useLabelsStore } from '../../stores/labels'
 import { useProjectsStore } from '../../stores/projects'
 import type { SearchResult } from '../../types/api'
 
 const DELAY = 250
 
 const projects = useProjectsStore()
+const labels = useLabelsStore()
 const router = useRouter()
 
 const query = ref('')
@@ -59,6 +61,11 @@ async function run(q: string): Promise<void> {
     error.value = errorMessage(e)
   }
   searched.value = true
+}
+
+// Only a known label gets the line, so no empty wrapper takes room.
+function hasLabels(result: SearchResult): boolean {
+  return (result.label_ids ?? []).some((id) => labels.byId(id) !== undefined)
 }
 
 // A result found inside the conversation opens it at that message: the term goes along as `?find=`.
@@ -127,9 +134,9 @@ onBeforeUnmount(() => {
         class="flex min-h-11 w-full cursor-pointer flex-col gap-0.5 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
         @click="open(session)"
       >
-        <span class="flex w-full min-w-0 items-center gap-1.5">
-          <span class="min-w-0 truncate text-[0.8125rem] font-medium">{{ session.title }}</span>
-          <LabelBadges :ids="session.label_ids" compact />
+        <span class="w-full min-w-0 truncate text-[0.8125rem] font-medium">{{ session.title }}</span>
+        <span v-if="hasLabels(session)" data-test="search-labels" class="flex w-full min-w-0 overflow-hidden whitespace-nowrap">
+          <LabelBadges :ids="session.label_ids" compact :max="3" />
         </span>
         <span class="flex w-full items-center gap-1.5 text-xs text-fg-muted">
           <span

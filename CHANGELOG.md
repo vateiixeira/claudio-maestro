@@ -14,6 +14,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - A busca de conversas (Ctrl K) também procura no texto das mensagens, mostra o trecho achado e abre a conversa na mensagem.
 - Antes de trocar de branch, mesclar, baixar ou descartar num repositório onde uma sessão está em execução (aberta nele ou numa pasta acima, como a raiz do projeto), o app pede confirmação e diz qual sessão é.
 
+### Alterado
+
+- No menu lateral e na busca de sessões, as tags de uma conversa ficam numa linha abaixo do título e mostram até três, sem cortar o título.
+
 ### Segurança
 
 - As ações de git do app nunca rodam hooks, editor, assinatura, drivers de merge ou filtros do repositório, e o envio usa o mesmo repositório temporário do fetch, sem ler a configuração do repositório e sem `--force`. Uma branch nunca é enviada para uma branch remota de outro nome. Repositório com Git LFS ou outro filtro fica só para leitura. Detalhes em `SECURITY.md`.

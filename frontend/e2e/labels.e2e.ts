@@ -311,3 +311,146 @@ test('o foco continua na caixa depois de marcar com o teclado', async ({ page })
   await expect(row).not.toHaveAttribute('aria-busy', 'true')
   await expect(option).toBeFocused()
 })
+
+test('no menu lateral e na busca, as etiquetas ficam numa linha abaixo do título, alinhadas a ele', async ({ page }) => {
+  await openConversation(page)
+  const row = await labelsRow(page)
+  await createLabel(row, 'primeira', '#1d4ed8')
+  await expect(badge(row, 'primeira')).toBeVisible()
+  const side = page.locator('a', { has: page.getByTestId('row-title') }).filter({ hasText: TITLE }).first()
+  await expect(side.getByTestId('row-labels')).toBeVisible()
+  for (const [slug, color] of [['segunda', '#16a34a'], ['terceira', '#ef4444'], ['quarta', '#a855f7']]) {
+    await row.getByTestId('label-new-slug').fill(slug)
+    await row.getByTestId('label-new-color').fill(color)
+    await row.getByTestId('label-new-save').click()
+    await expect(badge(row, slug)).toBeVisible()
+  }
+  await expect(side.getByTestId('row-labels').getByTestId('label-badge')).toHaveCount(3)
+  await expect(side.getByTestId('row-labels').getByTestId('label-more')).toHaveText('+1')
+  // Badges are not on the title line.
+  await expect(side.getByTestId('row-line').getByTestId('label-badge')).toHaveCount(0)
+
+  const title = (await side.getByTestId('row-title').boundingBox())!
+  const labels = (await side.getByTestId('row-labels').boundingBox())!
+  const link = (await side.boundingBox())!
+  expect(labels.y, 'tags abaixo do título').toBeGreaterThanOrEqual(title.y + title.height - 1)
+  expect(Math.abs(labels.x - title.x), 'tags alinhadas à borda esquerda do título').toBeLessThanOrEqual(1)
+  expect(labels.x + labels.width, 'tags dentro da linha').toBeLessThanOrEqual(link.x + link.width + 1)
+  expect(labels.y + labels.height, 'tags dentro da linha, com folga embaixo').toBeLessThan(link.y + link.height)
+
+  // The search result: the labels on their own line, between the title and the project line.
+  await page.getByTestId('search-input').fill('primeira')
+  const result = page.getByTestId('search-result').filter({ hasText: TITLE })
+  await expect(result).toHaveCount(1)
+  const found = result.getByTestId('search-labels')
+  await expect(found.getByTestId('label-badge')).toHaveCount(3)
+  const resultBox = (await result.boundingBox())!
+  const foundBox = (await found.boundingBox())!
+  expect(foundBox.x + foundBox.width).toBeLessThanOrEqual(resultBox.x + resultBox.width + 1)
+})
+
+const SECOND_TITLE = 'Liste as tarefas pendentes'
+
+async function labelAll(page: Page, baseURL: string, slugs: string[], title: string) {
+  const headers = { 'X-Maestro': '1', Origin: baseURL }
+  const ids: number[] = []
+  for (const slug of slugs) {
+    const made = await page.request.post('/api/labels', { headers, data: { slug, color: '#1d4ed8' } })
+    ids.push(((await made.json()) as { id: number }).id)
+  }
+  const sessions = (await (await page.request.get('/api/sessions', { headers })).json()) as { session_id: string; title: string }[]
+  const target = sessions.find((s) => s.title === title)!
+  await page.request.put(`/api/sessions/${target.session_id}/labels`, { headers, data: { label_ids: ids } })
+}
+
+test('conversa aninhada: sem tag mantém a altura, com tag ganha segunda linha alinhada ao título', async ({ page, baseURL }) => {
+  await labelAll(page, baseURL!, ['um'], TITLE)
+  await labelAll(page, baseURL!, ['m1', 'm2', 'm3', 'm4'], 'Investigue o módulo de pagamentos')
+  await page.goto('/inbox')
+  const nested = (title: string) => page.getByTestId('project-session').filter({ hasText: title })
+
+  const plain = (await nested(SECOND_TITLE).boundingBox())!
+  expect(plain.height, 'linha sem tag mantém ~28px').toBeLessThanOrEqual(29)
+  await expect(nested(SECOND_TITLE).getByTestId('row-labels')).toHaveCount(0)
+
+  for (const [title, count] of [[TITLE, 1], ['Investigue o módulo de pagamentos', 3]] as const) {
+    const row = nested(title)
+    const labels = row.getByTestId('row-labels')
+    await expect(labels.getByTestId('label-badge')).toHaveCount(count)
+    const box = (await row.boundingBox())!
+    const line = (await row.getByTestId('row-line').boundingBox())!
+    const name = (await row.getByTestId('row-title').boundingBox())!
+    const second = (await labels.boundingBox())!
+    const icon = (await row.locator('svg').first().boundingBox())!
+    expect(box.height, 'linha com tag é mais alta').toBeGreaterThan(plain.height + 10)
+    expect(Math.abs(second.x - name.x), 'segunda linha alinhada ao título').toBeLessThanOrEqual(1)
+    expect(second.y).toBeGreaterThanOrEqual(line.y + line.height - 1)
+    expect(second.y + second.height, 'folga embaixo').toBeLessThan(box.y + box.height)
+    expect(Math.abs(icon.y + icon.height / 2 - (line.y + line.height / 2)), 'ícone centrado na linha 1').toBeLessThanOrEqual(1.5)
+    await expect(row.getByTestId('row-age')).toBeVisible()
+    expect(second.x + second.width).toBeLessThanOrEqual(box.x + box.width + 1)
+  }
+  await expect(nested('Investigue').getByTestId('label-more')).toHaveText('+1')
+})
+
+test('conversa avulsa (lane "Para revisar") com tags: segunda linha alinhada e menu de contexto abre e fecha', async ({ page, baseURL }) => {
+  await labelAll(page, baseURL!, ['x1', 'x2'], SECOND_TITLE)
+  await page.goto('/inbox')
+  const nested = page.getByTestId('project-session').filter({ hasText: SECOND_TITLE })
+  try {
+    await nested.click({ button: 'right' })
+    const popover = page.getByTestId('mark-popover')
+    await expect(popover).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(popover).toHaveCount(0)
+
+    await nested.click({ button: 'right' })
+    await page.getByTestId('mark-review').click()
+    const row = page.getByTestId('lane-review-row').filter({ hasText: SECOND_TITLE })
+    await expect(row).toBeVisible()
+    const name = (await row.getByTestId('row-title').boundingBox())!
+    const second = (await row.getByTestId('row-labels').boundingBox())!
+    const box = (await row.boundingBox())!
+    expect(Math.abs(second.x - name.x)).toBeLessThanOrEqual(1)
+    expect(second.y).toBeGreaterThanOrEqual(name.y + name.height - 1)
+    expect(second.y + second.height).toBeLessThan(box.y + box.height)
+    await expect(row.getByTestId('row-age')).toBeVisible()
+  } finally {
+    await nested.click({ button: 'right' })
+    await page.getByTestId('mark-clear').click()
+    await expect(page.getByTestId('lane-review-row')).toHaveCount(0)
+  }
+})
+
+test('tag com slug longo trunca no próprio limite e a segunda linha não estoura a barra', async ({ page, baseURL }) => {
+  const long = 'longo-longo-longo-longo-longo-xx'
+  await labelAll(page, baseURL!, [long, 'b'], TITLE)
+  await page.goto('/inbox')
+  const row = page.getByTestId('project-session').filter({ hasText: TITLE })
+  await expect(row.getByTestId('row-labels').getByTestId('label-badge')).toHaveCount(2)
+  const box = (await row.boundingBox())!
+  const labels = (await row.getByTestId('row-labels').boundingBox())!
+  expect(labels.x + labels.width).toBeLessThanOrEqual(box.x + box.width + 1)
+  expect(labels.height, 'a linha de tags não quebra').toBeLessThanOrEqual(20)
+  const first = (await badgeBox(row, long))!
+  expect(first.width, 'a tag longa respeita o próprio limite').toBeLessThan(120)
+})
+
+async function badgeBox(scope: Locator, slug: string) {
+  return scope.locator(`[data-test="label-badge"][data-slug="${slug}"]`).boundingBox()
+}
+
+test('busca: resultado sem tag não deixa linha vazia', async ({ page, baseURL }) => {
+  await labelAll(page, baseURL!, ['achada'], TITLE)
+  await page.goto('/inbox')
+  await page.getByTestId('search-input').fill('pendentes')
+  const plain = page.getByTestId('search-result').filter({ hasText: SECOND_TITLE })
+  await expect(plain).toHaveCount(1)
+  await expect(plain.getByTestId('search-labels')).toHaveCount(0)
+  await page.getByTestId('search-input').fill('estrutura do projeto')
+  const tagged = page.getByTestId('search-result').filter({ hasText: TITLE })
+  await expect(tagged.getByTestId('search-labels').getByTestId('label-badge')).toHaveCount(1)
+  const t = (await tagged.getByTestId('search-labels').boundingBox())!
+  const title = (await tagged.locator('span').first().boundingBox())!
+  expect(t.y).toBeGreaterThanOrEqual(title.y + title.height - 1)
+})
