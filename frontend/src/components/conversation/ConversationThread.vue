@@ -11,11 +11,14 @@ import QuestionCard from './QuestionCard.vue'
 import RailNode from './RailNode.vue'
 import { railAlign } from '../../conversation/railAlign'
 import SubagentStrip from './SubagentStrip.vue'
+import TurnLiveLine from './TurnLiveLine.vue'
+import TurnTasks from './TurnTasks.vue'
 import UserMessage from './UserMessage.vue'
 import { findLastMessage, MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { buildItemTree, deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
 import { buildTurns, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
 import { groupNodeKind, workStatus } from '../../conversation/work'
+import { liveActivity, showTurnTasks, turnTaskStates } from '../../conversation/liveTurn'
 import { COLLAPSE_OPENING_KEY } from '../../conversation/collapseActivity'
 import { entryKey, isNearEnd, promptKey, turnKeys } from '../../conversation/liveItems'
 import WorkBlock from './WorkBlock.vue'
@@ -150,6 +153,7 @@ const backgroundRunning = computed(() =>
 const waitingLabel = computed(() => waitingText(backgroundRunning.value))
 const turns = computed(() => {
   const list = buildTurns(rows.value)
+  const taskStates = turnTaskStates(list)
   // A pending decision or a connecting session is still inside the turn.
   const running = sessionActive.value || conv.value?.state === 'connecting'
   return list.map((turn, index) => {
@@ -159,8 +163,18 @@ const turns = computed(() => {
     const waiting = done && last && backgroundRunning.value.length > 0
     let summary = done && !waiting ? summaryText(turnSummary(turn, tree.value.childrenOf)) : ''
     if (done && !waiting && last && resultParts.value.length) summary = [summary, ...resultParts.value].join(' · ')
-    return { turn, done, last, waiting, summary, failed: done && !waiting && last && resultFailed.value }
+    const tasks = taskStates[index]!
+    return {
+      turn, done, last, waiting, summary, failed: done && !waiting && last && resultFailed.value,
+      tasks: tasks.tasks, showTasks: showTurnTasks(tasks, done),
+    }
   })
+})
+// The line of the running turn: what it does now (a request waits, an action runs, a reply is written, or it thinks).
+const liveText = computed(() => {
+  const last = turns.value[turns.value.length - 1]
+  if (!last || last.done) return ''
+  return liveActivity(last.turn, sessionActive.value, waitingIds.value, (conv.value?.prompts.length ?? 0) > 0)
 })
 // What was already there when the conversation opened (or was switched to) is history and appears
 // at once; whatever shows up afterwards arrived live and enters with a motion. Rows that only
@@ -513,7 +527,7 @@ function resolvePrompt(promptId: string) {
           <p v-if="rows.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
-          <template v-for="({ turn, done, last, waiting, summary, failed }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
+          <template v-for="({ turn, done, last, waiting, summary, failed, tasks, showTasks }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
             <div v-if="index > 0" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-11 focus-visible:outline-2 focus-visible:outline-primary items-center gap-2.5">
               <span class="cap text-fg-subtle">Turno {{ turn.number }}</span>
               <span aria-hidden="true" class="h-px grow bg-line" />
@@ -556,6 +570,11 @@ function resolvePrompt(promptId: string) {
                   </template>
                 </div>
               </div>
+              <div v-if="!done" data-test="turn-progress" class="flex flex-col gap-2.5">
+                <TurnTasks v-if="showTasks" :tasks="tasks" />
+                <TurnLiveLine :activity="liveText" :started-at="conv.runningSince" :tokens="conv.turnTokens" />
+              </div>
+              <TurnTasks v-else-if="showTasks" :tasks="tasks" muted />
               <div v-if="done" data-test="turn-end" class="flex flex-wrap items-center gap-y-0.5 text-xs text-fg-subtle">
                 <button
                   v-if="waiting"

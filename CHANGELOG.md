@@ -13,9 +13,11 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - O botão de remover agrupador também aparece na barra lateral (ao passar o mouse ou focar a linha) e no painel de detalhes da conversa, sempre com confirmação; nenhuma conversa é apagada.
 - A busca de conversas (Ctrl K) também procura no texto das mensagens, mostra o trecho achado e abre a conversa na mensagem.
 - Antes de trocar de branch, mesclar, baixar ou descartar num repositório onde uma sessão está em execução (aberta nele ou numa pasta acima, como a raiz do projeto), o app pede confirmação e diz qual sessão é.
+- Com um turno em andamento, a conversa mostra no fim dele a lista de tarefas do Claude, atualizada no lugar, e uma linha viva com o que está acontecendo (pensando, escrevendo, a ação em execução ou "esperando você"), há quanto tempo e quantos tokens ele já gerou. Quando o turno termina, a lista fica apagada acima do "Concluído", só nos turnos que mexeram nela.
 
 ### Alterado
 
+- As chamadas de tarefa do Claude (TodoWrite, TaskCreate e TaskUpdate) deixam de aparecer como cartões no meio da conversa e já não contam como ações do turno: a lista do fim do turno é o registro.
 - No menu lateral e na busca de sessões, as tags de uma conversa ficam numa linha abaixo do título e mostram até três, sem cortar o título.
 - No menu lateral, o agrupador sem nenhuma conversa ativa deixa de aparecer, e o projeto que só tinha agrupadores assim fica sem a seta de recolher. Ele continua na tela do projeto e nos seletores.
 

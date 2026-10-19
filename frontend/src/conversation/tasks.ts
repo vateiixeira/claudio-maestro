@@ -1,4 +1,4 @@
-import type { ConversationItem } from '../types/conversation'
+import type { ConversationItem, ToolItem } from '../types/conversation'
 import { resultText, str } from './tool'
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed'
@@ -26,6 +26,25 @@ export function createdTaskId(content: unknown): string | null {
   return /#(\d+)/.exec(resultText(content))?.[1] ?? null
 }
 
+/** The task list after one more task tool call (`item` must be a TASK_TOOLS tool item). */
+export function applyTaskTool(tasks: TaskEntry[], item: ToolItem): TaskEntry[] {
+  const input = item.input ?? {}
+  if (item.name === 'TaskCreate') {
+    const id = createdTaskId(item.result?.content) ?? `sem-id-${item.id}`
+    return [...tasks.filter((t) => t.id !== id), { id, subject: str(input.subject) || str(input.description), status: 'pending' }]
+  }
+  if (item.name === 'TaskUpdate') {
+    const id = String(input.taskId ?? '')
+    return tasks.map((t) => (t.id === id ? { ...t, status: taskStatus(input.status), subject: str(input.subject) || t.subject } : t))
+  }
+  const todos = Array.isArray(input.todos) ? input.todos : []
+  return todos.map((todo: Record<string, unknown>, i: number) => ({
+    id: String(i + 1),
+    subject: str(todo?.content),
+    status: taskStatus(todo?.status),
+  }))
+}
+
 /**
  * The session's task list, rebuilt from the task tool calls in order, and the id of
  * the last item that changed it (where the full list is shown).
@@ -35,21 +54,7 @@ export function deriveTasks(items: ConversationItem[]): { tasks: TaskEntry[]; la
   let lastItemId: string | null = null
   for (const item of items) {
     if (item.type !== 'tool' || !TASK_TOOLS.has(item.name)) continue
-    const input = item.input ?? {}
-    if (item.name === 'TaskCreate') {
-      const id = createdTaskId(item.result?.content) ?? `sem-id-${item.id}`
-      tasks = [...tasks.filter((t) => t.id !== id), { id, subject: str(input.subject) || str(input.description), status: 'pending' }]
-    } else if (item.name === 'TaskUpdate') {
-      const id = String(input.taskId ?? '')
-      tasks = tasks.map((t) => (t.id === id ? { ...t, status: taskStatus(input.status), subject: str(input.subject) || t.subject } : t))
-    } else {
-      const todos = Array.isArray(input.todos) ? input.todos : []
-      tasks = todos.map((todo: Record<string, unknown>, i: number) => ({
-        id: String(i + 1),
-        subject: str(todo?.content),
-        status: taskStatus(todo?.status),
-      }))
-    }
+    tasks = applyTaskTool(tasks, item)
     lastItemId = item.id
   }
   return { tasks, lastItemId }

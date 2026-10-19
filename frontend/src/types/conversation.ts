@@ -151,6 +151,10 @@ export interface SessionSnapshot {
   permission_mode?: PermissionMode | null
   effort_pending?: boolean
   context?: ContextUsage | null
+  /** Output tokens the main agent generated in the running turn; 0 when none or unknown. */
+  turn_output_tokens?: number
+  /** When the open turn began (Unix seconds); null/absent while no turn is open. */
+  turn_started_at?: number | null
 }
 
 export type PromptDecision = 'allow_once' | 'allow_always' | 'deny' | 'answer' | 'approve' | 'reject'

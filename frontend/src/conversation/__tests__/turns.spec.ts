@@ -126,7 +126,6 @@ describe('nodeKind', () => {
     expect(nodeKind(tool('g', 'Grep'), false)).toBe('search')
     expect(nodeKind(tool('b', 'Bash'), false)).toBe('bash')
     expect(nodeKind(tool('e', 'MultiEdit'), false)).toBe('edit')
-    expect(nodeKind(tool('t', 'TodoWrite'), false)).toBe('task')
     expect(nodeKind(tool('s', 'ToolSearch'), false)).toBe('tool')
     expect(nodeKind(tool('m', 'mcp__x__y'), false)).toBe('tool')
     expect(nodeKind(tool('a', 'Agent'), false)).toBe('agent')
@@ -187,14 +186,33 @@ describe('blocos de trabalho', () => {
     expect(ids(t)).toEqual(['G(r1,e1)', 'x', 'G(b1,a1,b2)', 'y', 'z', 'G(g1)'])
   })
 
-  it('texto, aviso, pensamento, tarefas, pergunta e plano quebram o bloco', () => {
+  it('texto, aviso, pensamento, pergunta e plano quebram o bloco', () => {
     const t = buildTurns([
-      user('u'), tool('r1', 'Read'), tool('r2', 'Read'), tool('t', 'TodoWrite'), tool('r3', 'Read'), tool('tc', 'TaskCreate'), tool('r4', 'Read'),
+      user('u'), tool('r1', 'Read'), tool('r2', 'Read'),
       tool('q', 'AskUserQuestion'), tool('r5', 'Read'), tool('p', 'ExitPlanMode'), tool('r6', 'Read'),
       { type: 'notice', id: 'n', level: 'warning', text: '' }, tool('r7', 'Read'),
       { type: 'thinking', id: 'th', text: 'hmm', streaming: false, parent_tool_use_id: null }, tool('r8', 'Read'),
     ])[0]!
-    expect(ids(t)).toEqual(['G(r1,r2)', 't', 'G(r3)', 'tc', 'G(r4)', 'q', 'G(r5)', 'p', 'G(r6)', 'n', 'G(r7)', 'th', 'G(r8)'])
+    expect(ids(t)).toEqual(['G(r1,r2)', 'q', 'G(r5)', 'p', 'G(r6)', 'n', 'G(r7)', 'th', 'G(r8)'])
+  })
+
+  it('ferramentas de tarefa não viram entrada do trilho nem quebram o bloco; ficam em taskCalls', () => {
+    const t = buildTurns([
+      user('u'), tool('r1', 'Read'), tool('t', 'TodoWrite'), tool('r2', 'Read'), tool('tc', 'TaskCreate'), tool('tu', 'TaskUpdate'), tool('r3', 'Read'),
+    ])[0]!
+    expect(ids(t)).toEqual(['G(r1,r2,r3)'])
+    expect(t.taskCalls.map((c) => c.id)).toEqual(['t', 'tc', 'tu'])
+  })
+
+  it('turno só com chamadas de tarefa fica sem entradas, mas guarda as chamadas', () => {
+    const [t] = buildTurns([user('u'), tool('t', 'TodoWrite')])
+    expect(t!.entries).toEqual([])
+    expect(t!.taskCalls).toHaveLength(1)
+  })
+
+  it('o resumo do turno não conta as ferramentas de tarefa como ações', () => {
+    const [t] = buildTurns([user('u'), tool('r1', 'Read'), tool('t', 'TodoWrite')])
+    expect(turnSummary(t!, () => [])).toEqual({ actions: 1, files: 0 })
   })
 
   it('a ferramenta que espera permissão (sem resultado) fica no bloco, no fim', () => {

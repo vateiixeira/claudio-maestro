@@ -248,3 +248,78 @@ describe('conversa fechada antes do retrato chegar', () => {
     expect(store.get('s1')).toBeDefined()
   })
 })
+
+describe('tokens e início do turno em andamento', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('turn.tokens guarda os tokens de saída do turno', () => {
+    const state = emptyConversation('s1')
+    expect(state.turnTokens).toBe(0)
+    applyConversationEvent(state, makeEvent('turn.tokens', { output_tokens: 1600 }, 1))
+    expect(state.turnTokens).toBe(1600)
+    applyConversationEvent(state, makeEvent('turn.tokens', { output_tokens: 0 }, 2))
+    expect(state.turnTokens).toBe(0)
+  })
+
+  it('o snapshot traz os tokens do turno (ausente vale zero)', () => {
+    expect(conversationFromSnapshot(makeSnapshot({ turn_output_tokens: 353 })).turnTokens).toBe(353)
+    expect(conversationFromSnapshot(makeSnapshot()).turnTokens).toBe(0)
+  })
+
+  it('turn.started guarda o início que o backend registrou; um turno novo o substitui', () => {
+    const state = emptyConversation('s1')
+    expect(state.runningSince).toBeNull()
+    applyConversationEvent(state, makeEvent('turn.started', { started_at: 1000 }, 1))
+    expect(state.runningSince).toBe(1000)
+    applyConversationEvent(state, makeEvent('turn.started', { started_at: 1200 }, 2))
+    expect(state.runningSince).toBe(1200)
+  })
+
+  it('voltar a ocioso, fechar ou falhar limpa o início; esperar uma decisão não', () => {
+    const state = emptyConversation('s1')
+    applyConversationEvent(state, makeEvent('turn.started', { started_at: 1000 }, 1))
+    applyConversationEvent(state, makeEvent('session.state', { state: 'running', error: null }, 2))
+    applyConversationEvent(state, makeEvent('session.state', { state: 'awaiting_decision', error: null }, 3))
+    expect(state.runningSince).toBe(1000)
+    applyConversationEvent(state, makeEvent('session.state', { state: 'idle', error: null }, 4))
+    expect(state.runningSince).toBeNull()
+    applyConversationEvent(state, makeEvent('turn.started', { started_at: 2000 }, 5))
+    applyConversationEvent(state, makeEvent('session.state', { state: 'error', error: 'caiu' }, 6))
+    expect(state.runningSince).toBeNull()
+  })
+
+  it('o estado "rodando" sozinho não inventa um início', () => {
+    const state = emptyConversation('s1')
+    applyConversationEvent(state, makeEvent('session.state', { state: 'running', error: null }, 1))
+    expect(state.runningSince).toBeNull()
+  })
+
+  it('o snapshot traz o início do turno aberto, mesmo o aberto pelo agente', () => {
+    // A última mensagem do usuário é bem anterior: o início vem do backend, não dela.
+    const items = [{ type: 'user', id: 'u1', text: 'oi', at: 100 }]
+    const conv = conversationFromSnapshot(makeSnapshot({ state: 'running', items: items as never, turn_started_at: 9000 }))
+    expect(conv.runningSince).toBe(9000)
+  })
+
+  it('snapshot sem início (ocioso ou backend sem o dado) deixa o início vazio', () => {
+    const items = [{ type: 'user', id: 'u1', text: 'oi', at: 100 }]
+    expect(conversationFromSnapshot(makeSnapshot({ state: 'idle' })).runningSince).toBeNull()
+    expect(conversationFromSnapshot(makeSnapshot({ state: 'running', items: items as never })).runningSince).toBeNull()
+  })
+
+  it('recarregar o snapshot no meio do turno usa o início do novo snapshot', async () => {
+    const store = useConversationStore()
+    let started = 40
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, state: 'running', turn_started_at: started })) }))
+    await store.load('s1')
+    expect(store.get('s1')!.runningSince).toBe(40)
+    // Um turno novo começou enquanto o WebSocket estava fora: não herda o início do anterior.
+    started = 90
+    await store.load('s1')
+    expect(store.get('s1')!.runningSince).toBe(90)
+  })
+})

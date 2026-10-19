@@ -12,7 +12,6 @@ describe('railAlign', () => {
     for (const level of ['info', 'warning', 'error']) {
       expect(railAlign({ type: 'notice', id: 'n', level, text: 'a' } as ConversationItem)).toBe('notice')
     }
-    expect(railAlign(tool('TodoWrite'))).toBe('card')
     expect(railAlign(tool('AskUserQuestion', { result: { content: 'x', is_error: true, details: null } }))).toBe('card')
     expect(railAlign(tool('ExitPlanMode'))).toBe('card')
   })

@@ -6,7 +6,7 @@ export const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'WebSearch', 'WebFetch'])
 export const AGENT_TOOLS = new Set(['Agent', 'Task'])
 
 /**
- * One row of the assistant's rail: a single item (text, thinking, notice, task list, question or
+ * One row of the assistant's rail: a single item (text, thinking, notice, question or
  * plan), or a group, the work block: everything Claude did between two statements. A group's id
  * is its first item's id, so it keeps its state while it grows.
  */
@@ -19,10 +19,14 @@ const ASK_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
 /**
  * Work is any tool call (read, search, edit, command, other tool, subagent), failed or still
- * waiting for permission. Task lists, questions and plans are not: they stand on their own.
+ * waiting for permission. Questions and plans are not: they stand on their own.
  */
 function isWork(item: ConversationItem): item is ToolItem {
-  return item.type === 'tool' && !TASK_TOOLS.has(item.name) && !ASK_TOOLS.has(item.name)
+  return item.type === 'tool' && !ASK_TOOLS.has(item.name)
+}
+
+function isTaskCall(item: ConversationItem): item is ToolItem {
+  return item.type === 'tool' && TASK_TOOLS.has(item.name)
 }
 
 /**
@@ -73,25 +77,31 @@ export interface Turn {
   /** The message that opened the turn; null for items before the first message. */
   user: UserItem | null
   entries: TurnEntry[]
+  /**
+   * The task tool calls of the turn (TodoWrite, TaskCreate, TaskUpdate), in order. They are no
+   * entries of the rail: the task list at the foot of the turn is their record.
+   */
+  taskCalls: ToolItem[]
 }
 
 /** Splits the top-level items into turns, each opened by a user message. */
 export function buildTurns(items: ConversationItem[]): Turn[] {
-  const turns: { number: number; user: UserItem | null; items: ConversationItem[] }[] = []
+  const turns: { number: number; user: UserItem | null; items: ConversationItem[]; taskCalls: ToolItem[] }[] = []
   let current: (typeof turns)[number] | null = null
   for (const item of items) {
     if (item.type === 'user') {
-      current = { number: turns.length + 1, user: item, items: [] }
+      current = { number: turns.length + 1, user: item, items: [], taskCalls: [] }
       turns.push(current)
       continue
     }
     if (!current) {
-      current = { number: 1, user: null, items: [] }
+      current = { number: 1, user: null, items: [], taskCalls: [] }
       turns.push(current)
     }
-    current.items.push(item)
+    if (isTaskCall(item)) current.taskCalls.push(item)
+    else current.items.push(item)
   }
-  return turns.map(({ number, user, items }) => ({ number, user, entries: groupEntries(items) }))
+  return turns.map(({ number, user, items, taskCalls }) => ({ number, user, entries: groupEntries(items), taskCalls }))
 }
 
 export interface TurnSummary {
@@ -119,7 +129,7 @@ export function turnSummary(turn: Turn, childrenOf: (toolUseId: string) => Conve
 }
 
 /**
- * What a rail node draws. `text`, `task` (a card that stands alone: task list, question, plan),
+ * What a rail node draws. `text`, `task` (a card that stands alone: question, plan),
  * `info` and `warning` are a plain dot; `thinking` and the kinds of action get an icon; `running`,
  * `waiting` (needs the user) and `error` are states, and they win over the kind.
  */
@@ -157,7 +167,7 @@ export function nodeKind(item: ConversationItem, sessionActive: boolean, waiting
   if (SEARCH_TOOLS.has(item.name)) return 'search'
   if (item.name === 'Bash') return 'bash'
   if (EDIT_TOOLS.has(item.name)) return 'edit'
-  if (TASK_TOOLS.has(item.name) || ASK_TOOLS.has(item.name)) return 'task'
+  if (ASK_TOOLS.has(item.name)) return 'task'
   return 'tool'
 }
 

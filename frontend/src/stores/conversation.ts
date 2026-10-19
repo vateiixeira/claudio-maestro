@@ -32,7 +32,13 @@ export interface Conversation {
   /** When the user last saw it and when it last had activity, as the snapshot said (the "while you were away" card). */
   lastSeenAt?: number | null
   lastActivityAt?: number | null
+  /** Output tokens of the running turn (main agent only), as the backend counts them; 0 when none or unknown. */
+  turnTokens: number
+  /** When the open turn began (Unix seconds), as the backend registered it; null while no turn is open or it is not known. */
+  runningSince: number | null
 }
+
+const WORKING: ReadonlySet<SessionState> = new Set(['connecting', 'running', 'awaiting_decision'])
 
 /** Reads the options from a snapshot, a session or a `session.options` payload. */
 export function optionsFrom(data: Partial<SessionOptions> | Partial<Session>): SessionOptions {
@@ -62,6 +68,8 @@ export function emptyConversation(sessionId: string): Conversation {
     externalActivity: false,
     options: optionsFrom({}),
     context: null,
+    turnTokens: 0,
+    runningSince: null,
   }
 }
 
@@ -84,6 +92,8 @@ export function conversationFromSnapshot(snapshot: SessionSnapshot): Conversatio
     context: snapshot.context ?? null,
     lastSeenAt: snapshot.last_seen_at ?? null,
     lastActivityAt: snapshot.last_activity_at ?? null,
+    turnTokens: snapshot.turn_output_tokens ?? 0,
+    runningSince: snapshot.turn_started_at ?? null,
   }
 }
 
@@ -111,8 +121,16 @@ export function applyConversationEvent(conv: Conversation, event: WsEvent): bool
       break
     }
     case 'session.state':
+      // Waiting for a decision is still the same turn; the start itself comes with `turn.started`.
+      if (!WORKING.has(data.state as SessionState)) conv.runningSince = null
       conv.state = data.state as SessionState
       conv.error = (data.error as string | null) ?? null
+      break
+    case 'turn.started':
+      conv.runningSince = typeof data.started_at === 'number' ? data.started_at : null
+      break
+    case 'turn.tokens':
+      conv.turnTokens = Number(data.output_tokens) || 0
       break
     case 'session.title':
       conv.title = String(data.title ?? '')
