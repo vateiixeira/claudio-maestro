@@ -153,3 +153,33 @@ test('remover pelo painel de detalhes da conversa', async ({ page }) => {
   const fromA = await openConversation(page, A_TITLE)
   await expect(fromA).toHaveValue('')
 })
+
+test('agrupador sem conversa ativa some da barra lateral, mas continua na tela do projeto', async ({ page }) => {
+  const ACTIVE = 'Ativo'
+  const IDLE = 'Parado'
+  await page.goto('/inbox')
+  await openProject(page, A)
+  for (const name of [ACTIVE, IDLE]) {
+    await page.getByTestId('group-new').click()
+    await page.getByTestId('group-new-name').fill(name)
+    await page.getByTestId('group-new-name').press('Enter')
+    await expect(page.getByTestId('group-section').filter({ hasText: name })).toBeVisible()
+  }
+  const fromA = await openConversation(page, A_TITLE)
+  await fromA.selectOption({ label: ACTIVE })
+  await expect(fromA).toHaveValue(/\d+/)
+
+  // Mixed case: only the group with an open conversation is listed, and the project keeps its toggle.
+  const nav = sidebar(page)
+  const listed = nav.getByTestId('sidebar-group')
+  await expect(listed).toHaveCount(1)
+  await expect(listed).toContainText(ACTIVE)
+  await expect(listed.getByTestId('sidebar-session').filter({ hasText: A_TITLE })).toBeVisible()
+  await expect(nav.getByText(IDLE, { exact: true })).toHaveCount(0)
+  await expect(nav.getByRole('button', { name: `Recolher ${A}` })).toBeVisible()
+
+  // The project screen still lists both.
+  await openProject(page, A)
+  await expect(page.getByTestId('group-section').filter({ hasText: IDLE })).toBeVisible()
+  await expect(page.getByTestId('group-section').filter({ hasText: ACTIVE })).toBeVisible()
+})
