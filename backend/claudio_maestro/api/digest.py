@@ -15,6 +15,7 @@ from claudio_maestro.digest import store
 from claudio_maestro.digest.closure_store import get_closure
 from claudio_maestro.digest.config import ConfigError, validate
 from claudio_maestro.digest.service import ClosureItemNotFound, DigestService
+from claudio_maestro.digest.title_suggest import TitleSuggestError
 from claudio_maestro.sessions import SessionManager
 
 router = APIRouter(prefix="/api")
@@ -99,6 +100,25 @@ async def request_session_digest(
     await asyncio.to_thread(check)
     service.request_session(session_id)
     return {"queued": True}
+
+
+_TITLE_STATUS = {
+    "not_found": status.HTTP_404_NOT_FOUND,
+    "empty": status.HTTP_409_CONFLICT,
+    "timeout": status.HTTP_504_GATEWAY_TIMEOUT,
+}
+
+
+@router.post("/sessions/{session_id}/title-suggestions")
+async def suggest_titles(session_id: str, service: ServiceDep) -> dict[str, list[str]]:
+    """Three title suggestions from the model. Renames nothing: the client does it
+    afterwards with `PATCH /api/sessions/{id}`."""
+    try:
+        return {"suggestions": await service.suggest_titles(session_id)}
+    except TitleSuggestError as exc:
+        # The model, its answer or the app failed: a bad gateway, not the client's fault.
+        code = _TITLE_STATUS.get(exc.kind, status.HTTP_502_BAD_GATEWAY)
+        raise HTTPException(status_code=code, detail=exc.message) from exc
 
 
 @router.get("/sessions/{session_id}/closure")

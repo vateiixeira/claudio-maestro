@@ -463,6 +463,11 @@ export function resolveClosureItem(id: string, item: string): Promise<SessionClo
   return request('POST', `/api/sessions/${encodeURIComponent(id)}/closure/resolve`, { item })
 }
 
+/** Three title suggestions from the model; renames nothing. */
+export function suggestSessionTitles(id: string): Promise<string[]> {
+  return request<{ suggestions: string[] }>('POST', `/api/sessions/${encodeURIComponent(id)}/title-suggestions`).then((r) => r.suggestions)
+}
+
 // Deliveries
 
 export function getDeliveries(date: string): Promise<DeliveriesDay> {

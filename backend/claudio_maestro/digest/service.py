@@ -15,6 +15,7 @@ from typing import Any
 from claudio_maestro import db, deliveries, gitinfo, history
 from claudio_maestro.deliveries import Delivery
 from claudio_maestro.digest import closure_store, store
+from claudio_maestro.digest import title_suggest as titles
 from claudio_maestro.digest.closure import (
     CLOSURE_SCHEMA,
     TAIL_BUDGET,
@@ -33,7 +34,12 @@ from claudio_maestro.digest.closure import (
 )
 from claudio_maestro.digest.closure_store import Closure
 from claudio_maestro.digest.condense import Slice, condense, entries_after
-from claudio_maestro.digest.config import DigestConfig, load_config, model_known
+from claudio_maestro.digest.config import (
+    CONFIG_KEY,
+    DigestConfig,
+    load_config,
+    model_known,
+)
 from claudio_maestro.digest.delivery import (
     DELIVERY_SCHEMA,
     build_delivery_prompt,
@@ -912,6 +918,54 @@ class DigestService:
 
         for delivery in await asyncio.to_thread(settle):
             self._publish_delivery(delivery)
+
+    # Title suggestions -----------------------------------------------------------
+
+    def _title_inputs(self, session_id: str) -> dict[str, Any]:
+        """Session facts and the stored model choice, read from disk. Blocking."""
+        with closing(db.connect(self._db_path)) as conn:
+            row = conn.execute(
+                "SELECT s.session_id, s.cwd, s.title, s.history_dir, p.name AS project"
+                " FROM sessions s LEFT JOIN projects p ON p.id = s.project_id"
+                " WHERE s.session_id = ?", (session_id,)).fetchone()
+            if row is None:
+                raise titles.TitleSuggestError("not_found", titles.NOT_FOUND_MESSAGE)
+            configured = conn.execute("SELECT 1 FROM app_state WHERE key = ?",
+                                      (CONFIG_KEY,)).fetchone() is not None
+        directory = row["history_dir"] or row["cwd"]
+        transcript = self._read_transcript(self._session_file(session_id, directory))
+        if transcript is None:
+            raise titles.TitleSuggestError("empty", titles.EMPTY_MESSAGE)
+        first, recent, count = titles.split_conversation(transcript.messages, row["cwd"])
+        if count == 0:
+            raise titles.TitleSuggestError("empty", titles.EMPTY_MESSAGE)
+        return {
+            "prompt": titles.build_prompt(project=row["project"] or "", title=row["title"],
+                                         first=first, recent=recent),
+            "model": self._config.model if configured else titles.DEFAULT_MODEL,
+            "effort": self._config.effort if configured else titles.DEFAULT_EFFORT,
+        }
+
+    async def suggest_titles(self, session_id: str) -> list[str]:
+        """Up to three title suggestions for the session. Renames nothing.
+
+        Raises TitleSuggestError. Uses the summaries' model, or `haiku` when they were
+        never configured.
+        """
+        inputs = await asyncio.to_thread(self._title_inputs, session_id)
+        request = DigestRequest(titles.SYSTEM_PROMPT, inputs["prompt"], inputs["model"],
+                                inputs["effort"], schema=titles.TITLE_SCHEMA)
+        try:
+            async with asyncio.timeout(self._session_timeout):
+                raw = await self._model.summarize(request)
+        except TimeoutError as error:
+            raise titles.TitleSuggestError("timeout", TIMEOUT_MESSAGE) from error
+        except DigestModelError as error:
+            raise titles.TitleSuggestError("model", error.message) from error
+        except Exception as error:
+            logger.exception("Could not suggest titles for %s", session_id)
+            raise titles.TitleSuggestError("unexpected", titles.UNEXPECTED_MESSAGE) from error
+        return titles.sanitize(raw)
 
     # Scheduler -----------------------------------------------------------------
 

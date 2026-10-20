@@ -10,6 +10,7 @@ import IconArrowDown from '../icons/IconArrowDown.vue'
 import IconGroup from '../icons/IconGroup.vue'
 import LabelBadges from '../labels/LabelBadges.vue'
 import NextNeedsYou from './NextNeedsYou.vue'
+import TitleSuggest from './TitleSuggest.vue'
 import { errorMessage, openInEditor } from '../../api/http'
 import { behindCount, behindTitle } from '../../gitSync'
 import { isDiscarded, markChipText } from '../../conversation/marks'
@@ -193,6 +194,8 @@ async function openProject() {
           </template>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
         </nav>
+        <!-- Before the title (shrink-0, so it never pushes the title out). Disabled only when the conversation is loaded and empty; before it loads the backend answers. -->
+        <TitleSuggest v-if="!editing" :id="id" :disabled="!!conv && conv.items.length === 0" />
         <input
           v-if="editing"
           ref="input"

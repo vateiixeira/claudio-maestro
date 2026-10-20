@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, createProject, deleteProject, listCommands, listDirs, listProjects, searchFiles } from '../http'
+import { ApiError, createProject, deleteProject, listCommands, listDirs, listProjects, searchFiles, suggestSessionTitles } from '../http'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -142,5 +142,19 @@ describe('sugestões', () => {
     expect(calls[2]![0]).toBe('/api/sessions/s1/files?q=my+file%26x')
     expect(calls[2]![1]?.signal).toBe(signal)
     expect(calls[3]![0]).toBe('/api/projects/3/files?q=')
+  })
+})
+
+describe('sugestões de título', () => {
+  it('pede por POST e devolve só a lista', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse({ suggestions: ['A', 'B', 'C'] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(suggestSessionTitles('s 1')).resolves.toEqual(['A', 'B', 'C'])
+
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe('/api/sessions/s%201/title-suggestions')
+    expect(init?.method).toBe('POST')
+    expect((init?.headers as Record<string, string>)['X-Maestro']).toBe('1')
   })
 })

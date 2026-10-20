@@ -14,6 +14,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - A busca de conversas (Ctrl K) também procura no texto das mensagens, mostra o trecho achado e abre a conversa na mensagem.
 - Antes de trocar de branch, mesclar, baixar ou descartar num repositório onde uma sessão está em execução (aberta nele ou numa pasta acima, como a raiz do projeto), o app pede confirmação e diz qual sessão é.
 - Com um turno em andamento, a conversa mostra no fim dele a lista de tarefas do Claude, atualizada no lugar, e uma linha viva com o que está acontecendo (pensando, escrevendo, a ação em execução ou "esperando você"), há quanto tempo e quantos tokens ele já gerou. Quando o turno termina, a lista fica apagada acima do "Concluído", só nos turnos que mexeram nela.
+- Botão **Sugerir título** no cabeçalho da conversa: pede a um modelo três sugestões de título a partir do conteúdo (usa o modelo do agente de resumos, ou `haiku` se ele nunca foi configurado). Clicar numa sugestão renomeia a sessão, como a renomeação manual; "Gerar outras" pede novas e Esc ou um clique fora fecham sem mudar nada.
 
 ### Alterado
 
