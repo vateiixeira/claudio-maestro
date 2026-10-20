@@ -168,6 +168,15 @@ class FakeAgentClient:
         # Raised by set_model / set_permission_mode (after recording the call).
         self.set_model_error: AgentError | None = None
         self.set_permission_mode_error: AgentError | None = None
+        # set_effort / set_remote_control: calls are recorded before the error is raised.
+        self.effort_calls: list[str] = []
+        self.set_effort_error: AgentError | None = None
+        self.remote_control_calls: list[dict[str, Any]] = []
+        self.set_remote_control_error: AgentError | None = None
+        self.remote_control_response: dict[str, Any] = {
+            "session_url": "https://claude.ai/code/session_fake",
+            "bridge_session_id": "cse_fake",
+        }
         self.permission_results: list[PermissionRecord] = []
         self.connected = False
         self.closed = False
@@ -263,6 +272,30 @@ class FakeAgentClient:
         self.permission_mode_calls.append(mode)
         if self.set_permission_mode_error is not None:
             raise self.set_permission_mode_error
+
+    async def set_effort(self, effort: str) -> None:
+        self.effort_calls.append(effort)
+        if self.set_effort_error is not None:
+            raise self.set_effort_error
+
+    async def set_remote_control(
+        self,
+        enabled: bool,
+        *,
+        name: str | None = None,
+        reattach_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        self.remote_control_calls.append(
+            {"enabled": enabled, "name": name, "reattach_session_id": reattach_session_id}
+        )
+        if self.set_remote_control_error is not None:
+            raise self.set_remote_control_error
+        if not enabled:
+            return {}
+        response = dict(self.remote_control_response)
+        if reattach_session_id is not None:
+            response["bridge_session_id"] = reattach_session_id
+        return response
 
     async def detach(self) -> bool:
         return False
@@ -590,6 +623,30 @@ def local_command_message(text: str) -> UserMessage:
     """What the CLI sends at the start of a turn after set_model/set_permission_mode."""
     return UserMessage(
         content=f"<local-command-stdout>{text}</local-command-stdout>", uuid=str(uuid.uuid4())
+    )
+
+
+def bridge_state_message(
+    state: str, *, detail: str | None = None, failure_kind: str | None = None
+) -> SystemMessage:
+    """What the CLI sends when the Remote Control bridge changes state
+    (`ready`, `connected`, `failed`, `policy_disabled`)."""
+    data: dict[str, Any] = {"type": "system", "subtype": "bridge_state", "state": state}
+    if detail is not None:
+        data["detail"] = detail
+    if failure_kind is not None:
+        data["failure_kind"] = failure_kind
+    return SystemMessage(subtype="bridge_state", data=data)
+
+
+def remote_user_message(text: str) -> UserMessage:
+    """A message typed in the Claude app on the phone, echoed by the CLI when it
+    runs with `--replay-user-messages`."""
+    return UserMessage(
+        content=text,
+        uuid=str(uuid.uuid4()),
+        parent_tool_use_id=None,
+        origin={"kind": "human"},
     )
 
 

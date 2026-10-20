@@ -254,6 +254,47 @@ class SdkAgentClient:
         except Exception as error:
             raise to_control_error(error) from error
 
+    async def _control(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Send a control request the SDK has no public method for. The only place
+        that touches the SDK's private `_query`."""
+        try:
+            response = await self._client._query._send_control_request(request)
+        except Exception as error:
+            raise to_control_error(error) from error
+        return response if isinstance(response, dict) else {}
+
+    async def set_effort(self, effort: str) -> None:
+        # The CLI silently ignores an invalid level and answers `{}` either way,
+        # so the level it ends up with is checked afterwards.
+        await self._control(
+            {"subtype": "apply_flag_settings", "settings": {"effortLevel": effort}}
+        )
+        settings = await self._control({"subtype": "get_settings"})
+        applied = settings.get("applied")
+        if not isinstance(applied, dict) or applied.get("effort") != effort:
+            raise AgentError(f"O agente não aceitou o raciocínio {effort}.", refused=True)
+
+    async def set_remote_control(
+        self,
+        enabled: bool,
+        *,
+        name: str | None = None,
+        reattach_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        if not enabled:
+            await self._control({"subtype": "remote_control", "enabled": False})
+            return {}
+        request: dict[str, Any] = {
+            "subtype": "remote_control",
+            "enabled": True,
+            "keep_session_on_exit": True,
+        }
+        if name is not None:
+            request["name"] = name
+        if reattach_session_id is not None:
+            request["reattach_session_id"] = reattach_session_id
+        return await self._control(request)
+
     async def get_server_info(self) -> dict[str, Any] | None:
         try:
             return await self._client.get_server_info()

@@ -438,6 +438,138 @@ async def test_control_failure_of_the_process_is_not_refused(tmp_path, method, a
     assert info.value.refused is False
 
 
+class _ScriptedQuery:
+    """Stands in for `ClaudeSDKClient._query`: records control requests and answers
+    them from a script (a response dict per request, or an exception to raise)."""
+
+    def __init__(self, *responses: Any) -> None:
+        self.requests: list[dict[str, Any]] = []
+        self._responses = list(responses)
+
+    async def _send_control_request(self, request: dict[str, Any], timeout: float = 60.0):
+        self.requests.append(request)
+        response = self._responses.pop(0) if self._responses else {}
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+
+def _stub_with_query(*responses: Any) -> StubSdkClient:
+    stub = StubSdkClient()
+    stub._query = _ScriptedQuery(*responses)
+    return stub
+
+
+@pytest.mark.anyio
+async def test_set_effort_sends_flag_settings_then_checks_applied(tmp_path):
+    stub = _stub_with_query({}, {"applied": {"effort": "low"}})
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    await client.set_effort("low")
+
+    assert stub._query.requests == [
+        {"subtype": "apply_flag_settings", "settings": {"effortLevel": "low"}},
+        {"subtype": "get_settings"},
+    ]
+
+
+@pytest.mark.anyio
+async def test_set_effort_mismatch_is_refused(tmp_path):
+    stub = _stub_with_query({}, {"applied": {"effort": "high"}})
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    with pytest.raises(AgentError) as info:
+        await client.set_effort("low")
+
+    assert info.value.refused is True
+    assert info.value.message_pt == "O agente não aceitou o raciocínio low."
+
+
+@pytest.mark.anyio
+async def test_set_effort_cli_error_is_refused(tmp_path):
+    stub = _stub_with_query(Exception("x"))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    with pytest.raises(AgentError) as info:
+        await client.set_effort("low")
+
+    assert info.value.refused is True
+
+
+@pytest.mark.anyio
+async def test_set_effort_process_failure_is_not_refused(tmp_path):
+    stub = _stub_with_query(OSError("broken pipe"))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    with pytest.raises(AgentError) as info:
+        await client.set_effort("low")
+
+    assert info.value.refused is False
+
+
+@pytest.mark.anyio
+async def test_set_remote_control_enable_sends_keep_and_name(tmp_path):
+    answer = {"session_url": "https://claude.ai/code/session_1", "bridge_session_id": "cse_1"}
+    stub = _stub_with_query(answer)
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    result = await client.set_remote_control(True, name="T", reattach_session_id="cse_1")
+
+    assert stub._query.requests == [
+        {
+            "subtype": "remote_control",
+            "enabled": True,
+            "name": "T",
+            "keep_session_on_exit": True,
+            "reattach_session_id": "cse_1",
+        }
+    ]
+    assert result == answer
+
+
+@pytest.mark.anyio
+async def test_set_remote_control_enable_omits_missing_fields(tmp_path):
+    stub = _stub_with_query({"session_url": "u"})
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    await client.set_remote_control(True)
+
+    assert stub._query.requests == [
+        {"subtype": "remote_control", "enabled": True, "keep_session_on_exit": True}
+    ]
+
+
+@pytest.mark.anyio
+async def test_set_remote_control_disable(tmp_path):
+    stub = _stub_with_query({})
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    result = await client.set_remote_control(False, name="ignored")
+
+    assert stub._query.requests == [{"subtype": "remote_control", "enabled": False}]
+    assert result == {}
+
+
+@pytest.mark.anyio
+async def test_set_remote_control_cli_error_is_refused(tmp_path):
+    stub = _stub_with_query(Exception("disabled by policy"))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+
+    with pytest.raises(AgentError) as info:
+        await client.set_remote_control(True)
+
+    assert info.value.refused is True
+    assert info.value.message_pt == "disabled by policy"
+
+
 def test_default_sdk_client_is_built_from_options(tmp_path):
     """Creating the adapter builds a ClaudeSDKClient but starts no process."""
     client = SdkAgentClient(make_options(tmp_path, model="haiku"))

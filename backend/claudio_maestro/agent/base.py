@@ -94,6 +94,22 @@ class AgentClient(Protocol):
 
     async def set_permission_mode(self, mode: str) -> None: ...
 
+    async def set_effort(self, effort: str) -> None:
+        """Apply the reasoning level to the live process. Raises `AgentError(refused=True)`
+        when the CLI refuses or the level it ends up with is not the one asked."""
+        ...
+
+    async def set_remote_control(
+        self,
+        enabled: bool,
+        *,
+        name: str | None = None,
+        reattach_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Turn Remote Control on or off. Returns the CLI's answer (`session_url`,
+        `bridge_session_id`, ...); `{}` when turning it off."""
+        ...
+
     async def get_server_info(self) -> dict[str, Any] | None:
         """Initialization info of the CLI; `models` lists the available models."""
         ...

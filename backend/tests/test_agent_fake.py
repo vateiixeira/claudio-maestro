@@ -27,6 +27,8 @@ from claudio_maestro.agent.fake import (
     FakeAgentFactory,
     PauseStep,
     PermissionStep,
+    bridge_state_message,
+    remote_user_message,
     result_message,
     scripted,
     text_turn,
@@ -506,3 +508,62 @@ async def test_fake_client_cannot_detach(tmp_path):
     client = factory(AgentOptions(cwd=tmp_path, session_id="s", resume=False,
                                   can_use_tool=lambda *a: None))
     assert await client.detach() is False
+
+
+@pytest.mark.anyio
+async def test_fake_records_effort_and_remote_control(tmp_path):
+    client = FakeAgentFactory()(make_options(tmp_path))
+
+    await client.set_effort("low")
+    result = await client.set_remote_control(True, name="T")
+    await client.set_remote_control(False)
+
+    assert client.effort_calls == ["low"]
+    assert client.remote_control_calls == [
+        {"enabled": True, "name": "T", "reattach_session_id": None},
+        {"enabled": False, "name": None, "reattach_session_id": None},
+    ]
+    assert result == {
+        "session_url": "https://claude.ai/code/session_fake",
+        "bridge_session_id": "cse_fake",
+    }
+
+    client.set_effort_error = AgentError("não", refused=True)
+    client.set_remote_control_error = AgentError("política", refused=True)
+    with pytest.raises(AgentError):
+        await client.set_effort("high")
+    with pytest.raises(AgentError):
+        await client.set_remote_control(True)
+    # Calls are recorded even when the error is raised.
+    assert client.effort_calls == ["low", "high"]
+    assert len(client.remote_control_calls) == 3
+
+
+@pytest.mark.anyio
+async def test_fake_remote_control_echoes_reattach_bridge(tmp_path):
+    client = FakeAgentFactory()(make_options(tmp_path))
+
+    result = await client.set_remote_control(True, reattach_session_id="cse_old")
+
+    assert result["bridge_session_id"] == "cse_old"
+    assert result["session_url"] == "https://claude.ai/code/session_fake"
+    # The configured response is not mutated.
+    assert client.remote_control_response["bridge_session_id"] == "cse_fake"
+
+
+def test_bridge_state_and_remote_user_message_helpers():
+    ready = bridge_state_message("ready")
+    failed = bridge_state_message("failed", detail="sem rede", failure_kind="terminal")
+    human = remote_user_message("oi")
+
+    assert isinstance(ready, SystemMessage)
+    assert ready.subtype == "bridge_state"
+    assert ready.data["state"] == "ready"
+    assert "detail" not in ready.data and "failure_kind" not in ready.data
+    assert failed.data["detail"] == "sem rede"
+    assert failed.data["failure_kind"] == "terminal"
+    assert isinstance(human, UserMessage)
+    assert human.content == "oi"
+    assert human.origin == {"kind": "human"}
+    assert human.parent_tool_use_id is None
+    assert human.uuid and human.uuid != remote_user_message("oi").uuid
