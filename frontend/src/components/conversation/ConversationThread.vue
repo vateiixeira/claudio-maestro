@@ -307,11 +307,11 @@ async function applyFind() {
 }
 // Open/closed chosen by the user per work block (by id); unset follows `blockOpen`.
 const groupChoice = reactive(new Map<string, boolean>())
-// By default a block is open while its turn runs, when one of its actions failed (the row opens by itself)
-// and when it holds one action only; a finished turn folds the rest into the header.
-function blockOpen(entry: { id: string; items: ToolItem[] }, done: boolean): boolean {
+// By default a block is folded into its header line, running turn or not (the orange line says what runs).
+// It opens by itself when it holds one action only or when one of its actions failed (the row opens by itself).
+function blockOpen(entry: { id: string; items: ToolItem[] }): boolean {
   return groupChoice.get(entry.id)
-    ?? (!done || entry.items.length === 1 || entry.items.some((item) => workStatus(item, sessionActive.value) === 'error'))
+    ?? (entry.items.length === 1 || entry.items.some((item) => workStatus(item, sessionActive.value) === 'error'))
 }
 
 // Duration and cost of the last turn, shown in its end line; its error is shown apart, in red.
@@ -547,13 +547,13 @@ function resolvePrompt(promptId: string) {
                     <WorkBlock
                       class="min-w-0 grow"
                       :items="entry.items"
-                      :open="blockOpen(entry, done)"
+                      :open="blockOpen(entry)"
                       :session-active="sessionActive"
                       :waiting-ids="waitingIds"
                       :children-of="tree.childrenOf"
                       :origin-of="tree.originOf"
                       :task-list="taskList"
-                      @toggle="groupChoice.set(entry.id, !blockOpen(entry, done))"
+                      @toggle="groupChoice.set(entry.id, !blockOpen(entry))"
                     />
                   </template>
                   <template v-else>

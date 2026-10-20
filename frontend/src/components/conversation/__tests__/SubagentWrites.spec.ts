@@ -89,6 +89,8 @@ describe('escritas de subagente na conversa', () => {
       prompts: [{ prompt_id: 'p1', tool_name: 'Write', input: { file_path: '/p/novo.py', content: 'x' }, tool_use_id: 'tu-w1', can_always: true }],
     })
     expect(w.findAll('[data-test="permission-card"]')).toHaveLength(1)
+    // The block is folded while the turn runs; open it to see the rows.
+    await w.find('[data-test="work-block-toggle"]').trigger('click')
     const rows = w.findAll('[data-test="work-row"]')
     expect(rows).toHaveLength(2)
     // Both the subagent that runs it and the write wait for the user.

@@ -19,6 +19,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - As chamadas de tarefa do Claude (TodoWrite, TaskCreate e TaskUpdate) deixam de aparecer como cartões no meio da conversa e já não contam como ações do turno: a lista do fim do turno é o registro.
 - No menu lateral e na busca de sessões, as tags de uma conversa ficam numa linha abaixo do título e mostram até três, sem cortar o título.
+- Durante o turno, os blocos de ações da conversa ficam recolhidos numa linha de resumo, como já ficavam ao fim do turno; a linha laranja mostra o que está rodando e o bloco abre sozinho quando tem uma ação só ou alguma falhou. Clicar no bloco continua valendo.
 - No menu lateral, o agrupador sem nenhuma conversa ativa deixa de aparecer, e o projeto que só tinha agrupadores assim fica sem a seta de recolher. Ele continua na tela do projeto e nos seletores.
 
 ### Segurança

@@ -110,6 +110,80 @@ test('a lista de tarefas do turno em andamento se atualiza no lugar e não vira 
   await expect(page.getByTestId('work-block').getByText('TodoWrite')).toHaveCount(0)
 })
 
+test('com o turno em andamento, o bloco de várias ações fica recolhido e mostra o que roda', async ({ page }) => {
+  const turn = await stageRunningTurn(page)
+  await turn.upsert(tool('r1', 'Read', { file_path: '/tmp/projeto/leia-me.md' }))
+  await turn.upsert(running('b1', 'Bash', { command: 'pnpm test', description: 'Rodar os testes' }))
+
+  const block = page.getByTestId('work-block')
+  const toggle = block.getByTestId('work-block-toggle')
+  await expect(block.getByTestId('work-count')).toHaveText('2 ações')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(block.getByTestId('work-row')).toHaveCount(0)
+  await expect(block.getByTestId('work-activity')).toContainText('Rodar os testes')
+
+  // The user's click wins, and it stays when the turn ends.
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(block.getByTestId('work-row')).toHaveCount(2)
+  await turn.finish()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+})
+
+test('com o turno em andamento, um bloco de uma ação só e um bloco com falha abrem sozinhos', async ({ page }) => {
+  const turn = await stageRunningTurn(page)
+  await turn.upsert(tool('r1', 'Read', { file_path: '/tmp/projeto/leia-me.md' }))
+  const single = page.getByTestId('work-block')
+  await expect(single.getByTestId('work-count')).toHaveText('1 ação')
+  await expect(single.getByTestId('work-block-toggle')).toHaveAttribute('aria-expanded', 'true')
+  await expect(single.getByTestId('work-row')).toHaveCount(1)
+
+  // A text between the actions starts a second block; one of its actions failed, so it opens by itself.
+  await turn.upsert({ type: 'text', id: 'txt-1', text: 'Agora rodo os testes.', streaming: false, parent_tool_use_id: null, at: nowSeconds() })
+  await turn.upsert(tool('b1', 'Bash', { command: 'pnpm test', description: 'Rodar os testes' }, { result: { content: 'falhou', is_error: true, details: null } }))
+  await turn.upsert(running('b2', 'Bash', { command: 'pnpm lint', description: 'Rodar o lint' }))
+  const failed = page.getByTestId('work-block').nth(1)
+  await expect(failed.getByTestId('work-count')).toHaveText('2 ações')
+  await expect(failed.getByTestId('work-block-toggle')).toHaveAttribute('aria-expanded', 'true')
+  await expect(failed.getByTestId('work-row')).toHaveCount(2)
+})
+
+test('com um pedido pendente, o cartão fica fora do bloco recolhido e o resumo diz "esperando você"', async ({ page }) => {
+  const turn = await stageRunningTurn(page)
+  await turn.upsert(tool('r1', 'Read', { file_path: '/tmp/projeto/leia-me.md' }))
+  await turn.upsert(running('w1', 'Write', { file_path: '/tmp/projeto/novo.py', content: 'x = 1\n' }))
+  await turn.prompt({
+    prompt_id: 'p1', tool_name: 'Write', tool_use_id: 'tu-w1', can_always: true,
+    input: { file_path: '/tmp/projeto/novo.py', content: 'x = 1\n' },
+  })
+  const block = page.getByTestId('work-block')
+  await expect(block.getByTestId('work-block-toggle')).toHaveAttribute('aria-expanded', 'false')
+  await expect(block.getByTestId('work-summary')).toContainText('esperando você')
+  await expect(page.getByTestId('permission-card')).toBeVisible()
+  await expect(block.getByTestId('permission-card')).toHaveCount(0)
+})
+
+test('com o turno em andamento, a faixa de subagentes abre o bloco recolhido e mostra o cartão', async ({ page }) => {
+  const turn = await stageRunningTurn(page)
+  await turn.upsert(tool('r1', 'Read', { file_path: '/tmp/projeto/leia-me.md' }))
+  await turn.upsert(tool('ag', 'Agent', { subagent_type: 'implementer', description: 'Criar o módulo novo' }, {
+    result: null, streaming: true,
+    subagent: {
+      task_id: 't1', subagent_type: 'implementer', description: 'Criar o módulo novo',
+      status: 'running', last_activity: null, usage: null, summary: null,
+    },
+  }))
+  await turn.upsert(tool('ag-read', 'Read', { file_path: '/tmp/projeto/modulo.py' }, { parent_tool_use_id: 'tu-ag' }))
+  const toggle = page.getByTestId('work-block').getByTestId('work-block-toggle')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('subagent-card')).toHaveCount(0)
+
+  await page.getByTestId('subagent-row').click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('subagent-card')).toBeVisible()
+  await expect(page.getByTestId('subagent-toggle')).toContainText('Ações (1)')
+})
+
 test('a linha viva mostra a ação, o tempo que passa e os tokens quando chegam', async ({ page }) => {
   const turn = await stageRunningTurn(page)
   const live = page.getByTestId('turn-live')

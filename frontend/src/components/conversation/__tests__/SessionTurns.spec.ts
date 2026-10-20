@@ -102,6 +102,11 @@ describe('chat em turnos', () => {
       prompts: [{ prompt_id: 'p1', tool_name: 'Bash', input: { command: 'ls' }, can_always: false, tool_use_id: 'tu-b1' }],
     })
     expect(w.find('[data-test="work-summary"]').text()).toBe('1 leitura · 1 esperando você')
+    // The block is folded and the request is a card outside of it: the user still sees what to answer.
+    expect(w.find('[data-test="work-block-toggle"]').attributes('aria-expanded')).toBe('false')
+    expect(w.findAll('[data-test="permission-card"]')).toHaveLength(1)
+    expect(w.find('[data-test="work-activity"]').exists()).toBe(true)
+    await w.find('[data-test="work-block-toggle"]').trigger('click')
     const statuses = w.findAll('[data-test="work-row"] [data-test="work-status"]').map((n) => n.attributes('data-status'))
     expect(statuses).toEqual(['ok', 'waiting'])
   })
@@ -137,7 +142,7 @@ describe('bloco de trabalho', () => {
   const rowHeaders = (w: Wrapper) => w.findAll('[data-test="work-row"] [data-test="work-header"]')
   const turnResult = () => fake.session.get('s1')!(makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 10, total_cost_usd: null }, 2))
 
-  it('cabeçalho com contagem e resumo; aberto enquanto o turno roda', async () => {
+  it('cabeçalho com contagem e resumo; recolhido também enquanto o turno roda', async () => {
     const w = await mountWith({
       state: 'running',
       items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read'), tool('b1', 'Bash', { input: { command: 'ls' }, result: null })],
@@ -145,11 +150,50 @@ describe('bloco de trabalho', () => {
     expect(w.findAll('[data-test="work-block"]')).toHaveLength(1)
     expect(w.find('[data-test="work-count"]').text()).toBe('3 ações')
     expect(w.find('[data-test="work-summary"]').text()).toBe('2 leituras · 1 rodando')
+    expect(header(w).attributes('aria-expanded')).toBe('false')
+    expect(header(w).text()).toContain('Ver')
+    expect(header(w).find('svg[data-open="false"]').exists()).toBe(true)
+    expect(rowHeaders(w)).toHaveLength(0)
+    expect(w.find('[data-test="work-activity"]').text()).toBe('Comando · ls')
+    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['running'])
+    await header(w).trigger('click')
     expect(header(w).attributes('aria-expanded')).toBe('true')
     expect(header(w).text()).toContain('Recolher')
     expect(header(w).find('svg[data-open="true"]').exists()).toBe(true)
     expect(rowHeaders(w)).toHaveLength(3)
-    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['running'])
+    expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
+  })
+
+  it('com o turno rodando, o bloco de várias ações fica recolhido; o de uma ação só e o com falha ficam abertos', async () => {
+    const w = await mountWith({
+      state: 'running',
+      items: [
+        user('u1'),
+        tool('r1', 'Read'), tool('r2', 'Read'), text('a'),
+        tool('e1', 'Edit'), text('b'),
+        tool('r3', 'Read'), tool('b1', 'Bash', { input: { command: 'make' }, result: { content: 'deu ruim', is_error: true, details: null } }),
+      ],
+    })
+    const toggles = w.findAll('[data-test="work-block-toggle"]')
+    expect(toggles.map((t) => t.attributes('aria-expanded'))).toEqual(['false', 'true', 'true'])
+    const blocks = w.findAll('[data-test="work-block"]')
+    expect(blocks[0]!.findAll('[data-test="work-row"]')).toHaveLength(0)
+    expect(blocks[0]!.find('[data-test="work-summary"]').text()).toBe('2 leituras')
+    expect(blocks[1]!.findAll('[data-test="work-row"]')).toHaveLength(1)
+    expect(blocks[2]!.findAll('[data-test="work-row"]')).toHaveLength(2)
+    expect(blocks[2]!.find('[data-test="tool-error"]').text()).toContain('deu ruim')
+  })
+
+  it('com o turno rodando, o clique do usuário prevalece sobre a regra', async () => {
+    const w = await mountWith({
+      state: 'running',
+      items: [user('u1'), tool('r1', 'Read'), text('a'), tool('e1', 'Edit'), tool('e2', 'Edit')],
+    })
+    const [single, multi] = w.findAll('[data-test="work-block-toggle"]')
+    expect([single!.attributes('aria-expanded'), multi!.attributes('aria-expanded')]).toEqual(['true', 'false'])
+    await single!.trigger('click')
+    await multi!.trigger('click')
+    expect([single!.attributes('aria-expanded'), multi!.attributes('aria-expanded')]).toEqual(['false', 'true'])
   })
 
   it('todo o trabalho entre duas falas cai numa caixa só, e cada trecho tem a sua', async () => {
@@ -184,13 +228,14 @@ describe('bloco de trabalho', () => {
 
   it('a escolha manual prevalece quando o turno termina', async () => {
     const w = await mountWith({ state: 'running', items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read')] })
-    await header(w).trigger('click')
-    expect(header(w).attributes('aria-expanded')).toBe('false')
-    turnResult()
-    await flushPromises()
     expect(header(w).attributes('aria-expanded')).toBe('false')
     await header(w).trigger('click')
     expect(header(w).attributes('aria-expanded')).toBe('true')
+    turnResult()
+    await flushPromises()
+    expect(header(w).attributes('aria-expanded')).toBe('true')
+    await header(w).trigger('click')
+    expect(header(w).attributes('aria-expanded')).toBe('false')
   })
 
   it('a linha abre o card da ferramenta, sem repetir o cabeçalho', async () => {
@@ -198,6 +243,8 @@ describe('bloco de trabalho', () => {
       state: 'running',
       items: [user('u1'), tool('r1', 'Read', { result: { content: 'a\nb\n', is_error: false, details: null } }), tool('b1', 'Bash', { input: { command: 'ls -la' } })],
     })
+    expect(rowHeaders(w)).toHaveLength(0)
+    await header(w).trigger('click')
     const rows = rowHeaders(w)
     expect(rows[0]!.text()).toContain('Leitura')
     expect(rows[0]!.text()).toContain('/p/r1.py')
@@ -231,11 +278,11 @@ describe('bloco de trabalho', () => {
       state: 'running',
       items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { input: { command: 'pytest -q' }, result: null })],
     })
-    expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
-    await header(w).trigger('click')
     const line = w.find('[data-test="work-activity"]')
     expect(line.text()).toBe('Comando · pytest -q')
     expect(line.classes()).toEqual(expect.arrayContaining(['font-mono', 'text-secondary-soft']))
+    await header(w).trigger('click')
+    expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
     turnResult()
     await flushPromises()
   })
