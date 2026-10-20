@@ -9,6 +9,7 @@ from test_sessions import (  # noqa: F401
     wait_until,
 )
 
+from claudio_maestro.agent import AgentError
 from claudio_maestro.agent.fake import text_turn
 from claudio_maestro.sessions import SESSION_ENTRYPOINT
 
@@ -28,7 +29,8 @@ async def test_new_and_resumed_clients_carry_the_session_entrypoint(make_env, en
     await session.send("olá")
     await wait_until(lambda: session.state == "idle")
 
-    # An effort change reconnects the client with resume.
+    # An effort change the CLI refuses reconnects the client with resume.
+    env.factory.clients[0].set_effort_error = AgentError("unknown subtype", refused=True)
     await env.manager.update(session.session_id, effort="high")
     await wait_until(lambda: len(env.factory.clients) == 2 and session.state == "idle")
 

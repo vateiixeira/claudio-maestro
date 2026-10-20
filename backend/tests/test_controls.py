@@ -16,6 +16,7 @@ from test_sessions import (  # noqa: F401
     wait_until,
 )
 
+from claudio_maestro.agent import AgentError
 from claudio_maestro.agent.fake import (
     DEFAULT_SERVER_MODELS,
     FakeAgentFactory,
@@ -165,32 +166,80 @@ async def test_echo_of_live_change_is_not_shown(make_env, env_cleanup):
     assert notices == []
 
 
+def refuse_effort(client) -> None:
+    """The CLI does not know `apply_flag_settings`: effort falls back to a reconnect."""
+    client.set_effort_error = AgentError("unknown subtype", refused=True)
+
+
 @pytest.mark.anyio
-async def test_effort_while_idle_reconnects_with_resume(make_env, env_cleanup):
+async def test_effort_while_idle_applies_live(make_env, env_cleanup):
     env, session = await connected(make_env, env_cleanup)
 
+    summary = await env.manager.update(session.session_id, effort="low")
+
+    assert len(env.factory.clients) == 1
+    assert env.factory.clients[0].effort_calls == ["low"]
+    assert not env.factory.clients[0].closed
+    assert session.effort_pending is False
+    assert summary["effort"] == "low"
+    assert summary["effort_pending"] is False
+    events = [e for e in options_events(env, session) if e["effort"] == "low"]
+    assert events and all(e["effort_pending"] is False for e in events)
+    assert session.record.effort == "low"
+
+
+@pytest.mark.anyio
+async def test_effort_during_turn_applies_live(make_env, env_cleanup):
+    pause = PauseStep()
+    env, session = await connected(
+        make_env, env_cleanup,
+        lambda sid: [init_message(sid), pause, *text_turn(sid, "fim")[2:]],
+    )
+    await session.send("longo")
+    await pause.reached.wait()
+
+    summary = await env.manager.update(session.session_id, effort="low")
+
+    # Sent at once, without waiting for the ResultMessage.
+    assert env.factory.clients[0].effort_calls == ["low"]
+    assert summary["effort_pending"] is False
+    assert len(env.factory.clients) == 1
+    pause.release.set()
+    await wait_until(lambda: session.state == "idle")
+    assert len(env.factory.clients) == 1
+
+
+@pytest.mark.anyio
+async def test_effort_refused_falls_back_to_reconnect(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    refuse_effort(env.factory.clients[0])
+
     summary = await env.manager.update(session.session_id, effort="high")
-    await wait_until(lambda: len(env.factory.clients) == 2 and session.state == "idle")
-    await wait_until(lambda: not session.effort_pending)
+    assert summary["effort_pending"] is True
+    await wait_until(lambda: len(env.factory.clients) == 2 and not session.effort_pending)
+    await wait_until(lambda: session.state == "idle")
 
     old, new = env.factory.clients
-    assert old.closed
+    assert old.effort_calls == ["high"] and old.closed
     assert new.options.resume is True
     assert new.options.effort == "high"
-    assert summary["effort"] == "high"
+    assert session.record.effort == "high"
+    notices = [i for i in session.snapshot()["items"] if i["type"] == "notice"]
+    assert notices == []
     events = [e for e in options_events(env, session) if e["effort"] == "high"]
-    assert events[0]["effort_pending"] is True
+    assert any(e["effort_pending"] is True for e in events)
     assert events[-1]["effort_pending"] is False
 
 
 @pytest.mark.anyio
-async def test_effort_during_turn_waits_for_turn_end(make_env, env_cleanup):
+async def test_effort_refused_during_turn_reconnects_after_it(make_env, env_cleanup):
     pause = PauseStep()
     env, session = await connected(
         make_env, env_cleanup,
         lambda sid: [init_message(sid), pause, *text_turn(sid, "fim")[2:]],
         lambda sid: text_turn(sid, "depois"),
     )
+    refuse_effort(env.factory.clients[0])
     await session.send("longo")
     await pause.reached.wait()
 
@@ -207,6 +256,33 @@ async def test_effort_during_turn_waits_for_turn_end(make_env, env_cleanup):
     await session.send("próxima")
     await wait_until(lambda: session.state == "idle" and env.factory.clients[1].sent)
     assert env.factory.clients[1].sent == ["próxima"]
+
+
+@pytest.mark.anyio
+async def test_effort_error_that_is_not_a_refusal_fails_the_session(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    env.factory.clients[0].set_effort_error = AgentError("O agente morreu.")
+
+    await env.manager.update(session.session_id, effort="low")
+
+    assert session.client is None and session.state == "error"
+    assert session.effort_pending is False
+
+
+@pytest.mark.anyio
+async def test_effort_changed_while_connecting_is_applied_after_connect(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+
+    # The user chose a new effort while the client was connecting with another one.
+    session.save(effort="low")
+    ok = await session._reconcile_options(
+        client, (session.record.model, session.record.permission_mode, None)
+    )
+
+    assert ok is True
+    assert client.effort_calls == ["low"]
+    assert session.effort_pending is False
 
 
 @pytest.mark.anyio
@@ -398,6 +474,7 @@ async def test_effort_does_not_reconnect_between_autonomous_and_user_turn(
         return [turn[0], turn[1], turn[2], user_pause, *turn[3:]]
 
     env, session = await connected(make_env, env_cleanup, user_turn)
+    refuse_effort(env.factory.clients[0])
     client = env.factory.clients[0]
     sid = session.session_id
     turn = text_turn(sid, "autônomo")
@@ -435,6 +512,7 @@ async def test_followup_init_ends_the_wait_before_message_start(
         return [turn[0], user_pause, *turn[1:]]
 
     env, session = await connected(make_env, env_cleanup, user_turn)
+    refuse_effort(env.factory.clients[0])
     client = env.factory.clients[0]
     sid = session.session_id
     turn = text_turn(sid, "autônomo")
@@ -474,6 +552,7 @@ async def test_followup_expiry_keeps_effort_pending_until_next_send(
     pause = PauseStep()
     env, session = await connected(
         make_env, env_cleanup, lambda sid: [], lambda sid: text_turn(sid, "depois"))
+    refuse_effort(env.factory.clients[0])
     client = env.factory.clients[0]
     sid = session.session_id
     client.push([*response_messages(sid, [TextBlock(text="a")])[:1], pause,
@@ -816,6 +895,7 @@ async def test_close_during_followup_grace_leaves_nothing_running(make_env, env_
 @pytest.mark.anyio
 async def test_close_during_effort_reconnect_leaves_no_client(make_env, env_cleanup):
     env, session = await connected(make_env, env_cleanup)
+    refuse_effort(env.factory.clients[0])
     old = env.factory.clients[0]
     pause = PauseStep()
     old.close_pause = pause
@@ -848,6 +928,7 @@ async def test_effort_reconnect_keeps_rename_and_turn_end(make_env, env_cleanup)
 
     await session.send("longo")
     await pause.reached.wait()
+    refuse_effort(env.factory.clients[0])
     await env.manager.update(session.session_id, effort="low")
     pause.release.set()
     await wait_until(lambda: len(env.factory.clients) == 2 and not session.effort_pending)

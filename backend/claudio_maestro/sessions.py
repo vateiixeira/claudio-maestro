@@ -1502,19 +1502,22 @@ class ActiveSession:
                 logger.exception("Falha após conectar a sessão %s", self.session_id)
         return True
 
-    def _client_options(self) -> tuple[str | None, str | None]:
-        return self.record.model, self.record.permission_mode
+    def _client_options(self) -> tuple[str | None, str | None, str | None]:
+        return self.record.model, self.record.permission_mode, self.record.effort
 
     async def _reconcile_options(
-        self, client: AgentClient, used: tuple[str | None, str | None]
+        self, client: AgentClient, used: tuple[str | None, str | None, str | None]
     ) -> bool:
-        """Model or mode changed while connecting: apply them live now.
+        """Model, mode or effort changed while connecting: apply them live now.
         Returns False when the client failed meanwhile."""
-        model, mode = self.record.model, self.record.permission_mode
+        model, mode, effort = (
+            self.record.model, self.record.permission_mode, self.record.effort
+        )
         return await self._apply_live(
             client,
             model=(model, used[0]) if model != used[0] else None,
             mode=(mode, used[1]) if mode != used[1] and mode is not None else None,
+            effort=(effort, used[2]) if effort != used[2] and effort is not None else None,
         )
 
     async def _apply_live(
@@ -1523,13 +1526,18 @@ class ActiveSession:
         *,
         model: tuple[str | None, str | None] | None,
         mode: tuple[str, str | None] | None,
+        effort: tuple[str, str | None] | None = None,
     ) -> bool:
-        """Send a model and/or mode change to the client; each is `(new, previous)`.
+        """Send a model, mode and/or effort change to the client; each is
+        `(new, previous)`.
 
         An error the agent answered (`AgentError.refused`, its process is alive)
         does not end the session: the option goes back to the previous value and a
         notice says why. Any other error means the client is gone and fails the
-        session. Returns False when the session failed or lost this client."""
+        session. Effort is the exception to the revert: a refusal (an older CLI that
+        does not know the live change) leaves it saved and falls back to reconnecting
+        between turns, with no notice. Returns False when the session failed or lost
+        this client."""
         if model is not None:
             new, previous = model
             self.builder.expect_local_echo(f"Set model to {new}")
@@ -1556,6 +1564,15 @@ class ActiveSession:
                     else f"Não foi possível trocar o modo: {error.message_pt}"
                 )
                 self._revert_option("permission_mode", new, previous, text)
+        if effort is not None:
+            try:
+                await client.set_effort(effort[0])
+            except AgentError as error:
+                if not await self._control_failed(client, error):
+                    return False
+                self.effort_pending = True
+                self._emit_options()
+                self._schedule_effort()
         return True
 
     async def _control_failed(self, client: AgentClient, error: AgentError) -> bool:
@@ -1874,8 +1891,8 @@ class ActiveSession:
         permission_mode: str | None = None,
     ) -> bool:
         """Save new options and apply them to the client, if any. Returns True when
-        something changed. Model and mode change live; effort needs a reconnect,
-        done now if no turn is running, otherwise when the turn ends."""
+        something changed. Model, mode and effort change live; only when the CLI
+        refuses the effort change does it wait for a reconnect between turns."""
         changes: dict[str, Any] = {}
         if model is not None and model != self.record.model:
             changes["model"] = model
@@ -1885,12 +1902,13 @@ class ActiveSession:
             changes["permission_mode"] = permission_mode
         if not changes:
             return False
-        previous = {"model": self.record.model, "permission_mode": self.record.permission_mode}
+        previous = {
+            "model": self.record.model,
+            "effort": self.record.effort,
+            "permission_mode": self.record.permission_mode,
+        }
         self.save(**changes)
         client = self.client
-        if client is not None or self._connecting:
-            if "effort" in changes:
-                self.effort_pending = True
         self._emit_options()
         if client is not None:
             applied = await self._apply_live(
@@ -1901,6 +1919,7 @@ class ActiveSession:
                     if "permission_mode" in changes
                     else None
                 ),
+                effort=(changes["effort"], previous["effort"]) if "effort" in changes else None,
             )
             if not applied:
                 return True

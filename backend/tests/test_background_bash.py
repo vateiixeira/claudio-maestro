@@ -9,6 +9,7 @@ from claude_agent_sdk import ToolUseBlock
 from test_controls import connected
 from test_sessions import env_cleanup, make_env, wait_until  # noqa: F401
 
+from claudio_maestro.agent import AgentError
 from claudio_maestro.agent.fake import (
     background_bash_turn,
     background_tasks_changed_message,
@@ -273,6 +274,7 @@ async def test_running_background_bash_keeps_client_open_when_idle(make_env, env
 async def test_effort_waits_for_running_background_bash(make_env, env_cleanup):
     env, session = await with_background_bash(make_env, env_cleanup)
     client = env.factory.clients[0]
+    client.set_effort_error = AgentError("unknown subtype", refused=True)
     sid = session.session_id
 
     summary = await env.manager.update(sid, effort="high")

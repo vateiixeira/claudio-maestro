@@ -17,6 +17,7 @@ from test_sessions import (  # noqa: F401
     wait_until,
 )
 
+from claudio_maestro.agent import AgentError
 from claudio_maestro.agent.base import AgentOptions
 from claudio_maestro.agent.fake import (
     DEFAULT_SERVER_MODELS,
@@ -185,6 +186,7 @@ async def test_running_subagent_keeps_client_open_when_idle(make_env, env_cleanu
 async def test_effort_waits_for_running_subagent(make_env, env_cleanup):
     env, session = await with_background_agent(make_env, env_cleanup)
     client = env.factory.clients[0]
+    client.set_effort_error = AgentError("unknown subtype", refused=True)
     sid = session.session_id
 
     summary = await env.manager.update(sid, effort="high")

@@ -156,7 +156,7 @@ async def test_reconcile_refused_mode_reverts_and_keeps_client(make_env, env_cle
     # The user chose "auto" while the client was connecting with "default".
     session.save(permission_mode="auto")
 
-    ok = await session._reconcile_options(client, (session.record.model, "default"))
+    ok = await session._reconcile_options(client, (session.record.model, "default", session.record.effort))
 
     assert ok is True
     assert session.record.permission_mode == "default"
@@ -173,7 +173,7 @@ async def test_reconcile_refused_model_reverts_and_still_applies_mode(make_env, 
     used_model = session.record.model
     session.save(model="opus", permission_mode="plan")
 
-    ok = await session._reconcile_options(client, (used_model, "default"))
+    ok = await session._reconcile_options(client, (used_model, "default", session.record.effort))
 
     assert ok is True
     assert session.record.model == used_model
@@ -189,7 +189,7 @@ async def test_reconcile_dead_client_still_fails_the_session(make_env, env_clean
     client.set_permission_mode_error = AgentError("O agente morreu.")
     session.save(permission_mode="plan")
 
-    ok = await session._reconcile_options(client, (session.record.model, "default"))
+    ok = await session._reconcile_options(client, (session.record.model, "default", session.record.effort))
 
     assert ok is False
     assert session.client is None and session.state == "error"
