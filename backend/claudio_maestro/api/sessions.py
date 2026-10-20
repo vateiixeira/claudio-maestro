@@ -136,6 +136,13 @@ class SessionOut(BaseModel):
     # When a session on hold wakes up (seconds); None without a date.
     mark_until: int | None = None
     priority: bool = False
+    # Remote Control: what the user asked for, and what is true now ("off", "connecting",
+    # "on", "failed" or "elsewhere"), the claude.ai/code link of the session while it
+    # has one and why it failed.
+    remote_control: bool = False
+    remote_control_state: Literal["off", "connecting", "on", "failed", "elsewhere"] = "off"
+    remote_control_url: str | None = None
+    remote_control_error: str | None = None
     # Labels applied (ids of `GET /api/labels`), ordered by id.
     label_ids: list[int] = []
 
@@ -178,6 +185,7 @@ class SessionPatch(BaseModel):
     mark_note: Annotated[str, StringConstraints(strip_whitespace=True)] | None = None
     mark_until: int | None = None
     priority: bool | None = None
+    remote_control: bool | None = None
 
 
 class SessionCreate(BaseModel):
@@ -208,6 +216,7 @@ _STATUS = {
     sessions.InvalidImageError: status.HTTP_400_BAD_REQUEST,
     sessions.InvalidMarkError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     sessions.ContinuedElsewhereError: status.HTTP_409_CONFLICT,
+    sessions.RemoteControlUnavailable: status.HTTP_409_CONFLICT,
     sessions.SessionClosedError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
@@ -315,6 +324,7 @@ async def update_session(
             mark_note=body.mark_note if "mark_note" in body.model_fields_set else ...,
             mark_until=body.mark_until if "mark_until" in body.model_fields_set else ...,
             priority=body.priority,
+            remote_control=body.remote_control,
         )
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc

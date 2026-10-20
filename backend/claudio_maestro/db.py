@@ -241,6 +241,15 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         """,
         "CREATE INDEX session_labels_label_id ON session_labels(label_id)",
     ],
+    [
+        # Remote Control por sessão: whether the user wants it on (it comes back by itself
+        # after any restart), the id of its bridge (so a new process of the same
+        # conversation keeps the same entry in the Claude app) and the version of the
+        # code that spawned the session's process (what its arguments contain).
+        "ALTER TABLE sessions ADD COLUMN remote_control INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE sessions ADD COLUMN remote_control_bridge TEXT",
+        "ALTER TABLE sessions ADD COLUMN spawn_version INTEGER NOT NULL DEFAULT 0",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

@@ -206,3 +206,43 @@ def test_label_slug_is_unique(tmp_path: Path):
         conn.execute("INSERT INTO labels (slug, color, created_at) VALUES ('x', '#000000', 0)")
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute("INSERT INTO labels (slug, color, created_at) VALUES ('x', '#000000', 0)")
+
+
+def test_sessions_have_remote_control_columns(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        db.migrate(conn)
+        cols = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
+    assert {"remote_control", "remote_control_bridge", "spawn_version"} <= cols.keys()
+    assert cols["remote_control"]["dflt_value"] == "0" and cols["remote_control"]["notnull"]
+    assert cols["spawn_version"]["dflt_value"] == "0" and cols["spawn_version"]["notnull"]
+    assert cols["remote_control_bridge"]["dflt_value"] is None
+
+
+def test_remote_control_migration_keeps_existing_sessions_off(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        before = next(
+            index for index, statements in enumerate(db.MIGRATIONS)
+            if any("remote_control_bridge" in str(statement) for statement in statements)
+        )
+        for statements in db.MIGRATIONS[:before]:
+            for statement in statements:
+                if callable(statement):
+                    statement(conn)
+                else:
+                    conn.execute(statement)
+        conn.execute(f"PRAGMA user_version = {before}")
+        conn.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/p', '#fff', 0, 0)"
+        )
+        conn.execute(
+            "INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at)"
+            " VALUES ('old', 1, '/p', 't', 0, 0)"
+        )
+
+        db.migrate(conn)
+
+        row = conn.execute("SELECT * FROM sessions WHERE session_id = 'old'").fetchone()
+    assert row["remote_control"] == 0
+    assert row["remote_control_bridge"] is None
+    assert row["spawn_version"] == 0

@@ -551,6 +551,29 @@ async def test_fake_remote_control_echoes_reattach_bridge(tmp_path):
     assert client.remote_control_response["bridge_session_id"] == "cse_fake"
 
 
+@pytest.mark.anyio
+async def test_fake_remote_control_error_once_and_pause(tmp_path):
+    client = FakeAgentFactory()(make_options(tmp_path))
+    client.set_remote_control_error_once = AgentError("só desta vez", refused=True)
+
+    with pytest.raises(AgentError):
+        await client.set_remote_control(True, reattach_session_id="cse_old")
+    result = await client.set_remote_control(True)
+
+    assert result["bridge_session_id"] == "cse_fake"
+    assert client.set_remote_control_error_once is None
+    assert [call["reattach_session_id"] for call in client.remote_control_calls] == ["cse_old", None]
+
+    client.remote_control_pause = PauseStep()
+    pending = asyncio.create_task(client.set_remote_control(True))
+    await asyncio.wait_for(client.remote_control_pause.reached.wait(), 1)
+    assert not pending.done()
+    # Turning it off is never held.
+    await client.set_remote_control(False)
+    client.remote_control_pause.release.set()
+    assert (await pending)["bridge_session_id"] == "cse_fake"
+
+
 def test_bridge_state_and_remote_user_message_helpers():
     ready = bridge_state_message("ready")
     failed = bridge_state_message("failed", detail="sem rede", failure_kind="terminal")

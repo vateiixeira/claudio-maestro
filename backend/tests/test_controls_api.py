@@ -191,3 +191,79 @@ def test_patch_invalid_model(api, home):
 
     assert api.patch(url, json={"model": "opus; rm"}).status_code == 422
     assert api.patch(url, json={"model": "opus[1m]"}).status_code == 200
+
+
+def test_patch_remote_control_true_returns_state(api, home, factory):
+    session = new_session(api, home)
+    assert session["remote_control"] is False
+    assert session["remote_control_state"] == "off"
+    assert session["remote_control_url"] is None and session["remote_control_error"] is None
+    assert "remote_control_bridge" not in session and "spawn_version" not in session
+    url = f"/api/sessions/{session['session_id']}"
+
+    response = api.patch(url, json={"remote_control": True})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["remote_control"] is True
+    assert body["remote_control_state"] == "connecting"
+    assert body["remote_control_url"] == "https://claude.ai/code/session_fake"
+    assert body["remote_control_error"] is None
+    assert "remote_control_bridge" not in body and "spawn_version" not in body
+    assert factory.clients[-1].remote_control_calls[-1]["enabled"] is True
+    listed = api.get("/api/sessions").json()[0]
+    assert listed["remote_control"] is True and listed["remote_control_state"] == "connecting"
+    snapshot = api.get(url).json()
+    assert snapshot["remote_control_state"] == "connecting"
+
+    response = api.patch(url, json={"remote_control": False})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["remote_control"] is False and body["remote_control_state"] == "off"
+    assert body["remote_control_url"] is None
+    assert factory.clients[-1].remote_control_calls[-1]["enabled"] is False
+
+
+def test_patch_remote_control_on_finished_is_409(api, home, factory):
+    session = new_session(api, home)
+    url = f"/api/sessions/{session['session_id']}"
+    assert api.patch(url, json={"finished": True}).status_code == 200
+
+    response = api.patch(url, json={"remote_control": True})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Reabra a sessão para ligar o Remote Control."
+    assert factory.clients == []
+    assert api.get(url).json()["remote_control"] is False
+
+
+def test_patch_remote_control_with_reopening_is_allowed(api, home):
+    session = new_session(api, home)
+    url = f"/api/sessions/{session['session_id']}"
+    api.patch(url, json={"finished": True})
+
+    response = api.patch(url, json={"finished": False, "remote_control": True})
+
+    assert response.status_code == 200
+    assert response.json()["remote_control"] is True
+
+
+def test_patch_remote_control_rejects_non_bool(api, home):
+    session = new_session(api, home)
+    url = f"/api/sessions/{session['session_id']}"
+
+    assert api.patch(url, json={"remote_control": "sim"}).status_code == 422
+    assert api.patch(url, json={"remote_control": 2}).status_code == 422
+    assert api.get(url).json()["remote_control"] is False
+
+
+def test_patch_without_remote_control_leaves_it_alone(api, home, factory):
+    session = new_session(api, home)
+    url = f"/api/sessions/{session['session_id']}"
+    api.patch(url, json={"remote_control": True})
+
+    response = api.patch(url, json={"model": "haiku"})
+
+    assert response.json()["remote_control"] is True
+    assert response.json()["remote_control_state"] == "connecting"

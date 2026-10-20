@@ -111,6 +111,19 @@ DENY_MESSAGE = "O usuário recusou."
 CANCELLED_MESSAGE = "O pedido foi cancelado."
 
 SessionState = Literal["closed", "connecting", "running", "awaiting_decision", "idle", "error"]
+# What is true of the session's Remote Control now: "off" (no process has it), "connecting"
+# (asked, the bridge is not up yet), "on", "failed" (see `remote_error`) or "elsewhere"
+# (another process holds the conversation).
+RemoteState = Literal["off", "connecting", "on", "failed", "elsewhere"]
+# Wait before each automatic attempt to turn Remote Control on again after a failure
+# (seconds); the last one repeats.
+REMOTE_RETRY_DELAYS: tuple[float, ...] = (30, 60, 120, 300, 600)
+REMOTE_NAME_MAX = 60  # characters of the name the session has in the Claude app
+REMOTE_NAME_FALLBACK = "Cláudio Maestro"
+REMOTE_FAILED_PREFIX = "Não foi possível ligar o Remote Control: "
+REMOTE_OFF_FAILED_PREFIX = "Não foi possível desligar o Remote Control: "
+REMOTE_BRIDGE_FAILED_TEXT = "O Remote Control perdeu a conexão."
+REMOTE_POLICY_TEXT = "O Remote Control está desativado pela política da organização."
 Decision = Literal["allow_once", "allow_always", "deny", "answer", "approve", "reject"]
 DECISIONS: tuple[str, ...] = ("allow_once", "allow_always", "deny", "answer", "approve", "reject")
 PromptKind = Literal["tool", "question", "plan"]
@@ -284,6 +297,13 @@ class InvalidMarkError(SessionError):
     pass
 
 
+REMOTE_UNAVAILABLE_TEXT = "Reabra a sessão para ligar o Remote Control."
+
+
+class RemoteControlUnavailable(SessionError):
+    pass
+
+
 CONTINUED_ELSEWHERE_TEXT = (
     "Esta conversa continuou em outro processo enquanto uma tarefa em segundo plano "
     "rodava aqui. Pare as tarefas em segundo plano para o app retomar a conversa do disco."
@@ -351,6 +371,14 @@ class SessionRecord:
     # When the backend let go of this session's process on shutdown (the agentd kept
     # it); cleared once reattached. Where writes by other processes are judged from.
     detached_at: float | None = None
+    # The user wants Remote Control on: kept across restarts, and the session gets it
+    # back by itself whenever it has a process.
+    remote_control: bool = False
+    # Id of the Remote Control bridge, so a new process of this conversation keeps the
+    # same entry in the Claude app.
+    remote_control_bridge: str | None = None
+    # Version of the code that spawned the process (what its arguments contain).
+    spawn_version: int = 0
 
     @property
     def history_directory(self) -> str:
@@ -393,13 +421,17 @@ _COLUMNS = (
     + ", model, effort, permission_mode, finished_at, plan_path, plan_link, group_id"
     + ", history_dir, worktree_name, worktree_path, git_branch, turn_open"
     + ", mark, mark_note, mark_until, priority, detached_at"
+    + ", remote_control, remote_control_bridge, spawn_version"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
     "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
     "plan_path", "plan_link", "history_dir", "turn_open", "detached_at",
+    "remote_control_bridge", "spawn_version",
 )
-_BOOL_FIELDS = ("finished", "title_custom", "rename_pending", "turn_open", "priority")
+_BOOL_FIELDS = (
+    "finished", "title_custom", "rename_pending", "turn_open", "priority", "remote_control"
+)
 
 
 def _record(row: sqlite3.Row) -> SessionRecord:
@@ -407,6 +439,16 @@ def _record(row: sqlite3.Row) -> SessionRecord:
     for key in _BOOL_FIELDS:
         fields[key] = bool(fields[key])
     return SessionRecord(**fields)
+
+
+def remote_name(record: SessionRecord) -> str:
+    """Name the session has in the Claude app: its title (or first prompt) on one line,
+    cut at REMOTE_NAME_MAX characters."""
+    for text in (record.title if record.title != DEFAULT_TITLE else "", record.first_prompt):
+        name = " ".join((text or "").split())[:REMOTE_NAME_MAX].rstrip()
+        if name:
+            return name
+    return REMOTE_NAME_FALLBACK
 
 
 def _strip_accents(text: str) -> str:
@@ -550,6 +592,9 @@ def describe(
     closure_verdict: str | None = None,
     subagents_running: bool = False,
     label_ids: list[int] | None = None,
+    remote_state: RemoteState = "off",
+    remote_url: str | None = None,
+    remote_error: str | None = None,
 ) -> dict[str, Any]:
     """Session as sent to the frontend by listings, PATCH and `session.updated`.
 
@@ -594,6 +639,11 @@ def describe(
         "closure_verdict": closure_verdict,
         "label_ids": list(label_ids or []),
         "interrupted": bool(record.turn_open) and state in ("closed", "error"),
+        # `remote_control` (in the record) is what the user asked for; the state is
+        # what is true now.
+        "remote_control_state": remote_state,
+        "remote_control_url": remote_url,
+        "remote_control_error": remote_error,
     }
 
 
@@ -973,6 +1023,15 @@ class ActiveSession:
         # The app asked the client to stop its tasks and has not seen them end yet:
         # their end is not one the CLI follows with a turn of its own.
         self._stop_requested = False
+        # Remote Control as it is now (the record only holds what the user asked for).
+        self.remote_state: RemoteState = "off"
+        self.remote_url: str | None = None
+        self.remote_error: str | None = None
+        # Seconds to wait before each automatic attempt after a failure (a test replaces it).
+        self.remote_retry_delays: tuple[float, ...] = REMOTE_RETRY_DELAYS
+        self._remote_retry_task: asyncio.Task[None] | None = None
+        # Automatic attempts since the last time it worked or the user changed it.
+        self._remote_attempts = 0
 
     @property
     def session_id(self) -> str:
@@ -1320,6 +1379,9 @@ class ActiveSession:
             last_action=self.last_action,
             pending_kind=self.pending_kind,
             subagents_running=self.subagents_running,
+            remote_state=self.remote_state,
+            remote_url=self.remote_url,
+            remote_error=self.remote_error,
         )
 
     def emit_updated(self) -> None:
@@ -1693,6 +1755,8 @@ class ActiveSession:
                     return
                 if isinstance(message, SystemMessage) and message.subtype == "init":
                     self._apply_init()
+                elif isinstance(message, SystemMessage) and message.subtype == "bridge_state":
+                    self._on_bridge_state(message.data)
                 if isinstance(message, ResultMessage):
                     # Read in the background: the turn does not wait for it.
                     self._request_context(client)
@@ -1850,6 +1914,183 @@ class ActiveSession:
             and message.event.get("type") == "message_start"
         )
 
+    # Remote Control --------------------------------------------------------
+
+    def remote_retry_delay(self, attempt: int) -> float:
+        """Seconds before automatic attempt number `attempt` (from 0); the last repeats."""
+        delays = self.remote_retry_delays
+        return delays[min(attempt, len(delays) - 1)]
+
+    def _set_remote(
+        self, state: RemoteState, *, url: str | None = None, error: str | None = None
+    ) -> None:
+        """Change what is known of Remote Control and tell the clients if it differs."""
+        if (self.remote_state, self.remote_url, self.remote_error) == (state, url, error):
+            return
+        self.remote_state, self.remote_url, self.remote_error = state, url, error
+        self._emit_options()
+
+    def _remote_down(self) -> None:
+        """No client holds Remote Control now (closed, failed, replaced): the saved mark
+        stays, the state goes back to off and no attempt is pending."""
+        self._cancel_remote_retry()
+        self._remote_attempts = 0
+        self._set_remote("off")
+
+    def _cancel_remote_retry(self) -> None:
+        task, self._remote_retry_task = self._remote_retry_task, None
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+
+    def _schedule_remote_retry(self) -> None:
+        """After a failure, try again on its own while the mark is on and the client lives."""
+        task = self._remote_retry_task
+        if (
+            not self.record.remote_control
+            or self.client is None
+            or self.remote_state != "failed"
+            or self._final
+            or (task is not None and not task.done() and task is not asyncio.current_task())
+        ):
+            return
+        delay = self.remote_retry_delay(self._remote_attempts)
+        self._remote_attempts += 1
+        self._remote_retry_task = asyncio.create_task(self._remote_retry(delay))
+
+    async def _remote_retry(self, delay: float) -> None:
+        await asyncio.sleep(delay)
+        async with self._lock:
+            client = self.client
+            if (
+                client is None
+                or self._final
+                or not self.record.remote_control
+                or self.remote_state != "failed"
+            ):
+                return
+            await self._enable_remote(client)
+
+    def _on_bridge_state(self, data: dict[str, Any]) -> None:
+        """The CLI reports the state of the Remote Control bridge."""
+        if not self.record.remote_control:
+            return  # a late report after the user turned it off
+        state = data.get("state")
+        detail = data.get("detail")
+        detail = detail.strip() if isinstance(detail, str) and detail.strip() else None
+        if state == "connected":
+            self._remote_attempts = 0
+            self._cancel_remote_retry()
+            self._set_remote("on", url=self.remote_url)
+        elif state == "ready":
+            self._set_remote("connecting", url=self.remote_url)
+        elif state in ("failed", "policy_disabled"):
+            fallback = REMOTE_POLICY_TEXT if state == "policy_disabled" else REMOTE_BRIDGE_FAILED_TEXT
+            self._set_remote("failed", url=self.remote_url, error=detail or fallback)
+            self._schedule_remote_retry()
+
+    def _remote_failed(self, text: str) -> None:
+        """Turning it on failed but the session goes on: the mark stays, the chip says why
+        (one warning in the chat per run of failures) and a new attempt is scheduled."""
+        first = self._remote_attempts == 0
+        self._set_remote("failed", error=text)
+        if first:
+            self._emit_events(self.builder.add_notice("warning", REMOTE_FAILED_PREFIX + text))
+        self._schedule_remote_retry()
+
+    async def set_remote_control(self, enabled: bool) -> bool:
+        """Turn Remote Control on or off for this session; the choice is saved and comes
+        back after restarts. Returns True when the saved choice changed.
+
+        Turning it on connects the client first when there is none (resuming the
+        conversation). A finished session cannot turn it on. Turning it off takes
+        effect at once (mark, bridge and state); the request to the client follows
+        under the lock, after an `enable` still in flight."""
+        if enabled == self.record.remote_control:
+            return False
+        if enabled:
+            if self.record.finished:
+                raise RemoteControlUnavailable(REMOTE_UNAVAILABLE_TEXT)
+            if self._final:
+                raise SessionClosedError("O servidor está encerrando.")
+            self._cancel_remote_retry()
+            self._remote_attempts = 0
+            self.save(remote_control=True)
+            self._set_remote("connecting")
+            async with self._lock:
+                await self._wait_disposal()
+                if self._final or not self.record.remote_control:
+                    return True
+                if self.client is None and not await self._connect():
+                    if self.record.remote_control and self.error is not None:
+                        self._set_remote("failed", error=self.error)
+                    return True
+                client = self.client
+                if client is not None:
+                    await self._enable_remote(client)
+            return True
+        self._cancel_remote_retry()
+        self._remote_attempts = 0
+        self.save(remote_control=False, remote_control_bridge=None)
+        self._set_remote("off")
+        async with self._lock:
+            client = self.client
+            if client is None or self.record.remote_control:
+                return True
+            try:
+                await client.set_remote_control(False)
+            except AgentError as error:
+                if await self._control_failed(client, error):
+                    self._emit_events(
+                        self.builder.add_notice("warning", REMOTE_OFF_FAILED_PREFIX + error.message_pt)
+                    )
+        return True
+
+    async def _enable_remote(self, client: AgentClient) -> None:
+        """Ask `client` to turn Remote Control on (the mark is on). Called with the lock
+        held: by `set_remote_control`, by the automatic retries and, on new processes, by
+        the connect.
+
+        The saved bridge id goes as `reattach_session_id` so the Claude app keeps the
+        same entry; if the CLI refuses it, the request is made once more without it. Any
+        other refusal leaves the session as it is, with the failed state and a notice;
+        an error that kills the client fails the session."""
+        if self.client is not client or not self.record.remote_control:
+            return
+        self._cancel_remote_retry()
+        if self.remote_state != "on":
+            self._set_remote("connecting", url=self.remote_url)
+        name = remote_name(self.record)
+        bridge = self.record.remote_control_bridge
+        try:
+            try:
+                response = await client.set_remote_control(
+                    True, name=name, reattach_session_id=bridge
+                )
+            except AgentError as error:
+                if bridge is None or not error.refused or self.client is not client:
+                    raise
+                logger.info("Ponte %s recusada na sessão %s; ligando sem ela", bridge, self.session_id)
+                response = await client.set_remote_control(True, name=name)
+        except AgentError as error:
+            if not await self._control_failed(client, error):
+                return
+            if self.record.remote_control:
+                self._remote_failed(error.message_pt)
+            return
+        if self.client is not client or not self.record.remote_control:
+            return  # closed or turned off meanwhile; the off request follows
+        answer = response if isinstance(response, dict) else {}
+        bridge_id = answer.get("bridge_session_id")
+        if isinstance(bridge_id, str) and bridge_id and bridge_id != bridge:
+            self.save(remote_control_bridge=bridge_id)
+        url = answer.get("session_url")
+        url = url if isinstance(url, str) and url else self.remote_url
+        if self.remote_state in ("on", "failed"):
+            # The bridge reported while the request was in flight: keep what it said.
+            self._set_remote(self.remote_state, url=url, error=self.remote_error)
+        else:
+            self._set_remote("connecting", url=url)
+
     # Options ---------------------------------------------------------------
 
     def options(self) -> dict[str, Any]:
@@ -1859,6 +2100,10 @@ class ActiveSession:
             "permission_mode": self.record.permission_mode,
             "effort_pending": self.effort_pending,
             "model_resolved": self.model_resolved,
+            "remote_control": self.record.remote_control,
+            "remote_control_state": self.remote_state,
+            "remote_control_url": self.remote_url,
+            "remote_control_error": self.remote_error,
         }
 
     def _emit_options(self) -> None:
@@ -1961,6 +2206,7 @@ class ActiveSession:
         self.client = None
         self._reader = None
         self.builder.clear_local_echo()
+        self._remote_down()
         self._release_subagent_hold(announce=False)
         self._emit_events(self.builder.stop_running_subagents())
         self.sync_subagents()
@@ -2124,6 +2370,7 @@ class ActiveSession:
         self._clear_followup()
         self._release_subagent_hold(announce=False)
         self.builder.clear_local_echo()
+        self._remote_down()
         self._emit_events(self.builder.close_open_items())
         self._emit_events(self.builder.stop_running_subagents())
         if notice:
@@ -2168,6 +2415,7 @@ class ActiveSession:
         self._clear_followup()
         self._release_subagent_hold(announce=False)
         self.builder.clear_local_echo()
+        self._remote_down()
         if client is not None:
             self._emit_events(self.builder.stop_running_subagents())
         self._cancel_prompts()
@@ -2192,6 +2440,7 @@ class ActiveSession:
             effort_task.cancel()
             with suppress(asyncio.CancelledError):
                 await effort_task
+        self._cancel_remote_retry()
         await self.wait_settled()
         self._clear_followup()
         self._release_subagent_hold(announce=False)
@@ -3097,6 +3346,9 @@ class SessionManager:
             "closure_verdict": verdict,
             "subagents_running": active.subagents_running,
             "label_ids": self._label_ids.get(record.session_id, []),
+            "remote_state": active.remote_state,
+            "remote_url": active.remote_url,
+            "remote_error": active.remote_error,
         }
 
     def _load_digest_briefs(self) -> None:
@@ -3313,6 +3565,7 @@ class SessionManager:
         mark_note: str | None | EllipsisType = ...,
         mark_until: int | None | EllipsisType = ...,
         priority: bool | None = None,
+        remote_control: bool | None = None,
     ) -> dict[str, Any]:
         """Finish, reopen, rename or change options (model, effort, permission mode).
 
@@ -3320,9 +3573,12 @@ class SessionManager:
         `...` keeps it. `bypassPermissions` needs `confirm_bypass`. Emits `session.updated` when
         something changed, and `session.options` when an option changed. `mark`,
         `mark_note` and `mark_until` follow `resolve_mark`; finishing drops them and the
-        priority, and marking a finished session reopens it.
+        priority, and marking a finished session reopens it. `remote_control` turns Remote
+        Control on or off (`RemoteControlUnavailable` for a finished session that stays so).
         """
         session = self.get(session_id)
+        if remote_control and (finished is True or (session.record.finished and finished is not False)):
+            raise RemoteControlUnavailable(REMOTE_UNAVAILABLE_TEXT)
         if group_id is not ... and group_id is not None:
             with closing(db.connect(self._db_path)) as conn:
                 groups.get_group(conn, group_id)
@@ -3383,7 +3639,10 @@ class SessionManager:
         if "finished" in changes:
             changes["finished_at"] = _now() if changes["finished"] else None
         if not changes:
-            if options_changed:
+            remote_changed = remote_control is not None and await session.set_remote_control(
+                remote_control
+            )
+            if options_changed or remote_changed:
                 session.emit_updated()
             return session.summary()
         try:
@@ -3412,6 +3671,9 @@ class SessionManager:
             else:
                 # No conversation on disk yet: applied after the first turn.
                 session.save(rename_pending=True)
+        if remote_control is not None:
+            # After the changes above: reopening and turning it on can come together.
+            await session.set_remote_control(remote_control)
         session.emit_updated()
         return session.summary()
 

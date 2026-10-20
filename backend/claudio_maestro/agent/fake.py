@@ -173,6 +173,11 @@ class FakeAgentClient:
         self.set_effort_error: AgentError | None = None
         self.remote_control_calls: list[dict[str, Any]] = []
         self.set_remote_control_error: AgentError | None = None
+        # Raised by the next set_remote_control call only, then cleared.
+        self.set_remote_control_error_once: AgentError | None = None
+        # When set, turning Remote Control on stops here (after recording the call)
+        # until the test releases it.
+        self.remote_control_pause: PauseStep | None = None
         self.remote_control_response: dict[str, Any] = {
             "session_url": "https://claude.ai/code/session_fake",
             "bridge_session_id": "cse_fake",
@@ -288,10 +293,16 @@ class FakeAgentClient:
         self.remote_control_calls.append(
             {"enabled": enabled, "name": name, "reattach_session_id": reattach_session_id}
         )
+        if self.set_remote_control_error_once is not None:
+            error, self.set_remote_control_error_once = self.set_remote_control_error_once, None
+            raise error
         if self.set_remote_control_error is not None:
             raise self.set_remote_control_error
         if not enabled:
             return {}
+        if self.remote_control_pause is not None:
+            self.remote_control_pause.reached.set()
+            await self.remote_control_pause.release.wait()
         response = dict(self.remote_control_response)
         if reattach_session_id is not None:
             response["bridge_session_id"] = reattach_session_id
