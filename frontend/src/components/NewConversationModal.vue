@@ -465,6 +465,7 @@ function onKeydown(event: KeyboardEvent) {
               @click="suggestions.refresh()"
               @select="onPromptSelect"
               @blur="suggestions.onBlur()"
+              @focus="suggestions.onFocus()"
               @paste="onPaste"
             />
             <SuggestionMenu

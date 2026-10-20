@@ -2,6 +2,10 @@
 skills, read from the CLI with a throwaway client that runs no hooks.
 
 Built-in CLI commands are left out: the app has its own controls for them.
+
+Starting the CLI takes seconds, so a list once read answers at once from memory. It
+is read again in the background when it gets old or when a folder of skills,
+commands or plugins changes, and the next request gets the new list.
 """
 
 import asyncio
@@ -22,10 +26,16 @@ from claudio_maestro.agent.base import (
     AgentFactory,
     AgentOptions,
 )
+from claudio_maestro.config import claude_config_dir
 
 logger = logging.getLogger(__name__)
 
-CACHE_SECONDS = 5 * 60
+# A list older than this is read again in the background on its next use.
+REFRESH_SECONDS = 10 * 60
+# A list unused for this long is dropped; the next request waits for a new one.
+EXPIRE_SECONDS = 24 * 60 * 60
+# After a failed background refresh, the next one waits this long.
+RETRY_SECONDS = 60
 TIMEOUT_SECONDS = 10.0
 # Connecting fires SessionStart hooks; this keeps the list and runs none.
 NO_HOOKS = '{"disableAllHooks": true}'
@@ -72,40 +82,132 @@ def parse_commands(raw: Any) -> list[CommandInfo]:
     return found
 
 
+def _mtime(path: Path) -> int | None:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+@dataclass
+class _Entry:
+    commands: CommandList
+    fetched_at: float
+    used_at: float
+    # Modification times of the places the list comes from, read before the fetch.
+    stamp: tuple[int | None, ...]
+
+
 class CommandCatalog:
-    """Commands per folder, cached for `CACHE_SECONDS`. Concurrent requests for the
-    same folder share one client. Failures are not cached."""
+    """Commands per folder, kept in memory. Concurrent requests for the same folder
+    share one client. Failures are not cached; a failed background refresh keeps the
+    old list."""
 
     def __init__(
         self,
         agent_factory: AgentFactory,
         clock: Callable[[], float] = time.monotonic,
         timeout: float = TIMEOUT_SECONDS,
+        config_dir: Path | None = None,
     ) -> None:
         self._factory = agent_factory
         self._clock = clock
         self._timeout = timeout
-        self._cache: dict[Path, tuple[float, CommandList]] = {}
+        self._config_dir = config_dir
+        self._cache: dict[Path, _Entry] = {}
         self._locks: dict[Path, asyncio.Lock] = {}
+        self._refreshing: dict[Path, asyncio.Task[None]] = {}
+        self._failed_at: dict[Path, float] = {}
 
     async def list(self, folder: Path) -> CommandList:
         key = folder.resolve()
-        cached = self._fresh(key)
-        if cached is not None:
-            return cached
-        async with self._locks.setdefault(key, asyncio.Lock()):
-            cached = self._fresh(key)
-            if cached is not None:
-                return cached
-            commands = await self._fetch(key)
-            self._cache[key] = (self._clock(), commands)
-            return commands
-
-    def _fresh(self, key: Path) -> CommandList | None:
+        self._drop_expired()
         entry = self._cache.get(key)
-        if entry is None or self._clock() - entry[0] >= CACHE_SECONDS:
-            return None
-        return entry[1]
+        if entry is not None:
+            entry.used_at = self._clock()
+            if self._is_old(key, entry):
+                self._refresh_later(key)
+            return entry.commands
+        async with self._lock(key):
+            entry = self._cache.get(key)
+            if entry is not None:
+                return entry.commands
+            return await self._load(key)
+
+    async def aclose(self) -> None:
+        """Cancels the background refreshes (on app shutdown)."""
+        tasks = list(self._refreshing.values())
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
+
+    def _lock(self, key: Path) -> asyncio.Lock:
+        return self._locks.setdefault(key, asyncio.Lock())
+
+    def _drop_expired(self) -> None:
+        now = self._clock()
+        for key in [k for k, e in self._cache.items() if now - e.used_at >= EXPIRE_SECONDS]:
+            del self._cache[key]
+            self._failed_at.pop(key, None)
+            lock = self._locks.get(key)
+            if lock is not None and not lock.locked():
+                del self._locks[key]
+
+    def _is_old(self, key: Path, entry: _Entry) -> bool:
+        return self._clock() - entry.fetched_at >= REFRESH_SECONDS or self._stamp(key) != entry.stamp
+
+    def _stamp(self, folder: Path) -> tuple[int | None, ...]:
+        """Where a new skill, command or plugin shows up. A folder's time changes when
+        an entry is added to or removed from it; edits inside an entry wait for
+        `REFRESH_SECONDS`."""
+        config = self._config_dir if self._config_dir is not None else claude_config_dir()
+        project = folder / ".claude"
+        return tuple(
+            _mtime(path)
+            for path in (
+                config / "skills",
+                config / "commands",
+                config / "plugins" / "installed_plugins.json",
+                config / "settings.json",
+                project / "skills",
+                project / "commands",
+                project / "settings.json",
+                project / "settings.local.json",
+            )
+        )
+
+    async def _load(self, key: Path) -> CommandList:
+        stamp = self._stamp(key)
+        commands = await self._fetch(key)
+        now = self._clock()
+        self._cache[key] = _Entry(commands, now, now, stamp)
+        return commands
+
+    def _refresh_later(self, key: Path) -> None:
+        if key in self._refreshing:
+            return
+        failed_at = self._failed_at.get(key)
+        if failed_at is not None and self._clock() - failed_at < RETRY_SECONDS:
+            return
+        task = asyncio.create_task(self._refresh(key))
+        self._refreshing[key] = task
+
+        def forget(done: asyncio.Task[None]) -> None:
+            if self._refreshing.get(key) is done:
+                del self._refreshing[key]
+
+        task.add_done_callback(forget)
+
+    async def _refresh(self, key: Path) -> None:
+        async with self._lock(key):
+            try:
+                await self._load(key)
+                self._failed_at.pop(key, None)
+            except CommandCatalogError as exc:
+                self._failed_at[key] = self._clock()
+                logger.warning("Falha ao atualizar os comandos de %s: %s", key, exc)
 
     async def _fetch(self, folder: Path) -> CommandList:
         client: AgentClient | None = None

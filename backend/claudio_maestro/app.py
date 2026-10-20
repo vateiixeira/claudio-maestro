@@ -358,6 +358,7 @@ def create_app(
             for task in list(app.state.background):
                 with suppress(asyncio.CancelledError):
                     await task
+            await app.state.commands.aclose()
             await app.state.sessions.shutdown()
             if app.state.agentd is not None:
                 await app.state.agentd.aclose()

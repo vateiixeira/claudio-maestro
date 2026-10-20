@@ -78,7 +78,8 @@ describe('modal de nova conversa: comandos e menções', () => {
     await ta.trigger('input')
     await flushPromises()
     expect(wrapper.get('[role="listbox"]').text()).toContain('/hello')
-    expect(fetch.mock.calls.filter((c) => String(c[0]).endsWith('/commands'))).toHaveLength(2)
+    const urls = fetch.mock.calls.map((c) => String(c[0])).filter((u) => u.endsWith('/commands'))
+    expect(new Set(urls)).toEqual(new Set(['/api/projects/2/commands', '/api/projects/1/commands']))
   })
 
   it('Esc fecha só o menu, não o modal', async () => {

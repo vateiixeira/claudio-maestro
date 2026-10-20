@@ -41,7 +41,7 @@ function harness(scope = ref<SuggestionScope | null>({ sessionId: 's1' })) {
 }
 
 describe('menu /', () => {
-  it('busca a lista uma vez por fonte e filtra no navegador', async () => {
+  it('busca a lista ao abrir o menu e filtra no navegador', async () => {
     const fetch = routeFetch({ 'GET /api/sessions/s1/commands': () => jsonResponse(COMMANDS) })
     vi.stubGlobal('fetch', fetch)
     const t = harness()
@@ -49,10 +49,127 @@ describe('menu /', () => {
     expect(t.api.isOpen.value).toBe(true)
     expect(t.api.items.value.map((i) => i.label)).toEqual(['/commit'])
     await t.type('/he')
-    await t.type('')
-    await t.type('/')
-    expect(t.api.items.value.map((i) => i.label)).toEqual(['/commit', '/hello'])
+    expect(t.api.items.value.map((i) => i.label)).toEqual(['/hello'])
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('reabrir mostra a lista na hora e troca pela nova quando ela chega', async () => {
+    let list = COMMANDS
+    let release: ((r: Response) => void) | null = null
+    const fetch = routeFetch({
+      'GET /api/sessions/s1/commands': () =>
+        list === COMMANDS ? jsonResponse(list) : new Promise<Response>((resolve) => { release = resolve }),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const t = harness()
+    await t.type('/')
+    await t.type('')
+    list = [...COMMANDS, { name: 'nova', description: '', argument_hint: '' }]
+    await t.type('/')
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(t.api.status.value).toBe('ready')
+    expect(t.api.items.value.map((i) => i.label)).toEqual(['/commit', '/hello'])
+    release!(jsonResponse(list))
+    await flushPromises()
+    expect(t.api.items.value.map((i) => i.label)).toEqual(['/commit', '/hello', '/nova'])
+  })
+
+  it('lista nova igual à antiga mantém o item marcado', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/commands': () => jsonResponse(COMMANDS) }))
+    const t = harness()
+    await t.type('/')
+    await t.type('')
+    t.text.value = '/'
+    t.el.value = '/'
+    t.el.setSelectionRange(1, 1)
+    t.api.refresh()
+    t.key('ArrowDown')
+    await flushPromises()
+    expect(t.api.active.value).toBe(1)
+  })
+
+  it('falha ao atualizar por trás mantém a lista e não mostra erro', async () => {
+    let fail = false
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/commands': () => (fail ? jsonResponse({ detail: 'Falhou.' }, 502) : jsonResponse(COMMANDS)),
+    }))
+    const t = harness()
+    await t.type('/')
+    await t.type('')
+    fail = true
+    await t.type('/')
+    expect(t.api.status.value).toBe('ready')
+    expect(t.api.error.value).toBeNull()
+    expect(t.api.items.value).toHaveLength(2)
+  })
+
+  it('focar o campo busca a lista antes do /, sem mostrar carregando', async () => {
+    const fetch = routeFetch({ 'GET /api/sessions/s1/commands': () => jsonResponse(COMMANDS) })
+    vi.stubGlobal('fetch', fetch)
+    const t = harness()
+    t.api.onFocus()
+    expect(t.api.status.value).toBe('ready')
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(t.api.commands.value).toHaveLength(2)
+    t.api.onFocus()
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('/ com a busca do foco em voo mostra carregando e depois a lista', async () => {
+    let release!: (r: Response) => void
+    const pending = new Promise<Response>((resolve) => { release = resolve })
+    const fetch = routeFetch({ 'GET /api/sessions/s1/commands': () => pending })
+    vi.stubGlobal('fetch', fetch)
+    const t = harness()
+    t.api.onFocus()
+    await t.type('/')
+    expect(t.api.status.value).toBe('loading')
+    release(jsonResponse(COMMANDS))
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(t.api.status.value).toBe('ready')
+    expect(t.api.items.value).toHaveLength(2)
+  })
+
+  it('erro da busca do foco aparece se o menu / estiver aberto esperando', async () => {
+    let release!: (r: Response) => void
+    const pending = new Promise<Response>((resolve) => { release = resolve })
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/sessions/s1/commands': () => pending }))
+    const t = harness()
+    t.api.onFocus()
+    await t.type('/')
+    release(jsonResponse({ detail: 'Falhou.' }, 502))
+    await flushPromises()
+    expect(t.api.status.value).toBe('error')
+    expect(t.api.error.value).toBe('Falhou.')
+  })
+
+  it('trocar a fonte com o campo focado busca a lista da fonte nova', async () => {
+    const fetch = routeFetch({
+      'GET /api/projects/1/commands': () => jsonResponse(COMMANDS),
+      'GET /api/projects/2/commands': () => jsonResponse([COMMANDS[1]]),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const scope = ref<SuggestionScope | null>({ projectId: 1 })
+    const t = harness(scope)
+    t.el.focus()
+    t.api.onFocus()
+    await flushPromises()
+    scope.value = { projectId: 2 }
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(t.api.commands.value).toEqual([COMMANDS[1]])
+  })
+
+  it('focar sem fonte não busca nada', async () => {
+    const fetch = routeFetch({})
+    vi.stubGlobal('fetch', fetch)
+    const t = harness(ref<SuggestionScope | null>(null))
+    t.api.onFocus()
+    await flushPromises()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('mostra carregando e depois erro; reabrir tenta de novo', async () => {

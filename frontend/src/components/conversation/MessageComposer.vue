@@ -241,6 +241,7 @@ async function interrupt() {
           @click="suggestions.refresh()"
           @select="onSelect"
           @blur="suggestions.onBlur()"
+          @focus="suggestions.onFocus()"
           @paste="onPaste"
         />
         <SuggestionMenu

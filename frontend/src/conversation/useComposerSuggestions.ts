@@ -49,6 +49,8 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
   argumentHint: ComputedRef<string>
   refresh: () => void
   onKeydown: (event: KeyboardEvent) => boolean
+  /** Fetches the command list ahead of the first `/`, without showing "loading". */
+  onFocus: () => void
   choose: (index: number, via: 'enter' | 'tab' | 'click') => void
   close: () => void
   onBlur: () => void
@@ -133,24 +135,35 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     files.value = null
     loadingKey = null
     close()
+    // Same field, new source (another session): fetch ahead again if it has the focus.
+    if (options.textarea.value && document.activeElement === options.textarea.value) onFocus()
   })
 
-  async function loadCommands() {
+  // `quiet` fetches without showing "loading": ahead of the first `/`, or to refresh
+  // the list already on screen (the backend answers from its cache at once).
+  async function loadCommands(quiet = false) {
     const scope = options.scope()
     const key = scopeKey()
-    if (!scope || commands.value || loadingKey === key) return
+    if (!scope || loadingKey === key) return
     loadingKey = key
-    status.value = 'loading'
-    error.value = null
+    if (!quiet) {
+      status.value = 'loading'
+      error.value = null
+    }
     try {
       const list = await listCommands(scope)
       if (key === scopeKey()) {
-        commands.value = list
+        // An equal list keeps the selection (a new list moves it back to the top).
+        if (JSON.stringify(list) !== JSON.stringify(commands.value)) commands.value = list
         // The menu may have moved on to `@` while this was in flight; its status is not ours.
-        if (kind.value === 'command') status.value = 'ready'
+        if (kind.value === 'command') {
+          status.value = 'ready'
+          error.value = null
+        }
       }
     } catch (e) {
-      if (key === scopeKey() && kind.value === 'command') {
+      // With a list on screen, a failed refresh keeps it and says nothing.
+      if (key === scopeKey() && kind.value === 'command' && !commands.value) {
         status.value = 'error'
         error.value = errorMessage(e)
       }
@@ -235,7 +248,9 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     if (opening) {
       cancelSearch()
       if (commands.value) {
+        // The list shows at once and is swapped for a newer one if it changed.
         status.value = 'ready'
+        void loadCommands(true)
       } else {
         // Also covers coming back from `@` while the request is still in flight.
         status.value = 'loading'
@@ -304,5 +319,9 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     close()
   }
 
-  return { isOpen, kind, items, active, status, error, menuId, optionId, commands, mentions, argumentHint, refresh, onKeydown, choose, close, onBlur }
+  function onFocus() {
+    if (!commands.value) void loadCommands(true)
+  }
+
+  return { isOpen, kind, items, active, status, error, menuId, optionId, commands, mentions, argumentHint, refresh, onKeydown, onFocus, choose, close, onBlur }
 }
