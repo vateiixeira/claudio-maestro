@@ -910,6 +910,7 @@ class ActiveSession:
         history_limit: int = DEFAULT_HISTORY_LIMIT,
         read_tool_results: ReadToolResults | None = None,
         file_mtime: FileMtime | None = None,
+        session_file: Callable[[str, str], Path | None] | None = None,
         on_turn_end: Callable[[int], None] | None = None,
         on_connected: Callable[[AgentClient], Any] | None = None,
         read_transcript: history_module.ReadTranscript | None = None,
@@ -1019,6 +1020,8 @@ class ActiveSession:
         self._history_lock = asyncio.Lock()
         self.history_truncated = False
         self._file_mtime = file_mtime
+        # session_file(session_id, directory): path of the conversation's `.jsonl`, or None.
+        self._session_file = session_file
         # Modification time of the session file at the last load (None: unknown).
         self._loaded_mtime: float | None = None
         # Operations of the manager in progress (open, send): not forgotten meanwhile.
@@ -2022,18 +2025,18 @@ class ActiveSession:
                 return
             await self._enable_remote(client)
 
-    def _start_remote(self, client: AgentClient) -> None:
+    def _start_remote(self, client: AgentClient, *, attached: bool = False) -> None:
         """Turn Remote Control on in the background, once the lock is free: a process
         that was just connected or reattached. The task is the retry task, so closing,
         detaching and turning it off reach it."""
         self._cancel_remote_retry()
-        self._remote_retry_task = asyncio.create_task(self._remote_start(client))
+        self._remote_retry_task = asyncio.create_task(self._remote_start(client, attached))
 
-    async def _remote_start(self, client: AgentClient) -> None:
+    async def _remote_start(self, client: AgentClient, attached: bool) -> None:
         async with self._lock:
             if self._final or self.client is not client:
                 return
-            await self._enable_remote(client)
+            await self._enable_remote(client, attached=attached)
 
     def _on_bridge_state(self, data: dict[str, Any]) -> None:
         """The CLI reports the state of the Remote Control bridge."""
@@ -2159,16 +2162,29 @@ class ActiveSession:
             return client is not None and self.client is client
 
     async def _written_elsewhere(self) -> bool:
-        """The conversation's file changed after the last write the app made (saved in
-        `app_modified_at`, which `release_for_external` leaves untouched). Unknown dates
-        count as not written."""
+        """Another program continued the conversation after the app left it: the file
+        holds an assistant reply of the main chain written after `app_modified_at` (the
+        mtime saved at the app's last turn, close or failure; `release_for_external`
+        leaves it untouched). The CLI also appends metadata entries after the last turn
+        (`bridge-session`, `cost-state`, `last-prompt`, `ai-title`...), so the file's mtime
+        says nothing; only replies count. Unknown dates or an unreadable file count as
+        not written."""
         own = self.record.app_modified_at
-        if own is None:
+        if own is None or self._session_file is None:
             return False
-        current = await self._current_mtime()
-        return current is not None and current > own + APP_WRITE_TOLERANCE
+        try:
+            path = await asyncio.to_thread(
+                self._session_file, self.session_id, self.record.history_directory
+            )
+            if path is None:
+                return False
+            lines, _ = await asyncio.to_thread(read_new_lines, path, None)
+        except Exception:
+            logger.exception("Falha ao ler o arquivo da sessão %s", self.session_id)
+            return False
+        return bool(foreign_reply_uuids(lines, set(), own + APP_WRITE_TOLERANCE))
 
-    async def _enable_remote(self, client: AgentClient) -> None:
+    async def _enable_remote(self, client: AgentClient, *, attached: bool = False) -> None:
         """Ask `client` to turn Remote Control on (the mark is on). Called with the lock
         held: by `set_remote_control`, by the automatic retries and, on new processes, by
         the connect.
@@ -2176,14 +2192,18 @@ class ActiveSession:
         The saved bridge id goes as `reattach_session_id` so the Claude app keeps the
         same entry; if the CLI refuses it, the request is made once more without it. Any
         other refusal leaves the session as it is, with the failed state and a notice;
-        an error that kills the client fails the session."""
+        an error that kills the client fails the session.
+
+        `attached`: the process is one the agentd kept, so its bridge may be up already.
+        The CLI then answers at once with the bridge's data and sends no `bridge_state`
+        again: when the answer names the bridge saved before the request, it is `on`."""
         if self.client is not client or not self.record.remote_control:
             return
         self._cancel_remote_retry()
         if self.remote_state != "on":
             self._set_remote("connecting", url=self.remote_url)
         name = remote_name(self.record)
-        bridge = self.record.remote_control_bridge
+        bridge = saved_bridge = self.record.remote_control_bridge
         self._remote_calling = True
         try:
             try:
@@ -2224,6 +2244,9 @@ class ActiveSession:
         if self.remote_state in ("on", "failed"):
             # The bridge reported while the request was in flight: keep what it said.
             self._set_remote(self.remote_state, url=url, error=self.remote_error)
+        elif attached and saved_bridge is not None and bridge_id == saved_bridge:
+            self._remote_attempts = 0
+            self._set_remote("on", url=url)
         else:
             self._set_remote("connecting", url=url)
 
@@ -2690,7 +2713,7 @@ class ActiveSession:
             return
         self._set_remote("connecting")
         if self.record.spawn_version >= SPAWN_VERSION:
-            self._start_remote(client)
+            self._start_remote(client, attached=True)
         else:
             self.respawn_pending = True
             self._schedule_effort()
@@ -3128,6 +3151,7 @@ class SessionManager:
             history_limit=self._history_limit,
             read_tool_results=self._read_tool_results,
             file_mtime=self._file_mtime,
+            session_file=self._session_file,
             on_turn_end=self._on_turn_end,
             on_connected=self._on_connected,
             read_transcript=self._read_transcript,

@@ -5,12 +5,14 @@ Only the scripted fake agent is used.
 """
 
 import asyncio
+import json
 from contextlib import closing
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 from test_controls import connected, options_events
-from test_controls_refused import notice_texts
+from test_controls_refused import notice_texts, refused
 from test_sessions import (  # noqa: F401
     by_session,
     env_cleanup,
@@ -149,12 +151,73 @@ async def test_reattach_reenables_on_same_process(make_env, env_cleanup):
     await wait_until(lambda: len(calls(client)) == 1)
     assert calls(client)[0]["enabled"] is True
     assert calls(client)[0]["reattach_session_id"] == "cse_1"
-    assert session.remote_state == "connecting"
-
-    client.push([bridge_state_message("connected")])
-    await wait_until(lambda: session.remote_state == "on")
+    await wait_until(lambda: session.remote_state == "on")  # same bridge, answered at once
     assert session.remote_url == URL
     assert len(env.factory.clients) == 1
+
+
+@pytest.mark.anyio
+async def test_reattach_with_the_same_bridge_is_on_without_a_bridge_state(make_env, env_cleanup):
+    """The CLI answers at once with the live bridge and sends no `bridge_state` again."""
+    env, session = await marked(make_env, env_cleanup, spawn_version=1)
+
+    await session.reattach(child())
+    await wait_until(lambda: session.remote_state == "on")
+
+    assert session.remote_url == URL
+    assert session.remote_error is None
+    assert session.record.remote_control_bridge == "cse_1"
+    assert options_events(env, session)[-1]["remote_control_state"] == "on"
+
+
+@pytest.mark.anyio
+async def test_reattach_with_another_bridge_stays_connecting(make_env, env_cleanup):
+    env, session = await marked(make_env, env_cleanup, spawn_version=1)
+    original = env.factory.__call__
+
+    def factory(options):
+        made = original(options)
+        made.set_remote_control_error_once = refused("bridge session expired")
+        return made
+
+    session._agent_factory = factory
+
+    await session.reattach(child())
+    await wait_until(lambda: len(calls(env.factory.clients[0])) == 2)
+
+    assert [c["reattach_session_id"] for c in calls(env.factory.clients[0])] == ["cse_1", None]
+    assert session.record.remote_control_bridge == "cse_fake"
+    assert session.remote_state == "connecting"
+
+
+@pytest.mark.anyio
+async def test_failed_bridge_state_after_a_reattach_still_drops_to_failed(make_env, env_cleanup):
+    env, session = await marked(make_env, env_cleanup, spawn_version=1)
+    await session.reattach(child())
+    await wait_until(lambda: session.remote_state == "on")
+
+    env.factory.clients[0].push([bridge_state_message("failed", detail="queda")])
+
+    await wait_until(lambda: session.remote_state == "failed")
+    assert session.remote_error == "queda"
+
+
+@pytest.mark.anyio
+async def test_new_process_with_the_saved_bridge_waits_for_the_bridge_state(
+    make_env, env_cleanup
+):
+    env, session = await connected(
+        make_env, env_cleanup, lambda sid: text_turn(sid, "de novo")
+    )
+    session.save(remote_control=True, remote_control_bridge="cse_1")
+    await session.close()
+
+    await session.send("outra")
+    await wait_until(lambda: len(env.factory.clients) == 2 and calls(env.factory.clients[1]))
+    await wait_until(lambda: session.state == "idle")
+
+    assert calls(env.factory.clients[1])[0]["reattach_session_id"] == "cse_1"
+    assert session.remote_state == "connecting"
 
 
 @pytest.mark.anyio
@@ -592,24 +655,54 @@ def test_app_startup_reconnects_marked_sessions_in_the_background(data_dir, tmp_
 # Startup does not take a conversation another process is using -----------------------------------
 
 
-def boot_with_file_dates(env, mtime: float, app_modified_at: int):
+def entry(type_: str, at: float, uuid: str, **extra) -> str:
+    stamp = datetime.fromtimestamp(at, UTC).isoformat().replace("+00:00", "Z")
+    return json.dumps({"type": type_, "uuid": uuid, "timestamp": stamp, **extra})
+
+
+def boot_with_file(env, tmp_path, lines: list[str] | None, app_modified_at: int | None):
+    """A marked session with `app_modified_at` and a conversation file of `lines` (None:
+    no file), and a fresh manager that reads it."""
     session = env.new_session()
-    session.save(remote_control=True, remote_control_bridge="cse_1", app_modified_at=app_modified_at)
+    session.save(remote_control=True, remote_control_bridge="cse_1")
+    if app_modified_at is not None:
+        session.save(app_modified_at=app_modified_at)
+    path = tmp_path / "conversation.jsonl"
+    if lines is not None:
+        path.write_text("\n".join(lines) + "\n")
     boot = SessionManager(
         env.db_path,
         env.recorder,
         agent_factory=env.factory,
         history_exists=lambda *a: True,
-        file_mtime=lambda sid, directory: mtime,
+        session_file=lambda sid, directory: path if lines is not None else None,
+        file_mtime=lambda sid, directory: 9_999_999.0,  # never the criterion
     )
     return session, boot
 
 
+# What the CLI appends after the last turn: not a reply.
+CLI_METADATA = [
+    ("bridge-session", 40),
+    ("cost-state", 45),
+    ("last-prompt", 46),
+    ("ai-title", 47),
+    ("atis-latch", 48),
+]
+
+
 @pytest.mark.anyio
-async def test_startup_does_not_connect_a_conversation_written_elsewhere(make_env, env_cleanup):
+async def test_startup_does_not_connect_a_conversation_written_elsewhere(
+    make_env, env_cleanup, tmp_path
+):
     env = make_env()
     env_cleanup.append(env.manager)
-    session, boot = boot_with_file_dates(env, mtime=5_100.0, app_modified_at=5_000)
+    lines = [
+        entry("assistant", 5_000, "a-app"),
+        entry("assistant", 5_100, "a-terminal"),
+        *[entry(kind, 5_000 + at, f"m-{kind}") for kind, at in CLI_METADATA],
+    ]
+    session, boot = boot_with_file(env, tmp_path, lines, app_modified_at=5_000)
     env_cleanup.append(boot)
 
     await boot.reconnect_remote_sessions()
@@ -627,11 +720,19 @@ async def test_startup_does_not_connect_a_conversation_written_elsewhere(make_en
 
 
 @pytest.mark.anyio
-async def test_startup_connects_a_conversation_the_app_left_untouched(make_env, env_cleanup):
+async def test_startup_connects_when_only_cli_metadata_follows_the_last_turn(
+    make_env, env_cleanup, tmp_path
+):
+    """The CLI writes `bridge-session` when Remote Control turns on and `cost-state`,
+    `last-prompt`, `ai-title` and `atis-latch` when it exits; the file's mtime moves, but
+    nobody else talked in the conversation."""
     env = make_env()
     env_cleanup.append(env.manager)
-    # Within the tolerance of the app's own last write.
-    session, boot = boot_with_file_dates(env, mtime=5_001.0, app_modified_at=5_000)
+    lines = [
+        entry("assistant", 4_990, "a-app"),
+        *[entry(kind, 5_000 + at, f"m-{kind}") for kind, at in CLI_METADATA],
+    ]
+    session, boot = boot_with_file(env, tmp_path, lines, app_modified_at=5_000)
     env_cleanup.append(boot)
 
     await boot.reconnect_remote_sessions()
@@ -642,15 +743,51 @@ async def test_startup_connects_a_conversation_the_app_left_untouched(make_env, 
 
 
 @pytest.mark.anyio
-async def test_startup_without_a_saved_app_write_date_connects(make_env, env_cleanup):
+async def test_startup_ignores_a_reply_within_the_app_write_tolerance(
+    make_env, env_cleanup, tmp_path
+):
     env = make_env()
     env_cleanup.append(env.manager)
-    session = env.new_session()
-    session.save(remote_control=True)
-    boot = SessionManager(
-        env.db_path, env.recorder, agent_factory=env.factory, history_exists=lambda *a: True,
-        file_mtime=lambda sid, directory: 9_999.0,
-    )
+    lines = [entry("assistant", 5_001, "a-app")]
+    session, boot = boot_with_file(env, tmp_path, lines, app_modified_at=5_000)
+    env_cleanup.append(boot)
+
+    await boot.reconnect_remote_sessions()
+
+    assert len(env.factory.clients) == 1
+
+
+@pytest.mark.anyio
+async def test_startup_ignores_replies_of_subagents(make_env, env_cleanup, tmp_path):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    lines = [entry("assistant", 5_100, "a-side", isSidechain=True)]
+    session, boot = boot_with_file(env, tmp_path, lines, app_modified_at=5_000)
+    env_cleanup.append(boot)
+
+    await boot.reconnect_remote_sessions()
+
+    assert len(env.factory.clients) == 1
+
+
+@pytest.mark.anyio
+async def test_startup_without_a_saved_app_write_date_connects(make_env, env_cleanup, tmp_path):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    lines = [entry("assistant", 5_100, "a-terminal")]
+    session, boot = boot_with_file(env, tmp_path, lines, app_modified_at=None)
+    env_cleanup.append(boot)
+
+    await boot.reconnect_remote_sessions()
+
+    assert len(env.factory.clients) == 1
+
+
+@pytest.mark.anyio
+async def test_startup_without_a_conversation_file_connects(make_env, env_cleanup, tmp_path):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session, boot = boot_with_file(env, tmp_path, None, app_modified_at=5_000)
     env_cleanup.append(boot)
 
     await boot.reconnect_remote_sessions()
