@@ -368,6 +368,175 @@ async def test_detach_cancels_the_retry(make_env, env_cleanup):
     assert task.cancelled() or task.done()
 
 
+@pytest.mark.anyio
+async def test_close_cancels_a_retry_that_is_calling_the_agent(make_env, env_cleanup):
+    """The retry task enables Remote Control itself: it must stay reachable meanwhile."""
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    session.remote_retry_delays = (0,)
+    client.set_remote_control_error_once = refused("sem rede")
+    await session.set_remote_control(True)
+    client.remote_control_pause = PauseStep()
+    await asyncio.wait_for(client.remote_control_pause.reached.wait(), 1)
+    task = session._remote_retry_task
+    try:
+        assert task is not None and not task.done()
+
+        await session.close()
+
+        await asyncio.sleep(0)
+        assert task.cancelled()
+    finally:
+        client.remote_control_pause.release.set()  # never leave the lock held
+
+
+@pytest.mark.anyio
+async def test_disable_cancels_a_retry_that_is_calling_the_agent(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    session.remote_retry_delays = (0,)
+    client.set_remote_control_error_once = refused("sem rede")
+    await session.set_remote_control(True)
+    client.remote_control_pause = PauseStep()
+    await asyncio.wait_for(client.remote_control_pause.reached.wait(), 1)
+    task = session._remote_retry_task
+    try:
+        assert task is not None and not task.done()
+
+        await asyncio.wait_for(session.set_remote_control(False), 1)
+
+        await asyncio.sleep(0)
+        assert task.cancelled()
+    finally:
+        client.remote_control_pause.release.set()
+
+
+@pytest.mark.anyio
+async def test_connected_does_not_cancel_a_retry_that_is_calling_the_agent(
+    make_env, env_cleanup
+):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    session.remote_retry_delays = (0,)
+    client.set_remote_control_error_once = refused("sem rede")
+    await session.set_remote_control(True)
+    client.remote_control_pause = PauseStep()
+    await asyncio.wait_for(client.remote_control_pause.reached.wait(), 1)
+    task = session._remote_retry_task
+
+    client.push([bridge_state_message("connected")])
+    await wait_until(lambda: session.remote_state == "on")
+    client.remote_control_pause.release.set()
+    await asyncio.wait([task], timeout=1)
+
+    assert not task.cancelled()
+    assert session.remote_state == "on"
+
+
+@pytest.mark.anyio
+async def test_unexpected_error_in_a_retry_is_logged_not_left_in_the_task(
+    make_env, env_cleanup, caplog
+):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    session.remote_retry_delays = (0,)
+    client.set_remote_control_error_once = refused("sem rede")
+    await session.set_remote_control(True)
+    first = session._remote_retry_task
+    client.set_remote_control_error = RuntimeError("boom")  # not an AgentError
+    session.remote_retry_delays = (60,)
+
+    await asyncio.wait([first], timeout=1)
+
+    assert first.done() and not first.cancelled()
+    assert first.exception() is None
+    assert "boom" in caplog.text
+    assert session.client is client and session.state == "idle"
+    assert session.remote_state == "failed"
+
+
+@pytest.mark.anyio
+async def test_refused_reattach_forgets_the_old_bridge_even_if_the_second_call_fails(
+    make_env, env_cleanup
+):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    session.remote_retry_delays = (0,)
+    session.save(remote_control_bridge="cse_old")
+    client.set_remote_control_error_once = refused("bridge session expired")
+    client.set_remote_control_error = refused("sem rede")
+
+    await session.set_remote_control(True)
+
+    assert [call["reattach_session_id"] for call in calls(client)][:2] == ["cse_old", None]
+    assert session.record.remote_control_bridge is None
+    assert session_row(env.db_path, session.session_id)["remote_control_bridge"] is None
+    await wait_until(lambda: len(calls(client)) >= 4)
+    # Later attempts make one call each, without the dead bridge.
+    assert all(call["reattach_session_id"] is None for call in calls(client)[1:])
+
+
+@pytest.mark.anyio
+async def test_policy_disabled_is_not_retried_automatically(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    session.remote_retry_delays = (0,)
+    await session.set_remote_control(True)
+
+    client.push([bridge_state_message("policy_disabled", detail="bloqueado")])
+    await wait_until(lambda: session.remote_state == "failed")
+    await asyncio.sleep(0.05)
+
+    assert session.remote_state == "failed"
+    assert session.remote_error == "bloqueado"
+    assert len(calls(client)) == 1
+    assert session._remote_retry_task is None or session._remote_retry_task.done()
+
+
+@pytest.mark.anyio
+async def test_policy_disabled_drops_a_retry_already_waiting(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    client.set_remote_control_error = refused("sem rede")
+    await session.set_remote_control(True)
+    task = session._remote_retry_task
+    assert task is not None and not task.done()
+
+    client.push([bridge_state_message("policy_disabled")])
+    await wait_until(lambda: session.remote_error and "política" in session.remote_error)
+    await asyncio.sleep(0)
+
+    assert task.cancelled()
+    assert session.remote_state == "failed"
+
+
+@pytest.mark.anyio
+async def test_policy_disabled_can_be_retried_by_the_user(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    await session.set_remote_control(True)
+    client.push([bridge_state_message("policy_disabled")])
+    await wait_until(lambda: session.remote_state == "failed")
+
+    await session.set_remote_control(False)
+    await session.set_remote_control(True)
+
+    assert session.remote_state == "connecting"
+    assert [call["enabled"] for call in calls(client)] == [True, False, True]
+
+
+@pytest.mark.anyio
+async def test_failed_bridge_with_any_kind_keeps_retrying(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    session.remote_retry_delays = (0,)
+    await session.set_remote_control(True)
+
+    client.push([bridge_state_message("failed", detail="x", failure_kind="terminal")])
+
+    await wait_until(lambda: len(calls(client)) == 2)
+
+
 # Turning it off ------------------------------------------------------------
 
 

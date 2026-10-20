@@ -65,6 +65,8 @@ As sessões continuam rodando quando o backend reinicia: um processo auxiliar (a
 
 Se você roda o backend sob um gerenciador de serviços que encerra o grupo de processos inteiro (o padrão do systemd, `KillMode=control-group`), o agentd cai junto com o backend e as sessões não sobrevivem. O jeito mais simples é o serviço oficial, que já vem configurado para isso (veja [Rodar como serviço](#rodar-como-serviço)). Num serviço feito à mão, use `KillMode=process` na unit, ou rode o backend de modo que o agentd continue vivo depois dele.
 
+Para continuar uma conversa pelo celular, ligue o chip **Remote Control** na barra de opções dela: a sessão passa a aparecer no app do Claude e em claude.ai/code, com a sua conta, e o que passa por lá vai pelos servidores da Anthropic. A escolha vale por conversa e volta sozinha depois de reiniciar o app.
+
 ## Rodar como serviço
 
 Para o Maestro subir sozinho e voltar se cair, instale o serviço oficial. No macOS ele sobe quando você entra na conta; no Linux, também no boot, desde que rode `loginctl enable-linger`:

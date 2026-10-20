@@ -302,6 +302,46 @@ async def test_interrupt_cancels_pending_permission(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_cancelling_only_the_permission_request_lets_the_turn_go_on(tmp_path):
+    """The CLI's `control_cancel_request` (answered on the phone) cancels the callback
+    alone: the tool result and the rest of the turn still arrive."""
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def wait_forever(name, tool_input, context):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    turn = tool_turn(SESSION_ID, tool_name="Bash", tool_use_id="toolu_x", ask_permission=True)
+    client = FakeAgentClient(
+        make_options(tmp_path, can_use_tool=wait_forever), script=scripted(turn)
+    )
+    await client.connect()
+    await client.send("vai")
+    async with asyncio.timeout(2):
+        await started.wait()
+
+    client.cancel_permission_request()
+    messages = await collect_until_result(client)
+
+    assert cancelled.is_set()
+    assert messages[-1].subtype == "success"
+    assert any(
+        isinstance(block, ToolResultBlock) and block.tool_use_id == "toolu_x" and not block.is_error
+        for message in messages
+        if isinstance(message, UserMessage) and not isinstance(message.content, str)
+        for block in message.content
+    )
+    assert client.permission_results == []
+    # Nothing pending: cancelling again does nothing.
+    client.cancel_permission_request()
+
+
+@pytest.mark.anyio
 async def test_interrupt_with_pending_permission_mirrors_real_sdk(tmp_path):
     started = asyncio.Event()
 

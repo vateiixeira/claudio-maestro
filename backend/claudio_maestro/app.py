@@ -318,6 +318,16 @@ def create_app(
                         )
                     )
                 )
+
+        async def reconnect_remote() -> None:
+            # Sessions marked for Remote Control that no process holds (after a reboot):
+            # in the background, so a slow start never delays the app.
+            try:
+                await app.state.sessions.reconnect_remote_sessions()
+            except Exception:
+                logger.exception("Falha ao religar o Remote Control das sessões")
+
+        tasks.append(asyncio.create_task(reconnect_remote()))
         claude_projects = (
             app.state.settings.claude_projects_dir or claude_projects_dir()
         )

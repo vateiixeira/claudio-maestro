@@ -192,6 +192,7 @@ class FakeAgentClient:
         self._worker: asyncio.Task[None] | None = None
         self._current: asyncio.Task[None] | None = None
         self._pending_tool_use_id: str | None = None
+        self._permission_task: asyncio.Task[Any] | None = None
 
     async def connect(self) -> None:
         error = self.connect_error
@@ -308,6 +309,14 @@ class FakeAgentClient:
             response["bridge_session_id"] = reattach_session_id
         return response
 
+    def cancel_permission_request(self) -> None:
+        """What the CLI does with `control_cancel_request` when the person answers a
+        permission or question somewhere else (the phone): only the callback is
+        cancelled, the turn goes on."""
+        task = self._permission_task
+        if task is not None and not task.done():
+            task.cancel()
+
     async def detach(self) -> bool:
         return False
 
@@ -356,7 +365,25 @@ class FakeAgentClient:
             display_name=step.tool_name,
         )
         self._pending_tool_use_id = context.tool_use_id
-        result = await self.options.can_use_tool(step.tool_name, step.input, context)
+        callback = asyncio.create_task(
+            self.options.can_use_tool(step.tool_name, step.input, context)
+        )
+        self._permission_task = callback
+        try:
+            await asyncio.wait([callback])
+        except asyncio.CancelledError:
+            # The turn itself was cancelled (interrupt): the callback goes with it.
+            callback.cancel()
+            await asyncio.wait([callback])
+            raise
+        finally:
+            self._permission_task = None
+        if callback.cancelled():
+            # The CLI cancelled just this request (answered elsewhere, e.g. on the phone):
+            # the turn goes on and no answer is recorded.
+            self._pending_tool_use_id = None
+            return
+        result = callback.result()
         self._pending_tool_use_id = None
         self.permission_results.append(
             PermissionRecord(step.tool_name, step.input, context, result)
