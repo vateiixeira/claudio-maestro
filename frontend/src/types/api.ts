@@ -101,6 +101,10 @@ export interface Session {
   effort?: Effort | null
   permission_mode?: PermissionMode | null
   effort_pending?: boolean
+  remote_control?: boolean
+  remote_control_state?: RemoteControlState
+  remote_control_url?: string | null
+  remote_control_error?: string | null
   /** Context window use, updated at the end of each turn. */
   context?: ContextUsage | null
   /** Oldest tool permission request waiting (questions and plans are null). */
@@ -202,7 +206,10 @@ export interface SendResult {
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'auto' | 'dontAsk'
 
-/** Model, reasoning and permission mode of a session (`session.options`). */
+/** What is true about the Remote Control of a session right now. `off` with the mark on means nothing holds the request yet. */
+export type RemoteControlState = 'off' | 'connecting' | 'on' | 'failed' | 'elsewhere'
+
+/** Model, reasoning, permission mode and Remote Control of a session (`session.options`). */
 export interface SessionOptions {
   /** Alias chosen by the user, or null for the account default. */
   model: string | null
@@ -212,6 +219,13 @@ export interface SessionOptions {
   permission_mode: PermissionMode | null
   /** The new effort applies from the next turn. */
   effort_pending: boolean
+  /** The request saved for the session (the mark). */
+  remote_control: boolean
+  remote_control_state: RemoteControlState
+  /** claude.ai address of the session while connected. */
+  remote_control_url: string | null
+  /** Why it did not connect, when `failed`. */
+  remote_control_error: string | null
 }
 
 export interface ModelInfo {
@@ -229,6 +243,7 @@ export interface SessionUpdate {
   effort?: Effort
   permission_mode?: PermissionMode
   confirm_bypass?: boolean
+  remote_control?: boolean
   group_id?: number | null
   mark?: SessionMark | null
   mark_note?: string | null

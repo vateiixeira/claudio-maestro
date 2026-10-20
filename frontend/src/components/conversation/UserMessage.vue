@@ -65,6 +65,12 @@ function label(attachment: Attachment): string {
           class="rounded-md border border-primary/25 bg-surface/50 px-2 py-0.5 font-mono text-xs text-fg-muted"
         >{{ label(attachment) }}</span>
       </div>
+      <span
+        v-if="item.remote"
+        data-test="remote-mark"
+        title="Enviada pelo Remote Control"
+        class="text-xs text-fg-subtle"
+      >via Remote Control</span>
     </div>
   </div>
 </template>

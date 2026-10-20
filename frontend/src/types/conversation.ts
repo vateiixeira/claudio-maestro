@@ -1,4 +1,4 @@
-import type { ContextUsage, DisplayState, Effort, PermissionMode, SessionState } from './api'
+import type { ContextUsage, DisplayState, Effort, PermissionMode, RemoteControlState, SessionState } from './api'
 
 // Conversation items as the backend sends them (snapshot `items` and `item.upsert`).
 
@@ -14,6 +14,8 @@ export interface UserItem {
   id: string
   text: string
   images?: Attachment[]
+  /** Sent live from the Claude app (Remote Control), not typed here. */
+  remote?: boolean
   /** When the item was created (Unix seconds); absent or null when the history does not say. Same on every item type. */
   at?: number | null
 }
@@ -150,6 +152,10 @@ export interface SessionSnapshot {
   effort?: Effort | null
   permission_mode?: PermissionMode | null
   effort_pending?: boolean
+  remote_control?: boolean
+  remote_control_state?: RemoteControlState
+  remote_control_url?: string | null
+  remote_control_error?: string | null
   context?: ContextUsage | null
   /** Output tokens the main agent generated in the running turn; 0 when none or unknown. */
   turn_output_tokens?: number

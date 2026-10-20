@@ -163,14 +163,14 @@ describe('opções da sessão', () => {
       ...makeSnapshot({ seq: 1 }),
       model: 'sonnet', model_resolved: 'claude-sonnet-5', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false,
     } as never)
-    expect(conv.options).toEqual({ model: 'sonnet', model_resolved: 'claude-sonnet-5', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false })
-    applyConversationEvent(conv, makeEvent('session.options', { model: 'opus', model_resolved: null, effort: 'high', permission_mode: 'plan', effort_pending: true }, 2))
-    expect(conv.options).toEqual({ model: 'opus', model_resolved: null, effort: 'high', permission_mode: 'plan', effort_pending: true })
+    expect(conv.options).toEqual({ model: 'sonnet', model_resolved: 'claude-sonnet-5', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false, remote_control: false, remote_control_state: 'off', remote_control_url: null, remote_control_error: null })
+    applyConversationEvent(conv, makeEvent('session.options', { model: 'opus', model_resolved: null, effort: 'high', permission_mode: 'plan', effort_pending: true, remote_control: true, remote_control_state: 'on', remote_control_url: 'https://claude.ai/code/s', remote_control_error: null }, 2))
+    expect(conv.options).toEqual({ model: 'opus', model_resolved: null, effort: 'high', permission_mode: 'plan', effort_pending: true, remote_control: true, remote_control_state: 'on', remote_control_url: 'https://claude.ai/code/s', remote_control_error: null })
   })
 
   it('retrato sem opções usa nulos', () => {
     const conv = conversationFromSnapshot(makeSnapshot() as never)
-    expect(conv.options).toEqual({ model: null, model_resolved: null, effort: null, permission_mode: null, effort_pending: false })
+    expect(conv.options).toEqual({ model: null, model_resolved: null, effort: null, permission_mode: null, effort_pending: false, remote_control: false, remote_control_state: 'off', remote_control_url: null, remote_control_error: null })
   })
 })
 

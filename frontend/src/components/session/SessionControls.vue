@@ -5,11 +5,12 @@ import { useConversationStore } from '../../stores/conversation'
 import { formatTokens } from '../../format'
 import { useModelsStore } from '../../stores/models'
 import { useSessionsStore } from '../../stores/sessions'
-import type { Effort, PermissionMode, SessionUpdate } from '../../types/api'
+import type { Effort, PermissionMode, RemoteControlState, SessionUpdate } from '../../types/api'
 import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, modeLabel } from '../../sessionOptions'
 import BypassConfirmDialog from './BypassConfirmDialog.vue'
 import ClaudeCliFooter from './ClaudeCliFooter.vue'
 import OptionMenu, { type MenuOption } from './OptionMenu.vue'
+import RemoteControlChip from './RemoteControlChip.vue'
 
 const props = defineProps<{ sessionId: string }>()
 
@@ -75,6 +76,15 @@ const contextTitle = computed(() =>
 )
 const contextWarn = computed(() => contextPercent.value >= 80)
 
+// The mark on with nothing holding it (`off`) is shown as connecting: the backend reconnects by itself.
+const remoteState = computed<RemoteControlState>(() => {
+  const o = options.value
+  if (!o?.remote_control) return 'off'
+  return o.remote_control_state === 'off' ? 'connecting' : o.remote_control_state
+})
+// A finished session cannot be reconnected; the backend answers 409 until it is reopened.
+const sessionFinished = computed(() => sessionsStore.find(props.sessionId)?.finished === true)
+
 const error = ref<string | null>(null)
 const saving = ref(false)
 async function apply(changes: SessionUpdate) {
@@ -111,6 +121,13 @@ function confirmBypass() {
 
 <template>
   <div v-if="options" class="flex flex-wrap items-center gap-2">
+    <RemoteControlChip
+      :state="remoteState"
+      :url="options.remote_control_url"
+      :error="options.remote_control_error"
+      :disabled="saving || sessionFinished"
+      @toggle="(enabled) => apply({ remote_control: enabled })"
+    />
     <OptionMenu
       :name="`Modelo: ${modelText}`"
       :text="modelText"

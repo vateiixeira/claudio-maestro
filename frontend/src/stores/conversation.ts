@@ -48,6 +48,10 @@ export function optionsFrom(data: Partial<SessionOptions> | Partial<Session>): S
     effort: data.effort ?? null,
     permission_mode: data.permission_mode ?? null,
     effort_pending: data.effort_pending === true,
+    remote_control: data.remote_control === true,
+    remote_control_state: data.remote_control_state ?? 'off',
+    remote_control_url: data.remote_control_url ?? null,
+    remote_control_error: data.remote_control_error ?? null,
   }
 }
 

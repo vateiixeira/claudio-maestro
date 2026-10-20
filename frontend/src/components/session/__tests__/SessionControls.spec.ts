@@ -46,7 +46,10 @@ function setup(options: Record<string, unknown> = {}, patchStatus = 200) {
       const body = JSON.parse(init!.body as string)
       patches.push(body)
       if (patchStatus !== 200) return jsonResponse({ detail: 'Não deu.' }, patchStatus)
-      return jsonResponse({ ...makeSession(), model: 'sonnet', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false, model_resolved: null, ...body })
+      const remote = typeof body.remote_control === 'boolean'
+        ? { remote_control_state: body.remote_control ? 'on' : 'off', remote_control_url: body.remote_control ? 'https://claude.ai/code/session_1' : null, remote_control_error: null }
+        : {}
+      return jsonResponse({ ...makeSession(), model: 'sonnet', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false, model_resolved: null, ...remote, ...body })
     },
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -403,5 +406,88 @@ describe('uso do contexto', () => {
       makeSession({ session_id: 's1', context: { used_tokens: 120_000, max_tokens: 200_000, percent: 90 } }),
     ])
     expect(contextText(await mountControls()).text()).toBe('Contexto 90%')
+  })
+})
+
+describe('Remote Control', () => {
+  const rc = (w: ReturnType<typeof mount>) => w.find('button[aria-label^="Remote Control"]')
+
+  it('é o primeiro item da barra', async () => {
+    setup()
+    const w = await mountControls()
+    const first = w.find('button')
+    expect(first.attributes('aria-label')).toMatch(/^Remote Control/)
+    expect(first.text()).toBe('Remote Control')
+  })
+
+  it('desligado: o clique manda PATCH com remote_control true e aplica a resposta', async () => {
+    setup()
+    const w = await mountControls()
+    await rc(w).trigger('click')
+    await flushPromises()
+    expect(patches).toEqual([{ remote_control: true }])
+    // The PATCH response (a full session) carries the new state.
+    expect(rc(w).attributes('title')).toContain('Remote Control ativo')
+  })
+
+  it('o estado vem de session.options: ligado fica azul e abre o menu', async () => {
+    const { store } = setup({ remote_control: true, remote_control_state: 'connecting' })
+    const w = await mountControls()
+    expect(rc(w).attributes('title')).toBe('Remote Control conectando…')
+    store.receive(makeEvent('session.options', {
+      model: 'sonnet', model_resolved: null, effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false,
+      remote_control: true, remote_control_state: 'on', remote_control_url: 'https://claude.ai/code/session_1', remote_control_error: null,
+    }, 2))
+    await flushPromises()
+    expect(rc(w).classes()).toContain('text-info-soft')
+    await rc(w).trigger('click')
+    expect(body().find('[role="menu"] a[href="https://claude.ai/code/session_1"]').exists()).toBe(true)
+    await body().findAll('[role="menu"] [role="menuitem"]').at(-1)!.trigger('click')
+    await flushPromises()
+    expect(patches).toEqual([{ remote_control: false }])
+  })
+
+  it('marca ligada com estado off (sem processo) aparece como conectando, sem azul', async () => {
+    setup({ remote_control: true, remote_control_state: 'off' })
+    const w = await mountControls()
+    expect(rc(w).attributes('title')).toBe('Remote Control conectando…')
+    expect(rc(w).classes()).not.toContain('text-info-soft')
+  })
+
+  it('falhou mostra o erro no aviso do chip', async () => {
+    setup({ remote_control: true, remote_control_state: 'failed', remote_control_error: 'sem rede' })
+    const w = await mountControls()
+    expect(rc(w).attributes('title')).toBe('Remote Control não conectou: sem rede. Tentando de novo.')
+  })
+
+  it('depois de ligar, o foco volta ao chip (ele fica desabilitado durante o PATCH)', async () => {
+    setup()
+    const w = await mountControls()
+    ;(rc(w).element as HTMLElement).focus()
+    const click = rc(w).trigger('click')
+    // The browser drops the focus of a button that becomes disabled (jsdom does not, and cannot blur it afterwards).
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    await click
+    await flushPromises()
+    expect(document.activeElement).toBe(rc(w).element)
+  })
+
+  it('o 409 mostra o detail no erro da barra', async () => {
+    setup({}, 409)
+    const w = await mountControls()
+    await rc(w).trigger('click')
+    await flushPromises()
+    expect(w.find('[role="alert"]').text()).toContain('Não deu.')
+  })
+
+  it('sessão concluída: o chip fica desabilitado', async () => {
+    const { store } = setup()
+    void store
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', finished: true })])
+    const w = await mountControls()
+    expect(rc(w).attributes('disabled')).toBeDefined()
+    expect(rc(w).attributes('title')).toBe('Reabra a sessão para ligar o Remote Control')
+    await rc(w).trigger('click')
+    expect(patches).toEqual([])
   })
 })
