@@ -20,7 +20,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
-from claudio_maestro.agent.fake import text_turn, tool_turn
+from claudio_maestro.agent.fake import remote_user_message, text_turn, tool_turn
 from claudio_maestro.conversation import (
     ConversationBuilder,
     Event,
@@ -324,6 +324,87 @@ def test_plain_user_echo_is_ignored():
 
     assert builder.handle(UserMessage(content="oi")) == []
     assert builder.handle(UserMessage(content=[TextBlock(text="oi")])) == []
+    assert builder.items == []
+
+
+def test_remote_user_message_becomes_user_item():
+    builder = ConversationBuilder()
+
+    events = builder.handle(remote_user_message("oi"))
+
+    assert len(events) == 1
+    assert events[0].type == "item.upsert"
+    assert events[0].data["type"] == "user"
+    assert events[0].data["text"] == "oi"
+    assert events[0].data["remote"] is True
+    item = builder.items[0]
+    assert isinstance(item, UserItem)
+    assert item.remote is True
+
+
+def test_remote_user_message_strips_system_reminder():
+    builder = ConversationBuilder()
+    text = "<system-reminder>contexto</system-reminder>\nola do celular"
+
+    events = builder.handle(remote_user_message(text))
+
+    assert events[0].data["text"] == "ola do celular"
+
+
+def test_remote_user_message_with_only_reminder_is_dropped():
+    builder = ConversationBuilder()
+
+    assert builder.handle(remote_user_message("<system-reminder>x</system-reminder>")) == []
+    assert builder.items == []
+
+
+def test_remote_user_message_list_keeps_only_text_blocks():
+    builder = ConversationBuilder()
+    message = UserMessage(
+        content=[
+            TextBlock(text="veja isto"),
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}},
+        ],
+        parent_tool_use_id=None,
+        origin={"kind": "human"},
+    )
+
+    events = builder.handle(message)
+
+    assert events[0].data["text"] == "veja isto"
+    assert events[0].data["images"] == []
+    assert events[0].data["remote"] is True
+
+
+def test_user_item_is_not_remote_by_default():
+    builder = ConversationBuilder()
+
+    event = builder.add_user_message("oi")[0]
+
+    assert event.data["remote"] is False
+
+
+def test_replayed_own_messages_do_not_duplicate():
+    # With --replay-user-messages the CLI echoes what the app itself sent (origin=None).
+    builder = ConversationBuilder()
+    image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}}
+
+    assert builder.handle(UserMessage(content="oi", uuid="u1")) == []
+    assert builder.handle(UserMessage(content=[{"type": "text", "text": "oi"}, image], uuid="u2")) == []
+    assert (
+        builder.handle(
+            UserMessage(content="<command-name>/compact</command-name>", uuid="u3")
+        )
+        == []
+    )
+    assert builder.items == []
+
+
+def test_subagent_user_message_with_human_origin_is_not_remote():
+    builder = ConversationBuilder()
+    message = UserMessage(content="oi", parent_tool_use_id="toolu_1", origin={"kind": "human"})
+
+    assert builder.handle(message) == []
     assert builder.items == []
 
 

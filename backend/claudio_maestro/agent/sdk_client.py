@@ -92,7 +92,10 @@ def build_sdk_options(
         # Lets the session run in bypassPermissions, from the start (the default chosen in the
         # Preferências) or by switching later with set_permission_mode; it does not enable it.
         # The app asks for the confirmation when the user chooses the mode.
-        "extra_args": {"allow-dangerously-skip-permissions": None},
+        # replay-user-messages makes the CLI echo the user messages on the live stream, which
+        # is how the ones typed in the phone (Remote Control) reach the chat. It also echoes
+        # the app's own messages (origin None); the conversation builder drops those.
+        "extra_args": {"allow-dangerously-skip-permissions": None, "replay-user-messages": None},
     }
     if stderr is not None:
         kwargs["stderr"] = stderr

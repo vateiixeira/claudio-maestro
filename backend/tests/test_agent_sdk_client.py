@@ -62,7 +62,10 @@ def test_build_options_allows_switching_to_bypass_later(tmp_path):
     # Without this flag the CLI refuses set_permission_mode("bypassPermissions").
     sdk = build_sdk_options(make_options(tmp_path))
 
-    assert sdk.extra_args == {"allow-dangerously-skip-permissions": None}
+    assert sdk.extra_args == {
+        "allow-dangerously-skip-permissions": None,
+        "replay-user-messages": None,
+    }
     assert sdk.permission_mode is None
 
 

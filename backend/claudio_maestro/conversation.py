@@ -52,6 +52,9 @@ class UserItem:
     # Epoch seconds when the item was created; None when the history does not say.
     # Left out of equality: it is metadata, not content.
     at: int | None = field(default=None, compare=False)
+    # True only for a message that arrived live from another surface (the phone, via
+    # Remote Control); history reloaded from the JSONL never sets it.
+    remote: bool = False
     type: Literal["user"] = field(default="user", init=False)
 
 
@@ -809,6 +812,8 @@ class ConversationBuilder:
         events: list[Event] = []
         if message.parent_tool_use_id is not None:
             events.extend(self._note_alive(message.parent_tool_use_id))
+        if message.parent_tool_use_id is None and (message.origin or {}).get("kind") == "human":
+            return [*events, *self._on_remote_user(message)]
         # Plain text is the echo of what the user sent; add_user_message has it.
         # Output of a local command (e.g. after set_model) becomes a notice.
         if isinstance(message.content, str):
@@ -824,6 +829,26 @@ class ConversationBuilder:
             if isinstance(block, ToolResultBlock):
                 events.extend(self._attach_tool_result(block, message.tool_use_result))
         return events
+
+    def _on_remote_user(self, message: UserMessage) -> list[Event]:
+        """A message typed in the phone: the CLI echoes it with origin kind "human"
+        (the app's own messages come back with origin None and are ignored). Images
+        sent from the phone are left out."""
+        if isinstance(message.content, str):
+            raw_texts = [message.content]
+        else:
+            raw_texts = [
+                block.text if isinstance(block, TextBlock) else block.get("text") or ""
+                for block in message.content
+                if isinstance(block, TextBlock)
+                or (isinstance(block, dict) and block.get("type") == "text")
+            ]
+        texts = [text for raw in raw_texts if (text := _classify_user_text(raw)[0])]
+        if not texts:
+            return []
+        uuid_ = message.uuid or uuid.uuid4().hex
+        item = UserItem(id=f"user-{uuid_}", text="\n".join(texts), remote=True)
+        return [self._put(item)]
 
     def _attach_tool_result(
         self, block: ToolResultBlock, details: dict[str, Any] | None
