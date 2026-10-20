@@ -222,8 +222,11 @@ def create_app(
             cli_identity=cli_identity,
             text_index=app.state.textindex,
         )
+        # What the agentd may still hold, for the Remote Control reconnect below; `None`
+        # when it could not be asked (nothing is reconnected then).
+        agentd_held: set[str] | None = None
         try:
-            await app.state.sessions.reattach_all()
+            agentd_held = await app.state.sessions.reattach_all()
         except Exception:
             # Sessions that could not be reattached show as interrupted; the app must start.
             logger.exception("Falha ao religar as sessões do agentd")
@@ -323,7 +326,7 @@ def create_app(
             # Sessions marked for Remote Control that no process holds (after a reboot):
             # in the background, so a slow start never delays the app.
             try:
-                await app.state.sessions.reconnect_remote_sessions()
+                await app.state.sessions.reconnect_remote_sessions(agentd_held)
             except Exception:
                 logger.exception("Falha ao religar o Remote Control das sessões")
 

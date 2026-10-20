@@ -1,5 +1,6 @@
 """Fake SDK history functions (`list_sessions`, `get_session_messages`, `rename_session`)."""
 
+import itertools
 import time
 from typing import Any
 
@@ -37,9 +38,13 @@ def now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def user_entry(content: Any, session_id: str = "s", uuid: str = "u") -> SessionMessage:
+_entry_numbers = itertools.count(1)
+
+
+def user_entry(content: Any, session_id: str = "s", uuid: str | None = None) -> SessionMessage:
+    """Each entry gets its own uuid, as in the file (the user item takes it as its id)."""
     return SessionMessage(
-        type="user", uuid=uuid, session_id=session_id,
+        type="user", uuid=uuid or f"u-{next(_entry_numbers)}", session_id=session_id,
         message={"role": "user", "content": content},
     )
 

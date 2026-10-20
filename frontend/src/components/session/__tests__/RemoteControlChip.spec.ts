@@ -60,6 +60,19 @@ describe('RemoteControlChip', () => {
     expect(menuItems().map((i) => i.text())).toEqual(['Desligar'])
   })
 
+  it.each([
+    'javascript:alert(1)',
+    'http://claude.ai/code/session_abc',
+    'https://claude.ai.evil.example/code/session_abc',
+    'https://evil.example/https://claude.ai/',
+    '//claude.ai/code/x',
+  ])('url fora de https://claude.ai/ (%s) não vira link', async (url) => {
+    const w = mountChip({ state: 'on', url })
+    await trigger(w).trigger('click')
+    expect(menuItems().map((i) => i.text())).toEqual(['Desligar'])
+    expect(body().find('a').exists()).toBe(false)
+  })
+
   it('conectando: sem azul, aviso próprio, e dá para desligar pelo menu', async () => {
     const w = mountChip({ state: 'connecting' })
     expect(trigger(w).classes()).not.toContain('text-info-soft')

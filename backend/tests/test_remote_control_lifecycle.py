@@ -24,6 +24,7 @@ from test_sessions import (  # noqa: F401
 
 from claudio_maestro import db
 from claudio_maestro.agent.fake import (
+    FailStep,
     PauseStep,
     bridge_state_message,
     remote_user_message,
@@ -793,3 +794,321 @@ async def test_startup_without_a_conversation_file_connects(make_env, env_cleanu
     await boot.reconnect_remote_sessions()
 
     assert len(env.factory.clients) == 1
+
+
+# A marked session whose process dies ---------------------------------------------------------
+
+
+async def killed(make_env, env_cleanup, *, delays=(0.1,), message="Limite de uso atingido."):
+    """A marked session with Remote Control on whose process then dies."""
+    env, session = await connected(
+        make_env, env_cleanup, lambda sid: text_turn(sid, "de novo"), lambda sid: text_turn(sid, "3")
+    )
+    await session.set_remote_control(True)
+    session.remote_retry_delays = delays
+    env.factory.clients[0].push([FailStep(message)])
+    await wait_until(lambda: session.client is None)
+    return env, session
+
+
+@pytest.mark.anyio
+async def test_failed_session_shows_failed_with_the_reason_and_reconnects(make_env, env_cleanup):
+    env, session = await killed(make_env, env_cleanup)
+
+    assert session.remote_state == "failed"
+    assert session.remote_error == session.error == "Limite de uso atingido."
+    assert session.record.remote_control is True
+    assert session.summary()["remote_control_state"] == "failed"
+    assert options_events(env, session)[-1]["remote_control_error"] == "Limite de uso atingido."
+
+    await wait_until(lambda: len(env.factory.clients) == 2 and calls(env.factory.clients[1]))
+    new = env.factory.clients[1]
+    assert new.options.resume is True
+    assert calls(new)[0]["enabled"] is True
+    assert calls(new)[0]["reattach_session_id"] == "cse_fake"
+    assert session.client is new
+    assert session.remote_state == "connecting"
+    assert session.remote_error is None
+
+
+@pytest.mark.anyio
+async def test_reconnect_after_a_failure_backs_off_and_goes_on_until_it_works(
+    make_env, env_cleanup
+):
+    from claudio_maestro.agent import AgentError
+
+    env, session = await killed(make_env, env_cleanup, delays=(0.05, 0.05))
+    env.factory.connect_error = AgentError("sem claude")
+
+    await wait_until(lambda: len(env.factory.clients) >= 3)
+    assert session.remote_state == "failed"
+    assert session.remote_error == "sem claude"
+    assert session._remote_attempts >= 2
+
+    env.factory.connect_error = None
+    await wait_until(lambda: session.client is not None and session.remote_state == "connecting")
+    assert calls(session.client)[0]["enabled"] is True
+
+
+@pytest.mark.anyio
+async def test_no_reconnect_when_the_session_leaves_the_terminal_behind(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup, lambda sid: text_turn(sid, "x"))
+    await session.set_remote_control(True)
+    session.remote_retry_delays = (0.05,)
+
+    assert await session.release_for_external() is True
+    await asyncio.sleep(0.3)
+
+    assert len(env.factory.clients) == 1
+    assert session.remote_state == "elsewhere"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("how", ["close", "turn_off", "finish", "detach"])
+async def test_no_reconnect_after_the_user_or_the_app_ends_it(make_env, env_cleanup, how):
+    env, session = await killed(make_env, env_cleanup, delays=(0.2,))
+
+    if how == "close":
+        await session.close()
+    elif how == "turn_off":
+        await session.set_remote_control(False)
+    elif how == "finish":
+        await env.manager.update(session.session_id, finished=True)
+    else:
+        await session.detach()
+    await asyncio.sleep(0.5)
+
+    assert len(env.factory.clients) == 1
+    assert session._remote_retry_task is None or session._remote_retry_task.done()
+
+
+@pytest.mark.anyio
+async def test_unmarked_session_failure_stays_off(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup, lambda sid: text_turn(sid, "x"))
+    session.remote_retry_delays = (0.05,)
+    env.factory.clients[0].push([FailStep("caiu")])
+    await wait_until(lambda: session.client is None)
+    await asyncio.sleep(0.2)
+
+    assert session.remote_state == "off"
+    assert len(env.factory.clients) == 1
+
+
+@pytest.mark.anyio
+async def test_enable_again_with_the_mark_on_and_failed_tries_at_once(make_env, env_cleanup):
+    env, session = await killed(make_env, env_cleanup, delays=(60,))
+    assert session.remote_state == "failed"
+
+    summary = await env.manager.update(session.session_id, remote_control=True)
+
+    assert len(env.factory.clients) == 2
+    assert calls(env.factory.clients[1])[0]["enabled"] is True
+    assert summary["remote_control_state"] == "connecting"
+    assert session._remote_retry_task is None or session._remote_retry_task.done()
+
+
+@pytest.mark.anyio
+async def test_enable_again_with_the_mark_on_and_failed_bridge_calls_the_agent(
+    make_env, env_cleanup
+):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    session.remote_retry_delays = (60,)
+    client.set_remote_control_error_once = refused("sem rede")
+    await session.set_remote_control(True)
+    assert session.remote_state == "failed" and len(calls(client)) == 1
+
+    await env.manager.update(session.session_id, remote_control=True)
+
+    assert len(calls(client)) == 2
+    assert session.remote_state == "connecting"
+
+
+@pytest.mark.anyio
+async def test_enable_again_with_the_mark_on_and_state_off_connects(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup, lambda sid: text_turn(sid, "x"))
+    await session.set_remote_control(True)
+    await session.close()
+    assert session.remote_state == "off" and session.record.remote_control is True
+
+    await env.manager.update(session.session_id, remote_control=True)
+
+    assert len(env.factory.clients) == 2
+    assert calls(env.factory.clients[1])[0]["enabled"] is True
+    assert session.remote_state == "connecting"
+
+
+@pytest.mark.anyio
+async def test_enable_again_while_connecting_or_on_does_nothing(make_env, env_cleanup):
+    env, session = await connected(make_env, env_cleanup)
+    client = env.factory.clients[0]
+    await session.set_remote_control(True)
+    assert session.remote_state == "connecting"
+
+    assert await session.set_remote_control(True) is False
+    client.push([bridge_state_message("connected")])
+    await wait_until(lambda: session.remote_state == "on")
+    assert await session.set_remote_control(True) is False
+
+    assert len(calls(client)) == 1
+
+
+# The startup reconnect and what the reattach could not release ---------------------------------
+
+
+@pytest.mark.anyio
+async def test_startup_reconnect_skips_sessions_the_agentd_still_holds(make_env, env_cleanup):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    held = env.new_session()
+    held.save(remote_control=True, remote_control_bridge="cse_1")
+    free = env.new_session()
+    free.save(remote_control=True, remote_control_bridge="cse_2")
+    boot = second_manager(env)
+    env_cleanup.append(boot)
+
+    await boot.reconnect_remote_sessions({held.session_id})
+
+    assert [c.options.session_id for c in env.factory.clients] == [free.session_id]
+
+
+@pytest.mark.anyio
+async def test_startup_reconnect_does_not_run_when_the_listing_failed(make_env, env_cleanup):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+    session.save(remote_control=True)
+    boot = second_manager(env)
+    env_cleanup.append(boot)
+
+    await boot.reconnect_remote_sessions(None)
+
+    assert env.factory.clients == []
+    assert boot.get(session.session_id).client is None
+
+
+# The automatic reconnect is quiet and does not collide with other processes -----------------------
+
+
+@pytest.mark.anyio
+async def test_auto_reconnect_failures_do_not_pile_up_notices_or_flip_to_error(
+    make_env, env_cleanup
+):
+    from claudio_maestro.agent import AgentError
+
+    env, session = await killed(make_env, env_cleanup, delays=(0.05,))
+    env.factory.connect_error = AgentError("claude não encontrado")
+    start = len(env.recorder.states(session.session_id))
+    clients_before = len(env.factory.clients)
+
+    await wait_until(lambda: len(env.factory.clients) >= clients_before + 3)
+    states = env.recorder.states(session.session_id)[start:]
+
+    flips = sum(1 for a, b in zip(states, states[1:]) if a != "error" and b == "error")
+    errors = [i for i in session.builder.items if getattr(i, "level", None) == "error"]
+    assert flips == 0 and "connecting" not in states
+    assert [e.text for e in errors] == ["Limite de uso atingido."]  # the first failure only
+    assert session.state == "error"
+    assert session.remote_state == "failed" and session.remote_error == "claude não encontrado"
+
+
+@pytest.mark.anyio
+async def test_auto_reconnect_that_works_clears_the_error(make_env, env_cleanup):
+    env, session = await killed(make_env, env_cleanup, delays=(0.05,))
+
+    await wait_until(lambda: session.client is not None)
+
+    assert session.error is None
+    assert session.state != "error"
+
+
+@pytest.mark.anyio
+async def test_auto_reconnect_stops_when_the_project_folder_is_gone(make_env, env_cleanup):
+    import shutil
+
+    env, session = await killed(make_env, env_cleanup, delays=(0.2,))
+    shutil.rmtree(session.record.work_dir())
+
+    await asyncio.sleep(0.6)
+
+    assert len(env.factory.clients) == 1
+    assert session.remote_state == "failed"
+    assert "A pasta do projeto não existe mais" in session.remote_error
+    assert session._remote_retry_task is None or session._remote_retry_task.done()
+    assert session._remote_attempts == 1  # the one that found the folder gone
+
+
+@pytest.mark.anyio
+async def test_a_dead_session_whose_folder_is_already_gone_is_not_retried(make_env, env_cleanup):
+    import shutil
+
+    env, session = await connected(make_env, env_cleanup, lambda sid: text_turn(sid, "x"))
+    await session.set_remote_control(True)
+    session.remote_retry_delays = (0.05,)
+    shutil.rmtree(session.record.work_dir())
+    env.factory.clients[0].push([FailStep("caiu")])
+    await wait_until(lambda: session.client is None)
+
+    await asyncio.sleep(0.3)
+
+    assert len(env.factory.clients) == 1
+    assert session.remote_state == "failed"
+    assert "A pasta do projeto não existe mais" in session.remote_error
+    assert session._remote_attempts == 0
+
+
+@pytest.mark.anyio
+async def test_auto_reconnect_waits_while_the_cli_signal_is_up_and_goes_on_after(
+    make_env, env_cleanup
+):
+    import time
+
+    env, session = await killed(make_env, env_cleanup, delays=(0.1,))
+    env.manager.note_cli_turn(session.session_id, open=True, activity_at=time.time())
+
+    await asyncio.sleep(0.5)
+
+    # Not `elsewhere` (the signal alone may be the app's own dead process): it waits and
+    # asks again with the growing interval.
+    assert len(env.factory.clients) == 1
+    assert session.remote_state == "failed"
+    assert session._remote_attempts >= 2
+    assert session._remote_retry_task is not None and not session._remote_retry_task.done()
+
+    env.manager.note_cli_turn(session.session_id, open=False, activity_at=0.0)
+    await wait_until(lambda: session.client is not None and session.remote_state == "connecting")
+    assert calls(session.client)[0]["enabled"] is True
+
+
+@pytest.mark.anyio
+async def test_auto_reconnect_goes_elsewhere_on_a_reply_of_another_process(
+    make_env, env_cleanup, tmp_path
+):
+    import time
+
+    env = make_env()
+    env_cleanup.append(env.manager)
+    lines = [entry("assistant", 5_000, "a-app"), entry("assistant", 5_100, "a-terminal")]
+    session, boot = boot_with_file(env, tmp_path, lines, app_modified_at=5_000)
+    env_cleanup.append(boot)
+    reopened = boot.get(session.session_id)
+    reopened.remote_retry_delays = (0.05,)
+    boot.note_cli_turn(session.session_id, open=True, activity_at=time.time())
+
+    await reopened._remote_reconnect(0)
+
+    assert reopened.remote_state == "elsewhere"
+    assert env.factory.clients == []
+
+
+@pytest.mark.anyio
+async def test_auto_reconnect_respects_what_the_agentd_still_holds(make_env, env_cleanup):
+    env, session = await killed(make_env, env_cleanup, delays=(0.2,))
+    await env.manager.reconnect_remote_sessions({session.session_id})
+
+    await asyncio.sleep(0.5)
+
+    assert len(env.factory.clients) == 1
+    assert session.client is None
+    assert session.remote_state == "failed"
+    assert session._remote_retry_task is None or session._remote_retry_task.done()

@@ -439,3 +439,70 @@ async def test_reattach_without_a_detach_time_starts_the_client_now(env):
     session = manager2.get(env.session_id)
     assert session.client is not None
     assert session.client_since is not None and session.client_since >= before
+
+
+# What `reattach_all` reports to the startup reconnect of Remote Control ----------------------
+
+
+@pytest.mark.anyio
+async def test_reattach_all_reports_nothing_held_when_everything_attached(env):
+    await start_streaming_and_detach(env)
+    manager2 = env.manager()
+
+    assert await manager2.reattach_all() == set()
+    assert manager2.get(env.session_id).client is not None
+
+
+@pytest.mark.anyio
+async def test_reattach_all_reports_nothing_held_without_an_agentd_process(env, monkeypatch):
+    from claudio_maestro.agent.agentd_client import AgentdUnavailable
+
+    async def unavailable():
+        raise AgentdUnavailable("sem agentd")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(env.agentd, "list", unavailable)
+        held = await env.manager().reattach_all()
+
+    assert held == set()
+
+
+@pytest.mark.anyio
+async def test_reattach_all_returns_none_when_the_listing_fails(env, monkeypatch):
+    async def boom():
+        raise RuntimeError("boom")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(env.agentd, "list", boom)
+        held = await env.manager().reattach_all()
+
+    assert held is None
+
+
+@pytest.mark.anyio
+async def test_reattach_all_returns_none_when_the_listing_times_out(env, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr("claudio_maestro.sessions.REATTACH_TOTAL_TIMEOUT", 0.2)
+        patch.setattr(env.agentd, "list", hang)
+        held = await env.manager().reattach_all()
+
+    assert held is None
+
+
+@pytest.mark.anyio
+async def test_reattach_all_reports_the_session_whose_child_could_not_be_killed(
+    env, monkeypatch
+):
+    await start_streaming_and_detach(env)
+    manager2 = env.manager()
+
+    async def cannot_kill(*_args, **_kwargs):
+        raise RuntimeError("não morre")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("claudio_maestro.sessions.REATTACH_TIMEOUT", 0.3)
+        patch.setattr(env.agentd, "subscribe", hang)  # the attach never completes
+        patch.setattr(env.agentd, "kill", cannot_kill)
+        held = await manager2.reattach_all()
+
+    assert held == {env.session_id}

@@ -677,12 +677,12 @@ def bridge_state_message(
     return SystemMessage(subtype="bridge_state", data=data)
 
 
-def remote_user_message(text: str) -> UserMessage:
+def remote_user_message(text: str, message_uuid: str | None = None) -> UserMessage:
     """A message typed in the Claude app on the phone, echoed by the CLI when it
-    runs with `--replay-user-messages`."""
+    runs with `--replay-user-messages`. `message_uuid` is the id the CLI wrote in the file."""
     return UserMessage(
         content=text,
-        uuid=str(uuid.uuid4()),
+        uuid=message_uuid or str(uuid.uuid4()),
         parent_tool_use_id=None,
         origin={"kind": "human"},
     )

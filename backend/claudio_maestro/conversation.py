@@ -364,7 +364,7 @@ class ConversationBuilder:
             if entry.type == "user" and getattr(entry, "uuid", None) in compact_uuids:
                 self.add_notice("info", COMPACTED_TEXT)
             elif entry.type == "user":
-                self._load_user(content)
+                self._load_user(content, getattr(entry, "uuid", None))
             elif entry.type == "assistant" and isinstance(content, list):
                 blocks = [b for b in (_block_from_dict(raw) for raw in content) if b is not None]
                 if blocks:
@@ -480,7 +480,10 @@ class ConversationBuilder:
             if end.get("at") is not None:
                 sub["last_activity_at"] = end["at"]
 
-    def _load_user(self, content: Any) -> None:
+    def _load_user(self, content: Any, entry_uuid: str | None = None) -> None:
+        """`entry_uuid`: the id the file gives the message. The item takes it, so the same
+        message coming again live (the agentd replays what the backend never acknowledged)
+        replaces this item instead of repeating it."""
         if isinstance(content, str):
             content = [{"type": "text", "text": content}]
         if not isinstance(content, list):
@@ -502,7 +505,8 @@ class ConversationBuilder:
                 images.append(_media_marker(raw))
         text = "\n".join(texts)
         if text.strip() or images:
-            self._put(UserItem(id=f"user-{uuid.uuid4().hex}", text=text, images=images))
+            item_id = f"user-{entry_uuid or uuid.uuid4().hex}"
+            self._put(UserItem(id=item_id, text=text, images=images))
         for notice in notices:
             self.add_notice("info", notice)
         for raw in content:

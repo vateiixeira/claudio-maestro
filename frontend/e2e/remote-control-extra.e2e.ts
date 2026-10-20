@@ -101,6 +101,7 @@ test('teclado: Enter e Espaço ligam, Esc fecha o menu e o foco volta ao chip', 
   await expect.poll(() => rc.server.patches).toEqual([{ remote_control: true }])
   await expect(chip(page)).toBeFocused()
   await rc.options(true, 'on', URL)
+  await expect(chip(page)).toHaveAttribute('data-state', 'on') // Space on a chip still off would ask to turn it on again
 
   await page.keyboard.press('Space')
   const menu = page.getByRole('menu', { name: 'Remote Control' })

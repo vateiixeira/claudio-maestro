@@ -259,6 +259,32 @@ async def test_effort_refused_during_turn_reconnects_after_it(make_env, env_clea
 
 
 @pytest.mark.anyio
+async def test_effort_pending_clears_when_a_later_change_works_live(make_env, env_cleanup):
+    pause = PauseStep()
+    env, session = await connected(
+        make_env, env_cleanup,
+        lambda sid: [init_message(sid), pause, *text_turn(sid, "fim")[2:]],
+    )
+    client = env.factory.clients[0]
+    refuse_effort(client)
+    await session.send("longo")
+    await pause.reached.wait()
+    summary = await env.manager.update(session.session_id, effort="low")
+    assert summary["effort_pending"] is True
+
+    client.set_effort_error = None  # the next change goes through
+    summary = await env.manager.update(session.session_id, effort="high")
+
+    assert client.effort_calls == ["low", "high"]
+    assert summary["effort_pending"] is False
+    assert session.effort_pending is False
+    assert options_events(env, session)[-1]["effort_pending"] is False
+    pause.release.set()
+    await wait_until(lambda: session.state == "idle")
+    assert len(env.factory.clients) == 1  # no swap for an effort that is already applied
+
+
+@pytest.mark.anyio
 async def test_effort_error_that_is_not_a_refusal_fails_the_session(make_env, env_cleanup):
     env, session = await connected(make_env, env_cleanup)
     env.factory.clients[0].set_effort_error = AgentError("O agente morreu.")

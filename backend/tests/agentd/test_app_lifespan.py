@@ -59,3 +59,47 @@ def test_a_failing_reattach_does_not_stop_the_backend_from_starting(data_dir, mo
     app = create_app(agent_factory=FakeAgentFactory(), agentd=True)
     with TestClient(app, base_url=BACKEND_URL, headers=HEADERS) as client:
         assert client.get("/api/health").status_code == 200
+
+
+def test_startup_passes_what_the_agentd_holds_to_the_remote_reconnect(data_dir, monkeypatch):
+    import time
+
+    seen: list = []
+
+    async def reattach(self):
+        return {"sessao-presa"}
+
+    async def reconnect(self, held=frozenset()):
+        seen.append(held)
+
+    monkeypatch.setattr("claudio_maestro.sessions.SessionManager.reattach_all", reattach)
+    monkeypatch.setattr("claudio_maestro.sessions.SessionManager.reconnect_remote_sessions", reconnect)
+    app = create_app(agent_factory=FakeAgentFactory(), agentd=True)
+    with TestClient(app, base_url=BACKEND_URL, headers=HEADERS):
+        deadline = time.monotonic() + 5
+        while not seen and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+    assert seen == [{"sessao-presa"}]
+
+
+def test_startup_reconnect_gets_none_when_the_reattach_blows_up(data_dir, monkeypatch):
+    import time
+
+    seen: list = []
+
+    async def broken(self):
+        raise RuntimeError("boom")
+
+    async def reconnect(self, held=frozenset()):
+        seen.append(held)
+
+    monkeypatch.setattr("claudio_maestro.sessions.SessionManager.reattach_all", broken)
+    monkeypatch.setattr("claudio_maestro.sessions.SessionManager.reconnect_remote_sessions", reconnect)
+    app = create_app(agent_factory=FakeAgentFactory(), agentd=True)
+    with TestClient(app, base_url=BACKEND_URL, headers=HEADERS):
+        deadline = time.monotonic() + 5
+        while not seen and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+    assert seen == [None]

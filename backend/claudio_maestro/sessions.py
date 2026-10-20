@@ -17,7 +17,7 @@ import time
 import unicodedata
 import uuid
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from contextlib import closing, suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -129,6 +129,7 @@ REMOTE_BRIDGE_FAILED_TEXT = "O Remote Control perdeu a conexão."
 SPAWN_VERSION = 1
 # Sessions marked for Remote Control that are connected at the same time on startup.
 REMOTE_STARTUP_PARALLEL = 3
+REMOTE_CLI_BUSY_TEXT = "A conversa parece estar em uso em outro lugar. Tentando de novo em instantes."
 REMOTE_UNEXPECTED_TEXT = "Falha inesperada ao ligar o Remote Control."
 REMOTE_POLICY_TEXT = "O Remote Control está desativado pela política da organização."
 Decision = Literal["allow_once", "allow_always", "deny", "answer", "approve", "reject"]
@@ -918,8 +919,15 @@ class ActiveSession:
         refresh_plan: Callable[[str], Awaitable[bool]] | None = None,
         agentd: Any | None = None,
         agentd_any: Any | None = None,
+        cli_running: Callable[[str], bool] | None = None,
+        agentd_held: set[str] | None = None,
     ) -> None:
         self.record = record
+        # The manager's signals for the automatic Remote Control reconnect: a terminal
+        # `claude` is running in this conversation, and the sessions whose process the
+        # agentd may still hold after the last startup (shared set; connecting removes us).
+        self._cli_running = cli_running
+        self._agentd_held = agentd_held if agentd_held is not None else set()
         # AgentdClient for new processes (None: children of this process) and the one
         # used to attach to processes the agentd kept (whenever the manager has one).
         self._agentd = agentd
@@ -993,6 +1001,9 @@ class ActiveSession:
         self._agent_factory = agent_factory
         self._history_exists = history_exists
         self._connecting = False
+        # The automatic reconnect of a failed session keeps showing `error` meanwhile, so
+        # each attempt is not a new "stopped with an error" for the clients.
+        self._quiet_connect = False
         self._reader: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self._sent_messages = 0
@@ -1046,6 +1057,8 @@ class ActiveSession:
         self._remote_retry_task: asyncio.Task[None] | None = None
         # The task above is inside the call to the agent (not waiting for its turn).
         self._remote_calling = False
+        # A `failed` of the bridge came while that call was in flight (see `_schedule_remote_retry`).
+        self._remote_retry_wanted = False
         # Automatic attempts since the last time it worked or the user changed it.
         self._remote_attempts = 0
 
@@ -1057,7 +1070,7 @@ class ActiveSession:
 
     @property
     def state(self) -> SessionState:
-        if self._connecting:
+        if self._connecting and not self._quiet_connect:
             return "connecting"
         if self.client is None:
             return "error" if self.error is not None else "closed"
@@ -1523,7 +1536,7 @@ class ActiveSession:
             )
         self._emit("session.title", {"title": title})
 
-    async def _connect(self, *, enable_remote: bool = True) -> bool:
+    async def _connect(self, *, enable_remote: bool = True, quiet: bool = False) -> bool:
         """Create and connect a client. Called with the lock held.
 
         A session marked for Remote Control turns it on in the new process, in the
@@ -1533,16 +1546,21 @@ class ActiveSession:
         `resume` comes from memory (connected before) or from the disk check.
         A fresh connect that fails is retried once with `resume=True` when the
         error says the session is in use or the history now shows up.
+
+        `quiet` (the automatic reconnect of a failed session): the state stays `error`
+        while connecting and a new failure adds no notice to the chat.
         """
         generation = self._generation
         self._connecting = True
-        self.error = None
+        self._quiet_connect = quiet
+        if not quiet:
+            self.error = None
         self._refresh_state()
         client: AgentClient | None = None
         try:
-            work_dir = self.record.work_dir()
-            if not Path(work_dir).is_dir():
-                raise AgentError(f"A pasta do projeto não existe mais: {work_dir}")
+            missing = self._missing_folder_text()
+            if missing is not None:
+                raise AgentError(missing)
             resume = (
                 self._has_connected or self._connected_before or await self._check_history()
             )
@@ -1560,6 +1578,7 @@ class ActiveSession:
                 await client.connect()
         except asyncio.CancelledError:
             self._connecting = False
+            self._quiet_connect = False
             if client is not None:
                 # Tracked in `_disposal`: a later send or forget waits for it
                 # even if this task is cancelled again.
@@ -1569,6 +1588,7 @@ class ActiveSession:
             raise
         except Exception as error:  # AgentError or anything unexpected
             self._connecting = False
+            self._quiet_connect = False
             if generation != self._generation:
                 # Closed while connecting: nothing to report.
                 if client is not None:
@@ -1580,9 +1600,12 @@ class ActiveSession:
             else:
                 logger.exception("Falha ao conectar a sessão %s", self.session_id)
                 message = f"Falha inesperada ao iniciar o agente: {error}"
-            await self._fail(message, client)
+            await self._fail(message, client, notice=not quiet)
             return False
         self._connecting = False
+        self._quiet_connect = False
+        if quiet:
+            self.error = None
         if generation != self._generation:
             # close() ran while connecting: discard the new client.
             await self._dispose(client, None)
@@ -1671,6 +1694,12 @@ class ActiveSession:
                 self.effort_pending = True
                 self._emit_options()
                 self._schedule_effort()
+            else:
+                if self.effort_pending and self.client is client:
+                    # An earlier refused change was waiting for a swap; this one went
+                    # through live and replaces it, so nothing is left to swap for.
+                    self.effort_pending = False
+                    self._emit_options()
         return True
 
     async def _control_failed(self, client: AgentClient, error: AgentError) -> bool:
@@ -1983,6 +2012,49 @@ class ActiveSession:
         self._remote_attempts = 0
         self._set_remote("off")
 
+    def _missing_folder_text(self) -> str | None:
+        work_dir = self.record.work_dir()
+        if Path(work_dir).is_dir():
+            return None
+        return f"A pasta do projeto não existe mais: {work_dir}"
+
+    def _remote_lost(self, reason: str) -> None:
+        """The session failed and lost its process (usage limit, login, the CLI died, a
+        failed connect). A marked session shows `failed` with the reason and the backend
+        tries to bring it back by itself, with the growing intervals of the retries;
+        without the mark it is just `off`."""
+        if not self.record.remote_control or self._final or self.record.finished:
+            self._remote_down()
+            return
+        self._cancel_remote_retry()
+        # A folder that is gone does not come back by waiting: say so and stop trying.
+        missing = self._missing_folder_text()
+        self._set_remote("failed", error=missing or reason)
+        if missing is None:
+            self._schedule_remote_reconnect()
+
+    def _schedule_remote_reconnect(self) -> None:
+        """No process holds a marked session: connect again (resuming the conversation)
+        and turn Remote Control on after the next interval."""
+        task = self._remote_retry_task
+        if (
+            not self.record.remote_control
+            or self.record.finished
+            or self.client is not None
+            or self._final
+            or (task is not None and not task.done() and task is not asyncio.current_task())
+        ):
+            return
+        delay = self.remote_retry_delay(self._remote_attempts)
+        self._remote_attempts += 1
+        self._remote_retry_task = asyncio.create_task(self._remote_reconnect(delay))
+
+    async def _remote_reconnect(self, delay: float) -> None:
+        await asyncio.sleep(delay)
+        # Checks the mark, the state of the session and whether another program took the
+        # conversation meanwhile; a failure is in the state and schedules the next try.
+        await self.reconnect_remote(automatic=True)
+
     def _cancel_remote_retry(self, *, unless_calling: bool = False) -> None:
         """Cancel the pending attempt (or the one in the middle of its call: closing,
         detaching and turning it off need that; a good report from the bridge does not,
@@ -2005,8 +2077,13 @@ class ActiveSession:
             or self.client is None
             or self.remote_state != "failed"
             or self._final
-            or (task is not None and not task.done() and task is not asyncio.current_task())
         ):
+            return
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            # Another task is waiting to try, or is in the middle of its call: in the
+            # second case its end looks at this flag, so the failure it did not see
+            # coming is not left without a new attempt.
+            self._remote_retry_wanted = True
             return
         delay = self.remote_retry_delay(self._remote_attempts)
         self._remote_attempts += 1
@@ -2060,6 +2137,7 @@ class ActiveSession:
             # The organization forbids it: trying again changes nothing. It waits for the
             # user (turn it off and on) and drops an attempt that was already waiting.
             self._cancel_remote_retry(unless_calling=True)
+            self._remote_retry_wanted = False
             self._set_remote("failed", url=self.remote_url, error=detail or REMOTE_POLICY_TEXT)
 
     def _remote_failed(self, text: str) -> None:
@@ -2073,14 +2151,23 @@ class ActiveSession:
 
     async def set_remote_control(self, enabled: bool) -> bool:
         """Turn Remote Control on or off for this session; the choice is saved and comes
-        back after restarts. Returns True when the saved choice changed.
+        back after restarts. Returns True when something was done: the saved choice
+        changed, or it was on already but not working (`failed`, or no process holds it)
+        and an attempt was made at once.
 
         Turning it on connects the client first when there is none (resuming the
         conversation). A finished session cannot turn it on. Turning it off takes
         effect at once (mark, bridge and state); the request to the client follows
         under the lock, after an `enable` still in flight."""
-        if enabled == self.record.remote_control:
+        if enabled == self.record.remote_control and not (
+            enabled
+            and self.remote_state in ("failed", "off")
+            and not self.record.finished
+            and not self._final
+        ):
             return False
+        # Asking for what is already saved while it is not working: try now instead of
+        # waiting for the next automatic attempt.
         if enabled:
             if self.record.finished:
                 raise RemoteControlUnavailable(REMOTE_UNAVAILABLE_TEXT)
@@ -2131,11 +2218,15 @@ class ActiveSession:
                     )
         return True
 
-    async def reconnect_remote(self) -> bool:
+    async def reconnect_remote(self, *, automatic: bool = False) -> bool:
         """Startup: the session is marked, nothing holds its conversation and it is not
         finished. Start a process (resuming the conversation) and turn Remote Control on,
         so the session shows in the phone without the user opening the app. Returns
-        whether it connected; a failure is in the session's state, never raised."""
+        whether it connected; a failure is in the session's state, never raised.
+
+        `automatic`: the attempt after a failure, which makes no noise when it fails
+        again (see `_connect`). Neither runs when the agentd may still hold the process
+        or when a terminal `claude` is running in the conversation (`elsewhere`)."""
         if not self.record.remote_control or self.record.finished or self._final:
             return False
         async with self._lock:
@@ -2147,15 +2238,32 @@ class ActiveSession:
                 or self.record.finished
             ):
                 return False
+            if self.session_id in self._agentd_held:
+                logger.warning(
+                    "Remote Control da sessão %s não religado: o agentd ainda segura o processo",
+                    self.session_id,
+                )
+                return False
             if await self._written_elsewhere():
                 # Another process (terminal, editor) continued the conversation after the
                 # app left it: starting a second one would write to the same file.
                 self._set_remote("elsewhere")
                 return False
-            if not await self._connect(enable_remote=False):
+            if self._cli_running is not None and self._cli_running(self.session_id):
+                # The watcher sees a turn open in the file. It may be a terminal, but also
+                # the app's own process that died mid-turn: only a reply of another
+                # process in the file (above) is proof. Wait and look again.
+                self._set_remote("failed", error=REMOTE_CLI_BUSY_TEXT)
+                self._schedule_remote_reconnect()
+                return False
+            # Before the connect: once it ran, the saved conversation is not read (the
+            # live stream is taken as the whole of it) and the chat would open empty.
+            await self.ensure_history()
+            if not await self._connect(enable_remote=False, quiet=automatic):
                 if self.record.remote_control and self.error is not None:
                     self._set_remote("failed", error=self.error)
                 return False
+            self._agentd_held.discard(self.session_id)
             client = self.client
             if client is not None:
                 await self._enable_remote(client)
@@ -2200,6 +2308,7 @@ class ActiveSession:
         if self.client is not client or not self.record.remote_control:
             return
         self._cancel_remote_retry()
+        self._remote_retry_wanted = False
         if self.remote_state != "on":
             self._set_remote("connecting", url=self.remote_url)
         name = remote_name(self.record)
@@ -2244,6 +2353,9 @@ class ActiveSession:
         if self.remote_state in ("on", "failed"):
             # The bridge reported while the request was in flight: keep what it said.
             self._set_remote(self.remote_state, url=url, error=self.remote_error)
+            if self.remote_state == "failed" and self._remote_retry_wanted:
+                self._remote_retry_wanted = False
+                self._schedule_remote_retry()
         elif attached and saved_bridge is not None and bridge_id == saved_bridge:
             self._remote_attempts = 0
             self._set_remote("on", url=url)
@@ -2534,7 +2646,7 @@ class ActiveSession:
         self._clear_followup()
         self._release_subagent_hold(announce=False)
         self.builder.clear_local_echo()
-        self._remote_down()
+        self._remote_lost(message)
         self._emit_events(self.builder.close_open_items())
         self._emit_events(self.builder.stop_running_subagents())
         if notice:
@@ -2947,6 +3059,9 @@ class SessionManager:
         self._plan_locks: dict[str, asyncio.Lock] = {}
         # Sessions whose CLI is in the middle of a turn, from the CLI watcher (memory only).
         self._cli_turns: dict[str, _CliTurn] = {}
+        # Sessions whose process the agentd may still hold (from the last `reattach_all`),
+        # shared with the sessions: their automatic Remote Control reconnect waits.
+        self._agentd_held: set[str] = set()
         # Models of `get_server_info()`, kept in `app_state` so a restart starts
         # with the last list. `_models_fetched_at` is when it was last confirmed.
         self._models: list[dict[str, Any]] | None = None
@@ -3159,6 +3274,8 @@ class SessionManager:
             refresh_plan=self.refresh_plan,
             agentd=self._agentd if self._agentd_new_sessions else None,
             agentd_any=self._agentd,
+            cli_running=self._cli_running,
+            agentd_held=self._agentd_held,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:
@@ -4229,10 +4346,21 @@ class SessionManager:
         for session in list(self._sessions.values()):
             await session.detach()
 
-    async def reconnect_remote_sessions(self) -> None:
+    async def reconnect_remote_sessions(
+        self, held: Collection[str] | None = frozenset()
+    ) -> None:
         """Startup, after `reattach_all`: connect each session marked for Remote Control
         that is open and has no process (the machine rebooted, the agentd was gone), so it
-        shows in the phone again. A few at a time; one failing never stops the others."""
+        shows in the phone again. A few at a time; one failing never stops the others.
+
+        `held` is what `reattach_all` returned: the sessions whose process the agentd may
+        still hold. Those are skipped, and with `None` (the agentd could not be asked)
+        nothing is connected: a `--resume` next to a process that is still alive would put
+        two on the same conversation. Without the argument nothing is held."""
+        if held is None:
+            logger.warning("Remote Control não religado: o agentd não pôde ser consultado")
+            return
+        self._agentd_held.update(held)
         with closing(db.connect(self._db_path)) as conn:
             rows = conn.execute(
                 "SELECT s.session_id FROM sessions s JOIN projects p ON p.id = s.project_id"
@@ -4242,6 +4370,12 @@ class SessionManager:
         gate = asyncio.Semaphore(REMOTE_STARTUP_PARALLEL)
 
         async def one(session_id: str) -> None:
+            if session_id in held:
+                logger.warning(
+                    "Remote Control da sessão %s não religado: o agentd ainda segura o processo",
+                    session_id,
+                )
+                return
             async with gate:
                 try:
                     session = self.get(session_id)
@@ -4254,21 +4388,28 @@ class SessionManager:
 
         await asyncio.gather(*(one(row["session_id"]) for row in rows))
 
-    async def reattach_all(self) -> None:
+    async def reattach_all(self) -> set[str] | None:
         """Startup: attach to every session the agentd kept running. Never raises: a
-        child that does not attach in time is killed and its session closed."""
+        child that does not attach in time is killed and its session closed.
+
+        Returns the sessions whose process may still be alive in the agentd (a kill that
+        failed), or `None` when the agentd could not be asked what it holds. Nothing held
+        (no agentd, or none running) is an empty set. Whoever opens processes at startup
+        (`reconnect_remote_sessions`) needs it: a second process on the same conversation
+        writes to the same file."""
         if self._agentd is None:
-            return
+            return set()
         try:
             children = await asyncio.wait_for(self._agentd.list(), REATTACH_TOTAL_TIMEOUT)
         except AgentdUnavailable:
             logger.info("Nenhum agentd rodando; nada a religar")
-            return
+            return set()
         except Exception as error:  # includes TimeoutError
             logger.warning("Não foi possível listar as sessões do agentd: %r", error)
-            return
+            return None
+        held: set[str] = set()
         if not children:
-            return  # asyncio.wait below refuses an empty set
+            return held  # asyncio.wait below refuses an empty set
 
         async def kill(child: Any) -> None:
             try:
@@ -4276,6 +4417,8 @@ class SessionManager:
             except Exception as error:
                 logger.warning("Falha ao encerrar o processo da sessão %s: %r",
                                child.session_id, error)
+                if child.exit_code is None:
+                    held.add(child.session_id)
 
         # Two live children for one session (a leftover of a failed kill): keep the one
         # that has produced the most, kill the rest. Attaching both would replace a client.
@@ -4323,3 +4466,6 @@ class SessionManager:
             if task not in pending and not task.cancelled() and task.exception() is not None:
                 logger.warning("Falha ao religar a sessão %s: %r", child.session_id,
                                task.exception())
+                if child.exit_code is None:
+                    held.add(child.session_id)  # unknown what became of the process
+        return held

@@ -242,7 +242,10 @@ async def test_failure_that_kills_the_client_fails_the_session(make_env, env_cle
 
     assert session.client is None and session.state == "error"
     assert session.record.remote_control is True
-    assert session.remote_state == "off"
+    # The mark stays and the chip says why; the backend brings the process back by itself.
+    assert session.remote_state == "failed"
+    assert session.remote_error == "pipe quebrado"
+    assert session._remote_retry_task is not None
 
 
 @pytest.mark.anyio
@@ -701,3 +704,52 @@ async def test_remote_control_does_not_disturb_turns(make_env, env_cleanup):
     await wait_until(lambda: session.state == "idle" and session.pending_turns == 0)
 
     assert session.remote_state == "on"
+
+
+@pytest.mark.anyio
+async def test_bridge_failed_during_background_enable_keeps_a_retry(make_env, env_cleanup):
+    """A `failed` from the bridge that arrives while the background enable is still
+    calling the agent must not lose the next attempt."""
+    env, session = await connected(
+        make_env, env_cleanup, lambda sid: text_turn(sid, "de novo")
+    )
+    session.save(remote_control=True)
+    await session.close()
+    session.remote_retry_delays = (0.05,)
+    await session.send("outra")  # a new process: the enable runs in the background
+    await wait_until(lambda: len(env.factory.clients) == 2)
+    client = env.factory.clients[1]
+    client.remote_control_pause = PauseStep()
+    await asyncio.wait_for(client.remote_control_pause.reached.wait(), 1)
+    client.push([bridge_state_message("failed", detail="sem rede")])
+    await wait_until(lambda: session.remote_state == "failed")
+
+    client.remote_control_pause.release.set()
+    client.remote_control_pause = None
+    await wait_until(lambda: len(calls(client)) >= 2)
+
+    assert session.remote_state in ("connecting", "failed")
+
+
+@pytest.mark.anyio
+async def test_policy_disabled_during_background_enable_does_not_retry(make_env, env_cleanup):
+    env, session = await connected(
+        make_env, env_cleanup, lambda sid: text_turn(sid, "de novo")
+    )
+    session.save(remote_control=True)
+    await session.close()
+    session.remote_retry_delays = (0.05,)
+    await session.send("outra")
+    await wait_until(lambda: len(env.factory.clients) == 2)
+    client = env.factory.clients[1]
+    client.remote_control_pause = PauseStep()
+    await asyncio.wait_for(client.remote_control_pause.reached.wait(), 1)
+    client.push([bridge_state_message("policy_disabled", detail="a organização desligou")])
+    await wait_until(lambda: session.remote_state == "failed")
+
+    client.remote_control_pause.release.set()
+    client.remote_control_pause = None
+    await asyncio.sleep(0.4)
+
+    assert len(calls(client)) == 1
+    assert session.remote_state == "failed"

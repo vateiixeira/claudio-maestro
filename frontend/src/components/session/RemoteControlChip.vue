@@ -30,6 +30,8 @@ const title = computed(() => {
   }
 })
 const active = computed(() => props.state === 'on')
+// The address comes from the CLI: only the Claude app's own address becomes a link.
+const link = computed(() => (props.url?.startsWith('https://claude.ai/') ? props.url : null))
 
 const open = ref(false)
 const root = ref<HTMLElement | null>(null)
@@ -184,8 +186,8 @@ function turnOff() {
         @keydown="onMenuKey"
       >
         <a
-          v-if="url"
-          :href="url"
+          v-if="link"
+          :href="link"
           target="_blank"
           rel="noopener noreferrer"
           role="menuitem"
