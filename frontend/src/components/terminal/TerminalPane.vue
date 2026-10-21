@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { errorMessage } from '../../api/http'
-import { useTerminalStore } from '../../stores/terminal'
+import { NO_TERMINAL_CODE, useTerminalStore } from '../../stores/terminal'
 
 const props = defineProps<{ sessionId: string }>()
 
@@ -13,7 +13,9 @@ const state = computed(() => store.sessions[props.sessionId])
 
 // The shell exiting and the socket closing (even before it opened: refused or dropped) both end the terminal.
 // A connection still being made is not closed yet.
-const ended = computed(() => !!state.value?.exited || !!state.value?.closed)
+// 4410: the session has no terminal and the pane only attached; that is an empty state, not an error.
+const empty = computed(() => !!state.value?.closed && state.value.closeCode === NO_TERMINAL_CODE && !state.value.exited)
+const ended = computed(() => !empty.value && (!!state.value?.exited || !!state.value?.closed))
 // 4409: the server refused because the session's folder is gone.
 const endedText = computed(() => (state.value?.closeCode === 4409 ? 'A pasta da sessão não existe mais.' : 'O terminal foi encerrado.'))
 
@@ -26,6 +28,16 @@ let fitAddon: FitAddon | null = null
 let observer: ResizeObserver | null = null
 let stopOutput: (() => void) | null = null
 let sent = { cols: 0, rows: 0 }
+// xterm answers terminal queries (CSI c, CSI 6n) found in what it is made to write. When that is an old
+// replay, the answers are stale and must not reach the shell: input is ignored until the write is done.
+let muted = 0
+
+function writeQuiet(target: Terminal, data: string): void {
+  muted += 1
+  target.write(data, () => {
+    muted = Math.max(0, muted - 1)
+  })
+}
 
 // The app theme's colors; xterm's own defaults stand in when the variable is not defined.
 function cssVar(name: string): string | undefined {
@@ -66,7 +78,9 @@ function updateSelection(): void {
 onMounted(() => {
   const el = screen.value
   if (!el) return
-  store.connect(props.sessionId)
+  // Only a gesture (the tab, the header button, a play button) opens a shell; a pane shown just because
+  // the tab was remembered only attaches to a terminal that already exists.
+  store.connect(props.sessionId, store.takeOpenRequest(props.sessionId))
 
   const created = new Terminal({
     fontFamily: "'JetBrains Mono', ui-monospace, monospace",
@@ -87,12 +101,19 @@ onMounted(() => {
   fitAndReport()
 
   const buffer = state.value?.buffer ?? ''
-  if (buffer) created.write(buffer)
+  if (buffer) writeQuiet(created, buffer)
   stopOutput = store.onOutput(props.sessionId, (data, reset) => {
-    if (reset) created.reset()
-    created.write(data)
+    if (reset) {
+      created.reset()
+      writeQuiet(created, data)
+    } else {
+      created.write(data)
+    }
   })
-  created.onData((data) => store.sendInput(props.sessionId, data))
+  created.onData((data) => {
+    if (muted > 0) return
+    store.sendInput(props.sessionId, data)
+  })
   created.onSelectionChange(updateSelection)
 
   if (typeof ResizeObserver !== 'undefined') {
@@ -140,14 +161,27 @@ async function closeTerminal(): Promise<void> {
   }
 }
 
+// A click on "Abrir de novo" / "Abrir terminal": a gesture, so the new connection starts the shell.
+// The store sends the last known size to every new connection.
 function reopen(): void {
   error.value = null
-  // The new connection starts a shell of its own, which does not know the size sent to the old one.
-  sent = { cols: 0, rows: 0 }
   store.disconnect(props.sessionId)
-  store.connect(props.sessionId)
-  fitAndReport()
+  store.connect(props.sessionId, true)
 }
+
+// Something asked for this session's terminal (header button, play) while the pane is already up: make sure
+// the connection is one that may open the shell.
+watch(
+  () => store.panelRequest,
+  (request) => {
+    if (!request || request.sessionId !== props.sessionId) return
+    store.takeOpenRequest(props.sessionId)
+    if (state.value?.closed) reopen()
+    // Not closed yet: a socket that only attaches and is still connecting would meet 4410 right after;
+    // `connect` with open replaces it (and leaves a live or already opening one alone).
+    else store.connect(props.sessionId, true)
+  },
+)
 </script>
 
 <template>
@@ -163,7 +197,7 @@ function reopen(): void {
       <button
         type="button"
         data-test="terminal-close"
-        :disabled="ended"
+        :disabled="ended || empty"
         class="h-7 rounded-md border border-line-strong px-2.5 text-xs font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
         @click="closeTerminal"
       >Encerrar</button>
@@ -180,6 +214,15 @@ function reopen(): void {
         @mousedown.prevent
         @click="attachSelection"
       >Anexar à mensagem</button>
+      <div v-if="empty" data-test="terminal-empty" role="status" class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-panel p-4 text-center">
+        <p class="m-0 text-sm text-fg-muted">Nenhum terminal aberto nesta sessão.</p>
+        <button
+          type="button"
+          data-test="terminal-open"
+          class="h-8 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary"
+          @click="reopen"
+        >Abrir terminal</button>
+      </div>
     </div>
     <div v-if="ended" data-test="terminal-ended" role="status" class="flex shrink-0 items-center gap-3 border-t border-line px-3 py-2 text-xs text-fg-muted">
       <span class="grow">{{ endedText }}</span>

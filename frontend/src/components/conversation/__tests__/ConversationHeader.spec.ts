@@ -309,6 +309,8 @@ describe('terminal no cabeçalho', () => {
 
     await button.trigger('click')
     expect(store.panelRequest?.sessionId).toBe('s1')
+    // The click is a gesture: the pane that mounts for it may start the shell.
+    expect(store.takeOpenRequest('s1')).toBe(true)
   })
 
   it('o botão Terminal vem logo antes do espaço do botão de detalhes', () => {

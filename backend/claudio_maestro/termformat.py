@@ -3,8 +3,9 @@
 Two kinds reach the conversation as ordinary user messages, so the Claude sees them and the
 JSONL history keeps them:
 
-* a command run with the play button, written like the CLI writes a `!` command, plus a
-  trailer comment with the exit code and the duration;
+* a command run with the play button, written with the same tags the CLI uses for a `!`
+  command (`<bash-input>`, `<bash-stdout>`, `<bash-stderr>`), plus a trailer comment with the
+  exit code and the duration;
 * snippets of terminal output attached to a message, as quoted blocks.
 
 `conversation.py` recognizes both to show them as cards instead of raw text. The notes that
@@ -141,7 +142,12 @@ def format_run_message(
 
 
 def parse_terminal_message(text: str) -> TerminalRun | None:
-    """Read back a run message, or one written by the CLI for a `!` command (no trailer)."""
+    """Read back a run message: the three tags in one text, with or without the trailer.
+
+    The CLI writes a `!` command as separate entries (`<bash-input>` alone, then the output
+    tags), so what it saves never matches here; only a message in this module's format, which
+    puts the three tags in one text, does.
+    """
     match = _RUN.fullmatch(text.strip())
     if match is None:
         return None
@@ -174,6 +180,8 @@ def parse_terminal_message(text: str) -> TerminalRun | None:
 
 # Attachments -----------------------------------------------------------------
 
+SNIPPET_TITLE = "Trecho do terminal"
+
 
 def split_terminal_snippets(text: str) -> tuple[list[str], str]:
     """Terminal blocks a message opens with, and the user text that follows them."""
@@ -194,3 +202,18 @@ def split_terminal_snippets(text: str) -> tuple[list[str], str]:
     if i < len(lines) and lines[i] == "":
         i += 1
     return snippets, "\n".join(lines[i:])
+
+
+def terminal_title_text(text: str) -> str:
+    """The text a session title is made from when `text` is its first message.
+
+    A play-button run gives its command, and snippets of terminal output give the text the
+    user wrote after them, or `SNIPPET_TITLE` when there is none. Any other text is unchanged.
+    """
+    run = parse_terminal_message(text)
+    if run is not None:
+        return run["command"]
+    snippets, rest = split_terminal_snippets(text)
+    if snippets:
+        return rest if rest.strip() else SNIPPET_TITLE
+    return text

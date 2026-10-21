@@ -75,7 +75,7 @@ describe('play nos blocos de comando', () => {
     await flushPromises()
     expect(runInTerminal).toHaveBeenCalledWith('s1', 'pwd')
     expect(label(wrapper, 1)).toBe('Rodando…')
-    expect(wrapper.findAll('.code-block')[1]!.attributes('data-run-state')).toBe('starting')
+    expect(wrapper.findAll('.code-block')[1]!.attributes('data-run-state')).toBe('running')
     expect(wrapper.findAll('.code-block')[0]!.attributes('data-run-state')).toBe('idle')
   })
 
@@ -84,7 +84,7 @@ describe('play nos blocos de comando', () => {
     const { wrapper, pinia } = mountBlock('```bash\nls\n```')
     await wrapper.find('[data-code-run]').trigger('click')
     await flushPromises()
-    expect(useTerminalStore(pinia).runStateFor('m1:0')).toBe('starting')
+    expect(useTerminalStore(pinia).runStateFor('m1:0')).toBe('running')
     SOCKETS.instances[0]!.emit({ type: 'run', run_id: 'r1', state: 'running', exit_code: null })
     await flushPromises()
     expect(label(wrapper)).toBe('Rodando…')
@@ -99,7 +99,7 @@ describe('play nos blocos de comando', () => {
     const { wrapper, pinia } = mountBlock('```json\n{"a": 1}\n```\n\n```bash\nls\n```')
     await wrapper.find('[data-code-run]').trigger('click')
     await flushPromises()
-    expect(useTerminalStore(pinia).runStateFor('m1:1')).toBe('starting')
+    expect(useTerminalStore(pinia).runStateFor('m1:1')).toBe('running')
   })
 
   it('o estado volta ao DOM depois de o texto crescer e refazer o HTML', async () => {

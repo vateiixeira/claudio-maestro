@@ -1,8 +1,15 @@
 import type { SocketLike } from './socket'
 
+/** One play-button run as the replay reports it: the current one and the last finished ones, oldest first. */
+export interface ReplayRun {
+  run_id: string
+  state: 'running' | 'sent' | 'interrupted' | 'failed'
+  exit_code: number | null
+}
+
 /** What the server sends on WS /ws/terminal/{session_id}. */
 export type TerminalFrame =
-  | { type: 'replay'; data: string; cols: number; rows: number }
+  | { type: 'replay'; data: string; cols: number; rows: number; runs?: ReplayRun[] }
   | { type: 'output'; data: string }
   | { type: 'busy'; busy: boolean }
   | { type: 'run'; run_id: string; state: 'running' | 'sent' | 'interrupted' | 'failed'; exit_code: number | null }
@@ -21,6 +28,8 @@ function isFrame(value: unknown): value is TerminalFrame {
 /**
  * Client for one session's terminal. It never reconnects by itself: whoever
  * wants a new connection builds a new one (the store does it on `connect`).
+ * With `open` the server starts the shell if there is none (`?open=1`); without it
+ * the socket only attaches to a terminal that exists, and the server closes it with 4410 otherwise.
  */
 export class TerminalSocket {
   private readonly socket: TerminalSocketLike
@@ -30,9 +39,9 @@ export class TerminalSocket {
   private queued: string[] = []
   private closed = false
 
-  constructor(sessionId: string, createSocket?: (url: string) => TerminalSocketLike) {
+  constructor(sessionId: string, open = false, createSocket?: (url: string) => TerminalSocketLike) {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${protocol}://${window.location.host}/ws/terminal/${encodeURIComponent(sessionId)}`
+    const url = `${protocol}://${window.location.host}/ws/terminal/${encodeURIComponent(sessionId)}${open ? '?open=1' : ''}`
     const socket = (createSocket ?? ((u: string) => new WebSocket(u) as unknown as TerminalSocketLike))(url)
     this.socket = socket
 

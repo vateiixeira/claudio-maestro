@@ -15,6 +15,7 @@ import codecs
 import fcntl
 import logging
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -43,8 +44,9 @@ REPLAY_LIMIT = 262_144
 COALESCE_SECONDS = 0.016
 PROMPT_WAIT_SECONDS = 5.0
 KILL_GRACE_SECONDS = 2.0
-# Quiet time after the prompt mark before the shell counts as ready for a pasted command: the
-# mark comes from PROMPT_COMMAND, before readline draws the prompt and enables bracketed paste.
+# Time after the prompt mark before the shell counts as ready for a pasted command: the mark
+# comes from PROMPT_COMMAND, before readline draws the prompt and enables bracketed paste. It
+# is fixed: output after the mark (a background job that keeps printing) does not delay it.
 PROMPT_SETTLE_SECONDS = 0.05
 # How long a closing terminal waits for the sends in flight before cancelling them.
 DELIVER_WAIT_SECONDS = 5.0
@@ -56,6 +58,8 @@ STOP_POLL_SECONDS = 0.05
 DEFAULT_COLS = 120
 DEFAULT_ROWS = 30
 SUBSCRIBER_QUEUE_SIZE = 1024
+# Runs of a terminal the replay tells a new connection about (the current one and the last ended).
+RUN_HISTORY_LIMIT = 20
 # Raw characters kept of a running command; past this the start is dropped (the message to the
 # Claude keeps only the last RUN_OUTPUT_LIMIT characters of the clean output anyway).
 CAPTURE_LIMIT = 4 * RUN_OUTPUT_LIMIT
@@ -64,6 +68,16 @@ CAPTURE_LIMIT = 4 * RUN_OUTPUT_LIMIT
 _CLEAR_LINE = "\x05\x15"
 _PASTE_START = "\x1b[200~"
 _PASTE_END = "\x1b[201~"
+# Control characters that never reach the shell in a pasted command: every C0 but tab and
+# newline, DEL and the C1 range. Without ESC nothing can end the bracketed paste early, and
+# Ctrl+U, Ctrl+C and the like cannot act as keys.
+_CONTROL_CHARS = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+def sanitize_command(command: str) -> str:
+    """The command as it is pasted: line breaks as `\\n`, no control characters."""
+    text = command.replace("\r\n", "\n").replace("\r", "\n")
+    return _CONTROL_CHARS.sub("", text)
+
 
 Frame = dict[str, Any]
 SendMessage = Callable[[str, str], Awaitable[bool]]
@@ -224,6 +238,7 @@ class Terminal:
         self._prompt_seen = False
         self._settle_handle: asyncio.TimerHandle | None = None
         self._capture: _Capture | None = None
+        self._runs: dict[str, Frame] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._out = bytearray()
         self._writer_on = False
@@ -340,6 +355,21 @@ class Terminal:
         """
         return self._replay
 
+    def runs(self) -> list[Frame]:
+        """The current run and the last ended ones (up to `RUN_HISTORY_LIMIT`), oldest first.
+
+        Each item is `{"run_id", "state", "exit_code"}`, the same fields as the `run` frame,
+        so a connection that arrives late learns how the runs it missed ended.
+        """
+        return [dict(run) for run in self._runs.values()]
+
+    def _publish_run(self, run_id: str, state: RunState, exit_code: int | None) -> None:
+        frame: Frame = {"type": "run", "run_id": run_id, "state": state, "exit_code": exit_code}
+        self._runs[run_id] = {"run_id": run_id, "state": state, "exit_code": exit_code}
+        while len(self._runs) > RUN_HISTORY_LIMIT:
+            del self._runs[next(iter(self._runs))]
+        self._publish(frame)
+
     # Subscribers ---------------------------------------------------------------------
 
     def subscribe(self) -> "asyncio.Queue[Frame]":
@@ -410,8 +440,6 @@ class Terminal:
         if self._flush_handle is None:
             self._flush_handle = self._loop.call_later(COALESCE_SECONDS, self._flush_output)
         self._handle_events(self._tracker.feed(text))
-        if self._prompt_seen:
-            self._arm_settle()
         if self._tracker.busy != self._announced_busy:
             self._announced_busy = self._tracker.busy
             self._flush_output()
@@ -432,6 +460,7 @@ class Terminal:
                     self._end_capture("done", value)
             else:  # prompt
                 self._prompt_seen = True
+                self._arm_settle()
                 if capture is not None and not capture.started:
                     # The shell ran nothing (an empty line or a comment): it is back at the prompt.
                     self._end_capture("done", None)
@@ -502,6 +531,7 @@ class Terminal:
 
     async def run(self, command: str) -> str:
         """Paste `command` into the shell and capture its output; returns the run id."""
+        command = sanitize_command(command)
         if not command.strip():
             raise ValueError("Empty command")
         self._check_free()
@@ -515,9 +545,8 @@ class Terminal:
         run_id = uuid.uuid4().hex
         self._capture = _Capture(run_id, command)
         self._set_not_ready()
-        pasted = command.replace(_PASTE_START, "").replace(_PASTE_END, "")
-        self._send_bytes(f"{_CLEAR_LINE}{_PASTE_START}{pasted}{_PASTE_END}\r".encode())
-        self._publish({"type": "run", "run_id": run_id, "state": "running", "exit_code": None})
+        self._send_bytes(f"{_CLEAR_LINE}{_PASTE_START}{command}{_PASTE_END}\r".encode())
+        self._publish_run(run_id, "running", None)
         return run_id
 
     def _check_free(self) -> None:
@@ -533,9 +562,7 @@ class Terminal:
         if capture is None:
             return
         if not send:
-            self._publish(
-                {"type": "run", "run_id": capture.run_id, "state": "interrupted", "exit_code": None}
-            )
+            self._publish_run(capture.run_id, "interrupted", None)
             return
         task = asyncio.ensure_future(
             self._deliver(capture, exit_code, capture.duration_ms(), ended_by)
@@ -555,14 +582,10 @@ class Terminal:
         except Exception:
             logger.exception("Could not send the terminal run to session %s", self.session_id)
         except asyncio.CancelledError:
-            self._publish(
-                {"type": "run", "run_id": capture.run_id, "state": "failed", "exit_code": exit_code}
-            )
+            self._publish_run(capture.run_id, "failed", exit_code)
             raise
         state: RunState = "sent" if ok else "failed"
-        self._publish(
-            {"type": "run", "run_id": capture.run_id, "state": state, "exit_code": exit_code}
-        )
+        self._publish_run(capture.run_id, state, exit_code)
 
     # Closing -------------------------------------------------------------------------
 

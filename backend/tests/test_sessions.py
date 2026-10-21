@@ -45,6 +45,7 @@ from claudio_maestro.sessions import (
     SessionNotFoundError,
     sdk_history_exists,
 )
+from claudio_maestro.termformat import format_run_message
 
 WAIT = 2  # seconds; every wait fails instead of hanging the suite
 
@@ -261,6 +262,40 @@ async def test_title_only_changes_on_first_message(make_env, env_cleanup):
     await session.send("segunda")
 
     assert session.record.title == "primeira"
+
+
+@pytest.mark.anyio
+async def test_title_of_a_terminal_run_is_its_command(make_env, env_cleanup):
+    env = make_env(script=lambda content: text_turn("x", "ok"))
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    await session.send(format_run_message("npm test\n  --silent", "ok\r\n", 0, 120, "done"))
+
+    assert session.record.title == "npm test --silent"
+    assert session_row(env.db_path, session.session_id)["title"] == "npm test --silent"
+
+
+@pytest.mark.anyio
+async def test_title_of_terminal_snippets_is_the_text_after_them(make_env, env_cleanup):
+    env = make_env(script=lambda content: text_turn("x", "ok"))
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    await session.send("<!-- attach: Terminal -->\n> boom\n> trace\n\nPor que isso quebrou?")
+
+    assert session.record.title == "Por que isso quebrou?"
+
+
+@pytest.mark.anyio
+async def test_title_of_only_terminal_snippets_is_a_label(make_env, env_cleanup):
+    env = make_env(script=lambda content: text_turn("x", "ok"))
+    env_cleanup.append(env.manager)
+    session = env.new_session()
+
+    await session.send("<!-- attach: Terminal -->\n> boom")
+
+    assert session.record.title == "Trecho do terminal"
 
 
 # Turns ---------------------------------------------------------------------

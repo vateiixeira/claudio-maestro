@@ -56,8 +56,12 @@ def api(factory: FakeAgentFactory, tmp_path: Path) -> Iterator[TestClient]:  # n
         yield c
 
 
-def connect_terminal(api: TestClient, session_id: str, origin: str = APP_ORIGIN):
-    return api.websocket_connect(ws_url(session_id), headers={"origin": origin})
+def connect_terminal(
+    api: TestClient, session_id: str, origin: str = APP_ORIGIN, *, open_shell: bool = True
+):
+    """The WebSocket of the terminal; `open_shell=False` only attaches to an existing one."""
+    url = ws_url(session_id) + ("?open=1" if open_shell else "")
+    return api.websocket_connect(url, headers={"origin": origin})
 
 
 def read_until(ws, predicate: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
@@ -251,6 +255,73 @@ def test_ws_refuses_when_the_shell_does_not_start(api, home, monkeypatch):
     assert exc_info.value.code == 4500
 
 
+def test_ws_without_open_does_not_create_a_shell(api, home):
+    session = new_session(api, home)
+    sid = session["session_id"]
+
+    for url in (ws_url(sid), ws_url(sid) + "?open=0", ws_url(sid) + "?open=true"):
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with api.websocket_connect(url, headers={"origin": APP_ORIGIN}) as ws:
+                ws.receive_json()
+        assert exc_info.value.code == 4410
+        assert get_terminal(api, sid) is None
+
+
+def test_ws_without_open_keeps_the_other_refusals_first(api, home):
+    with pytest.raises(WebSocketDisconnect) as unknown:
+        with connect_terminal(api, MISSING, open_shell=False) as ws:
+            ws.receive_json()
+    assert unknown.value.code == 4404
+
+    session = new_session(api, home)
+    shutil.rmtree(home / "app")
+    with pytest.raises(WebSocketDisconnect) as gone:
+        with connect_terminal(api, session["session_id"], open_shell=False) as ws:
+            ws.receive_json()
+    assert gone.value.code == 4409
+
+
+def test_ws_without_open_attaches_to_a_live_terminal(api, home):
+    session = new_session(api, home)
+    sid = session["session_id"]
+    with connect_terminal(api, sid) as opener:
+        wait_prompt(opener)
+        opener.send_json({"type": "input", "data": "echo guardado\r"})
+        read_until(opener, has_output("guardado"))
+        terminal = get_terminal(api, sid)
+
+        with connect_terminal(api, sid, open_shell=False) as ws:
+            replay = receive_slow(ws)
+            assert replay["type"] == "replay"
+            assert "guardado" in replay["data"]
+            ws.send_json({"type": "input", "data": "echo outro\r"})
+            read_until(ws, has_output("outro"))
+    assert get_terminal(api, sid) is terminal
+
+
+def test_new_terminal_replays_no_runs(api, home):
+    session = new_session(api, home)
+    with connect_terminal(api, session["session_id"]) as ws:
+        assert receive_slow(ws)["runs"] == []
+
+
+def test_replay_brings_the_finished_and_the_running_runs(api, home):
+    session = new_session(api, home)
+    sid = session["session_id"]
+    first = api.post(run_url(sid), json={"command": "echo feito"}).json()["run_id"]
+    wait_for(lambda: [r["state"] for r in get_terminal(api, sid).runs()] == ["sent"])
+    second = api.post(run_url(sid), json={"command": "sleep 20"}).json()["run_id"]
+    wait_for(lambda: get_terminal(api, sid).busy)
+
+    # A new connection, without `open=1`, sees both.
+    with connect_terminal(api, sid, open_shell=False) as ws:
+        replay = receive_slow(ws)
+    assert replay["runs"] == [
+        {"run_id": first, "state": "sent", "exit_code": 0},
+        {"run_id": second, "state": "running", "exit_code": None},
+    ]
+
+
 def test_two_sockets_share_terminal_and_closing_one_keeps_it(api, home):
     session = new_session(api, home)
 
@@ -361,6 +432,8 @@ def test_run_endpoint_start_failure_is_503(api, home, monkeypatch):
         {},
         {"command": ""},
         {"command": "   \n"},
+        {"command": "\x1b\x15"},
+        {"command": " \x00\x1b\x7f\x85\r\n "},
         {"command": "x" * 20_001},
         {"command": "echo oi", "extra": 1},
         {"command": 5},
@@ -372,6 +445,16 @@ def test_run_endpoint_validates_the_body(api, home, body):
     response = api.post(run_url(session["session_id"]), json=body)
 
     assert response.status_code == 422
+    assert get_terminal(api, session["session_id"]) is None
+
+
+def test_run_endpoint_only_control_characters_is_refused_with_the_portuguese_message(api, home):
+    session = new_session(api, home)
+
+    response = api.post(run_url(session["session_id"]), json={"command": "\x1b\x15"})
+
+    assert response.status_code == 422
+    assert "O comando está vazio." in response.text
     assert get_terminal(api, session["session_id"]) is None
 
 
@@ -511,6 +594,12 @@ def test_refusals_reach_the_browser_as_close_codes_under_uvicorn(factory, home, 
 
         assert asyncio.run(close_code(MISSING)) == 4404
         assert asyncio.run(close_code(session["session_id"])) == 4409
+        assert server.config.app.state.terminals.get(session["session_id"]) is None
+
+        # With the folder back, but without a terminal and without `open=1`, the socket closes
+        # with 4410 and opens no shell.
+        folder.mkdir()
+        assert asyncio.run(close_code(session["session_id"])) == 4410
         assert server.config.app.state.terminals.get(session["session_id"]) is None
     finally:
         server.should_exit = True

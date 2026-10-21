@@ -71,6 +71,7 @@ from claudio_maestro.plans import (
 from claudio_maestro.procinfo import process_started_at
 from claudio_maestro.projects import Project
 from claudio_maestro.projects import project_roots as registered_project_roots
+from claudio_maestro.termformat import terminal_title_text
 from claudio_maestro.textindex import Match
 
 logger = logging.getLogger(__name__)
@@ -1482,7 +1483,7 @@ class ActiveSession:
         first = self._sent_messages == 0
         self._sent_messages += 1
         if first and self.record.title == DEFAULT_TITLE:
-            self._set_title(text)
+            self._set_title(terminal_title_text(text))
 
         async with self._lock:
             # A close still disposing of the old client must finish first, or

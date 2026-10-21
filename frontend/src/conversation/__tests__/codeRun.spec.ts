@@ -70,4 +70,9 @@ describe('runLabel', () => {
     expect(runLabel('failed', null)).toBe('Não foi possível enviar')
     expect(runLabel('busy', null)).toBe('O terminal está ocupado')
   })
+
+  it('uma falha com motivo do servidor mostra o motivo no lugar do texto genérico', () => {
+    expect(runLabel('failed', null, 'A pasta da sessão não existe mais.')).toBe('A pasta da sessão não existe mais.')
+    expect(runLabel('sent', 0, 'ignorado')).toBe('Enviado · código 0')
+  })
 })

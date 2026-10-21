@@ -477,3 +477,80 @@ async def test_run_on_a_closed_terminal_is_a_start_error(
     assert terminal.busy  # the end mark never came, yet the terminal is closed
     with pytest.raises(TerminalStartError):
         await terminal.run("echo x")
+
+
+async def test_background_output_does_not_delay_the_paste(
+    manager: TerminalManager, sent: Sent, workdir: Path
+) -> None:
+    """A job that prints without stopping used to keep re-arming the settle until the play
+    failed with TerminalStartError."""
+    terminal = await manager.open("s1", workdir)
+    terminal.write("(while true; do echo tick; sleep 0.02; done) &\r")
+    await until(lambda: terminal.replay().count("tick") >= 5)
+    await manager.run("s1", workdir, "echo ok")
+    await until(lambda: sent.calls)
+    run = sent.runs()[0]
+    assert run["exit_code"] == 0
+    assert "ok" in run["output"]
+    await manager.kill("s1", interrupted=True)
+
+
+async def test_control_characters_do_not_reach_the_shell(
+    manager: TerminalManager, sent: Sent, workdir: Path
+) -> None:
+    command = "printf '%s|' 'a\x1b[20\x1b[201~1~' 'b\x15c\x7f\x85d'\r\necho ok\rtrue"
+    await manager.run("s1", workdir, command)
+    await until(lambda: sent.calls)
+    run = sent.runs()[0]
+    assert run["exit_code"] == 0
+    assert run["output"] == "a[20[201~1~|bcd|ok"
+    assert not re.search(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", run["command"])
+    assert run["command"].split("\n")[1:] == ["echo ok", "true"]
+
+
+async def test_command_of_only_control_characters_is_rejected(
+    manager: TerminalManager, workdir: Path
+) -> None:
+    with pytest.raises(ValueError):
+        await manager.run("s1", workdir, "\x1b\x15 \x00")
+
+
+async def test_runs_history_follows_the_run_frames(
+    manager: TerminalManager, sent: Sent, workdir: Path
+) -> None:
+    terminal = await manager.open("s1", workdir)
+    assert terminal.runs() == []
+    first = await manager.run("s1", workdir, "sleep 0.3")
+    assert terminal.runs() == [{"run_id": first, "state": "running", "exit_code": None}]
+    await until(lambda: sent.calls)
+    await until(lambda: terminal.runs()[0]["state"] == "sent")
+    assert terminal.runs() == [{"run_id": first, "state": "sent", "exit_code": 0}]
+    second = await manager.run("s1", workdir, "false")
+    await until(lambda: len(sent.calls) == 2)
+    await until(lambda: terminal.runs()[1]["state"] == "sent")
+    assert terminal.runs() == [
+        {"run_id": first, "state": "sent", "exit_code": 0},
+        {"run_id": second, "state": "sent", "exit_code": 1},
+    ]
+
+
+async def test_runs_history_keeps_the_last_twenty(
+    manager: TerminalManager, sent: Sent, workdir: Path
+) -> None:
+    terminal = await manager.open("s1", workdir)
+    ids = []
+    for index in range(22):
+        ids.append(await manager.run("s1", workdir, f"echo {index}"))
+        await until(lambda: len(sent.calls) == index + 1)
+    await until(lambda: terminal.runs()[-1]["state"] == "sent")
+    assert [run["run_id"] for run in terminal.runs()] == ids[2:]
+
+
+async def test_runs_history_marks_a_killed_run_interrupted(
+    manager: TerminalManager, sent: Sent, workdir: Path
+) -> None:
+    terminal = await manager.open("s1", workdir)
+    run_id = await manager.run("s1", workdir, "sleep 5")
+    await until(lambda: terminal.busy)
+    await manager.kill("s1", interrupted=True)
+    assert terminal.runs() == [{"run_id": run_id, "state": "interrupted", "exit_code": None}]

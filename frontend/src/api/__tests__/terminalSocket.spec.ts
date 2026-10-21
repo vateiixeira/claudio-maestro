@@ -30,8 +30,8 @@ class FakeSocket {
 
 let sockets: FakeSocket[]
 
-function build(sessionId = 's1') {
-  return new TerminalSocket(sessionId, (url) => {
+function build(sessionId = 's1', open = false) {
+  return new TerminalSocket(sessionId, open, (url) => {
     const socket = new FakeSocket(url)
     sockets.push(socket)
     return socket
@@ -47,6 +47,13 @@ describe('TerminalSocket', () => {
     build('a b/c')
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
     expect(sockets[0]!.url).toBe(`${protocol}://${window.location.host}/ws/terminal/${encodeURIComponent('a b/c')}`)
+  })
+
+  it('só pede para abrir o shell quando open é verdadeiro (?open=1)', () => {
+    build('s1')
+    build('s1', true)
+    expect(sockets[0]!.url).not.toContain('?')
+    expect(sockets[1]!.url.endsWith('/ws/terminal/s1?open=1')).toBe(true)
   })
 
   it('repassa os frames JSON a quem assinou e para de repassar depois de cancelar', () => {

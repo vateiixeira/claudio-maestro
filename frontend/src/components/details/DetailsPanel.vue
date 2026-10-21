@@ -31,6 +31,7 @@ import { useConversationStore } from '../../stores/conversation'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import { useTerminalStore } from '../../stores/terminal'
 import type { ChangedFile, ChangesGroup } from '../../types/api'
 import IconBack from '../icons/IconBack.vue'
 import IconClose from '../icons/IconClose.vue'
@@ -53,8 +54,11 @@ const TABS: Array<{ id: DetailsTab; label: string }> = [
 ]
 const current = ref<DetailsTab>(props.tab)
 watch(() => props.tab, (tab) => { current.value = tab })
+const terminal = useTerminalStore()
 function selectTab(tab: DetailsTab) {
   if (current.value === tab) return
+  // Choosing the Terminal tab is a gesture: the pane that appears may start the shell.
+  if (tab === 'terminal') terminal.requestOpen(props.sessionId)
   current.value = tab
   emit('update:tab', tab)
 }

@@ -7,6 +7,7 @@ from claudio_maestro.termformat import (
     format_run_message,
     parse_terminal_message,
     split_terminal_snippets,
+    terminal_title_text,
 )
 
 
@@ -123,3 +124,14 @@ def test_split_terminal_snippets():
 def test_split_terminal_snippets_accepts_bare_marker_and_no_user_text():
     text = "<!-- attach: Terminal -->\n> a\n>\n> b"
     assert split_terminal_snippets(text) == (["a\n\nb"], "")
+
+
+def test_terminal_title_text():
+    run = format_run_message("npm test", "ok", 0, 10, "done")
+    assert terminal_title_text(run) == "npm test"
+    assert terminal_title_text("<!-- attach: Terminal -->\n> x\n\nPor que falhou?") == (
+        "Por que falhou?"
+    )
+    assert terminal_title_text("<!-- attach: Terminal -->\n> x") == "Trecho do terminal"
+    assert terminal_title_text("<!-- attach: Terminal -->\n> x\n\n  \n") == "Trecho do terminal"
+    assert terminal_title_text("conserta o teste") == "conserta o teste"

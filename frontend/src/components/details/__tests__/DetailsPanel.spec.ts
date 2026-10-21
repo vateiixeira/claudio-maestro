@@ -14,6 +14,7 @@ import { useConversationStore } from '../../../stores/conversation'
 import { useGitStore } from '../../../stores/git'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
+import { useTerminalStore } from '../../../stores/terminal'
 import { jsonResponse, makeEvent, makeGitRepo, makeProject, makeSession, makeSnapshot, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
@@ -244,6 +245,23 @@ describe('painel Detalhes', () => {
       expect(wrapper.emitted('update:tab')?.[1]).toEqual(['details'])
       expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(false)
       expect(wrapper.find('[data-test="details-properties"]').exists()).toBe(true)
+    })
+
+    it('clicar na aba Terminal é um gesto que pede para abrir o shell; a aba lembrada não', async () => {
+      const remembered = await mountPanel({}, { tab: 'terminal' })
+      await flushPromises()
+      expect(useTerminalStore(pinia).takeOpenRequest('s1')).toBe(false)
+      remembered.unmount()
+
+      const wrapper = await mountPanel()
+      await wrapper.get('[data-test="details-tab-terminal"]').trigger('click')
+      expect(useTerminalStore(pinia).takeOpenRequest('s1')).toBe(true)
+    })
+
+    it('trocar para Detalhes não pede o terminal', async () => {
+      const wrapper = await mountPanel({}, { tab: 'terminal' })
+      await wrapper.get('[data-test="details-tab-details"]').trigger('click')
+      expect(useTerminalStore(pinia).takeOpenRequest('s1')).toBe(false)
     })
 
     it('abre direto na aba pedida pela prop tab e acompanha as mudanças dela', async () => {

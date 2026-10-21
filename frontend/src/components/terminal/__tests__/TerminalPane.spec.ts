@@ -7,6 +7,7 @@ const fake = vi.hoisted(() => {
     instances: [] as Array<Record<string, any>>,
     fits: 0,
     observers: [] as Array<() => void>,
+    holdWrites: false,
   }
   return state
 })
@@ -31,7 +32,18 @@ vi.mock('@xterm/xterm', () => {
     }
     loadAddon() {}
     open(el: HTMLElement) { this.opened = el }
-    write(data: string) { this.written.push(data) }
+    // `hold` keeps the write callbacks until `flush`; `onWrite` lets a test play the replies xterm would give while parsing.
+    hold = fake.holdWrites
+    pending: Array<() => void> = []
+    onWrite: ((data: string) => void) | null = null
+    write(data: string, cb?: () => void) {
+      this.written.push(data)
+      this.onWrite?.(data)
+      if (!cb) return
+      if (this.hold) this.pending.push(cb)
+      else cb()
+    }
+    flush() { this.pending.splice(0).forEach((cb) => cb()) }
     reset() { this.resets += 1; this.written = [] }
     onData(cb: (data: string) => void) { this.dataCb = cb; return { dispose() {} } }
     onSelectionChange(cb: () => void) { this.selectionCb = cb; return { dispose() {} } }
@@ -58,6 +70,7 @@ beforeEach(() => {
   setActivePinia(pinia)
   fake.instances.length = 0
   fake.fits = 0
+  fake.holdWrites = false
   fake.observers.length = 0
   vi.stubGlobal('ResizeObserver', class {
     constructor(cb: () => void) { fake.observers.push(cb) }
@@ -90,7 +103,7 @@ describe('terminal da sessão', () => {
     const { wrapper, connect } = setup({ buffer: 'olá\r\n' })
     await flushPromises()
 
-    expect(connect).toHaveBeenCalledWith('s1')
+    expect(connect).toHaveBeenCalledWith('s1', false)
     expect(fake.instances).toHaveLength(1)
     expect(term().opened).toBe(wrapper.get('[data-test="terminal-screen"]').element)
     expect(term().written).toEqual(['olá\r\n'])
@@ -198,7 +211,7 @@ describe('terminal da sessão', () => {
     connect.mockClear()
     await wrapper.get('[data-test="terminal-reopen"]').trigger('click')
     expect(disconnect).toHaveBeenCalledWith('s1')
-    expect(connect).toHaveBeenCalledWith('s1')
+    expect(connect).toHaveBeenCalledWith('s1', true)
   })
 
   it('com o socket fechado, mesmo sem nunca ter conectado, mostra o aviso e Abrir de novo', async () => {
@@ -218,14 +231,103 @@ describe('terminal da sessão', () => {
     expect(wrapper.find('[data-test="terminal-reopen"]').exists()).toBe(true)
   })
 
-  it('depois de Abrir de novo, o tamanho vai outra vez ao novo terminal', async () => {
+  it('Abrir de novo não precisa reenviar o tamanho: a store o manda a cada conexão nova', async () => {
     const { wrapper, resize } = setup({ exited: true })
     expect(resize).toHaveBeenCalledTimes(1)
-    expect(resize).toHaveBeenLastCalledWith('s1', 80, 3)
-
     await wrapper.get('[data-test="terminal-reopen"]').trigger('click')
-    expect(resize).toHaveBeenCalledTimes(2)
-    expect(resize).toHaveBeenLastCalledWith('s1', 80, 3)
+    expect(resize).toHaveBeenCalledTimes(1)
+  })
+
+  it('montar por um gesto (aba, botão do cabeçalho, play) conecta pedindo para abrir; sem gesto só liga', () => {
+    const store = useTerminalStore(pinia)
+    store.openPanel('s1')
+    const { connect } = setup()
+    expect(connect).toHaveBeenCalledWith('s1', true)
+  })
+
+  it('com o close 4410 mostra o estado vazio com Abrir terminal, sem a mensagem de encerrado', async () => {
+    const { wrapper } = setup({ closed: true, closeCode: 4410 })
+    const empty = wrapper.get('[data-test="terminal-empty"]')
+    expect(empty.text()).toContain('Nenhum terminal aberto nesta sessão.')
+    expect(empty.get('[data-test="terminal-open"]').text()).toBe('Abrir terminal')
+    expect(wrapper.find('[data-test="terminal-ended"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('O terminal foi encerrado.')
+  })
+
+  it('o estado vazio some quando há terminal e não aparece sem o 4410', async () => {
+    const { wrapper, store } = setup({ closed: true, closeCode: 4410 })
+    expect(wrapper.find('[data-test="terminal-empty"]').exists()).toBe(true)
+    store.sessions = { s1: { ...store.sessions.s1, closed: false, closeCode: null, connected: true } }
+    await flushPromises()
+    expect(wrapper.find('[data-test="terminal-empty"]').exists()).toBe(false)
+    store.sessions = { s1: { ...store.sessions.s1, closed: true, closeCode: 4500, connected: false } }
+    await flushPromises()
+    expect(wrapper.find('[data-test="terminal-empty"]').exists()).toBe(false)
+  })
+
+  it('Abrir terminal reconecta no modo abrir', async () => {
+    const { wrapper, connect, disconnect } = setup({ closed: true, closeCode: 4410 })
+    connect.mockClear()
+    await wrapper.get('[data-test="terminal-open"]').trigger('click')
+    expect(disconnect).toHaveBeenCalledWith('s1')
+    expect(connect).toHaveBeenCalledWith('s1', true)
+  })
+
+  it('um pedido do terminal (cabeçalho, play) com o painel já montado e sem terminal reconecta abrindo', async () => {
+    const { store, connect } = setup({ closed: true, closeCode: 4410 })
+    connect.mockClear()
+    store.openPanel('s1')
+    await flushPromises()
+    expect(connect).toHaveBeenCalledWith('s1', true)
+  })
+
+  it('um pedido do terminal enquanto o socket que só liga ainda conecta pede connect abrindo (a store troca o socket)', async () => {
+    const { store, connect, disconnect } = setup()
+    connect.mockClear()
+    store.openPanel('s1')
+    await flushPromises()
+    expect(connect).toHaveBeenCalledWith('s1', true)
+    expect(disconnect).not.toHaveBeenCalled()
+  })
+
+  it('um pedido do terminal com o terminal vivo não derruba a conexão', async () => {
+    const { store, disconnect } = setup({ connected: true })
+    store.openPanel('s1')
+    await flushPromises()
+    expect(disconnect).not.toHaveBeenCalled()
+  })
+
+  it('um pedido para outra sessão não mexe neste terminal', async () => {
+    const { store, connect } = setup({ closed: true, closeCode: 4410 })
+    connect.mockClear()
+    store.openPanel('outra')
+    await flushPromises()
+    expect(connect).not.toHaveBeenCalled()
+  })
+
+  it('o que o xterm responde ao reescrever o replay (CSI c, CSI 6n) não vai ao shell', () => {
+    const { emit, sendInput } = setup()
+    term().hold = true
+    term().onWrite = (data: string) => { if (data.includes('\x1b[c')) term().dataCb!('\x1b[?1;2c') }
+    emit('antigo \x1b[c \x1b[6n', true)
+    expect(sendInput).not.toHaveBeenCalled()
+
+    // Typing is ignored until the replay is written; afterwards it flows again.
+    term().dataCb!('x')
+    expect(sendInput).not.toHaveBeenCalled()
+    term().flush()
+    term().dataCb!('y')
+    expect(sendInput).toHaveBeenCalledWith('s1', 'y')
+  })
+
+  it('o buffer escrito na montagem também não gera respostas fantasmas', () => {
+    fake.holdWrites = true
+    const { sendInput } = setup({ buffer: 'a\x1b[c' })
+    term().dataCb!('\x1b[?1;2c')
+    expect(sendInput).not.toHaveBeenCalled()
+    term().flush()
+    term().dataCb!('z')
+    expect(sendInput).toHaveBeenCalledWith('s1', 'z')
   })
 
   it('mostra o aviso na montagem quando o shell já tinha saído', () => {

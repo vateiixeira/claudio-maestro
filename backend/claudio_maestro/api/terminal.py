@@ -25,6 +25,7 @@ from claudio_maestro.terminal import (
     TerminalBusyError,
     TerminalManager,
     TerminalStartError,
+    sanitize_command,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ COMMAND_MAX_LENGTH = 20_000
 # Close codes of the terminal WebSocket (the 4000 range belongs to the application).
 CLOSE_NOT_FOUND = 4404
 CLOSE_FOLDER_UNAVAILABLE = 4409
+CLOSE_NO_TERMINAL = 4410
 CLOSE_START_FAILED = 4500
 
 
@@ -129,16 +131,25 @@ async def terminal_socket(websocket: WebSocket, session_id: str) -> None:
     except SessionFolderError:
         await _refuse(websocket, CLOSE_FOLDER_UNAVAILABLE)
         return
-    try:
-        terminal = await app.state.terminals.open(session_id, folder)
-    except TerminalStartError:
-        logger.exception("Could not open the terminal of session %s", session_id)
-        await _refuse(websocket, CLOSE_START_FAILED)
-        return
+    # Only the explicit `open=1` may start a shell; anything else just attaches to the live one.
+    if websocket.query_params.get("open") == "1":
+        try:
+            terminal = await app.state.terminals.open(session_id, folder)
+        except TerminalStartError:
+            logger.exception("Could not open the terminal of session %s", session_id)
+            await _refuse(websocket, CLOSE_START_FAILED)
+            return
+    else:
+        found = app.state.terminals.get(session_id)
+        if found is None or found.closed:
+            await _refuse(websocket, CLOSE_NO_TERMINAL)
+            return
+        terminal = found
 
     await websocket.accept()
     # No `await` between the replay and the subscription, or output is lost or repeated.
     replay = terminal.replay()
+    runs = terminal.runs()
     queue = terminal.subscribe()
     cols, rows = terminal.cols, terminal.rows
     # It may have closed while the handshake was accepted, before we subscribed: then no `exit`
@@ -146,7 +157,9 @@ async def terminal_socket(websocket: WebSocket, session_id: str) -> None:
     already_closed = terminal.closed
     pump = reader = None
     try:
-        await websocket.send_json({"type": "replay", "data": replay, "cols": cols, "rows": rows})
+        await websocket.send_json(
+            {"type": "replay", "data": replay, "cols": cols, "rows": rows, "runs": runs}
+        )
         if already_closed:
             await websocket.send_json({"type": "exit"})
             return
@@ -180,7 +193,9 @@ class RunIn(BaseModel):
     @field_validator("command")
     @classmethod
     def not_blank(cls, value: str) -> str:
-        if not value.strip():
+        # What is left after the cleaning `Terminal.run` does: a command made only of control
+        # characters is refused here, before any shell is opened.
+        if not sanitize_command(value).strip():
             raise ValueError("O comando está vazio.")
         return value
 

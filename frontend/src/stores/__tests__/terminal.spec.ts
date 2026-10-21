@@ -11,13 +11,15 @@ vi.mock('../../api/terminalSocket', () => {
   class TerminalSocket {
     static instances: TerminalSocket[] = []
     sessionId: string
+    open: boolean
     frameCbs = new Set<(f: unknown) => void>()
     closeCbs = new Set<(code: number) => void>()
     sentInput: string[] = []
     sizes: Array<[number, number]> = []
     closed = false
-    constructor(sessionId: string) {
+    constructor(sessionId: string, open = false) {
       this.sessionId = sessionId
+      this.open = open
       TerminalSocket.instances.push(this)
     }
     onFrame(cb: (f: unknown) => void) {
@@ -52,6 +54,7 @@ import { TerminalSocket } from '../../api/terminalSocket'
 import { useTerminalStore } from '../terminal'
 
 interface FakeTerminalSocket {
+  open: boolean
   emit(frame: unknown): void
   drop(code?: number): void
   sentInput: string[]
@@ -80,6 +83,56 @@ describe('conexão', () => {
     expect(store.sessions.s1).toMatchObject({ connected: false, busy: false, exited: false, buffer: '' })
     sockets()[0]!.emit({ type: 'replay', data: 'oi', cols: 80, rows: 24 })
     expect(store.sessions.s1).toMatchObject({ connected: true, buffer: 'oi' })
+  })
+
+  it('connect só liga por padrão e abre o shell (open) quando pedido', () => {
+    const store = useTerminalStore()
+    store.connect('s1')
+    store.connect('s2', true)
+    expect(sockets().map((s) => s.open)).toEqual([false, true])
+  })
+
+  it('um pedido de abrir troca o socket que só liga e ainda não conectou; um já conectado fica', () => {
+    const store = useTerminalStore()
+    store.connect('s1')
+    store.connect('s1', true)
+    expect(sockets()).toHaveLength(2)
+    expect(sockets()[0]!.closed).toBe(true)
+    expect(sockets()[1]!.open).toBe(true)
+
+    store.connect('s2')
+    sockets()[2]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [] })
+    store.connect('s2', true)
+    expect(sockets()).toHaveLength(3)
+  })
+
+  it('o close 4410 marca closed com o código e não é erro', () => {
+    const store = useTerminalStore()
+    store.connect('s1')
+    sockets()[0]!.drop(4410)
+    expect(store.sessions.s1).toMatchObject({ connected: false, closed: true, closeCode: 4410, exited: false })
+  })
+
+  it('o pedido de abrir (openPanel) vale uma vez para o painel que monta', () => {
+    const store = useTerminalStore()
+    expect(store.takeOpenRequest('s1')).toBe(false)
+    store.openPanel('s1')
+    expect(store.takeOpenRequest('s1')).toBe(true)
+    expect(store.takeOpenRequest('s1')).toBe(false)
+    store.requestOpen('s2')
+    store.disconnect('s2')
+    expect(store.takeOpenRequest('s2')).toBe(false)
+  })
+
+  it('a cada nova conexão o último tamanho conhecido vai ao novo socket', () => {
+    const store = useTerminalStore()
+    store.connect('s1')
+    store.resize('s1', 100, 30)
+    store.disconnect('s1')
+    store.connect('s1', true)
+    expect(sockets()[1]!.sizes).toEqual([[100, 30]])
+    store.connect('s2')
+    expect(sockets()[2]!.sizes).toEqual([])
   })
 
   it('output soma ao buffer, replay substitui, busy e exit atualizam o estado', () => {
@@ -197,14 +250,14 @@ describe('conexão', () => {
 })
 
 describe('run', () => {
-  it('abre o painel, conecta e chama o POST; o run fica starting até o frame', async () => {
+  it('abre o painel, conecta e chama o POST; o run fica running assim que o POST responde', async () => {
     vi.mocked(runInTerminal).mockResolvedValue({ run_id: 'r1' })
     const store = useTerminalStore()
     await store.run('s1', 'ls', 'blk')
     expect(runInTerminal).toHaveBeenCalledWith('s1', 'ls')
     expect(store.panelRequest).toMatchObject({ sessionId: 's1' })
     expect(sockets()).toHaveLength(1)
-    expect(store.runStateFor('blk')).toBe('starting')
+    expect(store.runStateFor('blk')).toBe('running')
     sockets()[0]!.emit({ type: 'run', run_id: 'r1', state: 'running', exit_code: null })
     expect(store.runStateFor('blk')).toBe('running')
     sockets()[0]!.emit({ type: 'run', run_id: 'r1', state: 'sent', exit_code: 0 })
@@ -271,10 +324,10 @@ describe('run', () => {
     await store.run('s1', 'ls', 'blk')
     sockets()[0]!.emit({ type: 'run', run_id: 'r1', state: 'sent', exit_code: 0 })
     await store.run('s1', 'ls', 'blk')
-    expect(store.runs.blk).toMatchObject({ state: 'starting', exitCode: null })
+    expect(store.runs.blk).toMatchObject({ state: 'running', exitCode: null })
     // O frame antigo, repetido, não mexe no run novo.
     sockets()[0]!.emit({ type: 'run', run_id: 'r1', state: 'failed', exit_code: 1 })
-    expect(store.runStateFor('blk')).toBe('starting')
+    expect(store.runStateFor('blk')).toBe('running')
   })
 
   it('um clique repetido enquanto o bloco roda não dispara outro POST', async () => {
@@ -283,6 +336,179 @@ describe('run', () => {
     await store.run('s1', 'ls', 'blk')
     await store.run('s1', 'ls', 'blk')
     expect(runInTerminal).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('run e o estado do servidor', () => {
+  async function startRun(store: ReturnType<typeof useTerminalStore>, runId = 'r1', block = 'blk') {
+    vi.mocked(runInTerminal).mockResolvedValueOnce({ run_id: runId })
+    await store.run('s1', 'sleep 9', block)
+    sockets()[sockets().length - 1]!.emit({ type: 'run', run_id: runId, state: 'running', exit_code: null })
+  }
+
+  it('o play abre o shell: connect com open', async () => {
+    vi.mocked(runInTerminal).mockResolvedValue({ run_id: 'r1' })
+    await useTerminalStore().run('s1', 'ls', 'blk')
+    expect(sockets()[0]!.open).toBe(true)
+  })
+
+  it('desconecta e volta com um replay que traz o run como sent: sai de running', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    expect(store.runStateFor('blk')).toBe('running')
+    store.disconnect('s1')
+    store.connect('s1')
+    sockets()[1]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [{ run_id: 'r1', state: 'sent', exit_code: 0 }] })
+    expect(store.runs.blk).toMatchObject({ state: 'sent', exitCode: 0 })
+  })
+
+  it('o replay que ainda traz o run como running mantém running', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    store.disconnect('s1')
+    store.connect('s1')
+    sockets()[1]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [{ run_id: 'r1', state: 'running', exit_code: null }] })
+    expect(store.runStateFor('blk')).toBe('running')
+  })
+
+  it('um replay sem o run o marca como interrupted', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    store.disconnect('s1')
+    store.connect('s1')
+    sockets()[1]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [] })
+    expect(store.runStateFor('blk')).toBe('interrupted')
+  })
+
+  it('um replay sem a lista de runs não mexe nos runs', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    sockets()[0]!.emit({ type: 'replay', data: '', cols: 80, rows: 24 })
+    expect(store.runStateFor('blk')).toBe('running')
+  })
+
+  it('o replay não muda um run starting nem o run de outra sessão', async () => {
+    let resolve!: (value: { run_id: string }) => void
+    vi.mocked(runInTerminal).mockReturnValueOnce(new Promise((r) => { resolve = r }))
+    const store = useTerminalStore()
+    const pending = store.run('s1', 'ls', 'blk')
+    sockets()[0]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [] })
+    expect(store.runStateFor('blk')).toBe('starting')
+    resolve({ run_id: 'r1' })
+    await pending
+
+    vi.mocked(runInTerminal).mockResolvedValueOnce({ run_id: 'r2' })
+    await store.run('s2', 'ls', 'other')
+    sockets()[1]!.emit({ type: 'run', run_id: 'r2', state: 'running', exit_code: null })
+    sockets()[0]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [] })
+    expect(store.runStateFor('other')).toBe('running')
+  })
+
+  it('o frame exit marca os runs running da sessão como interrupted', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    sockets()[0]!.emit({ type: 'exit' })
+    expect(store.runStateFor('blk')).toBe('interrupted')
+  })
+
+  it('o close 4410 também solta os runs running da sessão', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    sockets()[0]!.drop(4410)
+    expect(store.runStateFor('blk')).toBe('interrupted')
+  })
+
+  it('depois de interrupted, um novo run chama o POST outra vez', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    sockets()[0]!.emit({ type: 'exit' })
+    vi.mocked(runInTerminal).mockResolvedValueOnce({ run_id: 'r2' })
+    await store.run('s1', 'sleep 9', 'blk')
+    expect(runInTerminal).toHaveBeenCalledTimes(2)
+    expect(store.runStateFor('blk')).toBe('running')
+  })
+
+  it('o clique repetido enquanto está running continua recusado', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    await store.run('s1', 'sleep 9', 'blk')
+    expect(runInTerminal).toHaveBeenCalledTimes(1)
+  })
+
+  it('o POST que responde com um run_id que o replay já trouxe terminado adota esse estado', async () => {
+    let resolve!: (value: { run_id: string }) => void
+    vi.mocked(runInTerminal).mockReturnValueOnce(new Promise((r) => { resolve = r }))
+    const store = useTerminalStore()
+    const pending = store.run('s1', 'ls', 'blk')
+    sockets()[0]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [{ run_id: 'r1', state: 'sent', exit_code: 0 }] })
+    expect(store.runStateFor('blk')).toBe('starting')
+    resolve({ run_id: 'r1' })
+    await pending
+    expect(store.runs.blk).toMatchObject({ state: 'sent', exitCode: 0 })
+  })
+
+  it('o POST que responde depois de o socket cair (sem o frame running) deixa o run em running, e o replay o resolve', async () => {
+    let resolve!: (value: { run_id: string }) => void
+    vi.mocked(runInTerminal).mockReturnValueOnce(new Promise((r) => { resolve = r }))
+    const store = useTerminalStore()
+    const pending = store.run('s1', 'pnpm test', 'blk')
+    expect(store.runStateFor('blk')).toBe('starting')
+    store.disconnect('s1')
+    resolve({ run_id: 'r1' })
+    await pending
+    expect(store.runStateFor('blk')).toBe('running')
+
+    store.connect('s1')
+    sockets()[1]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [{ run_id: 'r1', state: 'sent', exit_code: 0 }] })
+    expect(store.runs.blk).toMatchObject({ state: 'sent', exitCode: 0 })
+    vi.mocked(runInTerminal).mockResolvedValueOnce({ run_id: 'r2' })
+    await store.run('s1', 'pnpm test', 'blk')
+    expect(runInTerminal).toHaveBeenCalledTimes(2)
+  })
+
+  it('o POST que responde depois de o socket cair e o replay não o conhece: vira interrupted', async () => {
+    let resolve!: (value: { run_id: string }) => void
+    vi.mocked(runInTerminal).mockReturnValueOnce(new Promise((r) => { resolve = r }))
+    const store = useTerminalStore()
+    const pending = store.run('s1', 'x', 'blk')
+    store.disconnect('s1')
+    resolve({ run_id: 'r1' })
+    await pending
+    store.connect('s1')
+    sockets()[1]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [] })
+    expect(store.runStateFor('blk')).toBe('interrupted')
+  })
+
+  it('o replay corrige um run marcado interrupted por engano com o estado que o servidor tem', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    sockets()[0]!.emit({ type: 'exit' })
+    expect(store.runStateFor('blk')).toBe('interrupted')
+    store.disconnect('s1')
+    store.connect('s1')
+    sockets()[1]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [{ run_id: 'r1', state: 'sent', exit_code: 0 }] })
+    expect(store.runs.blk).toMatchObject({ state: 'sent', exitCode: 0 })
+  })
+
+  it('o replay não mexe em run interrupted que ele não conhece', async () => {
+    const store = useTerminalStore()
+    await startRun(store)
+    sockets()[0]!.emit({ type: 'exit' })
+    store.disconnect('s1')
+    store.connect('s1')
+    sockets()[1]!.emit({ type: 'replay', data: '', cols: 80, rows: 24, runs: [] })
+    expect(store.runs.blk).toMatchObject({ state: 'interrupted' })
+  })
+
+  it('409 mostra o detail da resposta: ocupado vira busy, pasta ausente vira failed com o texto', async () => {
+    const store = useTerminalStore()
+    vi.mocked(runInTerminal).mockRejectedValueOnce(new ApiError(409, 'O terminal está ocupado.', 'Falhou'))
+    await store.run('s1', 'ls', 'a')
+    expect(store.runStateFor('a')).toBe('busy')
+
+    vi.mocked(runInTerminal).mockRejectedValueOnce(new ApiError(409, 'A pasta da sessão não existe mais.', 'Falhou'))
+    await store.run('s1', 'ls', 'b')
+    expect(store.runs.b).toMatchObject({ state: 'failed', message: 'A pasta da sessão não existe mais.' })
   })
 })
 

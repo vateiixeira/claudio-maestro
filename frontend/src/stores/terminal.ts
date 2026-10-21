@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ApiError, closeTerminal, runInTerminal } from '../api/http'
-import { TerminalSocket, type TerminalFrame } from '../api/terminalSocket'
+import { TerminalSocket, type ReplayRun, type TerminalFrame } from '../api/terminalSocket'
 
 /** What the store keeps of one session's terminal. */
 export interface TerminalSession {
@@ -21,12 +21,19 @@ export interface TerminalRunInfo {
   state: RunState
   exitCode: number | null
   blockKey: string
+  /** Why a run failed, when the server said (for example the session's folder is gone). */
+  message?: string
 }
 
 type RunFrame = Extract<TerminalFrame, { type: 'run' }>
 
 /** Called with new output. `reset` is true when `data` is a replay that replaces everything shown. */
 export type OutputListener = (data: string, reset: boolean) => void
+
+/** The server's reason when the session's folder is gone; the run says it instead of "busy". */
+export const FOLDER_GONE_DETAIL = 'A pasta da sessão não existe mais.'
+/** The close code of a socket that only attaches when the session has no terminal. */
+export const NO_TERMINAL_CODE = 4410
 
 /** The most the buffer keeps, the same limit the server uses for the replay. */
 export const BUFFER_LIMIT = 262_144
@@ -54,8 +61,15 @@ export const useTerminalStore = defineStore('terminal', () => {
   // run_id -> block, and the run_id each block is waiting for, so an old run's late frame is not applied to a new one.
   const blockOfRun = new Map<string, string>()
   const runIdOfBlock = new Map<string, string>()
-  // Run frames that came before the POST answered with their run_id, per session.
-  const earlyFrames = new Map<string, RunFrame[]>()
+  // The last state the server reported for each run_id (replay and run frames), per session, so a POST
+  // that answers after the server already told the outcome still ends up with it.
+  const knownRuns = new Map<string, Map<string, ReplayRun>>()
+  // Which session each block's run belongs to.
+  const sessionOfBlock = new Map<string, string>()
+  const socketModes = new Map<string, boolean>()
+  // A gesture (tab, header button, play) asked for the terminal: the pane that mounts for it opens the shell.
+  const openRequests = new Set<string>()
+  const lastSize = new Map<string, { cols: number; rows: number }>()
   const startingCount = new Map<string, number>()
   const busyTimers = new Map<string, ReturnType<typeof setTimeout>>()
   let seq = 0
@@ -68,6 +82,42 @@ export const useTerminalStore = defineStore('terminal', () => {
     listeners.get(sessionId)?.forEach((cb) => cb(data, reset))
   }
 
+  const KNOWN_RUNS_LIMIT = 50
+
+  function remember(sessionId: string, frame: ReplayRun): void {
+    const known = knownRuns.get(sessionId) ?? new Map<string, ReplayRun>()
+    known.delete(frame.run_id)
+    known.set(frame.run_id, frame)
+    if (known.size > KNOWN_RUNS_LIMIT) known.delete(known.keys().next().value as string)
+    knownRuns.set(sessionId, known)
+  }
+
+  /**
+   * Runs of this session that the server can no longer be running. With `reported` (a replay's runs) the
+   * server's word wins for every run it lists, even one marked interrupted here by a missed frame; a
+   * running run it does not list is over.
+   */
+  function interruptRunning(sessionId: string, reported?: Map<string, ReplayRun>): void {
+    const next = { ...runs.value }
+    let changed = false
+    for (const [blockKey, info] of Object.entries(runs.value)) {
+      if (sessionOfBlock.get(blockKey) !== sessionId) continue
+      const runId = runIdOfBlock.get(blockKey)
+      if (runId === undefined) continue
+      const entry = reported?.get(runId)
+      if (entry) {
+        if (info.state === entry.state && info.exitCode === entry.exit_code) continue
+        next[blockKey] = { state: entry.state, exitCode: entry.exit_code, blockKey }
+      } else if (info.state === 'running') {
+        next[blockKey] = { state: 'interrupted', exitCode: null, blockKey }
+      } else {
+        continue
+      }
+      changed = true
+    }
+    if (changed) runs.value = next
+  }
+
   function applyRunFrame(frame: RunFrame): boolean {
     const blockKey = blockOfRun.get(frame.run_id)
     if (blockKey === undefined || runIdOfBlock.get(blockKey) !== frame.run_id) return false
@@ -77,10 +127,16 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   function onFrame(sessionId: string, frame: TerminalFrame): void {
     switch (frame.type) {
-      case 'replay':
+      case 'replay': {
+        // The replay tells which runs the terminal still has: a run we think is running and it does not know is over.
+        if (frame.runs) {
+          frame.runs.forEach((entry) => remember(sessionId, entry))
+          interruptRunning(sessionId, new Map(frame.runs.map((entry) => [entry.run_id, entry])))
+        }
         patch(sessionId, { connected: true, exited: false, buffer: clip(frame.data) })
         emit(sessionId, frame.data, true)
         break
+      }
       case 'output':
         patch(sessionId, { buffer: clip((sessions.value[sessionId]?.buffer ?? '') + frame.data) })
         emit(sessionId, frame.data, false)
@@ -90,20 +146,32 @@ export const useTerminalStore = defineStore('terminal', () => {
         break
       case 'exit':
         patch(sessionId, { exited: true, busy: false })
+        interruptRunning(sessionId)
         break
       case 'run':
-        // A run the POST has not answered for yet: keep the frame for when it does.
-        if (!applyRunFrame(frame) && (startingCount.get(sessionId) ?? 0) > 0) {
-          earlyFrames.set(sessionId, [...(earlyFrames.get(sessionId) ?? []), frame])
-        }
+        remember(sessionId, frame)
+        applyRunFrame(frame)
         break
     }
   }
 
-  function connect(sessionId: string): void {
-    if (sockets.has(sessionId)) return
-    const socket = new TerminalSocket(sessionId)
+  /**
+   * Connects to the session's terminal. With `open` the server starts the shell if there is none (a user
+   * gesture); without it the socket only attaches and is closed with 4410 when there is no terminal.
+   */
+  function connect(sessionId: string, open = false): void {
+    const existing = sockets.get(sessionId)
+    if (existing) {
+      // A socket that only attaches and has not found a terminal yet cannot start one: replace it.
+      if (!open || socketModes.get(sessionId) || sessions.value[sessionId]?.connected) return
+      sockets.delete(sessionId)
+      existing.close()
+    }
+    const socket = new TerminalSocket(sessionId, open)
     sockets.set(sessionId, socket)
+    socketModes.set(sessionId, open)
+    const size = lastSize.get(sessionId)
+    if (size) socket.resize(size.cols, size.rows)
     patch(sessionId, { connected: false, exited: false, busy: false, closed: false, closeCode: null })
     socket.onFrame((frame) => {
       if (sockets.get(sessionId) === socket) onFrame(sessionId, frame)
@@ -113,10 +181,13 @@ export const useTerminalStore = defineStore('terminal', () => {
       if (sockets.get(sessionId) !== socket) return
       sockets.delete(sessionId)
       patch(sessionId, { connected: false, busy: false, closed: true, closeCode: code })
+      // No terminal there: whatever run was waiting on it is over.
+      if (code === NO_TERMINAL_CODE) interruptRunning(sessionId)
     })
   }
 
   function disconnect(sessionId: string): void {
+    openRequests.delete(sessionId)
     const socket = sockets.get(sessionId)
     if (!socket) return
     sockets.delete(sessionId)
@@ -142,16 +213,28 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   function resize(sessionId: string, cols: number, rows: number): void {
+    lastSize.set(sessionId, { cols, rows })
     sockets.get(sessionId)?.resize(cols, rows)
   }
 
+  /** A gesture asked for this session's terminal: the next pane to mount connects in "open" mode. */
+  function requestOpen(sessionId: string): void {
+    openRequests.add(sessionId)
+  }
+
+  /** True once if a gesture asked to open; a pane mounted by a remembered tab only attaches. */
+  function takeOpenRequest(sessionId: string): boolean {
+    return openRequests.delete(sessionId)
+  }
+
   function openPanel(sessionId: string): void {
+    requestOpen(sessionId)
     seq += 1
     panelRequest.value = { sessionId, seq }
   }
 
-  function setRun(blockKey: string, state: RunState, exitCode: number | null = null): void {
-    runs.value = { ...runs.value, [blockKey]: { state, exitCode, blockKey } }
+  function setRun(blockKey: string, state: RunState, exitCode: number | null = null, message?: string): void {
+    runs.value = { ...runs.value, [blockKey]: { state, exitCode, blockKey, ...(message ? { message } : {}) } }
   }
 
   function dropRun(blockKey: string): void {
@@ -174,20 +257,25 @@ export const useTerminalStore = defineStore('terminal', () => {
     forgetRunId(blockKey)
 
     openPanel(sessionId)
-    connect(sessionId)
+    connect(sessionId, true)
+    sessionOfBlock.set(blockKey, sessionId)
     setRun(blockKey, 'starting')
     startingCount.set(sessionId, (startingCount.get(sessionId) ?? 0) + 1)
     try {
       const { run_id } = await runInTerminal(sessionId, command)
       blockOfRun.set(run_id, blockKey)
       runIdOfBlock.set(blockKey, run_id)
-      const early = earlyFrames.get(sessionId) ?? []
-      const rest = early.filter((frame) => frame.run_id !== run_id)
-      early.filter((frame) => frame.run_id === run_id).forEach(applyRunFrame)
-      if (rest.length > 0) earlyFrames.set(sessionId, rest)
-      else earlyFrames.delete(sessionId)
+      // The server may have told the outcome (run frames, or a replay) before this answer came.
+      const known = knownRuns.get(sessionId)?.get(run_id)
+      if (known) applyRunFrame({ type: 'run', ...known })
+      // The server answers only after it published `running`, so a run still `starting` here missed that
+      // frame (the socket was down): it is running now, and replay, exit or a 4410 will settle it.
+      else if (runs.value[blockKey]?.state === 'starting' && runIdOfBlock.get(blockKey) === run_id) setRun(blockKey, 'running')
     } catch (error) {
-      if (error instanceof ApiError && error.status === 409) {
+      const folderGone = error instanceof ApiError && error.status === 409 && error.detail === FOLDER_GONE_DETAIL
+      if (folderGone) {
+        setRun(blockKey, 'failed', null, FOLDER_GONE_DETAIL)
+      } else if (error instanceof ApiError && error.status === 409) {
         setRun(blockKey, 'busy')
         busyTimers.set(
           blockKey,
@@ -202,10 +290,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     } finally {
       const left = (startingCount.get(sessionId) ?? 1) - 1
       if (left > 0) startingCount.set(sessionId, left)
-      else {
-        startingCount.delete(sessionId)
-        earlyFrames.delete(sessionId)
-      }
+      else startingCount.delete(sessionId)
     }
   }
 
@@ -254,6 +339,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     sendInput,
     resize,
     openPanel,
+    requestOpen,
+    takeOpenRequest,
     run,
     runStateFor,
     close,

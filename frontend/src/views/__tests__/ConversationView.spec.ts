@@ -838,6 +838,21 @@ describe('terminal da sessão na página da conversa', () => {
     expect(wrapper.find('[data-test="details-drawer"] [data-test="terminal-pane"]').exists()).toBe(true)
   })
 
+  it('a aba Terminal lembrada não pede para abrir o shell; o clique na aba, o botão e o play pedem', async () => {
+    localStorage.setItem('maestro:details-tab', 'terminal')
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(true)
+    const store = useTerminalStore(pinia)
+    expect(store.takeOpenRequest('s1')).toBe(false)
+
+    await wrapper.get('[data-test="details-tab-details"]').trigger('click')
+    await wrapper.get('[data-test="details-tab-terminal"]').trigger('click')
+    expect(store.takeOpenRequest('s1')).toBe(true)
+
+    store.openPanel('s1')
+    expect(store.takeOpenRequest('s1')).toBe(true)
+  })
+
   it('trocar de aba com o clique lembra a escolha', async () => {
     const { wrapper } = await mountAt('/sessions/s1')
     await wrapper.get('[data-test="details-tab-terminal"]').trigger('click')

@@ -30,7 +30,7 @@ export function commandFromBlock(lang: string, code: string): string | null {
 }
 
 /** The text of a play button for the state of its run. */
-export function runLabel(state: RunState | 'idle', exitCode: number | null): string {
+export function runLabel(state: RunState | 'idle', exitCode: number | null, message?: string): string {
   switch (state) {
     case 'starting':
     case 'running':
@@ -40,7 +40,7 @@ export function runLabel(state: RunState | 'idle', exitCode: number | null): str
     case 'interrupted':
       return 'Interrompido'
     case 'failed':
-      return 'Não foi possível enviar'
+      return message || 'Não foi possível enviar'
     case 'busy':
       return 'O terminal está ocupado'
     default:
@@ -51,7 +51,7 @@ export function runLabel(state: RunState | 'idle', exitCode: number | null): str
 /** The play button's own `aria-label` while it is idle. */
 const IDLE_ARIA = 'Rodar no terminal'
 
-export interface RunSnapshot { state: RunState; exitCode: number | null }
+export interface RunSnapshot { state: RunState; exitCode: number | null; message?: string }
 
 /** Key of a block's run: the message and the block's position among all the fenced blocks of the message. */
 export const blockKeyFor = (itemId: string, index: number): string => `${itemId}:${index}`
@@ -87,7 +87,7 @@ export function applyRunStates(root: Element, itemId: string, runs: Record<strin
     if (!button) return
     const info = runs[blockKeyFor(itemId, index)]
     const state = info?.state ?? 'idle'
-    const text = runLabel(state, info?.exitCode ?? null)
+    const text = runLabel(state, info?.exitCode ?? null, info?.message)
     block.dataset.runState = state
     const span = button.querySelector('span')
     if (span && span.textContent !== text) span.textContent = text
