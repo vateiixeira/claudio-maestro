@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import MessageComposer from '../MessageComposer.vue'
 import { jsonResponse, routeFetch } from '../../../test/factories'
-import { setPendingDraft } from '../../../conversation/pendingDrafts'
+import { setPendingDraft, takePendingDraft } from '../../../conversation/pendingDrafts'
 import { resetComposerDrafts } from '../../../conversation/composerDrafts'
 import { resetFileReads, settleReads, trackFileReads } from '../../../test/fileReader'
 
 enableAutoUnmount(afterEach)
 beforeEach(() => {
   resetComposerDrafts()
+  takePendingDraft('s-1')
   trackFileReads()
 })
 afterEach(() => {
@@ -34,6 +35,52 @@ async function paste(ta: ReturnType<typeof setup>['ta'], files: File[]) {
 }
 
 describe('rascunho por sessão', () => {
+  it('fills an empty composer when a pending draft arrives after mount', async () => {
+    const a = setup('s-1')
+    setPendingDraft('s-1', { text: 'oi', error: 'falhou', images: [] })
+    await flushPromises()
+    expect(a.value()).toBe('oi')
+    expect(a.w.find('[role="alert"]').text()).toBe('falhou')
+    expect(takePendingDraft('s-1')).toBeNull()
+  })
+
+  it('keeps typed text when a pending draft arrives after mount', async () => {
+    const a = setup('s-1')
+    await a.ta.setValue('outra coisa')
+    setPendingDraft('s-1', { text: 'oi', error: 'falhou' })
+    await flushPromises()
+    expect(a.value()).toBe('outra coisa')
+    expect(a.w.find('[role="alert"]').text()).toBe('falhou')
+  })
+
+  it('restores pending images into an empty composer after mount', async () => {
+    const a = setup('s-1')
+    setPendingDraft('s-1', { text: 'oi', error: 'falhou', images: [
+      { id: 100, name: 'primeira.png', size: 3, mediaType: 'image/png', url: 'data:image/png;base64,QUFB' },
+    ] })
+    await flushPromises()
+    expect(a.value()).toBe('oi')
+    expect(a.w.find('[data-test="attachment-draft"]').text()).toContain('primeira.png')
+  })
+
+  it('keeps attached images when a pending draft arrives after mount', async () => {
+    const a = setup('s-1')
+    await paste(a.ta, [png('nova.png')])
+    setPendingDraft('s-1', { text: 'oi', error: 'falhou', images: [] })
+    await flushPromises()
+    expect(a.value()).toBe('')
+    expect(a.w.find('[data-test="attachment-draft"]').text()).toContain('nova.png')
+    expect(a.w.find('[role="alert"]').text()).toBe('falhou')
+  })
+
+  it('stops listening after unmount', () => {
+    const a = setup('s-1')
+    a.w.unmount()
+    const draft = { text: 'oi', error: 'falhou', images: [] }
+    setPendingDraft('s-1', draft)
+    expect(takePendingDraft('s-1')).toEqual(draft)
+  })
+
   it('o texto volta ao montar outro campo da mesma sessão', async () => {
     const a = setup()
     await a.ta.setValue('metade da frase')
@@ -105,13 +152,14 @@ describe('rascunho por sessão', () => {
     expect(localStorage.getItem('maestro:composer-draft:s1')).toBe('primeira e mais')
   })
 
-  it('o primeiro prompt que falhou tem prioridade sobre o rascunho salvo', async () => {
+  it('preserva o rascunho salvo quando o primeiro prompt falha', async () => {
     localStorage.setItem('maestro:composer-draft:s1', 'antigo')
     setPendingDraft('s1', { text: 'prompt que falhou', error: 'falhou' })
     const a = setup()
-    expect(a.value()).toBe('prompt que falhou')
+    expect(a.value()).toBe('antigo')
+    expect(a.w.find('[role="alert"]').text()).toBe('falhou')
     await flushPromises()
-    expect(localStorage.getItem('maestro:composer-draft:s1')).toBe('prompt que falhou')
+    expect(localStorage.getItem('maestro:composer-draft:s1')).toBe('antigo')
   })
 
   it('as imagens anexadas sobrevivem a remontar, mas não vão para o localStorage', async () => {

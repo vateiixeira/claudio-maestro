@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { errorMessage, interruptSession, sendMessage } from '../../api/http'
 import { loadDraftImages, loadDraftText, saveDraftImages, saveDraftText } from '../../conversation/composerDrafts'
 import { useDictation } from '../../conversation/dictation'
 import { type DraftImage, attachImages, base64Of, filesFrom, formatSize } from '../../conversation/images'
-import { takePendingDraft } from '../../conversation/pendingDrafts'
+import { type PendingDraft, onPendingDraft, takePendingDraft } from '../../conversation/pendingDrafts'
 import { useComposerSuggestions } from '../../conversation/useComposerSuggestions'
 import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
@@ -18,14 +18,24 @@ const props = defineProps<{ sessionId: string; state: SessionState; blockedReaso
 const emit = defineEmits<{ sending: [] }>()
 
 const pendingDraft = takePendingDraft(props.sessionId)
-// A first prompt that failed wins; otherwise what was left typed in this session comes back.
-const text = ref(pendingDraft?.text ?? loadDraftText(props.sessionId))
+const text = ref(loadDraftText(props.sessionId))
 const sending = ref(false)
 const interrupting = ref(false)
 const error = ref<string | null>(pendingDraft?.error ?? null)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 
-const images = ref<DraftImage[]>(pendingDraft?.images ?? loadDraftImages(props.sessionId))
+const images = ref<DraftImage[]>(loadDraftImages(props.sessionId))
+
+function restorePendingDraft(draft: PendingDraft) {
+  error.value = draft.error
+  // Keep anything composed while the first request was pending, including while away.
+  if (text.value === '' && images.value.length === 0) {
+    text.value = draft.text
+    images.value = draft.images ?? []
+    void nextTick(resize)
+  }
+}
+if (pendingDraft) restorePendingDraft(pendingDraft)
 // The draft follows every change (typing, dictation, send), so switching sessions loses nothing.
 watch(text, (value) => saveDraftText(props.sessionId, value), { immediate: true })
 // Deep: attaching an image pushes into the same array.
@@ -89,7 +99,12 @@ function onScroll() {
   scrollTop.value = textarea.value?.scrollTop ?? 0
 }
 
-onMounted(() => nextTick(resize))
+let stopPendingDraft = () => {}
+onMounted(() => {
+  stopPendingDraft = onPendingDraft(props.sessionId, restorePendingDraft)
+  void nextTick(resize)
+})
+onBeforeUnmount(() => stopPendingDraft())
 
 const busy = computed(() => props.state === 'running' || props.state === 'awaiting_decision')
 

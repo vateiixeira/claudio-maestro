@@ -3,6 +3,8 @@ import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-u
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import NewConversationModal from '../NewConversationModal.vue'
+import MessageComposer from '../conversation/MessageComposer.vue'
+import { loadDraftImages, resetComposerDrafts } from '../../conversation/composerDrafts'
 import { createAppRouter } from '../../router'
 import { takePendingDraft } from '../../conversation/pendingDrafts'
 import { useNewConversationStore } from '../../stores/newConversation'
@@ -10,6 +12,7 @@ import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
 import { loadDraft } from '../../newConversationDraft'
 import { jsonResponse, makeGroup, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { settleReads, trackFileReads } from '../../test/fileReader'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -18,6 +21,8 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   localStorage.clear()
+  resetComposerDrafts()
+  takePendingDraft('nova')
   const projects = useProjectsStore(pinia)
   projects.projects = [
     makeProject({ id: 1, name: 'a' }),
@@ -50,6 +55,111 @@ async function openModal(preset: number | null = 2, extra = {}, presetGroup?: nu
 }
 
 describe('modal de nova conversa', () => {
+  it('closes and opens the session before the first message is answered', async () => {
+    const { wrapper, router, fetch } = await openModal(2, {
+      'POST /api/sessions/nova/messages': () => new Promise<Response>(() => {}),
+    })
+    const push = vi.spyOn(router, 'push')
+    await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
+    await wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    expect(fetch.mock.calls.some(([url]) => url === '/api/sessions/nova/messages')).toBe(true)
+    expect(useNewConversationStore(pinia).isOpen).toBe(false)
+    expect(push).toHaveBeenCalledWith({ name: 'session', params: { id: 'nova' } })
+    expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
+  })
+
+  it('a late send failure becomes the composer draft', async () => {
+    let fail!: (response: Response) => void
+    const response = new Promise<Response>((resolve) => { fail = resolve })
+    const { wrapper, router } = await openModal(2, {
+      'POST /api/sessions/nova/messages': () => response,
+    })
+    trackFileReads()
+    const prompt = wrapper.find('[data-test="nc-prompt"]')
+    const image = new File([new Uint8Array(3).fill(65)], 'tela.png', { type: 'image/png' })
+    await prompt.trigger('paste', { clipboardData: { files: [image] } })
+    await settleReads()
+    await prompt.setValue('Veja a tela')
+    await wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/sessions/nova')
+    wrapper.unmount()
+    fail(jsonResponse({ detail: 'sem rede' }, 503))
+    await flushPromises()
+    expect(takePendingDraft('nova')).toEqual({ text: 'Veja a tela', error: 'sem rede', images: [
+      expect.objectContaining({ name: 'tela.png', mediaType: 'image/png', size: 3, url: 'data:image/png;base64,QUFB' }),
+    ] })
+  })
+
+  it.each(['texto', 'imagens', 'ambos', 'vazio'])(
+    'preserva %s ao voltar depois de falha do primeiro envio enquanto fora da conversa', async (draft) => {
+      let fail!: (response: Response) => void
+      const response = new Promise<Response>((resolve) => { fail = resolve })
+      const { wrapper, router } = await openModal(2, {
+        'POST /api/sessions/nova/messages': () => response,
+      })
+      trackFileReads()
+      const originalImage = new File([new Uint8Array(3).fill(65)], 'original.png', { type: 'image/png' })
+      const prompt = wrapper.find('[data-test="nc-prompt"]')
+      await prompt.setValue('prompt original')
+      await prompt.trigger('paste', { clipboardData: { files: [originalImage] } })
+      await settleReads()
+      await wrapper.find('[data-test="nc-submit"]').trigger('click')
+      await flushPromises()
+      const props = { sessionId: 'nova', state: 'idle' as const }
+      const composer = mount(MessageComposer, { props })
+      const hasText = draft === 'texto' || draft === 'ambos'
+      const hasImages = draft === 'imagens' || draft === 'ambos'
+      if (hasText) await composer.find('textarea').setValue('nova mensagem em preparação')
+      if (hasImages) {
+        const newImage = new File([new Uint8Array(3).fill(66)], 'nova.png', { type: 'image/png' })
+        await composer.find('textarea').trigger('paste', { clipboardData: { files: [newImage] } })
+        await settleReads()
+      }
+      await router.push('/inbox')
+      composer.unmount()
+      fail(jsonResponse({ detail: 'envio falhou' }, 503))
+      await flushPromises()
+      await router.push('/sessions/nova')
+      const again = mount(MessageComposer, { props })
+      await flushPromises()
+      const expectedText = hasText ? 'nova mensagem em preparação' : draft === 'vazio' ? 'prompt original' : ''
+      const expectedImages = hasImages ? ['nova.png'] : draft === 'vazio' ? ['original.png'] : []
+      expect((again.find('textarea').element as HTMLTextAreaElement).value).toBe(expectedText)
+      expect(again.find('[role="alert"]').text()).toBe('envio falhou')
+      expect(again.findAll('[data-test="attachment-draft"]').map((chip) => chip.find('span').text())).toEqual(expectedImages)
+      expect(localStorage.getItem('maestro:composer-draft:nova')).toBe(expectedText || null)
+      expect(loadDraftImages('nova').map((image) => image.name)).toEqual(expectedImages)
+      again.unmount()
+      const persisted = mount(MessageComposer, { props })
+      expect((persisted.find('textarea').element as HTMLTextAreaElement).value).toBe(expectedText)
+      expect(persisted.findAll('[data-test="attachment-draft"]').map((chip) => chip.find('span').text())).toEqual(expectedImages)
+    },
+  )
+
+  it('title and options are still applied before the first message', async () => {
+    localStorage.setItem('maestro:new-conversation', JSON.stringify({
+      projectId: 2, title: 'Login', prompt: 'Corrija', model: 'haiku', effort: 'high', permissionMode: 'plan',
+    }))
+    let apply!: (response: Response) => void
+    const patchResponse = new Promise<Response>((resolve) => { apply = resolve })
+    const { wrapper, fetch } = await openModal(2, {
+      'PATCH /api/sessions/nova': () => patchResponse,
+      'POST /api/sessions/nova/messages': () => new Promise<Response>(() => {}),
+    })
+    await wrapper.find('[data-test="nc-submit"]').trigger('click')
+    await flushPromises()
+    const patch = fetch.mock.calls.find(([, init]) => init?.method === 'PATCH')!
+    expect(JSON.parse(patch[1]!.body as string)).toEqual({ title: 'Login', model: 'haiku', effort: 'high', permission_mode: 'plan' })
+    expect(fetch.mock.calls.some(([url]) => url === '/api/sessions/nova/messages')).toBe(false)
+    expect(useNewConversationStore(pinia).isOpen).toBe(true)
+    apply(jsonResponse(makeSession({ session_id: 'nova', project_id: 2 })))
+    await flushPromises()
+    expect(fetch.mock.calls.some(([url]) => url === '/api/sessions/nova/messages')).toBe(true)
+    expect(useNewConversationStore(pinia).isOpen).toBe(false)
+  })
+
   it('começa no projeto pedido e só lista projetos disponíveis', async () => {
     const { wrapper } = await openModal(2)
     const select = wrapper.find('[data-test="nc-project"]')

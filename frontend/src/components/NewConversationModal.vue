@@ -333,13 +333,11 @@ async function submit() {
   const attached = [...images.value]
   // Registered before the request: the user item may arrive over the socket first.
   const forget = attached.length ? rememberSentImages(sessionId, attached.map((i) => ({ url: i.url, mediaType: i.mediaType, size: i.size }))) : () => {}
-  try {
-    await sendMessage(sessionId, prompt, attached.map((i) => ({ media_type: i.mediaType, data: base64Of(i) })))
-  } catch (e) {
-    // The session exists: open it with the prompt and the images waiting in its composer.
+  void sendMessage(sessionId, prompt, attached.map((i) => ({ media_type: i.mediaType, data: base64Of(i) }))).catch((e) => {
+    // The conversation may already be open: return the failed prompt to its composer.
     forget()
     setPendingDraft(sessionId, { text: prompt, error: errorMessage(e), images: attached })
-  }
+  })
   finish()
   await router.push({ name: 'session', params: { id: sessionId } })
 }

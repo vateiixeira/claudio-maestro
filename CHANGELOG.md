@@ -19,6 +19,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- Ao iniciar uma conversa, a janela fecha na hora e a conversa abre em "Conectando", sem esperar o Claude subir.
 - Trocar o **raciocínio** de uma sessão passa a valer na hora, sem reabrir a sessão.
 - As chamadas de tarefa do Claude (TodoWrite, TaskCreate e TaskUpdate) deixam de aparecer como cartões no meio da conversa e já não contam como ações do turno: a lista do fim do turno é o registro.
 - No menu lateral e na busca de sessões, as tags de uma conversa ficam numa linha abaixo do título e mostram até três, sem cortar o título.
