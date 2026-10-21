@@ -39,6 +39,8 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
+from claudio_maestro.termformat import parse_terminal_message, split_terminal_snippets
+
 NoticeLevel = Literal["info", "warning", "error"]
 
 
@@ -56,6 +58,12 @@ class UserItem:
     # True only for a message that arrived live from another surface (the phone, via
     # Remote Control); history reloaded from the JSONL never sets it.
     remote: bool = False
+    # A command run with the play button of the session terminal (or a `!` command the CLI
+    # wrote): {command, output, exit_code, duration_ms, notes}. The card replaces the text.
+    terminal_run: dict[str, Any] | None = None
+    # Terminal output attached to the message, one string per snippet; `text` is what the
+    # user wrote after them.
+    terminal_snippets: list[str] = field(default_factory=list)
     type: Literal["user"] = field(default="user", init=False)
 
 
@@ -267,7 +275,7 @@ class ConversationBuilder:
         self, text: str, images: list[dict[str, Any]] | None = None
     ) -> list[Event]:
         """`images` are light markers ({type, media_type, size}), never the base64."""
-        item = UserItem(id=f"user-{uuid.uuid4().hex}", text=text, images=list(images or []))
+        item = _user_item(f"user-{uuid.uuid4().hex}", text, list(images or []))
         return [self._put(item)]
 
     def expect_local_echo(self, text: str) -> None:
@@ -570,22 +578,37 @@ class ConversationBuilder:
         texts: list[str] = []
         images: list[dict[str, Any]] = []
         notices: list[str] = []
+        terminal_run: dict[str, Any] | None = None
+        snippets: list[str] = []
         for raw in content:
             if not isinstance(raw, dict):
                 continue
             kind = raw.get("type")
             if kind == "text":
-                text, notice = _classify_user_text(raw.get("text") or "")
+                # The terminal formats come first: their output may hold reserved tags
+                # (`<system-reminder>`...) that the classification would act on.
+                block_run, block_snippets, block_text = _split_terminal(raw.get("text") or "")
+                if block_run is not None and terminal_run is None:
+                    terminal_run = block_run
+                snippets.extend(block_snippets)
+                text, notice = (
+                    _classify_user_text(block_text) if block_text else ("", None)
+                )
                 if notice:
                     notices.append(notice)
                 if text:
                     texts.append(text)
             elif kind in ("image", "document"):
                 images.append(_media_marker(raw))
-        text = "\n".join(texts)
-        if text.strip() or images:
-            item_id = f"user-{entry_uuid or uuid.uuid4().hex}"
-            self._put(UserItem(id=item_id, text=text, images=images))
+        item = UserItem(
+            id=f"user-{entry_uuid or uuid.uuid4().hex}",
+            text="\n".join(texts),
+            images=images,
+            terminal_run=terminal_run,
+            terminal_snippets=snippets,
+        )
+        if item.text.strip() or images or item.terminal_run or item.terminal_snippets:
+            self._put(item)
         for notice in notices:
             self.add_notice("info", notice)
         for raw in content:
@@ -1315,6 +1338,23 @@ def _classify_user_text(text: str) -> tuple[str, str | None]:
     if text.startswith(COMPACT_SUMMARY_PREFIX):
         return "", COMPACTED_TEXT
     return text, None
+
+
+def _split_terminal(text: str) -> tuple[dict[str, Any] | None, list[str], str]:
+    """(terminal run, terminal snippets, text left) of a user text."""
+    run = parse_terminal_message(text)
+    if run is not None:
+        return dict(run), [], ""
+    snippets, rest = split_terminal_snippets(text)
+    return None, snippets, rest
+
+
+def _user_item(item_id: str, text: str, images: list[Any]) -> UserItem:
+    """A user item, with the terminal card or snippets when the text came from the terminal."""
+    run, snippets, rest = _split_terminal(text)
+    return UserItem(
+        id=item_id, text=rest, images=images, terminal_run=run, terminal_snippets=snippets
+    )
 
 
 def classify_user_text(text: str) -> tuple[str, str | None]:

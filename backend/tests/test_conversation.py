@@ -676,3 +676,110 @@ def test_add_notice_appends_notice_item():
     assert (item.level, item.text) == ("error", "O agente caiu.")
     assert event.type == "item.upsert"
     assert event.data["id"] == item.id
+
+
+# Messages that come from the session terminal ------------------------------
+
+
+def test_user_message_from_terminal_run_fills_terminal_run():
+    from claudio_maestro.termformat import format_run_message
+
+    builder = ConversationBuilder()
+    event = builder.add_user_message(format_run_message("ls", "a\r\nb\r\n", 0, 1897, "done"))[0]
+
+    assert event.data["text"] == ""
+    assert event.data["terminal_run"] == {
+        "command": "ls",
+        "output": "a\nb",
+        "exit_code": 0,
+        "duration_ms": 1897,
+        "notes": [],
+    }
+    assert event.data["terminal_snippets"] == []
+
+
+def test_ordinary_user_message_has_no_terminal_data():
+    item = ConversationBuilder().add_user_message("oi")[0].data
+    assert item["terminal_run"] is None
+    assert item["terminal_snippets"] == []
+
+
+def _history_entry(text: str, uuid: str = "u1") -> Any:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(type="user", message={"content": text}, uuid=uuid)
+
+
+def test_history_user_message_with_snippets():
+    builder = ConversationBuilder()
+    builder.load_history([_history_entry(
+        "<!-- attach: Terminal -->\n> a\n> \n> b\n\n"
+        "<!-- attach: Terminal -->\n> c\n\npor quê?"
+    )])
+
+    [item] = builder.items
+    assert isinstance(item, UserItem)
+    assert item.terminal_snippets == ["a\n\nb", "c"]
+    assert item.text == "por quê?"
+    assert item.terminal_run is None
+
+
+def test_history_user_message_with_only_snippets_is_kept():
+    builder = ConversationBuilder()
+    builder.load_history([_history_entry("<!-- attach: Terminal -->\n> a")])
+
+    [item] = builder.items
+    assert isinstance(item, UserItem)
+    assert item.terminal_snippets == ["a"]
+    assert item.text == ""
+
+
+def test_cli_bang_message_renders_as_terminal_run():
+    builder = ConversationBuilder()
+    builder.load_history([_history_entry(
+        "<bash-input>netbird up</bash-input>"
+        "<bash-stdout>Already connected</bash-stdout><bash-stderr></bash-stderr>"
+    )])
+
+    [item] = builder.items
+    assert isinstance(item, UserItem)
+    assert item.terminal_run is not None
+    assert item.terminal_run["command"] == "netbird up"
+    assert item.terminal_run["output"] == "Already connected"
+    assert item.text == ""
+
+
+def test_history_terminal_run_with_reserved_tags_keeps_card():
+    from claudio_maestro.termformat import format_run_message
+
+    output = (
+        "<system-reminder>x</system-reminder>\n"
+        "<task-notification>y</task-notification>\n"
+        "<local-command-stdout>z</local-command-stdout>"
+    )
+    builder = ConversationBuilder()
+    builder.load_history([_history_entry(format_run_message("grep -r x .", output, 0, 9, "done"))])
+
+    [item] = builder.items
+    assert isinstance(item, UserItem)
+    assert item.terminal_run is not None
+    assert "<system-reminder>x</system-reminder>" in item.terminal_run["output"]
+    assert "<task-notification>y</task-notification>" in item.terminal_run["output"]
+    assert "<local-command-stdout>z</local-command-stdout>" in item.terminal_run["output"]
+    assert item.text == ""
+
+
+def test_history_snippet_with_reserved_tags_keeps_snippet():
+    builder = ConversationBuilder()
+    builder.load_history([_history_entry(
+        "<!-- attach: Terminal -->\n> <system-reminder>x</system-reminder>\n"
+        "> <task-notification>y</task-notification>\n\nexplica isso"
+    )])
+
+    [item] = builder.items
+    assert isinstance(item, UserItem)
+    assert item.terminal_snippets == [
+        "<system-reminder>x</system-reminder>\n<task-notification>y</task-notification>"
+    ]
+    assert item.text == "explica isso"
+    assert not [i for i in builder.items if not isinstance(i, UserItem)]
