@@ -10,12 +10,23 @@ type Item = Record<string, unknown>
 const COMMAND = 'ls -la'
 const ASSISTANT_ID = 'a-terminal-e2e'
 
-async function stageTerminal(page: Page, options: { runStatus?: number } = {}) {
+type RunReply = { status: number; json: Item }
+
+async function stageTerminal(page: Page, options: { runReply?: RunReply; rememberTerminalTab?: boolean } = {}) {
+  if (options.rememberTerminalTab) {
+    await page.addInitScript(() => localStorage.setItem('maestro:details-tab', 'terminal'))
+  }
   const server = {
     seq: 0,
     items: [] as Item[],
     runs: [] as string[],
     messages: [] as Array<{ text: string }>,
+    /** The URL of every terminal socket the page opened, in order. */
+    terminalUrls: [] as string[],
+    /** What the backend does with the next terminal socket (default: a fresh replay without runs). */
+    onTerminal: ((ws: WebSocketRoute) => {
+      ws.send(JSON.stringify({ type: 'replay', data: '', cols: 80, rows: 24, runs: [] }))
+    }) as (ws: WebSocketRoute) => void,
   }
   let events: WebSocketRoute | null = null
   let terminal: WebSocketRoute | null = null
@@ -24,7 +35,8 @@ async function stageTerminal(page: Page, options: { runStatus?: number } = {}) {
   })
   await page.routeWebSocket(/\/ws\/terminal\//, (ws) => {
     terminal = ws
-    ws.send(JSON.stringify({ type: 'replay', data: '', cols: 80, rows: 24 }))
+    server.terminalUrls.push(ws.url())
+    server.onTerminal(ws)
   })
   await page.route(/\/api\/sessions\/[0-9a-f-]+$/, async (route) => {
     if (route.request().method() !== 'GET') return route.fallback()
@@ -51,11 +63,8 @@ async function stageTerminal(page: Page, options: { runStatus?: number } = {}) {
   })
   await page.route(/\/api\/sessions\/[0-9a-f-]+\/terminal\/run$/, async (route) => {
     server.runs.push((route.request().postDataJSON() as { command: string }).command)
-    if (options.runStatus === 409) {
-      await route.fulfill({ status: 409, json: { detail: 'O terminal está ocupado.' } })
-      return
-    }
-    await route.fulfill({ status: 202, json: { run_id: 'run-1' } })
+    const reply = options.runReply ?? { status: 202, json: { run_id: 'run-1' } }
+    await route.fulfill(reply)
   })
   await page.route(/\/api\/sessions\/[0-9a-f-]+\/messages$/, async (route) => {
     server.messages.push(route.request().postDataJSON() as { text: string })
@@ -67,6 +76,10 @@ async function stageTerminal(page: Page, options: { runStatus?: number } = {}) {
   return {
     server,
     sessionId,
+    /** The latest terminal socket, to close it from the "backend". */
+    socket() {
+      return terminal!
+    },
     /** A frame of the terminal socket, as the backend would send it. */
     async frame(data: Item) {
       await expect.poll(() => terminal !== null).toBe(true)
@@ -82,7 +95,7 @@ async function stageTerminal(page: Page, options: { runStatus?: number } = {}) {
   }
 }
 
-const playButton = (page: Page) => page.locator(`[data-item-id="${ASSISTANT_ID}"]`).getByRole('button', { name: /Rodar no terminal|Rodando|Enviado|Interrompido|O terminal está ocupado/ })
+const playButton = (page: Page) => page.locator(`[data-item-id="${ASSISTANT_ID}"]`).getByRole('button', { name: /Rodar no terminal|Rodando|Enviado|Interrompido|O terminal está ocupado|A pasta da sessão/ })
 
 async function revealPlay(page: Page) {
   const block = page.locator(`[data-item-id="${ASSISTANT_ID}"] .code-block`)
@@ -155,7 +168,7 @@ test('"Anexar tela" vira o chip "Trecho do terminal" e o envio leva o prefixo de
 })
 
 test('409 no run mostra "O terminal está ocupado"', async ({ page, consoleErrors }) => {
-  const t = await stageTerminal(page, { runStatus: 409 })
+  const t = await stageTerminal(page, { runReply: { status: 409, json: { detail: 'O terminal está ocupado.' } } })
   await revealPlay(page)
   await playButton(page).click()
   await expect.poll(() => t.server.runs).toEqual([COMMAND])
@@ -193,4 +206,113 @@ test('Finalizar com o terminal ocupado pede confirmação', async ({ page }) => 
   await dialog.getByTestId('confirm-cancel').click()
   await expect(dialog).toHaveCount(0)
   await expect(page.getByTestId('toggle-finished')).toHaveText('Finalizar')
+})
+
+// A snapshot fetch still in flight when a test ends would otherwise fail it with "Test ended".
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
+})
+
+const openParam = (url: string) => new URL(url).searchParams.get('open')
+
+test('com a aba Terminal lembrada, abrir a conversa só liga: sem open=1, e o 4410 mostra o estado vazio', async ({ page }) => {
+  const t = await stageTerminal(page, { rememberTerminalTab: true })
+  t.server.onTerminal = (ws) => ws.close({ code: 4410 })
+  // The staging already opened a conversation with the remembered tab; reopen it with the 4410 in place.
+  await page.goto('/sessions')
+  await page.getByText('Explique a estrutura do projeto').first().click()
+  await expect(page.getByTestId('terminal-empty')).toContainText('Nenhum terminal aberto nesta sessão.')
+  await expect(page.getByTestId('terminal-ended')).toHaveCount(0)
+  expect(t.server.terminalUrls.length).toBeGreaterThan(0)
+  expect(t.server.terminalUrls.map(openParam)).toEqual(t.server.terminalUrls.map(() => null))
+
+  // The explicit button reconnects asking to open.
+  t.server.onTerminal = (ws) => ws.send(JSON.stringify({ type: 'replay', data: 'aberto\r\n', cols: 80, rows: 24, runs: [] }))
+  const before = t.server.terminalUrls.length
+  await page.getByTestId('terminal-open').click()
+  await expect.poll(() => t.server.terminalUrls.length).toBe(before + 1)
+  expect(openParam(t.server.terminalUrls.at(-1)!)).toBe('1')
+  await expect(page.getByTestId('terminal-screen')).toContainText('aberto')
+  await expect(page.getByTestId('terminal-empty')).toHaveCount(0)
+})
+
+test('os gestos explícitos abrem com open=1: a aba Terminal e o botão do cabeçalho', async ({ page }) => {
+  const t = await stageTerminal(page)
+  await expect(page.locator(`[data-item-id="${ASSISTANT_ID}"]`)).toBeVisible()
+  // Without a remembered tab the panel opens on Detalhes and nothing connects.
+  expect(t.server.terminalUrls).toEqual([])
+
+  await page.getByTestId('details-tab-terminal').click()
+  await expect(page.getByTestId('terminal-pane')).toBeVisible()
+  await expect.poll(() => t.server.terminalUrls.length).toBe(1)
+  expect(openParam(t.server.terminalUrls[0]!)).toBe('1')
+
+  // The tab is now remembered: a reload only attaches, without asking to open.
+  await page.reload()
+  await expect.poll(() => t.server.terminalUrls.length).toBe(2)
+  expect(openParam(t.server.terminalUrls[1]!)).toBeNull()
+})
+
+test('o botão Terminal do cabeçalho abre com open=1', async ({ page }) => {
+  const t = await stageTerminal(page)
+  await expect(page.locator(`[data-item-id="${ASSISTANT_ID}"]`)).toBeVisible()
+  expect(t.server.terminalUrls).toEqual([])
+  await page.getByTestId('terminal-button').click()
+  await expect(page.getByTestId('terminal-pane')).toBeVisible()
+  await expect.poll(() => t.server.terminalUrls.length).toBe(1)
+  expect(openParam(t.server.terminalUrls[0]!)).toBe('1')
+})
+
+test('o play que perde o frame final se recupera pelo replay e pode rodar de novo', async ({ page }) => {
+  const t = await stageTerminal(page)
+  await revealPlay(page)
+  await playButton(page).click()
+  await expect.poll(() => t.server.runs).toEqual([COMMAND])
+  expect(openParam(t.server.terminalUrls[0]!)).toBe('1')
+  await t.frame({ type: 'run', run_id: 'run-1', state: 'running', exit_code: null })
+  await expect(playButton(page)).toHaveText('Rodando…')
+
+  // The socket drops before the "sent" frame; the button stays on "Rodando…" until the replay says otherwise.
+  t.server.onTerminal = (ws) => ws.send(JSON.stringify({
+    type: 'replay', data: '', cols: 80, rows: 24, runs: [{ run_id: 'run-1', state: 'sent', exit_code: 0 }],
+  }))
+  t.socket().close({ code: 1006 })
+  await page.getByTestId('terminal-reopen').click()
+  await expect(playButton(page)).toHaveText('Enviado · código 0')
+
+  // A new click makes another POST.
+  await revealPlay(page)
+  await playButton(page).click()
+  await expect.poll(() => t.server.runs).toEqual([COMMAND, COMMAND])
+})
+
+test('o play cujo run some do replay vira "Interrompido" e pode rodar de novo', async ({ page }) => {
+  const t = await stageTerminal(page)
+  await revealPlay(page)
+  await playButton(page).click()
+  await expect.poll(() => t.server.runs).toEqual([COMMAND])
+  await t.frame({ type: 'run', run_id: 'run-1', state: 'running', exit_code: null })
+  await expect(playButton(page)).toHaveText('Rodando…')
+
+  t.server.onTerminal = (ws) => ws.send(JSON.stringify({ type: 'replay', data: '', cols: 80, rows: 24, runs: [] }))
+  t.socket().close({ code: 1006 })
+  await page.getByTestId('terminal-reopen').click()
+  await expect(playButton(page)).toHaveText('Interrompido')
+
+  await revealPlay(page)
+  await playButton(page).click()
+  await expect.poll(() => t.server.runs).toEqual([COMMAND, COMMAND])
+})
+
+test('409 com a pasta ausente mostra o motivo, não "ocupado"', async ({ page, consoleErrors }) => {
+  const t = await stageTerminal(page, {
+    runReply: { status: 409, json: { detail: 'A pasta da sessão não existe mais.' } },
+  })
+  await revealPlay(page)
+  await playButton(page).click()
+  await expect.poll(() => t.server.runs).toEqual([COMMAND])
+  await expect(playButton(page)).toHaveText('A pasta da sessão não existe mais.')
+  await expect(page.getByText('O terminal está ocupado')).toHaveCount(0)
+  expect(consoleErrors.filter((m) => !m.includes('409'))).toEqual([])
+  consoleErrors.length = 0
 })
