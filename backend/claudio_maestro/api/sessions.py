@@ -308,10 +308,10 @@ async def search_sessions(
 
 @router.patch("/sessions/{session_id}", response_model=SessionOut)
 async def update_session(
-    session_id: str, body: SessionPatch, manager: ManagerDep
+    session_id: str, body: SessionPatch, request: Request, manager: ManagerDep
 ) -> dict[str, Any]:
     try:
-        return await manager.update(
+        updated = await manager.update(
             session_id,
             finished=body.finished,
             title=body.title,
@@ -330,6 +330,11 @@ async def update_session(
         raise _http_error(exc) from exc
     except groups.GroupError as exc:
         raise group_http_error(exc) from exc
+    if body.finished is True:
+        # Finishing by hand closes the terminal of the session, and what it was running is not
+        # sent to the conversation. The automatic finish (idleness) does not come through here.
+        await request.app.state.terminals.kill(session_id, interrupted=True)
+    return updated
 
 
 @router.post("/sessions/seen")

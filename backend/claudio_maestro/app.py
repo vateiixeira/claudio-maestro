@@ -44,7 +44,13 @@ from claudio_maestro.security import (
     allowed_hosts,
     allowed_origins,
 )
-from claudio_maestro.sessions import HistoryExists, RenameSession, SessionManager
+from claudio_maestro.sessions import (
+    HistoryExists,
+    RenameSession,
+    SessionError,
+    SessionManager,
+)
+from claudio_maestro.terminal import TerminalManager
 from claudio_maestro.textindex import INDEX_FILENAME, TextIndex
 from claudio_maestro.updates import FetchRelease, UpdateChecker, fetch_latest_release
 from claudio_maestro.usage import FetchUsage, UsageChecker
@@ -86,6 +92,7 @@ def create_app(
     run_mode: RunMode | None = None,
     self_updater: Callable[..., Any] | None = None,
     claude_cli: ClaudeCliResolver | None = None,
+    terminal_env_overrides: dict[str, str] | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -108,6 +115,8 @@ def create_app(
     `self_updater`: factory of the updater, called with `publish`, `data_dir` and `restart` (tests pass fakes).
     `claude_cli`: which `claude` the SDK starts; None builds the real resolver (it only reads the
     machine when running the real agent).
+    `terminal_env_overrides`: environment variables set in the shells of the session terminals
+    (tests pass a temporary `HOME`, so the user's `~/.bashrc` stays out of them).
     """
 
     @asynccontextmanager
@@ -231,6 +240,18 @@ def create_app(
             # Sessions that could not be reattached show as interrupted; the app must start.
             logger.exception("Falha ao religar as sessões do agentd")
         app.state.commands = CommandCatalog(app.state.sessions.agent_factory)
+
+        async def send_terminal_message(session_id: str, text: str) -> bool:
+            """The output of a play button run goes to the session as a user message."""
+            try:
+                await app.state.sessions.send(session_id, text)
+            except SessionError:
+                return False
+            return True
+
+        app.state.terminals = TerminalManager(
+            send_message=send_terminal_message, env_overrides=terminal_env_overrides
+        )
         app.state.files = FileIndex()
         app.state.activity = ActivityReader(app.state.settings.db_path, session_file)
         agent_dir = (app.state.settings.data_dir / AGENT_DIR_NAME).resolve()
@@ -359,6 +380,7 @@ def create_app(
                 with suppress(asyncio.CancelledError):
                     await task
             await app.state.commands.aclose()
+            await app.state.terminals.aclose()
             await app.state.sessions.shutdown()
             if app.state.agentd is not None:
                 await app.state.agentd.aclose()

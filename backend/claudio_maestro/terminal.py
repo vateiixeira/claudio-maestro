@@ -467,7 +467,7 @@ class Terminal:
         capture = self._capture
         if capture is not None and capture.started and "\r" in data:
             self._end_capture("input", None)
-        self._send_bytes(data.encode("utf-8"))
+        self._send_bytes(data.encode("utf-8", errors="replace"))
 
     def resize(self, cols: int, rows: int) -> None:
         if not self._alive or cols < 1 or rows < 1:
