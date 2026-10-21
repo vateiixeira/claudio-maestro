@@ -141,6 +141,9 @@ __maestro_preexec() { printf '\e]133;C;%s\a' "$__maestro_nonce"; }
 add-zsh-hook precmd __maestro_precmd
 add-zsh-hook preexec __maestro_preexec
 precmd_functions=(__maestro_precmd ${precmd_functions:#__maestro_precmd})
+# PROMPT_SP prints "%" plus spaces and carriage returns before the precmd hooks, that is,
+# inside the output of the command, and erases its last line when it has no final newline.
+unsetopt prompt_sp
 """
 
 
