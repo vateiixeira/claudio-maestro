@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import pytest
+from shell_helpers import capable_bash
 
 from claudio_maestro.termmarks import OscTracker, bash_rcfile, zsh_rcfiles
 
@@ -189,6 +190,9 @@ def test_zsh_rcfiles_content():
     assert "133;D" in rc and "133;A" in rc and "133;C" in rc
     # The user's files load before the hooks are registered.
     assert rc.index('"$HOME/.zshrc"') < rc.index("add-zsh-hook")
+    # PROMPT_SP prints "%" plus spaces and CRs between the command and its end mark, which
+    # would erase the last line of an output with no final newline.
+    assert rc.index('"$HOME/.zshrc"') < rc.index("unsetopt prompt_sp")
 
 
 def _read_for(fd: int, seconds: float) -> str:
@@ -271,14 +275,14 @@ def _exercise_shell(master: int, proc: subprocess.Popen):
         os.close(master)
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not installed")
+@pytest.mark.skipif(capable_bash() is None, reason="needs bash 4.4+ (PS0)")
 def test_real_bash_emits_marks(tmp_path):
     home = tmp_path / "userhome"
     home.mkdir()
     rc = tmp_path / "rc"
     rc.write_text(bash_rcfile())
     master, proc = _run_shell(
-        [shutil.which("bash"), "--rcfile", str(rc), "-i"], _shell_env(home), tmp_path
+        [capable_bash(), "--rcfile", str(rc), "-i"], _shell_env(home), tmp_path
     )
     _exercise_shell(master, proc)
 

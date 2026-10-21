@@ -1,4 +1,4 @@
-"""Tests for the session terminal manager (real bash in a temporary folder)."""
+"""Tests for the session terminal manager (a real shell in a temporary folder)."""
 
 import asyncio
 import os
@@ -52,16 +52,25 @@ async def until(predicate: Any, timeout: float = TIMEOUT) -> None:
 
 
 def session_processes(sid: int) -> list[str]:
-    """`pid args` of the live processes (zombies excluded) that belong to session `sid`."""
+    """`pid args` of the live processes (zombies excluded) that belong to session `sid`.
+
+    Portable: `ps -ax -o pid=,stat=,args=` exists on Linux and macOS (the `sid` keyword does not).
+    """
     out = subprocess.run(
-        ["ps", "-eo", "pid,sid,stat,args"], capture_output=True, text=True, check=True
+        ["ps", "-ax", "-o", "pid=,stat=,args="], capture_output=True, text=True, check=True
     ).stdout
-    rows = [line.split(None, 3) for line in out.splitlines()[1:]]
-    return [
-        f"{row[0]} {row[3] if len(row) > 3 else ''}"
-        for row in rows
-        if row[1] == str(sid) and not row[2].startswith("Z")
-    ]
+    found: list[str] = []
+    for line in out.splitlines():
+        row = line.split(None, 2)
+        if len(row) < 2 or not row[0].isdigit() or row[1].startswith("Z"):
+            continue
+        try:
+            if os.getsid(int(row[0])) != sid:
+                continue
+        except OSError:
+            continue
+        found.append(f"{row[0]} {row[2] if len(row) > 2 else ''}")
+    return found
 
 
 def drain(queue: asyncio.Queue[Frame]) -> list[Frame]:
@@ -245,7 +254,7 @@ async def test_replay_keeps_last_chars(
     terminal = await manager.open("s1", workdir)
     await manager.run("s1", workdir, "head -c 400000 /dev/zero | tr '\\0' a")
     await until(lambda: sent.calls)
-    await until(lambda: re.search(r"\$ (\x1b\[\?2004h)?$", terminal.replay()) is not None)
+    await until(lambda: re.search(r"[$%#] (\x1b\[K)?(\x1b\[\?2004h)?$", terminal.replay()) is not None)
     assert len(terminal.replay()) <= REPLAY_LIMIT
     assert terminal.replay().count("a") > 200_000
 
@@ -268,6 +277,38 @@ async def test_zsh_emits_marks(tmp_path: Path, sent: Sent, workdir: Path) -> Non
         await manager.run("s1", workdir, "false")
         await until(lambda: sent.calls)
         assert sent.runs()[0]["exit_code"] == 1
+    finally:
+        await manager.aclose()
+
+
+@pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh is not installed")
+async def test_zsh_keeps_output_without_final_newline(
+    tmp_path: Path, sent: Sent, workdir: Path
+) -> None:
+    home = tmp_path / "zhome"
+    home.mkdir(exist_ok=True)
+    manager = TerminalManager(send_message=sent, shell="zsh", env_overrides={"HOME": str(home)})
+    try:
+        await manager.run("s1", workdir, "printf 'sem quebra'")
+        await until(lambda: sent.calls)
+        assert sent.runs()[0]["output"] == "sem quebra"
+    finally:
+        await manager.aclose()
+
+
+@pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh is not installed")
+async def test_zsh_has_a_controlling_terminal(tmp_path: Path, sent: Sent, workdir: Path) -> None:
+    """zsh does not take the terminal by itself (bash does): without it Ctrl-C does nothing."""
+    home = tmp_path / "zhome"
+    home.mkdir(exist_ok=True)
+    manager = TerminalManager(send_message=sent, shell="zsh", env_overrides={"HOME": str(home)})
+    try:
+        terminal = await manager.open("s1", workdir)
+        await manager.run("s1", workdir, "sleep 5")
+        await until(lambda: terminal.busy)
+        terminal.write("\x03")
+        await until(lambda: sent.calls)
+        assert sent.runs()[0]["exit_code"] == 130
     finally:
         await manager.aclose()
 
@@ -364,12 +405,22 @@ async def test_aclose_stops_every_terminal(
     assert isinstance(one, Terminal)
 
 
+@pytest.fixture(params=["proc", "ps"])
+def scan(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    """How the session is scanned: `/proc` (Linux) or `ps` (macOS has no `/proc`)."""
+    if request.param == "ps":
+        monkeypatch.setattr(terminal_module, "_HAS_PROC", False)
+    elif not terminal_module._HAS_PROC:
+        pytest.skip("no /proc on this system")
+    return str(request.param)
+
+
 @pytest.mark.parametrize(
     "command",
     [
         "nohup sleep 300 >/dev/null 2>&1 &",
         "sleep 300 & disown",
-        "bash -c 'trap \"\" HUP; sleep 300'",
+        "sh -c 'trap \"\" HUP; sleep 300'",
     ],
     ids=["nohup", "disown", "foreground-ignoring-hup"],
 )
@@ -378,6 +429,7 @@ async def test_kill_clears_the_whole_session(
     sent: Sent,
     workdir: Path,
     monkeypatch: pytest.MonkeyPatch,
+    scan: str,
     command: str,
 ) -> None:
     monkeypatch.setattr(terminal_module, "KILL_GRACE_SECONDS", 0.5)
@@ -394,6 +446,7 @@ async def test_shell_exit_with_background_job_closes_terminal(
     sent: Sent,
     workdir: Path,
     monkeypatch: pytest.MonkeyPatch,
+    scan: str,
     pidfd: bool,
 ) -> None:
     monkeypatch.setattr(terminal_module, "KILL_GRACE_SECONDS", 0.5)
@@ -554,3 +607,116 @@ async def test_runs_history_marks_a_killed_run_interrupted(
     await until(lambda: terminal.busy)
     await manager.kill("s1", interrupted=True)
     assert terminal.runs() == [{"run_id": run_id, "state": "interrupted", "exit_code": None}]
+
+
+def test_ps_scan_finds_the_session_and_only_it(tmp_path: Path) -> None:
+    """The scan without /proc lists the processes of a session, whatever their process group."""
+    mine = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    other = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        assert terminal_module._ps_members(mine.pid) == [mine.pid]
+        assert terminal_module._ps_members(other.pid) == [other.pid]
+    finally:
+        mine.kill()
+        other.kill()
+        mine.wait()
+        other.wait()
+    assert terminal_module._ps_members(mine.pid) == []
+
+
+def test_ps_scan_runs_ps_without_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake_run(args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        seen.update(args=args, **kwargs)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(terminal_module.subprocess, "run", fake_run)
+    assert terminal_module._ps_members(1) == []
+    assert seen["args"][0] == "ps" and isinstance(seen["args"], list)
+    assert not seen.get("shell")
+    assert 0 < seen["timeout"] <= 5
+    assert "HOME" not in seen["env"]
+
+
+def test_ps_scan_failure_is_logged_and_empty(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        raise FileNotFoundError("ps")
+
+    monkeypatch.setattr(terminal_module.subprocess, "run", broken)
+    with caplog.at_level("WARNING"):
+        assert terminal_module._ps_members(1) == []
+    assert "ps" in caplog.text
+
+
+async def test_ps_scan_runs_off_the_loop(
+    manager: TerminalManager, workdir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    monkeypatch.setattr(terminal_module, "_HAS_PROC", False)
+    monkeypatch.setattr(terminal_module, "KILL_GRACE_SECONDS", 0.5)
+    threads: list[int] = []
+    real = terminal_module._ps_members
+
+    def spy(sid: int) -> list[int]:
+        threads.append(threading.get_ident())
+        return real(sid)
+
+    monkeypatch.setattr(terminal_module, "_ps_members", spy)
+    await manager.open("s1", workdir)
+    await manager.kill("s1", interrupted=True)
+    assert threads and threading.get_ident() not in threads
+
+
+async def test_shell_is_picked_off_the_loop(
+    manager: TerminalManager, workdir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    threads: list[int] = []
+    real = terminal_module._pick_shell
+
+    def spy(shell: str | None) -> str:
+        threads.append(threading.get_ident())
+        return real(shell)
+
+    monkeypatch.setattr(terminal_module, "_pick_shell", spy)
+    await manager.open("s1", workdir)
+    assert threads and threading.get_ident() not in threads
+
+
+async def test_every_shell_starts_through_the_tty_trampoline(
+    tmp_path: Path, sent: Sent, workdir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bash takes the terminal by itself on Linux, but not necessarily everywhere."""
+    import sys
+
+    from shell_helpers import capable_bash
+
+    shells = [shell for shell in (capable_bash(), shutil.which("zsh")) if shell]
+    if not shells:
+        pytest.skip("no usable shell")
+    spawned: list[list[str]] = []
+    real = subprocess.Popen
+
+    def spy(args: Any, *a: Any, **kw: Any) -> Any:
+        if list(args)[0] == sys.executable:  # not the version check of the bash
+            spawned.append(list(args))
+        return real(args, *a, **kw)
+
+    monkeypatch.setattr(terminal_module.subprocess, "Popen", spy)
+    for shell in shells:
+        manager = TerminalManager(
+            send_message=sent, shell=shell, env_overrides={"HOME": str(tmp_path / "h")}
+        )
+        try:
+            await manager.open("s1", workdir)
+        finally:
+            await manager.aclose()
+    assert len(spawned) == len(shells)
+    for args, shell in zip(spawned, shells, strict=True):
+        assert args[0] == sys.executable and args[1:4] == ["-I", "-S", "-c"]
+        assert args[5] == shell

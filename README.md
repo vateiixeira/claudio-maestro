@@ -45,6 +45,7 @@ O que ele não é, de propósito: IDE, terminal embutido, editor de código ou �
 - [Python 3.13](https://www.python.org/) e [uv](https://docs.astral.sh/uv/)
 - [Node 22.12 ou mais novo](https://nodejs.org/) e [pnpm](https://pnpm.io/installation)
 - git
+- Para o terminal da sessão, bash 4.4 ou mais novo, ou zsh. No macOS o bash da Apple é o 3.2, então o app usa o zsh (ou um bash mais novo do Homebrew, se houver)
 - No Linux, o `zenity` (opcional) abre o seletor de pastas nativo. Sem ele, o app usa o navegador de pastas próprio
 - [Claude Code](https://code.claude.com/docs) instalado e autenticado na máquina
 

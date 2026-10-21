@@ -21,6 +21,7 @@ import shutil
 import signal
 import struct
 import subprocess
+import sys
 import tempfile
 import termios
 import time
@@ -54,6 +55,27 @@ DELIVER_WAIT_SECONDS = 5.0
 SHELL_POLL_SECONDS = 0.25
 # Interval of the checks while the processes of a closing terminal go away.
 STOP_POLL_SECONDS = 0.05
+
+# Bash older than this has no `PS0`, so the start mark never comes (macOS ships 3.2).
+MIN_BASH = (4, 4)
+BASH_VERSION_SCRIPT = 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"'
+BASH_CHECK_SECONDS = 2.0
+# Limit of the `ps` that lists the processes where there is no `/proc`.
+PS_TIMEOUT_SECONDS = 2.0
+# Interval of the checks while a closing terminal is scanned with `ps` (a process per check).
+PS_POLL_SECONDS = 0.25
+# Where Homebrew installs bash; the PATH of a service may not list them.
+BASH_FALLBACKS = ("/opt/homebrew/bin/bash", "/usr/local/bin/bash")
+ZSH_FALLBACK = "/bin/zsh"
+
+# Makes the PTY (stdin) the controlling terminal of the new session and becomes the shell.
+# zsh does not take it by itself, so without job control Ctrl-C would not reach the command;
+# bash does on Linux, but not necessarily elsewhere.
+_TAKE_TTY = (
+    "import fcntl, os, sys, termios\n"
+    "fcntl.ioctl(0, termios.TIOCSCTTY, 0)\n"
+    "os.execv(sys.argv[1], sys.argv[1:])\n"
+)
 
 DEFAULT_COLS = 120
 DEFAULT_ROWS = 30
@@ -132,6 +154,10 @@ def _session_members(sid: int) -> list[int]:
     Job control puts each job in its own process group and `nohup`/`disown` detach it from the
     shell, but they all stay in the session, which is what a closing terminal has to clear.
     """
+    return _proc_members(sid) if _HAS_PROC else _ps_members(sid)
+
+
+def _proc_members(sid: int) -> list[int]:
     members: list[int] = []
     try:
         names = os.listdir("/proc")
@@ -153,6 +179,39 @@ def _session_members(sid: int) -> list[int]:
     return members
 
 
+def _ps_members(sid: int) -> list[int]:
+    """Same as `_proc_members` where there is no `/proc` (macOS): `ps` lists, `getsid` filters.
+
+    Blocking (it starts a process): the closing code runs it in a thread. When `ps` fails the
+    result is empty and the caller falls back on the process group of the shell.
+    """
+    try:
+        out = subprocess.run(
+            ["ps", "-ax", "-o", "pid=,stat="],
+            capture_output=True,
+            text=True,
+            timeout=PS_TIMEOUT_SECONDS,
+            stdin=subprocess.DEVNULL,
+            env={"PATH": os.defpath, "LC_ALL": "C"},
+            check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("Could not list the processes with ps: %s", exc)
+        return []
+    members: list[int] = []
+    for line in out.splitlines():
+        row = line.split()
+        if len(row) < 2 or not row[0].isdigit() or row[1].startswith("Z"):
+            continue
+        pid = int(row[0])
+        try:
+            if os.getsid(pid) == sid:
+                members.append(pid)
+        except OSError:  # gone meanwhile, or not ours to look at
+            continue
+    return members
+
+
 def _group_alive(pgid: int) -> bool:
     try:
         os.killpg(pgid, 0)
@@ -163,21 +222,79 @@ def _group_alive(pgid: int) -> bool:
     return True
 
 
+_BASH_VERSIONS: dict[str, tuple[int, int] | None] = {}
+
+
+def _bash_version(path: str) -> tuple[int, int] | None:
+    """Version of the bash at `path`, or None when it is not a working bash.
+
+    No shell, a minimal environment and a short timeout: the file is whatever `$SHELL` or the
+    PATH point to. A version, or an answer that is no version, is kept per path; a timeout or
+    a file that does not start is not (the first run of a binary can be slow on macOS).
+    """
+    if path in _BASH_VERSIONS:
+        return _BASH_VERSIONS[path]
+    try:
+        out = subprocess.run(
+            [path, "--norc", "--noprofile", "-c", BASH_VERSION_SCRIPT],
+            capture_output=True,
+            text=True,
+            timeout=BASH_CHECK_SECONDS,
+            stdin=subprocess.DEVNULL,
+            env={"PATH": os.defpath, "LC_ALL": "C"},
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    try:
+        major, _, minor = out.strip().partition(".")
+        version: tuple[int, int] | None = (int(major), int(minor))
+    except ValueError:
+        version = None
+    _BASH_VERSIONS[path] = version
+    return version
+
+
+def _usable_bash(path: str | None) -> str | None:
+    """`path` when it is a bash that can print the marks (the `PS0` of the start mark is 4.4+)."""
+    if path is None or not os.path.isabs(path) or not os.access(path, os.X_OK):
+        return None
+    version = _bash_version(path)
+    return path if version is not None and version >= MIN_BASH else None
+
+
+def _zsh_candidate(shell_path: str) -> str | None:
+    if os.path.isabs(shell_path) and os.path.basename(shell_path) == "zsh":
+        if os.access(shell_path, os.X_OK):
+            return shell_path
+    found = shutil.which("zsh")
+    if found is not None:
+        return found
+    return ZSH_FALLBACK if os.access(ZSH_FALLBACK, os.X_OK) else None
+
+
 def _pick_shell(shell: str | None) -> str:
-    """The shell executable: bash or zsh (the `$SHELL` of the user, bash for anything else)."""
+    """The shell executable: the `$SHELL` of the user when it is zsh, else a bash 4.4+, else zsh.
+
+    The marks of bash need 4.4 and the bash of macOS is 3.2, where the app uses zsh.
+    """
     candidate = shell if shell is not None else os.environ.get("SHELL", "")
-    name = os.path.basename(candidate)
-    if name not in ("bash", "zsh"):
-        name = "bash"
-    if os.path.isabs(candidate) and os.path.basename(candidate) == name:
-        if os.access(candidate, os.X_OK):
-            return candidate
-    found = shutil.which(name)
-    if found is None and name == "zsh":
-        found = shutil.which("bash")
-    if found is None:
-        raise TerminalStartError(f"Shell not found: {name}")
-    return found
+    if os.path.basename(candidate) == "zsh":
+        zsh = _zsh_candidate(candidate)
+        if zsh is not None:
+            return zsh
+    is_bash = os.path.basename(candidate) == "bash"
+    for path in (
+        candidate if is_bash else None,
+        shutil.which("bash"),
+        *BASH_FALLBACKS,
+    ):
+        bash = _usable_bash(path)
+        if bash is not None:
+            return bash
+    zsh = _zsh_candidate(candidate)
+    if zsh is not None:
+        return zsh
+    raise TerminalStartError("O terminal precisa de bash 4.4 ou mais novo, ou de zsh.")
 
 
 def _shell_env(nonce: str, overrides: dict[str, str] | None) -> dict[str, str]:
@@ -216,7 +333,7 @@ class Terminal:
         cwd: Path,
         *,
         send_message: SendMessage,
-        shell: str | None,
+        shell: str,
         env_overrides: dict[str, str] | None,
         on_closing: Callable[["Terminal", "asyncio.Task[None]"], None],
     ) -> None:
@@ -261,19 +378,20 @@ class Terminal:
     # Start ---------------------------------------------------------------------------
 
     def _spawn(
-        self, cwd: Path, shell: str | None, env_overrides: dict[str, str] | None
+        self, cwd: Path, shell: str, env_overrides: dict[str, str] | None
     ) -> "subprocess.Popen[bytes]":
-        exe = _pick_shell(shell)
+        exe = shell
         env = _shell_env(self._nonce, env_overrides)
         if os.path.basename(exe) == "zsh":
             for name, content in zsh_rcfiles().items():
                 (self._tmpdir / name).write_text(content)
             env["ZDOTDIR"] = str(self._tmpdir)
-            args = [exe, "-i"]
+            shell_args = [exe, "-i"]
         else:
             rcfile = self._tmpdir / "bashrc"
             rcfile.write_text(bash_rcfile())
-            args = [exe, "--rcfile", str(rcfile), "-i"]
+            shell_args = [exe, "--rcfile", str(rcfile), "-i"]
+        args = [sys.executable, "-I", "-S", "-c", _TAKE_TTY, *shell_args]
         master, slave = os.openpty()
         self._master_fd = master
         try:
@@ -636,35 +754,48 @@ class Terminal:
                 os.close(self._master_fd)
             self._cleanup_files()
 
-    def _signal(self, signum: int) -> None:
-        """Signal every process of the shell's session, not only its process group."""
-        for pid in _session_members(self.pid):
+    def _signal(self, signum: int, members: list[int] | None = None) -> None:
+        """Signal every process of the shell's session, not only its process group.
+
+        Without `members` it scans here, in the caller (the paths of a cancelled close).
+        """
+        for pid in _session_members(self.pid) if members is None else members:
             with suppress(ProcessLookupError, PermissionError):
                 os.kill(pid, signum)
         if not _HAS_PROC and self._proc.returncode is None:
             with suppress(ProcessLookupError, PermissionError):
                 os.killpg(self.pid, signum)
 
-    def _running(self) -> bool:
-        if self._proc.poll() is None or _session_members(self.pid):
+    async def _scan(self) -> list[int]:
+        """The session members; `ps` runs in a thread so it does not stop the loop."""
+        if _HAS_PROC:
+            return _session_members(self.pid)
+        return await asyncio.to_thread(_session_members, self.pid)
+
+    def _running(self, members: list[int]) -> bool:
+        if self._proc.poll() is None or members:
             return True
         return not _HAS_PROC and _group_alive(self.pid)
 
     async def _wait_gone(self, timeout: float, *, resignal: int | None = None) -> bool:
         deadline = self._loop.time() + timeout
-        while self._running():
+        interval = STOP_POLL_SECONDS if _HAS_PROC else max(STOP_POLL_SECONDS, PS_POLL_SECONDS)
+        while True:
+            members = await self._scan()
+            if not self._running(members):
+                return True
             if self._loop.time() >= deadline:
                 return False
             if resignal is not None:
-                self._signal(resignal)  # catches what the dying processes forked meanwhile
-            await asyncio.sleep(STOP_POLL_SECONDS)
-        return True
+                self._signal(resignal, members)  # catches what the dying processes forked
+            await asyncio.sleep(interval)
 
     async def _terminate(self) -> None:
         """SIGHUP to the whole session, SIGKILL after the grace period (as `_stop` in gitinfo)."""
         try:
-            if self._running():
-                self._signal(signal.SIGHUP)
+            members = await self._scan()
+            if self._running(members):
+                self._signal(signal.SIGHUP, members)
                 if await self._wait_gone(KILL_GRACE_SECONDS):
                     return
         except BaseException:
@@ -706,12 +837,17 @@ class TerminalManager:
         existing = self._terminals.get(session_id)
         if existing is not None:
             return existing
+        # Looks at files and may run `bash --version`: not on the loop.
+        exe = await asyncio.to_thread(_pick_shell, self._shell)
+        existing = self._terminals.get(session_id)
+        if existing is not None:  # another open won the race while the shell was picked
+            return existing
         try:
             terminal = Terminal(
                 session_id,
                 cwd,
                 send_message=self._send_message,
-                shell=self._shell,
+                shell=exe,
                 env_overrides=self._env_overrides,
                 on_closing=self._on_closing,
             )

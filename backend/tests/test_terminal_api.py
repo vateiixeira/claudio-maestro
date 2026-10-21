@@ -1,4 +1,4 @@
-"""Terminal routes: WebSocket, play endpoint and the app life cycle (real bash, fake agent)."""
+"""Terminal routes: WebSocket, play endpoint and the app life cycle (real shell, fake agent)."""
 
 import os
 import shutil
