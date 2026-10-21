@@ -7,11 +7,13 @@ import ConversationThread from '../components/conversation/ConversationThread.vu
 import DetailsPanel from '../components/details/DetailsPanel.vue'
 import { awayCounts, shouldShowAway } from '../conversation/awayCounts'
 import { readDetailsOpen, writeDetailsOpen } from '../detailsPanelPref'
+import { readDetailsTab, writeDetailsTab, type DetailsTab } from '../detailsTabPref'
 import { useMediaQuery } from '../useMediaQuery'
 import { useChangesPanelStore } from '../stores/changesPanel'
 import { useConversationStore } from '../stores/conversation'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
+import { useTerminalStore } from '../stores/terminal'
 
 // `embedded`: shown beside the project list. `projectId` is the project that list belongs to: "Fechar"
 // goes back to it, even if `?sessao=` points at a conversation of another project or one that is gone.
@@ -33,6 +35,7 @@ const sessions = useSessionsStore()
 const conversations = useConversationStore()
 const projects = useProjectsStore()
 const changesPanel = useChangesPanelStore()
+const terminal = useTerminalStore()
 
 const title = computed(() => conversations.get(props.id)?.title ?? sessions.find(props.id)?.title ?? '')
 const project = computed(() => {
@@ -87,6 +90,26 @@ function toggleDetails() {
     drawerOpen.value = !drawerOpen.value
   }
 }
+// The panel's tab: the user's choice is remembered; a request for the terminal only changes what is shown now.
+const detailsTab = ref<DetailsTab>(readDetailsTab())
+function chooseTab(tab: DetailsTab) {
+  detailsTab.value = tab
+  writeDetailsTab(tab)
+}
+function openDetailsPanel() {
+  if (sidePanel.value) sideOpen.value = true
+  else drawerOpen.value = true
+}
+// The terminal button, a play button or "Anexar" asks for the terminal of this session.
+watch(() => terminal.panelRequest, (request) => {
+  if (!request || request.sessionId !== props.id || missing.value) return
+  detailsTab.value = 'terminal'
+  openDetailsPanel()
+})
+// The terminal belongs to one session: leaving it (or the page) closes the connection, and coming back reconnects.
+watch(() => props.id, (_id, oldId) => { if (oldId) terminal.disconnect(oldId) })
+onBeforeUnmount(() => terminal.disconnect(props.id))
+
 // The drawer takes focus when it opens; Esc closes it and hands focus back to the toggle.
 // It listens on `window`, after every handler on the document or below it: an Esc that a menu,
 // dialog, rename or search already handled arrives with `defaultPrevented` set, and only the
@@ -114,8 +137,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onDrawerKeydown))
 // "Ver alterações" in the away card: the details panel, whose list has the changed files.
 function viewChanges() {
   if (changesPanel.sessionId === props.id) changesPanel.close()
-  if (sidePanel.value) sideOpen.value = true
-  else drawerOpen.value = true
+  detailsTab.value = 'details'
+  openDetailsPanel()
 }
 // "Ir para o fim": the thread's own scroller, the same move as its "Novidades abaixo" button.
 const column = ref<HTMLElement | null>(null)
@@ -130,8 +153,8 @@ function jumpToEnd() {
 // "Ver alterações" in an edit card opens the panel (the drawer on narrow screens).
 watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (open) => {
   if (!open) return
-  if (sidePanel.value) sideOpen.value = true
-  else drawerOpen.value = true
+  detailsTab.value = 'details'
+  openDetailsPanel()
 }, { immediate: true })
 </script>
 
@@ -216,9 +239,9 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
         <ConversationThread :key="id" :id="id" :find="findTerm" @missing="missing = true" @find-done="clearFind" />
       </template>
     </div>
-    <DetailsPanel v-if="!missing && sidePanel && sideOpen" :session-id="id" />
+    <DetailsPanel v-if="!missing && sidePanel && sideOpen" :session-id="id" :tab="detailsTab" @update:tab="chooseTab" />
     <div v-if="!missing && !sidePanel && drawerOpen" ref="drawer" data-test="details-drawer" class="absolute inset-y-0 right-0 z-30 flex max-w-full shadow-2xl">
-      <DetailsPanel :session-id="id" drawer @close="closeDrawer" />
+      <DetailsPanel :session-id="id" :tab="detailsTab" drawer @close="closeDrawer" @update:tab="chooseTab" />
     </div>
   </div>
 </template>

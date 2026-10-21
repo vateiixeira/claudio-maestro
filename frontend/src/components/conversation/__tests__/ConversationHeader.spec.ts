@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import ConversationHeader from '../ConversationHeader.vue'
@@ -10,7 +10,8 @@ import { useGroupsStore } from '../../../stores/groups'
 import { useLabelsStore } from '../../../stores/labels'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
-import { makeGitRepo, makeGroup, makeLabel, makeProject, makeSession } from '../../../test/factories'
+import { useTerminalStore } from '../../../stores/terminal'
+import { jsonResponse, makeGitRepo, makeGroup, makeLabel, makeProject, makeSession, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -289,5 +290,94 @@ describe('etiquetas no cabeçalho', () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', label_ids: [] })])
     expect(mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } }).find('[data-test="label-badges"]').exists()).toBe(false)
     expect(mount(ConversationHeader, { props: { id: 'desconhecida' }, global: { plugins: [pinia, router] } }).find('[data-test="label-badges"]').exists()).toBe(false)
+  })
+})
+
+describe('terminal no cabeçalho', () => {
+  function mountTerminalHeader() {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'waiting' })])
+    return mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+  }
+
+  it('o botão Terminal pede para abrir o painel do terminal da sessão', async () => {
+    const wrapper = mountTerminalHeader()
+    const store = useTerminalStore(pinia)
+    const button = wrapper.get('[data-test="terminal-button"]')
+    expect(button.attributes('aria-label')).toBe('Abrir o terminal')
+    expect(button.find('svg').exists()).toBe(true)
+    expect(store.panelRequest).toBeNull()
+
+    await button.trigger('click')
+    expect(store.panelRequest?.sessionId).toBe('s1')
+  })
+
+  it('o botão Terminal vem logo antes do espaço do botão de detalhes', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1' })])
+    const wrapper = mount(ConversationHeader, {
+      props: { id: 's1' },
+      slots: { 'details-toggle': '<button data-test="slot-toggle">d</button>' },
+      global: { plugins: [pinia, router] },
+    })
+    const html = wrapper.get('[data-test="header-actions"]').html()
+    expect(html.indexOf('data-test="terminal-button"')).toBeLessThan(html.indexOf('data-test="slot-toggle"'))
+    expect(html.indexOf('data-test="header-menu"')).toBeLessThan(html.indexOf('data-test="terminal-button"'))
+  })
+
+  it('Finalizar sem comando rodando segue direto', async () => {
+    const fetchMock = routeFetch({ 'PATCH /api/sessions/s1': () => jsonResponse(makeSession({ session_id: 's1', display_state: 'finished' })) })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountTerminalHeader()
+
+    await wrapper.get('[data-test="toggle-finished"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('Finalizar com comando rodando pede confirmação antes do PATCH', async () => {
+    const fetchMock = routeFetch({ 'PATCH /api/sessions/s1': () => jsonResponse(makeSession({ session_id: 's1', display_state: 'finished' })) })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountTerminalHeader()
+    useTerminalStore(pinia).sessions = { s1: { connected: true, busy: true, exited: false, closed: false, closeCode: null, buffer: '' } }
+
+    await wrapper.get('[data-test="toggle-finished"]').trigger('click')
+    await flushPromises()
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.text()).toContain('Finalizar com o terminal rodando?')
+    expect(dialog.text()).toContain('Há um comando rodando no terminal desta sessão. Finalizar encerra o terminal e o comando.')
+    expect(dialog.get('[data-test="confirm-ok"]').text()).toBe('Finalizar')
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    await dialog.get('[data-test="confirm-ok"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)).toEqual({ finished: true })
+  })
+
+  it('Cancelar o diálogo não finaliza a sessão', async () => {
+    const fetchMock = routeFetch({})
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountTerminalHeader()
+    useTerminalStore(pinia).sessions = { s1: { connected: true, busy: true, exited: false, closed: false, closeCode: null, buffer: '' } }
+
+    await wrapper.get('[data-test="toggle-finished"]').trigger('click')
+    await wrapper.get('[data-test="confirm-cancel"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('Reabrir uma sessão finalizada não pergunta nada, mesmo com comando rodando', async () => {
+    const fetchMock = routeFetch({ 'PATCH /api/sessions/s1': () => jsonResponse(makeSession({ session_id: 's1' })) })
+    vi.stubGlobal('fetch', fetchMock)
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'finished' })])
+    const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    useTerminalStore(pinia).sessions = { s1: { connected: true, busy: true, exited: false, closed: false, closeCode: null, buffer: '' } }
+
+    await wrapper.get('[data-test="toggle-finished"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

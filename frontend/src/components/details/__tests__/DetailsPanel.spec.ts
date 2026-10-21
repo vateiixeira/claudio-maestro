@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
+import { h } from 'vue'
+vi.mock('../../terminal/TerminalPane.vue', () => ({
+  __esModule: true,
+  default: { name: 'TerminalPane', props: ['sessionId'], setup: (props: { sessionId: string }) => () => h('div', { 'data-test': 'terminal-pane', 'data-session': props.sessionId }) },
+}))
 import DetailsPanel from '../DetailsPanel.vue'
 import { createAppRouter } from '../../../router'
 import { useChangesPanelStore } from '../../../stores/changesPanel'
@@ -36,7 +41,7 @@ beforeEach(async () => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-async function mountPanel(fetchHandlers = {}) {
+async function mountPanel(fetchHandlers = {}, props: Record<string, unknown> = {}) {
   vi.stubGlobal('fetch', routeFetch({
     'GET /api/sessions/s1/changes': () => jsonResponse(changes),
     'GET /api/sessions/s1/digest': () => jsonResponse(null),
@@ -48,7 +53,7 @@ async function mountPanel(fetchHandlers = {}) {
   }))
   await useConversationStore(pinia).load('s1')
   const router = createAppRouter(createMemoryHistory())
-  const wrapper = mount(DetailsPanel, { props: { sessionId: 's1' }, global: { plugins: [pinia, router] } })
+  const wrapper = mount(DetailsPanel, { props: { sessionId: 's1', ...props }, global: { plugins: [pinia, router] } })
   await flushPromises()
   return wrapper
 }
@@ -206,6 +211,95 @@ describe('painel Detalhes', () => {
     expect(wrapper.find('[data-test="details-diff"]').text()).toContain('/x/b.py')
     await wrapper.find('[data-test="diff-back"]').trigger('click')
     expect(useChangesPanelStore(pinia).edit).toBeNull()
+  })
+
+  describe('abas Detalhes e Terminal', () => {
+    it('mostra a lista de abas com Detalhes selecionada por padrão', async () => {
+      const wrapper = await mountPanel()
+
+      expect(wrapper.get('[role="tablist"]').findAll('[role="tab"]')).toHaveLength(2)
+      const details = wrapper.get('[data-test="details-tab-details"]')
+      const terminal = wrapper.get('[data-test="details-tab-terminal"]')
+      expect(details.text()).toBe('Detalhes')
+      expect(terminal.text()).toBe('Terminal')
+      expect(details.attributes('aria-selected')).toBe('true')
+      expect(terminal.attributes('aria-selected')).toBe('false')
+      expect(wrapper.find('[data-test="details-properties"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(false)
+    })
+
+    it('trocar para Terminal mostra o terminal da sessão no lugar das propriedades e avisa quem usa o painel', async () => {
+      const wrapper = await mountPanel()
+
+      await wrapper.get('[data-test="details-tab-terminal"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.emitted('update:tab')).toEqual([['terminal']])
+      expect(wrapper.get('[data-test="details-tab-terminal"]').attributes('aria-selected')).toBe('true')
+      expect(wrapper.find('[data-test="details-properties"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="details-changes"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="terminal-pane"]').attributes('data-session')).toBe('s1')
+
+      await wrapper.get('[data-test="details-tab-details"]').trigger('click')
+      expect(wrapper.emitted('update:tab')?.[1]).toEqual(['details'])
+      expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="details-properties"]').exists()).toBe(true)
+    })
+
+    it('abre direto na aba pedida pela prop tab e acompanha as mudanças dela', async () => {
+      const wrapper = await mountPanel({}, { tab: 'terminal' })
+      await flushPromises()
+      expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(true)
+
+      await wrapper.setProps({ tab: 'details' })
+      expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="details-tab-details"]').attributes('aria-selected')).toBe('true')
+    })
+
+    it('as setas movem a seleção entre as abas', async () => {
+      const wrapper = await mountPanel()
+      await wrapper.get('[data-test="details-tab-details"]').trigger('keydown', { key: 'ArrowRight' })
+      await flushPromises()
+      expect(wrapper.emitted('update:tab')).toEqual([['terminal']])
+      await wrapper.get('[data-test="details-tab-terminal"]').trigger('keydown', { key: 'ArrowLeft' })
+      expect(wrapper.emitted('update:tab')?.[1]).toEqual(['details'])
+    })
+
+    it('o modo diff fica escondido na aba Terminal e volta com Detalhes', async () => {
+      const wrapper = await mountPanel({
+        'GET /api/projects/1/diff?repo=.&file=a.py': () => jsonResponse({ diff: '', truncated: false }),
+      })
+      await wrapper.find('[data-test="changed-file"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="diff-back"]').exists()).toBe(true)
+      expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
+
+      await wrapper.setProps({ tab: 'terminal' })
+      await flushPromises()
+      expect(wrapper.find('[data-test="diff-back"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="diff-expand"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="details-diff"]').exists()).toBe(false)
+      expect(wrapper.find('[role="tablist"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(true)
+
+      await wrapper.setProps({ tab: 'details' })
+      expect(wrapper.find('[data-test="details-diff"]').exists()).toBe(true)
+    })
+
+    it('uma edição pedida pela conversa leva o painel de volta à aba Detalhes', async () => {
+      const wrapper = await mountPanel({}, { tab: 'terminal' })
+      await flushPromises()
+      useChangesPanelStore(pinia).open('s1', {
+        type: 'tool', id: 't1', tool_use_id: 't1', name: 'Edit',
+        input: { file_path: '/x/b.py', old_string: 'a', new_string: 'b' }, result: null,
+      } as never)
+      await flushPromises()
+
+      // Shows the diff without announcing a choice of tab (the owner would remember it).
+      expect(wrapper.emitted('update:tab')).toBeUndefined()
+      expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="details-diff"]').text()).toContain('/x/b.py')
+    })
   })
 
   it('alarga e volta com o botão de expandir', async () => {

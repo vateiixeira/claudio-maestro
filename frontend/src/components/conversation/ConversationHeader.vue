@@ -8,6 +8,8 @@ import MarkIcon from '../MarkIcon.vue'
 import MarkPopover from '../marks/MarkPopover.vue'
 import IconArrowDown from '../icons/IconArrowDown.vue'
 import IconGroup from '../icons/IconGroup.vue'
+import IconTerminal from '../icons/IconTerminal.vue'
+import ConfirmDialog from '../ConfirmDialog.vue'
 import LabelBadges from '../labels/LabelBadges.vue'
 import NextNeedsYou from './NextNeedsYou.vue'
 import TitleSuggest from './TitleSuggest.vue'
@@ -21,6 +23,7 @@ import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import { useTerminalStore } from '../../stores/terminal'
 import { displayStateLabel } from '../../sessionState'
 import { worktreeLabel } from '../../worktree'
 
@@ -33,6 +36,7 @@ const conversations = useConversationStore()
 const projects = useProjectsStore()
 const git = useGitStore()
 const groups = useGroupsStore()
+const terminal = useTerminalStore()
 const now = useMinuteClock()
 
 const listed = computed(() => sessions.find(props.id))
@@ -86,6 +90,19 @@ async function discardSession() {
   } finally {
     toggling.value = false
   }
+}
+// Finishing ends the session's terminal and the command in it, so a running one asks first.
+const confirmingFinish = ref(false)
+function requestToggleFinished() {
+  if (!isFinished.value && terminal.sessions[props.id]?.busy) {
+    confirmingFinish.value = true
+    return
+  }
+  void toggleFinished()
+}
+function confirmFinish() {
+  confirmingFinish.value = false
+  void toggleFinished()
 }
 async function toggleFinished() {
   toggling.value = true
@@ -234,7 +251,7 @@ async function openProject() {
           class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
           :class="isFinished ? 'text-primary-soft' : 'text-fg'"
           :disabled="toggling"
-          @click="toggleFinished"
+          @click="requestToggleFinished"
         >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
         <button
           v-if="listed && !isDiscarded(listed)"
@@ -267,6 +284,15 @@ async function openProject() {
             <button type="button" role="menuitem" data-test="menu-copy-id" class="px-3 py-2 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted" @click="copyId">Copiar ID da sessão</button>
           </div>
         </div>
+        <button
+          v-if="listed"
+          type="button"
+          data-test="terminal-button"
+          aria-label="Abrir o terminal"
+          title="Abrir o terminal"
+          class="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+          @click="terminal.openPanel(id)"
+        ><IconTerminal :size="16" /></button>
         <slot name="details-toggle" />
       </div>
     </div>
@@ -305,6 +331,16 @@ async function openProject() {
       role="status"
       class="m-0 border-t border-secondary/40 bg-secondary-tint px-4 py-2 text-xs text-secondary-soft"
     >Esta sessão foi modificada fora do app no último minuto. Usar a mesma sessão no CLI e aqui ao mesmo tempo pode embaralhar o histórico.</p>
+    <ConfirmDialog
+      v-if="confirmingFinish"
+      title="Finalizar com o terminal rodando?"
+      confirm-label="Finalizar"
+      tone="warn"
+      @cancel="confirmingFinish = false"
+      @confirm="confirmFinish"
+    >
+      <p class="m-0 text-sm text-fg-muted">Há um comando rodando no terminal desta sessão. Finalizar encerra o terminal e o comando.</p>
+    </ConfirmDialog>
     <MarkPopover v-if="markAt && listed" :session="listed" :x="markAt.x" :y="markAt.y" :ignore="[markButton, markChipButton]" @close="markAt = null" />
   </header>
 </template>

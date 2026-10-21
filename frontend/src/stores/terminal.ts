@@ -8,6 +8,9 @@ export interface TerminalSession {
   connected: boolean
   busy: boolean
   exited: boolean
+  /** The socket closed (refused, dropped or ended by the server); `closeCode` says how. */
+  closed: boolean
+  closeCode: number | null
   buffer: string
 }
 
@@ -31,7 +34,7 @@ export const BUFFER_LIMIT = 262_144
 export const BUSY_RESET_MS = 2500
 
 function emptySession(): TerminalSession {
-  return { connected: false, busy: false, exited: false, buffer: '' }
+  return { connected: false, busy: false, exited: false, closed: false, closeCode: null, buffer: '' }
 }
 
 function clip(text: string): string {
@@ -101,15 +104,15 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (sockets.has(sessionId)) return
     const socket = new TerminalSocket(sessionId)
     sockets.set(sessionId, socket)
-    patch(sessionId, { connected: false, exited: false, busy: false })
+    patch(sessionId, { connected: false, exited: false, busy: false, closed: false, closeCode: null })
     socket.onFrame((frame) => {
       if (sockets.get(sessionId) === socket) onFrame(sessionId, frame)
     })
-    socket.onClose(() => {
+    socket.onClose((code) => {
       // A socket already replaced or dropped by `disconnect` says nothing about the current one.
       if (sockets.get(sessionId) !== socket) return
       sockets.delete(sessionId)
-      patch(sessionId, { connected: false, busy: false })
+      patch(sessionId, { connected: false, busy: false, closed: true, closeCode: code })
     })
   }
 

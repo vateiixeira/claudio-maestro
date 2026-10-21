@@ -13,7 +13,14 @@ vi.mock('../../api/socket', () => ({
   }),
 }))
 
+import { h } from 'vue'
+vi.mock('../../components/terminal/TerminalPane.vue', () => ({
+  __esModule: true,
+  default: { name: 'TerminalPane', props: ['sessionId'], setup: (props: { sessionId: string }) => () => h('div', { 'data-test': 'terminal-pane', 'data-session': props.sessionId }) },
+}))
+
 import ConversationView from '../ConversationView.vue'
+import { useTerminalStore } from '../../stores/terminal'
 import { createAppRouter } from '../../router'
 import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
@@ -787,5 +794,103 @@ describe('cabeçalho da conversa: Descartar ao lado de Finalizar', () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting', mark: 'discarded' })])
     const { wrapper } = await mountAt('/sessions/s1')
     expect(wrapper.find('[data-test="header-discard"]').exists()).toBe(false)
+  })
+})
+
+describe('terminal da sessão na página da conversa', () => {
+  it('pedir o terminal com o painel fechado abre o painel na aba Terminal', async () => {
+    localStorage.setItem('maestro:details-open', 'false')
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(false)
+
+    useTerminalStore(pinia).openPanel('s1')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="details-tab-terminal"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-test="terminal-pane"]').attributes('data-session')).toBe('s1')
+  })
+
+  it('com o painel aberto na aba Detalhes, o pedido troca para Terminal', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.get('[data-test="details-tab-details"]').attributes('aria-selected')).toBe('true')
+
+    useTerminalStore(pinia).openPanel('s1')
+    await flushPromises()
+    expect(wrapper.get('[data-test="details-tab-terminal"]').attributes('aria-selected')).toBe('true')
+  })
+
+  it('o pedido de outra sessão não abre nada aqui', async () => {
+    localStorage.setItem('maestro:details-open', 'false')
+    const { wrapper } = await mountAt('/sessions/s1')
+    useTerminalStore(pinia).openPanel('outra')
+    await flushPromises()
+    expect(wrapper.find('[data-test="details-panel"]').exists()).toBe(false)
+  })
+
+  it('em tela estreita, o pedido abre a gaveta na aba Terminal', async () => {
+    stubMedia(false)
+    const { wrapper } = await mountAt('/sessions/s1')
+    expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(false)
+
+    useTerminalStore(pinia).openPanel('s1')
+    await flushPromises()
+    expect(wrapper.find('[data-test="details-drawer"] [data-test="terminal-pane"]').exists()).toBe(true)
+  })
+
+  it('trocar de aba com o clique lembra a escolha', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    await wrapper.get('[data-test="details-tab-terminal"]').trigger('click')
+    expect(localStorage.getItem('maestro:details-tab')).toBe('terminal')
+    await wrapper.get('[data-test="details-tab-details"]').trigger('click')
+    expect(localStorage.getItem('maestro:details-tab')).toBe('details')
+  })
+
+  it('o pedido do terminal não grava a aba como preferência', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    useTerminalStore(pinia).openPanel('s1')
+    await flushPromises()
+    expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(true)
+    expect(localStorage.getItem('maestro:details-tab')).toBeNull()
+  })
+
+  it('uma edição aberta pela conversa leva o painel de volta a Detalhes sem mexer na preferência', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    await wrapper.get('[data-test="details-tab-terminal"]').trigger('click')
+    expect(localStorage.getItem('maestro:details-tab')).toBe('terminal')
+    useChangesPanelStore(pinia).open('s1', {
+      type: 'tool', id: 't1', tool_use_id: 't1', name: 'Edit',
+      input: { file_path: '/x/b.py', old_string: 'a', new_string: 'b' }, result: null,
+    } as never)
+    await flushPromises()
+    expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="details-diff"]').exists()).toBe(true)
+    expect(localStorage.getItem('maestro:details-tab')).toBe('terminal')
+  })
+
+  it('trocar de sessão desconecta o terminal da anterior', async () => {
+    const disconnect = vi.spyOn(useTerminalStore(pinia), 'disconnect')
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting' }),
+      makeSession({ session_id: 's2', title: 'Outra', display_state: 'waiting' }),
+    ])
+    const { wrapper } = await mountAt('/sessions/s1', {
+      'GET /api/sessions/s2': () => jsonResponse(makeSnapshot({ session_id: 's2', title: 'Outra' })),
+      'GET /api/sessions/s2/changes': () => jsonResponse({ repos: [] }),
+      'GET /api/sessions/s2/digest': () => jsonResponse(null),
+      'POST /api/sessions/s2/seen': () => jsonResponse(makeSession()),
+    })
+    expect(disconnect).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ id: 's2' })
+    await flushPromises()
+    expect(disconnect).toHaveBeenCalledWith('s1')
+  })
+
+  it('sair da página desconecta o terminal da sessão', async () => {
+    const disconnect = vi.spyOn(useTerminalStore(pinia), 'disconnect')
+    const { wrapper } = await mountAt('/sessions/s1')
+    wrapper.unmount()
+    expect(disconnect).toHaveBeenCalledWith('s1')
   })
 })

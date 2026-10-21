@@ -134,6 +134,28 @@ describe('conexão', () => {
     expect(store.sessions.s1!.exited).toBe(false)
   })
 
+  it('um fechamento antes de abrir marca closed com o código, e connect zera', () => {
+    const store = useTerminalStore()
+    store.connect('s1')
+    expect(store.sessions.s1).toMatchObject({ closed: false, closeCode: null })
+    sockets()[0]!.drop(4409)
+    expect(store.sessions.s1).toMatchObject({ connected: false, closed: true, closeCode: 4409 })
+
+    store.connect('s1')
+    expect(store.sessions.s1).toMatchObject({ closed: false, closeCode: null })
+    sockets()[1]!.drop(1006)
+    expect(store.sessions.s1).toMatchObject({ closed: true, closeCode: 1006 })
+  })
+
+  it('disconnect não conta como fechamento e o fechamento tardio do socket antigo é ignorado', () => {
+    const store = useTerminalStore()
+    store.connect('s1')
+    store.disconnect('s1')
+    expect(store.sessions.s1).toMatchObject({ closed: false, closeCode: null })
+    sockets()[0]!.drop(1000)
+    expect(store.sessions.s1).toMatchObject({ closed: false, closeCode: null })
+  })
+
   it('disconnect fecha o socket e um fechamento tardio dele não mexe no estado novo', () => {
     const store = useTerminalStore()
     store.connect('s1')

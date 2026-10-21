@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import BranchLabel from '../git/BranchLabel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
@@ -24,6 +24,7 @@ import {
   DETAILS_DEFAULT_WIDTH, DETAILS_KEY_STEP, DETAILS_MIN_WIDTH,
   clampDetailsWidth, detailsMaxWidth, readDetailsWidth, writeDetailsWidth,
 } from '../../detailsWidthPref'
+import type { DetailsTab } from '../../detailsTabPref'
 import { displayStateLabel } from '../../sessionState'
 import { useChangesPanelStore } from '../../stores/changesPanel'
 import { useConversationStore } from '../../stores/conversation'
@@ -35,8 +36,37 @@ import IconBack from '../icons/IconBack.vue'
 import IconClose from '../icons/IconClose.vue'
 import IconExpand from '../icons/IconExpand.vue'
 
-const props = withDefaults(defineProps<{ sessionId: string; drawer?: boolean }>(), { drawer: false })
-const emit = defineEmits<{ close: [] }>()
+const props = withDefaults(defineProps<{ sessionId: string; drawer?: boolean; tab?: DetailsTab }>(), { drawer: false, tab: 'details' })
+const emit = defineEmits<{ close: []; 'update:tab': [tab: DetailsTab] }>()
+
+// The xterm code is a chunk of its own, downloaded the first time the Terminal tab opens.
+const TerminalPane = defineAsyncComponent({
+  loader: () => import('../terminal/TerminalPane.vue'),
+  loadingComponent: { render: () => h('p', { class: 'm-0 p-4 text-sm text-fg-muted' }, 'Abrindo o terminal…') },
+  errorComponent: { render: () => h('p', { role: 'alert', class: 'm-0 p-4 text-sm text-diff-del-fg' }, 'Não foi possível carregar o terminal.') },
+  delay: 150,
+})
+
+const TABS: Array<{ id: DetailsTab; label: string }> = [
+  { id: 'details', label: 'Detalhes' },
+  { id: 'terminal', label: 'Terminal' },
+]
+const current = ref<DetailsTab>(props.tab)
+watch(() => props.tab, (tab) => { current.value = tab })
+function selectTab(tab: DetailsTab) {
+  if (current.value === tab) return
+  current.value = tab
+  emit('update:tab', tab)
+}
+function onTabKey(event: KeyboardEvent, index: number) {
+  const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+  if (!step) return
+  event.preventDefault()
+  const next = TABS[(index + step + TABS.length) % TABS.length]!
+  selectTab(next.id)
+  const list = (event.currentTarget as HTMLElement | null)?.parentElement
+  void nextTick(() => list?.querySelector<HTMLElement>(`[data-test="details-tab-${next.id}"]`)?.focus())
+}
 
 const sessions = useSessionsStore()
 const conversations = useConversationStore()
@@ -62,8 +92,10 @@ const changes = useSessionChanges(() => props.sessionId)
 // What the panel shows: properties and the list, or one diff (a file or an edit of the conversation).
 const selectedFile = ref<{ group: ChangesGroup; file: ChangedFile } | null>(null)
 const editOpen = computed(() => panel.sessionId === props.sessionId && panel.edit != null)
-const showingDiff = computed(() => editOpen.value || selectedFile.value != null)
+// The diff belongs to the Detalhes tab: on Terminal it stays hidden, and comes back with the tab.
+const showingDiff = computed(() => current.value === 'details' && (editOpen.value || selectedFile.value != null))
 const wide = ref(false)
+const isWide = computed(() => wide.value && showingDiff.value)
 const editLines = computed(() => {
   const item = panel.edit
   return item ? toolDiff(item.name, item.input, item.result?.details ?? null) : []
@@ -80,7 +112,12 @@ function back() {
 }
 watch(() => props.sessionId, back)
 // An edit opened from the conversation replaces a selected file.
-watch(editOpen, (open) => { if (open) selectedFile.value = null })
+watch(editOpen, (open) => {
+  if (!open) return
+  selectedFile.value = null
+  // Only what is shown now changes: the tab the user chose to open the panel on is not touched.
+  current.value = 'details'
+})
 
 const viewport = ref(window.innerWidth)
 const onWindowResize = () => { viewport.value = window.innerWidth }
@@ -123,14 +160,14 @@ function resetWidth() {
 <template>
   <aside
     data-test="details-panel"
-    :data-wide="String(wide)"
+    :data-wide="String(isWide)"
     aria-label="Detalhes da conversa"
     class="relative flex h-full shrink-0 flex-col border-l border-line-strong bg-bg"
-    :class="[wide ? 'w-[60vw]' : '', drawer ? 'max-w-full' : '']"
-    :style="wide ? undefined : { width: `${applied}px` }"
+    :class="[isWide ? 'w-[60vw]' : '', drawer ? 'max-w-full' : '']"
+    :style="isWide ? undefined : { width: `${applied}px` }"
   >
     <div
-      v-if="!wide"
+      v-if="!isWide"
       data-test="details-resize"
       role="separator"
       aria-orientation="vertical"
@@ -166,7 +203,23 @@ function resetWidth() {
           @click="wide = !wide"
         ><IconExpand :size="14" /></button>
       </template>
-      <h2 v-else class="m-0 grow text-sm font-semibold">Detalhes</h2>
+      <div v-else role="tablist" aria-label="Painel da conversa" class="flex grow items-center gap-1">
+        <button
+          v-for="(item, index) in TABS"
+          :id="`details-tab-${item.id}`"
+          :key="item.id"
+          type="button"
+          role="tab"
+          :data-test="`details-tab-${item.id}`"
+          :aria-selected="current === item.id"
+          aria-controls="details-tabpanel"
+          :tabindex="current === item.id ? 0 : -1"
+          class="h-8 rounded-md px-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-primary"
+          :class="current === item.id ? 'text-fg' : 'font-medium text-fg-muted hover:bg-card hover:text-fg'"
+          @click="selectTab(item.id)"
+          @keydown="onTabKey($event, index)"
+        >{{ item.label }}</button>
+      </div>
       <button
         v-if="drawer"
         type="button"
@@ -176,7 +229,24 @@ function resetWidth() {
       ><IconClose :size="14" /></button>
     </header>
 
-    <div data-test="details-body" class="relative flex min-h-0 grow flex-col gap-5 overflow-y-auto p-4">
+    <div
+      v-if="current === 'terminal'"
+      id="details-tabpanel"
+      data-test="details-body"
+      role="tabpanel"
+      aria-labelledby="details-tab-terminal"
+      class="relative flex min-h-0 grow flex-col overflow-hidden"
+    >
+      <TerminalPane :key="sessionId" :session-id="sessionId" />
+    </div>
+    <div
+      v-else
+      id="details-tabpanel"
+      data-test="details-body"
+      role="tabpanel"
+      aria-labelledby="details-tab-details"
+      class="relative flex min-h-0 grow flex-col gap-5 overflow-y-auto p-4"
+    >
       <template v-if="showingDiff">
         <section v-if="editOpen && panel.edit" data-test="details-diff" class="overflow-hidden rounded-lg border border-line bg-panel">
           <div class="truncate border-b border-line px-3 py-2 font-mono text-xs text-fg-muted">{{ str(panel.edit.input.file_path) }}</div>
