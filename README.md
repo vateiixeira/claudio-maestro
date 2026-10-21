@@ -26,6 +26,7 @@ Se você não lê português, o tradutor do navegador dá conta, e o próprio Cl
 - **Triagem pelo teclado.** Na Inbox, `j`/`k` movem, `Enter` abre, `a` permite e `d` nega, sem abrir cada conversa.
 - **Notificações do sistema.** O navegador avisa quando uma conversa pede permissão, faz uma pergunta ou traz um plano (ligue em Preferências → Notificações).
 - **Git sem sair do app.** Na tela do projeto, o painel de controle de versão do VS Code para todos os repositórios de uma vez: preparar, commitar, descartar, trocar e criar branch, mesclar (com o conflito à vista e o Claude para resolver), baixar, enviar e publicar. Ao lado, o histórico de commits no estilo do GitLens. A branch de cada repositório, inclusive worktrees, aparece no menu lateral, e o app busca a branch remota a cada 5 minutos.
+- **Terminal da sessão.** Uma aba Terminal no painel da conversa abre um shell na pasta da sessão. O play nos comandos sugeridos roda o comando ali e manda a saída ao Claude, e dá para anexar trechos do terminal à mensagem.
 - **Continuidade com o CLI.** As conversas ficam em `~/.claude/projects`, como no CLI e na extensão. Dá para retomar no Maestro uma conversa começada no terminal, e vice-versa.
 - **Controles por conversa.** Modelo, nível de raciocínio, modo de permissão, imagens coladas, comandos `/` e menções `@`.
 - **Resumo das conversas.** Um agente do próprio app pode resumir em fases o que cada conversa em andamento já fez.

@@ -16,6 +16,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - Com um turno em andamento, a conversa mostra no fim dele a lista de tarefas do Claude, atualizada no lugar, e uma linha viva com o que está acontecendo (pensando, escrevendo, a ação em execução ou "esperando você"), há quanto tempo e quantos tokens ele já gerou. Quando o turno termina, a lista fica apagada acima do "Concluído", só nos turnos que mexeram nela.
 - Botão **Sugerir título** no cabeçalho da conversa: pede a um modelo três sugestões de título a partir do conteúdo (usa o modelo do agente de resumos, ou `haiku` se ele nunca foi configurado). Clicar numa sugestão renomeia a sessão, como a renomeação manual; "Gerar outras" pede novas e Esc ou um clique fora fecham sem mudar nada.
 - **Remote Control** por sessão: um chip na barra do chat liga a sessão no app do Claude, no celular ou no claude.ai. As mensagens mandadas de lá aparecem no chat, e a sessão volta ligada sozinha depois de reiniciar.
+- Terminal da sessão: aba Terminal no painel da conversa, play nos blocos de comando que roda o comando e manda a saída ao Claude, e anexo de trechos do terminal na mensagem.
 
 ### Alterado
 
@@ -30,6 +31,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 ### Segurança
 
 - As ações de git do app nunca rodam hooks, editor, assinatura, drivers de merge ou filtros do repositório, e o envio usa o mesmo repositório temporário do fetch, sem ler a configuração do repositório e sem `--force`. Uma branch nunca é enviada para uma branch remota de outro nome. Repositório com Git LFS ou outro filtro fica só para leitura. Detalhes em `SECURITY.md`.
+- O terminal da sessão é um shell interativo com os seus privilégios, aberto só na pasta da sessão, por WebSocket com `Origin` do app. Nenhuma rota, ferramenta ou mensagem do app o aciona além do play, que exige o seu clique. Detalhes em `SECURITY.md`.
 
 ### Corrigido
 

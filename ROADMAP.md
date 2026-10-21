@@ -12,6 +12,6 @@ O que o Cláudio Maestro já faz está no [README](README.md). Aqui fica o que p
 
 ## Fora de escopo, de propósito
 
-- Virar IDE: terminal embutido, editor de código, árvore de arquivos.
+- Virar IDE: editor de código, árvore de arquivos e terminal solto. Existe só o terminal de cada sessão, a serviço da conversa.
 - Acesso pela rede ou várias pessoas na mesma instalação.
 - Git além do dia a dia: rebase, stash, cherry-pick, tags e envio forçado ficam com o terminal.
