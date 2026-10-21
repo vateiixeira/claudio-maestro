@@ -11,6 +11,7 @@ import sql from 'highlight.js/lib/languages/sql'
 import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
+import { commandFromBlock } from './codeRun'
 
 // Only a few common languages, to keep the bundle small.
 const languages = { bash, css, diff, javascript, json, markdown, python, sql, typescript, xml, yaml }
@@ -52,6 +53,8 @@ export interface RenderOptions {
   baseDir?: string
   /** On the reader page: headings get ids and reader links stay in the same tab. */
   reader?: boolean
+  /** Shell blocks get a play button that runs them in the session's terminal (only the Claude's replies). */
+  runnable?: boolean
 }
 interface Env extends RenderOptions { slugs?: Map<string, number> }
 
@@ -212,11 +215,23 @@ md.core.ruler.push('task_checkbox', (state) => {
 md.renderer.rules.task_checkbox = (tokens, idx) =>
   `<input type="checkbox" class="task-checkbox" disabled${tokens[idx]!.meta?.checked ? ' checked' : ''}> `
 
-// Fenced blocks get a copy button (handled by `onCodeCopyClick`). The wrapper is added here and
-// not in `highlight`, because markdown-it only skips its own <pre> wrapper when the result starts with `<pre`.
+// Fenced blocks get a copy button (handled by `onCodeCopyClick`) and, in the Claude's replies, a play button for
+// commands (handled by `onCodeRunClick`). The wrapper is added here and not in `highlight`, because markdown-it
+// only skips its own <pre> wrapper when the result starts with `<pre`.
+const PLAY_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>'
 const defaultFence = md.renderer.rules.fence!
-md.renderer.rules.fence = (tokens, idx, options, env, self) =>
-  `<div class="code-block"><button type="button" class="code-copy" data-code-copy aria-label="Copiar código">Copiar</button>${defaultFence(tokens, idx, options, env, self)}</div>`
+md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+  const token = tokens[idx]!
+  const lang = token.info.trim().split(/\s+/)[0] ?? ''
+  const runnable = (env as Env | undefined)?.runnable === true && commandFromBlock(lang, token.content) !== null
+  const attrs = runnable ? ` data-lang="${escapeHtml(lang)}"` : ''
+  const play = runnable
+    ? `<button type="button" class="code-run" data-code-run aria-label="Rodar no terminal">${PLAY_ICON}<span>Rodar</span></button>`
+    : ''
+  const copy = '<button type="button" class="code-copy" data-code-copy aria-label="Copiar código">Copiar</button>'
+  return `<div class="code-block"${attrs}><div class="code-actions">${play}${copy}</div>${defaultFence(tokens, idx, options, env, self)}</div>`
+}
 
 export function renderMarkdown(text: string, options: RenderOptions = {}): string {
   const env: Env = { ...options }

@@ -144,13 +144,25 @@ body {
   overflow-x: auto;
 }
 .markdown pre code { color: var(--color-fg); font-size: 0.75rem; background: none; border: none; border-radius: 0; padding: 0; }
-/* Copy button on fenced blocks (see conversation/codeCopy.ts). The wrapper takes over the pre's margin. */
+/* Buttons on fenced blocks: copy (conversation/codeCopy.ts) and, on commands in the replies, play (conversation/codeRun.ts).
+   The wrapper takes over the pre's margin; the buttons are revealed together on hover or focus. */
 .markdown .code-block { position: relative; margin: 0 0 0.75em; }
 .markdown .code-block pre { margin: 0; }
-.markdown .code-copy {
+.markdown .code-actions {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.markdown .code-copy,
+.markdown .code-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
   border: 1px solid var(--color-line-strong);
   border-radius: 10px;
@@ -160,17 +172,18 @@ body {
   font-size: 0.6875rem;
   line-height: 1.4;
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s;
 }
-.markdown .code-copy:hover { color: var(--color-fg); }
-.markdown .code-block:hover .code-copy,
-.markdown .code-block:focus-within .code-copy,
-.markdown .code-copy:focus-visible { opacity: 1; pointer-events: auto; }
-.markdown .code-copy:focus-visible { outline: 2px solid var(--color-primary); }
+.markdown .code-copy:hover,
+.markdown .code-run:hover { color: var(--color-fg); }
+/* Green only on the icon: green is the main action and execution. */
+.markdown .code-run svg { color: var(--color-primary); flex: none; }
+.markdown .code-block:hover .code-actions,
+.markdown .code-block:focus-within .code-actions,
+.markdown .code-block[data-run-state]:not([data-run-state="idle"]) .code-actions { opacity: 1; pointer-events: auto; }
+.markdown .code-copy:focus-visible,
+.markdown .code-run:focus-visible { outline: 2px solid var(--color-primary); }
 @media (hover: none) {
-  .markdown .code-copy { opacity: 1; pointer-events: auto; }
+  .markdown .code-actions { opacity: 1; pointer-events: auto; }
 }
 .markdown blockquote { border-left: 2px solid var(--color-line-strong); padding-left: 12px; color: var(--color-fg-muted); }
 /* Rounded outer border while keeping horizontal scroll: separate borders with zero spacing. */

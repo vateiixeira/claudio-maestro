@@ -39,6 +39,43 @@ describe('renderMarkdown', () => {
     expect(el.querySelectorAll('.code-block button[data-code-copy]')).toHaveLength(1)
   })
 
+  it('com runnable, bloco de shell ganha o play antes do Copiar e data-lang', () => {
+    const el = document.createElement('div')
+    el.innerHTML = renderMarkdown('```bash\nls -la\n```', { runnable: true })
+    const block = el.querySelector('.code-block')!
+    expect(block.getAttribute('data-lang')).toBe('bash')
+    const run = block.querySelector('button[data-code-run]')!
+    expect(run.getAttribute('aria-label')).toBe('Rodar no terminal')
+    expect(run.classList.contains('code-run')).toBe(true)
+    expect(run.querySelector('svg')).not.toBeNull()
+    expect(run.querySelector('span')!.textContent).toBe('Rodar')
+    const buttons = [...block.querySelectorAll('button')]
+    expect(buttons.map((b) => b.hasAttribute('data-code-run') ? 'run' : 'copy')).toEqual(['run', 'copy'])
+  })
+
+  it('sem runnable não há play', () => {
+    const el = document.createElement('div')
+    el.innerHTML = renderMarkdown('```bash\nls -la\n```')
+    expect(el.querySelector('[data-code-run]')).toBeNull()
+    expect(el.querySelector('.code-block')!.hasAttribute('data-lang')).toBe(false)
+  })
+
+  it('com runnable, bloco json não ganha play', () => {
+    const el = document.createElement('div')
+    el.innerHTML = renderMarkdown('```json\n{"a": 1}\n```', { runnable: true })
+    expect(el.querySelector('[data-code-run]')).toBeNull()
+    expect(el.querySelector('[data-code-copy]')).not.toBeNull()
+  })
+
+  it('com runnable, bloco sem linguagem só ganha play se parecer comando', () => {
+    const el = document.createElement('div')
+    el.innerHTML = renderMarkdown('```\ngit status\n```\n\n```\nsó texto\n```', { runnable: true })
+    const blocks = el.querySelectorAll('.code-block')
+    expect(blocks[0]!.querySelector('[data-code-run]')).not.toBeNull()
+    expect(blocks[0]!.getAttribute('data-lang')).toBe('')
+    expect(blocks[1]!.querySelector('[data-code-run]')).toBeNull()
+  })
+
   it('código inline não ganha botão', () => {
     const el = document.createElement('div')
     el.innerHTML = renderMarkdown('use `x` aqui')

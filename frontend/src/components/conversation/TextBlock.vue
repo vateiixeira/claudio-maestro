@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onCodeCopyClick } from '../../conversation/codeCopy'
+import { applyRunStates, onCodeRunClick } from '../../conversation/codeRun'
 import { renderMarkdown } from '../../conversation/markdown'
 import { useSmoothText } from '../../conversation/useSmoothText'
 import { MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { SESSION_ID_KEY } from '../../stores/changesPanel'
+import { useTerminalStore } from '../../stores/terminal'
 import type { TextItem } from '../../types/conversation'
 
 // The reply is running text over the background, with no box: only the work has a frame.
@@ -21,7 +23,26 @@ const sessionId = inject(SESSION_ID_KEY, null)
 // The search took the user here: the block is marked for a moment.
 const messageFocus = inject(MESSAGE_FOCUS_KEY, ref<string | null>(null))
 const highlighted = computed(() => messageFocus.value === props.item.id)
-const html = computed(() => renderMarkdown(shown.value, { sessionId: sessionId?.value }))
+// Shell blocks get a play button, but not while the reply is still being written (the last block may be cut).
+const runnable = computed(() => !!sessionId?.value && !props.item.streaming)
+const html = computed(() => renderMarkdown(shown.value, { sessionId: sessionId?.value, runnable: runnable.value }))
+// Only a reply in a conversation can run commands; the store is not needed (nor Pinia) without one.
+const terminal = sessionId ? useTerminalStore() : null
+const body = ref<HTMLElement | null>(null)
+
+// `v-html` redoes the blocks whenever the text changes, so the run states are put back after each render.
+function showRunStates() {
+  if (terminal && body.value) applyRunStates(body.value, props.item.id, terminal.runs)
+}
+onMounted(showRunStates)
+watch([html, () => terminal?.runs], showRunStates, { flush: 'post' })
+
+function onBodyClick(event: MouseEvent) {
+  void onCodeCopyClick(event)
+  if (!terminal || !sessionId?.value) return
+  const id = sessionId.value
+  onCodeRunClick(event, props.item.id, (command, blockKey) => void terminal.run(id, command, blockKey))
+}
 // After the DOM has the new text; nothing is said at mount, history appears whole.
 watch(shown, () => emit('reveal'), { flush: 'post' })
 
@@ -50,7 +71,7 @@ onBeforeUnmount(() => clearTimeout(timer))
     :class="highlighted ? 'ring-2 ring-primary' : ''"
   >
     <div class="markdown max-w-[72ch] text-[0.9375rem] leading-[1.65]">
-      <div @click="onCodeCopyClick" v-html="html" />
+      <div ref="body" @click="onBodyClick" v-html="html" />
       <span
         v-if="item.streaming"
         data-test="streaming"
