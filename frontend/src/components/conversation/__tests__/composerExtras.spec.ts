@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import MessageComposer from '../MessageComposer.vue'
 import { resetComposerDrafts } from '../../../conversation/composerDrafts'
 import { jsonResponse, routeFetch } from '../../../test/factories'
@@ -9,7 +10,10 @@ import { resetFileReads, settleReads, trackFileReads } from '../../../test/fileR
 import { localImagesFor, claimLocalImages, forgetSessionImages, resetLocalImages } from '../../../conversation/localImages'
 
 enableAutoUnmount(afterEach)
-beforeEach(resetComposerDrafts)
+beforeEach(() => {
+  setActivePinia(createPinia())
+  resetComposerDrafts()
+})
 afterEach(() => {
   vi.unstubAllGlobals()
   resetLocalImages()

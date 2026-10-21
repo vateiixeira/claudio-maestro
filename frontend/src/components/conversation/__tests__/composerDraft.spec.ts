@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import MessageComposer from '../MessageComposer.vue'
 import { jsonResponse, routeFetch } from '../../../test/factories'
 import { setPendingDraft, takePendingDraft } from '../../../conversation/pendingDrafts'
@@ -8,6 +9,7 @@ import { resetFileReads, settleReads, trackFileReads } from '../../../test/fileR
 
 enableAutoUnmount(afterEach)
 beforeEach(() => {
+  setActivePinia(createPinia())
   resetComposerDrafts()
   takePendingDraft('s-1')
   trackFileReads()

@@ -5,9 +5,11 @@ import { loadDraftImages, loadDraftText, saveDraftImages, saveDraftText } from '
 import { useDictation } from '../../conversation/dictation'
 import { type DraftImage, attachImages, base64Of, filesFrom, formatSize } from '../../conversation/images'
 import { type PendingDraft, onPendingDraft, takePendingDraft } from '../../conversation/pendingDrafts'
+import { formatTerminalAttachments } from '../../conversation/terminalText'
 import { useComposerSuggestions } from '../../conversation/useComposerSuggestions'
 import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
+import { useTerminalStore } from '../../stores/terminal'
 import type { SessionState } from '../../types/api'
 import MentionMirror from './MentionMirror.vue'
 import SuggestionMenu from './SuggestionMenu.vue'
@@ -41,7 +43,20 @@ watch(text, (value) => saveDraftText(props.sessionId, value), { immediate: true 
 // Deep: attaching an image pushes into the same array.
 watch(images, (list) => saveDraftImages(props.sessionId, list), { immediate: true, deep: true })
 
-const canSend = computed(() => !sending.value && !props.blockedReason && (text.value.trim() !== '' || images.value.length > 0))
+// Pieces of terminal output the user attached to the next message. They live in the store, so they survive switching sessions.
+const terminal = useTerminalStore()
+const snippets = computed(() => terminal.attachments[props.sessionId] ?? [])
+const SNIPPET_PREVIEW = 60
+
+/** The first line of a snippet for its chip, cut at 60 characters. */
+function snippetPreview(snippet: string): string {
+  const first = snippet.split(/\r\n?|\n/).find((line) => line.trim() !== '') ?? ''
+  return first.length > SNIPPET_PREVIEW ? `${first.slice(0, SNIPPET_PREVIEW)}…` : first
+}
+
+const canSend = computed(
+  () => !sending.value && !props.blockedReason && (text.value.trim() !== '' || images.value.length > 0 || snippets.value.length > 0),
+)
 
 /** Attaches image files after checking format, size and count. Used by paste and drop. */
 async function addFiles(files: File[]) {
@@ -157,6 +172,7 @@ async function send() {
   const message = text.value
   // A copy: an image that finishes reading while the request is out is not part of this message.
   const attached = [...images.value]
+  const sentSnippets = [...snippets.value]
   if (!canSend.value) return
   suggestions.close()
   if (dictation.recording.value) dictation.stop()
@@ -168,13 +184,16 @@ async function send() {
   try {
     const result = await sendMessage(
       props.sessionId,
-      message,
+      formatTerminalAttachments(sentSnippets, message),
       attached.map((i) => ({ media_type: i.mediaType, data: base64Of(i) })),
     )
     if (result?.external_activity) useConversationStore().noteExternalActivity(props.sessionId)
     // Only clear if the user did not keep typing meanwhile.
     if (text.value === message) text.value = ''
     images.value = images.value.filter((i) => !attached.includes(i))
+    // Only what was sent: a snippet attached while the request was out stays for the next message.
+    if (snippets.value.length === sentSnippets.length) terminal.takeAttachments(props.sessionId)
+    else for (let i = 0; i < sentSnippets.length; i++) terminal.removeAttachment(props.sessionId, 0)
     // Explicit: the watchers stop when the user left this session before the reply came back.
     saveDraftText(props.sessionId, text.value)
     saveDraftImages(props.sessionId, images.value)
@@ -205,7 +224,27 @@ async function interrupt() {
     <p v-if="blockedReason" :id="`blocked-${sessionId}`" class="m-0 text-sm text-fg-muted">{{ blockedReason }}</p>
     <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <p v-else-if="dictation.error.value" role="alert" class="m-0 text-sm text-diff-del-fg">{{ dictation.error.value }}</p>
-    <div v-if="images.length" class="flex flex-wrap gap-2">
+    <div v-if="images.length || snippets.length" class="flex flex-wrap gap-2">
+      <div
+        v-for="(snippet, index) in snippets"
+        :key="`terminal-${index}`"
+        data-test="terminal-attachment"
+        class="flex items-center gap-2.5 rounded-lg border border-line-strong bg-card p-1.5 pl-3"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-type-command" aria-hidden="true"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>
+        <div class="flex min-w-0 flex-col">
+          <span class="text-[0.8125rem] font-medium">Trecho do terminal</span>
+          <span class="max-w-64 truncate font-mono text-xs text-fg-subtle">{{ snippetPreview(snippet) }}</span>
+        </div>
+        <button
+          type="button"
+          aria-label="Remover trecho do terminal"
+          class="flex size-11 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-fg-muted hover:bg-elevated hover:text-fg"
+          @click="terminal.removeAttachment(sessionId, index)"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+        </button>
+      </div>
       <div
         v-for="image in images"
         :key="image.id"

@@ -3,6 +3,9 @@ import { computed, inject, ref } from 'vue'
 import { MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { localImagesFor } from '../../conversation/localImages'
 import type { Attachment, UserItem } from '../../types/conversation'
+import BashPane from './BashPane.vue'
+import TerminalRunBox from './TerminalRunBox.vue'
+import WorkHeader from './WorkHeader.vue'
 
 const props = defineProps<{ item: UserItem }>()
 // Thumbnails exist only for images sent from this tab; the history keeps type and size.
@@ -31,8 +34,18 @@ function label(attachment: Attachment): string {
 </script>
 
 <template>
+  <!-- Output of a command run in the terminal: like Claude's own actions, on the left and without the bubble. -->
+  <TerminalRunBox
+    v-if="item.terminal_run"
+    :run="item.terminal_run"
+    :data-item-id="item.id"
+    :data-highlighted="highlighted ? 'true' : undefined"
+    tabindex="-1"
+    class="w-full"
+    :class="highlighted ? 'ring-2 ring-primary' : ''"
+  />
   <!-- Like a messenger: what the user sends sits on the right, the model's replies on the left. -->
-  <div data-test="user-message-row" class="flex w-full justify-end pl-10">
+  <div v-else data-test="user-message-row" class="flex w-full justify-end pl-10">
     <div
       data-test="user-message-card"
       :data-item-id="item.id"
@@ -42,6 +55,15 @@ function label(attachment: Attachment): string {
       :class="highlighted ? 'ring-2 ring-primary' : ''"
     >
       <span class="sr-only">Você:</span>
+      <div
+        v-for="(snippet, index) in item.terminal_snippets"
+        :key="index"
+        data-test="terminal-snippet"
+        class="min-w-0 self-stretch overflow-hidden rounded-lg border border-line bg-panel text-left"
+      >
+        <WorkHeader kind="bash" label="Trecho do terminal" desc="" status="idle" class="[&_.cap]:w-auto" />
+        <BashPane label="OUT" name="Trecho do terminal" copy-label="Copiar trecho" :text="snippet" :preview="4" class="border-t border-line" />
+      </div>
       <div
         v-if="item.text"
         data-test="user-message"

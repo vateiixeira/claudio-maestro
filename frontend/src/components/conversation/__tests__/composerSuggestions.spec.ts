@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import MessageComposer from '../MessageComposer.vue'
 import { jsonResponse, routeFetch } from '../../../test/factories'
 import { FakeRecognition } from '../../../test/fakeRecognition'
 
 enableAutoUnmount(afterEach)
+beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => vi.unstubAllGlobals())
 
 const COMMANDS = [

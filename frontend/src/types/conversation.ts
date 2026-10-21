@@ -1,3 +1,4 @@
+import type { NoteCode } from '../conversation/terminalText'
 import type { ContextUsage, DisplayState, Effort, PermissionMode, RemoteControlState, SessionState } from './api'
 
 // Conversation items as the backend sends them (snapshot `items` and `item.upsert`).
@@ -9,11 +10,26 @@ export interface Attachment {
   size: number | null
 }
 
+/** A command the user ran in the session's terminal and sent to Claude. */
+export interface TerminalRun {
+  command: string
+  output: string
+  /** Null when the command had not finished (the user typed into it, or the shell exited). */
+  exit_code: number | null
+  duration_ms: number | null
+  /** Why the output is not the whole output of the command. */
+  notes: NoteCode[]
+}
+
 export interface UserItem {
   type: 'user'
   id: string
   text: string
   images?: Attachment[]
+  /** A message that came from the terminal: shown as a command box, `text` is empty. */
+  terminal_run?: TerminalRun | null
+  /** Pieces of terminal output attached to the message, in the order they were attached. */
+  terminal_snippets?: string[]
   /** Sent live from the Claude app (Remote Control), not typed here. */
   remote?: boolean
   /** When the item was created (Unix seconds); absent or null when the history does not say. Same on every item type. */

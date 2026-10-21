@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import MessageComposer from '../MessageComposer.vue'
 import { resetComposerDrafts } from '../../../conversation/composerDrafts'
 import { jsonResponse, routeFetch } from '../../../test/factories'
+import { useTerminalStore } from '../../../stores/terminal'
 
 afterEach(() => vi.unstubAllGlobals())
-beforeEach(resetComposerDrafts)
+beforeEach(() => {
+  resetComposerDrafts()
+  setActivePinia(createPinia())
+})
 
 const URL = 'POST /api/sessions/s1/messages'
 function setup(status = 202, body: unknown = {}) {
@@ -99,5 +104,87 @@ describe('campo de mensagem', () => {
     expect(w.find('[data-test="interrupt"]').exists()).toBe(true)
     await w.setProps({ state: 'connecting' })
     expect(w.find('[data-test="interrupt"]').exists()).toBe(false)
+  })
+
+  describe('trechos do terminal', () => {
+    it('anexo do store aparece como chip com a primeira linha', async () => {
+      const { w } = setup()
+      useTerminalStore().attach('s1', 'primeira linha\nsegunda')
+      await flushPromises()
+      const chip = w.find('[data-test="terminal-attachment"]')
+      expect(chip.exists()).toBe(true)
+      expect(chip.text()).toContain('Trecho do terminal')
+      expect(chip.text()).toContain('primeira linha')
+      expect(chip.text()).not.toContain('segunda')
+    })
+
+    it('corta a primeira linha em 60 caracteres', async () => {
+      const { w } = setup()
+      useTerminalStore().attach('s1', 'x'.repeat(80))
+      await flushPromises()
+      const text = w.find('[data-test="terminal-attachment"]').text()
+      expect(text).toContain('x'.repeat(60))
+      expect(text).not.toContain('x'.repeat(61))
+    })
+
+    it('anexo de outra sessão não aparece', async () => {
+      const { w } = setup()
+      useTerminalStore().attach('s2', 'outra')
+      await flushPromises()
+      expect(w.find('[data-test="terminal-attachment"]').exists()).toBe(false)
+    })
+
+    it('enviar manda o trecho citado antes do texto e limpa o chip', async () => {
+      const { w, fetchMock, ta } = setup()
+      const store = useTerminalStore()
+      store.attach('s1', 'linha')
+      await ta.setValue('e isso?')
+      await w.find('[data-test="send"]').trigger('click')
+      await flushPromises()
+      expect(JSON.parse(sent(fetchMock)[0]![1]!.body as string)).toEqual({ text: '<!-- attach: Terminal -->\n> linha\n\ne isso?' })
+      expect(w.find('[data-test="terminal-attachment"]').exists()).toBe(false)
+      expect(store.attachments['s1']).toBeUndefined()
+    })
+
+    it('remover o chip tira o anexo do store', async () => {
+      const { w } = setup()
+      const store = useTerminalStore()
+      store.attach('s1', 'linha')
+      await flushPromises()
+      const button = w.find('[data-test="terminal-attachment"] button')
+      expect(button.attributes('aria-label')).toBe('Remover trecho do terminal')
+      await button.trigger('click')
+      expect(w.find('[data-test="terminal-attachment"]').exists()).toBe(false)
+      expect(store.attachments['s1']).toBeUndefined()
+    })
+
+    it('só com o anexo, Enviar fica habilitado', async () => {
+      const { w } = setup()
+      const send = w.find('[data-test="send"]')
+      expect(send.attributes('disabled')).toBeDefined()
+      useTerminalStore().attach('s1', 'linha')
+      await flushPromises()
+      expect(send.attributes('disabled')).toBeUndefined()
+    })
+
+    it('falha no envio mantém o anexo', async () => {
+      const { w, ta } = setup(503, { detail: 'O servidor está encerrando.' })
+      const store = useTerminalStore()
+      store.attach('s1', 'linha')
+      await ta.setValue('e isso?')
+      await w.find('[data-test="send"]').trigger('click')
+      await flushPromises()
+      expect(store.attachments['s1']).toEqual(['linha'])
+      expect(w.find('[data-test="terminal-attachment"]').exists()).toBe(true)
+    })
+
+    it('os anexos sobrevivem a trocar de sessão', async () => {
+      const first = setup()
+      useTerminalStore().attach('s1', 'linha')
+      first.w.unmount()
+      const again = mount(MessageComposer, { props: { sessionId: 's1', state: 'idle' } })
+      await flushPromises()
+      expect(again.find('[data-test="terminal-attachment"]').exists()).toBe(true)
+    })
   })
 })
