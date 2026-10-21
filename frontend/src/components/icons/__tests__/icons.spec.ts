@@ -10,9 +10,11 @@ import IconCircleDot from '../IconCircleDot.vue'
 import IconClose from '../IconClose.vue'
 import IconExpand from '../IconExpand.vue'
 import IconGroup from '../IconGroup.vue'
+import IconPlay from '../IconPlay.vue'
 import IconPlus from '../IconPlus.vue'
+import IconTerminal from '../IconTerminal.vue'
 
-const all = { IconArrowDown, IconArrowUp, IconBack, IconCheck, IconChevron, IconCircle, IconCircleDot, IconClose, IconExpand, IconGroup, IconPlus }
+const all = { IconArrowDown, IconArrowUp, IconBack, IconCheck, IconChevron, IconCircle, IconCircleDot, IconClose, IconExpand, IconGroup, IconPlay, IconPlus, IconTerminal }
 
 describe('ícones em SVG', () => {
   it.each(Object.entries(all))('%s é um SVG em traço, decorativo e do tamanho pedido', (_name, component) => {

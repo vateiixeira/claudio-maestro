@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, createProject, deleteProject, listCommands, listDirs, listProjects, searchFiles, suggestSessionTitles } from '../http'
+import { ApiError, closeTerminal, createProject, deleteProject, listCommands, listDirs, listProjects, runInTerminal, searchFiles, suggestSessionTitles } from '../http'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -156,5 +156,29 @@ describe('sugestões de título', () => {
     expect(url).toBe('/api/sessions/s%201/title-suggestions')
     expect(init?.method).toBe('POST')
     expect((init?.headers as Record<string, string>)['X-Maestro']).toBe('1')
+  })
+})
+
+describe('terminal da sessão', () => {
+  it('runInTerminal envia o comando por POST e devolve o run_id', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ run_id: 'r1' }, 202))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(runInTerminal('s1', 'ls -la')).resolves.toEqual({ run_id: 'r1' })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sessions/s1/terminal/run',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ command: 'ls -la' }) }),
+    )
+  })
+
+  it('runInTerminal lança ApiError 409 com a mensagem do servidor', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: 'O terminal está ocupado.' }, 409)))
+    await expect(runInTerminal('s1', 'ls')).rejects.toMatchObject({ status: 409, detail: 'O terminal está ocupado.' })
+  })
+
+  it('closeTerminal chama DELETE e aceita o 204', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(closeTerminal('s1')).resolves.toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s1/terminal', expect.objectContaining({ method: 'DELETE' }))
   })
 })

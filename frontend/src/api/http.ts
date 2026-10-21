@@ -477,3 +477,15 @@ export function getDeliveries(date: string): Promise<DeliveriesDay> {
 export function summarizeDelivery(id: number): Promise<Delivery> {
   return request('POST', `/api/deliveries/${id}/summarize`)
 }
+
+// Terminal
+
+/** Types a command into the session's terminal. Only a click of the user may call this. */
+export function runInTerminal(sessionId: string, command: string): Promise<{ run_id: string }> {
+  return request('POST', `/api/sessions/${encodeURIComponent(sessionId)}/terminal/run`, { command })
+}
+
+/** Ends the session's terminal (the shell and whatever runs in it). */
+export function closeTerminal(sessionId: string): Promise<void> {
+  return request('DELETE', `/api/sessions/${encodeURIComponent(sessionId)}/terminal`)
+}
