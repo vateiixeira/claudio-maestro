@@ -120,7 +120,6 @@ export function workRow(item: ToolItem, sessionActive: boolean, waiting?: Readon
   return row
 }
 
-const SUMMARY_ORDER: WorkKind[] = ['read', 'search', 'edit', 'bash', 'tool', 'agent']
 const SUMMARY_WORDS: Record<WorkKind, [string, string]> = {
   read: ['leitura', 'leituras'],
   search: ['busca', 'buscas'],
@@ -128,29 +127,6 @@ const SUMMARY_WORDS: Record<WorkKind, [string, string]> = {
   bash: ['comando', 'comandos'],
   tool: ['ferramenta', 'ferramentas'],
   agent: ['subagente', 'subagentes'],
-}
-
-/** "1 edição · 1 comando ok · 1 falhou": what the block did by kind, then what is running, waiting for the user or failed. */
-export function workSummary(items: ToolItem[], sessionActive: boolean, waiting?: ReadonlySet<string>): string {
-  const counts = new Map<WorkKind, number>()
-  let running = 0
-  let asking = 0
-  let failed = 0
-  for (const item of items) {
-    const status = workStatus(item, sessionActive, waiting)
-    if (status === 'running') running++
-    else if (status === 'waiting') asking++
-    else if (status === 'error') failed++
-    else counts.set(workKind(item), (counts.get(workKind(item)) ?? 0) + 1)
-  }
-  const parts = SUMMARY_ORDER.filter((k) => counts.has(k)).map((k) => {
-    const [one, many] = SUMMARY_WORDS[k]
-    return `${plural(counts.get(k)!, one, many)}${k === 'bash' ? ' ok' : ''}`
-  })
-  if (running) parts.push(`${running} rodando`)
-  if (asking) parts.push(`${asking} esperando você`)
-  if (failed) parts.push(failed === 1 ? '1 falhou' : `${failed} falharam`)
-  return parts.join(' · ')
 }
 
 /** What the block is doing now (its last running or waiting action), for the line shown while it is closed; empty when nothing runs. */
@@ -164,6 +140,44 @@ export function workActivity(items: ToolItem[], sessionActive: boolean, waiting?
     return [row.label === 'Escrita' ? WORK_LABEL.edit : WORK_LABEL[row.kind], what].filter(Boolean).join(' · ')
   }
   return ''
+}
+
+/** One sentence for a collapsed group, using only facts already present in the conversation. */
+export function workCaption(items: ToolItem[], sessionActive: boolean, waiting?: ReadonlySet<string>): string {
+  const states = items.map((item) => ({ item, status: workStatus(item, sessionActive, waiting) }))
+  if (states.some(({ status }) => status === 'waiting')) return 'Esperando você'
+  const failed = states.filter(({ status }) => status === 'error').length
+  const failure = failed ? plural(failed, 'falhou', 'falharam') : ''
+  const running = [...states].reverse().find(({ status }) => status === 'running')?.item
+  if (running) {
+    const description = running.subagent?.last_activity || running.subagent?.description || str(running.input?.description)
+    return [description || workActivity([running], sessionActive, waiting), failure].filter(Boolean).join(' · ')
+  }
+  const completed = states.filter(({ status }) => status === 'ok').map(({ item }) => item)
+  const parts: string[] = []
+  const commands = completed.filter((item) => workKind(item) === 'bash').length
+  if (commands) parts.push(`executou ${plural(commands, 'comando', 'comandos')}`)
+  for (const kind of ['read', 'edit'] as const) {
+    const matching = completed.filter((item) => workKind(item) === kind)
+    if (!matching.length) continue
+    const paths = new Set(matching.map((item) => str(item.input?.file_path) || str(item.input?.notebook_path)).filter(Boolean))
+    if (paths.size && matching.every((item) => str(item.input?.file_path) || str(item.input?.notebook_path))) {
+      const path = [...paths][0]!
+      const subject = paths.size === 1 ? path.split(/[/\\]/).filter(Boolean).at(-1) || path : `${paths.size} arquivos`
+      parts.push(`${kind === 'read' ? 'leu' : 'editou'} ${subject}`)
+    } else parts.push(`fez ${plural(matching.length, ...SUMMARY_WORDS[kind])}`)
+  }
+  for (const kind of ['search', 'tool', 'agent'] as const) {
+    const count = completed.filter((item) => workKind(item) === kind).length
+    if (count) parts.push(`${kind === 'search' ? 'fez' : kind === 'agent' ? 'executou' : 'usou'} ${plural(count, ...SUMMARY_WORDS[kind])}`)
+  }
+  if (failure) parts.push(failure)
+  const missing = states.filter(({ status }) => status === 'idle').length
+  const stopped = states.filter(({ status }) => status === 'stopped').length
+  if (missing) parts.push(`${plural(missing, 'ação', 'ações')} sem resultado`)
+  if (stopped) parts.push(plural(stopped, 'ação interrompida', 'ações interrompidas'))
+  const sentence = parts.join(', ')
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1)
 }
 
 /**

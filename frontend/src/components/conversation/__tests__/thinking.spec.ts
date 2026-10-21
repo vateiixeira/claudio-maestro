@@ -11,10 +11,10 @@ describe('raciocínio durante o streaming', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('fica aberto com o tempo e recolhe ao terminar', async () => {
+  it('fica recolhido durante o streaming e ao terminar', async () => {
     const w = mount(ThinkingBlock, { props: { item: item(true) } })
     expect(w.text()).toContain('pensando fundo')
-    expect(w.find('button').attributes('aria-expanded')).toBe('true')
+    expect(w.find('button').attributes('aria-expanded')).toBe('false')
     expect(w.text()).toContain('Pensando…')
     expect(w.text()).toContain('· 0 s')
     await vi.advanceTimersByTimeAsync(3000)
@@ -27,8 +27,9 @@ describe('raciocínio durante o streaming', () => {
     expect(w.text()).toContain('pensando fundo')
   })
 
-  it('respeita quem fechou durante o streaming', async () => {
+  it('respeita quem abriu e fechou durante o streaming', async () => {
     const w = mount(ThinkingBlock, { props: { item: item(true) } })
+    await w.find('button').trigger('click')
     await w.find('button').trigger('click')
     expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
     await w.setProps({ item: { ...item(true), text: 'mais' } })
@@ -37,7 +38,6 @@ describe('raciocínio durante o streaming', () => {
 
   it('respeita quem abriu: continua aberto ao terminar', async () => {
     const w = mount(ThinkingBlock, { props: { item: item(true) } })
-    await w.find('button').trigger('click')
     await w.find('button').trigger('click')
     await w.setProps({ item: item(false) })
     expect(w.text()).toContain('pensando fundo')
@@ -61,19 +61,22 @@ describe('raciocínio durante o streaming: janela de 4 linhas', () => {
 
   it('mostra só as 4 últimas linhas e acompanha o texto que chega', async () => {
     const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.find('button').trigger('click')
     expect(shown(w)).toBe('linha 7\nlinha 8\nlinha 9\nlinha 10')
     await w.setProps({ item: long(true, 12) })
     expect(shown(w)).toBe('linha 9\nlinha 10\nlinha 11\nlinha 12')
   })
 
-  it('texto curto aparece inteiro e sem o controle', () => {
+  it('texto curto aparece inteiro e sem o controle', async () => {
     const w = mount(ThinkingBlock, { props: { item: long(true, 3) } })
+    await w.find('button').trigger('click')
     expect(shown(w)).toBe('linha 1\nlinha 2\nlinha 3')
     expect(w.find('[data-test="thinking-expand"]').exists()).toBe(false)
   })
 
   it('"Ver tudo" expande e "Recolher" volta à janela', async () => {
     const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.find('button').trigger('click')
     const control = () => w.find('[data-test="thinking-expand"]')
     expect(control().text()).toBe('Ver tudo')
     expect(control().attributes('aria-expanded')).toBe('false')
@@ -86,8 +89,9 @@ describe('raciocínio durante o streaming: janela de 4 linhas', () => {
     expect(shown(w)).toBe('linha 7\nlinha 8\nlinha 9\nlinha 10')
   })
 
-  it('o controle é um botão de verdade, alcançável pelo teclado', () => {
+  it('o controle é um botão de verdade, alcançável pelo teclado', async () => {
     const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.find('button').trigger('click')
     const el = w.find('[data-test="thinking-expand"]')
     expect(el.element.tagName).toBe('BUTTON')
     expect(el.attributes('type')).toBe('button')
@@ -96,6 +100,7 @@ describe('raciocínio durante o streaming: janela de 4 linhas', () => {
 
   it('quem expandiu durante o streaming continua vendo tudo ao terminar', async () => {
     const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.find('button').trigger('click')
     await w.find('[data-test="thinking-expand"]').trigger('click')
     await w.setProps({ item: long(false) })
     expect(shown(w)).toContain('linha 1')
@@ -110,16 +115,18 @@ describe('raciocínio durante o streaming: janela de 4 linhas', () => {
     expect(shown(w)).toContain('linha 1')
   })
 
-  it('recolher a janela durante o streaming não deixa aberto ao terminar', async () => {
+  it('recolher a janela mantém a escolha de abrir o raciocínio ao terminar', async () => {
     const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.find('button').trigger('click')
     await w.find('[data-test="thinking-expand"]').trigger('click')
     await w.find('[data-test="thinking-expand"]').trigger('click')
     await w.setProps({ item: long(false) })
-    expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(true)
   })
 
   it('fechado pelo cabeçalho, o controle some', async () => {
     const w = mount(ThinkingBlock, { props: { item: long(true) } })
+    await w.find('button').trigger('click')
     await w.find('button').trigger('click')
     expect(w.find('[data-test="thinking-expand"]').exists()).toBe(false)
   })
@@ -211,11 +218,11 @@ describe('raciocínio: bloco de uma linha', () => {
     expect(empty.find('button').exists()).toBe(false)
   })
 
-  it('o texto chega depois: ganha chevron e abre', async () => {
+  it('o texto chega depois: ganha chevron e continua recolhido', async () => {
     const w = mount(ThinkingBlock, { props: { item: { ...item(true), text: '' } } })
     await w.setProps({ item: item(true) })
     expect(w.find('[data-test="thinking-chevron"]').exists()).toBe(true)
-    expect(w.find('[data-test="thinking-text"]').text()).toBe('pensando fundo')
+    expect(w.find('[data-test="thinking-text"]').exists()).toBe(false)
   })
 
   it('pensamento vazio e terminado não desenha bloco nenhum', () => {

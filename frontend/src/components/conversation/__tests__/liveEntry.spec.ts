@@ -92,7 +92,8 @@ describe('entrada só para o que chega ao vivo', () => {
     emit('item.upsert', { ...tool('t1'), result: { content: 'ok', is_error: false } }, 3)
     await flushPromises()
     expect(w.text()).toContain('um dois três')
-    expect(animated(w, 'animate-enter')).toHaveLength(0)
+    // The summary may animate its new label; the existing rail entries never re-enter.
+    expect(entries(w).some((entry) => entry.classes().includes('animate-enter'))).toBe(false)
     expect(animated(w, 'animate-pop')).toHaveLength(0)
   })
 

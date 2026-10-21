@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupNodeKind, workActivity, workRow, workStatus, workSummary } from '../work'
+import { groupNodeKind, workActivity, workRow, workStatus, workCaption } from '../work'
 import type { ToolItem } from '../../types/conversation'
 
 const done = { content: 'ok', is_error: false, details: null }
@@ -85,14 +85,14 @@ describe('workRow', () => {
   })
 })
 
-describe('workSummary', () => {
-  it('conta por tipo, com "ok" nos comandos e as falhas à parte', () => {
+describe('workCaption', () => {
+  it('resume por tipo e mantém as falhas visíveis', () => {
     const items = [
       tool('e', 'Edit', { file_path: '/a' }),
       tool('b', 'Bash', { command: 'ls' }),
       tool('x', 'Read', {}, { result: failed }),
     ]
-    expect(workSummary(items, false)).toBe('1 edição · 1 comando ok · 1 falhou')
+    expect(workCaption(items, false)).toBe('Executou 1 comando, editou a, 1 falhou')
   })
 
   it('plural, ordem fixa e falhas no plural', () => {
@@ -101,13 +101,13 @@ describe('workSummary', () => {
       tool('f', 'Read'), tool('g', 'Grep'), tool('h', 'mcp__s__t'),
       tool('i', 'Bash', {}, { result: failed }), tool('j', 'Edit', {}, { result: failed }),
     ]
-    expect(workSummary(items, false)).toBe('1 leitura · 1 busca · 2 edições · 2 comandos ok · 1 ferramenta · 1 subagente · 2 falharam')
+    expect(workCaption(items, false)).toBe('Executou 2 comandos, fez 1 leitura, fez 2 edições, fez 1 busca, usou 1 ferramenta, executou 1 subagente, 2 falharam')
   })
 
-  it('o que roda aparece como "rodando" e sai da contagem do tipo', () => {
+  it('a atividade substitui o resumo enquanto executa', () => {
     const items = [tool('a', 'Read'), tool('b', 'Bash', {}, { result: null })]
-    expect(workSummary(items, true)).toBe('1 leitura · 1 rodando')
-    expect(workSummary(items, false)).toBe('1 leitura · 1 comando ok')
+    expect(workCaption(items, true)).toBe('Comando')
+    expect(workCaption(items, false)).toBe('Fez 1 leitura, 1 ação sem resultado')
   })
 })
 
@@ -181,11 +181,11 @@ describe('ferramenta esperando o usuário', () => {
     expect(workRow(pending(), true, waiting).status).toBe('waiting')
   })
 
-  it('o resumo conta "esperando você" no lugar de "rodando"', () => {
+  it('a espera pelo usuário prevalece sobre a execução', () => {
     const items = [tool('a', 'Read'), pending()]
-    expect(workSummary(items, true, waiting)).toBe('1 leitura · 1 esperando você')
-    expect(workSummary([...items, tool('r', 'Bash', {}, { result: null })], true, waiting)).toBe('1 leitura · 1 rodando · 1 esperando você')
-    expect(workSummary([pending(), tool('w2', 'Bash', {}, { result: null })], true, new Set(['tu-w', 'tu-w2']))).toBe('2 esperando você')
+    expect(workCaption(items, true, waiting)).toBe('Esperando você')
+    expect(workCaption([...items, tool('r', 'Bash', {}, { result: null })], true, waiting)).toBe('Esperando você')
+    expect(workCaption([pending(), tool('w2', 'Bash', {}, { result: null })], true, new Set(['tu-w', 'tu-w2']))).toBe('Esperando você')
   })
 
   it('a linha de atividade do bloco fechado continua dizendo qual é a ação', () => {

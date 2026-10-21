@@ -14,14 +14,13 @@ const done = computed(() => props.tasks.filter((task) => task.status === 'comple
   <div
     data-test="turn-tasks"
     :data-muted="muted ? 'true' : undefined"
+    role="group"
+    :aria-label="`Tarefas: ${done} de ${tasks.length} concluídas`"
     class="flex flex-col gap-1.5 rounded-lg border border-line bg-panel px-3 py-2"
     :class="{ 'opacity-70': muted }"
   >
-    <div class="flex items-center gap-2 text-xs">
-      <span class="font-semibold text-fg-subtle">Tarefas</span>
-      <span data-test="turn-tasks-count" class="text-fg-subtle">{{ done }} de {{ tasks.length }}</span>
-    </div>
-    <ul class="m-0 flex list-none flex-col gap-1 border-t border-line p-0 pt-1.5">
+    <span data-test="turn-tasks-count" class="sr-only">{{ done }} de {{ tasks.length }}</span>
+    <ul class="m-0 flex list-none flex-col gap-1.5 p-0">
       <li
         v-for="task in tasks"
         :key="task.id"
@@ -47,7 +46,7 @@ const done = computed(() => props.tasks.filter((task) => task.status === 'comple
         <span
           data-test="turn-task-label"
           class="min-w-0 grow"
-          :class="task.status === 'completed' ? 'text-fg-muted line-through' : task.status === 'in_progress' ? 'font-medium text-fg' : 'text-fg'"
+          :class="task.status === 'completed' ? 'text-fg-muted' : task.status === 'in_progress' ? 'font-medium text-fg' : 'text-fg'"
         >{{ task.subject }}</span>
         <span class="sr-only">{{ TASK_STATUS_LABEL[task.status] }}</span>
       </li>

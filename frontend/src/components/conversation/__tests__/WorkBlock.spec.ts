@@ -25,9 +25,10 @@ describe('WorkBlock: cabeçalho', () => {
   it('conta as ações e resume por tipo', () => {
     const w = mountBlock({ items: [tool('e', 'Edit', { file_path: '/a' }), tool('b', 'Bash', { command: 'ls' }), tool('x', 'Read', {}, { result: failed })] })
     expect(w.find('[data-test="work-count"]').text()).toBe('3 ações')
-    expect(w.find('[data-test="work-count"]').classes()).toContain('cap')
-    expect(w.find('[data-test="work-summary"]').text()).toBe('1 edição · 1 comando ok · 1 falhou')
-    expect(w.find('[data-test="work-summary"]').classes()).toEqual(expect.arrayContaining(['text-xs', 'text-fg-subtle']))
+    expect(w.find('[data-test="work-count"]').classes()).toContain('sr-only')
+    expect(w.classes()).not.toContain('border')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Executou 1 comando, editou a, 1 falhou')
+    expect(w.find('[data-test="work-summary"]').classes()).toContain('truncate')
   })
 
   it('uma ação só é "1 ação"', () => {
@@ -38,13 +39,13 @@ describe('WorkBlock: cabeçalho', () => {
     const w = mountBlock({ items: [tool('r', 'Read'), tool('s', 'Read')], open: false })
     const toggle = w.find('[data-test="work-block-toggle"]')
     expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(toggle.text()).toContain('Ver')
+    expect(toggle.attributes('aria-label')).toContain('Ver')
     expect(rows(w)).toHaveLength(0)
     await toggle.trigger('click')
     expect(w.emitted('toggle')).toHaveLength(1)
     await w.setProps({ open: true })
     expect(toggle.attributes('aria-expanded')).toBe('true')
-    expect(toggle.text()).toContain('Recolher')
+    expect(toggle.attributes('aria-label')).toContain('Recolher')
     expect(rows(w)).toHaveLength(2)
   })
 })
@@ -152,23 +153,18 @@ describe('WorkBlock: card aberto de cada tipo', () => {
 })
 
 describe('WorkBlock: atividade', () => {
-  const running = tool('b', 'Bash', { command: 'pytest -q' }, { result: null })
+  const running = tool('b', 'Bash', { command: 'pytest -q', description: 'Rodar os testes' }, { result: null })
 
-  it('fechado e rodando, uma linha mono em âmbar diz o que acontece', () => {
-    const w = mountBlock({ items: [tool('r', 'Read', { file_path: '/p/a.py' }), running], open: false, sessionActive: true })
-    const line = w.find('[data-test="work-activity"]')
-    expect(line.text()).toBe('Comando · pytest -q')
-    expect(line.classes()).toEqual(expect.arrayContaining(['font-mono', 'text-[0.6875rem]', 'text-secondary-soft']))
-  })
-
-  it('não aparece aberto, nem quando nada roda', async () => {
-    const w = mountBlock({ items: [running], open: true, sessionActive: true })
+  it('a atividade ocupa o cabeçalho, sem uma segunda linha', async () => {
+    const w = mountBlock({ items: [running], open: false, sessionActive: true })
+    const header = w.find('[data-test="work-summary"]')
+    expect(header.text()).toBe('Rodar os testes')
+    expect(header.classes()).toContain('text-secondary-soft')
     expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
-    await w.setProps({ open: false })
-    expect(w.find('[data-test="work-activity"]').exists()).toBe(true)
-    await w.setProps({ sessionActive: false })
-    expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
-    expect(mountBlock({ items: [tool('r', 'Read')], open: false, sessionActive: true }).find('[data-test="work-activity"]').exists()).toBe(false)
+    await w.setProps({ open: true })
+    expect(header.text()).toBe('Rodar os testes')
+    await w.setProps({ items: [tool('b', 'Bash', running.input)] })
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Executou 1 comando')
   })
 })
 
@@ -197,7 +193,7 @@ describe('WorkBlock: animações', () => {
     const w = mountBlock({ items: [tool('b', 'Bash', { command: 'ls' }, { result: null })], sessionActive: true })
     expect(w.find('[data-test="work-summary"]').classes()).not.toContain('animate-enter')
     await w.setProps({ items: [tool('b', 'Bash', { command: 'ls' })] })
-    expect(w.find('[data-test="work-summary"]').text()).toBe('1 comando ok')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Executou 1 comando')
     expect(w.find('[data-test="work-summary"]').classes()).toContain('animate-enter')
     expect(w.find('[data-test="work-summary"]').classes()).toContain('[animation-duration:var(--motion-state)]')
   })

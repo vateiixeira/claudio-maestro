@@ -16,9 +16,9 @@ const preview = computed(() => {
   return (props.item.streaming ? filled[filled.length - 1] : filled[0]) ?? ''
 })
 
-// Open while the model thinks, closed when it ends, unless the user chose otherwise.
+// Streaming never opens the reasoning by itself. An explicit choice survives completion.
 const manual = ref<boolean | null>(null)
-const open = computed(() => manual.value ?? props.item.streaming)
+const open = computed(() => manual.value ?? false)
 function toggle() {
   manual.value = !open.value
 }
@@ -42,11 +42,11 @@ async function follow() {
 watch(() => [props.item.text, props.item.streaming, open.value, full.value], follow, { flush: 'post' })
 onMounted(follow)
 const canExpand = computed(() => props.item.streaming && open.value && (full.value || lines.value.length > TAIL_LINES || wrapped.value))
-// Expanding opens the block for good; collapsing goes back to the default (closed at the end).
+// Both window choices keep the reasoning open, as explicitly requested by the user.
 function toggleFull() {
   if (full.value) {
     full.value = false
-    manual.value = null
+    manual.value = true
   } else {
     full.value = true
     manual.value = true

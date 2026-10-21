@@ -51,13 +51,13 @@ describe('WorkBlock: ferramenta esperando você', () => {
     expect(statusOf(w, 1).attributes('data-status')).toBe('waiting')
     expect(statusOf(w, 1).text()).toContain('esperando você')
     expect(statusOf(w, 1).find('.animate-spin').exists()).toBe(false)
-    expect(w.find('[data-test="work-summary"]').text()).toBe('1 leitura · 1 esperando você')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Esperando você')
   })
 
   it('sem o pedido pendente continua rodando', () => {
     const w = mountBlock({ items: items() })
     expect(statusOf(w, 1).attributes('data-status')).toBe('running')
-    expect(w.find('[data-test="work-summary"]').text()).toBe('1 leitura · 1 rodando')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Comando · rm -rf x')
   })
 
   it('o pedido respondido volta a linha ao estado seguinte', async () => {

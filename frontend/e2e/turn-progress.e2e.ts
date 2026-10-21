@@ -120,7 +120,7 @@ test('com o turno em andamento, o bloco de várias ações fica recolhido e most
   await expect(block.getByTestId('work-count')).toHaveText('2 ações')
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await expect(block.getByTestId('work-row')).toHaveCount(0)
-  await expect(block.getByTestId('work-activity')).toContainText('Rodar os testes')
+  await expect(block.getByTestId('work-summary')).toHaveText('Rodar os testes')
 
   // The user's click wins, and it stays when the turn ends.
   await toggle.click()
@@ -130,13 +130,13 @@ test('com o turno em andamento, o bloco de várias ações fica recolhido e most
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 })
 
-test('com o turno em andamento, um bloco de uma ação só e um bloco com falha abrem sozinhos', async ({ page }) => {
+test('com o turno em andamento, uma ação só fica recolhida e uma falha abre sozinha', async ({ page }) => {
   const turn = await stageRunningTurn(page)
   await turn.upsert(tool('r1', 'Read', { file_path: '/tmp/projeto/leia-me.md' }))
   const single = page.getByTestId('work-block')
   await expect(single.getByTestId('work-count')).toHaveText('1 ação')
-  await expect(single.getByTestId('work-block-toggle')).toHaveAttribute('aria-expanded', 'true')
-  await expect(single.getByTestId('work-row')).toHaveCount(1)
+  await expect(single.getByTestId('work-block-toggle')).toHaveAttribute('aria-expanded', 'false')
+  await expect(single.getByTestId('work-row')).toHaveCount(0)
 
   // A text between the actions starts a second block; one of its actions failed, so it opens by itself.
   await turn.upsert({ type: 'text', id: 'txt-1', text: 'Agora rodo os testes.', streaming: false, parent_tool_use_id: null, at: nowSeconds() })
@@ -158,7 +158,7 @@ test('com um pedido pendente, o cartão fica fora do bloco recolhido e o resumo 
   })
   const block = page.getByTestId('work-block')
   await expect(block.getByTestId('work-block-toggle')).toHaveAttribute('aria-expanded', 'false')
-  await expect(block.getByTestId('work-summary')).toContainText('esperando você')
+  await expect(block.getByTestId('work-summary')).toContainText('Esperando você')
   await expect(page.getByTestId('permission-card')).toBeVisible()
   await expect(block.getByTestId('permission-card')).toHaveCount(0)
 })
@@ -304,4 +304,34 @@ test('em tela estreita o texto da linha viva trunca sem estourar a largura', asy
   expect(overflow).toBeLessThanOrEqual(0)
   const box = (await live.boundingBox())!
   expect(box.x + box.width).toBeLessThanOrEqual(360)
+})
+
+
+test('o trabalho atualiza a mesma linha, preserva as falas e mantém o raciocínio recolhido', async ({ page }, testInfo) => {
+  const turn = await stageRunningTurn(page)
+  await turn.upsert(running('b1', 'Bash', { command: 'pnpm test', description: 'Conferir dependências' }))
+  const block = page.getByTestId('work-block').last()
+  const toggle = block.getByTestId('work-block-toggle')
+  await expect(block.getByTestId('work-summary')).toHaveText('Conferir dependências')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(block.getByTestId('work-activity')).toHaveCount(0)
+  await turn.upsert(tool('b1', 'Bash', { command: 'pnpm test', description: 'Conferir dependências' }))
+  await expect(block.getByTestId('work-summary')).toHaveText('Executou 1 comando')
+  await turn.upsert({ type: 'text', id: 'narration', text: 'Agora vou escrever o plano.', streaming: false, parent_tool_use_id: null })
+  await turn.upsert({ type: 'thinking', id: 'thought', text: 'Primeira ideia\nMais detalhes', streaming: true, parent_tool_use_id: null })
+  await expect(page.getByText('Agora vou escrever o plano.', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('thinking-text')).toHaveCount(0)
+  await page.getByTestId('thinking-label').click()
+  await expect(page.getByTestId('thinking-text')).toBeVisible()
+  await page.getByTestId('thinking-label').click()
+  await expect(page.getByTestId('thinking-text')).not.toBeVisible()
+  await turn.upsert(todos('t1', [['Conferir versões', 'completed'], ['Escrever plano', 'in_progress']]))
+  await expect(progress(page).getByTestId('turn-tasks')).toHaveAccessibleName('Tarefas: 1 de 2 concluídas')
+  await page.screenshot({ path: testInfo.outputPath('trabalho-compacto.png'), fullPage: true, animations: 'disabled' })
+  await toggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(block.getByTestId('work-row')).toHaveCount(1)
+  await turn.finish()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 })

@@ -101,11 +101,11 @@ describe('chat em turnos', () => {
       items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { result: null })],
       prompts: [{ prompt_id: 'p1', tool_name: 'Bash', input: { command: 'ls' }, can_always: false, tool_use_id: 'tu-b1' }],
     })
-    expect(w.find('[data-test="work-summary"]').text()).toBe('1 leitura · 1 esperando você')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Esperando você')
     // The block is folded and the request is a card outside of it: the user still sees what to answer.
     expect(w.find('[data-test="work-block-toggle"]').attributes('aria-expanded')).toBe('false')
     expect(w.findAll('[data-test="permission-card"]')).toHaveLength(1)
-    expect(w.find('[data-test="work-activity"]').exists()).toBe(true)
+    expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
     await w.find('[data-test="work-block-toggle"]').trigger('click')
     const statuses = w.findAll('[data-test="work-row"] [data-test="work-status"]').map((n) => n.attributes('data-status'))
     expect(statuses).toEqual(['ok', 'waiting'])
@@ -149,22 +149,22 @@ describe('bloco de trabalho', () => {
     })
     expect(w.findAll('[data-test="work-block"]')).toHaveLength(1)
     expect(w.find('[data-test="work-count"]').text()).toBe('3 ações')
-    expect(w.find('[data-test="work-summary"]').text()).toBe('2 leituras · 1 rodando')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Comando · ls')
     expect(header(w).attributes('aria-expanded')).toBe('false')
-    expect(header(w).text()).toContain('Ver')
+    expect(header(w).attributes('aria-label')).toContain('Ver')
     expect(header(w).find('svg[data-open="false"]').exists()).toBe(true)
     expect(rowHeaders(w)).toHaveLength(0)
-    expect(w.find('[data-test="work-activity"]').text()).toBe('Comando · ls')
+    expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
     expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['running'])
     await header(w).trigger('click')
     expect(header(w).attributes('aria-expanded')).toBe('true')
-    expect(header(w).text()).toContain('Recolher')
+    expect(header(w).attributes('aria-label')).toContain('Recolher')
     expect(header(w).find('svg[data-open="true"]').exists()).toBe(true)
     expect(rowHeaders(w)).toHaveLength(3)
     expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
   })
 
-  it('com o turno rodando, o bloco de várias ações fica recolhido; o de uma ação só e o com falha ficam abertos', async () => {
+  it('com o turno rodando, o bloco de várias ações fica recolhido; uma ação só continua recolhida e uma falha abre', async () => {
     const w = await mountWith({
       state: 'running',
       items: [
@@ -175,11 +175,11 @@ describe('bloco de trabalho', () => {
       ],
     })
     const toggles = w.findAll('[data-test="work-block-toggle"]')
-    expect(toggles.map((t) => t.attributes('aria-expanded'))).toEqual(['false', 'true', 'true'])
+    expect(toggles.map((t) => t.attributes('aria-expanded'))).toEqual(['false', 'false', 'true'])
     const blocks = w.findAll('[data-test="work-block"]')
     expect(blocks[0]!.findAll('[data-test="work-row"]')).toHaveLength(0)
-    expect(blocks[0]!.find('[data-test="work-summary"]').text()).toBe('2 leituras')
-    expect(blocks[1]!.findAll('[data-test="work-row"]')).toHaveLength(1)
+    expect(blocks[0]!.find('[data-test="work-summary"]').text()).toBe('Leu 2 arquivos')
+    expect(blocks[1]!.findAll('[data-test="work-row"]')).toHaveLength(0)
     expect(blocks[2]!.findAll('[data-test="work-row"]')).toHaveLength(2)
     expect(blocks[2]!.find('[data-test="tool-error"]').text()).toContain('deu ruim')
   })
@@ -190,10 +190,10 @@ describe('bloco de trabalho', () => {
       items: [user('u1'), tool('r1', 'Read'), text('a'), tool('e1', 'Edit'), tool('e2', 'Edit')],
     })
     const [single, multi] = w.findAll('[data-test="work-block-toggle"]')
-    expect([single!.attributes('aria-expanded'), multi!.attributes('aria-expanded')]).toEqual(['true', 'false'])
+    expect([single!.attributes('aria-expanded'), multi!.attributes('aria-expanded')]).toEqual(['false', 'false'])
     await single!.trigger('click')
     await multi!.trigger('click')
-    expect([single!.attributes('aria-expanded'), multi!.attributes('aria-expanded')]).toEqual(['false', 'true'])
+    expect([single!.attributes('aria-expanded'), multi!.attributes('aria-expanded')]).toEqual(['true', 'true'])
   })
 
   it('todo o trabalho entre duas falas cai numa caixa só, e cada trecho tem a sua', async () => {
@@ -213,17 +213,17 @@ describe('bloco de trabalho', () => {
   it('recolhido depois que o turno termina', async () => {
     const w = await mountWith({ state: 'idle', items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read')] })
     expect(header(w).attributes('aria-expanded')).toBe('false')
-    expect(header(w).text()).toContain('Ver')
+    expect(header(w).attributes('aria-label')).toContain('Ver')
     expect(header(w).find('svg[data-open="false"]').exists()).toBe(true)
     expect(rowHeaders(w)).toHaveLength(0)
-    expect(w.find('[data-test="work-summary"]').text()).toBe('2 leituras')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Leu 2 arquivos')
     expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['read'])
   })
 
-  it('um bloco de uma ação só continua aberto depois do turno', async () => {
+  it('um bloco de uma ação só continua recolhido depois do turno', async () => {
     const w = await mountWith({ state: 'idle', items: [user('u1'), tool('e1', 'Edit')] })
-    expect(header(w).attributes('aria-expanded')).toBe('true')
-    expect(rowHeaders(w)).toHaveLength(1)
+    expect(header(w).attributes('aria-expanded')).toBe('false')
+    expect(rowHeaders(w)).toHaveLength(0)
   })
 
   it('a escolha manual prevalece quando o turno termina', async () => {
@@ -265,7 +265,7 @@ describe('bloco de trabalho', () => {
       items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { input: { command: 'make' }, result: { content: 'deu ruim', is_error: true, details: null } }), tool('r2', 'Read')],
     })
     expect(header(w).attributes('aria-expanded')).toBe('true')
-    expect(w.find('[data-test="work-summary"]').text()).toBe('2 leituras · 1 falhou')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Leu 2 arquivos, 1 falhou')
     const rows = rowHeaders(w)
     expect(rows.map((r) => r.attributes('aria-expanded'))).toEqual(['false', 'true', 'false'])
     expect(w.findAll('[data-test="tool-error"]')).toHaveLength(1)
@@ -278,9 +278,9 @@ describe('bloco de trabalho', () => {
       state: 'running',
       items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { input: { command: 'pytest -q' }, result: null })],
     })
-    const line = w.find('[data-test="work-activity"]')
+    const line = w.find('[data-test="work-summary"]')
     expect(line.text()).toBe('Comando · pytest -q')
-    expect(line.classes()).toEqual(expect.arrayContaining(['font-mono', 'text-secondary-soft']))
+    expect(line.classes()).toContain('text-secondary-soft')
     await header(w).trigger('click')
     expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
     turnResult()
@@ -292,6 +292,7 @@ describe('bloco de trabalho', () => {
       state: 'idle',
       items: [user('u1'), tool('b1', 'Bash', { input: { command: 'pytest -q', description: 'Roda os testes' } })],
     })
+    await header(w).trigger('click')
     const row = rowHeaders(w)[0]!
     expect(row.text()).toContain('Roda os testes')
     const command = row.find('[data-test="work-command"]')

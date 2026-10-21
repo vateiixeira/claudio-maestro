@@ -75,7 +75,7 @@ describe('indicadores de rodando em âmbar', () => {
     expect(state.find('svg').classes()).toEqual(expect.arrayContaining(['animate-spin', 'text-secondary-soft']))
     expect(state.find('svg').classes()).not.toContain('text-primary')
     const closed = mount(WorkBlock, { props: { items, open: false, sessionActive: true } })
-    const line = closed.find('[data-test="work-activity"]')
+    const line = closed.find('[data-test="work-summary"]')
     expect(line.text()).toBe('Leitura · /a')
     expect(line.classes()).toContain('text-secondary-soft')
     expect(line.classes()).not.toContain('text-primary-soft')

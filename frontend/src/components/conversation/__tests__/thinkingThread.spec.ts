@@ -51,6 +51,9 @@ async function mountWith(items: Record<string, unknown>[]) {
 
 // The actions of a work block start closed; opens every row.
 async function openRows(w: { findAll: (selector: string) => { attributes: (name: string) => string | undefined; trigger: (event: string) => Promise<unknown> }[] }) {
+  for (const block of w.findAll('[data-test="work-block-toggle"]')) {
+    if (block.attributes('aria-expanded') === 'false') await block.trigger('click')
+  }
   for (const row of w.findAll('[data-test="work-row"] [data-test="work-header"]')) {
     if (row.attributes('aria-expanded') === 'false') await row.trigger('click')
   }
