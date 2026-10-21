@@ -17,6 +17,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from itertools import chain
 from typing import Any, Literal
 
 from claude_agent_sdk import (
@@ -94,7 +95,7 @@ class ToolItem:
     # The last two are epoch seconds, None when the history does not say.
     subagent: dict[str, Any] | None = None
     # Background Bash/Monitor: {task_id, status, summary}, updated by
-    # the SDK task messages. Absent (None) in history: no live status exists there.
+    # SDK task messages or live history reconstruction. Absent without a live process.
     background: dict[str, Any] | None = None
     at: int | None = field(default=None, compare=False)
     type: Literal["tool"] = field(default="tool", init=False)
@@ -302,6 +303,9 @@ class ConversationBuilder:
         task_endings: dict[str, dict[str, Any]] | None = None,
         task_resumes: dict[str, int] | None = None,
         subagent_models: dict[str, str] | None = None,
+        process_started_at: float | None = None,
+        background_entries: list[Any] | None = None,
+        background_launches: dict[str, str] | None = None,
     ) -> None:
         """Rebuild items from a saved conversation (`get_session_messages`).
 
@@ -331,7 +335,13 @@ class ConversationBuilder:
         notifications again. A subagent without one keeps running (live). `task_resumes`
         ({task_id: epoch seconds}) lists the SendMessage resumes: one later than the
         subagent's notification means it is running again (live only, as in the stream).
-        Cards still running take their real start as the base of SUBAGENT_MAX_SECONDS.
+        Subagent cards still running take their real start as the base of SUBAGENT_MAX_SECONDS.
+        Open Bash/Monitor launches instead restart that guard on live load; a known
+        `process_started_at` excludes commands launched before this process (2 s tolerance).
+        `background_entries` supplies launches outside the display window: only their open
+        background state is kept; their messages and tool cards are never rendered here.
+        `background_launches` ({tool_use_id: name}) also supplies launches before compaction,
+        collected from the entire transcript independently of its visible message chain.
         `subagent_models` ({tool_use_id: model}, from the subagents' own transcripts) gives
         the cards the model they ran on, over the one the Agent call asked for.
         """
@@ -405,6 +415,11 @@ class ConversationBuilder:
                 model = (subagent_models or {}).get(item.tool_use_id)
                 if model:
                     item.subagent["model"] = model
+        if live:
+            self._restore_backgrounds(
+                tool_times, task_endings or {}, process_started_at,
+                background_entries or [], tool_results, background_launches or {},
+            )
         self._apply_task_endings(task_endings or {}, task_resumes or {}, live)
         for item in self.items:
             if not isinstance(item, ToolItem) or item.subagent is None:
@@ -423,6 +438,70 @@ class ConversationBuilder:
                 last_seen = max(sub["started_at"], sub["last_activity_at"] or 0)
                 age = max(0.0, self._wall_clock() - last_seen)
                 self._subagent_started[item.tool_use_id] = time.monotonic() - age
+
+    def _background_calls(
+        self, entries: list[Any], results: dict[str, dict[str, Any]],
+    ) -> Iterator[tuple[str, str, dict[str, Any] | None]]:
+        """Launch metadata only: do not build or retain cards for older messages."""
+        for entry in entries:
+            if entry.type != "assistant" or not isinstance(entry.message, dict):
+                continue
+            content = entry.message.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                tool_id, name, input_ = block.get("id"), block.get("name"), block.get("input")
+                if not isinstance(tool_id, str) or not isinstance(input_, dict):
+                    continue
+                if name == "Monitor" or (name == "Bash" and input_.get("run_in_background") is True):
+                    yield tool_id, name, results.get(tool_id)
+
+    def _restore_backgrounds(
+        self, times: dict[str, dict[str, int]], endings: dict[str, dict[str, Any]],
+        process_started_at: float | None, entries: list[Any], results: dict[str, dict[str, Any]],
+        launches: dict[str, str],
+    ) -> None:
+        """Restore successful open launches that belong to the reattached process.
+
+        Without its start time, keep open commands conservatively. With a known start,
+        missing launch times cannot establish that this process launched the command.
+        The three-hour guard restarts here, as it does for the reattached turn.
+        """
+        ended_tasks = {end["task_id"] for end in endings.values() if end.get("task_id")}
+        visible = ((item.tool_use_id, item.name, item.result)
+                   for item in self.items if isinstance(item, ToolItem) and (
+                       item.name == "Monitor" or (
+                           item.name == "Bash" and item.input.get("run_in_background") is True)))
+        compacted = ((tool_id, name, results.get(tool_id)) for tool_id, name in launches.items())
+        for tool_id, name, result in chain(visible, self._background_calls(entries, results), compacted):
+            if tool_id in self._backgrounds:
+                continue
+            if result is None or result.get("is_error"):
+                continue
+            details = result.get("details")
+            task_id = details.get("backgroundTaskId" if name == "Bash" else "taskId") \
+                if isinstance(details, dict) else None
+            if not isinstance(task_id, str) or not task_id:
+                task_id = None
+            if tool_id in endings or (task_id is not None and (
+                task_id in endings or task_id in ended_tasks
+            )):
+                continue
+            started = times.get(tool_id, {}).get("started_at")
+            if process_started_at is not None and (
+                started is None or started < process_started_at - 2
+            ):
+                continue
+            state = {"task_id": task_id, "status": "running", "summary": None}
+            self._backgrounds[tool_id] = state
+            self._subagent_started[tool_id] = time.monotonic()
+            if task_id is not None:
+                self._task_tools[task_id] = tool_id
+            tool = self._tool_item(tool_id)
+            if tool is not None:
+                tool.background = state
 
     def _apply_task_endings(
         self, endings: dict[str, dict[str, Any]], resumes: dict[str, int], live: bool
@@ -912,6 +991,8 @@ class ConversationBuilder:
         task_id = getattr(message, "task_id", None)
         tool_use_id = getattr(message, "tool_use_id", None)
         tool = self._tool_item(tool_use_id) if tool_use_id else None
+        if tool is None and tool_use_id in self._backgrounds:
+            return self._on_background_task(message, None, tool_use_id)
         if tool is None or tool.name not in SUBAGENT_TOOLS | BACKGROUND_TOOLS:
             # After a SendMessage resume the CLI names the SendMessage call, not the
             # Agent/Task one; the card is still the one that started the task.
@@ -919,9 +1000,11 @@ class ConversationBuilder:
             tool_use_id = self._task_tools.get(task_id)
             tool = self._tool_item(tool_use_id) if tool_use_id else None
         if tool is None:
+            if tool_use_id in self._backgrounds:
+                return self._on_background_task(message, None, tool_use_id)
             return []
         if tool.name in BACKGROUND_TOOLS:
-            return self._on_background_task(message, tool)
+            return self._on_background_task(message, tool, tool.tool_use_id)
         if tool.name not in SUBAGENT_TOOLS:
             return []
         self._task_tools[task_id] = tool.tool_use_id
@@ -951,15 +1034,17 @@ class ConversationBuilder:
                 sub["usage"] = dict(message.usage)
         return [self._put(tool)]
 
-    def _on_background_task(self, message: SystemMessage, tool: ToolItem) -> list[Event]:
+    def _on_background_task(
+        self, message: SystemMessage, tool: ToolItem | None, tool_use_id: str,
+    ) -> list[Event]:
         """Track a Monitor on any `task_started`; Bash requires a backgrounded call.
         Messages about a call never started that way are ignored."""
         task_id = message.task_id  # type: ignore[attr-defined]
-        state = self._backgrounds.get(tool.tool_use_id)
+        state = self._backgrounds.get(tool_use_id)
         if state is not None:
-            self._subagent_started[tool.tool_use_id] = time.monotonic()
+            self._subagent_started[tool_use_id] = time.monotonic()
         if state is None:
-            if not isinstance(message, TaskStartedMessage):
+            if tool is None or not isinstance(message, TaskStartedMessage):
                 return []
             if not (
                 tool.name == "Monitor"
@@ -968,9 +1053,13 @@ class ConversationBuilder:
             ):
                 return []
             state = {"task_id": task_id, "status": "running", "summary": None}
-            self._backgrounds[tool.tool_use_id] = state
-            self._subagent_started[tool.tool_use_id] = time.monotonic()
-            self._task_tools[task_id] = tool.tool_use_id
+            self._backgrounds[tool_use_id] = state
+            self._subagent_started[tool_use_id] = time.monotonic()
+            self._task_tools[task_id] = tool_use_id
+        elif isinstance(message, TaskStartedMessage):
+            # A restored launch may not have had an id until this replay.
+            state["task_id"] = task_id
+            self._task_tools[task_id] = tool_use_id
         elif isinstance(message, TaskUpdatedMessage):
             status = message.status or message.patch.get("status")
             state["status"] = _SUBAGENT_STATUS.get(str(status), state["status"])
@@ -979,7 +1068,7 @@ class ConversationBuilder:
             state["summary"] = message.summary or state["summary"]
         else:
             return []
-        return [self._put(tool)]
+        return [self._put(tool)] if tool is not None else []
 
     def _on_system(self, message: SystemMessage) -> list[Event]:
         if isinstance(
@@ -1063,18 +1152,21 @@ class ConversationBuilder:
             events.append(self._put(tool))
         return events
 
-    def _end_subagents(self, status_for: Callable[[str, ToolItem], str | None]) -> list[Event]:
+    def _end_subagents(
+        self, status_for: Callable[[str, ToolItem | None], str | None],
+    ) -> list[Event]:
         """Give running subagents and background Bash/Monitor the status `status_for` returns
         (None keeps them)."""
         events: list[Event] = []
         for tool_use_id, state in list(self._running_states()):
             tool = self._tool_item(tool_use_id)
-            if state["status"] != "running" or tool is None:
+            if state["status"] != "running":
                 continue
             status = status_for(tool_use_id, tool)
             if status is not None:
                 state["status"] = status
-                events.append(self._put(tool))
+                if tool is not None:
+                    events.append(self._put(tool))
         return events
 
     def running_task_ids(self) -> list[str]:
@@ -1095,7 +1187,8 @@ class ConversationBuilder:
         if not isinstance(tasks, list) or tasks:
             return []
         return self._end_subagents(
-            lambda _id, tool: "completed" if tool.result is not None else "stopped"
+            # A command without a card was restored from a successful launch.
+            lambda _id, tool: "completed" if tool is None or tool.result is not None else "stopped"
         )
 
     def close_open_items(self) -> list[Event]:

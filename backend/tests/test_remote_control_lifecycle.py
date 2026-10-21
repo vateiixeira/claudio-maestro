@@ -43,7 +43,7 @@ def calls(client) -> list[dict]:
 
 def child(agentd_id: str = "child-1"):
     """What the agentd lists for a process it kept."""
-    return SimpleNamespace(id=agentd_id, ack=0, init=None)
+    return SimpleNamespace(id=agentd_id, pid=0, ack=0, init=None)
 
 
 async def marked(make_env, env_cleanup, *, spawn_version: int, **kwargs):

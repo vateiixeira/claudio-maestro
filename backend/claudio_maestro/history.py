@@ -59,12 +59,13 @@ class Transcript:
     # uuids of `isCompactSummary` entries (the summary written when compacting).
     compact_uuids: set[str] = field(default_factory=set)
     # {tool_use_id: {started_at, ended_at}} in epoch seconds, from the entry timestamps, for
-    # Agent/Task calls only. A moment the transcript does not say is left out.
+    # Agent/Task and Bash/Monitor calls. A moment the transcript does not say is left out.
     tool_times: dict[str, dict[str, int]] = field(default_factory=dict)
     # {uuid: epoch seconds} of the user and assistant entries that have a timestamp.
     entry_times: dict[str, int] = field(default_factory=dict)
-    # {tool_use_id: {status, at, task_id, summary}} from the `<task-notification>` texts: how
-    # each background subagent (or command) ended, the latest notification of the call winning.
+    # {tool_use_id (or task_id if absent): {status, at, task_id, summary}} from
+    # `<task-notification>` texts: how each background subagent or command ended,
+    # the latest notification of the call winning.
     # `status` is the CLI's word (completed, failed, killed...), `at` epoch seconds or None.
     task_endings: dict[str, dict[str, Any]] = field(default_factory=dict)
     # {task_id: epoch seconds} of the latest SendMessage that resumed that subagent.
@@ -72,6 +73,10 @@ class Transcript:
     # {tool_use_id: model} of the subagents, from the files next to the session file
     # (`<session>/subagents/agent-*.jsonl` and `.meta.json`).
     subagent_models: dict[str, str] = field(default_factory=dict)
+    # {tool_use_id: name} of Bash background / Monitor launches across the entire file.
+    # Separate from the visible chain: compaction must not erase a still-running command.
+    # No command input, message text or old tool card is retained here.
+    background_launches: dict[str, str] = field(default_factory=dict)
 
 
 # read_transcript(session_id, directory) -> Transcript, or None when there is no file.
@@ -233,7 +238,7 @@ def _collect_tool_results(entry: Any, results: dict[str, dict[str, Any]]) -> Non
         }
 
 
-_TIMED_TOOLS = frozenset({"Agent", "Task"})
+_TIMED_TOOLS = frozenset({"Agent", "Task", "Bash", "Monitor"})
 
 
 def _epoch_seconds(value: Any) -> int | None:
@@ -249,8 +254,25 @@ def _epoch_seconds(value: Any) -> int | None:
     return int(moment.timestamp())
 
 
+def _collect_background_launches(entry: dict[str, Any], launches: dict[str, str]) -> None:
+    if entry.get("type") != "assistant":
+        return
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        tool_id, name, input_ = block.get("id"), block.get("name"), block.get("input")
+        if not isinstance(tool_id, str) or not isinstance(input_, dict):
+            continue
+        if name == "Monitor" or (name == "Bash" and input_.get("run_in_background") is True):
+            launches[tool_id] = name
+
+
 def _collect_tool_times(entry: dict[str, Any], times: dict[str, dict[str, int]]) -> None:
-    """Note when an Agent/Task call was made (assistant entry) and when its result came back."""
+    """Note when a subagent or command call was made and when its result came back."""
     stamp = _epoch_seconds(entry.get("timestamp"))
     if stamp is None:
         return
@@ -320,15 +342,17 @@ def _collect_task_endings(entry: dict[str, Any], endings: dict[str, dict[str, An
             head = match.group(1).split("<result>", 1)[0]
             tool_use_id = _notification_tag(head, "tool-use-id")
             status = _notification_tag(head, "status")
-            if not tool_use_id or not status:
+            task_id = _notification_tag(head, "task-id")
+            key = tool_use_id or task_id
+            if not key or not status:
                 continue
-            before = endings.get(tool_use_id)
+            before = endings.get(key)
             if before is not None and None not in (before["at"], stamp) and stamp < before["at"]:
                 continue
-            endings[tool_use_id] = {
+            endings[key] = {
                 "status": status,
                 "at": stamp,
-                "task_id": _notification_tag(head, "task-id"),
+                "task_id": task_id,
                 "summary": _notification_tag(head, "summary"),
             }
 
@@ -490,6 +514,7 @@ def read_transcript_file(path: Path, *, with_subagents: bool = False) -> Transcr
     entry_times: dict[str, int] = {}
     endings: dict[str, dict[str, Any]] = {}
     resumes: dict[str, int] = {}
+    background_launches: dict[str, str] = {}
     skipped = 0
     for line, complete in _lines(path):
         try:
@@ -504,6 +529,8 @@ def read_transcript_file(path: Path, *, with_subagents: bool = False) -> Transcr
             _collect_tool_results(entry, results)
         if '"tool_use"' in line or '"tool_result"' in line:
             _collect_tool_times(entry, times)
+        if '"tool_use"' in line:
+            _collect_background_launches(entry, background_launches)
         if "<task-notification>" in line:
             _collect_task_endings(entry, endings)
         if "resumedAgentId" in line:
@@ -523,6 +550,7 @@ def read_transcript_file(path: Path, *, with_subagents: bool = False) -> Transcr
         entry_times=entry_times,
         task_endings=endings,
         task_resumes=resumes,
+        background_launches=background_launches,
         subagent_models=read_subagent_models(path) if with_subagents else {},
     )
 

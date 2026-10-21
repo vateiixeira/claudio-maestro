@@ -68,6 +68,7 @@ from claudio_maestro.plans import (
     looks_like_plan_path,
     read_new_lines,
 )
+from claudio_maestro.procinfo import process_started_at
 from claudio_maestro.projects import Project
 from claudio_maestro.projects import project_roots as registered_project_roots
 from claudio_maestro.textindex import Match
@@ -1288,7 +1289,9 @@ class ActiveSession:
             self._emit("conversation.reset", {})
         await self.ensure_history()
 
-    async def ensure_history(self, *, live: bool = False) -> None:
+    async def ensure_history(
+        self, *, live: bool = False, process_started_at: float | None = None
+    ) -> None:
         """Load the saved conversation once, before anything else is shown or sent.
 
         Only the last `history_limit` messages are kept (`history_truncated`).
@@ -1321,16 +1324,20 @@ class ActiveSession:
                 self._history_failed = True
                 return
             (entries, tool_results, skipped, compact, tool_times, entry_times,
-             task_endings, task_resumes, subagent_models) = loaded
+             task_endings, task_resumes, subagent_models, background_launches) = loaded
             self._history_failed = False
             self._link_history_plan(entries)
+            background_entries = None
             if len(entries) > self._history_limit:
                 self.history_truncated = True
+                # Scan launches beyond the display window without rendering old messages.
+                background_entries = entries if live else None
                 entries = entries[-self._history_limit:]
             self.builder.load_history(
                 entries, tool_results, compact, live=live, tool_times=tool_times,
                 entry_times=entry_times, task_endings=task_endings, task_resumes=task_resumes,
-                subagent_models=subagent_models,
+                subagent_models=subagent_models, process_started_at=process_started_at,
+                background_entries=background_entries, background_launches=background_launches,
             )
             if self.record.turn_open and not self.active and not live:
                 self.builder.add_notice("warning", INTERRUPTED_TEXT)
@@ -1351,16 +1358,16 @@ class ActiveSession:
         self,
     ) -> tuple[
         list[Any], dict[str, dict[str, Any]], int, set[str], dict[str, dict[str, int]],
-        dict[str, int], dict[str, dict[str, Any]], dict[str, int], dict[str, str]
+        dict[str, int], dict[str, dict[str, Any]], dict[str, int], dict[str, str], dict[str, str]
     ]:
         """(entries, tool results, skipped lines, compact summary uuids, subagent times,
-        entry times, task endings, task resumes, subagent models)."""
+        entry times, task endings, task resumes, subagent models, background launches)."""
         if self._read_transcript is not None:
             transcript = await asyncio.to_thread(
                 self._read_transcript, self.session_id, self.record.history_directory
             )
             if transcript is None:
-                return [], {}, 0, set(), {}, {}, {}, {}, {}
+                return [], {}, 0, set(), {}, {}, {}, {}, {}, {}
             return (
                 list(transcript.messages), transcript.tool_results,
                 transcript.skipped_lines, set(transcript.compact_uuids),
@@ -1369,6 +1376,7 @@ class ActiveSession:
                 dict(getattr(transcript, "task_endings", None) or {}),
                 dict(getattr(transcript, "task_resumes", None) or {}),
                 dict(getattr(transcript, "subagent_models", None) or {}),
+                dict(getattr(transcript, "background_launches", None) or {}),
             )
         assert self._get_session_messages is not None
         entries = list(
@@ -1385,7 +1393,7 @@ class ActiveSession:
                 logger.exception(
                     "Falha ao ler os resultados de ferramentas da sessão %s", self.session_id
                 )
-        return entries, tool_results, 0, set(), {}, {}, {}, {}, {}
+        return entries, tool_results, 0, set(), {}, {}, {}, {}, {}, {}
 
     async def _apply_pending_rename(self) -> None:
         """Write a title chosen before the conversation existed on disk."""
@@ -2769,7 +2777,8 @@ class ActiveSession:
         async with self._lock:
             if self.client is not None:
                 return False  # already attached: never replace a client that is in use
-            await self.ensure_history(live=True)
+            started = await asyncio.to_thread(process_started_at, child.pid)
+            await self.ensure_history(live=True, process_started_at=started)
             was_open = self.record.turn_open
             client = self._new_client(
                 resume=True,

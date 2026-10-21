@@ -82,7 +82,7 @@ async def test_reattach_replay_does_not_duplicate_phone_message(make_env, loaded
             # The history was read before the reattach (not live): the replayed uuid is not
             # among the ones remembered, so only the item's own id can join the two.
             await session.ensure_history()
-        assert await session.reattach(SimpleNamespace(id="c1", ack=0, init=None))
+        assert await session.reattach(SimpleNamespace(id="c1", pid=0, ack=0, init=None))
         client = env.factory.clients[-1]
         # The agentd replays what the old backend never acknowledged.
         client.push([remote_user_message("do celular", message_uuid="phone-1")])

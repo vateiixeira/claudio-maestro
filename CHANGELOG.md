@@ -30,6 +30,11 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - As ações de git do app nunca rodam hooks, editor, assinatura, drivers de merge ou filtros do repositório, e o envio usa o mesmo repositório temporário do fetch, sem ler a configuração do repositório e sem `--force`. Uma branch nunca é enviada para uma branch remota de outro nome. Repositório com Git LFS ou outro filtro fica só para leitura. Detalhes em `SECURITY.md`.
 
+### Corrigido
+
+- Uma conversa parada com um Monitor rodando não é mais fechada por inatividade.
+- Comandos em segundo plano continuam contando depois de reiniciar o app: a conversa não é mais fechada por inatividade enquanto eles rodam.
+
 ## [0.7.0] - 2026-10-12
 
 Temas Dracula e Monokai para a interface, limite de CPU das sessões e o modelo de cada subagente à vista na conversa.
@@ -72,7 +77,6 @@ Serviço oficial para rodar o Maestro no Linux e no macOS, e atualização pelo 
 
 ### Corrigido
 
-- Uma conversa parada com um Monitor rodando não é mais fechada por inatividade.
 - A tela inteira podia rolar além do rodapé e deixar uma faixa vazia embaixo, cortando o topo do menu lateral, quando a lista do menu era maior que a janela.
 - Em janelas estreitas ou baixas, a página da conversa não ganha mais barras de rolagem próprias: os botões do cabeçalho quebram linha em vez de vazar, e só a conversa rola.
 
