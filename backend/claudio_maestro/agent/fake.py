@@ -778,7 +778,7 @@ def task_notification_message(
     )
 
 
-# Bash in the background ----------------------------------------------------
+# Bash/Monitor in the background --------------------------------------------
 
 
 def bash_task_started_message(
@@ -822,6 +822,22 @@ def bash_task_notification_message(
         status=status,  # type: ignore[arg-type]
         output_file=output_file, summary=summary, uuid=str(uuid.uuid4()),
         session_id=session_id, tool_use_id=tool_use_id,
+    )
+
+
+def monitor_task_started_message(
+    session_id: str, task_id: str, tool_use_id: str,
+) -> TaskStartedMessage:
+    """Monitor emits the same `local_bash` task start as a background Bash."""
+    return bash_task_started_message(session_id, task_id, tool_use_id)
+
+
+def monitor_task_notification_message(
+    session_id: str, task_id: str, tool_use_id: str, status: str = "completed",
+) -> TaskNotificationMessage:
+    """Monitor ends with both task ids, an output file and no usage."""
+    return bash_task_notification_message(
+        session_id, task_id, tool_use_id, status=status, summary=f"Monitor {status}",
     )
 
 

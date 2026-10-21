@@ -72,6 +72,7 @@ Serviço oficial para rodar o Maestro no Linux e no macOS, e atualização pelo 
 
 ### Corrigido
 
+- Uma conversa parada com um Monitor rodando não é mais fechada por inatividade.
 - A tela inteira podia rolar além do rodapé e deixar uma faixa vazia embaixo, cortando o topo do menu lateral, quando a lista do menu era maior que a janela.
 - Em janelas estreitas ou baixas, a página da conversa não ganha mais barras de rolagem próprias: os botões do cabeçalho quebram linha em vez de vazar, e só a conversa rola.
 
