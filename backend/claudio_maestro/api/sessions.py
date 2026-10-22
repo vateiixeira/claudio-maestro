@@ -363,6 +363,16 @@ async def get_session(session_id: str, manager: ManagerDep) -> dict[str, Any]:
     return await manager.open(session_id)
 
 
+@router.get("/sessions/{session_id}/context")
+async def get_context_details(session_id: str, manager: ManagerDep) -> dict[str, Any]:
+    """Breakdown of the context window, read on demand. 200 whenever the session exists:
+    `available: false` and a `reason` say why there is no breakdown."""
+    try:
+        return await manager.context_details(session_id)
+    except sessions.SessionError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
 async def send_message(session_id: str, body: MessageIn, manager: ManagerDep) -> dict[str, Any]:
     _get_session(manager, session_id)

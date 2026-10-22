@@ -51,6 +51,7 @@ from claudio_maestro.agent.base import (
     AttachInfo,
 )
 from claudio_maestro.config import read_user_claude_settings
+from claudio_maestro.contextusage import context_breakdown
 from claudio_maestro.conversation import (
     ConversationBuilder,
     Event,
@@ -234,6 +235,10 @@ DEFAULT_CONTEXT_WINDOW = 200_000
 LARGE_CONTEXT_WINDOW = 1_000_000
 # How long a context read holds its slot; a call that takes longer is abandoned.
 CONTEXT_READ_LIMIT = 10.0  # seconds
+# An error of the CLI that tells it does not know the `get_context_usage` request.
+_UNSUPPORTED_CONTEXT = re.compile(
+    r"unsupported control request|unknown control|unrecognized.*subtype", re.IGNORECASE
+)
 # After an autonomous turn ends with a message sent meanwhile, how long to wait for
 # the turn that answers it before deciding the CLI answered inside the autonomous one.
 AUTONOMOUS_FOLLOWUP_GRACE = 3.0  # seconds
@@ -967,6 +972,8 @@ class ActiveSession:
         self._context_again = False
         # Every `get_context_usage()` call still running, including abandoned ones.
         self._context_calls: set[asyncio.Future[Any]] = set()
+        # The on-demand `full` read in flight (shared by simultaneous requests).
+        self._details_task: asyncio.Task[dict[str, Any]] | None = None
         # A turn the CLI opened by itself (no send pending) is running.
         self._autonomous_turn = False
         # When the open turn began (epoch seconds), None while no turn is open. It is the
@@ -1958,6 +1965,67 @@ class ActiveSession:
             if not self._context_again:
                 return
 
+    async def read_context_details(self) -> dict[str, Any]:
+        """The `full` context usage, read on demand (the route behind the context panel).
+
+        Simultaneous requests share one read. Like the per-turn read, a call that
+        does not answer within `CONTEXT_READ_LIMIT` is abandoned, not cancelled (it stays
+        in `_context_calls` until it ends or the client goes away), and the request is
+        answered with `timeout`. Never raises: a failure is an `available: False` answer."""
+        client = self.client
+        if client is None:
+            return {"available": False, "reason": "no_process", "context": self.context}
+        task = self._details_task
+        if task is None or task.done():
+            task = asyncio.create_task(self._read_context_details(client))
+            self._details_task = task
+        # `wait` does not cancel the read when this caller goes away.
+        await asyncio.wait([task])
+        if task.cancelled() or task.exception() is not None:
+            return self._details_failure("failed")
+        return task.result()
+
+    def _details_failure(self, reason: str) -> dict[str, Any]:
+        return {"available": False, "reason": reason, "context": self.context}
+
+    async def _read_context_details(self, client: AgentClient) -> dict[str, Any]:
+        call = asyncio.ensure_future(client.get_context_usage("full"))
+        self._context_calls.add(call)
+        call.add_done_callback(self._context_call_done)
+        try:
+            await asyncio.wait([call], timeout=CONTEXT_READ_LIMIT)
+        finally:
+            if self._details_task is asyncio.current_task():
+                self._details_task = None
+        if not call.done():
+            logger.warning(
+                "Leitura completa do contexto da sessão %s passou do limite", self.session_id
+            )
+            return self._details_failure("timeout")
+        if call.cancelled():
+            return self._details_failure("failed")
+        error = call.exception()
+        if error is not None:
+            if _UNSUPPORTED_CONTEXT.search(str(error)):
+                return self._details_failure("unsupported")
+            logger.warning(
+                "Falha ao ler o contexto completo da sessão %s",
+                self.session_id,
+                exc_info=error,
+            )
+            return self._details_failure("failed")
+        if self.client is not client:
+            # The client went away meanwhile: its answer is not for the current one.
+            return self._details_failure("failed")
+        usage = call.result()
+        context, breakdown = context_from_sdk(usage), context_breakdown(usage)
+        if context is None or breakdown is None:
+            return self._details_failure("failed")
+        if context != self.context:
+            self.context = context
+            self.emit_updated()
+        return {"available": True, "context": context, "breakdown": breakdown}
+
     def _context_call_done(self, call: asyncio.Future[Any]) -> None:
         self._context_calls.discard(call)
         if not call.cancelled():
@@ -1969,6 +2037,9 @@ class ActiveSession:
         self._context_again = False
         if task is not None and not task.done():
             task.cancel()
+        details, self._details_task = self._details_task, None
+        if details is not None and not details.done():
+            details.cancel()
         for call in list(self._context_calls):
             call.cancel()
         self._context_calls.clear()
@@ -3324,6 +3395,17 @@ class SessionManager:
             return session.snapshot()
         finally:
             session.users -= 1
+
+    async def context_details(self, session_id: str) -> dict[str, Any]:
+        """Context breakdown of a session, read on demand from its client.
+
+        A session without a client in memory (never opened, or only history) is not
+        loaded just to answer: it has no process to ask."""
+        self.find_record(session_id)  # SessionNotFoundError for an unknown id
+        session = self._sessions.get(session_id)
+        if session is None:
+            return {"available": False, "reason": "no_process", "context": None}
+        return await session.read_context_details()
 
     async def send(
         self, session_id: str, text: str, images: list[dict[str, Any]] | None = None
