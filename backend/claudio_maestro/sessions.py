@@ -51,6 +51,7 @@ from claudio_maestro.agent.base import (
     AttachInfo,
 )
 from claudio_maestro.config import read_user_claude_settings
+from claudio_maestro.contextprobe import probe_context
 from claudio_maestro.contextusage import context_breakdown
 from claudio_maestro.conversation import (
     ConversationBuilder,
@@ -235,6 +236,9 @@ DEFAULT_CONTEXT_WINDOW = 200_000
 LARGE_CONTEXT_WINDOW = 1_000_000
 # How long a context read holds its slot; a call that takes longer is abandoned.
 CONTEXT_READ_LIMIT = 10.0  # seconds
+# How long a temporary process may take to measure a closed conversation, from its start
+# (connect included) to its answer.
+CONTEXT_PROBE_LIMIT = 30.0  # seconds
 # An error of the CLI that tells it does not know the `get_context_usage` request.
 _UNSUPPORTED_CONTEXT = re.compile(
     r"unsupported control request|unknown control|unrecognized.*subtype", re.IGNORECASE
@@ -912,6 +916,17 @@ async def _deny_all(
 ) -> PermissionResultDeny:
     """Permission callback of the throwaway client that only lists the models."""
     return PermissionResultDeny(message="Cliente só de consulta.")
+
+
+@dataclass
+class _Probe:
+    """A measurement of a closed conversation by a temporary process, shared by every
+    request for that session. `started` turns true once it has the app-wide slot (before
+    that it is only waiting in line and nothing is running)."""
+
+    task: "asyncio.Task[tuple[dict[str, Any], float] | None] | None" = None
+    waiters: int = 0
+    started: bool = False
 
 
 @dataclass
@@ -3192,6 +3207,10 @@ class SessionManager:
         # Sessions whose process the agentd may still hold (from the last `reattach_all`),
         # shared with the sessions: their automatic Remote Control reconnect waits.
         self._agentd_held: set[str] = set()
+        # Temporary-process context measurements of closed conversations, by session id,
+        # and the slot that lets only one of them run in the whole app.
+        self._probes: dict[str, _Probe] = {}
+        self._probe_slot = asyncio.Semaphore(1)
         # Models of `get_server_info()`, kept in `app_state` so a restart starts
         # with the last list. `_models_fetched_at` is when it was last confirmed.
         self._models: list[dict[str, Any]] | None = None
@@ -3451,17 +3470,134 @@ class SessionManager:
     async def context_details(self, session_id: str) -> dict[str, Any]:
         """Context breakdown of a session, read on demand from its client.
 
-        A session without a client in memory (never opened, or only history) is not
-        loaded just to answer: it has no process to ask."""
-        self.find_record(session_id)  # SessionNotFoundError for an unknown id
+        A session without a client has no process to ask: it answers the last breakdown
+        kept in memory. With none kept (and nothing using the conversation), a temporary
+        process measures a copy of it (`_probe_details`), so the answer is `live: False`
+        with the time of that measurement. Without anything to show, `no_process`."""
+        record = self.find_record(session_id)  # SessionNotFoundError for an unknown id
         session = self._sessions.get(session_id)
         if session is None:
             kept = self._kept_breakdowns.get(session_id)
-            if kept is None:
-                return {"available": False, "reason": "no_process", "context": None}
-            breakdown, measured_at = kept
-            return _stored_details(breakdown, measured_at, None)
-        return await session.read_context_details()
+            if kept is not None:
+                breakdown, measured_at = kept
+                return _stored_details(breakdown, measured_at, None)
+        elif session.client is not None or session.last_breakdown is not None:
+            return await session.read_context_details()
+        context = session.context if session is not None else None
+        if self.app_writing(session_id) or not await self._has_history(record):
+            return {"available": False, "reason": "no_process", "context": context}
+        measured = await self._probe_details(session_id, record)
+        if measured is None:
+            return {"available": False, "reason": "no_process", "context": context}
+        breakdown, measured_at = measured
+        return _stored_details(breakdown, measured_at, context)
+
+    async def _has_history(self, record: SessionRecord) -> bool:
+        """The conversation exists on disk: without it there is nothing to resume."""
+        try:
+            return await asyncio.to_thread(
+                self._history_exists, record.session_id, record.history_directory
+            )
+        except Exception:
+            logger.exception("Falha ao consultar o histórico da sessão %s", record.session_id)
+            return False
+
+    async def _probe_details(
+        self, session_id: str, record: SessionRecord
+    ) -> tuple[dict[str, Any], float] | None:
+        """(breakdown, measured_at) from a temporary process, or None when it failed.
+
+        Requests for the same session share one measurement. A caller that goes away does
+        not cancel it once its process started: it ends on its own within
+        `CONTEXT_PROBE_LIMIT` and its result is kept for the next request. A measurement
+        still waiting in line with nobody left to answer is dropped instead."""
+        probe = self._probes.get(session_id)
+        if probe is None or probe.task is None or probe.task.done():
+            probe = _Probe()
+            task = asyncio.create_task(self._run_probe(session_id, record, probe))
+            probe.task = task
+            self._probes[session_id] = probe
+
+            def forget(_done: asyncio.Future[Any], probe: _Probe = probe) -> None:
+                if self._probes.get(session_id) is probe:
+                    del self._probes[session_id]
+
+            task.add_done_callback(forget)
+        task = probe.task
+        assert task is not None
+        probe.waiters += 1
+        try:
+            # `wait` does not cancel the measurement when this caller goes away.
+            await asyncio.wait([task])
+        finally:
+            probe.waiters -= 1
+            if probe.waiters == 0 and not probe.started and not task.done():
+                task.cancel()
+                # A request arriving before the cancel lands starts a new measurement.
+                if self._probes.get(session_id) is probe:
+                    del self._probes[session_id]
+        if task.cancelled() or task.exception() is not None:
+            return None
+        return task.result()
+
+    async def _run_probe(
+        self, session_id: str, record: SessionRecord, probe: _Probe
+    ) -> tuple[dict[str, Any], float] | None:
+        async with self._probe_slot:
+            probe.started = True
+            started_at = time.time()
+            try:
+                usage = await probe_context(
+                    self._agent_factory, self._probe_options(record), CONTEXT_PROBE_LIMIT
+                )
+            except Exception as error:
+                # An `AgentError` (connect, read, a factory that refuses) or the timeout.
+                logger.warning(
+                    "Não foi possível medir o contexto da sessão %s: %s",
+                    session_id,
+                    str(error) or type(error).__name__,
+                )
+                return None
+            breakdown = context_breakdown(usage)
+            if breakdown is None:
+                return None
+            # The conversation was read when the process opened, so that is its time.
+            self._keep_probed(session_id, breakdown, started_at)
+            return breakdown, started_at
+
+    def _probe_options(self, record: SessionRecord) -> AgentOptions:
+        """A resumed copy of the conversation that sends nothing and runs no tool or hook.
+
+        It loads the folder's settings (MCP, skills, CLAUDE.md, agents), so the breakdown
+        is the real one; the SDK starts it directly, not through the agentd. A fork writes
+        no file under `~/.claude/projects` until a message is sent, so it needs no
+        entrypoint to hide it from the editor extension."""
+        return AgentOptions(
+            cwd=Path(record.work_dir()),
+            session_id=record.session_id,
+            resume=True,
+            fork_session=True,
+            can_use_tool=_deny_all,
+            model=None if record.model == DEFAULT_MODEL_VALUE else record.model,
+            settings='{"disableAllHooks": true}',
+            setting_sources=None,
+            agentd=None,
+        )
+
+    def _keep_probed(self, session_id: str, breakdown: dict[str, Any], measured_at: float) -> None:
+        """Keep what a probe measured, unless something newer is already kept (a live
+        client may have measured the session while the probe ran)."""
+        session = self._sessions.get(session_id)
+        if session is not None:
+            if session.last_breakdown_at is None or session.last_breakdown_at < measured_at:
+                session.last_breakdown, session.last_breakdown_at = breakdown, measured_at
+            return
+        kept = self._kept_breakdowns.get(session_id)
+        if kept is None or kept[1] < measured_at:
+            self._kept_breakdowns[session_id] = (breakdown, measured_at)
+            self._kept_breakdowns.move_to_end(session_id)
+            while len(self._kept_breakdowns) > KEPT_BREAKDOWN_LIMIT:
+                self._kept_breakdowns.popitem(last=False)
 
     async def send(
         self, session_id: str, text: str, images: list[dict[str, Any]] | None = None
@@ -4498,6 +4634,12 @@ class SessionManager:
                 logger.exception("Falha ao acordar sessões em espera")
 
     async def shutdown(self) -> None:
+        # Temporary measurement processes go away with the app (the task closes its client).
+        probes = [probe.task for probe in self._probes.values() if probe.task is not None]
+        for task in probes:
+            task.cancel()
+        if probes:
+            await asyncio.wait(probes)
         for session in list(self._sessions.values()):
             await session.detach()
 

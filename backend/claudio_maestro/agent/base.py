@@ -72,6 +72,9 @@ class AgentOptions:
     agentd: Any | None = None
     # Attach to a process the agentd kept (see AttachInfo) instead of starting one.
     attach: AttachInfo | None = None
+    # With resume: the agent opens a copy of the conversation under a new session id and
+    # leaves the original file alone (throwaway clients that only read it).
+    fork_session: bool = False
 
 
 @runtime_checkable

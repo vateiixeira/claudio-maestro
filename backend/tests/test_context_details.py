@@ -5,9 +5,11 @@ Uses the scripted fake agent; nothing here touches the real SDK.
 
 import asyncio
 import time
+from pathlib import Path
 from typing import Any
 
 import pytest
+from claude_agent_sdk import PermissionResultDeny
 from fastapi.testclient import TestClient
 from test_context_breakdown import FULL_USAGE
 from test_context_permission import (
@@ -25,7 +27,7 @@ from claudio_maestro.agent.base import AgentError
 from claudio_maestro.agent.fake import text_turn
 from claudio_maestro.app import create_app
 from claudio_maestro.contextusage import context_breakdown
-from claudio_maestro.sessions import SessionNotFoundError
+from claudio_maestro.sessions import DEFAULT_MODEL_VALUE, SessionNotFoundError
 
 NO_PROCESS = {"available": False, "reason": "no_process", "context": None}
 
@@ -505,10 +507,11 @@ async def test_kept_breakdowns_are_limited_to_the_most_recent(  # noqa: F811
 @pytest.mark.anyio
 async def test_session_that_never_measured_stays_no_process(make_env, env_cleanup):  # noqa: F811
     env, session, _client = await connected(make_env, env_cleanup, usage=SDK_USAGE)
-    # The summary came without categories: nothing to show, but the total still counts.
+    # Nothing kept, and the temporary process has nothing to show either: only the total.
     await session.close()
     session.last_breakdown = None
     session.last_breakdown_at = None
+    env.factory.usage = None
 
     result = await env.manager.context_details(session.session_id)
 
@@ -567,3 +570,385 @@ def test_route_reads_full_with_a_connected_client(api_client, home):
     assert body["live"] is True and isinstance(body["measured_at"], float)
     assert factory.clients[0].context_usage_details[-1] == "full"
 
+
+
+# Measuring a closed conversation on demand ----------------------------------
+
+
+class ProbeFactory(ContextFactory):
+    """Fake factory whose clients can hold or fail `get_context_usage`, and that counts
+    how many reads run at the same time."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.usage = FULL_USAGE
+        self.hold: asyncio.Event | None = None
+        self.read_error: Exception | None = None
+        self.reading = 0
+        self.max_reading = 0
+        self.reading_changed = asyncio.Event()
+
+    def __call__(self, options):
+        client = super().__call__(options)
+        read = client.get_context_usage
+
+        async def gated(detail="full"):
+            self.reading += 1
+            self.max_reading = max(self.max_reading, self.reading)
+            self.reading_changed.set()
+            try:
+                if self.hold is not None:
+                    await self.hold.wait()
+                if self.read_error is not None:
+                    raise self.read_error
+                return await read(detail)
+            finally:
+                self.reading -= 1
+
+        client.get_context_usage = gated
+        return client
+
+
+def probe_env(make_env, env_cleanup, factory=None):  # noqa: F811
+    factory = factory or ProbeFactory()
+    env = make_env(factory=factory)
+    env_cleanup.append(env.manager)
+    env.manager._history_exists = lambda sid, cwd: True
+    return env, factory
+
+
+def sessions_in_memory(env, count: int):
+    return [env.new_session() for _ in range(count)]
+
+
+def forget(env, session) -> None:
+    env.manager.forget_closed()
+    assert session.session_id not in env.manager.active_ids()
+
+
+@pytest.mark.anyio
+async def test_closed_session_never_measured_is_measured_on_demand(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    session = env.new_session()
+    session.record.model = "haiku"
+    before = time.time()
+
+    result = await env.manager.context_details(session.session_id)
+
+    after = time.time()
+    assert result["available"] is True and result["live"] is False
+    assert before <= result["measured_at"] <= after
+    assert result["breakdown"] == context_breakdown(FULL_USAGE)
+    assert result["context"] == {"used_tokens": 84800, "max_tokens": 400000, "percent": 21.2}
+    (client,) = factory.clients
+    assert client.context_usage_details == ["full"]
+    assert client.sent == [] and client.closed
+    options = client.options
+    assert options.session_id == session.session_id
+    assert options.resume is True and options.fork_session is True
+    assert options.cwd == Path(session.record.work_dir())
+    assert options.model == "haiku"
+    assert options.settings == '{"disableAllHooks": true}'
+    assert options.setting_sources is None
+    assert options.agentd is None and options.attach is None
+    denied = await options.can_use_tool("Bash", {"command": "ls"}, None)
+    assert isinstance(denied, PermissionResultDeny)
+    # What the probe measured is what the session keeps for the next time.
+    assert session.last_breakdown == result["breakdown"]
+    assert session.last_breakdown_at == result["measured_at"]
+
+
+@pytest.mark.anyio
+async def test_default_model_is_not_passed_to_the_probe(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    session = env.new_session()
+    session.record.model = DEFAULT_MODEL_VALUE
+
+    await env.manager.context_details(session.session_id)
+
+    assert factory.clients[0].options.model is None
+
+
+@pytest.mark.anyio
+async def test_second_call_uses_the_kept_breakdown_without_measuring_again(  # noqa: F811
+    make_env, env_cleanup
+):
+    env, factory = probe_env(make_env, env_cleanup)
+    session = env.new_session()
+
+    first = await env.manager.context_details(session.session_id)
+    second = await env.manager.context_details(session.session_id)
+
+    assert len(factory.clients) == 1
+    assert second == first
+
+
+@pytest.mark.anyio
+async def test_forgotten_session_is_measured_and_kept_in_the_manager(  # noqa: F811
+    make_env, env_cleanup
+):
+    env, factory = probe_env(make_env, env_cleanup)
+    session = env.new_session()
+    forget(env, session)
+
+    first = await env.manager.context_details(session.session_id)
+
+    assert first["available"] is True and first["live"] is False
+    assert env.manager._kept_breakdowns[session.session_id] == (
+        first["breakdown"], first["measured_at"],
+    )
+    assert await env.manager.context_details(session.session_id) == first
+    assert len(factory.clients) == 1
+
+
+@pytest.mark.anyio
+async def test_simultaneous_calls_share_one_measurement(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    factory.hold = asyncio.Event()
+    session = env.new_session()
+
+    first = asyncio.create_task(env.manager.context_details(session.session_id))
+    second = asyncio.create_task(env.manager.context_details(session.session_id))
+    await wait_until(lambda: factory.reading == 1)
+    await asyncio.sleep(0.01)
+    factory.hold.set()
+    results = await asyncio.gather(first, second)
+
+    assert len(factory.clients) == 1
+    assert results[0] == results[1] and results[0]["available"] is True
+
+
+@pytest.mark.anyio
+async def test_two_sessions_are_measured_one_at_a_time(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    factory.hold = asyncio.Event()
+    one, two = sessions_in_memory(env, 2)
+
+    first = asyncio.create_task(env.manager.context_details(one.session_id))
+    await wait_until(lambda: factory.reading == 1)
+    second = asyncio.create_task(env.manager.context_details(two.session_id))
+    await asyncio.sleep(0.05)
+    assert len(factory.clients) == 1  # the second waits for its turn: no process yet
+
+    factory.hold.set()
+    results = await asyncio.gather(first, second)
+
+    assert all(result["available"] is True for result in results)
+    assert len(factory.clients) == 2 and factory.max_reading == 1
+    assert all(client.closed for client in factory.clients)
+
+
+@pytest.mark.anyio
+async def test_a_queued_measurement_nobody_waits_for_is_dropped(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    factory.hold = asyncio.Event()
+    one, two = sessions_in_memory(env, 2)
+    first = asyncio.create_task(env.manager.context_details(one.session_id))
+    await wait_until(lambda: factory.reading == 1)
+    second = asyncio.create_task(env.manager.context_details(two.session_id))
+    await asyncio.sleep(0.02)
+
+    second.cancel()
+    await asyncio.wait([second])
+    factory.hold.set()
+    await first
+
+    assert len(factory.clients) == 1  # the abandoned queued one never started a process
+    assert env.manager._probes == {}
+
+
+@pytest.mark.anyio
+async def test_caller_cancelled_while_measuring_does_not_leave_the_process_open(  # noqa: F811
+    make_env, env_cleanup
+):
+    env, factory = probe_env(make_env, env_cleanup)
+    factory.hold = asyncio.Event()
+    session = env.new_session()
+    caller = asyncio.create_task(env.manager.context_details(session.session_id))
+    await wait_until(lambda: factory.reading == 1)
+
+    caller.cancel()
+    await asyncio.wait([caller])
+    # The measurement is not wasted: it ends on its own (here, now) and closes the process.
+    factory.hold.set()
+    await wait_until(lambda: env.manager._probes == {})
+
+    assert factory.clients[0].closed
+    assert session.last_breakdown == context_breakdown(FULL_USAGE)
+
+
+@pytest.mark.anyio
+async def test_shutdown_closes_a_measurement_in_flight(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    factory.hold = asyncio.Event()  # never opens
+    session = env.new_session()
+    caller = asyncio.create_task(env.manager.context_details(session.session_id))
+    await wait_until(lambda: factory.reading == 1)
+
+    await env.manager.shutdown()
+    await asyncio.wait([caller])
+
+    assert factory.clients[0].closed and env.manager._probes == {}
+    assert caller.result()["available"] is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["error", "timeout", "no_data", "unusable"])
+async def test_failed_measurement_is_no_process_and_keeps_nothing(  # noqa: F811
+    make_env, env_cleanup, monkeypatch, failure
+):
+    env, factory = probe_env(make_env, env_cleanup)
+    if failure == "error":
+        factory.read_error = AgentError("quebrou")
+    elif failure == "timeout":
+        factory.hold = asyncio.Event()  # never opens
+        monkeypatch.setattr("claudio_maestro.sessions.CONTEXT_PROBE_LIMIT", 0.05)
+    elif failure == "no_data":
+        factory.usage = None
+    else:
+        factory.usage = {"totalTokens": "x"}
+    session = env.new_session()
+
+    result = await env.manager.context_details(session.session_id)
+
+    assert result == {"available": False, "reason": "no_process", "context": None}
+    assert session.last_breakdown is None and session.last_breakdown_at is None
+    assert env.manager._kept_breakdowns == {}
+    assert factory.clients[0].closed
+    assert env.manager._probes == {}
+
+
+@pytest.mark.anyio
+async def test_failed_measurement_of_a_forgotten_session_keeps_nothing(  # noqa: F811
+    make_env, env_cleanup
+):
+    env, factory = probe_env(make_env, env_cleanup)
+    factory.read_error = AgentError("quebrou")
+    session = env.new_session()
+    forget(env, session)
+
+    result = await env.manager.context_details(session.session_id)
+
+    assert result == {"available": False, "reason": "no_process", "context": None}
+    assert env.manager._kept_breakdowns == {}
+
+
+@pytest.mark.anyio
+async def test_connect_failure_is_no_process(make_env, env_cleanup):  # noqa: F811
+    factory = ProbeFactory()
+    factory.connect_error = AgentError("não abriu")
+    env, _ = probe_env(make_env, env_cleanup, factory)
+    session = env.new_session()
+
+    result = await env.manager.context_details(session.session_id)
+
+    assert result["available"] is False and result["reason"] == "no_process"
+    assert factory.clients[0].closed
+
+
+@pytest.mark.anyio
+async def test_a_factory_that_refuses_is_no_process(make_env, env_cleanup):  # noqa: F811
+    """The E2E server's factory raises `AgentError` for every client."""
+
+    def refuse(options):
+        raise AgentError("O servidor de E2E não inicia o agente real.")
+
+    env, _ = probe_env(make_env, env_cleanup, refuse)
+    session = env.new_session()
+
+    result = await env.manager.context_details(session.session_id)
+
+    assert result == {"available": False, "reason": "no_process", "context": None}
+
+
+@pytest.mark.anyio
+async def test_session_with_a_client_is_not_measured_by_a_probe(make_env, env_cleanup):  # noqa: F811
+    env, session, client = await connected(make_env, env_cleanup, usage=SDK_USAGE)
+
+    result = await env.manager.context_details(session.session_id)
+
+    assert result["live"] is True
+    assert env.factory.clients == [client]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("busy", ["connecting", "turn", "prompt", "history_missing"])
+async def test_session_in_use_or_without_history_is_not_measured(  # noqa: F811
+    make_env, env_cleanup, busy
+):
+    env, factory = probe_env(make_env, env_cleanup)
+    session = env.new_session()
+    if busy == "connecting":
+        session._connecting = True
+    elif busy == "turn":
+        session.pending_turns = 1
+    elif busy == "prompt":
+        session.prompts["p1"] = object()  # type: ignore[assignment]
+    else:
+        env.manager._history_exists = lambda sid, cwd: False
+
+    result = await env.manager.context_details(session.session_id)
+
+    assert result == {"available": False, "reason": "no_process", "context": None}
+    assert factory.clients == []
+
+
+@pytest.mark.anyio
+async def test_unknown_session_is_still_not_found_before_any_probe(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+
+    with pytest.raises(SessionNotFoundError):
+        await env.manager.context_details("não-existe")
+
+    assert factory.clients == []
+
+
+@pytest.mark.anyio
+async def test_probe_result_does_not_overwrite_a_newer_live_breakdown(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    factory.hold = asyncio.Event()
+    session = env.new_session()
+    caller = asyncio.create_task(env.manager.context_details(session.session_id))
+    await wait_until(lambda: factory.reading == 1)
+
+    # A live client measured the session while the probe was still running.
+    live = context_breakdown(other_usage(120000))
+    session.last_breakdown, session.last_breakdown_at = live, time.time()
+    factory.hold.set()
+    result = await caller
+
+    assert result["available"] is True
+    assert session.last_breakdown == live
+
+
+@pytest.mark.anyio
+async def test_a_kept_breakdown_is_never_measured_again_by_a_probe(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    session = env.new_session()
+    env.manager._kept_breakdowns[session.session_id] = (context_breakdown(other_usage(1000)), 1.0)
+    forget(env, session)
+    env.manager._kept_breakdowns[session.session_id] = (context_breakdown(other_usage(1000)), 1.0)
+
+    result = await env.manager.context_details(session.session_id)
+
+    assert result["breakdown"]["total_tokens"] == 1000
+    assert factory.clients == []
+
+
+def test_route_with_a_refusing_agent_factory_stays_no_process(monkeypatch, home):
+    """The E2E server refuses to start any agent: the temporary process fails the same way."""
+
+    def refuse(options):
+        raise AgentError("O servidor de E2E não inicia o agente real.")
+
+    monkeypatch.setattr("claudio_maestro.history.sdk_read_context", lambda sid, cwd: None)
+    monkeypatch.setattr("claudio_maestro.history.sdk_session_file_mtime", lambda sid, cwd: 1000.0)
+    app = create_app(agent_factory=refuse, history_exists=lambda sid, cwd: True)
+    headers = {"origin": APP_ORIGIN, "x-maestro": "1"}
+    with TestClient(app, base_url=BACKEND_URL, headers=headers) as client:
+        sid = api_session(client, home)["session_id"]
+
+        response = client.get(f"/api/sessions/{sid}/context")
+
+    assert response.status_code == 200
+    assert response.json() == NO_PROCESS

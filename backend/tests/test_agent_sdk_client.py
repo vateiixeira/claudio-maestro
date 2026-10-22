@@ -97,6 +97,26 @@ def test_build_options_with_model_effort_mode(tmp_path):
     assert sdk.permission_mode == "acceptEdits"
 
 
+def test_build_options_does_not_fork_by_default(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, resume=True))
+
+    assert sdk.fork_session is False
+
+
+def test_build_options_forks_a_resumed_session(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, resume=True, fork_session=True))
+
+    assert sdk.resume == SESSION_ID
+    assert sdk.fork_session is True
+
+
+def test_build_options_fork_needs_resume(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, resume=False, fork_session=True))
+
+    assert sdk.session_id == SESSION_ID
+    assert sdk.fork_session is False
+
+
 def test_build_options_does_not_set_setting_sources(tmp_path):
     sdk = build_sdk_options(make_options(tmp_path))
 
