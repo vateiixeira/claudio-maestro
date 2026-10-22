@@ -2,13 +2,13 @@
 import { computed, ref } from 'vue'
 import { errorMessage, updateSession } from '../../api/http'
 import { useConversationStore } from '../../stores/conversation'
-import { formatTokens } from '../../format'
 import { useModelsStore } from '../../stores/models'
 import { useSessionsStore } from '../../stores/sessions'
 import type { Effort, PermissionMode, RemoteControlState, SessionUpdate } from '../../types/api'
 import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, modeLabel } from '../../sessionOptions'
 import BypassConfirmDialog from './BypassConfirmDialog.vue'
 import ClaudeCliFooter from './ClaudeCliFooter.vue'
+import ContextIndicator from './ContextIndicator.vue'
 import OptionMenu, { type MenuOption } from './OptionMenu.vue'
 import RemoteControlChip from './RemoteControlChip.vue'
 
@@ -67,14 +67,6 @@ const context = computed(() => {
   // The list can carry `null` (no connected client); the snapshot then holds the value from the history.
   return sessionsStore.find(props.sessionId)?.context ?? conversations.get(props.sessionId)?.context ?? null
 })
-const contextPercent = computed(() => (context.value ? Math.round(context.value.percent) : 0))
-const contextTitle = computed(() =>
-  context.value
-    // "1 milhão de tokens", but "200 mil tokens".
-    ? `${formatTokens(context.value.used_tokens)} de ${formatTokens(context.value.max_tokens)}${context.value.max_tokens >= 1_000_000 ? ' de' : ''} tokens`
-    : undefined,
-)
-const contextWarn = computed(() => contextPercent.value >= 80)
 
 // The mark on with nothing holding it (`off`) is shown as connecting: the backend reconnects by itself.
 const remoteState = computed<RemoteControlState>(() => {
@@ -158,15 +150,7 @@ function confirmBypass() {
       :disabled="saving"
       @select="selectMode"
     />
-    <span
-      v-if="context && contextWarn"
-      data-test="context-usage"
-      :title="contextTitle"
-      aria-hidden="true"
-      class="font-mono text-xs"
-      :class="contextWarn ? 'text-secondary' : 'text-fg-subtle'"
-    >Contexto {{ contextPercent }}%</span>
-    <span v-if="context && contextWarn" data-test="context-usage-sr" class="sr-only">Contexto {{ contextPercent }}%, {{ contextTitle }}</span>
+    <ContextIndicator v-if="context" :session-id="sessionId" :context="context" />
     <span v-if="options.effort_pending" data-test="effort-pending" class="text-xs text-fg-subtle">vale a partir do próximo turno</span>
     <p v-if="error" role="alert" class="m-0 w-full text-sm text-diff-del-fg">{{ error }}</p>
 

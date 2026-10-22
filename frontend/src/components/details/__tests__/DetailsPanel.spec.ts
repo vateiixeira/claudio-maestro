@@ -42,10 +42,26 @@ beforeEach(async () => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
+const CONTEXT_RESPONSE = {
+  available: true,
+  context: { used_tokens: 84_000, max_tokens: 200_000, percent: 42 },
+  breakdown: {
+    model: 'claude-opus-5-5', total_tokens: 84_000, max_tokens: 200_000, percent: 42,
+    categories: [
+      { name: 'Messages', tokens: 50_000, kind: 'used' },
+      { name: 'MCP tools', tokens: 9_000, kind: 'used' },
+      { name: 'Free space', tokens: 116_000, kind: 'free' },
+    ],
+    mcp_tools: [{ name: 'smart_search', server: 'claude-mem', tokens: 1_900, loaded: true }],
+    memory_files: [], agents: [], skills: [],
+  },
+}
+
 async function mountPanel(fetchHandlers = {}, props: Record<string, unknown> = {}) {
   vi.stubGlobal('fetch', routeFetch({
     'GET /api/sessions/s1/changes': () => jsonResponse(changes),
     'GET /api/sessions/s1/digest': () => jsonResponse(null),
+    'GET /api/sessions/s1/context': () => jsonResponse(CONTEXT_RESPONSE),
     'GET /api/sessions/s1/plan': () => jsonResponse({ link: 'auto', path: null, plan: null, tasks: [] }),
     'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ items: [
       { type: 'user', id: 'u1', text: 'um' }, { type: 'user', id: 'u2', text: 'dois' },
@@ -154,6 +170,36 @@ describe('painel Detalhes', () => {
     expect(wrapper.find('[data-test="prop-context"]').text()).toContain('42%')
     expect(wrapper.find('[data-test="prop-context"]').text()).toContain('84 mil')
     expect(wrapper.find('[data-test="prop-turns"]').text()).toContain('2')
+  })
+
+  it('a seção Contexto usa o ContextBreakdown no lugar da barra', async () => {
+    const wrapper = await mountPanel()
+
+    const section = wrapper.find('[data-test="prop-context"]')
+    const breakdown = section.find('[data-test="ctx-root"]')
+    expect(breakdown.exists()).toBe(true)
+    expect(breakdown.attributes('data-variant')).toBe('panel')
+    expect(section.find('[data-test="ctx-percent"]').text()).toBe('42% usado')
+    expect(section.findAll('[data-test="ctx-row"]').map((r) => r.text()).join(' ')).toContain('Messages')
+    // The breakdown takes the whole width, under the "Contexto" label, not the narrow value column.
+    const label = wrapper.findAll('dt').find((dt) => dt.text() === 'Contexto')!
+    expect(label.classes()).toContain('col-span-2')
+    expect(section.classes()).toContain('col-span-2')
+    expect(section.element.previousElementSibling).toBe(label.element)
+    // The old bar and "N% · X de Y" line are gone.
+    expect(section.find('span.bg-primary').exists()).toBe(false)
+    // Detail lists start closed.
+    expect(section.find('[data-test="ctx-toggle"]').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('sem contexto a seção continua "Desconhecido" e não pede o detalhamento', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', context: null, display_state: 'waiting', state: 'idle' })])
+    const requested = vi.fn()
+    const wrapper = await mountPanel({ 'GET /api/sessions/s1/context': () => { requested(); return jsonResponse(CONTEXT_RESPONSE) } })
+
+    expect(wrapper.find('[data-test="prop-context"]').text()).toBe('Desconhecido')
+    expect(wrapper.find('[data-test="ctx-root"]').exists()).toBe(false)
+    expect(requested).not.toHaveBeenCalled()
   })
 
   it('Branch mostra o estado de sincronização de cada repositório, menos na worktree', async () => {

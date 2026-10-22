@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import ContextBreakdown from '../context/ContextBreakdown.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
@@ -19,7 +20,7 @@ import { toolDiff } from '../../conversation/diff'
 import { needsYou } from '../../conversation/needsYou'
 import { str } from '../../conversation/tool'
 import { waitingReason } from '../../conversationList'
-import { formatActivity, formatTokens } from '../../format'
+import { formatActivity } from '../../format'
 import {
   DETAILS_DEFAULT_WIDTH, DETAILS_KEY_STEP, DETAILS_MIN_WIDTH,
   clampDetailsWidth, detailsMaxWidth, readDetailsWidth, writeDetailsWidth,
@@ -301,14 +302,10 @@ function resetWidth() {
                   <span :title="session.worktree_path ?? undefined"><WorktreeLabel :text="session.worktree_name" /></span>
                 </dd>
               </template>
-              <dt class="text-fg-muted">Contexto</dt>
-              <dd data-test="prop-context" class="m-0 flex flex-col gap-1.5">
-                <template v-if="context">
-                  <span :class="context.percent >= 80 ? 'text-secondary' : 'text-fg'">{{ Math.round(context.percent) }}% · {{ formatTokens(context.used_tokens) }} de {{ formatTokens(context.max_tokens) }}</span>
-                  <span class="h-1.5 overflow-hidden rounded-full bg-line" aria-hidden="true">
-                    <span class="block h-full rounded-full" :class="context.percent >= 80 ? 'bg-secondary' : 'bg-primary'" :style="{ width: `${Math.min(context.percent, 100)}%` }" />
-                  </span>
-                </template>
+              <!-- The breakdown needs the whole width: label and content each take a full row of the grid. -->
+              <dt class="col-span-2 text-fg-muted">Contexto</dt>
+              <dd data-test="prop-context" class="col-span-2 -mt-1 min-w-0">
+                <ContextBreakdown v-if="context" :session-id="sessionId" :context="context" variant="panel" />
                 <span v-else class="text-fg-muted">Desconhecido</span>
               </dd>
               <GroupProperty v-if="projectId != null" :session-id="sessionId" :project-id="projectId" />

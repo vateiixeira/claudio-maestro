@@ -28,11 +28,28 @@ const CLAUDE_CLI = {
 
 let pinia: Pinia
 let patches: unknown[]
+let contextCalls = 0
+const contextRequests = () => contextCalls
+
+const BREAKDOWN = {
+  available: true,
+  context: { used_tokens: 84_800, max_tokens: 400_000, percent: 21.2 },
+  breakdown: {
+    model: 'claude-opus-5-5', total_tokens: 84_800, max_tokens: 400_000, percent: 21.2,
+    categories: [
+      { name: 'Messages', tokens: 35_800, kind: 'used' },
+      { name: 'System tools', tokens: 12_000, kind: 'used' },
+      { name: 'Free space', tokens: 300_000, kind: 'free' },
+    ],
+    mcp_tools: [], memory_files: [], agents: [], skills: [],
+  },
+}
 
 function setup(options: Record<string, unknown> = {}, patchStatus = 200) {
   pinia = createPinia()
   setActivePinia(pinia)
   patches = []
+  contextCalls = 0
   const store = useConversationStore(pinia)
   store.bySession['s1'] = conversationFromSnapshot({
     ...makeSnapshot({ seq: 1 }),
@@ -42,6 +59,7 @@ function setup(options: Record<string, unknown> = {}, patchStatus = 200) {
   const fetchMock = routeFetch({
     'GET /api/models': () => jsonResponse(MODELS),
     'GET /api/claude-cli': () => jsonResponse(CLAUDE_CLI),
+    'GET /api/sessions/s1/context': () => { contextCalls++; return jsonResponse(BREAKDOWN) },
     'PATCH /api/sessions/s1': (init) => {
       const body = JSON.parse(init!.body as string)
       patches.push(body)
@@ -349,41 +367,52 @@ describe('resposta do PATCH', () => {
 
 describe('uso do contexto', () => {
   const contextText = (w: ReturnType<typeof mount>) => w.find('[data-test="context-usage"]')
+  const popover = () => body().find('[data-test="context-popover"]')
 
-  it('esconde o contexto abaixo de 80%', async () => {
-    setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 42 } })
-    const w = await mountControls()
-    expect(contextText(w).exists()).toBe(false)
-    expect(w.find('[data-test="context-usage-sr"]').exists()).toBe(false)
+  it('mostra o indicador com qualquer percentual, discreto abaixo de 80%', async () => {
+    setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 21 } })
+    const el = contextText(await mountControls())
+    expect(el.exists()).toBe(true)
+    expect(el.element.tagName).toBe('BUTTON')
+    expect(el.text()).toBe('21%')
+    expect(el.classes()).toContain('text-fg-subtle')
+    expect(el.classes()).not.toContain('text-secondary')
   })
 
-  it('mostra a porcentagem com os tokens no título a partir de 80%', async () => {
-    setup({ context: { used_tokens: 170_000, max_tokens: 200_000, percent: 85 } })
-    const w = await mountControls()
-    const el = contextText(w)
-    expect(el.text()).toBe('Contexto 85%')
-    expect(el.attributes('title')).toBe('170 mil de 200 mil tokens')
-    // Screen readers get the tokens too, not only the tooltip; the visible text is not read twice.
-    expect(el.attributes('aria-hidden')).toBe('true')
-    expect(w.find('[data-test="context-usage-sr"]').text()).toBe('Contexto 85%, 170 mil de 200 mil tokens')
-    expect(w.find('[data-test="context-usage-sr"]').classes()).toContain('sr-only')
+  it('destaca com text-secondary a partir de 80%', async () => {
+    setup({ context: { used_tokens: 170_000, max_tokens: 200_000, percent: 84 } })
+    const el = contextText(await mountControls())
+    expect(el.text()).toBe('84%')
+    expect(el.classes()).toContain('text-secondary')
+    expect(el.classes()).not.toContain('text-fg-subtle')
   })
 
-  it('usa cor de alerta a partir de 80%', async () => {
+  it('80% já destaca', async () => {
     setup({ context: { used_tokens: 160_000, max_tokens: 200_000, percent: 80 } })
     expect(contextText(await mountControls()).classes()).toContain('text-secondary')
+  })
+
+  it('o leitor de tela ouve percentual e tokens; o texto visível não é lido de novo', async () => {
+    setup({ context: { used_tokens: 170_000, max_tokens: 200_000, percent: 85 } })
+    const el = contextText(await mountControls())
+    expect(el.attributes('aria-label')).toBe('Contexto 85%, 170 mil de 200 mil tokens')
+    expect(el.attributes('title')).toBe('170 mil de 200 mil tokens')
+    expect(el.attributes('aria-haspopup')).toBe('dialog')
+    expect(el.attributes('aria-expanded')).toBe('false')
   })
 
   it('arredonda a porcentagem e formata milhões', async () => {
     setup({ context: { used_tokens: 850_000, max_tokens: 1_000_000, percent: 85.4 } })
     const el = contextText(await mountControls())
-    expect(el.text()).toBe('Contexto 85%')
+    expect(el.text()).toBe('85%')
     expect(el.attributes('title')).toBe('850 mil de 1 milhão de tokens')
   })
 
-  it('não mostra nada sem contexto', async () => {
+  it('sem contexto não há indicador', async () => {
     setup({ context: null })
-    expect(contextText(await mountControls()).exists()).toBe(false)
+    const w = await mountControls()
+    expect(contextText(w).exists()).toBe(false)
+    expect(popover().exists()).toBe(false)
   })
 
   it('o resumo da sessão mais novo vence o retrato', async () => {
@@ -391,13 +420,13 @@ describe('uso do contexto', () => {
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 's1', context: { used_tokens: 120_000, max_tokens: 200_000, percent: 90 } }),
     ])
-    expect(contextText(await mountControls()).text()).toBe('Contexto 90%')
+    expect(contextText(await mountControls()).text()).toBe('90%')
   })
 
   it('lista com contexto nulo cai no valor do retrato', async () => {
     setup({ context: { used_tokens: 170_000, max_tokens: 200_000, percent: 85 } })
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', context: null })])
-    expect(contextText(await mountControls()).text()).toBe('Contexto 85%')
+    expect(contextText(await mountControls()).text()).toBe('85%')
   })
 
   it('lista com contexto e retrato sem contexto mostra o da lista', async () => {
@@ -405,7 +434,86 @@ describe('uso do contexto', () => {
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 's1', context: { used_tokens: 120_000, max_tokens: 200_000, percent: 90 } }),
     ])
-    expect(contextText(await mountControls()).text()).toBe('Contexto 90%')
+    expect(contextText(await mountControls()).text()).toBe('90%')
+  })
+
+  describe('popover', () => {
+    beforeEach(() => setup({ context: { used_tokens: 84_800, max_tokens: 400_000, percent: 21.2 } }))
+
+    it('começa fechado e sem pedir o detalhamento', async () => {
+      const w = await mountControls()
+      expect(popover().exists()).toBe(false)
+      expect(contextRequests()).toBe(0)
+      expect(contextText(w).attributes('aria-expanded')).toBe('false')
+    })
+
+    it('o indicador abre o popover com o detalhamento', async () => {
+      const w = await mountControls()
+      await contextText(w).trigger('click')
+      await flushPromises()
+      expect(contextText(w).attributes('aria-expanded')).toBe('true')
+      expect(popover().exists()).toBe(true)
+      expect(popover().attributes('role')).toBe('dialog')
+      expect(popover().find('[data-test="ctx-root"]').attributes('data-variant')).toBe('popover')
+      expect(popover().find('[data-test="ctx-percent"]').text()).toBe('21% usado')
+      expect(popover().findAll('[data-test="ctx-row"]').length).toBeGreaterThan(0)
+      expect(contextRequests()).toBe(1)
+    })
+
+    it('clicar de novo no indicador fecha', async () => {
+      const w = await mountControls()
+      await contextText(w).trigger('click')
+      await contextText(w).trigger('click')
+      expect(popover().exists()).toBe(false)
+      expect(contextText(w).attributes('aria-expanded')).toBe('false')
+    })
+
+    it('Esc fecha o popover e devolve o foco ao indicador', async () => {
+      const w = await mountControls()
+      await contextText(w).trigger('click')
+      await flushPromises()
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await flushPromises()
+      expect(popover().exists()).toBe(false)
+      expect(document.activeElement).toBe(contextText(w).element)
+    })
+
+    it('clique fora fecha sem roubar o foco; clique dentro não fecha', async () => {
+      const w = await mountControls()
+      await contextText(w).trigger('click')
+      await flushPromises()
+      popover().element.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      await flushPromises()
+      expect(popover().exists()).toBe(true)
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      await flushPromises()
+      expect(popover().exists()).toBe(false)
+    })
+
+    it('o Esc com o popover aberto não chega aos outros ouvintes da página', async () => {
+      const w = await mountControls()
+      const seen = vi.fn()
+      window.addEventListener('keydown', seen)
+      try {
+        await contextText(w).trigger('click')
+        await flushPromises()
+        popover().element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+        await flushPromises()
+        expect(popover().exists()).toBe(false)
+        expect(seen).not.toHaveBeenCalled()
+      } finally {
+        window.removeEventListener('keydown', seen)
+      }
+    })
+
+    it('com o popover fechado nenhum ouvinte de Esc fica preso', async () => {
+      const w = await mountControls()
+      await contextText(w).trigger('click')
+      await contextText(w).trigger('click')
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      document.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+    })
   })
 })
 

@@ -132,8 +132,8 @@ function separated(index: number): boolean {
 <template>
   <div data-test="ctx-root" :data-variant="variant" class="flex min-w-0 flex-col">
     <div v-if="total" class="mb-2 flex items-baseline justify-between gap-3">
-      <b data-test="ctx-percent" class="font-medium" :class="variant === 'popover' ? 'text-[0.9375rem]' : 'text-[0.8125rem]'">{{ percentLabel }}</b>
-      <span data-test="ctx-tokens" class="font-mono text-xs text-fg-subtle tabular-nums">{{ tokensLabel }}</span>
+      <b data-test="ctx-percent" class="font-medium whitespace-nowrap" :class="variant === 'popover' ? 'text-[0.9375rem]' : 'text-[0.8125rem]'">{{ percentLabel }}</b>
+      <span data-test="ctx-tokens" class="font-mono text-xs whitespace-nowrap text-fg-subtle tabular-nums">{{ tokensLabel }}</span>
     </div>
 
     <div
