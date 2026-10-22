@@ -5,6 +5,7 @@ import type {
   ClaudeCliUpdateResult,
   CommandInfo,
   CommitDetail,
+  ContextDetailsResponse,
   DeliveriesDay,
   Delivery,
   FileMatch,
@@ -401,6 +402,11 @@ export function compareBranch(projectId: number, repo: string, ref: string): Pro
 
 export function getSessionChanges(sessionId: string, signal?: AbortSignal): Promise<{ repos: ChangesGroup[] }> {
   return request('GET', `/api/sessions/${encodeURIComponent(sessionId)}/changes`, undefined, signal)
+}
+
+/** Context window breakdown of a session; the backend reads it from the live process (up to 10 s). */
+export function getSessionContext(sessionId: string, signal?: AbortSignal): Promise<ContextDetailsResponse> {
+  return request('GET', `/api/sessions/${encodeURIComponent(sessionId)}/context`, undefined, signal)
 }
 
 export function openInEditor(path: string): Promise<void> {

@@ -188,6 +188,41 @@ export interface ContextUsage {
   percent: number
 }
 
+/** How a category of the context breakdown counts: used window, free space, autocompact buffer or deferred (not loaded). */
+export type ContextCategoryKind = 'used' | 'free' | 'buffer' | 'deferred'
+
+/** Category names stay as the CLI sends them ("Messages", "System tools", "Free space"...). */
+export interface ContextCategory {
+  name: string
+  tokens: number
+  kind: ContextCategoryKind
+}
+
+export interface ContextMcpTool { name: string; server: string; tokens: number; loaded: boolean }
+export interface ContextMemoryFile { path: string; tokens: number }
+export interface ContextAgent { name: string; tokens: number }
+export interface ContextSkill { name: string; tokens: number }
+
+/** Breakdown of a session's context window (`GET /api/sessions/{id}/context`), normalized by the backend. */
+export interface ContextBreakdown {
+  model: string | null
+  total_tokens: number
+  max_tokens: number
+  percent: number
+  /** Without 0-token items, in display order: used (largest first), buffer, free, deferred (largest first). */
+  categories: ContextCategory[]
+  mcp_tools: ContextMcpTool[]
+  memory_files: ContextMemoryFile[]
+  agents: ContextAgent[]
+  skills: ContextSkill[]
+}
+
+export type ContextUnavailableReason = 'no_process' | 'timeout' | 'failed' | 'unsupported'
+
+export type ContextDetailsResponse =
+  | { available: true; context: ContextUsage | null; breakdown: ContextBreakdown }
+  | { available: false; reason: ContextUnavailableReason; context: ContextUsage | null }
+
 export interface PendingPermission {
   prompt_id: string
   tool_name: string
