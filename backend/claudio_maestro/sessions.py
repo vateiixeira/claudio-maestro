@@ -1930,7 +1930,7 @@ class ActiveSession:
         """Read until no turn ended meanwhile; a failure keeps the last value."""
         while self.client is client:
             self._context_again = False
-            call = asyncio.ensure_future(client.get_context_usage())
+            call = asyncio.ensure_future(client.get_context_usage("summary"))
             self._context_calls.add(call)
             call.add_done_callback(self._context_call_done)
             await asyncio.wait([call], timeout=CONTEXT_READ_LIMIT)

@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from claude_agent_sdk import ToolPermissionContext
 from fastapi.testclient import TestClient
-from test_agent_sdk_client import StubSdkClient, make_options
+from test_agent_sdk_client import StubSdkClient, _ScriptedQuery, make_options
 from test_sessions import Env, by_session, fake_history, wait_until
 
 from claudio_maestro import history as history_module
@@ -82,22 +82,44 @@ async def test_fake_get_context_usage_returns_configured_value(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_sdk_client_forwards_get_context_usage(tmp_path):
-    class Stub(StubSdkClient):
-        async def get_context_usage(self):
-            return SDK_USAGE
-
-    client = SdkAgentClient(make_options(tmp_path), sdk_client=Stub())
+async def test_fake_get_context_usage_records_detail(tmp_path):
+    client = FakeAgentClient(make_options(tmp_path))
+    client.context_usage = SDK_USAGE
+    assert await client.get_context_usage("summary") == SDK_USAGE
     assert await client.get_context_usage() == SDK_USAGE
+    assert client.context_usage_details == ["summary", "full"]
+
+
+def _context_stub(*responses: Any) -> StubSdkClient:
+    stub = StubSdkClient()
+    stub._query = _ScriptedQuery(*responses)
+    return stub
+
+
+@pytest.mark.anyio
+async def test_sdk_client_forwards_get_context_usage(tmp_path):
+    stub = _context_stub(SDK_USAGE)
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+    assert await client.get_context_usage() == SDK_USAGE
+    assert stub._query.requests == [{"subtype": "get_context_usage", "detail": "full"}]
+
+
+@pytest.mark.anyio
+async def test_sdk_client_sends_context_usage_with_detail(tmp_path):
+    stub = _context_stub(SDK_USAGE)
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
+    result = await client.get_context_usage("summary")
+    assert stub._query.requests == [{"subtype": "get_context_usage", "detail": "summary"}]
+    assert result == SDK_USAGE
 
 
 @pytest.mark.anyio
 async def test_sdk_client_maps_get_context_usage_errors(tmp_path):
-    class Stub(StubSdkClient):
-        async def get_context_usage(self):
-            raise RuntimeError("quebrou")
-
-    client = SdkAgentClient(make_options(tmp_path), sdk_client=Stub())
+    stub = _context_stub(RuntimeError("quebrou"))
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+    await client.connect()
     with pytest.raises(AgentError):
         await client.get_context_usage()
 
@@ -149,6 +171,8 @@ async def test_context_updated_at_end_of_turn(make_env, env_cleanup):
     assert updates[-1]["data"]["context"] == expected
     assert session.snapshot()["context"] == expected
     assert env.factory.clients[0].context_usage_calls == 1
+    # The per-turn read asks the CLI for the cheap summary.
+    assert env.factory.clients[0].context_usage_details == ["summary"]
 
 
 @pytest.mark.anyio
@@ -172,7 +196,7 @@ async def test_context_failure_keeps_last_value_and_turn_finishes(make_env, env_
     async def failing():
         raise AgentError("sem dados")
 
-    async def counted_failure():
+    async def counted_failure(detail="full"):
         client.context_failures += 1
         await failing()
 
@@ -223,7 +247,7 @@ async def hanging_context_env(make_env, env_cleanup):
     release = asyncio.Event()
     stats = {"calls": 0, "cancelled": 0}
 
-    async def hang():
+    async def hang(detail="full"):
         stats["calls"] += 1
         try:
             await release.wait()
@@ -324,7 +348,7 @@ async def test_context_read_slot_is_freed_after_the_limit(make_env, env_cleanup,
     await wait_until(lambda: session._context_task is None or session._context_task.done())
     assert stats["cancelled"] == 0
 
-    async def answer():
+    async def answer(detail="full"):
         stats["calls"] += 1
         return {**SDK_USAGE, "totalTokens": 90_000}
 

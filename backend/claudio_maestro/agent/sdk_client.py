@@ -7,7 +7,7 @@ import logging
 import os
 from collections import deque
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import Any, Literal
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -304,11 +304,14 @@ class SdkAgentClient:
         except Exception as error:
             raise to_agent_error(error) from error
 
-    async def get_context_usage(self) -> dict[str, Any] | None:
-        try:
-            return await self._client.get_context_usage()
-        except Exception as error:
-            raise to_agent_error(error) from error
+    async def get_context_usage(
+        self, detail: Literal["summary", "full"] = "full"
+    ) -> dict[str, Any] | None:
+        # The SDK's public `get_context_usage()` takes no `detail`, so the request
+        # goes through `_control`. The CLI's schema is not strict: a CLI that does not
+        # know the field ignores it (and one that does not know the request refuses
+        # the public call too), so there is no fallback.
+        return await self._control({"subtype": "get_context_usage", "detail": detail})
 
     async def detach(self) -> bool:
         if self._transport is None:

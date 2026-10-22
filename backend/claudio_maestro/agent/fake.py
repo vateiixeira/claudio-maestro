@@ -18,7 +18,7 @@ import json
 import uuid
 from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -157,6 +157,8 @@ class FakeAgentClient:
         # Answer of `get_context_usage()` (SDK format); None: no data.
         self.context_usage: dict[str, Any] | None = None
         self.context_usage_calls = 0
+        # Every `detail` that `get_context_usage()` received, in order.
+        self.context_usage_details: list[str] = []
         # When set, close() stops here until the test releases it.
         self.close_pause: PauseStep | None = None
 
@@ -220,8 +222,11 @@ class FakeAgentClient:
         self.server_info_calls += 1
         return self.server_info
 
-    async def get_context_usage(self) -> dict[str, Any] | None:
+    async def get_context_usage(
+        self, detail: Literal["summary", "full"] = "full"
+    ) -> dict[str, Any] | None:
         self.context_usage_calls += 1
+        self.context_usage_details.append(detail)
         return self.context_usage
 
     async def messages(self) -> AsyncIterator[Message]:

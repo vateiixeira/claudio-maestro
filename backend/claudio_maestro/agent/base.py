@@ -6,7 +6,7 @@ The real implementation lives in `sdk_client.py`; tests use `fake.py`.
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from claude_agent_sdk import (
     Message,
@@ -114,8 +114,14 @@ class AgentClient(Protocol):
         """Initialization info of the CLI; `models` lists the available models."""
         ...
 
-    async def get_context_usage(self) -> dict[str, Any] | None:
-        """Context window usage (`/context`): `totalTokens`, `rawMaxTokens`, `maxTokens`, `percentage`."""
+    async def get_context_usage(
+        self, detail: Literal["summary", "full"] = "full"
+    ) -> dict[str, Any] | None:
+        """Context window usage (`/context`): `totalTokens`, `rawMaxTokens`, `maxTokens`, `percentage`.
+
+        `detail="summary"` asks the CLI only for the totals (cheap; what the
+        per-turn read uses). `detail="full"` also brings the breakdown (`categories`,
+        `mcpTools`, `memoryFiles`, `agents`, `skills`), as the Desktop's context panel does."""
         ...
 
     async def detach(self) -> bool:
