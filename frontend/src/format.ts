@@ -39,6 +39,15 @@ export function formatActivity(seconds: number, now: Date = new Date()): string 
   return date.getFullYear() === now.getFullYear() ? label : `${label} ${date.getFullYear()}`
 }
 
+/** When a context breakdown was measured, from a Unix timestamp in seconds: "Medido às 14:32" (today) or "Medido em 21 out às 14:32". */
+export function formatMeasuredAt(seconds: number, now: Date = new Date()): string {
+  const date = new Date(seconds * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  if (startOfDay(date) === startOfDay(now)) return `Medido às ${time}`
+  return `Medido em ${date.getDate()} ${MONTHS[date.getMonth()]} às ${time}`
+}
+
 /** Compact time since `seconds` (Unix), for tight spots like the sidebar: "agora", "3 min", "1 h", "1 dia", "4 dias". */
 export function formatElapsedShort(seconds: number, nowMs: number = Date.now()): string {
   const elapsed = Math.floor(nowMs / 1000 - seconds)

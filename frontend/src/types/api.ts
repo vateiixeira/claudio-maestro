@@ -220,7 +220,8 @@ export interface ContextBreakdown {
 export type ContextUnavailableReason = 'no_process' | 'timeout' | 'failed' | 'unsupported'
 
 export type ContextDetailsResponse =
-  | { available: true; context: ContextUsage | null; breakdown: ContextBreakdown }
+  // `live` false: the last breakdown kept in memory, answered with no process running; `measured_at` is Unix seconds.
+  | { available: true; live: boolean; measured_at: number; context: ContextUsage | null; breakdown: ContextBreakdown }
   | { available: false; reason: ContextUnavailableReason; context: ContextUsage | null }
 
 export interface PendingPermission {

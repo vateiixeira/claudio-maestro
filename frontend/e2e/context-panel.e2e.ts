@@ -24,6 +24,8 @@ const categories: Category[] = [
 ]
 const BREAKDOWN = {
   available: true,
+  live: true,
+  measured_at: Math.floor(Date.now() / 1000),
   context: CONTEXT,
   breakdown: {
     model: 'claude-opus-5-5',
@@ -64,7 +66,7 @@ async function openConversation(page: Page) {
 const indicator = (page: Page) => page.getByTestId('context-usage')
 const popover = (page: Page) => page.getByTestId('context-popover')
 
-test('numa sessão fechada o indicador abre o total e a frase de sessão fechada', async ({ page }) => {
+test('numa sessão fechada o indicador abre o total e a frase de sem medição', async ({ page }) => {
   await stageContext(page)
   await openConversation(page)
 
@@ -75,7 +77,7 @@ test('numa sessão fechada o indicador abre o total e a frase de sessão fechada
   await expect(popover(page)).toBeVisible()
   await expect(popover(page).getByTestId('ctx-percent')).toHaveText('21% usado')
   await expect(popover(page).getByTestId('ctx-tokens')).toContainText('84,8 mil')
-  await expect(popover(page).getByTestId('ctx-message')).toHaveText('O detalhamento aparece quando a sessão estiver aberta.')
+  await expect(popover(page).getByTestId('ctx-message')).toHaveText('O detalhamento aparece depois da próxima mensagem desta conversa.')
 })
 
 test('o detalhamento mostra cabeçalho, barra, espaço livre, deferred e as sublistas', async ({ page }) => {
@@ -184,4 +186,48 @@ test('na seção Contexto do painel os rótulos e o cabeçalho cabem sem ser cor
   const percent = section.getByTestId('ctx-percent')
   const lineHeight = await percent.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) || el.clientHeight)
   expect((await percent.boundingBox())!.height).toBeLessThanOrEqual(lineHeight + 2)
+})
+
+const secondsAgo = (n: number) => Math.floor(Date.now() / 1000) - n
+
+test('sem o Claude rodando, o último detalhamento aparece com a hora da medição', async ({ page }) => {
+  await stageContext(page, { json: { ...BREAKDOWN, live: false, measured_at: secondsAgo(5) } })
+  await openConversation(page)
+  await indicator(page).click()
+
+  const pop = popover(page)
+  await expect(pop.getByTestId('ctx-row').filter({ hasText: 'Espaço livre' })).toBeVisible()
+  await expect(pop.getByTestId('ctx-measured')).toHaveText(/^Medido às \d{2}:\d{2}$/)
+  await expect(pop.getByTestId('ctx-message')).toHaveCount(0)
+
+  // The same line sits in the details panel.
+  await page.keyboard.press('Escape')
+  await page.getByTestId('details-tab-details').click()
+  await expect(page.getByTestId('prop-context').getByTestId('ctx-measured')).toHaveText(/^Medido às \d{2}:\d{2}$/)
+})
+
+test('uma medição de outro dia mostra o dia na linha', async ({ page }) => {
+  await stageContext(page, { json: { ...BREAKDOWN, live: false, measured_at: secondsAgo(3 * 86400) } })
+  await openConversation(page)
+  await indicator(page).click()
+
+  await expect(popover(page).getByTestId('ctx-measured')).toHaveText(/^Medido em \d{1,2} \S+ às \d{2}:\d{2}$/)
+})
+
+test('com o Claude rodando não há linha de hora', async ({ page }) => {
+  await stageContext(page, { json: BREAKDOWN })
+  await openConversation(page)
+  await indicator(page).click()
+
+  await expect(popover(page).getByTestId('ctx-row').filter({ hasText: 'Espaço livre' })).toBeVisible()
+  await expect(popover(page).getByTestId('ctx-measured')).toHaveCount(0)
+})
+
+test('uma hora de medição inválida esconde a linha', async ({ page }) => {
+  await stageContext(page, { json: { ...BREAKDOWN, live: false, measured_at: null } })
+  await openConversation(page)
+  await indicator(page).click()
+
+  await expect(popover(page).getByTestId('ctx-row').filter({ hasText: 'Espaço livre' })).toBeVisible()
+  await expect(popover(page).getByTestId('ctx-measured')).toHaveCount(0)
 })

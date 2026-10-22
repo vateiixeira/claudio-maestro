@@ -244,6 +244,8 @@ _UNSUPPORTED_CONTEXT = re.compile(
 AUTONOMOUS_FOLLOWUP_GRACE = 3.0  # seconds
 # Entries of the cache of contexts read from history files.
 CONTEXT_CACHE_SIZE = 512
+# Last context breakdowns kept for sessions forgotten from memory (oldest dropped first).
+KEPT_BREAKDOWN_LIMIT = 200
 PERMISSION_SUMMARY_MAX = 200  # characters
 PLAN_EDITS_MAX = 64  # edit calls on plans waiting for their result, per session
 # A CLI turn signal older than this (since the last write of the session file or of a
@@ -879,6 +881,28 @@ def default_agent_factory(options: AgentOptions) -> AgentClient:
     return SdkAgentClient(options)
 
 
+def _stored_details(
+    breakdown: dict[str, Any], measured_at: float, context: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Answer of the context route from the last breakdown kept in memory (no process).
+
+    Without a known context, the breakdown's own total stands in for it (same limit and
+    percent as `context_from_sdk`)."""
+    if context is None:
+        context = {
+            "used_tokens": breakdown["total_tokens"],
+            "max_tokens": breakdown["max_tokens"],
+            "percent": breakdown["percent"],
+        }
+    return {
+        "available": True,
+        "live": False,
+        "measured_at": measured_at,
+        "context": context,
+        "breakdown": breakdown,
+    }
+
+
 def _now() -> int:
     return int(time.time())
 
@@ -963,6 +987,11 @@ class ActiveSession:
         self.respawn_pending = False
         # Context usage read from the connected client at the end of each turn.
         self.context: dict[str, Any] | None = None
+        # Last normalized context breakdown and when it was measured (epoch seconds), from
+        # the per-turn `summary` read or the on-demand `full` one, whichever came last.
+        # Memory only: it answers the context panel while there is no client.
+        self.last_breakdown: dict[str, Any] | None = None
+        self.last_breakdown_at: float | None = None
         # Model id the CLI resolved (from the last init); not saved.
         self.model_resolved: str | None = None
         # Last tool used by the main conversation, for the dashboard; memory only.
@@ -1959,11 +1988,20 @@ class ActiveSession:
             context = context_from_sdk(usage)
             if self.client is not client:
                 return
+            self._keep_breakdown(usage)
             if context is not None and context != self.context:
                 self.context = context
                 self.emit_updated()
             if not self._context_again:
                 return
+
+    def _keep_breakdown(self, usage: Any) -> dict[str, Any] | None:
+        """Remember the breakdown of a read that came from the current client."""
+        breakdown = context_breakdown(usage)
+        if breakdown is not None:
+            self.last_breakdown = breakdown
+            self.last_breakdown_at = time.time()
+        return breakdown
 
     async def read_context_details(self) -> dict[str, Any]:
         """The `full` context usage, read on demand (the route behind the context panel).
@@ -1974,7 +2012,9 @@ class ActiveSession:
         answered with `timeout`. Never raises: a failure is an `available: False` answer."""
         client = self.client
         if client is None:
-            return {"available": False, "reason": "no_process", "context": self.context}
+            if self.last_breakdown is None or self.last_breakdown_at is None:
+                return {"available": False, "reason": "no_process", "context": self.context}
+            return _stored_details(self.last_breakdown, self.last_breakdown_at, self.context)
         task = self._details_task
         if task is None or task.done():
             task = asyncio.create_task(self._read_context_details(client))
@@ -2018,13 +2058,19 @@ class ActiveSession:
             # The client went away meanwhile: its answer is not for the current one.
             return self._details_failure("failed")
         usage = call.result()
-        context, breakdown = context_from_sdk(usage), context_breakdown(usage)
+        context, breakdown = context_from_sdk(usage), self._keep_breakdown(usage)
         if context is None or breakdown is None:
             return self._details_failure("failed")
         if context != self.context:
             self.context = context
             self.emit_updated()
-        return {"available": True, "context": context, "breakdown": breakdown}
+        return {
+            "available": True,
+            "live": True,
+            "measured_at": self.last_breakdown_at,
+            "context": context,
+            "breakdown": breakdown,
+        }
 
     def _context_call_done(self, call: asyncio.Future[Any]) -> None:
         self._context_calls.discard(call)
@@ -3120,6 +3166,9 @@ class SessionManager:
         # State of sessions forgotten from memory (seq, connected before, app
         # activity), so events keep increasing and they resume as before.
         self._forgotten: dict[str, tuple[int, bool, float, float | None]] = {}
+        # session_id -> (last context breakdown, when it was measured) of forgotten sessions,
+        # so the context panel still has something to show; memory only, bounded.
+        self._kept_breakdowns: OrderedDict[str, tuple[dict[str, Any], float]] = OrderedDict()
         self._read_tool_results = read_tool_results or history_module.sdk_read_tool_results
         self._list_sessions = list_sessions or history_module.sdk_list_sessions
         self._get_session_messages = (
@@ -3365,6 +3414,9 @@ class SessionManager:
             # Recreated empty: the conversation comes from disk, and the frontend
             # drops what it shows before any other event of this session.
             session._emit("conversation.reset", {})
+        kept = self._kept_breakdowns.pop(session_id, None)
+        if kept is not None:
+            session.last_breakdown, session.last_breakdown_at = kept
         self._sessions[session_id] = session
         return session
 
@@ -3404,7 +3456,11 @@ class SessionManager:
         self.find_record(session_id)  # SessionNotFoundError for an unknown id
         session = self._sessions.get(session_id)
         if session is None:
-            return {"available": False, "reason": "no_process", "context": None}
+            kept = self._kept_breakdowns.get(session_id)
+            if kept is None:
+                return {"available": False, "reason": "no_process", "context": None}
+            breakdown, measured_at = kept
+            return _stored_details(breakdown, measured_at, None)
         return await session.read_context_details()
 
     async def send(
@@ -4224,6 +4280,13 @@ class SessionManager:
                     session.seq, session._has_connected or session._connected_before,
                     session._app_activity_at, session._loaded_mtime,
                 )
+                if session.last_breakdown is not None and session.last_breakdown_at is not None:
+                    self._kept_breakdowns[session_id] = (
+                        session.last_breakdown, session.last_breakdown_at,
+                    )
+                    self._kept_breakdowns.move_to_end(session_id)
+                    while len(self._kept_breakdowns) > KEPT_BREAKDOWN_LIMIT:
+                        self._kept_breakdowns.popitem(last=False)
                 del self._sessions[session_id]
 
     def app_writing(self, session_id: str) -> bool:

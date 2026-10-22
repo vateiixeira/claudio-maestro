@@ -2,15 +2,23 @@
 <script lang="ts">
 import type { ContextBreakdown as Breakdown } from '../../types/api'
 
+/** What the backend last measured. `live` false: kept in memory, answered with no process running. */
+interface Measured {
+  breakdown: Breakdown
+  live: boolean
+  /** Unix seconds; null when the backend sent nothing usable. */
+  at: number | null
+}
+
 /** Last breakdown per session, so reopening the popover or the panel shows it at once while the new one is read. */
-const lastBreakdown = new Map<string, Breakdown>()
+const lastBreakdown = new Map<string, Measured>()
 </script>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { getSessionContext } from '../../api/http'
 import { contextLayout } from '../../contextLayout'
-import { formatTokens } from '../../format'
+import { formatMeasuredAt, formatTokens } from '../../format'
 import type { ContextDetailsResponse, ContextUnavailableReason, ContextUsage } from '../../types/api'
 
 const props = defineProps<{
@@ -19,11 +27,12 @@ const props = defineProps<{
   variant: 'popover' | 'panel'
 }>()
 
-const CLOSED_PHRASE = 'O detalhamento aparece quando a sessão estiver aberta.'
+const CLOSED_PHRASE = 'O detalhamento aparece depois da próxima mensagem desta conversa.'
 const ERROR_PHRASE = 'Não foi possível calcular o detalhamento agora.'
 
 const uid = useId()
-const breakdown = ref<Breakdown | null>(null)
+const measured = ref<Measured | null>(null)
+const breakdown = computed(() => measured.value?.breakdown ?? null)
 const loading = ref(false)
 const failure = ref<ContextUnavailableReason | null>(null)
 // Total the backend knew when it could not read the details; the fallback when the prop is empty.
@@ -51,8 +60,13 @@ async function run() {
   }
   if (mine !== generation) return
   if (response?.available) {
-    breakdown.value = response.breakdown
-    lastBreakdown.set(id, response.breakdown)
+    const at: unknown = response.measured_at
+    measured.value = {
+      breakdown: response.breakdown,
+      live: response.live,
+      at: typeof at === 'number' && !Number.isNaN(new Date(at * 1000).getTime()) ? at : null,
+    }
+    lastBreakdown.set(id, measured.value)
     failure.value = null
     knownContext.value = response.context
   } else if (response) {
@@ -79,7 +93,7 @@ function switchSession() {
   controller?.abort()
   running = false
   again = false
-  breakdown.value = lastBreakdown.get(props.sessionId) ?? null
+  measured.value = lastBreakdown.get(props.sessionId) ?? null
   failure.value = null
   knownContext.value = null
   opened.value = []
@@ -113,8 +127,15 @@ const percentLabel = computed(() => (total.value ? `${Math.round(total.value.per
 const tokensLabel = computed(() => (total.value ? `${formatTokens(total.value.used)} / ${formatTokens(total.value.max)}` : ''))
 const barLabel = computed(() => (total.value ? `Contexto: ${percentLabel.value}, ${tokensLabel.value}` : ''))
 
+// The time shows for a kept reading, and for any reading once the session has no process any more.
+const measuredLabel = computed(() => {
+  const m = measured.value
+  if (!m || m.at === null) return null
+  return !m.live || failure.value === 'no_process' ? formatMeasuredAt(m.at) : null
+})
+
 const message = computed(() => {
-  if (failure.value === 'no_process') return CLOSED_PHRASE
+  if (failure.value === 'no_process') return breakdown.value ? null : CLOSED_PHRASE
   if (failure.value) return ERROR_PHRASE
   return loading.value && !breakdown.value ? 'Calculando…' : null
 })
@@ -201,6 +222,7 @@ function separated(index: number): boolean {
       </template>
     </ul>
 
+    <p v-if="measuredLabel" data-test="ctx-measured" class="m-0 text-[0.71875rem] text-fg-subtle" :class="layout ? 'mt-2.5' : ''">{{ measuredLabel }}</p>
     <p v-if="message" data-test="ctx-message" role="status" class="m-0 text-[0.71875rem] text-fg-subtle" :class="layout ? 'mt-2.5' : ''">{{ message }}</p>
   </div>
 </template>

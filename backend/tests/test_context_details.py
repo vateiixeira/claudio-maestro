@@ -24,6 +24,7 @@ from test_sessions import by_session, wait_until
 from claudio_maestro.agent.base import AgentError
 from claudio_maestro.agent.fake import text_turn
 from claudio_maestro.app import create_app
+from claudio_maestro.contextusage import context_breakdown
 from claudio_maestro.sessions import SessionNotFoundError
 
 NO_PROCESS = {"available": False, "reason": "no_process", "context": None}
@@ -89,6 +90,7 @@ async def test_details_without_client_is_no_process(make_env, env_cleanup):  # n
 async def test_details_with_client_reads_full_and_normalizes(make_env, env_cleanup):  # noqa: F811
     env, session, client = await connected(make_env, env_cleanup)
     client.context_usage = FULL_USAGE
+    before = time.time()
 
     result = await env.manager.context_details(session.session_id)
 
@@ -97,7 +99,9 @@ async def test_details_with_client_reads_full_and_normalizes(make_env, env_clean
     assert result["breakdown"]["categories"][0]["name"] == "Messages"
     assert result["breakdown"]["model"] == "claude-opus-5-5"
     assert client.context_usage_details[-1] == "full"
-    assert set(result) == {"available", "context", "breakdown"}
+    assert set(result) == {"available", "live", "measured_at", "context", "breakdown"}
+    assert result["live"] is True
+    assert before <= result["measured_at"] <= time.time()
 
 
 @pytest.mark.anyio
@@ -333,6 +337,184 @@ async def test_details_do_not_hold_the_turn_or_other_reads(make_env, env_cleanup
     assert (await pending)["available"] is True
 
 
+# Last measured breakdown kept in memory ------------------------------------
+
+
+def other_usage(total: int) -> dict[str, Any]:
+    return {**FULL_USAGE, "totalTokens": total}
+
+
+@pytest.mark.anyio
+async def test_closed_session_answers_the_last_summary_breakdown(make_env, env_cleanup):  # noqa: F811
+    before = time.time()
+    env, session, client = await connected(make_env, env_cleanup, usage=FULL_USAGE)
+    after = time.time()
+    assert session.last_breakdown == context_breakdown(FULL_USAGE)
+    assert before <= session.last_breakdown_at <= after
+
+    await session.close()
+    result = await env.manager.context_details(session.session_id)
+
+    assert result == {
+        "available": True,
+        "live": False,
+        "measured_at": session.last_breakdown_at,
+        "context": {"used_tokens": 84800, "max_tokens": 400000, "percent": 21.2},
+        "breakdown": context_breakdown(FULL_USAGE),
+    }
+    assert client.context_usage_details == ["summary"]  # nothing was read to answer
+
+
+@pytest.mark.anyio
+async def test_full_read_updates_the_kept_breakdown(make_env, env_cleanup):  # noqa: F811
+    env, session, client = await connected(make_env, env_cleanup, usage=FULL_USAGE)
+    summary_at = session.last_breakdown_at
+    await asyncio.sleep(0.01)
+    client.context_usage = other_usage(90000)
+
+    live = await env.manager.context_details(session.session_id)
+
+    assert live["live"] is True and live["breakdown"]["total_tokens"] == 90000
+    assert live["measured_at"] > summary_at
+    assert session.last_breakdown == live["breakdown"]
+    assert session.last_breakdown_at == live["measured_at"]
+
+    await session.close()
+    closed = await env.manager.context_details(session.session_id)
+    assert closed["live"] is False
+    assert closed["breakdown"]["total_tokens"] == 90000
+    assert closed["measured_at"] == live["measured_at"]
+
+
+@pytest.mark.anyio
+async def test_a_newer_summary_replaces_the_kept_full(make_env, env_cleanup):  # noqa: F811
+    env, session, client = await connected(make_env, env_cleanup, usage=FULL_USAGE)
+    client.context_usage = other_usage(90000)
+    await env.manager.context_details(session.session_id)
+    full_at = session.last_breakdown_at
+    await asyncio.sleep(0.01)
+
+    client.context_usage = other_usage(95000)
+    session._request_context(client)
+    await wait_until(lambda: session.last_breakdown["total_tokens"] == 95000)
+
+    assert session.last_breakdown_at > full_at
+
+
+@pytest.mark.anyio
+async def test_unusable_summary_keeps_the_last_breakdown(make_env, env_cleanup):  # noqa: F811
+    env, session, client = await connected(make_env, env_cleanup, usage=FULL_USAGE)
+    kept, kept_at = session.last_breakdown, session.last_breakdown_at
+    client.context_usage = None
+    session._request_context(client)
+    await wait_until(lambda: client.context_usage_details == ["summary", "summary"])
+    await asyncio.sleep(0.01)
+
+    assert (session.last_breakdown, session.last_breakdown_at) == (kept, kept_at)
+
+
+@pytest.mark.anyio
+async def test_failed_full_read_keeps_the_last_breakdown(make_env, env_cleanup):  # noqa: F811
+    env, session, client = await connected(make_env, env_cleanup, usage=FULL_USAGE)
+    kept, kept_at = session.last_breakdown, session.last_breakdown_at
+
+    async def answer(detail):
+        raise RuntimeError("quebrou")
+
+    replace_read(client, answer)
+    result = await env.manager.context_details(session.session_id)
+
+    assert result["available"] is False and result["reason"] == "failed"
+    assert (session.last_breakdown, session.last_breakdown_at) == (kept, kept_at)
+
+
+@pytest.mark.anyio
+async def test_replaced_client_result_does_not_write_the_kept_breakdown(  # noqa: F811
+    make_env, env_cleanup
+):
+    env, session, client = await connected(make_env, env_cleanup, usage=FULL_USAGE)
+    kept, kept_at = session.last_breakdown, session.last_breakdown_at
+    release = asyncio.Event()
+
+    async def answer(detail):
+        await release.wait()
+        return other_usage(99000)
+
+    replace_read(client, answer)
+    full = asyncio.create_task(env.manager.context_details(session.session_id))
+    await wait_until(lambda: client.context_usage_details == ["full"])
+    session._request_context(client)
+    await wait_until(lambda: client.context_usage_details == ["full", "summary"])
+    session.client = object()  # type: ignore[assignment]
+    release.set()
+    await full
+    await asyncio.sleep(0.02)
+    session.client = client
+
+    assert (session.last_breakdown, session.last_breakdown_at) == (kept, kept_at)
+
+
+@pytest.mark.anyio
+async def test_forgotten_session_keeps_the_last_breakdown(make_env, env_cleanup):  # noqa: F811
+    env, session, _client = await connected(make_env, env_cleanup, usage=FULL_USAGE)
+    sid, measured_at = session.session_id, session.last_breakdown_at
+    await session.close()
+
+    env.manager.forget_closed()
+    assert sid not in env.manager.active_ids()
+    result = await env.manager.context_details(sid)
+
+    assert result == {
+        "available": True,
+        "live": False,
+        "measured_at": measured_at,
+        "context": {"used_tokens": 84800, "max_tokens": 400000, "percent": 21.2},
+        "breakdown": context_breakdown(FULL_USAGE),
+    }
+    assert sid not in env.manager.active_ids()  # answering does not load the session
+
+    # Back in memory, the session has it again.
+    restored = env.manager.get(sid)
+    assert restored.last_breakdown == context_breakdown(FULL_USAGE)
+    assert restored.last_breakdown_at == measured_at
+    again = await env.manager.context_details(sid)
+    assert again["live"] is False and again["measured_at"] == measured_at
+
+
+@pytest.mark.anyio
+async def test_kept_breakdowns_are_limited_to_the_most_recent(  # noqa: F811
+    make_env, env_cleanup, monkeypatch
+):
+    monkeypatch.setattr("claudio_maestro.sessions.KEPT_BREAKDOWN_LIMIT", 2)
+    env = make_env()
+    env_cleanup.append(env.manager)
+    ids = []
+    for total in (1000, 2000, 3000):
+        record = env.manager.create_session(env.project)
+        session = env.manager.get(record.session_id)
+        session.last_breakdown = context_breakdown(other_usage(total))
+        session.last_breakdown_at = float(total)
+        ids.append(record.session_id)
+    env.manager.forget_closed()
+
+    assert list(env.manager._kept_breakdowns) == ids[1:]
+    assert (await env.manager.context_details(ids[0])) == NO_PROCESS
+    assert (await env.manager.context_details(ids[2]))["breakdown"]["total_tokens"] == 3000
+
+
+@pytest.mark.anyio
+async def test_session_that_never_measured_stays_no_process(make_env, env_cleanup):  # noqa: F811
+    env, session, _client = await connected(make_env, env_cleanup, usage=SDK_USAGE)
+    # The summary came without categories: nothing to show, but the total still counts.
+    await session.close()
+    session.last_breakdown = None
+    session.last_breakdown_at = None
+
+    result = await env.manager.context_details(session.session_id)
+
+    assert result == {"available": False, "reason": "no_process", "context": session.context}
+
+
 # Route ---------------------------------------------------------------------
 
 
@@ -382,5 +564,6 @@ def test_route_reads_full_with_a_connected_client(api_client, home):
     assert body["available"] is True
     assert body["context"] == {"used_tokens": 84800, "max_tokens": 400000, "percent": 21.2}
     assert body["breakdown"]["categories"][0]["name"] == "Messages"
+    assert body["live"] is True and isinstance(body["measured_at"], float)
     assert factory.clients[0].context_usage_details[-1] == "full"
 

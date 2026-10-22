@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatActivity, formatElapsedShort, tildePath } from '../format'
+import { formatActivity, formatElapsedShort, formatMeasuredAt, tildePath } from '../format'
 
 describe('tildePath', () => {
   it('troca a pasta pessoal por ~', () => {
@@ -116,5 +116,20 @@ describe('formatModelName', () => {
     expect(formatModelName('inherit')).toBe('inherit')
     expect(formatModelName('<synthetic>')).toBe('<synthetic>')
     expect(formatModelName('')).toBe('')
+  })
+})
+
+describe('formatMeasuredAt', () => {
+  const now = new Date(2026, 9, 22, 16, 0, 0)
+  const at = (d: Date) => d.getTime() / 1000
+
+  it('no mesmo dia mostra só a hora', () => {
+    expect(formatMeasuredAt(at(new Date(2026, 9, 22, 14, 32, 0)), now)).toBe('Medido às 14:32')
+    expect(formatMeasuredAt(at(new Date(2026, 9, 22, 9, 5, 0)), now)).toBe('Medido às 09:05')
+  })
+
+  it('em outro dia mostra dia e mês abreviado', () => {
+    expect(formatMeasuredAt(at(new Date(2026, 9, 21, 14, 32, 0)), now)).toBe('Medido em 21 out às 14:32')
+    expect(formatMeasuredAt(at(new Date(2026, 0, 3, 0, 7, 0)), now)).toBe('Medido em 3 jan às 00:07')
   })
 })

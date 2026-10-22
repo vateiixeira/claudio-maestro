@@ -35,7 +35,9 @@ const BREAKDOWN: Breakdown = {
   skills: [],
 }
 
-const ok = (breakdown: Breakdown = BREAKDOWN): ContextDetailsResponse => ({ available: true, context: CONTEXT, breakdown })
+const ok = (breakdown: Breakdown = BREAKDOWN): ContextDetailsResponse => ({ available: true, live: true, measured_at: 1_790_000_000, context: CONTEXT, breakdown })
+const stored = (measuredAt: number, breakdown: Breakdown = BREAKDOWN): ContextDetailsResponse => ({ available: true, live: false, measured_at: measuredAt, context: CONTEXT, breakdown })
+const seconds = (date: Date) => date.getTime() / 1000
 const unavailable = (reason: 'no_process' | 'timeout' | 'failed' | 'unsupported'): ContextDetailsResponse => ({ available: false, reason, context: CONTEXT })
 
 let counter = 0
@@ -118,15 +120,139 @@ describe('ContextBreakdown', () => {
     expect(w.find('[data-test="ctx-details"]').exists()).toBe(false)
   })
 
-  it('no_process mostra o total e a frase da sessão fechada', async () => {
+  it('no_process mostra o total e a frase de espera pela próxima mensagem', async () => {
     getSessionContext.mockResolvedValue(unavailable('no_process'))
     const w = mountIt()
     await flushPromises()
     expect(w.text()).toContain('21% usado')
     expect(w.text()).toContain('84,8 mil / 400 mil')
-    expect(w.text()).toContain('O detalhamento aparece quando a sessão estiver aberta.')
+    expect(w.find('[data-test="ctx-message"]').text()).toBe('O detalhamento aparece depois da próxima mensagem desta conversa.')
+    expect(w.text()).not.toContain('estiver aberta')
+    expect(w.find('[data-test="ctx-measured"]').exists()).toBe(false)
     expect(w.findAll('[data-test="ctx-row"]').length).toBe(0)
     expect(w.text()).not.toContain('Calculando')
+  })
+
+  describe('detalhamento guardado (live: false)', () => {
+    afterEach(() => vi.useRealTimers())
+
+    it('mostra o detalhamento e "Medido às HH:MM" quando a medição é de hoje', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 9, 22, 16, 0, 0))
+      getSessionContext.mockResolvedValue(stored(seconds(new Date(2026, 9, 22, 14, 32, 5))))
+      const w = mountIt()
+      await flushPromises()
+      expect(w.findAll('[data-test="ctx-row"]').length).toBe(6)
+      expect(w.find('[data-test="ctx-measured"]').text()).toBe('Medido às 14:32')
+      expect(w.find('[data-test="ctx-message"]').exists()).toBe(false)
+      expect(w.text()).not.toContain('estiver aberta')
+    })
+
+    it('completa hora e minuto com zero à esquerda', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 9, 22, 16, 0, 0))
+      getSessionContext.mockResolvedValue(stored(seconds(new Date(2026, 9, 22, 9, 5, 0))))
+      const w = mountIt()
+      await flushPromises()
+      expect(w.find('[data-test="ctx-measured"]').text()).toBe('Medido às 09:05')
+    })
+
+    it('mostra "Medido em 21 out às HH:MM" quando a medição é de outro dia', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 9, 22, 8, 0, 0))
+      getSessionContext.mockResolvedValue(stored(seconds(new Date(2026, 9, 21, 14, 32, 0))))
+      const w = mountIt()
+      await flushPromises()
+      expect(w.find('[data-test="ctx-measured"]').text()).toBe('Medido em 21 out às 14:32')
+    })
+
+    it.each([undefined, null, 'ontem', Number.NaN, 1e20, -1e20])('measured_at %s não mostra a linha, nunca "NaN"', async (value) => {
+      getSessionContext.mockResolvedValue({ ...stored(0), measured_at: value } as unknown as ContextDetailsResponse)
+      const w = mountIt()
+      await flushPromises()
+      expect(w.findAll('[data-test="ctx-row"]').length).toBe(6)
+      expect(w.find('[data-test="ctx-measured"]').exists()).toBe(false)
+      expect(w.text()).not.toContain('NaN')
+      expect(w.text()).not.toContain('Medido')
+    })
+
+    it('no_process com detalhamento em cache de leitura ao vivo mostra o cache com a hora daquela leitura', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 9, 22, 16, 0, 0))
+      const id = freshId()
+      getSessionContext.mockResolvedValueOnce({ ...ok(), measured_at: seconds(new Date(2026, 9, 22, 15, 10, 0)) })
+      const first = mountIt({ sessionId: id })
+      await flushPromises()
+      first.unmount()
+      getSessionContext.mockResolvedValueOnce(unavailable('no_process'))
+      const second = mountIt({ sessionId: id })
+      await flushPromises()
+      expect(second.findAll('[data-test="ctx-row"]').length).toBe(6)
+      expect(second.find('[data-test="ctx-measured"]').text()).toBe('Medido às 15:10')
+      expect(second.find('[data-test="ctx-message"]').exists()).toBe(false)
+      expect(second.text()).not.toContain('depois da próxima mensagem')
+    })
+
+    it('no_process com detalhamento guardado em cache mantém o cache e a hora', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 9, 22, 16, 0, 0))
+      getSessionContext.mockResolvedValueOnce(stored(seconds(new Date(2026, 9, 22, 14, 32, 0))))
+      const w = mountIt()
+      await flushPromises()
+      getSessionContext.mockResolvedValueOnce(unavailable('no_process'))
+      await w.setProps({ context: { ...CONTEXT, used_tokens: 90000 } })
+      await flushPromises()
+      expect(w.findAll('[data-test="ctx-row"]').length).toBe(6)
+      expect(w.find('[data-test="ctx-measured"]').text()).toBe('Medido às 14:32')
+      expect(w.find('[data-test="ctx-message"]').exists()).toBe(false)
+    })
+
+    it('falha com cache de leitura ao vivo mostra só a frase de erro, sem linha de hora', async () => {
+      getSessionContext.mockResolvedValueOnce(ok())
+      const w = mountIt()
+      await flushPromises()
+      getSessionContext.mockResolvedValueOnce(unavailable('timeout'))
+      await w.setProps({ context: { ...CONTEXT, used_tokens: 90000 } })
+      await flushPromises()
+      expect(w.findAll('[data-test="ctx-row"]').length).toBe(6)
+      expect(w.find('[data-test="ctx-message"]').text()).toBe('Não foi possível calcular o detalhamento agora.')
+      expect(w.find('[data-test="ctx-measured"]').exists()).toBe(false)
+    })
+
+    it('com live: true a linha não aparece', async () => {
+      getSessionContext.mockResolvedValue(ok())
+      const w = mountIt()
+      await flushPromises()
+      expect(w.find('[data-test="ctx-measured"]').exists()).toBe(false)
+    })
+
+    it('a linha some quando uma nova leitura chega ao vivo', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 9, 22, 16, 0, 0))
+      getSessionContext.mockResolvedValueOnce(stored(seconds(new Date(2026, 9, 22, 14, 32, 0))))
+      const w = mountIt()
+      await flushPromises()
+      expect(w.find('[data-test="ctx-measured"]').exists()).toBe(true)
+      getSessionContext.mockResolvedValueOnce(ok())
+      await w.setProps({ context: { ...CONTEXT, used_tokens: 90000 } })
+      await flushPromises()
+      expect(w.find('[data-test="ctx-measured"]').exists()).toBe(false)
+    })
+
+    it('reabrir a sessão mostra na hora o guardado, com a linha de hora', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 9, 22, 16, 0, 0))
+      const id = freshId()
+      getSessionContext.mockResolvedValueOnce(stored(seconds(new Date(2026, 9, 22, 14, 32, 0))))
+      const first = mountIt({ sessionId: id })
+      await flushPromises()
+      first.unmount()
+      getSessionContext.mockReturnValueOnce(deferred<ContextDetailsResponse>().promise)
+      const second = mountIt({ sessionId: id })
+      await flushPromises()
+      expect(second.findAll('[data-test="ctx-row"]').length).toBe(6)
+      expect(second.find('[data-test="ctx-measured"]').text()).toBe('Medido às 14:32')
+    })
   })
 
   it.each(['timeout', 'failed', 'unsupported'] as const)('%s mostra a frase de erro', async (reason) => {
