@@ -1,5 +1,6 @@
 """Session routes: create, list, snapshot, send, interrupt, stop subagents, answer prompts."""
 
+import asyncio
 import sqlite3
 from typing import Annotated, Any, Literal
 
@@ -10,6 +11,9 @@ from claudio_maestro import groups, labels, projects, sessions
 from claudio_maestro.api.deps import DbDep
 
 router = APIRouter(prefix="/api")
+
+# How often a route that may wait long looks at whether the client is still there.
+DISCONNECT_POLL_SECONDS = 0.25
 
 # Every route is async: sessions live on the event loop and must not be read
 # or changed from the threadpool.
@@ -364,13 +368,37 @@ async def get_session(session_id: str, manager: ManagerDep) -> dict[str, Any]:
 
 
 @router.get("/sessions/{session_id}/context")
-async def get_context_details(session_id: str, manager: ManagerDep) -> dict[str, Any]:
+async def get_context_details(
+    session_id: str, request: Request, manager: ManagerDep
+) -> dict[str, Any]:
     """Breakdown of the context window, read on demand. 200 whenever the session exists:
     `available: false` and a `reason` say why there is no breakdown."""
+    # The server does not cancel a handler when the client hangs up, and a temporary
+    # process waiting in line would then start for nobody: watch the connection and
+    # cancel the work (a measurement already running is not cancelled, see `_probe_details`).
+    work = asyncio.ensure_future(manager.context_details(session_id))
+    watcher = asyncio.ensure_future(_wait_for_disconnect(request))
     try:
-        return await manager.context_details(session_id)
+        await asyncio.wait([work, watcher], return_when=asyncio.FIRST_COMPLETED)
+        if not work.done():
+            work.cancel()
+            await asyncio.wait([work])
+            # Nobody is left to read it.
+            return {"available": False, "reason": "no_process", "context": None}
+        return work.result()
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
+    finally:
+        # The handler itself being cancelled (shutdown) takes the work down with it.
+        for task in (work, watcher):
+            if not task.done():
+                task.cancel()
+
+
+async def _wait_for_disconnect(request: Request) -> None:
+    """Return when the HTTP client has gone away."""
+    while not await request.is_disconnected():
+        await asyncio.sleep(DISCONNECT_POLL_SECONDS)
 
 
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)

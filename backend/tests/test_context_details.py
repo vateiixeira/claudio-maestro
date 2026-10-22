@@ -274,8 +274,9 @@ async def test_details_unusable_response_is_failed(make_env, env_cleanup, usage)
 
 
 @pytest.mark.anyio
-async def test_details_session_closed_during_read_is_failed(make_env, env_cleanup):  # noqa: F811
+async def test_details_session_closed_during_read_without_kept_breakdown_is_failed(make_env, env_cleanup):  # noqa: F811
     env, session, client = await connected(make_env, env_cleanup)
+    session.last_breakdown, session.last_breakdown_at = None, None  # nothing kept to show
     release = asyncio.Event()
 
     async def answer(detail):
@@ -297,9 +298,60 @@ async def test_details_session_closed_during_read_is_failed(make_env, env_cleanu
 
 
 @pytest.mark.anyio
-async def test_details_client_replaced_during_read_is_failed(make_env, env_cleanup):  # noqa: F811
+async def test_details_session_closed_during_read_answers_the_kept_breakdown(  # noqa: F811
+    make_env, env_cleanup
+):
+    """The popover was open when the session closed: the last breakdown is still shown."""
+    env, session, client = await connected(make_env, env_cleanup, usage=FULL_USAGE)
+    kept_at = session.last_breakdown_at
+    release = asyncio.Event()
+
+    async def answer(detail):
+        await release.wait()
+        return other_usage(99000)
+
+    replace_read(client, answer)
+    pending = asyncio.create_task(env.manager.context_details(session.session_id))
+    await wait_until(lambda: client.context_usage_details == ["full"])
+
+    await session.close()
+    release.set()
+    result = await pending
+
+    assert result["available"] is True and result["live"] is False
+    assert result["measured_at"] == kept_at
+    assert result["breakdown"] == context_breakdown(FULL_USAGE)  # not the dead read's
+    assert result["context"] == {"used_tokens": 84800, "max_tokens": 400000, "percent": 21.2}
+
+
+@pytest.mark.anyio
+async def test_details_client_replaced_during_read_answers_the_kept_breakdown(  # noqa: F811
+    make_env, env_cleanup
+):
+    env, session, client = await connected(make_env, env_cleanup, usage=FULL_USAGE)
+    release = asyncio.Event()
+
+    async def answer(detail):
+        await release.wait()
+        return other_usage(99000)
+
+    replace_read(client, answer)
+    pending = asyncio.create_task(env.manager.context_details(session.session_id))
+    await wait_until(lambda: client.context_usage_details == ["full"])
+    session.client = object()  # type: ignore[assignment]
+    release.set()
+    result = await pending
+    session.client = client
+
+    assert result["available"] is True and result["live"] is False
+    assert result["breakdown"] == context_breakdown(FULL_USAGE)
+
+
+@pytest.mark.anyio
+async def test_details_client_replaced_during_read_without_kept_breakdown_is_failed(make_env, env_cleanup):  # noqa: F811
     """The late result of a replaced client never overwrites the context of the new one."""
     env, session, client = await connected(make_env, env_cleanup)
+    session.last_breakdown, session.last_breakdown_at = None, None  # nothing kept to show
     release = asyncio.Event()
 
     async def answer(detail):
@@ -952,3 +1004,112 @@ def test_route_with_a_refusing_agent_factory_stays_no_process(monkeypatch, home)
 
     assert response.status_code == 200
     assert response.json() == NO_PROCESS
+
+
+# A conversation the agentd may still hold is never measured -------------------
+
+
+@pytest.mark.anyio
+async def test_a_session_the_agentd_may_hold_is_not_measured(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    session = env.new_session()
+    env.manager._agentd_held.add(session.session_id)
+
+    result = await env.manager.context_details(session.session_id)
+
+    assert result == {"available": False, "reason": "no_process", "context": None}
+    assert factory.clients == []
+
+    # Once the agentd no longer holds it, the measurement is allowed again.
+    env.manager._agentd_held.discard(session.session_id)
+    result = await env.manager.context_details(session.session_id)
+    assert result["available"] is True and len(factory.clients) == 1
+
+
+# A client that leaves cancels the measurement still in line ---------------------
+
+
+def asgi_scope(path: str) -> dict[str, Any]:
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"127.0.0.1:6660"),
+            (b"origin", APP_ORIGIN.encode()),
+            (b"x-maestro", b"1"),
+        ],
+        "client": ("127.0.0.1", 50000),
+        "server": ("127.0.0.1", 6660),
+    }
+
+
+class Call:
+    """One HTTP request driven straight through the ASGI app, with a client that can hang
+    up (the test client of Starlette never does)."""
+
+    def __init__(self, app, path: str) -> None:
+        self.hangup = asyncio.Event()
+        self.sent: list[dict[str, Any]] = []
+        self._body_sent = False
+        self.task = asyncio.create_task(app(asgi_scope(path), self._receive, self._send))
+
+    async def _receive(self) -> dict[str, Any]:
+        if not self._body_sent:
+            self._body_sent = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        await self.hangup.wait()
+        return {"type": "http.disconnect"}
+
+    async def _send(self, message: dict[str, Any]) -> None:
+        self.sent.append(message)
+
+    def body(self) -> dict[str, Any]:
+        import json
+
+        data = b"".join(m.get("body", b"") for m in self.sent if m["type"] == "http.response.body")
+        return json.loads(data)
+
+
+@pytest.mark.anyio
+async def test_a_client_that_hangs_up_drops_its_queued_measurement(home):
+    import httpx
+
+    factory = ProbeFactory()
+    factory.hold = asyncio.Event()
+    app = create_app(agent_factory=factory, history_exists=lambda sid, cwd: True)
+    headers = {"origin": APP_ORIGIN, "x-maestro": "1"}
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url=BACKEND_URL, headers=headers
+        ) as api:
+            folder = home / "app"
+            folder.mkdir()
+            project = (
+                await api.post("/api/projects", json={"name": "app", "path": str(folder), "color": "#ff8800"})
+            ).json()
+            first = (await api.post(f"/api/projects/{project['id']}/sessions")).json()
+            second = (await api.post(f"/api/projects/{project['id']}/sessions")).json()
+        manager = app.state.sessions
+
+        one = Call(app, f"/api/sessions/{first['session_id']}/context")
+        await wait_until(lambda: factory.reading == 1)
+        two = Call(app, f"/api/sessions/{second['session_id']}/context")
+        await wait_until(lambda: len(manager._probes) == 2)
+
+        two.hangup.set()
+        await asyncio.wait_for(two.task, 2)
+
+        assert set(manager._probes) == {first["session_id"]}
+        factory.hold.set()
+        await asyncio.wait_for(one.task, 2)
+        assert one.body()["available"] is True
+        assert len(factory.clients) == 1  # the second one never opened a process
+        assert manager._probes == {}

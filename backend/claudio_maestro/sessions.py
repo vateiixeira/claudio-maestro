@@ -2036,12 +2036,22 @@ class ActiveSession:
             self._details_task = task
         # `wait` does not cancel the read when this caller goes away.
         await asyncio.wait([task])
-        if task.cancelled() or task.exception() is not None:
+        if task.cancelled():
+            # The session closed (or its client went away) during the read.
+            return self._details_gone()
+        if task.exception() is not None:
             return self._details_failure("failed")
         return task.result()
 
     def _details_failure(self, reason: str) -> dict[str, Any]:
         return {"available": False, "reason": reason, "context": self.context}
+
+    def _details_gone(self) -> dict[str, Any]:
+        """The client that was reading went away (closed, replaced): the last breakdown
+        kept still answers, as it does for a session with no client; without one, `failed`."""
+        if self.last_breakdown is None or self.last_breakdown_at is None:
+            return self._details_failure("failed")
+        return _stored_details(self.last_breakdown, self.last_breakdown_at, self.context)
 
     async def _read_context_details(self, client: AgentClient) -> dict[str, Any]:
         call = asyncio.ensure_future(client.get_context_usage("full"))
@@ -2058,7 +2068,7 @@ class ActiveSession:
             )
             return self._details_failure("timeout")
         if call.cancelled():
-            return self._details_failure("failed")
+            return self._details_gone()
         error = call.exception()
         if error is not None:
             if _UNSUPPORTED_CONTEXT.search(str(error)):
@@ -2071,7 +2081,7 @@ class ActiveSession:
             return self._details_failure("failed")
         if self.client is not client:
             # The client went away meanwhile: its answer is not for the current one.
-            return self._details_failure("failed")
+            return self._details_gone()
         usage = call.result()
         context, breakdown = context_from_sdk(usage), self._keep_breakdown(usage)
         if context is None or breakdown is None:
@@ -3484,7 +3494,13 @@ class SessionManager:
         elif session.client is not None or session.last_breakdown is not None:
             return await session.read_context_details()
         context = session.context if session is not None else None
-        if self.app_writing(session_id) or not await self._has_history(record):
+        if (
+            self.app_writing(session_id)
+            # The agentd may still hold a process on this conversation (restart): a second
+            # one, even a fork, is not wanted next to it.
+            or session_id in self._agentd_held
+            or not await self._has_history(record)
+        ):
             return {"available": False, "reason": "no_process", "context": context}
         measured = await self._probe_details(session_id, record)
         if measured is None:
@@ -3510,7 +3526,9 @@ class SessionManager:
         Requests for the same session share one measurement. A caller that goes away does
         not cancel it once its process started: it ends on its own within
         `CONTEXT_PROBE_LIMIT` and its result is kept for the next request. A measurement
-        still waiting in line with nobody left to answer is dropped instead."""
+        still waiting in line with nobody left to answer is dropped instead. A caller
+        "goes away" when its task is cancelled: the route cancels it when the HTTP client
+        hangs up (the server does not do that by itself)."""
         probe = self._probes.get(session_id)
         if probe is None or probe.task is None or probe.task.done():
             probe = _Probe()
