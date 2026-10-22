@@ -37,6 +37,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - Uma conversa parada com um Monitor rodando não é mais fechada por inatividade.
 - Comandos em segundo plano continuam contando depois de reiniciar o app: a conversa não é mais fechada por inatividade enquanto eles rodam.
+- No painel Detalhes, a linha Branch passa a vir recolhida quando o projeto tem vários repositórios: mostra o primeiro e um botão para expandir os demais e voltar a recolher.
 
 ## [0.7.0] - 2026-10-12
 

@@ -166,6 +166,113 @@ describe('painel Detalhes', () => {
     expect(inWorktree.find('[data-test="prop-branch-sync"]').exists()).toBe(false)
   })
 
+  describe('Branch com vários repositórios', () => {
+    const repo = (rel: string, overrides = {}) => makeGitRepo({ path: `/home/vi/dev/loja-online/${rel}`, rel_path: rel, branch: `b-${rel}`, ...overrides })
+    const three = () => useGitStore(pinia).set(1, [repo('api'), repo('web'), repo('docs')])
+
+    it('com um repositório não mostra o botão de alternância', async () => {
+      const wrapper = await mountPanel()
+
+      expect(wrapper.find('[data-test="prop-branch-toggle"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="prop-branch-more"]').exists()).toBe(false)
+    })
+
+    it('vem recolhido: só o primeiro repositório e o botão com a contagem dos demais', async () => {
+      three()
+      const wrapper = await mountPanel()
+
+      const branch = wrapper.get('[data-test="prop-branch"]')
+      expect(branch.text()).toContain('api · b-api')
+      expect(branch.text()).not.toContain('web · b-web')
+      expect(branch.text()).not.toContain('docs · b-docs')
+      const toggle = wrapper.get('[data-test="prop-branch-toggle"]')
+      expect(toggle.attributes('type')).toBe('button')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(toggle.text()).toContain('+ 2 repositórios')
+      expect(wrapper.find('[data-test="prop-branch-more"]').exists()).toBe(false)
+    })
+
+    it('usa o singular com um repositório escondido', async () => {
+      useGitStore(pinia).set(1, [repo('api'), repo('web')])
+      const wrapper = await mountPanel()
+
+      expect(wrapper.get('[data-test="prop-branch-toggle"]').text()).toContain('+ 1 repositório')
+      expect(wrapper.get('[data-test="prop-branch-toggle"]').text()).not.toContain('repositórios')
+    })
+
+    it('clicar expande todos os repositórios e clicar de novo recolhe', async () => {
+      three()
+      const wrapper = await mountPanel()
+      const toggle = wrapper.get('[data-test="prop-branch-toggle"]')
+
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-expanded')).toBe('true')
+      expect(toggle.text()).toContain('menos')
+      const more = wrapper.get('[data-test="prop-branch-more"]')
+      expect(toggle.attributes('aria-controls')).toBe(more.attributes('id'))
+      expect(more.text()).toContain('web · b-web')
+      expect(more.text()).toContain('docs · b-docs')
+      expect(wrapper.get('[data-test="prop-branch"]').text()).toContain('api · b-api')
+
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(toggle.text()).toContain('+ 2 repositórios')
+      expect(wrapper.find('[data-test="prop-branch-more"]').exists()).toBe(false)
+    })
+
+    it('os repositórios escondidos também mostram a sincronização quando expandidos', async () => {
+      useGitStore(pinia).set(1, [repo('api'), repo('web', { behind: 2, upstream: 'origin/main' })])
+      const wrapper = await mountPanel()
+      expect(wrapper.get('[data-test="prop-branch"]').text()).not.toContain('para baixar')
+
+      await wrapper.get('[data-test="prop-branch-toggle"]').trigger('click')
+
+      expect(wrapper.get('[data-test="prop-branch-more"] [data-test="prop-branch-sync"]').text()).toContain('2 commits para baixar de origin/main')
+    })
+
+    it('avisa no botão quando um repositório escondido precisa de atenção, mas não quando só o primeiro precisa', async () => {
+      useGitStore(pinia).set(1, [repo('api', { behind: 1, upstream: 'origin/main' }), repo('web')])
+      const quiet = await mountPanel()
+      expect(quiet.find('[data-test="prop-branch-attention"]').exists()).toBe(false)
+
+      useGitStore(pinia).set(1, [repo('api'), repo('web', { behind: 1, upstream: 'origin/main' })])
+      const behind = await mountPanel()
+      expect(behind.find('[data-test="prop-branch-attention"]').exists()).toBe(true)
+      await behind.get('[data-test="prop-branch-toggle"]').trigger('click')
+      expect(behind.find('[data-test="prop-branch-attention"]').exists()).toBe(false)
+
+      useGitStore(pinia).set(1, [repo('api'), repo('web', { error: 'falhou' })])
+      expect((await mountPanel()).find('[data-test="prop-branch-attention"]').exists()).toBe(true)
+    })
+
+    it('volta a recolher ao trocar de conversa', async () => {
+      three()
+      useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1' }), makeSession({ session_id: 's2' })])
+      const wrapper = await mountPanel({
+        'GET /api/sessions/s2/changes': () => jsonResponse(changes),
+        'GET /api/sessions/s2/digest': () => jsonResponse(null),
+        'GET /api/sessions/s2/plan': () => jsonResponse({ link: 'auto', path: null, plan: null, tasks: [] }),
+      })
+      await wrapper.get('[data-test="prop-branch-toggle"]').trigger('click')
+      expect(wrapper.find('[data-test="prop-branch-more"]').exists()).toBe(true)
+
+      await wrapper.setProps({ sessionId: 's2' })
+      await flushPromises()
+
+      expect(wrapper.get('[data-test="prop-branch-toggle"]').attributes('aria-expanded')).toBe('false')
+      expect(wrapper.find('[data-test="prop-branch-more"]').exists()).toBe(false)
+    })
+
+    it('na worktree a linha não muda e não tem botão', async () => {
+      three()
+      useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', worktree_name: 'melhorias', git_branch: 'worktree-melhorias' })])
+      const wrapper = await mountPanel()
+
+      expect(wrapper.get('[data-test="prop-branch"]').text()).toContain('worktree-melhorias')
+      expect(wrapper.find('[data-test="prop-branch-toggle"]').exists()).toBe(false)
+    })
+  })
+
   it('Detalhes mostra a linha Worktree com o caminho na dica e o branch da sessão', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias', git_branch: 'worktree-melhorias' })])
     const wrapper = await mountPanel()

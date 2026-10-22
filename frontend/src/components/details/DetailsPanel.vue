@@ -10,7 +10,7 @@ import LabelProperty from '../labels/LabelProperty.vue'
 import PlanProperty from '../plan/PlanProperty.vue'
 import PlanStrip from '../plan/PlanStrip.vue'
 import { planVisible } from '../plan/planText'
-import BranchSync from './BranchSync.vue'
+import BranchList from './BranchList.vue'
 import ChangesList from './ChangesList.vue'
 import DigestSection from './DigestSection.vue'
 import FileDiffView from './FileDiffView.vue'
@@ -28,7 +28,7 @@ import type { DetailsTab } from '../../detailsTabPref'
 import { displayStateLabel } from '../../sessionState'
 import { useChangesPanelStore } from '../../stores/changesPanel'
 import { useConversationStore } from '../../stores/conversation'
-import { repoLabel, useGitStore } from '../../stores/git'
+import { useGitStore } from '../../stores/git'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useTerminalStore } from '../../stores/terminal'
@@ -291,10 +291,7 @@ function resetWidth() {
                   <span v-else class="text-fg-muted">desconhecido</span>
                 </template>
                 <template v-else>
-                  <div v-for="repo in repos" :key="repo.path" class="flex min-w-0 flex-col gap-0.5">
-                    <BranchLabel :text="repoLabel(repo)" :muted="!!repo.error" />
-                    <BranchSync v-if="projectId != null && !repo.error" :project-id="projectId" :repo="repo" />
-                  </div>
+                  <BranchList v-if="projectId != null && repos.length > 0" :key="sessionId" :project-id="projectId" :repos="repos" />
                   <span v-if="repos.length === 0" class="text-fg-muted">sem repositório git</span>
                 </template>
               </dd>

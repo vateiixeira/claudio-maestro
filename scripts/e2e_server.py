@@ -115,6 +115,7 @@ GIT_SCENARIO = [
     {"name": "Alterações Demo", "slug": "alteracoes-demo", "color": "#a371f7", "git": "changes"},
     {"name": "Merge Demo", "slug": "merge-demo", "color": "#3fb950", "git": "merge"},
     {"name": "Sincronia Demo", "slug": "sincronia-demo", "color": "#58a6ff", "git": "sync"},
+    {"name": "Ramos Demo", "slug": "ramos-demo", "color": "#f0883e", "git": "branches"},
 ]
 
 
@@ -450,8 +451,23 @@ def _seed_sync(project_dir: Path, root: Path) -> None:
     _commit(site, "nova.html", "Criar a página nova", "<p>nova</p>\n")
 
 
+def _seed_branches(project_dir: Path, root: Path) -> None:
+    """Three repositories (`api`, `docs`, `web`) and one conversation, to read the Branch line of
+    Detalhes: only the first repository shows until the toggle is clicked."""
+    for name in ("api", "docs", "web"):
+        _commit(_new_repo(project_dir / name), "README.md", f"Criar {name}", f"# {name}\n")
+    settings = load_settings()
+    cwd = project_dir.resolve()
+    _write_conversation(
+        _history_folder(settings.claude_projects_dir, cwd), cwd,
+        "Confira os ramos dos repositórios", "Os três repositórios estão na main.",
+        datetime.now(UTC) - timedelta(hours=3),
+    )
+
+
 GIT_SEEDERS = {
     "history": _seed_history, "changes": _seed_changes, "merge": _seed_merge, "sync": _seed_sync,
+    "branches": _seed_branches,
 }
 
 

@@ -4,6 +4,7 @@ import asyncio
 import importlib.util
 import json
 import os
+import re
 import signal
 import subprocess
 import time
@@ -176,6 +177,15 @@ def test_seed_creates_the_sync_project(tmp_path, monkeypatch):
     for path in (loja, site):
         url = git(path, "remote", "get-url", "origin").strip()
         assert Path(url).resolve().is_relative_to(tmp_path.resolve())
+
+
+def test_seed_creates_the_branches_project_with_three_repositories_and_a_conversation(tmp_path, monkeypatch):
+    home = _seeded(tmp_path, monkeypatch)
+    project = home / "projetos" / "ramos-demo"
+    for name in ("api", "docs", "web"):
+        assert git(project / name, "symbolic-ref", "--short", "HEAD").strip() == "main"
+    folder = load_settings().claude_projects_dir / re.sub(r"[^a-zA-Z0-9]", "-", str(project.resolve()))
+    assert len(list(folder.glob("*.jsonl"))) == 1
 
 
 def test_seed_creates_the_merge_project(tmp_path, monkeypatch):
