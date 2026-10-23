@@ -8,6 +8,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
@@ -23,24 +27,31 @@ jobs:
         run: |
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Conferir se a tag já existe
-        id: tag
+      - name: Conferir a tag e a release
+        id: state
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           if [ -n "$(git ls-remote --tags origin "refs/tags/v${VERSION}")" ]; then
-            echo "A tag v${VERSION} já existe; nada a publicar."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+            echo "A tag v${VERSION} já existe."
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+            echo "A release v${VERSION} já existe."
+          else
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Montar as notas
-        if: steps.tag.outputs.skip != 'true'
+        if: steps.state.outputs.release_exists == 'false'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: python3 scripts/release.py notes "$VERSION" --out "$RUNNER_TEMP/notes.md"
       - name: Criar a tag
-        if: steps.tag.outputs.skip != 'true'
+        if: steps.state.outputs.tag_exists == 'false'
         env:
           VERSION: ${{ steps.version.outputs.version }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -50,7 +61,7 @@ jobs:
           git tag -a "v${VERSION}" -m "Cláudio Maestro ${VERSION}" "$HEAD_SHA"
           git push origin "v${VERSION}"
       - name: Publicar a release
-        if: steps.tag.outputs.skip != 'true'
+        if: steps.state.outputs.release_exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}

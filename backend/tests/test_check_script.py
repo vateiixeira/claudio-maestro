@@ -244,3 +244,48 @@ def test_moving_a_file_out_of_backend_counts(project):
     git(project, "mv", "backend/a.py", "docs/a.py")
     commit_all(project, "move")
     assert dry(project) == BACKEND
+
+
+def reasons(project: Path, *args: str) -> list[str]:
+    """Lines printed before the first `==> ` line (or all of them, when there is none)."""
+    result = run_check(project, "--dry-run", *args)
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    first = next((i for i, ln in enumerate(lines) if ln.startswith("==> ")), len(lines))
+    return lines[:first]
+
+
+def test_dry_run_explains_backend_choice_before_the_commands(project):
+    write(project, "backend/a.py", "a = 2\n")
+    commit_all(project, "backend")
+    lines = reasons(project)
+    assert any("backend/a.py" in ln for ln in lines)
+    assert not any("frontend/" in ln for ln in lines)
+
+
+def test_dry_run_explains_frontend_choice(project):
+    write(project, "frontend/src/a.ts", "export const a = 2\n")
+    commit_all(project, "frontend")
+    lines = reasons(project)
+    assert any("frontend/src/a.ts" in ln for ln in lines)
+
+
+def test_dry_run_explains_ci_change(project):
+    write(project, ".github/workflows/ci.yml", "name: ci2\n")
+    commit_all(project, "ci")
+    assert any(".github/workflows/ci.yml" in ln for ln in reasons(project))
+
+
+@pytest.mark.parametrize(
+    ("flag", "expected"),
+    [("--all", "--all"), ("--full", "--full"), ("--e2e", "--e2e")],
+)
+def test_dry_run_explains_option(project, flag, expected):
+    write(project, "backend/a.py", "a = 2\n")
+    assert any(expected in ln for ln in reasons(project, flag))
+
+
+def test_dry_run_explains_missing_develop(project):
+    git(project, "update-ref", "-d", "refs/remotes/origin/develop")
+    git(project, "update-ref", "-d", "refs/heads/develop")
+    assert any("sem develop" in ln for ln in reasons(project))

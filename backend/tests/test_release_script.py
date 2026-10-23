@@ -568,8 +568,21 @@ def test_release_notes_last_section_until_end():
 
 
 def test_release_notes_ignores_unreleased_and_other_versions():
+    text = (
+        "# Changelog\n\n## [Não lançado]\n\n- Ainda não saiu.\n\n"
+        "## [0.1.10] - 2026-10-10\n\n### Corrigido\n\n- Dez.\n\n"
+        "## [0.1.1] - 2026-10-02\n\n### Corrigido\n\n- Um.\n"
+    )
+    assert release.release_notes(text, "0.1.1") == "### Corrigido\n\n- Um.\n"
+    assert release.release_notes(text, "0.1.10") == "### Corrigido\n\n- Dez.\n"
     with pytest.raises(release.ReleaseError, match=r"0\.1\.00"):
-        release.release_notes(CHANGELOG, "0.1.00")
+        release.release_notes(text, "0.1.00")
+
+
+def test_ensure_main_is_ancestor_reports_missing_ref(repo):
+    run(repo, "update-ref", "-d", "refs/remotes/origin/main")
+    with pytest.raises(release.ReleaseError, match="origin/main"):
+        release.ensure_main_is_ancestor_of_develop(repo)
 
 
 def test_release_notes_missing_version_raises():

@@ -63,15 +63,37 @@ def test_release_checks_out_the_tested_commit():
     assert checkout_step()["with"]["ref"] == "${{ github.event.workflow_run.head_sha }}"
 
 
-def test_release_skips_when_tag_exists():
-    check = step_index("git ls-remote --tags")
-    tag = step_index("git tag -a")
-    release = step_index("gh release create")
-    assert check < tag < release
-    check_id = steps()[check]["id"]
-    assert f"steps.{check_id}.outputs.skip" in steps()[tag]["if"]
-    assert f"steps.{check_id}.outputs.skip" in steps()[release]["if"]
-    assert f"steps.{check_id}.outputs.skip" in steps()[step_index("scripts/release.py notes")]["if"]
+def test_release_decides_on_tag_and_release_separately():
+    check = steps()[step_index("git ls-remote --tags")]
+    assert check["id"] == "state"
+    run = check["run"]
+    assert "gh release view" in run
+    assert "tag_exists=" in run and "release_exists=" in run
+    assert check["env"]["GH_TOKEN"] == "${{ github.token }}"
+
+
+def test_release_creates_only_what_is_missing():
+    state = steps()[step_index("git ls-remote --tags")]["id"]
+    tag_flag = f"steps.{state}.outputs.tag_exists"
+    release_flag = f"steps.{state}.outputs.release_exists"
+    notes = steps()[step_index("scripts/release.py notes")]
+    tag = steps()[step_index("git tag -a")]
+    release = steps()[step_index("gh release create")]
+    assert step_index("git ls-remote --tags") < step_index("git tag -a")
+    assert step_index("git tag -a") < step_index("gh release create")
+    assert f"{release_flag} == 'false'" in notes["if"]
+    assert f"{release_flag} == 'false'" in release["if"]
+    assert f"{tag_flag} == 'false'" in tag["if"]
+    assert release_flag not in tag["if"] and tag_flag not in release["if"]
+
+
+def test_release_serializes_runs():
+    assert wf()["concurrency"] == {"group": "release", "cancel-in-progress": False}
+
+
+def test_ci_workflow_is_named_ci():
+    # release.yml listens for `workflow_run` of the workflow called "CI".
+    assert load(CI)["name"] == "CI"
 
 
 def test_release_uses_changelog_notes_and_verify_tag():
