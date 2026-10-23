@@ -6,7 +6,12 @@ If this fails after an SDK upgrade, update spawn.py to match subprocess_cli.py.
 from pathlib import Path
 
 import pytest
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+from claude_agent_sdk import (
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    create_sdk_mcp_server,
+    tool,
+)
 from claude_agent_sdk._internal.transport import subprocess_cli
 
 from claudio_maestro.agent.spawn import build_cli_spawn
@@ -41,6 +46,11 @@ async def _allow(*_args):
     return None
 
 
+@tool("eco", "Devolve o texto", {"texto": str})
+async def _eco(args):
+    return {"content": [{"type": "text", "text": args["texto"]}]}
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("extra", [
     {"session_id": "11111111-1111-1111-1111-111111111111"},
@@ -48,6 +58,14 @@ async def _allow(*_args):
      "permission_mode": "plan", "effort": "high"},
     {"session_id": "33333333-3333-3333-3333-333333333333",
      "env": {"CLAUDE_CODE_ENTRYPOINT": "claudio-maestro"}, "setting_sources": []},
+    # What the app gives a session of an agent: skill, extra folders, env, in-process
+    # MCP server and the `ask` rules.
+    {"session_id": "55555555-5555-5555-5555-555555555555", "setting_sources": [],
+     "system_prompt": {"type": "preset", "preset": "claude_code", "append": "Você é o revisor."},
+     "add_dirs": ["/opt/outra-pasta"],
+     "env": {"CLAUDE_CODE_ENTRYPOINT": "claudio-maestro", "MAESTRO_X": "1"},
+     "mcp_servers": {"maestro": create_sdk_mcp_server("maestro", tools=[_eco])},
+     "settings": '{"permissions": {"ask": ["Bash(git push:*)"]}}'},
 ])
 async def test_matches_sdk_connect(tmp_path: Path, monkeypatch, fake_cli, extra):
     options = ClaudeAgentOptions(
@@ -60,6 +78,9 @@ async def test_matches_sdk_connect(tmp_path: Path, monkeypatch, fake_cli, extra)
     assert ours.cwd == sdk["cwd"]
     assert ours.env == sdk["env"]
     assert "--permission-prompt-tool" in ours.cmd  # can_use_tool routed over stdio
+    if "mcp_servers" in extra:
+        assert "--mcp-config" in ours.cmd
+        assert "--append-system-prompt" in ours.cmd and "--add-dir" in ours.cmd
 
 
 def _options(tmp_path: Path, **extra) -> ClaudeAgentOptions:

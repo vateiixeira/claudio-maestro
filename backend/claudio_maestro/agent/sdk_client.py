@@ -6,7 +6,7 @@ Nothing here starts the `claude` process until `connect()` is called.
 import logging
 import os
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Collection
 from typing import Any, Literal
 
 from claude_agent_sdk import (
@@ -97,6 +97,8 @@ def build_sdk_options(
         # the app's own messages (origin None); the conversation builder drops those.
         "extra_args": {"allow-dangerously-skip-permissions": None, "replay-user-messages": None},
     }
+    if not options.allow_bypass:
+        del kwargs["extra_args"]["allow-dangerously-skip-permissions"]
     if stderr is not None:
         kwargs["stderr"] = stderr
     if cli_path is not None:
@@ -117,9 +119,22 @@ def build_sdk_options(
         kwargs["setting_sources"] = options.setting_sources
     if options.settings is not None:
         kwargs["settings"] = options.settings
+    if options.system_prompt_append:
+        kwargs["system_prompt"] = {
+            "type": "preset",
+            "preset": "claude_code",
+            "append": options.system_prompt_append,
+        }
+    if options.add_dirs:
+        kwargs["add_dirs"] = list(options.add_dirs)
+    if options.mcp_servers:
+        kwargs["mcp_servers"] = dict(options.mcp_servers)
+    # The SDK applies `env` over the inherited environment and its own default.
+    env = dict(options.env)
     if options.entrypoint is not None:
-        # The SDK applies `env` over the inherited environment and its own default.
-        kwargs["env"] = {"CLAUDE_CODE_ENTRYPOINT": options.entrypoint}
+        env["CLAUDE_CODE_ENTRYPOINT"] = options.entrypoint
+    if env:
+        kwargs["env"] = env
     return ClaudeAgentOptions(**kwargs)
 
 
@@ -152,6 +167,56 @@ def to_control_error(error: BaseException) -> AgentError:
     if type(error) is Exception:
         return AgentError(str(error), refused=True)
     return to_agent_error(error)
+
+
+async def initialize_sdk_mcp_servers(sdk_client: Any, expected: Collection[str] = ()) -> None:
+    """Run the MCP handshake on each in-process (SDK) MCP server of a client that attached.
+
+    Why: when the backend restarts, the agentd keeps the `claude` process, which did the MCP
+    `initialize` with the *previous* backend's server. The new backend builds new in-process
+    servers that never saw it, and the `mcp` package rejects every request before an
+    `initialize` ("Invalid request parameters"). The CLI cannot redo it either:
+    `reconnect_mcp_server` does not work for SDK servers. So the backend plays the CLI's
+    part itself, straight into the SDK bridge of each server.
+
+    Reaches into private SDK API (`Query._sdk_mcp_bridges`, `SdkMcpBridge.handle`);
+    `tests/test_agent_sdk_client.py` breaks when an upgrade removes them. A server that
+    fails here is only logged: the session still works, minus that server's tools.
+
+    `expected` are the names of the SDK servers in the options; one without a bridge
+    (the SDK renamed its private attributes) is logged, not silently skipped.
+
+    It runs after `connect()`, whose reader is already forwarding messages, so a tool
+    call the agentd replays could in theory reach the server before this `initialize`.
+    The bridges only exist once the SDK builds its `Query` inside `connect()`, right
+    before it starts the reader, so there is no hook between the two to do it earlier
+    without copying the SDK's connect. Such a call would fail once ("Invalid request
+    parameters"), as it did before this handshake existed.
+    """
+    query = getattr(sdk_client, "_query", None)
+    bridges: dict[str, Any] = getattr(query, "_sdk_mcp_bridges", None) or {}
+    for name in sorted(set(expected) - set(bridges)):
+        logger.warning(
+            "Não achei a ponte do servidor MCP %r no SDK; ele não será religado "
+            "(o SDK mudou?)", name,
+        )
+    for name, bridge in bridges.items():
+        try:
+            await bridge.handle({
+                "jsonrpc": "2.0",
+                "id": "maestro-reattach",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "claudio-maestro", "version": "0"},
+                },
+            })
+            await bridge.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        except Exception:
+            logger.warning(
+                "Falha ao religar o servidor MCP %r depois de reatar a sessão", name, exc_info=True
+            )
 
 
 class SdkAgentClient:
@@ -191,6 +256,14 @@ class SdkAgentClient:
     async def connect(self) -> None:
         try:
             await self._client.connect()
+            if self.options.attach is not None:
+                await initialize_sdk_mcp_servers(
+                    self._client,
+                    [
+                        name for name, config in (self.options.mcp_servers or {}).items()
+                        if isinstance(config, dict) and config.get("type") == "sdk"
+                    ],
+                )
         except AgentdConnectError:
             if self.options.attach is not None:
                 raise AgentError("O processo que guardava a sessão não está mais rodando.")

@@ -117,12 +117,13 @@ def sdk_connect_attempts(
     """No test starts the real `claude` through the SDK. This covers both ways the app
     builds the real client (`default_agent_factory` and `sdk_agent_factory`): it cuts the
     SDK's own `connect`, which is what starts the process, and records each attempt.
-    Stubs injected as `sdk_client` never reach it. Three files connect the real client on
+    Stubs injected as `sdk_client` never reach it. Some files connect the real client on
     purpose, with the process replaced by a fake CLI or by a patched launch, so they are
     left alone."""
     attempts: list[object] = []
     if request.node.path.name in (
         "test_agent_spawn.py",
+        "test_sdk_mcp_reattach.py",
         "test_sdk_over_agentd.py",
         "test_sessions_restart.py",
     ):

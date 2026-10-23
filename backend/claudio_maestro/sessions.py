@@ -157,6 +157,12 @@ PERMISSION_MODES: tuple[str, ...] = (
 )
 # Model ids and aliases, e.g. "opus", "claude-opus-5-5", "opus[1m]".
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._\[\]-]{1,100}$")
+# How long an agent's policy may take to decide a tool call before the user is asked.
+POLICY_TIMEOUT = 10.0
+SPECIALIST_SETUP_FAILED_TEXT = "Não foi possível preparar o agente desta sessão."
+SPECIALIST_MODE_TEXT = "Sessões de agente só rodam no modo padrão de permissões."
+# Modes the CLI may report for a session of an agent (it enters plan mode by itself).
+SPECIALIST_CLI_MODES = ("default", "plan")
 DEFAULT_MODEL_VALUE = "default"
 # Entrypoint written to the transcripts of the app's sessions. The editor extension
 # hides `sdk-cli`, `sdk-ts` and `sdk-py`, and the CLI turns `cli` into `sdk-cli`
@@ -942,6 +948,28 @@ class _CliTurn:
     announced: bool
 
 
+# What the agents feature (specialists) adds to a session --------------------
+
+
+@dataclass
+class SessionExtras:
+    """What a session of an agent adds to the options of its client: the agent's skill
+    (appended to the system prompt), extra folders, environment, in-process MCP servers,
+    the `--settings` JSON with the `ask` rules, and `decide`, the agent's policy that
+    answers `allow` (no prompt) or `ask` (a pending prompt in the Inbox) per tool call."""
+
+    system_prompt_append: str
+    add_dirs: list[Path]
+    env: dict[str, str]
+    mcp_servers: dict[str, Any]
+    settings: str
+    decide: Callable[[str, dict[str, Any]], Awaitable[Literal["allow", "ask"]]]
+
+
+# Called by every new client of a session with a `specialist_id`; None: no extras.
+SessionSetup = Callable[[SessionRecord], SessionExtras | None]
+
+
 # Active session ------------------------------------------------------------
 
 
@@ -970,8 +998,13 @@ class ActiveSession:
         agentd_any: Any | None = None,
         cli_running: Callable[[str], bool] | None = None,
         agentd_held: set[str] | None = None,
+        session_setup: SessionSetup | None = None,
     ) -> None:
         self.record = record
+        # Extras of the agent this session belongs to, rebuilt with every client (attached
+        # ones too, since the MCP server lives in this process); None for ordinary sessions.
+        self._session_setup = session_setup
+        self._extras: SessionExtras | None = None
         # The manager's signals for the automatic Remote Control reconnect: a terminal
         # `claude` is running in this conversation, and the sessions whose process the
         # agentd may still hold after the last startup (shared set; connecting removes us).
@@ -1786,6 +1819,18 @@ class ActiveSession:
         if attach is None and self.record.spawn_version != SPAWN_VERSION:
             # A process started now has what Remote Control needs from this version on.
             self.save(spawn_version=SPAWN_VERSION)
+        extras = None
+        specialist = self.record.specialist_id is not None
+        if self._session_setup is not None and specialist:
+            try:
+                extras = self._session_setup(self.record)
+            except Exception as error:
+                # The error may quote the agent's secrets: the log gets it, the screen not.
+                logger.exception(
+                    "Falha ao preparar a sessão de agente %s: %s", self.session_id, error
+                )
+                raise AgentError(SPECIALIST_SETUP_FAILED_TEXT) from None
+        self._extras = extras
         return self._agent_factory(
             AgentOptions(
                 cwd=Path(self.record.work_dir()),
@@ -1794,12 +1839,22 @@ class ActiveSession:
                 can_use_tool=self._can_use_tool,
                 model=None if model == DEFAULT_MODEL_VALUE else model,
                 effort=self.record.effort,
-                permission_mode=self.record.permission_mode,
+                # A session of an agent never leaves the default mode, whatever the record
+                # says, and its process is not started able to switch to bypassPermissions.
+                permission_mode="default" if specialist else self.record.permission_mode,
+                allow_bypass=not specialist,
                 entrypoint=SESSION_ENTRYPOINT,
                 # New processes go through the agentd only when the manager allows it;
                 # attaching always uses it (MAESTRO_AGENTD=0 still reattaches).
                 agentd=self._agentd if attach is None else self._agentd_any,
                 attach=attach,
+                **({} if extras is None else {
+                    "system_prompt_append": extras.system_prompt_append,
+                    "add_dirs": extras.add_dirs,
+                    "env": extras.env,
+                    "mcp_servers": extras.mcp_servers,
+                    "settings": extras.settings,
+                }),
             )
         )
 
@@ -2546,7 +2601,14 @@ class ActiveSession:
             # The resolved id; `model` keeps the alias the user chose.
             self.model_resolved = init.model
             emit = True
-        if init.permission_mode and init.permission_mode != self.record.permission_mode:
+        if (
+            init.permission_mode
+            and init.permission_mode != self.record.permission_mode
+            and (
+                self.record.specialist_id is None
+                or init.permission_mode in SPECIALIST_CLI_MODES
+            )
+        ):
             changes["permission_mode"] = init.permission_mode
         if changes:
             self.save(**changes)
@@ -2563,6 +2625,12 @@ class ActiveSession:
         """Save new options and apply them to the client, if any. Returns True when
         something changed. Model, mode and effort change live; only when the CLI
         refuses the effort change does it wait for a reconnect between turns."""
+        if (
+            permission_mode is not None
+            and permission_mode != "default"
+            and self.record.specialist_id is not None
+        ):
+            raise InvalidDecisionError(SPECIALIST_MODE_TEXT)
         changes: dict[str, Any] = {}
         if model is not None and model != self.record.model:
             changes["model"] = model
@@ -2926,21 +2994,24 @@ class ActiveSession:
             started = await asyncio.to_thread(process_started_at, child.pid)
             await self.ensure_history(live=True, process_started_at=started)
             was_open = self.record.turn_open
-            client = self._new_client(
-                resume=True,
-                attach=AttachInfo(agentd_id=child.id, from_pos=child.ack,
-                                  init_response=child.init),
-            )
+            client: AgentClient | None = None
             generation = self._generation
             # Before connect: a pending permission delivered during connect refreshes
             # the state, and turn_open must not flip to 0 meanwhile.
             self._autonomous_turn = bool(was_open)
             try:
+                # Inside the try: the setup of an agent session can fail here too.
+                client = self._new_client(
+                    resume=True,
+                    attach=AttachInfo(agentd_id=child.id, from_pos=child.ack,
+                                      init_response=child.init),
+                )
                 await client.connect()
             except asyncio.CancelledError:
                 self._autonomous_turn = False
-                with suppress(asyncio.CancelledError):
-                    await self._dispose(client, None)
+                if client is not None:
+                    with suppress(asyncio.CancelledError):
+                        await self._dispose(client, None)
                 self._mark_interrupted(was_open)
                 self._refresh_state()
                 raise
@@ -3036,6 +3107,9 @@ class ActiveSession:
     async def _can_use_tool(
         self, tool_name: str, tool_input: dict[str, Any], context: ToolPermissionContext
     ) -> PermissionResultAllow | PermissionResultDeny:
+        extras = self._extras
+        if extras is not None and await self._policy_allows(extras, tool_name, tool_input):
+            return PermissionResultAllow()
         prompt = PendingPrompt(
             prompt_id=uuid.uuid4().hex,
             future=asyncio.get_running_loop().create_future(),
@@ -3062,6 +3136,26 @@ class ActiveSession:
                 self._refresh_state()
                 self._emit_pending_change(before)
             raise
+
+    async def _policy_allows(
+        self, extras: SessionExtras, tool_name: str, tool_input: dict[str, Any]
+    ) -> bool:
+        """The agent's policy let this tool call through without asking. Any failure
+        of the policy means "ask": the user decides."""
+        try:
+            decision = await asyncio.wait_for(
+                extras.decide(tool_name, tool_input), POLICY_TIMEOUT
+            )
+            return decision == "allow"
+        except TimeoutError:
+            logger.warning(
+                "A política do agente da sessão %s demorou mais de %s s em %s; perguntando",
+                self.session_id, POLICY_TIMEOUT, tool_name,
+            )
+            return False
+        except Exception:
+            logger.exception("Falha na política do agente da sessão %s", self.session_id)
+            return False
 
     def _emit_pending_change(self, before: tuple[dict[str, Any] | None, str | None]) -> None:
         """Update the summary when the pending permission or prompt kind it shows changed."""
@@ -3162,7 +3256,10 @@ class SessionManager:
         agentd_new_sessions: bool = True,
         cli_identity: Callable[[], dict[str, Any]] | None = None,
         text_index: TextSearch | None = None,
+        session_setup: SessionSetup | None = None,
     ) -> None:
+        # Gives the sessions of an agent their skill, folders, MCP server and policy.
+        self._session_setup = session_setup
         # `{"path", "version"}` of the `claude` in use now. The models list is saved with
         # the one it came from and is stale when they differ (None: not checked).
         self._cli_identity = cli_identity
@@ -3346,12 +3443,26 @@ class SessionManager:
                 logger.exception("Falha na atualização periódica dos modelos")
             await sleep(interval)
 
-    def create_session(self, project: Project, group_id: int | None = None) -> SessionRecord:
+    def create_session(
+        self,
+        project: Project,
+        group_id: int | None = None,
+        *,
+        specialist_id: int | None = None,
+        model: str | None = None,
+        effort: str | None = None,
+    ) -> SessionRecord:
+        """A new session. For an agent (`specialist_id`) it always starts in the default
+        permission mode, whatever the saved preference: its policy needs the CLI to ask."""
+        if effort is not None and effort not in EFFORTS:
+            raise InvalidDecisionError("Nível de raciocínio inválido.")
+        if model is not None and not MODEL_PATTERN.match(model):
+            raise InvalidDecisionError("Modelo inválido.")
         if not project.available:
             raise ProjectUnavailableError("A pasta do projeto não está disponível.")
         now = _now()
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
-            model, effort, mode = new_session_defaults(conn)
+            default_model, default_effort, mode = new_session_defaults(conn)
             record = SessionRecord(
                 session_id=str(uuid.uuid4()),
                 project_id=project.id,
@@ -3361,11 +3472,15 @@ class SessionManager:
                 last_activity_at=now,
                 last_seen_at=now,
                 finished=False,
-                model=model,
-                effort=effort,
+                model=model or default_model,
+                effort=effort or default_effort,
                 # Saved preference, then the user's CLI `defaultMode`, then None.
-                permission_mode=mode or self._default_permission_mode(),
+                permission_mode=(
+                    "default" if specialist_id is not None
+                    else mode or self._default_permission_mode()
+                ),
                 group_id=group_id,
+                specialist_id=specialist_id,
             )
             # Same transaction: the group cannot vanish between the check and the insert.
             if group_id is not None:
@@ -3439,6 +3554,7 @@ class SessionManager:
             agentd_any=self._agentd,
             cli_running=self._cli_running,
             agentd_held=self._agentd_held,
+            session_setup=self._session_setup,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:
@@ -4192,6 +4308,12 @@ class SessionManager:
             raise InvalidDecisionError("Modelo inválido.")
         if permission_mode is not None and permission_mode not in PERMISSION_MODES:
             raise InvalidDecisionError("Modo de permissão inválido.")
+        if (
+            permission_mode is not None
+            and permission_mode != "default"
+            and session.record.specialist_id is not None
+        ):
+            raise InvalidDecisionError(SPECIALIST_MODE_TEXT)
         if (
             permission_mode == "bypassPermissions"
             and not confirm_bypass

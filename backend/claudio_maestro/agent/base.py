@@ -4,7 +4,7 @@ The real implementation lives in `sdk_client.py`; tests use `fake.py`.
 """
 
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -75,6 +75,18 @@ class AgentOptions:
     # With resume: the agent opens a copy of the conversation under a new session id and
     # leaves the original file alone (throwaway clients that only read it).
     fork_session: bool = False
+    # False: the process is not started with the switch that lets the mode become
+    # bypassPermissions later (sessions of an agent never leave the default mode).
+    allow_bypass: bool = True
+    # Sessions of an agent (specialist). Text appended to the Claude Code system prompt
+    # (None: the SDK default prompt, untouched).
+    system_prompt_append: str | None = None
+    # Extra folders the agent may read and write (the `--add-dir`s).
+    add_dirs: list[Path] = field(default_factory=list)
+    # Environment of the agent process, over the inherited one. `entrypoint` wins on its key.
+    env: dict[str, str] = field(default_factory=dict)
+    # MCP servers by name; the in-process ones (`create_sdk_mcp_server`) live in the backend.
+    mcp_servers: dict[str, Any] | None = None
 
 
 @runtime_checkable

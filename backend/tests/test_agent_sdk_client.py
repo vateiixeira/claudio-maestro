@@ -1,5 +1,6 @@
 """Real SDK client adapter, tested without starting the SDK or the `claude` process."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -11,10 +12,12 @@ from claude_agent_sdk import (
     CLINotFoundError,
     PermissionResultAllow,
     ProcessError,
+    create_sdk_mcp_server,
+    tool,
 )
 from fastapi.testclient import TestClient
 
-from claudio_maestro.agent.base import AgentClient, AgentError, AgentOptions
+from claudio_maestro.agent.base import AgentClient, AgentError, AgentOptions, AttachInfo
 from claudio_maestro.agent.sdk_client import (
     INHERITED_ENV_VARS,
     SdkAgentClient,
@@ -158,6 +161,49 @@ def test_build_options_passes_entrypoint_in_env(tmp_path):
 
 
 # clean_inherited_env -------------------------------------------------------
+
+
+def _echo_server():
+    @tool("eco", "Devolve o texto", {"texto": str})
+    async def eco(args):
+        return {"content": [{"type": "text", "text": args["texto"]}]}
+
+    return create_sdk_mcp_server("maestro", tools=[eco])
+
+
+def test_build_options_maps_specialist_fields(tmp_path):
+    server = _echo_server()
+    sdk = build_sdk_options(make_options(
+        tmp_path,
+        system_prompt_append="Você é o revisor.",
+        add_dirs=[tmp_path / "outra"],
+        env={"MAESTRO_X": "1", "CLAUDE_CODE_ENTRYPOINT": "outro"},
+        mcp_servers={"maestro": server},
+        entrypoint="claudio-maestro",
+    ))
+
+    assert sdk.system_prompt == {
+        "type": "preset", "preset": "claude_code", "append": "Você é o revisor.",
+    }
+    assert sdk.add_dirs == [tmp_path / "outra"]
+    assert sdk.mcp_servers == {"maestro": server}
+    # The entrypoint of the app wins over the same key in `env`.
+    assert sdk.env == {"MAESTRO_X": "1", "CLAUDE_CODE_ENTRYPOINT": "claudio-maestro"}
+
+
+def test_build_options_specialist_env_without_entrypoint(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, env={"MAESTRO_X": "1"}))
+
+    assert sdk.env == {"MAESTRO_X": "1"}
+
+
+def test_build_options_without_specialist_fields_keeps_sdk_defaults(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path))
+
+    assert not sdk.system_prompt  # the SDK default: nothing appended
+    assert sdk.add_dirs == []
+    assert sdk.mcp_servers == {}
+    assert sdk.env == {}
 
 
 def test_build_options_passes_cli_path_when_given(tmp_path):
@@ -657,3 +703,171 @@ async def test_get_server_info_is_forwarded(tmp_path):
     await client.connect()
 
     assert await client.get_server_info() == {"models": [{"value": "haiku"}]}
+
+
+# MCP handshake after attach -------------------------------------------------
+
+
+class RecordingBridge:
+    def __init__(self, events: list[Any], name: str, error: Exception | None = None) -> None:
+        self.events = events
+        self.name = name
+        self.error = error
+
+    async def handle(self, message: dict[str, Any]) -> dict[str, Any] | None:
+        self.events.append((self.name, message))
+        if self.error is not None:
+            raise self.error
+        return {"jsonrpc": "2.0", "id": message.get("id"), "result": {}} if "id" in message else None
+
+
+class BridgedStub(StubSdkClient):
+    def __init__(self, events: list[Any], bridges: dict[str, RecordingBridge]) -> None:
+        super().__init__()
+        self._events = events
+        self._query = type("Q", (), {"_sdk_mcp_bridges": bridges})()
+
+    async def connect(self, prompt=None):
+        self._events.append("connect")
+        await super().connect(prompt)
+
+
+def _attach() -> AttachInfo:
+    return AttachInfo(agentd_id="abc", from_pos=0, init_response=None)
+
+
+@pytest.mark.anyio
+async def test_connect_without_attach_does_not_handshake_sdk_mcp_servers(tmp_path):
+    events: list[Any] = []
+    stub = BridgedStub(events, {"maestro": RecordingBridge(events, "maestro")})
+    client = SdkAgentClient(make_options(tmp_path), sdk_client=stub)
+
+    await client.connect()
+
+    assert events == ["connect"]
+
+
+@pytest.mark.anyio
+async def test_connect_with_attach_initializes_each_sdk_mcp_server(tmp_path):
+    events: list[Any] = []
+    stub = BridgedStub(events, {
+        "maestro": RecordingBridge(events, "maestro"),
+        "outro": RecordingBridge(events, "outro"),
+    })
+    client = SdkAgentClient(make_options(tmp_path, attach=_attach()), sdk_client=stub)
+
+    await client.connect()
+
+    assert events[0] == "connect"
+    for name in ("maestro", "outro"):
+        mine = [message for who, message in events[1:] if who == name]
+        assert [m.get("method") for m in mine] == ["initialize", "notifications/initialized"]
+        assert mine[0]["jsonrpc"] == "2.0" and "id" in mine[0]
+        assert mine[0]["params"]["clientInfo"]["name"] == "claudio-maestro"
+        assert "id" not in mine[1]
+
+
+@pytest.mark.anyio
+async def test_connect_with_attach_and_no_sdk_mcp_servers_is_fine(tmp_path):
+    events: list[Any] = []
+    stub = BridgedStub(events, {})
+    await SdkAgentClient(make_options(tmp_path, attach=_attach()), sdk_client=stub).connect()
+    # A stub without `_query` (not connected to the real SDK) is fine too.
+    await SdkAgentClient(
+        make_options(tmp_path, attach=_attach()), sdk_client=StubSdkClient()
+    ).connect()
+
+    assert events == ["connect"]
+
+
+@pytest.mark.anyio
+async def test_failed_mcp_handshake_does_not_fail_the_connect(tmp_path, caplog):
+    events: list[Any] = []
+    stub = BridgedStub(events, {
+        "ruim": RecordingBridge(events, "ruim", error=RuntimeError("quebrou")),
+        "bom": RecordingBridge(events, "bom"),
+    })
+    client = SdkAgentClient(make_options(tmp_path, attach=_attach()), sdk_client=stub)
+
+    await client.connect()
+
+    assert stub.connected is True
+    assert any(who == "bom" for who, _ in events[1:])
+    assert "ruim" in caplog.text
+
+
+def test_sdk_still_has_the_private_api_the_reattach_handshake_uses():
+    """The handshake after attach reaches into the SDK (`Query._sdk_mcp_bridges`,
+    `SdkMcpBridge.handle`). If an upgrade removes them, this breaks instead of production."""
+    import inspect
+
+    from claude_agent_sdk._internal.query import Query
+    from claude_agent_sdk._internal.sdk_mcp_bridge import SdkMcpBridge
+
+    assert inspect.iscoroutinefunction(SdkMcpBridge.handle)
+    query = Query(
+        transport=None,  # type: ignore[arg-type]
+        is_streaming_mode=True,
+        sdk_mcp_servers={"maestro": _echo_server()["instance"]},
+    )
+    bridge = query._sdk_mcp_bridges["maestro"]
+    assert isinstance(bridge, SdkMcpBridge)
+
+
+@pytest.mark.anyio
+async def test_real_bridge_accepts_the_reattach_handshake_then_lists_tools():
+    from claude_agent_sdk._internal.sdk_mcp_bridge import SdkMcpBridge
+
+    from claudio_maestro.agent.sdk_client import initialize_sdk_mcp_servers
+
+    bridge = SdkMcpBridge("maestro", _echo_server()["instance"])
+    query = type("Q", (), {"_sdk_mcp_bridges": {"maestro": bridge}})()
+    stub = StubSdkClient()
+    stub._query = query
+    try:
+        await initialize_sdk_mcp_servers(stub)
+        listed = await bridge.handle({"jsonrpc": "2.0", "id": 7, "method": "tools/list"})
+    finally:
+        await bridge.aclose()
+
+    assert listed is not None and "error" not in listed
+    assert [t["name"] for t in listed["result"]["tools"]] == ["eco"]
+
+
+def test_build_options_can_leave_out_the_bypass_switch(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, allow_bypass=False))
+
+    assert "allow-dangerously-skip-permissions" not in sdk.extra_args
+    assert "replay-user-messages" in sdk.extra_args
+
+
+def test_build_options_allows_the_bypass_switch_by_default(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path))
+
+    assert "allow-dangerously-skip-permissions" in sdk.extra_args
+
+
+@pytest.mark.anyio
+async def test_missing_bridges_are_logged_when_the_options_have_sdk_servers(tmp_path, caplog):
+    server = _echo_server()
+    stub = StubSdkClient()  # no `_query`, as if the SDK renamed it
+    client = SdkAgentClient(
+        make_options(tmp_path, attach=_attach(), mcp_servers={"maestro": server}),
+        sdk_client=stub,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        await client.connect()
+
+    assert "maestro" in caplog.text and "ponte" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_no_warning_without_sdk_servers_in_the_options(tmp_path, caplog):
+    stub = StubSdkClient()
+    client = SdkAgentClient(make_options(tmp_path, attach=_attach()), sdk_client=stub)
+
+    with caplog.at_level(logging.WARNING):
+        await client.connect()
+
+    assert caplog.text == ""
