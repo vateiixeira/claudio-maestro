@@ -62,6 +62,7 @@ class World:
             on_finished=lambda sid, at: self.service.on_finished(sid, at),
             on_turn_error=lambda sid, error: self.service.on_turn_error(sid, error),
             on_init=lambda sid, servers: self.service.on_init(sid, servers),
+            on_pr_created=lambda sid, url: self.service.on_pr_created(sid, url),
         )
         self.service = SpecialistService(
             self.db_path,
@@ -1252,3 +1253,62 @@ async def test_tool_host_rewrites_learnings(world):
     world.service.rewrite_learnings(specialist_id, "Aprendi X.")
 
     assert world.files.read_learnings("revisor") == "Aprendi X."
+
+
+# on_pr_created and is_agent_pr ---------------------------------------------------------
+
+PR = "https://github.com/angular-ecommerce/ecommerce/pull/9"
+
+
+async def test_on_pr_created_registers_the_pr_with_its_session_and_publishes(world):
+    specialist_id = world.add_specialist()
+    run = await started(world, specialist_id)
+
+    world.service.on_pr_created(run.session_id, PR + "/")
+
+    with closing(db.connect(world.db_path)) as conn:
+        pr = store.get_pr(conn, PR)
+    assert (pr.specialist_id, pr.session_id, pr.created_at) == (
+        specialist_id, run.session_id, NOW
+    )
+    assert world.published("specialist.changed")[-1] == {"id": specialist_id}
+    assert world.service.is_agent_pr(PR + "#issuecomment-1") == specialist_id
+
+
+async def test_on_pr_created_ignores_unknown_and_ordinary_sessions(world):
+    world.add_specialist()
+    ordinary = world.manager.create_session(world.project)
+
+    world.service.on_pr_created("nao-existe", PR)
+    world.service.on_pr_created(ordinary.session_id, PR)
+
+    with closing(db.connect(world.db_path)) as conn:
+        assert store.get_pr(conn, PR) is None
+    assert world.published("specialist.changed") == []
+
+
+async def test_is_agent_pr_from_items(world):
+    specialist_id = world.add_specialist()
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.upsert_item(
+            conn, specialist_id, key="sentry:ecommerce:ECOMMERCE-GB", status="pr aberto",
+            link="https://github.com/angular-ecommerce/ecommerce/pull/7", note=None, now=NOW,
+        )
+
+    found = world.service.is_agent_pr("https://github.com/angular-ecommerce/ecommerce/pull/7/")
+
+    assert found == specialist_id
+    assert world.service.is_agent_pr("https://github.com/angular-ecommerce/ecommerce/pull/8") is None
+
+
+@pytest.mark.parametrize(
+    "url", [PR + "/", PR + "#issuecomment-5", PR + "?diff=split", PR + "/?x=1#y"]
+)
+async def test_is_agent_pr_compares_without_slash_fragment_or_query(world, url):
+    specialist_id = world.add_specialist()
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.upsert_pr(
+            conn, url=PR, specialist_id=specialist_id, session_id=None, created_at=NOW
+        )
+
+    assert world.service.is_agent_pr(url) == specialist_id

@@ -17,6 +17,7 @@ from claudio_maestro.agent.fake import (
     init_message,
     result_message,
     text_turn,
+    tool_turn,
 )
 from claudio_maestro.sessions import SessionManager
 from claudio_maestro.specialists import store
@@ -29,6 +30,12 @@ class Hooks:
         self.errors: list[tuple[str, str]] = []
         self.inits: list[tuple[str, list[dict[str, str]]]] = []
         self.fail = False
+        self.prs: list[tuple[str, str]] = []
+
+    def on_pr_created(self, session_id: str, url: str) -> None:
+        self.prs.append((session_id, url))
+        if self.fail:
+            raise RuntimeError("quebrou")
 
     def on_turn_error(self, session_id: str, error: str) -> None:
         self.errors.append((session_id, error))
@@ -59,6 +66,7 @@ class World:
             history_exists=fake_history(self.factory),
             on_turn_error=self.hooks.on_turn_error,
             on_init=self.hooks.on_init,
+            on_pr_created=self.hooks.on_pr_created,
         )
 
     def session(self, *, agent: bool):
@@ -213,3 +221,90 @@ async def test_init_of_an_ordinary_session_is_not_reported(world):
 
     assert world.hooks.inits == []
     assert session.builder.init.mcp_servers == [{"name": "x", "status": "connected"}]
+
+
+# on_pr_created -----------------------------------------------------------------------
+
+PR_URL = "https://github.com/angular-ecommerce/ecommerce/pull/9"
+
+
+def bash_turn(sid: str, command: str, output: str, *, is_error: bool = False) -> list:
+    return tool_turn(
+        sid, tool_name="Bash", tool_input={"command": command},
+        result_content=output, is_error=is_error,
+    )
+
+
+async def test_pr_url_captured_from_gh_pr_create_result(world):
+    world.turn = lambda sid: bash_turn(
+        sid, "cd w && gh pr create --base develop --title x --body y", f"{PR_URL}\n"
+    )
+    session = world.session(agent=True)
+
+    await run_turn(session)
+
+    assert world.hooks.prs == [(session.session_id, PR_URL)]
+
+
+async def test_pr_url_is_the_first_one_in_a_list_result(world):
+    world.turn = lambda sid: tool_turn(
+        sid, tool_name="Bash", tool_input={"command": "gh pr create --fill"},
+        result_content=[
+            {"type": "text", "text": f"Creating pull request\n{PR_URL}\n"},
+            {"type": "text", "text": "https://github.com/a/b/pull/1"},
+        ],
+    )
+    session = world.session(agent=True)
+
+    await run_turn(session)
+
+    assert world.hooks.prs == [(session.session_id, PR_URL)]
+
+
+async def test_pr_url_ignored_on_error_result(world):
+    world.turn = lambda sid: bash_turn(sid, "gh pr create --fill", PR_URL, is_error=True)
+    session = world.session(agent=True)
+
+    await run_turn(session)
+
+    assert world.hooks.prs == []
+
+
+async def test_other_commands_ignored(world):
+    world.turn = lambda sid: bash_turn(sid, "gh pr view 9", PR_URL)
+    session = world.session(agent=True)
+
+    await run_turn(session)
+
+    assert world.hooks.prs == []
+
+
+async def test_result_without_a_pr_url_is_ignored(world):
+    world.turn = lambda sid: bash_turn(sid, "gh pr create --fill", "falhou sem url")
+    session = world.session(agent=True)
+
+    await run_turn(session)
+
+    assert world.hooks.prs == []
+
+
+async def test_pr_of_an_ordinary_session_is_not_reported(world):
+    world.turn = lambda sid: bash_turn(sid, "gh pr create --fill", PR_URL)
+    session = world.session(agent=False)
+
+    await run_turn(session)
+
+    assert world.hooks.prs == []
+
+
+async def test_on_pr_created_failure_does_not_break_the_session(world, caplog):
+    world.hooks.fail = True
+    world.turn = lambda sid: bash_turn(sid, "gh pr create --fill", PR_URL)
+    session = world.session(agent=True)
+
+    with caplog.at_level(logging.ERROR):
+        await run_turn(session)
+
+    assert session.state == "idle"
+    assert world.hooks.prs == [(session.session_id, PR_URL)]
+    assert "PR" in caplog.text

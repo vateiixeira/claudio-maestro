@@ -79,6 +79,12 @@ def _cut(text: str, limit: int = REASON_MAX_CHARS) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
+def normalize_pr_url(url: str) -> str:
+    """A PR URL without query, fragment or trailing slash: the one form the registry
+    keeps and compares, so a PR is never stored twice."""
+    return url.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+
+
 class SpecialistService:
     def __init__(
         self,
@@ -502,6 +508,37 @@ class SpecialistService:
             return
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             store.update_specialist(conn, specialist.id, now=self._now(), last_mcp=mcp_servers)
+
+    def on_pr_created(self, session_id: str, url: str) -> None:
+        """The agent's session opened a PR: remember which session did, so the owner's
+        comments on it can be sent back to that conversation."""
+        specialist = self._specialist_of(session_id)
+        if specialist is None:
+            return
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.upsert_pr(
+                conn, url=normalize_pr_url(url), specialist_id=specialist.id,
+                session_id=session_id, created_at=self._now(),
+            )
+        self._publish(
+            {"session_id": None, "seq": 0, "type": "specialist.changed",
+             "data": {"id": specialist.id}}
+        )
+
+    def is_agent_pr(self, url: str) -> int | None:
+        """The agent a PR belongs to: one that opened it, or that has it as the link of an
+        item of its registry. None when no agent does."""
+        wanted = normalize_pr_url(url)
+        with closing(db.connect(self._db_path)) as conn:
+            pr = store.get_pr(conn, wanted)
+            if pr is not None:
+                return pr.specialist_id
+            for row in conn.execute(
+                "SELECT specialist_id, link FROM specialist_items WHERE link IS NOT NULL"
+            ):
+                if normalize_pr_url(row["link"]) == wanted:
+                    return row["specialist_id"]
+        return None
 
     # Internals ---------------------------------------------------------------------
 

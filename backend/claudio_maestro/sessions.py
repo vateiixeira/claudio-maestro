@@ -261,6 +261,8 @@ CONTEXT_CACHE_SIZE = 512
 KEPT_BREAKDOWN_LIMIT = 200
 PERMISSION_SUMMARY_MAX = 200  # characters
 PLAN_EDITS_MAX = 64  # edit calls on plans waiting for their result, per session
+PR_CREATES_MAX = 16  # `gh pr create` calls waiting for their result, per session
+PR_URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
 # A CLI turn signal older than this (since the last write of the session file or of a
 # subagent file) is dropped: the CLI probably died in the middle of the turn.
 CLI_TURN_STALE_SECONDS = 20 * 60
@@ -919,6 +921,18 @@ def _stored_details(
     }
 
 
+def _tool_result_text(content: str | list[dict[str, Any]] | None) -> str:
+    """The text of a tool result, whether it came as a string or as content blocks."""
+    if isinstance(content, str):
+        return content
+    if not content:
+        return ""
+    return "\n".join(
+        part["text"] for part in content
+        if isinstance(part, dict) and isinstance(part.get("text"), str)
+    )
+
+
 def _now() -> int:
     return int(time.time())
 
@@ -1007,13 +1021,16 @@ class ActiveSession:
         session_setup: SessionSetup | None = None,
         on_turn_error: Callable[[str, str], None] | None = None,
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
+        on_pr_created: Callable[[str, str], None] | None = None,
     ) -> None:
         self.record = record
         # Hooks of the agents feature, called only for the sessions of an agent: a turn
         # or the session ended in error (session id, text), and an init arrived (session
-        # id, the MCP servers it reports).
+        # id, the MCP servers it reports), and a PR that its `gh pr create` opened (session
+        # id, URL).
         self._on_turn_error = on_turn_error
         self._on_init = on_init
+        self._on_pr_created = on_pr_created
         # Extras of the agent this session belongs to, rebuilt with every client (attached
         # ones too, since the MCP server lives in this process); None for ordinary sessions.
         self._session_setup = session_setup
@@ -1035,6 +1052,8 @@ class ActiveSession:
         self._plan_tasks: set[asyncio.Task[bool]] = set()
         # Edit-like plan-tool calls waiting for their result: tool_use_id -> file_path.
         self._plan_edits: dict[str, str] = {}
+        # Bash calls of `gh pr create` waiting for their result (agent sessions only).
+        self._pr_creates: set[str] = set()
         # The last load failed: the next open tries again.
         self._history_failed = False
         # Why the process kept by the agentd died while the app was down (its last stderr
@@ -1950,8 +1969,10 @@ class ActiveSession:
                     if message.parent_tool_use_id is None:
                         self._note_tool_use(message)
                     self._note_plan_use(message)
+                    self._note_pr_use(message)
                 elif isinstance(message, UserMessage):
                     self._note_plan_result(message)
+                    self._note_pr_result(message)
                     if (
                         message.parent_tool_use_id is None
                         and (message.origin or {}).get("kind") == "human"
@@ -2821,6 +2842,40 @@ class ActiveSession:
                 if self._on_linked_plan(file_path):
                     self._schedule_plan_refresh()
 
+    # PR opened by an agent ----------------------------------------------
+
+    def _note_pr_use(self, message: AssistantMessage) -> None:
+        """Keep the Bash calls that run `gh pr create` until their result arrives."""
+        if self._on_pr_created is None or self.record.specialist_id is None:
+            return
+        for block in message.content:
+            if not isinstance(block, ToolUseBlock) or block.name != "Bash":
+                continue
+            command = (block.input or {}).get("command")
+            if not isinstance(command, str) or "gh pr create" not in command:
+                continue
+            if len(self._pr_creates) >= PR_CREATES_MAX:
+                self._pr_creates.clear()
+            self._pr_creates.add(block.id)
+
+    def _note_pr_result(self, message: UserMessage) -> None:
+        """The result of a `gh pr create`: the first PR URL in it is the PR just opened."""
+        if not self._pr_creates or isinstance(message.content, str):
+            return
+        for block in message.content:
+            if not isinstance(block, ToolResultBlock) or block.tool_use_id not in self._pr_creates:
+                continue
+            self._pr_creates.discard(block.tool_use_id)
+            if block.is_error or self._on_pr_created is None:
+                continue
+            found = PR_URL_RE.search(_tool_result_text(block.content))
+            if found is None:
+                continue
+            try:
+                self._on_pr_created(self.session_id, found.group(0))
+            except Exception:
+                logger.exception("Falha ao registrar o PR da sessão de agente %s", self.session_id)
+
     def _schedule_plan_refresh(self) -> None:
         if self._refresh_plan is None or not self.record.plan_path:
             return
@@ -2840,6 +2895,7 @@ class ActiveSession:
         for task in list(self._plan_tasks):
             task.cancel()
         self._plan_edits.clear()
+        self._pr_creates.clear()
 
     def _touch(self) -> None:
         self._app_activity_at = time.time()
@@ -3306,12 +3362,14 @@ class SessionManager:
         session_setup: SessionSetup | None = None,
         on_turn_error: Callable[[str, str], None] | None = None,
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
+        on_pr_created: Callable[[str, str], None] | None = None,
     ) -> None:
         # Gives the sessions of an agent their skill, folders, MCP server and policy.
         self._session_setup = session_setup
         # Errors and inits of the sessions of an agent (see `ActiveSession`).
         self._on_turn_error = on_turn_error
         self._on_init = on_init
+        self._on_pr_created = on_pr_created
         # `{"path", "version"}` of the `claude` in use now. The models list is saved with
         # the one it came from and is stale when they differ (None: not checked).
         self._cli_identity = cli_identity
@@ -3609,6 +3667,7 @@ class SessionManager:
             session_setup=self._session_setup,
             on_turn_error=self._on_turn_error,
             on_init=self._on_init,
+            on_pr_created=self._on_pr_created,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:
