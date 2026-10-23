@@ -4,11 +4,15 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.8.0] - 2026-10-23
+
+Chegam os Agentes, rotinas agendadas que o Maestro roda por você, e o painel de git na tela do projeto, com alterações, commits e merge. Também entram etiquetas nas conversas, agrupadores entre projetos, terminal da sessão, Remote Control, busca no texto das mensagens e o detalhamento do contexto.
+
 ### Adicionado
 
 - Página **Agentes**: cadastre agentes, rotinas que o Maestro roda por você, cada uma com sua skill (`SKILL.md`), pasta e projetos, autonomia (pede ok antes de agir para fora, ou vai até o fim), horários, segredos (arquivo 600, só como variáveis de ambiente da sessão, nunca mostrados), memória (aprendizados e registro consultado por ferramenta) e histórico de execuções, e rode um deles na hora com "Rodar agora". A sessão do agente não pede ok para editar nem para rodar comandos locais; `git push`, `gh pr create`, `gh issue comment`, `gh issue close` e `gh release` pedem ok na autonomia que pede, e o merge, o push para a branch padrão e o push forçado pedem sempre. O agendador pula a execução se a anterior ainda roda ou espera você, ou se o uso da assinatura passa de 90%, registra uma execução "perdida" se o app estava desligado e alerta depois de duas execuções seguidas sem sucesso. Os avisos que os agentes deixam aparecem na Inbox, com um contador no item "Agentes" da barra, e as conversas de um agente levam o selo "Agente · nome". Os avisos também chegam como notificação do sistema, nas mesmas preferências das outras notificações (opção "Avisos dos agentes").
 - Detalhamento do contexto da sessão (mensagens, ferramentas, MCP, skills, memória, agentes, buffer e espaço livre) num popover a partir do indicador, que agora fica sempre visível, e no painel de detalhes. Com a conversa fechada, mostra a última medição guardada, com a hora ("Medido às 14:32"). Se a conversa fechada nunca foi medida, o app abre uma cópia dela por alguns segundos, sem mandar mensagem, e mede na hora.
-- Etiquetas nas conversas: cada etiqueta tem um slug e uma cor, vale para todos os projetos e aparece como badge em toda lista de conversas (menu lateral, Conversas, Caixa de entrada, Painel, Entregas, busca e cabeçalho). Aplique no painel de detalhes da conversa (Etiquetas → Editar, onde também dá para criar uma nova) e renomeie, troque a cor ou apague em Preferências → Etiquetas. A busca de conversas também acha pelo slug.
+- Etiquetas nas conversas: cada etiqueta tem um slug e uma cor, vale para todos os projetos e aparece como badge em toda lista de conversas (menu lateral, Conversas, Caixa de entrada, Painel, Entregas, busca e cabeçalho). Aplique no painel de detalhes da conversa (Etiquetas → Editar, onde também dá para criar uma nova) e renomeie, troque a cor ou apague em Preferências → Etiquetas. A busca de conversas também acha pelo slug. No menu lateral e na busca de sessões, as etiquetas ficam numa linha abaixo do título e mostram até três, sem cortar o título.
 - Painel de git na tela do projeto, no estilo do VS Code, para todos os repositórios do projeto de uma vez. Na seção **Alterações**: preparar e tirar da preparação por arquivo ou grupo, commitar (Ctrl+Enter), descartar com confirmação, ver o diff de cada arquivo, trocar e criar branch, mesclar outra branch, baixar (com merge), enviar, publicar uma branch nova e sincronizar. Um merge com conflito fica em andamento e mostra os arquivos em conflito, com as marcas nomeando a sua branch e a que entra, e o botão "Pedir ao Claude para resolver".
 - Seção **Commits**, no estilo do GitLens e só para leitura: o histórico de cada repositório em páginas, com os grupos "Para subir" e "Para baixar", a escolha de outra branch sem trocar, e cada commit com seus arquivos, diff e os botões de copiar hash e mensagem.
 - Agrupadores entre projetos: uma conversa pode ficar num agrupador criado em outro projeto, para juntar, por exemplo, o backend e o frontend do mesmo trabalho. O agrupador aparece na tela e na barra lateral de todo projeto que tem conversa nele (e sempre no projeto onde foi criado), com as conversas de todos; as de outro projeto levam o nome do projeto. Os seletores de agrupador (detalhes da conversa, nova conversa e filtro de Conversas) passam a oferecer os de qualquer projeto, com "Nome · Projeto" para os de fora. Remover o projeto onde o agrupador foi criado apaga o agrupador e solta as conversas dos outros projetos.
@@ -25,8 +29,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - Ao iniciar uma conversa, a janela fecha na hora e a conversa abre em "Conectando", sem esperar o Claude subir.
 - Trocar o **raciocínio** de uma sessão passa a valer na hora, sem reabrir a sessão.
 - As chamadas de tarefa do Claude (TodoWrite, TaskCreate e TaskUpdate) deixam de aparecer como cartões no meio da conversa e já não contam como ações do turno: a lista do fim do turno é o registro.
-- No menu lateral e na busca de sessões, as tags de uma conversa ficam numa linha abaixo do título e mostram até três, sem cortar o título.
-- As ações da conversa aparecem numa linha clicável, sem caixa enquanto recolhidas: a descrição do que está rodando dá lugar ao resumo quando termina. Ações isoladas e raciocínio também começam recolhidos; falhas abrem os detalhes e a escolha manual de abrir ou fechar é preservada. A lista de tarefas fica mais simples, sem cabeçalho nem divisória.
+- As ações da conversa aparecem numa linha clicável, sem caixa enquanto recolhidas: a descrição do que está rodando dá lugar ao resumo quando termina. Ações isoladas e raciocínio também começam recolhidos; falhas abrem os detalhes e a escolha manual de abrir ou fechar é preservada.
 - No menu lateral, o agrupador sem nenhuma conversa ativa deixa de aparecer, e o projeto que só tinha agrupadores assim fica sem a seta de recolher. Ele continua na tela do projeto e nos seletores.
 - O menu `/` abre na hora: a lista de comandos e skills de cada pasta fica guardada e é atualizada por trás a cada 10 minutos, ou logo que uma skill, comando ou plugin é instalado ou removido. Ela também passa a ser buscada assim que o campo de mensagem ganha foco, então só a primeira vez numa pasta nova espera o CLI.
 
@@ -37,8 +40,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Corrigido
 
-- Uma conversa parada com um Monitor rodando não é mais fechada por inatividade.
-- Comandos em segundo plano continuam contando depois de reiniciar o app: a conversa não é mais fechada por inatividade enquanto eles rodam.
+- Uma conversa parada com um Monitor ou comandos em segundo plano rodando não é mais fechada por inatividade, inclusive depois de reiniciar o app.
 - No painel Detalhes, a linha Branch passa a vir recolhida quando o projeto tem vários repositórios: mostra o primeiro e um botão para expandir os demais e voltar a recolher.
 
 ## [0.7.0] - 2026-10-12
