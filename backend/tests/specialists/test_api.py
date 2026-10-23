@@ -289,6 +289,76 @@ def test_patch_accepts_patterns_with_the_allowed_characters(api, agent, field):
     assert response.json()[field] == patterns
 
 
+TOOL_TEXT = (
+    "Use o nome da ferramenta (ex.: WebFetch ou mcp__servidor__ferramenta) ou o servidor "
+    "inteiro (mcp__servidor), com até 200 caracteres. Sem parênteses, espaços nem curingas."
+)
+
+
+def test_new_agent_has_no_blocked_tools(api, agent):
+    assert agent["denied_tools"] == []
+
+
+def test_patch_blocked_tools_round_trip_cleaned(api, agent):
+    response = patch(
+        api,
+        agent["id"],
+        denied_tools=[
+            " mcp__kbgen-issues__editar_issue ", "WebFetch", "mcp__kbgen-issues",
+            "WebFetch", "mcp__claude_ai_Slack_beta__search",
+        ],
+    )
+
+    assert response.status_code == 200, response.text
+    expected = [
+        "mcp__kbgen-issues__editar_issue", "WebFetch", "mcp__kbgen-issues",
+        "mcp__claude_ai_Slack_beta__search",
+    ]
+    assert response.json()["denied_tools"] == expected
+    assert api.get("/api/specialists").json()[0]["denied_tools"] == expected
+    assert patch(api, agent["id"], denied_tools=[]).json()["denied_tools"] == []
+
+
+@pytest.mark.parametrize(
+    "tool",
+    ["Bash(rm:*)", "mcp__srv__*", "mcp__*", "*", "dois nomes", "mcp__", "mcp_srv", "mcp__srv__",
+     "mcp__srv__a(b)", "mcp__srv___", "mcp__srv__tool__", "mcp__sr v", "a/b", "1Tool", "Ferramenta.ponto", "x" * 201, "ação", "a\nb"],
+)
+def test_patch_refuses_blocked_tools_that_are_not_tool_names(api, agent, tool):
+    response = api.patch(f"/api/specialists/{agent['id']}", json={"denied_tools": ["WebFetch", tool]})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == TOOL_TEXT
+    assert api.get("/api/specialists").json() == [agent]
+
+
+@pytest.mark.parametrize("tools", [[""], ["   "], ["a"] * 101, [1], "WebFetch", None])
+def test_patch_refuses_malformed_blocked_tools_list(api, agent, tools):
+    response = api.patch(f"/api/specialists/{agent['id']}", json={"denied_tools": tools})
+
+    assert response.status_code == 422
+    assert api.get("/api/specialists").json() == [agent]
+
+
+def test_patch_accepts_mcp_names_with_separators_at_the_ends(api, agent):
+    # The CLI turns any other character of a server name into `_` ("Gmail " -> "Gmail_").
+    tools = ["mcp__Gmail_", "mcp__-srv", "mcp__srv_-__tool_", "mcp__srv__tool-", "mcp__srv__a__b"]
+
+    response = api.patch(f"/api/specialists/{agent['id']}", json={"denied_tools": tools})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["denied_tools"] == tools
+
+
+def test_patch_accepts_the_limit_of_blocked_tools(api, agent):
+    tools = [f"Tool{i}" for i in range(100)]
+
+    response = api.patch(f"/api/specialists/{agent['id']}", json={"denied_tools": tools})
+
+    assert response.status_code == 200
+    assert response.json()["denied_tools"] == tools
+
+
 def test_patch_unknown_agent_is_404(api):
     assert patch(api, 999, name="x").status_code == 404
 

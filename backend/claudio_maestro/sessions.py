@@ -114,6 +114,7 @@ def last_action_text(name: str, tool_input: dict[str, Any]) -> str:
         text = text[: LAST_ACTION_MAX - 1] + "…"
     return text
 DENY_MESSAGE = "O usuário recusou."
+BLOCKED_TOOL_MESSAGE = "Esta ferramenta está bloqueada para este agente e não pode ser usada."
 CANCELLED_MESSAGE = "O pedido foi cancelado."
 
 SessionState = Literal["closed", "connecting", "running", "awaiting_decision", "idle", "error"]
@@ -957,15 +958,16 @@ class _CliTurn:
 class SessionExtras:
     """What a session of an agent adds to the options of its client: the agent's skill
     (appended to the system prompt), extra folders, environment, in-process MCP servers,
-    the `--settings` JSON with the `ask` rules, and `decide`, the agent's policy that
-    answers `allow` (no prompt) or `ask` (a pending prompt in the Inbox) per tool call."""
+    the `--settings` JSON with the `ask` and `deny` rules, and `decide`, the agent's policy
+    that answers `allow` (no prompt), `ask` (a pending prompt in the Inbox) or `deny` (the
+    tool is refused, no prompt) per tool call."""
 
     system_prompt_append: str
     add_dirs: list[Path]
     env: dict[str, str]
     mcp_servers: dict[str, Any]
     settings: str
-    decide: Callable[[str, dict[str, Any]], Awaitable[Literal["allow", "ask"]]]
+    decide: Callable[[str, dict[str, Any]], Awaitable[Literal["allow", "ask", "deny"]]]
 
 
 # Called by every new client of a session with a `specialist_id`; None: no extras.
@@ -3144,8 +3146,12 @@ class ActiveSession:
         self, tool_name: str, tool_input: dict[str, Any], context: ToolPermissionContext
     ) -> PermissionResultAllow | PermissionResultDeny:
         extras = self._extras
-        if extras is not None and await self._policy_allows(extras, tool_name, tool_input):
-            return PermissionResultAllow()
+        if extras is not None:
+            decision = await self._policy_decision(extras, tool_name, tool_input)
+            if decision == "allow":
+                return PermissionResultAllow()
+            if decision == "deny":
+                return PermissionResultDeny(message=BLOCKED_TOOL_MESSAGE)
         prompt = PendingPrompt(
             prompt_id=uuid.uuid4().hex,
             future=asyncio.get_running_loop().create_future(),
@@ -3173,25 +3179,25 @@ class ActiveSession:
                 self._emit_pending_change(before)
             raise
 
-    async def _policy_allows(
+    async def _policy_decision(
         self, extras: SessionExtras, tool_name: str, tool_input: dict[str, Any]
-    ) -> bool:
-        """The agent's policy let this tool call through without asking. Any failure
-        of the policy means "ask": the user decides."""
+    ) -> Literal["allow", "ask", "deny"]:
+        """What the agent's policy says about this tool call. Anything but `allow` or
+        `deny`, and any failure of the policy, means "ask": the user decides."""
         try:
             decision = await asyncio.wait_for(
                 extras.decide(tool_name, tool_input), POLICY_TIMEOUT
             )
-            return decision == "allow"
+            return decision if decision in ("allow", "deny") else "ask"
         except TimeoutError:
             logger.warning(
                 "A política do agente da sessão %s demorou mais de %s s em %s; perguntando",
                 self.session_id, POLICY_TIMEOUT, tool_name,
             )
-            return False
+            return "ask"
         except Exception:
             logger.exception("Falha na política do agente da sessão %s", self.session_id)
-            return False
+            return "ask"
 
     def _emit_pending_change(self, before: tuple[dict[str, Any] | None, str | None]) -> None:
         """Update the summary when the pending permission or prompt kind it shows changed."""

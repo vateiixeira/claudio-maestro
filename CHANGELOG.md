@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- Agentes: o campo "Ferramentas bloqueadas", na seção Autonomia, impede o agente de usar uma ferramenta em qualquer autonomia, pelo nome (`mcp__servidor__ferramenta`, `WebFetch`) ou pelo servidor MCP inteiro (`mcp__servidor`).
+
 ### Corrigido
 
 - A barra de uso da assinatura não some mais depois de reiniciar o app (mostra a última leitura, com o aviso no tooltip) e espera antes de consultar de novo quando a Anthropic limita as consultas.

@@ -726,6 +726,8 @@ export interface Specialist {
   /** Only the ones added by the user; the factory defaults are fixed in the backend. */
   outward_patterns: string[]
   always_ask_patterns: string[]
+  /** Tools the agent can never use: a tool name (`WebFetch`, `mcp__server__tool`) or a whole MCP server (`mcp__server`). */
+  denied_tools: string[]
   close_by_check: boolean
   model: string | null
   effort: Effort | null
@@ -752,6 +754,7 @@ export interface SpecialistUpdate {
   autonomy?: SpecialistAutonomy
   outward_patterns?: string[]
   always_ask_patterns?: string[]
+  denied_tools?: string[]
   close_by_check?: boolean
   /** `null` goes back to the default. */
   model?: string | null

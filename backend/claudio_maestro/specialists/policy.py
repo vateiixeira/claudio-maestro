@@ -113,6 +113,28 @@ def ask_rules(outward: list[str], always: list[str]) -> list[str]:
     return rules
 
 
+# A blocked tool is written as in a permission rule of the CLI, without arguments or
+# wildcards: a built-in tool by its name (`WebFetch`), an MCP tool by `mcp__<server>__<tool>`
+# or a whole MCP server by `mcp__<server>`.
+MAX_TOOL_NAME = 200
+# The CLI turns any character of an MCP server name outside [A-Za-z0-9_-] into `_`
+# ("Gmail " -> "Gmail_"), so those characters are accepted at the ends of the name too. The
+# only thing refused is a name that ends in the `__` separator (`mcp__srv__`, nothing after).
+TOOL_NAME_PATTERN = re.compile(r"mcp__(?!.*__$)[A-Za-z0-9_-]+|[A-Za-z][A-Za-z0-9]*")
+
+
+def is_tool_name(name: str) -> bool:
+    return len(name) <= MAX_TOOL_NAME and TOOL_NAME_PATTERN.fullmatch(name) is not None
+
+
+def is_blocked(tool_name: str, denied: list[str]) -> bool:
+    """The tool is one of `denied`, or belongs to an MCP server listed there."""
+    return any(
+        tool_name == rule or (rule.startswith("mcp__") and tool_name.startswith(f"{rule}__"))
+        for rule in denied
+    )
+
+
 async def classify(
     command: str,
     *,

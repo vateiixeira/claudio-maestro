@@ -31,7 +31,12 @@ from claudio_maestro.sessions import (
 )
 from claudio_maestro.specialists import store
 from claudio_maestro.specialists.files import SpecialistFiles, parse_skill
-from claudio_maestro.specialists.policy import ask_rules, classify, read_git_context
+from claudio_maestro.specialists.policy import (
+    ask_rules,
+    classify,
+    is_blocked,
+    read_git_context,
+)
 from claudio_maestro.specialists.prompt import build_append
 from claudio_maestro.specialists.tools import SERVER_NAME, TOOL_PREFIX, build_server
 
@@ -126,8 +131,10 @@ class SpecialistService:
                     self, specialist_id=specialist.id, session_id=record.session_id
                 )
             },
-            settings=json.dumps({"permissions": {"ask": rules}}),
-            decide=self._decider(record.session_id),
+            settings=json.dumps(
+                {"permissions": {"ask": rules, "deny": list(specialist.denied_tools)}}
+            ),
+            decide=self._decider(record.session_id, list(specialist.denied_tools)),
         )
 
     @staticmethod
@@ -147,8 +154,18 @@ class SpecialistService:
                 found.append(project)
         return found
 
-    def _decider(self, session_id: str):
-        async def decide(tool_name: str, tool_input: dict[str, Any]) -> Literal["allow", "ask"]:
+    def _decider(self, session_id: str, denied_at_start: list[str]):
+        async def decide(
+            tool_name: str, tool_input: dict[str, Any]
+        ) -> Literal["allow", "ask", "deny"]:
+            # The `deny` rules of the session settings already stop a blocked tool in the
+            # CLI; this is the second wall. It reads the list now, so a tool blocked after
+            # the process started is refused too, but only if the call reaches this callback.
+            # What the CLI allows by itself (Read, Glob, Grep...) never does, and the
+            # `--settings` of a running process is not redone: such a tool is only blocked
+            # for good once the session gets a new process.
+            if is_blocked(tool_name, self._denied_tools(session_id, denied_at_start)):
+                return "deny"
             if tool_name.startswith(TOOL_PREFIX):
                 return "allow"
             if tool_name in ALWAYS_ASK_TOOLS:
@@ -179,6 +196,19 @@ class SpecialistService:
             )
 
         return decide
+
+    def _denied_tools(self, session_id: str, at_start: list[str]) -> list[str]:
+        """The tools blocked for the session's agent now; the ones from the start of the
+        session when the agent can no longer be read."""
+        try:
+            record = self._sessions.find_record(session_id)
+            specialist = self._specialist_by_id(record.specialist_id)
+        except Exception:
+            logger.exception("Falha ao ler as ferramentas bloqueadas da sessão %s", session_id)
+            return at_start
+        if specialist is None:
+            return at_start
+        return [*specialist.denied_tools, *at_start]
 
     # Starting a run ----------------------------------------------------------------
 

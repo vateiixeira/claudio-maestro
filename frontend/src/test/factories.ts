@@ -185,6 +185,7 @@ export function makeSpecialist(overrides: Partial<import('../types/api').Special
     autonomy: 'ask',
     outward_patterns: [],
     always_ask_patterns: [],
+    denied_tools: [],
     close_by_check: false,
     model: null,
     effort: null,

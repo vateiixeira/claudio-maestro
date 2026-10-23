@@ -11,7 +11,11 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from claude_agent_sdk import PermissionResultAllow, ToolPermissionContext
+from claude_agent_sdk import (
+    PermissionResultAllow,
+    PermissionResultDeny,
+    ToolPermissionContext,
+)
 from test_sessions import Env, by_session, fake_history, wait_until
 
 from claudio_maestro import db
@@ -198,6 +202,20 @@ async def test_specialist_session_allow_does_not_create_prompt(make_env, env_cle
 
     assert isinstance(result, PermissionResultAllow)
     assert setup.decided == [("Read", {"file_path": "a.txt"})]
+    assert session.prompts == {}
+    assert env.recorder.of(session.session_id, "prompt.request") == []
+
+
+@pytest.mark.anyio
+async def test_specialist_session_deny_refuses_without_a_prompt(make_env, env_cleanup):
+    setup = Setup("deny")
+    env, session, can_use_tool = await connected_specialist_session(make_env, env_cleanup, setup)
+
+    result = await can_use_tool("mcp__srv__editar", {"id": 1}, ask_context())
+
+    assert isinstance(result, PermissionResultDeny)
+    assert "bloqueada" in result.message
+    assert result.interrupt is False
     assert session.prompts == {}
     assert env.recorder.of(session.session_id, "prompt.request") == []
 

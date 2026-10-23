@@ -920,6 +920,24 @@ async def test_session_setup_env_has_secrets_and_prompt_has_no_secret_values(wor
     assert list(extras.mcp_servers) == [SERVER_NAME]
     rules = json.loads(extras.settings)["permissions"]["ask"]
     assert "Bash(terraform apply:*)" in rules and "Bash(rm -rf:*)" in rules
+    assert json.loads(extras.settings)["permissions"]["deny"] == []
+
+
+async def test_session_setup_settings_deny_the_blocked_tools(world):
+    specialist_id = world.add_specialist()
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_specialist(
+            conn, specialist_id, now=1,
+            denied_tools=["mcp__kbgen-issues__editar_issue", "mcp__outro", "WebFetch"],
+        )
+    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+
+    extras = world.service.session_setup(record)
+
+    assert extras is not None
+    permissions = json.loads(extras.settings)["permissions"]
+    assert permissions["deny"] == ["mcp__kbgen-issues__editar_issue", "mcp__outro", "WebFetch"]
+    assert "ask" in permissions
 
 
 async def test_session_setup_skips_unavailable_extra_projects(world):
@@ -989,6 +1007,60 @@ async def test_decide_routes_tools(world, monkeypatch):
     assert await decide("Bash", {"command": "ls -la"}) == "allow"
     assert await decide("Edit", {"file_path": "a.py"}) == "allow"
     assert await decide("Read", {"file_path": "a.py"}) == "allow"
+
+
+async def test_decide_denies_blocked_tools_by_name_or_server(world):
+    decide, _ = make_decide(
+        world,
+        autonomy="full",
+        denied_tools=["mcp__kbgen-issues__editar_issue", "mcp__slack", "WebFetch"],
+    )
+
+    assert await decide("mcp__kbgen-issues__editar_issue", {"id": 1}) == "deny"
+    assert await decide("mcp__slack__enviar", {}) == "deny"
+    assert await decide("mcp__slack__a__b", {}) == "deny"
+    assert await decide("WebFetch", {"url": "https://x"}) == "deny"
+    # Only what the list names: another tool of the same server, a server whose name
+    # merely starts the same, a built-in with a similar name.
+    assert await decide("mcp__kbgen-issues__ler_issue", {}) == "allow"
+    assert await decide("mcp__slack2__enviar", {}) == "allow"
+    assert await decide("mcp__slack", {}) == "deny"
+    assert await decide("WebSearch", {}) == "allow"
+    assert await decide("Read", {"file_path": "a.py"}) == "allow"
+    assert await decide("mcp__maestro__concluir", {}) == "allow"
+    assert await decide("Bash", {"command": "ls"}) == "allow"
+
+
+async def test_decide_matches_server_names_with_a_trailing_separator(world):
+    decide, _ = make_decide(world, autonomy="full", denied_tools=["mcp__Gmail_"])
+
+    assert await decide("mcp__Gmail___search", {}) == "deny"
+    assert await decide("mcp__Gmail__search", {}) == "allow"
+
+
+async def test_decide_denies_a_bash_tool_when_it_is_blocked(world):
+    decide, _ = make_decide(world, autonomy="full", denied_tools=["Bash"])
+
+    assert await decide("Bash", {"command": "ls"}) == "deny"
+
+
+async def test_decide_sees_tools_blocked_after_the_session_started(world):
+    decide, record = make_decide(world, autonomy="full")
+    assert await decide("WebFetch", {}) == "allow"
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_specialist(
+            conn, record.specialist_id, now=2, denied_tools=["WebFetch"]
+        )
+
+    assert await decide("WebFetch", {}) == "deny"
+
+
+async def test_decide_keeps_the_blocked_tools_of_the_start_if_the_agent_is_gone(world):
+    decide, record = make_decide(world, autonomy="full", denied_tools=["WebFetch"])
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        conn.execute("DELETE FROM specialists WHERE id = ?", (record.specialist_id,))
+
+    assert await decide("WebFetch", {}) == "deny"
 
 
 async def test_decide_in_ask_autonomy_asks_for_any_push(world, monkeypatch):

@@ -201,6 +201,44 @@ describe('AgentDetail', () => {
     })
   })
 
+  describe('ferramentas bloqueadas', () => {
+    it('lista as ferramentas bloqueadas, sem padrões de fábrica, com a ajuda', async () => {
+      const { wrapper } = await mountDetail(makeSpecialist({ denied_tools: ['mcp__kbgen-issues__editar_issue', 'WebFetch'] }))
+      expect(wrapper.text()).toContain('Ferramentas bloqueadas')
+      expect(wrapper.text()).toContain('em nenhuma autonomia')
+      expect(wrapper.text()).toContain('Vale por completo nas sessões abertas depois de salvar.')
+      expect(wrapper.findAll('[data-test="denied-default"]')).toHaveLength(0)
+      const custom = wrapper.findAll('[data-test="denied-custom"]')
+      expect(custom.map((d) => d.text())).toEqual(['mcp__kbgen-issues__editar_issue', 'WebFetch'])
+      expect(custom[0]!.find('[data-test="pattern-remove"]').exists()).toBe(true)
+    })
+
+    it('acrescenta e remove ferramentas salvando a lista inteira', async () => {
+      const agent = makeSpecialist({ denied_tools: ['WebFetch'] })
+      const { wrapper, fetch } = await mountDetail(agent, {
+        'PATCH /api/specialists/1': () => jsonResponse({ ...agent, denied_tools: ['WebFetch', 'mcp__kbgen-issues'] }),
+      })
+      await wrapper.get('[data-test="denied-input"]').setValue('  mcp__kbgen-issues ')
+      await wrapper.get('[data-test="denied-add"]').trigger('click')
+      await flushPromises()
+      expect(bodies(fetch, 'PATCH', '/api/specialists/1')).toEqual([{ denied_tools: ['WebFetch', 'mcp__kbgen-issues'] }])
+      await wrapper.get('[data-test="denied-custom"] [data-test="pattern-remove"]').trigger('click')
+      await flushPromises()
+      expect(bodies(fetch, 'PATCH', '/api/specialists/1')[1]).toEqual({ denied_tools: [] })
+    })
+
+    it('mostra o erro da API sem limpar o que foi digitado', async () => {
+      const { wrapper } = await mountDetail(makeSpecialist(), {
+        'PATCH /api/specialists/1': () => jsonResponse({ detail: 'Use o nome da ferramenta.' }, 422),
+      })
+      await wrapper.get('[data-test="denied-input"]').setValue('Bash(rm:*)')
+      await wrapper.get('[data-test="denied-add"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-test="action-error"]').text()).toContain('Use o nome da ferramenta.')
+      expect(wrapper.get<HTMLInputElement>('[data-test="denied-input"]').element.value).toBe('Bash(rm:*)')
+    })
+  })
+
   describe('horários', () => {
     it('adiciona uma linha, escolhe dias e hora e salva', async () => {
       const agent = makeSpecialist()

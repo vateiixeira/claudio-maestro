@@ -75,6 +75,38 @@ def test_mark_migration_keeps_existing_sessions_unmarked(tmp_path: Path):
     assert row["detached_at"] is None
 
 
+def test_specialist_migration_adds_empty_denied_tools(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        # The migration that adds the blocked tools (later ones may follow it).
+        before = next(
+            index for index, statements in enumerate(db.MIGRATIONS)
+            if any("denied_tools" in str(statement) for statement in statements)
+        )
+        for statements in db.MIGRATIONS[:before]:
+            for statement in statements:
+                if callable(statement):
+                    statement(conn)
+                else:
+                    conn.execute(statement)
+        conn.execute(f"PRAGMA user_version = {before}")
+        conn.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/p', '#fff', 0, 0)"
+        )
+        conn.execute(
+            "INSERT INTO specialists (slug, name, project_id, created_at, updated_at)"
+            " VALUES ('rev', 'Rev', 1, 0, 0)"
+        )
+        assert "denied_tools" not in {
+            row["name"] for row in conn.execute("PRAGMA table_info(specialists)")
+        }
+
+        db.migrate(conn)
+
+        row = conn.execute("SELECT denied_tools FROM specialists WHERE slug = 'rev'").fetchone()
+    assert row["denied_tools"] == "[]"
+
+
 def test_migrate_twice_is_harmless(tmp_path: Path):
     path = tmp_path / "test.db"
     with open_db(path) as conn:
@@ -266,7 +298,6 @@ def test_specialists_migration_keeps_existing_sessions(tmp_path: Path):
             index for index, statements in enumerate(db.MIGRATIONS)
             if any("CREATE TABLE specialists" in str(statement) for statement in statements)
         )
-        assert before == len(db.MIGRATIONS) - 1  # the newest migration
         for statements in db.MIGRATIONS[:before]:
             for statement in statements:
                 if callable(statement):

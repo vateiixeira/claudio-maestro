@@ -41,6 +41,7 @@ class Specialist:
     autonomy: Autonomy
     outward_patterns: list[str]
     always_ask_patterns: list[str]
+    denied_tools: list[str]
     close_by_check: bool
     model: str | None
     effort: str | None
@@ -96,7 +97,9 @@ class Notice:
 
 # Specialists ------------------------------------------------------------------
 
-_JSON_FIELDS = ("extra_project_ids", "outward_patterns", "always_ask_patterns", "last_mcp")
+_JSON_FIELDS = (
+    "extra_project_ids", "outward_patterns", "always_ask_patterns", "denied_tools", "last_mcp",
+)
 _BOOL_FIELDS = ("close_by_check", "enabled")
 _UPDATABLE = (
     "slug", "name", "project_id", "autonomy", "model", "effort", "run_text",
@@ -104,8 +107,8 @@ _UPDATABLE = (
 )
 _COLUMNS = (
     "id, slug, name, project_id, extra_project_ids, autonomy, outward_patterns,"
-    " always_ask_patterns, close_by_check, model, effort, run_text, enabled, last_mcp,"
-    " created_at, updated_at"
+    " always_ask_patterns, denied_tools, close_by_check, model, effort, run_text, enabled,"
+    " last_mcp, created_at, updated_at"
 )
 
 

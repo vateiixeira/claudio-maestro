@@ -45,6 +45,7 @@ def test_create_and_get_round_trip(conn):
     assert loaded.extra_project_ids == [] and isinstance(loaded.extra_project_ids, list)
     assert loaded.outward_patterns == [] and loaded.always_ask_patterns == []
     assert loaded.last_mcp == []
+    assert loaded.denied_tools == [] and isinstance(loaded.denied_tools, list)
     assert loaded.autonomy == "ask"
     assert loaded.close_by_check is True
     assert loaded.run_text == "Execute a rotina agendada."
@@ -65,6 +66,7 @@ def test_update_specialist_round_trips_lists_and_flags(conn):
         autonomy="full",
         outward_patterns=["Bash(git push:*)"],
         always_ask_patterns=["Bash(rm:*)"],
+        denied_tools=["mcp__kbgen-issues__editar_issue"],
         close_by_check=False,
         enabled=False,
         model="haiku",
@@ -75,6 +77,7 @@ def test_update_specialist_round_trips_lists_and_flags(conn):
     assert updated.autonomy == "full"
     assert updated.outward_patterns == ["Bash(git push:*)"]
     assert updated.always_ask_patterns == ["Bash(rm:*)"]
+    assert updated.denied_tools == ["mcp__kbgen-issues__editar_issue"]
     assert updated.close_by_check is False and updated.enabled is False
     assert updated.model == "haiku"
     assert updated.last_mcp == [{"name": "x", "status": "ok"}]

@@ -30,6 +30,7 @@ from claudio_maestro.specialists.files import (
     SpecialistFiles,
     parse_skill,
 )
+from claudio_maestro.specialists.policy import MAX_TOOL_NAME, is_tool_name
 
 router = APIRouter(prefix="/api")
 
@@ -65,6 +66,11 @@ BAD_PATTERN = (
     "Os padrões aceitam só letras, números, espaço e os sinais - _ . / :, "
     "com até 100 caracteres cada."
 )
+BAD_TOOL = (
+    "Use o nome da ferramenta (ex.: WebFetch ou mcp__servidor__ferramenta) ou o servidor "
+    f"inteiro (mcp__servidor), com até {MAX_TOOL_NAME} caracteres. "
+    "Sem parênteses, espaços nem curingas."
+)
 BAD_SECRETS_BODY = 'Envie {"values": {"NOME": "valor" ou null}}.'
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NAME)]
@@ -72,6 +78,10 @@ Pattern = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_PATTERN_INPUT)
 ]
 Patterns = Annotated[list[Pattern], Field(max_length=MAX_PATTERNS)]
+Tool = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_PATTERN_INPUT)
+]
+Tools = Annotated[list[Tool], Field(max_length=MAX_PATTERNS)]
 RunText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_RUN_TEXT)
 ]
@@ -105,6 +115,7 @@ class SpecialistPatch(BaseModel):
     autonomy: Literal["ask", "full"] | None = None
     outward_patterns: Patterns | None = None
     always_ask_patterns: Patterns | None = None
+    denied_tools: Tools | None = None
     close_by_check: bool | None = None
     # `null` goes back to the default model / effort.
     model: Annotated[
@@ -211,6 +222,7 @@ def _out(
         "autonomy": specialist.autonomy,
         "outward_patterns": specialist.outward_patterns,
         "always_ask_patterns": specialist.always_ask_patterns,
+        "denied_tools": specialist.denied_tools,
         "close_by_check": specialist.close_by_check,
         "model": specialist.model,
         "effort": specialist.effort,
@@ -256,6 +268,13 @@ def _clean_patterns(patterns: list[str]) -> list[str]:
         if len(pattern) > MAX_PATTERN or not COMMAND_PATTERN.fullmatch(pattern):
             raise _unprocessable(BAD_PATTERN)
     return _dedupe(patterns)
+
+
+def _clean_tools(tools: list[str]) -> list[str]:
+    for tool in tools:
+        if not is_tool_name(tool):
+            raise _unprocessable(BAD_TOOL)
+    return _dedupe(tools)
 
 
 def _require_project(conn: sqlite3.Connection, project_id: int) -> None:
@@ -316,6 +335,8 @@ async def update_specialist(
     for field in ("outward_patterns", "always_ask_patterns"):
         if field in given:
             given[field] = _clean_patterns(given[field])
+    if "denied_tools" in given:
+        given["denied_tools"] = _clean_tools(given["denied_tools"])
     now = _now()
     try:
         with db.transaction(conn):

@@ -50,5 +50,17 @@ async function choose(autonomy: 'ask' | 'full', event: Event): Promise<void> {
         <p class="m-0 text-xs text-fg-subtle">Valem nas duas autonomias. Enviar para a branch principal e o push forçado também sempre pedem ok.</p>
       </template>
     </AgentPatterns>
+    <AgentPatterns
+      label="Ferramentas bloqueadas"
+      kind="denied"
+      :defaults="[]"
+      :custom="props.agent.denied_tools"
+      placeholder="mcp__kbgen-issues__editar_issue"
+      :save="(list) => save({ denied_tools: list })"
+    >
+      <template #hint>
+        <p class="m-0 text-xs text-fg-subtle">O agente não consegue usar estas ferramentas, em nenhuma autonomia. Use o nome exato (mcp__kbgen-issues__editar_issue, WebFetch) ou o servidor inteiro (mcp__kbgen-issues). Vale por completo nas sessões abertas depois de salvar.</p>
+      </template>
+    </AgentPatterns>
   </AgentSection>
 </template>

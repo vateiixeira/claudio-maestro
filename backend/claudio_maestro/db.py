@@ -332,6 +332,8 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         "ALTER TABLE sessions ADD COLUMN specialist_id INTEGER REFERENCES specialists(id) ON DELETE SET NULL",
         "CREATE INDEX sessions_specialist ON sessions(specialist_id)",
     ],
+    # Tools an agent can never use (names in the CLI's permission rule form), JSON text.
+    ["ALTER TABLE specialists ADD COLUMN denied_tools TEXT NOT NULL DEFAULT '[]'"],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)
