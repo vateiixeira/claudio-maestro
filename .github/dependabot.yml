@@ -2,10 +2,12 @@ version: 2
 updates:
   - package-ecosystem: uv
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
   - package-ecosystem: npm
     directory: /frontend
+    target-branch: develop
     schedule:
       interval: weekly
     # TypeScript 7 removeu `typescript/lib/tsc` e o `vue-tsc` 3.3.11 quebra com
@@ -15,5 +17,6 @@ updates:
         update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
