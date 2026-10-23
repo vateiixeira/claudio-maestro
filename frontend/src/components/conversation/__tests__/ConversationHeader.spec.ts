@@ -10,8 +10,9 @@ import { useGroupsStore } from '../../../stores/groups'
 import { useLabelsStore } from '../../../stores/labels'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
+import { useSpecialistsStore } from '../../../stores/specialists'
 import { useTerminalStore } from '../../../stores/terminal'
-import { jsonResponse, makeGitRepo, makeGroup, makeLabel, makeProject, makeSession, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeGitRepo, makeGroup, makeLabel, makeProject, makeSession, makeSpecialist, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -381,5 +382,25 @@ describe('terminal no cabeçalho', () => {
     await flushPromises()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('selo de agente no cabeçalho', () => {
+  function mountAgentHeader(specialistId: number | null) {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', specialist_id: specialistId })])
+    return mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+  }
+
+  it('sessão de agente mostra "Agente · nome"', () => {
+    useSpecialistsStore(pinia).list = [makeSpecialist({ id: 4, name: 'Triagem' })]
+    expect(mountAgentHeader(4).get('[data-test="agent-badge"]').text()).toBe('Agente · Triagem')
+  })
+
+  it('sem o agente carregado mostra só "Agente"', () => {
+    expect(mountAgentHeader(9).get('[data-test="agent-badge"]').text()).toBe('Agente')
+  })
+
+  it('sessão comum não tem o selo', () => {
+    expect(mountAgentHeader(null).find('[data-test="agent-badge"]').exists()).toBe(false)
   })
 })

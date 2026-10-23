@@ -17,12 +17,13 @@ import { useGroupsStore } from '../../../stores/groups'
 import { useNewConversationStore } from '../../../stores/newConversation'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
+import { useSpecialistsStore } from '../../../stores/specialists'
 import { useClaudeCliStore } from '../../../stores/claudeCli'
 import { useUpdatesStore } from '../../../stores/updates'
 import { useUsageStore } from '../../../stores/usage'
 import { setCollapsed, setSectionCollapsed, setSectionOpened } from '../../../sidebarCollapse'
 import { sidebarWidth } from '../../../sidebarWidthPref'
-import { makeGitRepo, makeGroup, makeProject, makeSession } from '../../../test/factories'
+import { makeGitRepo, makeGroup, makeProject, makeSession, makeSpecialistNotice } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -738,5 +739,23 @@ describe('aviso de versão nova do Claude no rodapé', () => {
     await nextTick()
     await wrapper.get('[data-test="claude-update-notice"]').trigger('click')
     expect(store.update).toHaveBeenCalledOnce()
+  })
+})
+
+describe('contador de avisos no item Agentes', () => {
+  it('mostra quantos avisos não lidos há', () => {
+    useSpecialistsStore(pinia).notices = [
+      makeSpecialistNotice({ id: 1 }),
+      makeSpecialistNotice({ id: 2 }),
+      makeSpecialistNotice({ id: 3, read_at: 9 }),
+    ]
+    const count = mountSidebar().get('[data-test="agents-count"]')
+    expect(count.text()).toContain('2')
+    expect(count.text()).toContain('não lidos')
+  })
+
+  it('não aparece sem avisos não lidos', () => {
+    useSpecialistsStore(pinia).notices = [makeSpecialistNotice({ id: 1, read_at: 9 })]
+    expect(mountSidebar().find('[data-test="agents-count"]').exists()).toBe(false)
   })
 })

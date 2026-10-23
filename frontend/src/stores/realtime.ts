@@ -35,6 +35,11 @@ export async function loadEverything(): Promise<void> {
   void useGroupsStore().load().catch(() => {})
   // A failure leaves the labels out of the badges until the next load.
   void useLabelsStore().load().catch(() => {})
+  // The agents (their names show on notices and session badges) and their notices are secondary:
+  // a failure keeps the last ones (the store keeps the error).
+  const specialists = useSpecialistsStore()
+  void specialists.load().catch(() => {})
+  void specialists.loadNotices().catch(() => {})
   await sessions.loadAll(projects.projects.map((p) => p.id))
 }
 
@@ -82,7 +87,6 @@ export function bindRealtime(socket: EventSocket): () => void {
     socket.on('specialist.run', (event) => useSpecialistsStore().applyRun(event.data)),
     socket.on('specialist.notice', (event) => useSpecialistsStore().applyNotice(event.data)),
     socket.onReconnect(() => {
-      useSpecialistsStore().reload()
       useDigestStore().invalidate()
       useClosureStore().invalidate()
       void useDigestStore().refreshStatus()

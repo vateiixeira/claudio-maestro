@@ -147,15 +147,9 @@ export const useSpecialistsStore = defineStore('specialists', () => {
     notices.value = [data, ...notices.value]
   }
 
-  /** The socket came back: events sent while it was down are lost. */
-  function reload(): void {
-    if (loaded.value) void load()
-    if (noticesLoaded.value) void loadNotices()
-  }
-
   return {
     list, loaded, error, notices, noticesError, runs, changes, unreadCount,
     byId, runsOf, load, loadRuns, loadNotices, create, update, remove, runNow, markRead,
-    applyChanged, applyRun, applyNotice, reload,
+    applyChanged, applyRun, applyNotice,
   }
 })

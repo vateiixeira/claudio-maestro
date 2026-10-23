@@ -146,6 +146,8 @@ export interface Session {
   priority?: boolean
   /** Ids of the labels applied (`GET /api/labels`), ordered by id. */
   label_ids?: number[]
+  /** The agent (`/agentes`) that started the session; null (or absent) for an ordinary one. */
+  specialist_id?: number | null
 }
 
 /** A session found by the search; `match` is present when the term is in the text of its messages. */

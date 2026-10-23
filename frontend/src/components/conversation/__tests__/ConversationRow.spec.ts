@@ -8,7 +8,8 @@ import { useGitStore } from '../../../stores/git'
 import { useGroupsStore } from '../../../stores/groups'
 import { useLabelsStore } from '../../../stores/labels'
 import { useProjectsStore } from '../../../stores/projects'
-import { jsonResponse, makeGitRepo, makeGroup, makeLabel, makeProject, makeSession, routeFetch } from '../../../test/factories'
+import { useSpecialistsStore } from '../../../stores/specialists'
+import { jsonResponse, makeGitRepo, makeGroup, makeLabel, makeProject, makeSession, makeSpecialist, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -423,5 +424,22 @@ describe('etiquetas na linha de conversa', () => {
   it('sem etiquetas não mostra nada', () => {
     expect(mountRow(makeSession({ label_ids: [] })).find('[data-test="label-badges"]').exists()).toBe(false)
     expect(mountRow(makeSession()).find('[data-test="label-badges"]').exists()).toBe(false)
+  })
+})
+
+describe('selo de agente na linha', () => {
+  it('sessão de agente mostra "Agente · nome"', () => {
+    useSpecialistsStore(pinia).list = [makeSpecialist({ id: 4, name: 'Triagem' })]
+    const w = mountRow(makeSession({ specialist_id: 4 }))
+    expect(w.get('[data-test="row-title"]').get('[data-test="agent-badge"]').text()).toBe('Agente · Triagem')
+  })
+
+  it('agente que não está carregado mostra só "Agente"', () => {
+    expect(mountRow(makeSession({ specialist_id: 9 })).get('[data-test="agent-badge"]').text()).toBe('Agente')
+  })
+
+  it('sessão comum não tem o selo', () => {
+    expect(mountRow(makeSession()).find('[data-test="agent-badge"]').exists()).toBe(false)
+    expect(mountRow(makeSession({ specialist_id: null })).find('[data-test="agent-badge"]').exists()).toBe(false)
   })
 })

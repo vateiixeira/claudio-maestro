@@ -13,7 +13,8 @@ import { useDigestStore } from '../digest'
 import { useClosureStore } from '../closure'
 import { useDeliveriesStore } from '../deliveries'
 import { useClaudeCliStore } from '../claudeCli'
-import { jsonResponse, makeGroup, makeLabel, makeProject, makeSession } from '../../test/factories'
+import { useSpecialistsStore } from '../specialists'
+import { jsonResponse, makeGroup, makeLabel, makeProject, makeSession, makeSpecialist, makeSpecialistNotice } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
   onopen: ((ev: unknown) => void) | null = null
@@ -268,6 +269,54 @@ describe('bindRealtime', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/labels', expect.anything())
     expect(useLabelsStore().byId(3)).toBeDefined()
+  })
+
+  it('loadEverything também carrega os agentes e os avisos deles', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/projects') return jsonResponse([makeProject({ id: 1 })])
+      if (url === '/api/specialists') return jsonResponse([makeSpecialist({ id: 1, name: 'Triagem' })])
+      if (url === '/api/specialist-notices') return jsonResponse([makeSpecialistNotice({ id: 5 })])
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await loadEverything()
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/specialists', expect.anything())
+    expect(fetchMock).toHaveBeenCalledWith('/api/specialist-notices', expect.anything())
+    expect(useSpecialistsStore().byId(1)?.name).toBe('Triagem')
+    expect(useSpecialistsStore().unreadCount).toBe(1)
+  })
+
+  it('loadEverything segue quando a lista de agentes falha', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/projects') return jsonResponse([makeProject({ id: 1 })])
+      if (url === '/api/specialists') return jsonResponse({ detail: 'x' }, 500)
+      if (url === '/api/specialist-notices') return jsonResponse([makeSpecialistNotice({ id: 5 })])
+      return jsonResponse([])
+    }))
+    await expect(loadEverything()).resolves.toBeUndefined()
+    await flushPromises()
+    expect(useSpecialistsStore().unreadCount).toBe(1)
+  })
+
+  it('ao reconectar, relê agentes e avisos uma vez só', async () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/projects') return jsonResponse([makeProject({ id: 1 })])
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    sockets[0]!.onclose?.({})
+    vi.advanceTimersByTime(10)
+    sockets[1]!.onopen?.({})
+    await flushPromises()
+    const count = (path: string) => fetchMock.mock.calls.filter(([u]) => u === path).length
+    expect(count('/api/specialists')).toBe(1)
+    expect(count('/api/specialist-notices')).toBe(1)
   })
 
   const CLAUDE_STATE = {

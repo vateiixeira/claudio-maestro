@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AgentNotices from '../components/inbox/AgentNotices.vue'
 import ConversationRow from '../components/conversation/ConversationRow.vue'
 import FirstSteps from '../components/FirstSteps.vue'
 import InboxTriageRow from '../components/inbox/InboxTriageRow.vue'
@@ -160,6 +161,7 @@ async function markAll() {
     <h1 class="m-0 font-mono text-sm tracking-[0.08em] text-fg uppercase">Inbox</h1>
     <FirstSteps v-if="projects.loaded && !projects.loadError && projects.projects.length === 0" />
     <template v-else>
+      <AgentNotices />
       <div class="flex flex-wrap items-center gap-3">
         <div role="tablist" aria-label="Filtro da Inbox" class="flex gap-1">
           <button

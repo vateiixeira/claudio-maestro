@@ -27,6 +27,7 @@ import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import { useSpecialistsStore } from '../../stores/specialists'
 import { useUpdatesStore } from '../../stores/updates'
 import type { GitRepo, Project, Session, SessionGroup } from '../../types/api'
 import IconAgents from '../icons/IconAgents.vue'
@@ -41,6 +42,7 @@ import IconSettings from '../icons/IconSettings.vue'
 
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
+const specialists = useSpecialistsStore()
 const git = useGitStore()
 const groups = useGroupsStore()
 const newConversation = useNewConversationStore()
@@ -202,6 +204,9 @@ const itemClass = sidebarItemClass
       </RouterLink>
       <RouterLink to="/agentes" data-test="nav-agents" :class="itemClass(route.name === 'agents')" :aria-current="route.name === 'agents' ? 'page' : undefined">
         <IconAgents /><span class="grow">Agentes</span>
+        <span v-if="specialists.unreadCount" data-test="agents-count" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-secondary">
+          <span aria-hidden="true">{{ specialists.unreadCount }}</span><span class="sr-only">{{ specialists.unreadCount }} {{ specialists.unreadCount === 1 ? 'aviso não lido' : 'avisos não lidos' }}</span>
+        </span>
       </RouterLink>
     </div>
 

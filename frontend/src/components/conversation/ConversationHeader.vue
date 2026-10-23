@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import AgentBadge from '../agents/AgentBadge.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
@@ -233,6 +234,7 @@ async function openProject() {
             @click="startRename"
           >{{ title }}</button>
         </h1>
+        <AgentBadge v-if="listed?.specialist_id != null" :specialist-id="listed.specialist_id" />
         <LabelBadges :ids="listed?.label_ids" />
       </div>
       <!-- Quebram linha numa coluna estreita: shrink-0 em fila única vazava e fazia a página rolar. -->
