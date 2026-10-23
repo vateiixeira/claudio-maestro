@@ -250,6 +250,88 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         "ALTER TABLE sessions ADD COLUMN remote_control_bridge TEXT",
         "ALTER TABLE sessions ADD COLUMN spawn_version INTEGER NOT NULL DEFAULT 0",
     ],
+    [
+        # Agentes (specialists): a named routine bound to a project, with its schedules,
+        # run history, memory items and notices. Lists (extra projects, patterns, MCP
+        # servers) are JSON text. Removing the project or the agent removes everything
+        # that hangs from it; removing a session only unlinks it (the history stays).
+        """
+        CREATE TABLE specialists (
+          id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+          slug                 TEXT NOT NULL UNIQUE,
+          name                 TEXT NOT NULL,
+          project_id           INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          extra_project_ids    TEXT NOT NULL DEFAULT '[]',
+          autonomy             TEXT NOT NULL DEFAULT 'ask' CHECK (autonomy IN ('ask', 'full')),
+          outward_patterns     TEXT NOT NULL DEFAULT '[]',
+          always_ask_patterns  TEXT NOT NULL DEFAULT '[]',
+          close_by_check       INTEGER NOT NULL DEFAULT 1,
+          model                TEXT,
+          effort               TEXT,
+          run_text             TEXT NOT NULL DEFAULT 'Execute a rotina agendada.',
+          enabled              INTEGER NOT NULL DEFAULT 1,
+          last_mcp             TEXT NOT NULL DEFAULT '[]',
+          created_at           INTEGER NOT NULL,
+          updated_at           INTEGER NOT NULL
+        )
+        """,
+        # Weekdays are ISO digits (1 = Monday ... 7 = Sunday); `last_fired_at` is the
+        # last slot already handled, so a restart never fires the same slot twice.
+        """
+        CREATE TABLE specialist_schedules (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          days           TEXT NOT NULL,
+          time           TEXT NOT NULL,
+          last_fired_at  INTEGER
+        )
+        """,
+        "CREATE INDEX specialist_schedules_specialist ON specialist_schedules(specialist_id)",
+        """
+        CREATE TABLE specialist_runs (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+          trigger        TEXT NOT NULL CHECK (trigger IN ('schedule', 'manual')),
+          scheduled_for  INTEGER,
+          started_at     INTEGER NOT NULL,
+          ended_at       INTEGER,
+          outcome        TEXT NOT NULL CHECK (
+            outcome IN ('running', 'concluded', 'closed', 'waiting', 'failed', 'skipped', 'missed')
+          ),
+          reason         TEXT
+        )
+        """,
+        "CREATE INDEX specialist_runs_specialist_started ON specialist_runs(specialist_id, started_at)",
+        "CREATE INDEX specialist_runs_session ON specialist_runs(session_id)",
+        # What the agent already looked at, by its own key (a ticket, a PR, a file).
+        """
+        CREATE TABLE specialist_items (
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          key            TEXT NOT NULL,
+          status         TEXT NOT NULL,
+          link           TEXT,
+          note           TEXT,
+          created_at     INTEGER NOT NULL,
+          updated_at     INTEGER NOT NULL,
+          PRIMARY KEY (specialist_id, key)
+        )
+        """,
+        """
+        CREATE TABLE specialist_notices (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+          kind           TEXT NOT NULL CHECK (kind IN ('notice', 'summary', 'alert')),
+          text           TEXT NOT NULL,
+          created_at     INTEGER NOT NULL,
+          read_at        INTEGER
+        )
+        """,
+        "CREATE INDEX specialist_notices_read ON specialist_notices(read_at)",
+        "ALTER TABLE sessions ADD COLUMN specialist_id INTEGER REFERENCES specialists(id) ON DELETE SET NULL",
+        "CREATE INDEX sessions_specialist ON sessions(specialist_id)",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

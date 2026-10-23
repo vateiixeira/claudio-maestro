@@ -246,3 +246,46 @@ def test_remote_control_migration_keeps_existing_sessions_off(tmp_path: Path):
     assert row["remote_control"] == 0
     assert row["remote_control_bridge"] is None
     assert row["spawn_version"] == 0
+
+
+def test_migration_creates_specialist_tables(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        db.migrate(conn)
+        assert {
+            "specialists", "specialist_schedules", "specialist_runs",
+            "specialist_items", "specialist_notices",
+        } <= table_names(conn)
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == len(db.MIGRATIONS)
+        cols = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
+    assert "specialist_id" in cols and cols["specialist_id"]["dflt_value"] is None
+
+
+def test_specialists_migration_keeps_existing_sessions(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        before = next(
+            index for index, statements in enumerate(db.MIGRATIONS)
+            if any("CREATE TABLE specialists" in str(statement) for statement in statements)
+        )
+        assert before == len(db.MIGRATIONS) - 1  # the newest migration
+        for statements in db.MIGRATIONS[:before]:
+            for statement in statements:
+                if callable(statement):
+                    statement(conn)
+                else:
+                    conn.execute(statement)
+        conn.execute(f"PRAGMA user_version = {before}")
+        conn.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/p', '#fff', 0, 0)"
+        )
+        conn.execute(
+            "INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at)"
+            " VALUES ('old', 1, '/p', 't', 0, 0)"
+        )
+        assert "specialist_id" not in {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
+
+        db.migrate(conn)
+
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == len(db.MIGRATIONS)
+        row = conn.execute("SELECT * FROM sessions WHERE session_id = 'old'").fetchone()
+    assert row["title"] == "t" and row["specialist_id"] is None

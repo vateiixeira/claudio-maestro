@@ -400,6 +400,9 @@ class SessionRecord:
     remote_control_bridge: str | None = None
     # Version of the code that spawned the process (what its arguments contain).
     spawn_version: int = 0
+    # Agente (specialist) that started this session; None for a regular one or when the
+    # agent was removed.
+    specialist_id: int | None = None
 
     @property
     def history_directory(self) -> str:
@@ -442,13 +445,13 @@ _COLUMNS = (
     + ", model, effort, permission_mode, finished_at, plan_path, plan_link, group_id"
     + ", history_dir, worktree_name, worktree_path, git_branch, turn_open"
     + ", mark, mark_note, mark_until, priority, detached_at"
-    + ", remote_control, remote_control_bridge, spawn_version"
+    + ", remote_control, remote_control_bridge, spawn_version, specialist_id"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
     "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
     "plan_path", "plan_link", "history_dir", "turn_open", "detached_at",
-    "remote_control_bridge", "spawn_version",
+    "remote_control_bridge", "spawn_version", "specialist_id",
 )
 _BOOL_FIELDS = (
     "finished", "title_custom", "rename_pending", "turn_open", "priority", "remote_control"
@@ -3368,8 +3371,8 @@ class SessionManager:
             if group_id is not None:
                 groups.get_group(conn, group_id)
             conn.execute(
-                f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id,"
+                " specialist_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.session_id,
                     record.project_id,
@@ -3383,6 +3386,7 @@ class SessionManager:
                     record.effort,
                     record.permission_mode,
                     record.group_id,
+                    record.specialist_id,
                 ),
             )
         return record
