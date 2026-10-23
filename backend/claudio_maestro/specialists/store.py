@@ -532,6 +532,26 @@ def pending_announcements(conn: sqlite3.Connection, specialist_id: int) -> list[
     return [_announcement(row) for row in rows]
 
 
+def announcement_for_run(conn: sqlite3.Connection, run_id: int) -> Announcement | None:
+    row = conn.execute(
+        f"SELECT {_ANNOUNCEMENT_COLUMNS} FROM specialist_announcements WHERE run_id = ?"
+        " ORDER BY id LIMIT 1",
+        (run_id,),
+    ).fetchone()
+    return _announcement(row) if row else None
+
+
+def update_announcement_text(conn: sqlite3.Connection, announcement_id: int, text: str) -> Announcement:
+    conn.execute(
+        "UPDATE specialist_announcements SET text = ? WHERE id = ?", (text, announcement_id)
+    )
+    row = conn.execute(
+        f"SELECT {_ANNOUNCEMENT_COLUMNS} FROM specialist_announcements WHERE id = ?",
+        (announcement_id,),
+    ).fetchone()
+    return _announcement(row)
+
+
 def mark_announcements_delivered(conn: sqlite3.Connection, ids: list[int], at: int) -> None:
     if not ids:
         return

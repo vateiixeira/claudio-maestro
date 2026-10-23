@@ -9,6 +9,7 @@ they only travel in the `env` of the session.
 import asyncio
 import json
 import logging
+import re
 import sqlite3
 import time
 from collections.abc import Callable
@@ -65,6 +66,16 @@ TURN_OPEN_STATES = ("connecting", "running", "awaiting_decision")
 FINISHING_OUTCOMES = ("concluded", "closed")
 PROBLEM_OUTCOMES = ("failed", "skipped")
 REASON_MAX_CHARS = 500
+# Outcomes that tell the main conversation how a run went (once per run), and how each
+# one reads in the announcement.
+ANNOUNCED_OUTCOMES = {
+    "concluded": "concluída",
+    "closed": "fechada pela verificação",
+    "failed": "falhou",
+}
+ANNOUNCEMENT_MAX_CHARS = 4000
+ANNOUNCEMENTS_OPEN = "<maestro-anuncios>"
+ANNOUNCEMENTS_CLOSE = "</maestro-anuncios>"
 # A concluded session is finished when its turn ends. The wait has no limit (a session is
 # never finished with its turn open); past this long it is only logged.
 FINISH_POLL_SECONDS = 0.25
@@ -77,6 +88,22 @@ Publish = Callable[[dict[str, Any]], None]
 def _cut(text: str, limit: int = REASON_MAX_CHARS) -> str:
     text = " ".join(text.split())
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+# The tag that wraps the announcements in a message, opening or closing, in any case and
+# with spaces: a text that carried one could end the block early.
+_BLOCK_TAG = re.compile(r"<(?=\s*/?\s*maestro-anuncios)", re.IGNORECASE)
+
+
+def _announcement_text(text: str, limit: int) -> str:
+    """One line, cut to `limit` characters, that cannot close the announcements block nor
+    fake the `[dd/mm HH:MM]` start of another announcement."""
+    text = _BLOCK_TAG.sub("‹", " ".join(text.split()))
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _noop() -> None:
+    return None
 
 
 def normalize_pr_url(url: str) -> str:
@@ -292,6 +319,58 @@ class SpecialistService:
                 "SELECT 1 FROM specialists WHERE main_session_id = ?", (session_id,)
             ).fetchone() is not None
 
+    # Announcements -----------------------------------------------------------------
+
+    def prepare_message(
+        self, record: SessionRecord, text: str
+    ) -> tuple[str, Callable[[], None]]:
+        """What the main conversation really receives: the announcements still pending
+        go in a marked block before the message, and the returned `commit` marks them
+        delivered (the session calls it once the message is recorded). Anywhere else the
+        text is untouched and `commit` does nothing."""
+        if record.specialist_id is None or not self.is_main(record.session_id):
+            return text, _noop
+        specialist_id = record.specialist_id
+        with closing(db.connect(self._db_path)) as conn:
+            pending = store.pending_announcements(conn, specialist_id)
+        if not pending:
+            return text, _noop
+        lines = [
+            f"[{datetime.fromtimestamp(a.created_at):%d/%m %H:%M}] {a.text}"
+            + (f" (sessão {a.session_id})" if a.session_id else "")
+            for a in pending
+        ]
+        block = "\n".join([ANNOUNCEMENTS_OPEN, *lines, ANNOUNCEMENTS_CLOSE])
+        ids = [a.id for a in pending]
+
+        def commit() -> None:
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                store.mark_announcements_delivered(conn, ids, self._now())
+            self._publish(
+                {"session_id": None, "seq": 0, "type": "specialist.changed",
+                 "data": {"id": specialist_id}}
+            )
+
+        return f"{block}\n\n{text}", commit
+
+    def unseen(self, specialist_id: int) -> int:
+        """What the agent's main conversation has for its owner: the announcements not
+        delivered yet, plus one while that conversation waits for an answer (a
+        permission or a question)."""
+        with closing(db.connect(self._db_path)) as conn:
+            count = len(store.pending_announcements(conn, specialist_id))
+            row = conn.execute(
+                "SELECT main_session_id FROM specialists WHERE id = ?", (specialist_id,)
+            ).fetchone()
+        main = row["main_session_id"] if row else None
+        if main is not None and main in self._sessions.active_ids():
+            try:
+                if self._sessions.get(main).pending_kind is not None:
+                    count += 1
+            except SessionNotFoundError:
+                pass
+        return count
+
     # Starting a run ----------------------------------------------------------------
 
     async def start_run(
@@ -438,7 +517,9 @@ class SpecialistService:
                 reason=_cut(reason),
                 ended_at=now,
             )
+            announcement = self._announce(conn, run, run.reason or "")
         self._publish_run(run)
+        self._publish_announcement(announcement)
         self._check_streak(specialist)
         return run
 
@@ -452,7 +533,9 @@ class SpecialistService:
         if specialist is None:
             return
         self._add_notice(specialist.id, session_id, "summary", summary)
-        self._set_outcome(session_id, "concluded", None, only_from=RECOVERABLE_OUTCOMES)
+        self._set_outcome(
+            session_id, "concluded", None, only_from=RECOVERABLE_OUTCOMES, announce=summary
+        )
         self._finish_later(session_id)
 
     async def notify(self, session_id: str, text: str) -> None:
@@ -512,7 +595,10 @@ class SpecialistService:
             self._add_notice(
                 specialist.id, closure.session_id, "summary", f"Fechada pela verificação: {evidence}"
             )
-            self._set_outcome(closure.session_id, "closed", None, only_from=RECOVERABLE_OUTCOMES)
+            self._set_outcome(
+                closure.session_id, "closed", None, only_from=RECOVERABLE_OUTCOMES,
+                announce=evidence,
+            )
             self._finish_later(closure.session_id)
             return
         self._set_outcome(
@@ -553,7 +639,8 @@ class SpecialistService:
         counts as concluded, and no finish is pending any more."""
         self._clear_pending(session_id)
         self._set_outcome(
-            session_id, "concluded", FINISHED_BY_USER, only_from=OPEN_OUTCOMES, ended_at=finished_at
+            session_id, "concluded", FINISHED_BY_USER, only_from=OPEN_OUTCOMES, ended_at=finished_at,
+            announce=False,
         )
 
     def on_turn_error(self, session_id: str, error: str) -> None:
@@ -633,9 +720,12 @@ class SpecialistService:
         *,
         only_from: tuple[str, ...],
         ended_at: int | None = None,
+        announce: str | Literal[False] | None = None,
     ) -> store.Run | None:
         """Move the session's run to `outcome` when it is in one of `only_from`; a final
-        outcome gets an end time. Returns the run changed, or None."""
+        outcome gets an end time. The first `concluded`, `closed` or `failed` of a run is
+        announced to the main conversation, with `announce` (default: the reason) as the
+        text; `announce=False` announces nothing. Returns the run changed, or None."""
         final = outcome != "waiting"
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             run = store.run_for_session(conn, session_id)
@@ -649,7 +739,13 @@ class SpecialistService:
                 reason=reason,
             )
             run = store.get_run(conn, run.id)
+            announcement = (
+                None
+                if announce is False
+                else self._announce(conn, run, reason if announce is None else announce)
+            )
         self._publish_run(run)
+        self._publish_announcement(announcement)
         return run
 
     def _add_notice(
@@ -668,6 +764,51 @@ class SpecialistService:
             {"session_id": None, "seq": 0, "type": "specialist.notice", "data": asdict(notice)}
         )
         return notice
+
+    def _announce(
+        self, conn: sqlite3.Connection, run: store.Run, text: str | None
+    ) -> store.Announcement | None:
+        """Record the run's announcement, in the transaction that changed its outcome. A
+        run has one: a later outcome (a failed run that concluded) rewrites it while it is
+        still pending, and leaves it alone once delivered. None when nothing changed."""
+        if run.outcome not in ANNOUNCED_OUTCOMES:
+            return None
+        body = _announcement_text(text or "", ANNOUNCEMENT_MAX_CHARS)
+        full = f"{self._run_label(conn, run)} {ANNOUNCED_OUTCOMES[run.outcome]}: {body}"
+        existing = store.announcement_for_run(conn, run.id)
+        if existing is not None:
+            if existing.delivered_at is not None or existing.text == full:
+                return None
+            return store.update_announcement_text(conn, existing.id, full)
+        return store.add_announcement(
+            conn,
+            specialist_id=run.specialist_id,
+            run_id=run.id,
+            session_id=run.session_id,
+            text=full,
+            created_at=self._now(),
+        )
+
+    @staticmethod
+    def _run_label(conn: sqlite3.Connection, run: store.Run) -> str:
+        if run.trigger == "comment":
+            row = conn.execute(
+                "SELECT url FROM specialist_prs WHERE session_id = ?"
+                " ORDER BY created_at DESC, url DESC LIMIT 1",
+                (run.session_id,),
+            ).fetchone() if run.session_id is not None else None
+            number = row["url"].rsplit("/", 1)[-1] if row else ""
+            return f"Comentário no PR #{number}" if number.isdigit() else "Comentário no PR"
+        at = run.scheduled_for if run.scheduled_for is not None else run.started_at
+        return f"Execução das {datetime.fromtimestamp(at):%H:%M}"
+
+    def _publish_announcement(self, announcement: store.Announcement | None) -> None:
+        if announcement is None:
+            return
+        self._publish(
+            {"session_id": None, "seq": 0, "type": "specialist.announcement",
+             "data": asdict(announcement)}
+        )
 
     def _publish_run(self, run: store.Run) -> None:
         self._publish(

@@ -988,6 +988,14 @@ class SessionExtras:
 
 # Called by every new client of a session with a `specialist_id`; None: no extras.
 SessionSetup = Callable[[SessionRecord], SessionExtras | None]
+# What the manager asks of the agents feature before a message is recorded: the text that
+# really goes in (the main conversation of an agent gets its announcements in front), and
+# a `commit` to call once that text is recorded.
+PrepareMessage = Callable[[SessionRecord, str], tuple[str, Callable[[], None]]]
+
+
+def _no_commit() -> None:
+    return None
 
 
 # Active session ------------------------------------------------------------
@@ -1022,6 +1030,7 @@ class ActiveSession:
         on_turn_error: Callable[[str, str], None] | None = None,
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
         on_pr_created: Callable[[str, str], None] | None = None,
+        prepare_message: PrepareMessage | None = None,
     ) -> None:
         self.record = record
         # Hooks of the agents feature, called only for the sessions of an agent: a turn
@@ -1031,6 +1040,8 @@ class ActiveSession:
         self._on_turn_error = on_turn_error
         self._on_init = on_init
         self._on_pr_created = on_pr_created
+        # Rewrites the text of a message before it is recorded (agents only).
+        self._prepare_message = prepare_message
         # Extras of the agent this session belongs to, rebuilt with every client (attached
         # ones too, since the MCP server lives in this process); None for ordinary sessions.
         self._session_setup = session_setup
@@ -1605,7 +1616,12 @@ class ActiveSession:
         # The saved conversation comes first, so the new message goes after it.
         await self.ensure_history()
         # The user's message is recorded first so it is never lost.
-        self._emit_events(self.builder.add_user_message(text, markers))
+        sent_text, commit = self._prepare(text)
+        self._emit_events(self.builder.add_user_message(sent_text, markers))
+        try:
+            commit()
+        except Exception:
+            logger.exception("Falha ao confirmar os anúncios da sessão %s", self.session_id)
         self._touch()
         self._reopen_if_finished()
         self.emit_updated()
@@ -1629,9 +1645,9 @@ class ActiveSession:
             assert client is not None
             self.pending_turns += 1
             self._refresh_state()
-            content: str | list[dict[str, Any]] = text
+            content: str | list[dict[str, Any]] = sent_text
             if images:
-                content = [{"type": "text", "text": text}] if text.strip() else []
+                content = [{"type": "text", "text": sent_text}] if sent_text.strip() else []
                 content += [
                     {
                         "type": "image",
@@ -1649,6 +1665,17 @@ class ActiveSession:
                 # If close() discarded this client meanwhile, the error is expected.
                 if self.client is client:
                     await self._fail(error.message_pt)
+
+    def _prepare(self, text: str) -> tuple[str, Callable[[], None]]:
+        """The text to record and send, and what to call once it is recorded. Whatever
+        goes wrong here, the person's own message goes through as written."""
+        if self._prepare_message is None or self.record.specialist_id is None:
+            return text, _no_commit
+        try:
+            return self._prepare_message(self.record, text)
+        except Exception:
+            logger.exception("Falha ao preparar a mensagem da sessão %s", self.session_id)
+            return text, _no_commit
 
     def _reopen_if_finished(self) -> bool:
         """Writing to a session (here, or from the phone) means working on it again:
@@ -3363,6 +3390,7 @@ class SessionManager:
         on_turn_error: Callable[[str, str], None] | None = None,
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
         on_pr_created: Callable[[str, str], None] | None = None,
+        prepare_message: PrepareMessage | None = None,
     ) -> None:
         # Gives the sessions of an agent their skill, folders, MCP server and policy.
         self._session_setup = session_setup
@@ -3370,6 +3398,7 @@ class SessionManager:
         self._on_turn_error = on_turn_error
         self._on_init = on_init
         self._on_pr_created = on_pr_created
+        self._prepare_message = prepare_message
         # `{"path", "version"}` of the `claude` in use now. The models list is saved with
         # the one it came from and is stale when they differ (None: not checked).
         self._cli_identity = cli_identity
@@ -3668,6 +3697,7 @@ class SessionManager:
             on_turn_error=self._on_turn_error,
             on_init=self._on_init,
             on_pr_created=self._on_pr_created,
+            prepare_message=self._prepare_message,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:

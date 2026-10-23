@@ -210,6 +210,7 @@ def _out(
     files: SpecialistFiles,
     specialist: store.Specialist,
     project_ids: set[int],
+    unseen: int = 0,
 ) -> dict[str, Any]:
     runs = store.list_runs(conn, specialist.id, 1)
     open_sessions = conn.execute(
@@ -237,11 +238,17 @@ def _out(
         "last_run": asdict(runs[0]) if runs else None,
         "open_sessions": open_sessions,
         "main_session_id": specialist.main_session_id,
+        # Announcements the main conversation has not received, plus one while it waits
+        # for an answer.
+        "unseen": unseen,
     }
 
 
 def _one(request: Request, conn: sqlite3.Connection, specialist_id: int) -> dict[str, Any]:
-    return _out(conn, _files(request), store.get_specialist(conn, specialist_id), _project_ids(conn))
+    return _out(
+        conn, _files(request), store.get_specialist(conn, specialist_id), _project_ids(conn),
+        request.app.state.specialists.unseen(specialist_id),
+    )
 
 
 def _dedupe(values: list[Any]) -> list[Any]:
@@ -294,7 +301,11 @@ def _require_project(conn: sqlite3.Connection, project_id: int) -> None:
 async def list_specialists(request: Request, conn: DbDep) -> list[dict[str, Any]]:
     files = _files(request)
     project_ids = _project_ids(conn)
-    return [_out(conn, files, s, project_ids) for s in store.list_specialists(conn)]
+    service = request.app.state.specialists
+    return [
+        _out(conn, files, s, project_ids, service.unseen(s.id))
+        for s in store.list_specialists(conn)
+    ]
 
 
 @router.post("/specialists", status_code=status.HTTP_201_CREATED)
@@ -547,6 +558,26 @@ async def open_main(specialist_id: int, request: Request, conn: DbDep) -> dict[s
     except (ProjectUnavailableError, InvalidDecisionError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return {"session_id": session_id}
+
+
+@router.get("/specialists/{specialist_id}/announcements")
+async def list_announcements(
+    specialist_id: int,
+    conn: DbDep,
+    pending: bool = False,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[dict[str, Any]]:
+    """What the runs announced to the agent's main conversation, newest first."""
+    _get(conn, specialist_id)
+    found = (
+        store.pending_announcements(conn, specialist_id)[::-1][:limit]
+        if pending
+        else store.list_announcements(conn, specialist_id, limit)
+    )
+    return [
+        {key: value for key, value in asdict(announcement).items() if key != "specialist_id"}
+        for announcement in found
+    ]
 
 
 # Notices -------------------------------------------------------------------------------------------------

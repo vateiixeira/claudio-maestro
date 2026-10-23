@@ -31,6 +31,25 @@ class Hooks:
         self.inits: list[tuple[str, list[dict[str, str]]]] = []
         self.fail = False
         self.prs: list[tuple[str, str]] = []
+        self.prepared: list[tuple[str, str]] = []
+        self.committed = 0
+        self.prefix: str | None = None
+        self.prepare_fails = False
+        self.commit_fails = False
+
+    def prepare_message(self, record: Any, text: str):
+        self.prepared.append((record.session_id, text))
+        if self.prepare_fails:
+            raise RuntimeError("anuncio quebrou")
+
+        def commit() -> None:
+            self.committed += 1
+            if self.commit_fails:
+                raise RuntimeError("commit quebrou")
+
+        if self.prefix is None:
+            return text, commit
+        return f"{self.prefix}\n\n{text}", commit
 
     def on_pr_created(self, session_id: str, url: str) -> None:
         self.prs.append((session_id, url))
@@ -67,6 +86,7 @@ class World:
             on_turn_error=self.hooks.on_turn_error,
             on_init=self.hooks.on_init,
             on_pr_created=self.hooks.on_pr_created,
+            prepare_message=self.hooks.prepare_message,
         )
 
     def session(self, *, agent: bool):
@@ -308,3 +328,83 @@ async def test_on_pr_created_failure_does_not_break_the_session(world, caplog):
     assert session.state == "idle"
     assert world.hooks.prs == [(session.session_id, PR_URL)]
     assert "PR" in caplog.text
+
+
+# prepare_message ---------------------------------------------------------------------
+
+ANNOUNCEMENTS = "<maestro-anuncios>\n[23/10 10:00] Execução das 09:00 concluída: ok (sessão x)\n</maestro-anuncios>"
+
+
+def user_items(session) -> list[Any]:
+    return [item for item in session.builder.items if getattr(item, "type", None) == "user"]
+
+
+async def test_send_records_prepared_text(world):
+    world.hooks.prefix = ANNOUNCEMENTS
+    session = world.session(agent=True)
+
+    await run_turn(session)
+
+    [(_, original)] = world.hooks.prepared
+    assert original == "olá"
+    [user] = user_items(session)
+    assert user.text == f"{ANNOUNCEMENTS}\n\nolá"
+    assert world.factory.clients[-1].sent[0] == f"{ANNOUNCEMENTS}\n\nolá"
+    assert world.hooks.committed == 1
+    # The title still comes from what the person wrote.
+    assert session.record.title == "olá"
+
+
+async def test_send_commits_only_after_the_message_is_recorded(world):
+    world.hooks.prefix = ANNOUNCEMENTS
+    session = world.session(agent=True)
+    seen: list[int] = []
+    original = world.hooks.prepare_message
+
+    def prepare(record, text):
+        result, commit = original(record, text)
+
+        def checked() -> None:
+            seen.append(len(user_items(session)))
+            commit()
+
+        return result, checked
+
+    session._prepare_message = prepare
+
+    await run_turn(session)
+
+    assert seen == [1]
+
+
+async def test_send_of_an_ordinary_session_does_not_prepare(world):
+    session = world.session(agent=False)
+
+    await run_turn(session)
+
+    assert world.hooks.prepared == []
+
+
+async def test_a_failing_prepare_sends_the_original_text(world, caplog):
+    world.hooks.prepare_fails = True
+    session = world.session(agent=True)
+
+    with caplog.at_level(logging.ERROR):
+        await run_turn(session)
+
+    assert world.factory.clients[-1].sent[0] == "olá"
+    assert user_items(session)[0].text == "olá"
+    assert world.hooks.committed == 0
+    assert "anuncio quebrou" in caplog.text
+
+
+async def test_a_failing_commit_does_not_lose_the_message(world, caplog):
+    world.hooks.prefix = ANNOUNCEMENTS
+    world.hooks.commit_fails = True
+    session = world.session(agent=True)
+
+    with caplog.at_level(logging.ERROR):
+        await run_turn(session)
+
+    assert world.factory.clients[-1].sent[0].startswith("<maestro-anuncios>")
+    assert "commit quebrou" in caplog.text

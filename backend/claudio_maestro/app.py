@@ -286,6 +286,9 @@ def create_app(
             on_init=lambda session_id, servers: app.state.specialists.on_init(
                 session_id, servers
             ),
+            prepare_message=lambda record, text: app.state.specialists.prepare_message(
+                record, text
+            ),
         )
         app.state.specialist_files = SpecialistFiles(app.state.settings.data_dir / "specialists")
         app.state.specialists = SpecialistService(

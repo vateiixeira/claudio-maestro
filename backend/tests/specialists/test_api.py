@@ -939,6 +939,72 @@ def test_main_endpoint_with_the_project_folder_gone_is_409(api, agent, project):
     assert response.json()["detail"] == "A pasta do projeto não está disponível."
 
 
+# Announcements -------------------------------------------------------------------------------------------------
+
+
+def add_announcement(api, specialist_id: int, text: str, *, delivered: bool = False, at: int = 100):
+    with conn_of(api) as conn, db.transaction(conn):
+        announcement = store.add_announcement(
+            conn, specialist_id=specialist_id, run_id=None, session_id=None, text=text,
+            created_at=at,
+        )
+        if delivered:
+            store.mark_announcements_delivered(conn, [announcement.id], at + 1)
+    return announcement
+
+
+def test_announcements_list_newest_first_and_filter_pending(api, agent):
+    old = add_announcement(api, agent["id"], "velho", delivered=True, at=100)
+    new = add_announcement(api, agent["id"], "novo", at=200)
+
+    everything = api.get(f"/api/specialists/{agent['id']}/announcements").json()
+    pending = api.get(f"/api/specialists/{agent['id']}/announcements?pending=1").json()
+
+    assert [a["id"] for a in everything] == [new.id, old.id]
+    assert pending == [
+        {
+            "id": new.id, "run_id": None, "session_id": None, "text": "novo",
+            "created_at": 200, "delivered_at": None,
+        }
+    ]
+    assert everything[1]["delivered_at"] == 101
+
+
+def test_announcements_of_an_unknown_agent_is_404(api):
+    assert api.get("/api/specialists/999/announcements").status_code == 404
+
+
+def test_announcements_require_the_maestro_header(api, agent):
+    with without_header(api, "x-maestro"):
+        assert api.get(f"/api/specialists/{agent['id']}/announcements").status_code == 403
+
+
+def test_unseen_counts_pending_announcements(api, agent):
+    assert api.get("/api/specialists").json()[0]["unseen"] == 0
+    add_announcement(api, agent["id"], "a")
+    add_announcement(api, agent["id"], "b")
+    add_announcement(api, agent["id"], "c", delivered=True)
+
+    assert api.get("/api/specialists").json()[0]["unseen"] == 2
+
+
+def test_unseen_adds_one_for_a_pending_ask_in_the_main_conversation(api, agent, factory):
+    from claudio_maestro.agent.fake import PermissionStep, init_message
+
+    factory.script = lambda content: [
+        init_message(factory.clients[-1].options.session_id),
+        PermissionStep("Bash", {"command": "git push origin main"}),
+    ]
+    session_id = api.post(f"/api/specialists/{agent['id']}/main").json()["session_id"]
+    add_announcement(api, agent["id"], "a")
+    session = api.app.state.sessions.get(session_id)
+
+    api.post(f"/api/sessions/{session_id}/messages", json={"text": "rode"})
+    wait_for(lambda: session.pending_kind is not None)
+
+    assert api.get("/api/specialists").json()[0]["unseen"] == 1
+
+
 # Auth ------------------------------------------------------------------------------------------------------
 
 
