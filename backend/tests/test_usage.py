@@ -3,6 +3,7 @@ import http.server
 import io
 import json
 import logging
+import os
 import threading
 import urllib.error
 from pathlib import Path
@@ -488,3 +489,490 @@ def test_snapshot_without_data_has_no_plan():
     checker, _, _ = make_checker([UsageCheckError("Login do CLI expirado")])
     asyncio.run(checker.refresh())
     assert checker.snapshot()["plan"] is None
+
+
+# Retry-After on HTTP 429 ----------------------------------------------------
+
+
+def _http_429(headers: dict[str, str] | None, code: int = 429) -> urllib.error.HTTPError:
+    import email.message
+
+    message = email.message.Message()
+    for key, value in (headers or {}).items():
+        message[key] = value
+    return urllib.error.HTTPError(USAGE_URL, code, "x", message, None)
+
+
+def _request_failure(tmp_path, error) -> UsageCheckError:
+    folder = write_credentials(tmp_path / "c")
+    with pytest.raises(UsageCheckError) as info:
+        request_usage(folder, opener_raising(error))
+    return info.value
+
+
+def test_usage_check_error_defaults():
+    assert UsageCheckError("x").retry_after is None
+    assert UsageCheckError("x").rate_limited is False
+    assert UsageCheckError("x", rate_limited=True).rate_limited is True
+    assert UsageCheckError("x", retry_after=90).retry_after == 90
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        ("120", 120),
+        ("5", 60),
+        ("99999", 3600),
+        ("60", 60),
+        ("3600", 3600),
+        ("Wed, 21 Oct 2026 07:28:00 GMT", None),
+        ("abc", None),
+        ("1.5", None),
+        ("-30", None),
+        ("", None),
+    ],
+)
+def test_request_429_reads_retry_after(tmp_path, header, expected):
+    error = _request_failure(tmp_path, _http_429({"Retry-After": header}))
+    assert str(error) == "Consulta de uso falhou (HTTP 429)"
+    assert error.retry_after == expected
+    _assert_no_token(error)
+
+
+def test_request_429_is_rate_limited_and_500_is_not(tmp_path):
+    assert _request_failure(tmp_path, _http_429({})).rate_limited is True
+    assert _request_failure(tmp_path, _http_429({}, code=500)).rate_limited is False
+    assert _request_failure(tmp_path, _http_429({}, code=401)).rate_limited is False
+
+
+def test_message_alone_does_not_block():
+    clock = Clock()
+    checker, _, _ = make_checker([UsageCheckError("Consulta de uso falhou (HTTP 429)")], clock=clock)
+    asyncio.run(checker.refresh())
+    assert checker._blocked_until is None
+
+
+def test_request_429_without_header_has_no_retry_after(tmp_path):
+    error = _request_failure(tmp_path, _http_429({}))
+    assert str(error) == "Consulta de uso falhou (HTTP 429)"
+    assert error.retry_after is None
+
+
+def test_request_429_with_headers_none_has_no_retry_after(tmp_path):
+    assert _request_failure(tmp_path, _http_429(None)).retry_after is None
+
+
+def test_request_429_error_is_raised_outside_the_except(tmp_path):
+    error = _request_failure(tmp_path, _http_429({"Retry-After": "120"}))
+    assert error.__cause__ is None
+    assert error.__context__ is None
+
+
+def test_request_other_http_errors_have_no_retry_after(tmp_path):
+    error = _request_failure(tmp_path, _http_429({"Retry-After": "120"}, code=500))
+    assert str(error) == "Consulta de uso falhou (HTTP 500)"
+    assert error.retry_after is None
+
+
+# UsageChecker backoff -------------------------------------------------------
+
+
+def _rate_limited(retry_after=None):
+    return UsageCheckError("Consulta de uso falhou (HTTP 429)", retry_after=retry_after, rate_limited=True)
+
+
+def test_429_blocks_for_five_minutes():
+    clock = Clock()
+    checker, _, _ = make_checker([_rate_limited()], clock=clock)
+    asyncio.run(checker.refresh())
+    clock.now = 1000.0 + 299
+    assert checker.wants_refresh() is False
+    clock.now = 1000.0 + 300
+    assert checker.wants_refresh() is True
+
+
+def test_refresh_during_the_block_does_not_fetch_nor_publish():
+    clock = Clock()
+    checker, published, calls = make_checker([_rate_limited(), REPORT], clock=clock)
+    asyncio.run(checker.refresh())
+    assert len(calls) == 1 and len(published) == 1
+    clock.now += 100
+    asyncio.run(checker.refresh())
+    assert len(calls) == 1 and len(published) == 1
+    clock.now = 1000.0 + 300
+    asyncio.run(checker.refresh())
+    assert len(calls) == 2 and len(published) == 2
+    assert checker.snapshot()["error"] is None
+
+
+def test_consecutive_429s_wait_longer_up_to_thirty_minutes():
+    clock = Clock()
+    checker, _, calls = make_checker([_rate_limited() for _ in range(5)], clock=clock)
+    waits = []
+    for _ in range(5):
+        asyncio.run(checker.refresh())
+        waits.append(checker._blocked_until - clock.now)
+        clock.now = checker._blocked_until
+    assert waits == [300, 600, 1200, 1800, 1800]
+    assert len(calls) == 5
+
+
+def test_retry_after_wins_over_the_growing_wait():
+    clock = Clock()
+    checker, _, _ = make_checker([_rate_limited(), _rate_limited(retry_after=120)], clock=clock)
+    asyncio.run(checker.refresh())
+    clock.now = checker._blocked_until
+    asyncio.run(checker.refresh())
+    assert checker._blocked_until == clock.now + 120
+    clock.now += 119
+    assert checker.wants_refresh() is False
+    clock.now += 1
+    assert checker.wants_refresh() is True
+
+
+def test_success_resets_the_backoff():
+    clock = Clock()
+    checker, _, _ = make_checker(
+        [_rate_limited(), _rate_limited(), REPORT, _rate_limited()], clock=clock
+    )
+    for _ in range(3):
+        asyncio.run(checker.refresh())
+        if checker._blocked_until is not None:
+            clock.now = checker._blocked_until
+    assert checker._blocked_until is None
+    assert checker._rate_limited_count == 0
+    asyncio.run(checker.refresh())
+    assert checker._blocked_until == clock.now + 300
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        UsageCheckError("Login do CLI expirado"),
+        UsageCheckError("Consulta de uso falhou (HTTP 500)"),
+        UsageCheckError("Sem conexão com a Anthropic"),
+        RuntimeError("boom"),
+    ],
+)
+def test_other_errors_do_not_block(error):
+    clock = Clock()
+    checker, _, _ = make_checker([error], clock=clock)
+    asyncio.run(checker.refresh())
+    assert checker._blocked_until is None
+    assert checker._rate_limited_count == 0
+    clock.now += 60
+    assert checker.wants_refresh() is True
+
+
+def test_other_error_during_a_count_keeps_the_block_state():
+    clock = Clock()
+    checker, _, _ = make_checker(
+        [_rate_limited(), UsageCheckError("Sem conexão com a Anthropic")], clock=clock
+    )
+    asyncio.run(checker.refresh())
+    blocked_until = checker._blocked_until
+    clock.now = blocked_until
+    asyncio.run(checker.refresh())
+    assert checker._blocked_until == blocked_until
+    assert checker._rate_limited_count == 1
+
+
+def test_block_is_logged_once_with_the_wait(caplog):
+    caplog.set_level(logging.DEBUG)
+    clock = Clock()
+    checker, _, _ = make_checker([_rate_limited(retry_after=120)], clock=clock)
+    asyncio.run(checker.refresh())
+    asyncio.run(checker.refresh())
+    asyncio.run(checker.refresh())
+    blocked = [r for r in caplog.records if "120" in r.getMessage()]
+    assert len(blocked) == 1
+    assert blocked[0].levelno == logging.WARNING
+
+
+# Cache of the last good reading ----------------------------------------------
+
+
+def make_cached(results, cache_path, *, enabled=True, clock=None):
+    published: list[dict] = []
+    calls: list[int] = []
+
+    async def fetch():
+        calls.append(1)
+        result = results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    checker = UsageChecker(
+        published.append, enabled=enabled, fetch=fetch, clock=clock or Clock(), cache_path=cache_path
+    )
+    return checker, published, calls
+
+
+def _limit_dict(**changes):
+    base = {"kind": "session", "label": "Sessão", "percent": 14, "severity": "normal",
+            "resets_at": 1791333000.0}
+    return {**base, **changes}
+
+
+def _write_cache(path: Path, **changes):
+    data = {"limits": [_limit_dict()], "plan": "Max 20x", "fetched_at": 900.0, **changes}
+    path.write_text(json.dumps(data))
+    return path
+
+
+def test_success_writes_the_cache_with_mode_600(tmp_path):
+    path = tmp_path / "data" / "usage.json"
+    path.parent.mkdir()
+    checker, _, _ = make_cached([REPORT], path)
+    asyncio.run(checker.refresh())
+    assert (path.stat().st_mode & 0o777) == 0o600
+    content = path.read_text()
+    assert TOKEN not in content
+    assert json.loads(content) == {
+        "limits": [_limit_dict()],
+        "plan": "Max 20x",
+        "fetched_at": 1000.0,
+    }
+    assert [p.name for p in path.parent.iterdir()] == ["usage.json"]
+
+
+def test_cache_write_overwrites_the_old_file(tmp_path):
+    path = _write_cache(tmp_path / "usage.json")
+    path.chmod(0o644)
+    checker, _, _ = make_cached([UsageReport([LIMIT], "Pro")], path)
+    asyncio.run(checker.refresh())
+    assert json.loads(path.read_text())["plan"] == "Pro"
+    assert (path.stat().st_mode & 0o777) == 0o600
+
+
+def test_new_checker_loads_the_cache(tmp_path):
+    path = tmp_path / "usage.json"
+    first, _, _ = make_cached([REPORT], path)
+    asyncio.run(first.refresh())
+    second, published, calls = make_cached([], path)
+    assert second.snapshot() == {
+        "enabled": True,
+        "limits": [_limit_dict()],
+        "fetched_at": 1000.0,
+        "error": None,
+        "plan": "Max 20x",
+    }
+    assert published == [] and calls == []
+
+
+def test_cache_drops_limits_already_reset(tmp_path):
+    clock = Clock()
+    clock.now = 1_000.0
+    path = _write_cache(
+        tmp_path / "usage.json",
+        limits=[
+            _limit_dict(kind="session", resets_at=1_000.0),
+            _limit_dict(kind="weekly_all", label="Semana", resets_at=999.0),
+            _limit_dict(kind="weekly_scoped", label="Semana · Fable", resets_at=1_001.0),
+            _limit_dict(kind="weekly_scoped", label="Semana · Outro", resets_at=None),
+        ],
+    )
+    checker, _, _ = make_cached([], path, clock=clock)
+    assert [x["label"] for x in checker.snapshot()["limits"]] == ["Semana · Fable", "Semana · Outro"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{",
+        "",
+        "[]",
+        '"x"',
+        "null",
+        '{"plan": "Pro", "fetched_at": 1}',
+        '{"limits": "x", "plan": null, "fetched_at": 1}',
+        '{"limits": [], "plan": 5, "fetched_at": 1}',
+        '{"limits": [], "plan": null}',
+        '{"limits": [], "plan": null, "fetched_at": "x"}',
+        '{"limits": [], "plan": null, "fetched_at": true}',
+        '{"limits": [], "plan": null, "fetched_at": NaN}',
+    ],
+)
+def test_malformed_cache_loads_empty(tmp_path, content):
+    path = tmp_path / "usage.json"
+    path.write_text(content)
+    checker, _, _ = make_cached([], path)
+    assert checker.snapshot() == {
+        "enabled": True, "limits": [], "fetched_at": None, "error": None, "plan": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "texto",
+        {"kind": "session"},
+        _limit_dict(kind="monthly"),
+        _limit_dict(kind=3),
+        _limit_dict(label=None),
+        _limit_dict(percent="14"),
+        _limit_dict(percent=True),
+        _limit_dict(percent=float("nan")),
+        _limit_dict(percent=101),
+        _limit_dict(percent=-1),
+        _limit_dict(severity="explodiu"),
+        _limit_dict(resets_at="amanhã"),
+        _limit_dict(resets_at=True),
+        _limit_dict(resets_at=float("inf")),
+    ],
+)
+def test_cache_with_an_invalid_limit_is_ignored_entirely(tmp_path, bad):
+    path = _write_cache(tmp_path / "usage.json", limits=[_limit_dict(), bad])
+    # json.dumps writes NaN/Infinity, which json.loads accepts; the validation must refuse them.
+    checker, _, _ = make_cached([], path)
+    snap = checker.snapshot()
+    assert snap["limits"] == [] and snap["plan"] is None and snap["fetched_at"] is None
+    assert snap["error"] is None
+
+
+def test_cache_larger_than_64_kib_is_ignored(tmp_path):
+    path = tmp_path / "usage.json"
+    padding = " " * (64 * 1024)
+    path.write_text(json.dumps({"limits": [_limit_dict()], "plan": None, "fetched_at": 1.0}) + padding)
+    checker, _, _ = make_cached([], path)
+    assert checker.snapshot()["limits"] == []
+
+
+def test_cache_missing_file_loads_empty(tmp_path):
+    checker, _, _ = make_cached([], tmp_path / "nope" / "usage.json")
+    assert checker.snapshot()["limits"] == []
+
+
+def test_disabled_checker_neither_reads_nor_writes_the_cache(tmp_path):
+    path = _write_cache(tmp_path / "usage.json")
+    before = path.read_text()
+    checker, published, calls = make_cached([REPORT], path, enabled=False)
+    assert checker.snapshot()["limits"] == []
+    asyncio.run(checker.refresh())
+    assert calls == [] and published == []
+    assert path.read_text() == before
+    fresh = tmp_path / "other.json"
+    other, _, _ = make_cached([REPORT], fresh, enabled=False)
+    asyncio.run(other.refresh())
+    assert not fresh.exists()
+
+
+def test_429_after_loading_the_cache_keeps_the_limits_and_sets_the_error(tmp_path):
+    clock = Clock()
+    path = _write_cache(tmp_path / "usage.json")
+    checker, published, _ = make_cached([_rate_limited()], path, clock=clock)
+    asyncio.run(checker.refresh())
+    snap = checker.snapshot()
+    assert snap["error"] == "Consulta de uso falhou (HTTP 429)"
+    assert [x["percent"] for x in snap["limits"]] == [14]
+    assert snap["plan"] == "Max 20x"
+    assert snap["fetched_at"] == 900.0
+    assert published[-1]["data"] == snap
+
+
+def test_failed_fetch_does_not_touch_the_cache(tmp_path):
+    path = _write_cache(tmp_path / "usage.json")
+    before = path.read_text()
+    checker, _, _ = make_cached([_rate_limited()], path)
+    asyncio.run(checker.refresh())
+    assert path.read_text() == before
+
+
+def test_unwritable_cache_folder_does_not_break_refresh(tmp_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    folder = tmp_path / "ro"
+    folder.mkdir()
+    folder.chmod(0o500)
+    try:
+        checker, published, _ = make_cached([REPORT], folder / "usage.json")
+        asyncio.run(checker.refresh())
+    finally:
+        folder.chmod(0o700)
+    snap = checker.snapshot()
+    assert snap["error"] is None and snap["limits"][0]["percent"] == 14
+    assert len(published) == 1
+    assert not (folder / "usage.json").exists()
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_replace_failure_does_not_break_refresh_and_cleans_the_temp_file(tmp_path, monkeypatch):
+    def boom(src, dst):
+        raise OSError(f"SEGREDO {src} {dst}")
+
+    monkeypatch.setattr(usage.os, "replace", boom)
+    folder = tmp_path / "data"
+    folder.mkdir()
+    checker, published, _ = make_cached([REPORT], folder / "usage.json")
+    asyncio.run(checker.refresh())
+    snap = checker.snapshot()
+    assert snap["error"] is None and snap["fetched_at"] == 1000.0
+    assert len(published) == 1
+    assert list(folder.iterdir()) == []
+
+
+def test_cache_write_failure_log_has_no_details(tmp_path, monkeypatch, caplog):
+    caplog.set_level(logging.DEBUG)
+
+    def boom(src, dst):
+        raise OSError("SEGREDO")
+
+    monkeypatch.setattr(usage.os, "replace", boom)
+    checker, _, _ = make_cached([REPORT], tmp_path / "usage.json")
+    asyncio.run(checker.refresh())
+    for record in caplog.records:
+        assert "SEGREDO" not in record.getMessage()
+        assert "SEGREDO" not in (record.exc_text or "")
+        assert record.exc_info is None
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+# Cache hardening --------------------------------------------------------------
+
+
+def test_cache_symlink_is_ignored(tmp_path):
+    real = _write_cache(tmp_path / "real.json")
+    link = tmp_path / "usage.json"
+    link.symlink_to(real)
+    checker, _, _ = make_cached([], link)
+    assert checker.snapshot()["limits"] == []
+
+
+def test_cache_fifo_is_ignored_without_blocking(tmp_path):
+    fifo = tmp_path / "usage.json"
+    os.mkfifo(fifo)
+    result: list = []
+    thread = threading.Thread(target=lambda: result.append(make_cached([], fifo)[0]), daemon=True)
+    thread.start()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert result[0].snapshot()["limits"] == []
+
+
+def test_cache_directory_is_ignored(tmp_path):
+    folder = tmp_path / "usage.json"
+    folder.mkdir()
+    checker, _, _ = make_cached([], folder)
+    assert checker.snapshot()["limits"] == []
+
+
+@pytest.mark.parametrize("fetched_at", [-5, 0, 1e300, 1301.0])
+def test_cache_with_implausible_fetched_at_is_ignored(tmp_path, fetched_at):
+    path = _write_cache(tmp_path / "usage.json", fetched_at=fetched_at)
+    checker, _, _ = make_cached([], path)  # clock is 1000
+    assert checker.snapshot()["limits"] == []
+
+
+def test_cache_fetched_at_slightly_in_the_future_is_kept(tmp_path):
+    path = _write_cache(tmp_path / "usage.json", fetched_at=1300.0)
+    checker, _, _ = make_cached([], path)
+    assert checker.snapshot()["fetched_at"] == 1300.0
+
+
+def test_cache_label_longer_than_200_chars_is_ignored(tmp_path):
+    path = _write_cache(tmp_path / "usage.json", limits=[_limit_dict(label="x" * 201)])
+    checker, _, _ = make_cached([], path)
+    assert checker.snapshot()["limits"] == []
+    path = _write_cache(tmp_path / "usage.json", limits=[_limit_dict(label="x" * 200)])
+    checker, _, _ = make_cached([], path)
+    assert len(checker.snapshot()["limits"]) == 1

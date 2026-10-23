@@ -156,6 +156,7 @@ def create_app(
             app.state.hub.publish,
             enabled=app.state.settings.usage_check,
             fetch=fetch_usage or default_fetch_usage,
+            cache_path=app.state.settings.data_dir / "usage.json",
         )
         # One-off tasks (e.g. syncing a new project), cancelled on shutdown.
         app.state.background = set()

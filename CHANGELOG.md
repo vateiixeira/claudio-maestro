@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Corrigido
+
+- A barra de uso da assinatura não some mais depois de reiniciar o app (mostra a última leitura, com o aviso no tooltip) e espera antes de consultar de novo quando a Anthropic limita as consultas.
+
 ## [0.8.0] - 2026-10-23
 
 Chegam os Agentes, rotinas agendadas que o Maestro roda por você, e o painel de git na tela do projeto, com alterações, commits e merge. Também entram etiquetas nas conversas, agrupadores entre projetos, terminal da sessão, Remote Control, busca no texto das mensagens e o detalhamento do contexto.
