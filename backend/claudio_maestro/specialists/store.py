@@ -260,8 +260,20 @@ def insert_run(
     return _run(row)
 
 
+def get_run(conn: sqlite3.Connection, run_id: int) -> Run:
+    row = conn.execute(f"SELECT {_RUN_COLUMNS} FROM specialist_runs WHERE id = ?", (run_id,)).fetchone()
+    if row is None:
+        raise SpecialistNotFoundError("Execução não encontrada.")
+    return _run(row)
+
+
 def finish_run(
-    conn: sqlite3.Connection, run_id: int, *, outcome: Outcome, ended_at: int, reason: str | None = None
+    conn: sqlite3.Connection,
+    run_id: int,
+    *,
+    outcome: Outcome,
+    ended_at: int | None,
+    reason: str | None = None,
 ) -> None:
     conn.execute(
         "UPDATE specialist_runs SET outcome = ?, ended_at = ?, reason = ? WHERE id = ?",

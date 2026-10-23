@@ -179,7 +179,7 @@ def test_text_turn_with_thinking_exact_events_and_items():
         ThinkingItem(id="msg_1:0", text="Hmm, saudação.", streaming=False),
         TextItem(id="msg_1:1", text="Olá!", streaming=False),
     ]
-    assert events[0].data == {"session_id": SID, "model": MODEL, "permission_mode": "default"}
+    assert events[0].data == {"session_id": SID, "model": MODEL, "permission_mode": "default", "mcp_servers": []}
     assert builder.init is not None and builder.init.model == MODEL
     assert builder.init.permission_mode == "default"
     turn = events[-1].data

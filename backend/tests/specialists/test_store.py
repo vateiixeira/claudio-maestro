@@ -178,6 +178,12 @@ def test_insert_and_finish_run(conn):
     assert (loaded.outcome, loaded.ended_at, loaded.reason) == ("failed", 20, "quebrou")
     assert store.run_for_session(conn, "s1") == loaded
     assert store.run_for_session(conn, "nope") is None
+    assert store.get_run(conn, run.id) == loaded
+
+
+def test_get_run_missing_raises(conn):
+    with pytest.raises(store.SpecialistNotFoundError):
+        store.get_run(conn, 999)
 
 
 def test_run_for_session_returns_most_recent(conn):

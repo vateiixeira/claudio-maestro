@@ -54,10 +54,12 @@ from claudio_maestro.config import read_user_claude_settings
 from claudio_maestro.contextprobe import probe_context
 from claudio_maestro.contextusage import context_breakdown
 from claudio_maestro.conversation import (
+    INTERRUPTED_REASONS,
     ConversationBuilder,
     Event,
     cap_items,
     rate_limit_text,
+    result_error_text,
 )
 from claudio_maestro.digest import store as digest_store
 from claudio_maestro.digest.closure_store import closure_briefs
@@ -999,8 +1001,15 @@ class ActiveSession:
         cli_running: Callable[[str], bool] | None = None,
         agentd_held: set[str] | None = None,
         session_setup: SessionSetup | None = None,
+        on_turn_error: Callable[[str, str], None] | None = None,
+        on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
     ) -> None:
         self.record = record
+        # Hooks of the agents feature, called only for the sessions of an agent: a turn
+        # or the session ended in error (session id, text), and an init arrived (session
+        # id, the MCP servers it reports).
+        self._on_turn_error = on_turn_error
+        self._on_init = on_init
         # Extras of the agent this session belongs to, rebuilt with every client (attached
         # ones too, since the MCP server lives in this process); None for ordinary sessions.
         self._session_setup = session_setup
@@ -1096,6 +1105,8 @@ class ActiveSession:
         self._reader: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self._sent_messages = 0
+        # How many times `finished` changed in this instance (finish, reopen).
+        self._finish_changes = 0
         # True once a client connected: the conversation then exists on disk.
         self._has_connected = False
         # A client connected in an earlier instance of this session (forgotten from
@@ -1532,6 +1543,8 @@ class ActiveSession:
 
     def save(self, **changes: Any) -> None:
         """Write record fields to the database and memory."""
+        if "finished" in changes and changes["finished"] != self.record.finished:
+            self._finish_changes += 1
         assignments = ", ".join(f"{column} = ?" for column in changes)
         with closing(db.connect(self._db_path)) as conn:
             conn.execute(
@@ -1540,6 +1553,12 @@ class ActiveSession:
             )
         for key, value in changes.items():
             setattr(self.record, key, value)
+
+    @property
+    def activity_marker(self) -> tuple[int, int]:
+        """Changes when the person writes (a message sent) or finishes/reopens the
+        session. The agents feature compares it before finishing a concluded session."""
+        return (self._sent_messages, self._finish_changes)
 
     async def has_history(self) -> bool:
         return self._has_connected or await self._check_history()
@@ -1951,6 +1970,8 @@ class ActiveSession:
                 elif isinstance(message, SystemMessage) and message.subtype == "bridge_state":
                     self._on_bridge_state(message.data)
                 if isinstance(message, ResultMessage):
+                    if message.is_error and message.terminal_reason not in INTERRUPTED_REASONS:
+                        self._report_turn_error(result_error_text(message))
                     # Read in the background: the turn does not wait for it.
                     self._request_context(client)
                     self._schedule_plan_refresh()
@@ -2614,6 +2635,11 @@ class ActiveSession:
             self.save(**changes)
         if changes or emit:
             self._emit_options()
+        if self._on_init is not None and self.record.specialist_id is not None:
+            try:
+                self._on_init(self.session_id, list(init.mcp_servers))
+            except Exception:
+                logger.exception("Falha ao registrar os MCPs da sessão de agente %s", self.session_id)
 
     async def set_options(
         self,
@@ -2876,9 +2902,19 @@ class ActiveSession:
         self._cancel_prompts()
         self._refresh_state()
         self.sync_subagents()
+        self._report_turn_error(message)
         await self._dispose(client, reader)
         if client is not None:
             await self._record_app_mtime()
+
+    def _report_turn_error(self, text: str) -> None:
+        """Tell the agents feature that this agent's turn or session ended in error."""
+        if self._on_turn_error is None or self.record.specialist_id is None:
+            return
+        try:
+            self._on_turn_error(self.session_id, text)
+        except Exception:
+            logger.exception("Falha ao registrar o erro da sessão de agente %s", self.session_id)
 
     async def close(self, *, final: bool = False, record_mtime: bool = True) -> None:
         """Close the client, if any. The session goes back to `closed`.
@@ -3257,9 +3293,14 @@ class SessionManager:
         cli_identity: Callable[[], dict[str, Any]] | None = None,
         text_index: TextSearch | None = None,
         session_setup: SessionSetup | None = None,
+        on_turn_error: Callable[[str, str], None] | None = None,
+        on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
     ) -> None:
         # Gives the sessions of an agent their skill, folders, MCP server and policy.
         self._session_setup = session_setup
+        # Errors and inits of the sessions of an agent (see `ActiveSession`).
+        self._on_turn_error = on_turn_error
+        self._on_init = on_init
         # `{"path", "version"}` of the `claude` in use now. The models list is saved with
         # the one it came from and is stale when they differ (None: not checked).
         self._cli_identity = cli_identity
@@ -3555,6 +3596,8 @@ class SessionManager:
             cli_running=self._cli_running,
             agentd_held=self._agentd_held,
             session_setup=self._session_setup,
+            on_turn_error=self._on_turn_error,
+            on_init=self._on_init,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:

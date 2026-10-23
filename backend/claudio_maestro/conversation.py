@@ -141,6 +141,8 @@ class SessionInit:
     session_id: str | None
     model: str | None
     permission_mode: str | None
+    # MCP servers the CLI reports on init: `{"name", "status"}` of each.
+    mcp_servers: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -1108,6 +1110,7 @@ class ConversationBuilder:
             session_id=data.get("session_id"),
             model=data.get("model"),
             permission_mode=data.get("permissionMode"),
+            mcp_servers=_init_mcp_servers(data.get("mcp_servers")),
         )
         return [Event("session.init", asdict(self.init))]
 
@@ -1243,7 +1246,7 @@ class ConversationBuilder:
         if message.terminal_reason in INTERRUPTED_REASONS:
             events.append(self._notice("info", "Interrompido."))
         elif message.is_error and not self._turn_error_shown:
-            events.append(self._notice("error", _result_error_text(message)))
+            events.append(self._notice("error", result_error_text(message)))
         self._turn_error_shown = False
 
         self.last_result = TurnResult(
@@ -1466,7 +1469,19 @@ def _block_from_dict(raw: Any) -> Any:
     return None
 
 
-def _result_error_text(message: ResultMessage) -> str:
+def _init_mcp_servers(raw: Any) -> list[dict[str, str]]:
+    """Name and status of each MCP server of an init message; anything else is dropped."""
+    if not isinstance(raw, list):
+        return []
+    servers: list[dict[str, str]] = []
+    for entry in raw:
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+            status = entry.get("status")
+            servers.append({"name": entry["name"], "status": status if isinstance(status, str) else ""})
+    return servers
+
+
+def result_error_text(message: ResultMessage) -> str:
     text = RESULT_ERROR_TEXT.get(message.subtype, "O turno terminou com erro.")
     detail = "; ".join(message.errors) if message.errors else message.result
     return f"{text} {detail}" if detail else text

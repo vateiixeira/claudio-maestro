@@ -151,7 +151,11 @@ class DigestService:
         read_transcript: Callable[[Path | None], history.Transcript | None] | None = None,
         session_timeout: float = SESSION_TIMEOUT,
         git_status: Callable[[Path], Awaitable[RepoStatus]] | None = None,
+        on_closure: Callable[[Closure], Awaitable[None]] | None = None,
     ) -> None:
+        # Told about every closure saved (the agents feature decides what it means for
+        # the run of an agent's session); its failure never loses the closure.
+        self._on_closure = on_closure
         self._db_path = db_path
         self._manager = manager
         self._publish = publish
@@ -475,6 +479,11 @@ class DigestService:
                 closure.session_id, closure.verdict, closure.checked_at)
         except Exception:
             logger.exception("Could not update the closure of session %s", closure.session_id)
+        if self._on_closure is not None:
+            try:
+                await self._on_closure(closure)
+            except Exception:
+                logger.exception("Could not hand the closure of session %s on", closure.session_id)
 
     def _closure_inputs(self, session: dict[str, Any]) -> dict[str, Any] | None:
         """Files, summary and plan for one session. Blocking. None without a file."""
