@@ -340,3 +340,182 @@ def test_remove_extra_project_from_every_agent(conn):
     assert store.get_specialist(conn, first.id).updated_at == 50
     assert store.get_specialist(conn, second.id).extra_project_ids == [7]
     assert store.get_specialist(conn, third.id).updated_at == 100
+
+
+# Main conversation, announcements, PRs and PR comments ---------------------------------
+
+
+def make_comment(comment_id: str = "issue:1", **overrides) -> store.PrComment:
+    fields = dict(
+        comment_id=comment_id, pr_url="https://github.com/o/r/pull/1", specialist_id=1,
+        author="ana", body="corrija", path=None, line=None,
+        html_url="https://github.com/o/r/pull/1#issuecomment-1", created_at=50,
+        received_at=60, status="queued", batch_at=None,
+    )
+    fields.update(overrides)
+    return store.PrComment(**fields)
+
+
+def test_set_main_session_is_not_updatable(conn):
+    created = make(conn)
+    add_session(conn, "m1")
+    assert created.main_session_id is None
+    store.set_main_session(conn, created.id, "m1")
+    assert store.get_specialist(conn, created.id).main_session_id == "m1"
+    store.set_main_session(conn, created.id, None)
+    assert store.get_specialist(conn, created.id).main_session_id is None
+    with pytest.raises(ValueError):
+        store.update_specialist(conn, created.id, now=1, main_session_id="m1")
+
+
+def test_deleting_main_session_clears_the_link(conn):
+    created = make(conn)
+    add_session(conn, "m1")
+    store.set_main_session(conn, created.id, "m1")
+    conn.execute("DELETE FROM sessions WHERE session_id = 'm1'")
+    assert store.get_specialist(conn, created.id).main_session_id is None
+
+
+def test_run_accepts_comment_trigger(conn):
+    created = make(conn)
+    run = store.insert_run(
+        conn, specialist_id=created.id, trigger="comment", started_at=1, outcome="running"
+    )
+    assert store.get_run(conn, run.id).trigger == "comment"
+
+
+def test_pending_announcements_in_order_and_delivered(conn):
+    created = make(conn)
+    other = make(conn, slug="outro")
+    add_session(conn, "s1")
+    first = store.add_announcement(
+        conn, specialist_id=created.id, run_id=None, session_id="s1", text="um", created_at=10
+    )
+    second = store.add_announcement(
+        conn, specialist_id=created.id, run_id=None, session_id=None, text="dois", created_at=20
+    )
+    store.add_announcement(
+        conn, specialist_id=other.id, run_id=None, session_id=None, text="alheio", created_at=15
+    )
+    assert first.delivered_at is None and first.session_id == "s1" and first.text == "um"
+
+    assert [a.text for a in store.pending_announcements(conn, created.id)] == ["um", "dois"]
+
+    store.mark_announcements_delivered(conn, [first.id], at=99)
+
+    assert [a.text for a in store.pending_announcements(conn, created.id)] == ["dois"]
+    listed = store.list_announcements(conn, created.id)
+    assert {a.id: a.delivered_at for a in listed} == {first.id: 99, second.id: None}
+    store.mark_announcements_delivered(conn, [], at=100)
+
+
+def test_announcement_keeps_run_and_unlinks_on_run_delete(conn):
+    created = make(conn)
+    run = store.insert_run(
+        conn, specialist_id=created.id, trigger="manual", started_at=1, outcome="concluded"
+    )
+    note = store.add_announcement(
+        conn, specialist_id=created.id, run_id=run.id, session_id=None, text="t", created_at=1
+    )
+    assert note.run_id == run.id
+    conn.execute("DELETE FROM specialist_runs WHERE id = ?", (run.id,))
+    assert store.list_announcements(conn, created.id)[0].run_id is None
+
+
+def test_list_announcements_newest_first_with_limit(conn):
+    created = make(conn)
+    for at in (1, 2, 3):
+        store.add_announcement(
+            conn, specialist_id=created.id, run_id=None, session_id=None, text=str(at),
+            created_at=at,
+        )
+    assert [a.text for a in store.list_announcements(conn, created.id, limit=2)] == ["3", "2"]
+
+
+def test_upsert_pr_keeps_known_session(conn):
+    created = make(conn)
+    add_session(conn, "s1")
+    url = "https://github.com/o/r/pull/1"
+    store.upsert_pr(conn, url=url, specialist_id=created.id, session_id="s1", created_at=5)
+    store.upsert_pr(conn, url=url, specialist_id=created.id, session_id=None, created_at=9)
+    pr = store.get_pr(conn, url)
+    assert pr is not None
+    assert (pr.session_id, pr.created_at, pr.closed, pr.polled_at) == ("s1", 5, False, None)
+    assert store.get_pr(conn, "https://github.com/o/r/pull/2") is None
+
+
+def test_upsert_pr_fills_missing_session(conn):
+    created = make(conn)
+    add_session(conn, "s2")
+    url = "https://github.com/o/r/pull/1"
+    store.upsert_pr(conn, url=url, specialist_id=created.id, session_id=None, created_at=5)
+    store.upsert_pr(conn, url=url, specialist_id=created.id, session_id="s2", created_at=9)
+    assert store.get_pr(conn, url).session_id == "s2"
+
+
+def test_pr_poll_and_close(conn):
+    created = make(conn)
+    a, b = "https://github.com/o/r/pull/1", "https://github.com/o/r/pull/2"
+    for url in (a, b):
+        store.upsert_pr(conn, url=url, specialist_id=created.id, session_id=None, created_at=1)
+    assert [p.url for p in store.open_prs(conn)] == [a, b]
+    store.mark_pr_polled(conn, a, at=77)
+    assert store.get_pr(conn, a).polled_at == 77
+    store.close_pr(conn, a)
+    assert store.get_pr(conn, a).closed is True
+    assert [p.url for p in store.open_prs(conn)] == [b]
+
+
+def test_deleting_session_unlinks_pr(conn):
+    created = make(conn)
+    add_session(conn, "s1")
+    url = "https://github.com/o/r/pull/1"
+    store.upsert_pr(conn, url=url, specialist_id=created.id, session_id="s1", created_at=1)
+    conn.execute("DELETE FROM sessions WHERE session_id = 's1'")
+    assert store.get_pr(conn, url).session_id is None
+
+
+def test_insert_comment_is_idempotent(conn):
+    created = make(conn)
+    comment = make_comment(specialist_id=created.id)
+    assert store.insert_comment(conn, comment) is True
+    assert store.insert_comment(conn, comment) is False
+    assert store.queued_comments(conn) == [comment]
+
+
+def test_comment_status_and_queue(conn):
+    created = make(conn)
+    for n in (1, 2, 3):
+        store.insert_comment(
+            conn, make_comment(f"line:{n}", specialist_id=created.id, path="a.py", line=n,
+                               received_at=60 + n)
+        )
+    assert [c.comment_id for c in store.queued_comments(conn)] == ["line:1", "line:2", "line:3"]
+    store.mark_comments(conn, ["line:1", "line:2"], "delivered", batch_at=1000)
+    store.mark_comments(conn, ["line:3"], "dropped", batch_at=None)
+    assert store.queued_comments(conn) == []
+    store.mark_comments(conn, [], "delivered", batch_at=1)
+    row = conn.execute(
+        "SELECT status, batch_at, path, line FROM specialist_pr_comments"
+        " WHERE comment_id = 'line:1'"
+    ).fetchone()
+    assert tuple(row) == ("delivered", 1000, "a.py", 1)
+
+
+def test_turns_today_counts_batches(conn):
+    created = make(conn)
+    url = "https://github.com/o/r/pull/1"
+    day_start = 1000
+    batches = {"issue:1": 1500, "issue:2": 1500, "issue:3": 1500, "issue:4": 1800, "issue:5": 900}
+    for comment_id in batches:
+        store.insert_comment(conn, make_comment(comment_id, specialist_id=created.id))
+    for comment_id, batch_at in batches.items():
+        store.mark_comments(conn, [comment_id], "delivered", batch_at=batch_at)
+    store.insert_comment(
+        conn, make_comment("issue:6", specialist_id=created.id, pr_url="https://github.com/o/r/pull/2")
+    )
+    store.mark_comments(conn, ["issue:6"], "delivered", batch_at=2000)
+
+    assert store.turns_today(conn, url, day_start) == 2
+    assert store.turns_today(conn, url, 1600) == 1
+    assert store.turns_today(conn, url, 5000) == 0

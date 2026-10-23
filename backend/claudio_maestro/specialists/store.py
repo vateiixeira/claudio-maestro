@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 Autonomy = Literal["ask", "full"]
-Trigger = Literal["schedule", "manual"]
+Trigger = Literal["schedule", "manual", "comment"]
+CommentStatus = Literal["queued", "delivered", "dropped"]
 Outcome = Literal["running", "concluded", "closed", "waiting", "failed", "skipped", "missed"]
 NoticeKind = Literal["notice", "summary", "alert"]
 
@@ -48,6 +49,7 @@ class Specialist:
     run_text: str
     enabled: bool
     last_mcp: list[dict[str, str]]
+    main_session_id: str | None
     created_at: int
     updated_at: int
 
@@ -85,6 +87,43 @@ class Item:
 
 
 @dataclass(frozen=True)
+class Announcement:
+    id: int
+    specialist_id: int
+    run_id: int | None
+    session_id: str | None  # the session the announcement came from
+    text: str
+    created_at: int
+    delivered_at: int | None
+
+
+@dataclass(frozen=True)
+class Pr:
+    url: str
+    specialist_id: int
+    session_id: str | None
+    created_at: int
+    polled_at: int | None
+    closed: bool
+
+
+@dataclass(frozen=True)
+class PrComment:
+    comment_id: str  # "issue:<id>", "review:<id>" or "line:<id>"
+    pr_url: str
+    specialist_id: int
+    author: str
+    body: str
+    path: str | None
+    line: int | None
+    html_url: str
+    created_at: int  # GitHub's time, epoch seconds
+    received_at: int
+    status: CommentStatus
+    batch_at: int | None
+
+
+@dataclass(frozen=True)
 class Notice:
     id: int
     specialist_id: int
@@ -108,7 +147,7 @@ _UPDATABLE = (
 _COLUMNS = (
     "id, slug, name, project_id, extra_project_ids, autonomy, outward_patterns,"
     " always_ask_patterns, denied_tools, close_by_check, model, effort, run_text, enabled,"
-    " last_mcp, created_at, updated_at"
+    " last_mcp, main_session_id, created_at, updated_at"
 )
 
 
@@ -183,6 +222,18 @@ def update_specialist(
     if cursor.rowcount == 0:
         raise SpecialistNotFoundError("Agente não encontrado.")
     return get_specialist(conn, specialist_id)
+
+
+def set_main_session(
+    conn: sqlite3.Connection, specialist_id: int, session_id: str | None
+) -> None:
+    """Point the agent at its main conversation (kept out of `update_specialist`: only the
+    service decides it)."""
+    cursor = conn.execute(
+        "UPDATE specialists SET main_session_id = ? WHERE id = ?", (session_id, specialist_id)
+    )
+    if cursor.rowcount == 0:
+        raise SpecialistNotFoundError("Agente não encontrado.")
 
 
 def remove_extra_project(conn: sqlite3.Connection, project_id: int, now: int) -> list[int]:
@@ -439,6 +490,170 @@ def mark_notices_read(conn: sqlite3.Connection, ids: list[int], now: int) -> int
         (now, *ids),
     )
     return cursor.rowcount
+
+
+# Announcements ----------------------------------------------------------------
+
+_ANNOUNCEMENT_COLUMNS = "id, specialist_id, run_id, session_id, text, created_at, delivered_at"
+
+
+def _announcement(row: sqlite3.Row) -> Announcement:
+    return Announcement(**{key: row[key] for key in row.keys()})
+
+
+def add_announcement(
+    conn: sqlite3.Connection,
+    *,
+    specialist_id: int,
+    run_id: int | None,
+    session_id: str | None,
+    text: str,
+    created_at: int,
+) -> Announcement:
+    cursor = conn.execute(
+        "INSERT INTO specialist_announcements (specialist_id, run_id, session_id, text, created_at)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (specialist_id, run_id, session_id, text, created_at),
+    )
+    row = conn.execute(
+        f"SELECT {_ANNOUNCEMENT_COLUMNS} FROM specialist_announcements WHERE id = ?",
+        (cursor.lastrowid,),
+    ).fetchone()
+    return _announcement(row)
+
+
+def pending_announcements(conn: sqlite3.Connection, specialist_id: int) -> list[Announcement]:
+    """Not yet delivered, oldest first."""
+    rows = conn.execute(
+        f"SELECT {_ANNOUNCEMENT_COLUMNS} FROM specialist_announcements"
+        " WHERE specialist_id = ? AND delivered_at IS NULL ORDER BY created_at, id",
+        (specialist_id,),
+    ).fetchall()
+    return [_announcement(row) for row in rows]
+
+
+def mark_announcements_delivered(conn: sqlite3.Connection, ids: list[int], at: int) -> None:
+    if not ids:
+        return
+    marks = ", ".join("?" for _ in ids)
+    conn.execute(
+        f"UPDATE specialist_announcements SET delivered_at = ? WHERE id IN ({marks})",
+        (at, *ids),
+    )
+
+
+def list_announcements(
+    conn: sqlite3.Connection, specialist_id: int, limit: int = 50
+) -> list[Announcement]:
+    """Newest first."""
+    rows = conn.execute(
+        f"SELECT {_ANNOUNCEMENT_COLUMNS} FROM specialist_announcements"
+        " WHERE specialist_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+        (specialist_id, limit),
+    ).fetchall()
+    return [_announcement(row) for row in rows]
+
+
+# Pull requests and their comments -----------------------------------------------
+
+_PR_COLUMNS = "url, specialist_id, session_id, created_at, polled_at, closed"
+_COMMENT_COLUMNS = (
+    "comment_id, pr_url, specialist_id, author, body, path, line, html_url, created_at,"
+    " received_at, status, batch_at"
+)
+
+
+def _pr(row: sqlite3.Row) -> Pr:
+    fields = {key: row[key] for key in row.keys()}
+    fields["closed"] = bool(fields["closed"])
+    return Pr(**fields)
+
+
+def upsert_pr(
+    conn: sqlite3.Connection,
+    *,
+    url: str,
+    specialist_id: int,
+    session_id: str | None,
+    created_at: int,
+) -> None:
+    """Register a PR. A known session is never overwritten by a missing one."""
+    conn.execute(
+        "INSERT INTO specialist_prs (url, specialist_id, session_id, created_at)"
+        " VALUES (?, ?, ?, ?)"
+        " ON CONFLICT (url) DO UPDATE SET"
+        " session_id = COALESCE(excluded.session_id, specialist_prs.session_id)",
+        (url, specialist_id, session_id, created_at),
+    )
+
+
+def get_pr(conn: sqlite3.Connection, url: str) -> Pr | None:
+    row = conn.execute(f"SELECT {_PR_COLUMNS} FROM specialist_prs WHERE url = ?", (url,)).fetchone()
+    return _pr(row) if row else None
+
+
+def open_prs(conn: sqlite3.Connection) -> list[Pr]:
+    rows = conn.execute(
+        f"SELECT {_PR_COLUMNS} FROM specialist_prs WHERE closed = 0 ORDER BY created_at, url"
+    ).fetchall()
+    return [_pr(row) for row in rows]
+
+
+def mark_pr_polled(conn: sqlite3.Connection, url: str, at: int) -> None:
+    conn.execute("UPDATE specialist_prs SET polled_at = ? WHERE url = ?", (at, url))
+
+
+def close_pr(conn: sqlite3.Connection, url: str) -> None:
+    conn.execute("UPDATE specialist_prs SET closed = 1 WHERE url = ?", (url,))
+
+
+def _comment(row: sqlite3.Row) -> PrComment:
+    return PrComment(**{key: row[key] for key in row.keys()})
+
+
+def insert_comment(conn: sqlite3.Connection, comment: PrComment) -> bool:
+    """Queue a comment; False when it was already seen (same `comment_id`)."""
+    cursor = conn.execute(
+        f"INSERT OR IGNORE INTO specialist_pr_comments ({_COMMENT_COLUMNS})"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            comment.comment_id, comment.pr_url, comment.specialist_id, comment.author,
+            comment.body, comment.path, comment.line, comment.html_url, comment.created_at,
+            comment.received_at, comment.status, comment.batch_at,
+        ),
+    )
+    return cursor.rowcount == 1
+
+
+def queued_comments(conn: sqlite3.Connection) -> list[PrComment]:
+    """Oldest first (by GitHub time, then arrival)."""
+    rows = conn.execute(
+        f"SELECT {_COMMENT_COLUMNS} FROM specialist_pr_comments WHERE status = 'queued'"
+        " ORDER BY created_at, received_at, comment_id"
+    ).fetchall()
+    return [_comment(row) for row in rows]
+
+
+def mark_comments(
+    conn: sqlite3.Connection, ids: list[str], status: CommentStatus, batch_at: int | None
+) -> None:
+    if not ids:
+        return
+    marks = ", ".join("?" for _ in ids)
+    conn.execute(
+        f"UPDATE specialist_pr_comments SET status = ?, batch_at = ? WHERE comment_id IN ({marks})",
+        (status, batch_at, *ids),
+    )
+
+
+def turns_today(conn: sqlite3.Connection, pr_url: str, day_start: int) -> int:
+    """Turns spent on this PR since `day_start`: distinct batches of its comments."""
+    row = conn.execute(
+        "SELECT COUNT(DISTINCT batch_at) FROM specialist_pr_comments"
+        " WHERE pr_url = ? AND batch_at >= ?",
+        (pr_url, day_start),
+    ).fetchone()
+    return row[0]
 
 
 # Sessions still to be finished ---------------------------------------------------------

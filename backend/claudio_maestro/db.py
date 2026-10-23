@@ -334,6 +334,80 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
     ],
     # Tools an agent can never use (names in the CLI's permission rule form), JSON text.
     ["ALTER TABLE specialists ADD COLUMN denied_tools TEXT NOT NULL DEFAULT '[]'"],
+    [
+        # Conversa principal de cada agente, anúncios dos agentes e fila de comentários de PR.
+        # `specialist_runs` is rebuilt only to widen the CHECK on `trigger` ('comment'): nothing
+        # references it yet, so dropping it is safe with foreign keys on, and the rows and the
+        # two indexes are carried over.
+        "ALTER TABLE specialists ADD COLUMN main_session_id TEXT"
+        " REFERENCES sessions(session_id) ON DELETE SET NULL",
+        """
+        CREATE TABLE specialist_runs_new (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+          trigger        TEXT NOT NULL CHECK (trigger IN ('schedule', 'manual', 'comment')),
+          scheduled_for  INTEGER,
+          started_at     INTEGER NOT NULL,
+          ended_at       INTEGER,
+          outcome        TEXT NOT NULL CHECK (
+            outcome IN ('running', 'concluded', 'closed', 'waiting', 'failed', 'skipped', 'missed')
+          ),
+          reason         TEXT
+        )
+        """,
+        "INSERT INTO specialist_runs_new (id, specialist_id, session_id, trigger, scheduled_for,"
+        " started_at, ended_at, outcome, reason) SELECT id, specialist_id, session_id, trigger,"
+        " scheduled_for, started_at, ended_at, outcome, reason FROM specialist_runs",
+        "DROP TABLE specialist_runs",
+        "ALTER TABLE specialist_runs_new RENAME TO specialist_runs",
+        "CREATE INDEX specialist_runs_specialist_started ON specialist_runs(specialist_id, started_at)",
+        "CREATE INDEX specialist_runs_session ON specialist_runs(session_id)",
+        # What an agent announced to its main conversation; `delivered_at` is set once the
+        # announcement was handed to that conversation.
+        """
+        CREATE TABLE specialist_announcements (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          run_id         INTEGER REFERENCES specialist_runs(id) ON DELETE SET NULL,
+          session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+          text           TEXT NOT NULL,
+          created_at     INTEGER NOT NULL,
+          delivered_at   INTEGER
+        )
+        """,
+        "CREATE INDEX specialist_announcements_pending ON specialist_announcements(specialist_id, delivered_at)",
+        # PRs an agent opened (url without trailing slash) and the comments found on them.
+        """
+        CREATE TABLE specialist_prs (
+          url            TEXT PRIMARY KEY,
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+          created_at     INTEGER NOT NULL,
+          polled_at      INTEGER,
+          closed         INTEGER NOT NULL DEFAULT 0
+        )
+        """,
+        # `comment_id` is `issue:<id>`, `review:<id>` or `line:<id>`; `created_at` is the
+        # GitHub time, `received_at` when we saw it, `batch_at` when it went out in a turn.
+        """
+        CREATE TABLE specialist_pr_comments (
+          comment_id     TEXT PRIMARY KEY,
+          pr_url         TEXT NOT NULL,
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          author         TEXT NOT NULL,
+          body           TEXT NOT NULL,
+          path           TEXT,
+          line           INTEGER,
+          html_url       TEXT NOT NULL,
+          created_at     INTEGER NOT NULL,
+          received_at    INTEGER NOT NULL,
+          status         TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'delivered', 'dropped')),
+          batch_at       INTEGER
+        )
+        """,
+        "CREATE INDEX specialist_pr_comments_status_pr ON specialist_pr_comments(status, pr_url)",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

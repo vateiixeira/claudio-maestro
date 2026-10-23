@@ -298,6 +298,7 @@ def test_specialists_migration_keeps_existing_sessions(tmp_path: Path):
             index for index, statements in enumerate(db.MIGRATIONS)
             if any("CREATE TABLE specialists" in str(statement) for statement in statements)
         )
+        assert before < len(db.MIGRATIONS)
         for statements in db.MIGRATIONS[:before]:
             for statement in statements:
                 if callable(statement):
@@ -320,3 +321,81 @@ def test_specialists_migration_keeps_existing_sessions(tmp_path: Path):
         assert conn.execute("PRAGMA user_version").fetchone()[0] == len(db.MIGRATIONS)
         row = conn.execute("SELECT * FROM sessions WHERE session_id = 'old'").fetchone()
     assert row["title"] == "t" and row["specialist_id"] is None
+
+
+def test_migration_keeps_runs_and_accepts_comment_trigger(tmp_path: Path):
+    from claudio_maestro.specialists import store
+
+    with open_db(tmp_path / "old.db") as conn:
+        before = next(
+            index for index, statements in enumerate(db.MIGRATIONS)
+            if any("main_session_id" in str(statement) for statement in statements)
+        )
+        for statements in db.MIGRATIONS[:before]:
+            for statement in statements:
+                if callable(statement):
+                    statement(conn)
+                else:
+                    conn.execute(statement)
+        conn.execute(f"PRAGMA user_version = {before}")
+        conn.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/p', '#fff', 0, 0)"
+        )
+        conn.execute(
+            "INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at)"
+            " VALUES ('s1', 1, '/p', 't', 0, 0)"
+        )
+        conn.execute(
+            "INSERT INTO specialists (slug, name, project_id, created_at, updated_at)"
+            " VALUES ('a', 'A', 1, 1, 1)"
+        )
+        agent_id = conn.execute("SELECT id FROM specialists").fetchone()[0]
+        conn.execute(
+            "INSERT INTO specialist_runs (specialist_id, session_id, trigger, started_at, outcome)"
+            " VALUES (?, 's1', 'schedule', 10, 'concluded')",
+            (agent_id,),
+        )
+        conn.execute(
+            "INSERT INTO specialist_runs (specialist_id, session_id, trigger, scheduled_for,"
+            " started_at, ended_at, outcome, reason) VALUES (?, NULL, 'manual', 5, 20, 30,"
+            " 'failed', 'x')",
+            (agent_id,),
+        )
+
+        db.migrate(conn)
+
+        runs = conn.execute("SELECT * FROM specialist_runs ORDER BY id").fetchall()
+        assert [(r["trigger"], r["session_id"], r["started_at"]) for r in runs] == [
+            ("schedule", "s1", 10), ("manual", None, 20),
+        ]
+        assert (runs[1]["scheduled_for"], runs[1]["ended_at"], runs[1]["reason"]) == (5, 30, "x")
+        indexes = {
+            row["name"] for row in conn.execute("PRAGMA index_list(specialist_runs)")
+        }
+        assert {"specialist_runs_specialist_started", "specialist_runs_session"} <= indexes
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        comment = store.insert_run(
+            conn, specialist_id=agent_id, trigger="comment", started_at=40, outcome="running",
+        )
+        assert store.get_run(conn, comment.id).trigger == "comment"
+        # The foreign keys survived the rebuild: deleting the session unlinks the run.
+        conn.execute("DELETE FROM sessions WHERE session_id = 's1'")
+        assert conn.execute(
+            "SELECT session_id FROM specialist_runs WHERE id = ?", (runs[0]["id"],)
+        ).fetchone()[0] is None
+        # And so do the cascades: deleting the agent removes its runs.
+        store.delete_specialist(conn, agent_id)
+        assert conn.execute("SELECT COUNT(*) FROM specialist_runs").fetchone()[0] == 0
+
+
+def test_migration_creates_conversation_tables(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        db.migrate(conn)
+        assert {
+            "specialist_announcements", "specialist_prs", "specialist_pr_comments",
+        } <= table_names(conn)
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(specialists)")}
+        indexes = {row["name"] for row in conn.execute("PRAGMA index_list(specialist_pr_comments)")}
+    assert "main_session_id" in cols
+    assert "specialist_pr_comments_status_pr" in indexes
