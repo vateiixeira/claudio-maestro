@@ -243,6 +243,45 @@ class SpecialistService:
             specialist = store.get_specialist(conn, specialist_id)
         return self._record_without_session(specialist, "schedule", "skipped", reason, scheduled_for)
 
+    def record_missed(self, specialist_id: int, reason: str, *, scheduled_for: int) -> store.Run:
+        """A scheduled run whose time passed without the scheduler seeing it (the app was
+        off or late). It never counts toward the alert on runs in a row without success."""
+        now = self._now()
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.get_specialist(conn, specialist_id)
+            run = store.insert_run(
+                conn,
+                specialist_id=specialist_id,
+                trigger="schedule",
+                started_at=now,
+                outcome="missed",
+                scheduled_for=scheduled_for,
+                reason=_cut(reason),
+                ended_at=now,
+            )
+        self._publish_run(run)
+        return run
+
+    def add_alert(self, specialist_id: int, text: str) -> store.Notice:
+        """An `alert` notice from outside a run (the scheduler's usage warning)."""
+        return self._add_notice(specialist_id, None, "alert", text)
+
+    def is_busy(self, specialist_id: int) -> bool:
+        """Whether an unfinished session of the agent has a turn open or a pending
+        permission or question."""
+        for session_id in self._sessions.active_ids():
+            try:
+                session = self._sessions.get(session_id)
+            except SessionNotFoundError:
+                continue
+            if (
+                session.record.specialist_id == specialist_id
+                and not session.record.finished
+                and session.state in TURN_OPEN_STATES
+            ):
+                return True
+        return False
+
     def _record_without_session(
         self,
         specialist: store.Specialist,
