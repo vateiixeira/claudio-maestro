@@ -64,6 +64,15 @@ describe('Agentes', () => {
     expect(wrapper.text()).toContain('Nenhum agente ainda')
   })
 
+  it('o layout segue a largura da área (container query), não a da janela: estreito empilha a lista', async () => {
+    const { wrapper } = await mountAt('/agentes', { 'GET /api/specialists': () => jsonResponse([makeSpecialist()]) })
+    expect(wrapper.classes()).toContain('@container')
+    const grid = wrapper.get('.grid')
+    expect(grid.classes()).toContain('grid-cols-[minmax(0,1fr)]')
+    expect(grid.classes().some((c) => c.startsWith('@4xl:grid-cols-'))).toBe(true)
+    expect(wrapper.get('nav').classes()).toContain('@4xl:border-r')
+  })
+
   it('abre o detalhe do agente da rota', async () => {
     const fetch = routeFetch({ 'GET /api/specialists': () => jsonResponse([makeSpecialist()]), ...detailRoutes(1) })
     vi.stubGlobal('fetch', fetch)

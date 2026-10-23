@@ -13,7 +13,7 @@ const now = useMinuteClock()
 </script>
 
 <template>
-  <nav aria-label="Agentes" class="flex min-h-0 flex-col gap-2 border-r border-line p-3">
+  <nav aria-label="Agentes" class="flex min-h-0 min-w-0 flex-col gap-2 border-b border-line p-3 @4xl:border-r @4xl:border-b-0">
     <h1 class="m-0 px-1 pt-1 pb-0.5 text-[0.9375rem] font-semibold tracking-tight">Agentes</h1>
     <button
       type="button"
@@ -25,7 +25,7 @@ const now = useMinuteClock()
       <span class="grow">Novo agente</span>
     </button>
     <p v-if="agents.length === 0" class="m-0 px-2.5 py-2 text-sm text-fg-muted">{{ loading ? 'Carregando…' : 'Nenhum agente ainda.' }}</p>
-    <ul class="m-0 flex min-h-0 list-none flex-col gap-px overflow-y-auto p-0">
+    <ul class="m-0 flex max-h-44 min-h-0 list-none flex-col gap-px overflow-y-auto p-0 @4xl:max-h-none">
       <li v-for="agent in agents" :key="agent.id">
         <RouterLink
           data-test="agent-item"

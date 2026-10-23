@@ -141,11 +141,11 @@ watch(() => props.agent.id, () => { actionError.value = null })
   <article class="flex min-w-0 flex-col gap-5" :aria-label="`Agente ${agent.name}`">
     <header class="flex flex-col gap-3">
       <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
-        <div class="flex min-w-0 grow flex-col gap-0.5">
+        <div class="flex min-w-0 basis-48 grow flex-col gap-0.5">
           <h2 data-test="agent-name" class="m-0 truncate text-[1.25rem] font-semibold tracking-tight">{{ agent.name }}</h2>
           <p data-test="agent-description" class="m-0 text-sm" :class="agent.description ? 'text-fg-muted' : 'text-fg-subtle'">{{ agent.description || 'Sem descrição.' }}</p>
         </div>
-        <div class="flex shrink-0 items-center gap-3">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
           <button
             type="button"
             role="switch"
