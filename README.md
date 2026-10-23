@@ -31,6 +31,7 @@ Se você não lê português, o tradutor do navegador dá conta, e o próprio Cl
 - **Controles por conversa.** Modelo, nível de raciocínio, modo de permissão, imagens coladas, comandos `/` e menções `@`.
 - **Resumo das conversas.** Um agente do próprio app pode resumir em fases o que cada conversa em andamento já fez.
 - **Resumo ao voltar.** Ao reabrir uma conversa depois de um tempo, um card mostra o que aconteceu enquanto você estava fora e o que falta.
+- **Agentes.** Rotinas com skill, memória e horários próprios, que rodam sozinhas e deixam avisos na Inbox. O merge sempre pede o seu ok (veja [Agentes](#agentes)).
 - **Temas.** Maestro (o padrão), Dracula e os filtros do Monokai, escolhidos em Preferências → Geral → Tema, com uma prévia de uma sessão aberta. Veja os [Créditos](#créditos).
 
 O que ele não é, de propósito: IDE, terminal embutido, editor de código ou árvore de arquivos.
@@ -158,6 +159,27 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 As portas precisam estar entre 1024 e 65535, fora de 6665 a 6669 (os navegadores bloqueiam essas). O app escuta só em `127.0.0.1`, sempre.
 
 O comando que abre arquivos no editor (padrão: `code`) fica nas Preferências do app.
+
+## Agentes
+
+Um agente é uma rotina que você descreve uma vez e o Maestro roda por você, na hora ou nos horários marcados: triar issues, revisar PRs, conferir um deploy. Cadastre na página **Agentes**; cada um tem:
+
+- **Skill.** O passo a passo que ele segue, num `SKILL.md`.
+- **Projetos.** A pasta onde ele trabalha e os outros projetos que ele pode ler.
+- **Autonomia.** "Pede ok antes de agir para fora" ou "Vai até o fim".
+- **Horários.** Dias da semana e hora. Também dá para rodar na hora, com "Rodar agora".
+- **Segredos.** Variáveis de ambiente (um token, por exemplo) que só a sessão do agente enxerga.
+- **Memória.** Os aprendizados que ele reescreve entre execuções e o registro do que já fez, que ele consulta quando precisa.
+
+Onde ficam os arquivos: cada agente tem uma pasta `<pasta de dados>/specialists/<nome>/` (permissão 700), com `SKILL.md`, `aprendizados.md` (até 4.000 caracteres) e `secrets.env` (permissão 600). Os segredos entram só como variáveis de ambiente da sessão do agente, nunca no prompt, e a tela nunca mostra os valores.
+
+Como ele roda:
+
+- A sessão do agente aparece nas conversas do projeto, com o selo "Agente · nome". Ela fica no modo de permissão `default` e não pede ok para editar nem para rodar comandos locais.
+- As ações para fora (`git push`, `gh pr create`, `gh pr merge`, `gh issue comment`, `gh issue close`, `gh release` e as que você acrescentar) pedem ok quando a autonomia é "Pede ok antes de agir para fora". O merge (`gh pr merge`), o push para a branch padrão e o push forçado pedem ok sempre, qualquer que seja a autonomia.
+- O agente fecha a própria execução com a ferramenta `concluir`. Se ele não fechar, o Maestro confere o desfecho no fim da sessão.
+- O agendador pula a execução se a anterior ainda estiver rodando ou esperando você, ou se o uso da assinatura estiver em 90% ou mais. Se o app estava desligado no horário, grava uma execução "perdida". Duas execuções seguidas sem sucesso geram um alerta.
+- Os avisos que o agente deixa aparecem na Inbox. O histórico das execuções não entra no contexto do agente: o registro é consultado por ferramenta, só quando ele precisa.
 
 ## Segurança
 
