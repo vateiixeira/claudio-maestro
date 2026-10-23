@@ -421,6 +421,30 @@ def test_app_never_reaches_the_sdk_or_the_claude_binary(tmp_path, monkeypatch):
     assert attempts == []
 
 
+def test_agents_live_in_the_temporary_root_and_run_without_the_real_agent(tmp_path, monkeypatch):
+    apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
+    e2e.seed(tmp_path)
+    attempts = forbid_claude(monkeypatch)
+
+    with TestClient(
+        e2e.build_app(6620),
+        base_url="http://127.0.0.1:6620",
+        headers={"origin": "http://localhost:6620", "x-maestro": "1"},
+    ) as client:
+        project_id = client.get("/api/projects").json()[0]["id"]
+        created = client.post(
+            "/api/specialists", json={"name": "Teste", "slug": "teste", "project_id": project_id}
+        )
+        assert created.status_code == 201
+        ran = client.post(f"/api/specialists/{created.json()['id']}/run", json={})
+        assert ran.status_code == 202
+        folder = client.app.state.specialist_files.root
+
+    assert folder == tmp_path / "data" / "specialists"
+    assert (folder / "teste" / "SKILL.md").is_file()
+    assert attempts == []
+
+
 def test_digest_model_refuses_with_a_clear_message():
     request = DigestRequest(system_prompt="s", prompt="p", model="haiku", effort="low")
 

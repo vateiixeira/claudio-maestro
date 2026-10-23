@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -50,6 +51,9 @@ from claudio_maestro.sessions import (
     SessionError,
     SessionManager,
 )
+from claudio_maestro.specialists.files import SpecialistFiles
+from claudio_maestro.specialists.scheduler import Scheduler
+from claudio_maestro.specialists.service import SpecialistService
 from claudio_maestro.terminal import TerminalManager
 from claudio_maestro.textindex import INDEX_FILENAME, TextIndex
 from claudio_maestro.updates import FetchRelease, UpdateChecker, fetch_latest_release
@@ -170,11 +174,23 @@ def create_app(
                 app.state.background.add(task)
                 task.add_done_callback(app.state.background.discard)
 
-        def on_finished(session_id: str, finished_at: int) -> None:
+        def finish_for_deliveries(session_id: str, finished_at: int) -> None:
             # "Entregas": the digest service records the click and queues the summary.
             task = asyncio.create_task(app.state.digest.record_finish(session_id, finished_at))
             app.state.background.add(task)
             task.add_done_callback(app.state.background.discard)
+
+        def finish_for_specialists(session_id: str, finished_at: int) -> None:
+            # Agentes: a run still open counts as concluded.
+            app.state.specialists.on_finished(session_id, finished_at)
+
+        def on_finished(session_id: str, finished_at: int) -> None:
+            # Each hook is isolated: one failing never stops the other.
+            for hook in (finish_for_deliveries, finish_for_specialists):
+                try:
+                    hook(session_id, finished_at)
+                except Exception:
+                    logger.exception("Falha ao tratar a finalização da sessão %s", session_id)
 
         use_agentd = agentd if agentd is not None else agent_factory is None
         new_through_agentd = os.environ.get("MAESTRO_AGENTD", "1") != "0"
@@ -230,6 +246,29 @@ def create_app(
             agentd_new_sessions=new_through_agentd,
             cli_identity=cli_identity,
             text_index=app.state.textindex,
+            # The agents service is built right after the manager (it needs it); the
+            # hooks look it up when called.
+            session_setup=lambda record: app.state.specialists.session_setup(record),
+            on_turn_error=lambda session_id, error: app.state.specialists.on_turn_error(
+                session_id, error
+            ),
+            on_init=lambda session_id, servers: app.state.specialists.on_init(
+                session_id, servers
+            ),
+        )
+        app.state.specialist_files = SpecialistFiles(app.state.settings.data_dir / "specialists")
+        app.state.specialists = SpecialistService(
+            app.state.settings.db_path,
+            files=app.state.specialist_files,
+            sessions=app.state.sessions,
+            publish=app.state.hub.publish,
+        )
+        app.state.scheduler = Scheduler(
+            app.state.specialists,
+            app.state.sessions,
+            app.state.usage,
+            app.state.settings.db_path,
+            time.time,
         )
         # What the agentd may still hold, for the Remote Control reconnect below; `None`
         # when it could not be asked (nothing is reconnected then).
@@ -264,6 +303,7 @@ def create_app(
             app.state.sessions,
             app.state.hub.publish,
             digest_model or SdkDigestModel(agent_dir, cli_path=app.state.claude_cli.cli_path),
+            on_closure=app.state.specialists.on_closure,
         )
 
         def on_history_change(session_ids: set[str]) -> None:
@@ -313,6 +353,8 @@ def create_app(
             ),
             asyncio.create_task(app.state.digest.run()),
         ]
+        app.state.scheduler_task = asyncio.create_task(app.state.scheduler.run())
+        tasks.append(app.state.scheduler_task)
         if refresh_models if refresh_models is not None else agent_factory is None:
             tasks.append(
                 asyncio.create_task(
@@ -379,6 +421,7 @@ def create_app(
             for task in list(app.state.background):
                 with suppress(asyncio.CancelledError):
                     await task
+            await app.state.specialists.shutdown()
             await app.state.commands.aclose()
             await app.state.terminals.aclose()
             await app.state.sessions.shutdown()

@@ -149,6 +149,8 @@ class SessionOut(BaseModel):
     remote_control_error: str | None = None
     # Labels applied (ids of `GET /api/labels`), ordered by id.
     label_ids: list[int] = []
+    # The agent (`GET /api/specialists`) that started the session; None for an ordinary one.
+    specialist_id: int | None = None
 
 
 class MatchPartOut(BaseModel):

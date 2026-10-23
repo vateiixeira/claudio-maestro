@@ -585,6 +585,10 @@ def build_app(port: int) -> FastAPI:
     (off), `ports` and `frontend_dir` (this server), `restart` (None: no restart or update
     button), `run_mode` (fixed, reads nothing from the system) and `self_updater` (None: the
     real one, which with `restart=None` refuses before running anything).
+
+    The agents (specialists) need no parameter: their folders live under `MAESTRO_DATA_DIR`
+    (inside the temporary root), their sessions go through `agent_factory` and their
+    schedules read the usage through `fetch_usage`, so nothing of theirs reaches real data.
     """
     from claudio_maestro.app import create_app
 

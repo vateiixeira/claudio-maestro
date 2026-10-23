@@ -459,7 +459,7 @@ _COLUMNS = (
 _INTERNAL_FIELDS = (
     "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
     "plan_path", "plan_link", "history_dir", "turn_open", "detached_at",
-    "remote_control_bridge", "spawn_version", "specialist_id",
+    "remote_control_bridge", "spawn_version",
 )
 _BOOL_FIELDS = (
     "finished", "title_custom", "rename_pending", "turn_open", "priority", "remote_control"

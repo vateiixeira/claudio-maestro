@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from claudio_maestro import groups, projects
 from claudio_maestro.api.deps import DbDep, SettingsDep
+from claudio_maestro.specialists import store
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +135,18 @@ async def delete_project(project_id: int, conn: DbDep, request: Request) -> Resp
         await manager.close_project(project_id)
         # Their groups die with the project: remember who sat in them from other projects.
         released = groups.foreign_members(conn, project_id)
+        # The cascade takes the project's agents out of the database; their folders
+        # (skill, learnings, secrets) go too.
+        orphans = [s for s in store.list_specialists(conn) if s.project_id == project_id]
         projects.delete_project(conn, project_id)
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
+    for specialist in orphans:
+        request.app.state.specialist_files.delete(specialist.slug)
+        request.app.state.hub.publish(
+            {"session_id": None, "seq": 0, "type": "specialist.changed",
+             "data": {"id": specialist.id}}
+        )
     # The cascade took the project's sessions, and their labels, out of the database.
     manager.reconcile_label_ids()
     if released:

@@ -145,7 +145,8 @@ def _check_secret_value(name: str, value: object) -> None:
 
 def _check_secret_name(name: str) -> None:
     if not isinstance(name, str) or not SECRET_NAME_PATTERN.fullmatch(name):
-        raise InvalidSecretNameError(f"Nome de segredo inválido: use letras maiúsculas, números e '_' ({name!r}).")
+        # Never quotes the name: it may be a token pasted in the wrong field.
+        raise InvalidSecretNameError("Nome de segredo inválido: use letras maiúsculas, números e _.")
 
 
 class SpecialistFiles:
