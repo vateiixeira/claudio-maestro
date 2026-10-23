@@ -41,10 +41,15 @@ uv run ruff check              # lint do backend
 pnpm --dir frontend test       # frontend
 pnpm --dir frontend build      # compilação e checagem de tipos
 pnpm --dir frontend e2e        # testes de ponta a ponta no navegador
-scripts/check.sh               # tudo acima de uma vez, como na CI
+scripts/check.sh               # só o que a mudança pede
+scripts/check.sh --e2e         # o que a mudança pede, mais o E2E
+scripts/check.sh --all         # tudo, menos o E2E
+scripts/check.sh --full        # tudo, igual à CI
 ```
 
-A CI roda tudo isso em cada pull request: o backend no Linux e no macOS; o frontend e o E2E no Linux.
+Sem argumentos, o `scripts/check.sh` compara o que mudou com a `develop` (commitado ou não) e roda só o necessário: mudança em `backend/`, `pyproject.toml`, `uv.lock` ou `scripts/` roda o ruff e o pytest; em `frontend/`, os testes e a compilação; em `.github/` ou no próprio `check.sh`, tudo menos o E2E; só documentação, nada. Ele diz o que vai rodar e por quê, e roda todas as verificações escolhidas mesmo quando uma falha. Sem a `develop` (nem a local nem `origin/develop`), ele roda como `--all`. Rode `--full` quando quiser a mesma cobertura da CI.
+
+A CI roda tudo isso (o mesmo que o `--full`) em cada pull request e em cada push na `main`: o backend no Linux e no macOS; o frontend e o E2E no Linux.
 
 ### Testes de ponta a ponta (E2E)
 
@@ -93,8 +98,15 @@ Formato: `[Tipo] Título`, em português, verbo no infinitivo, até 72 caractere
 
 Exemplo: `[Feat] Mostrar a branch de cada worktree no menu lateral`.
 
+## Branches
+
+- A `develop` é a branch de integração. O trabalho parte dela e volta para ela, e é o que o mantenedor roda no dia a dia. Ela deve estar sempre pronta para lançar.
+- A `main` só recebe releases. Ninguém faz commit direto nela, e ela só avança por fast-forward, a partir da `develop`.
+- A branch padrão do GitHub continua sendo a `main`, para quem clona receber a versão estável.
+
 ## Pull requests
 
+- Abra o PR contra a `develop`, não contra a `main`. O Dependabot também mira a `develop`.
 - Um assunto por PR.
 - Diga o que mudou e como você testou. Mudança visual pede uma captura de tela.
 - CI verde antes da revisão.
@@ -102,7 +114,13 @@ Exemplo: `[Feat] Mostrar a branch de cada worktree no menu lateral`.
 
 ## Lançar uma versão
 
-Para quem mantém o projeto. No Claude Code, `/release` (com `patch`, `minor` ou `atual`; sem argumento, ele sugere o tipo olhando o CHANGELOG) conduz tudo: confere a CI, revisa o "Não lançado" com você, carimba o CHANGELOG e o `pyproject.toml`, atualiza o `uv.lock`, roda as verificações e só publica depois do seu "ok" (push na `main`, tag `vX.Y.Z` e release no GitHub). O cálculo da versão e a troca nos arquivos ficam em `scripts/release.py` (`suggest`, `check` e `prepare`), que também dá para rodar à mão. O passo a passo está em `.claude/skills/release/SKILL.md`.
+Para quem mantém o projeto. A versão sai da `develop`; o GitHub confere e publica.
+
+No Claude Code, `/release` (com `patch`, `minor` ou `atual`; sem argumento, ele sugere o tipo olhando o CHANGELOG) conduz o lado local: revisa o "Não lançado" com você, carimba o CHANGELOG e o `pyproject.toml`, atualiza o `uv.lock` e, só depois do seu "ok", faz `git push --atomic origin HEAD:develop HEAD:main` do commit `[Release]`. Os dois destinos precisam ser fast-forward; ele nunca faz merge nem force push. Não espera a CI.
+
+O push na `main` roda a CI completa. Se todos os jobs passam, o workflow `Release` (`.github/workflows/release.yml`) cria a tag anotada `vX.Y.Z` e publica a release com as notas da versão no CHANGELOG. Se a CI falhar, a `main` fica com o commit `[Release]`, mas sem tag e sem release, e o app de quem instalou não oferece atualização. A correção entra na `develop` pelo fluxo normal, e um novo `/release` percebe que a versão já está carimbada e sem tag: não carimba de novo, só envia a `develop` para a `main`.
+
+O cálculo da versão e a troca nos arquivos ficam em `scripts/release.py` (`suggest`, `check`, `prepare`, `pending` e `notes`), que também dá para rodar à mão. O passo a passo está em `.claude/skills/release/SKILL.md`.
 
 Os scripts de `scripts/` são ferramentas de quem mantém o projeto e chamam o `git` direto; a regra do `run_git` vale para o app, não para eles.
 

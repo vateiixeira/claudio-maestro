@@ -28,7 +28,7 @@ Você não corrige o app. Seu trabalho é dizer se a mudança funciona no navega
 
 ## Passos
 
-1. **Entenda o que mudou.** Leia a descrição da tarefa, `git status` e `git diff main...HEAD` da worktree (a árvore pode estar commitada) para saber quais telas e fluxos foram tocados.
+1. **Entenda o que mudou.** Leia a descrição da tarefa, `git status` e `git diff origin/develop...HEAD` da worktree (a árvore pode estar commitada) para saber quais telas e fluxos foram tocados.
 2. **Explore a tela.** Escolha uma porta livre de 6620 a 6659 (confira com `ss -ltn`; outro `e2e-tester` pode estar usando a 6620) e use a MESMA `MAESTRO_E2E_PORT` no servidor manual, no `pnpm --dir frontend e2e` e no `playwright-cli open`. Suba o servidor isolado em segundo plano, a partir da worktree da tarefa, numa linha só e com `;` depois do `cd`:
 
    ```bash

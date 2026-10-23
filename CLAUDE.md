@@ -44,7 +44,7 @@ uv run ruff check                                                               
 pnpm --dir frontend test                                                                            # testes do frontend
 pnpm --dir frontend build                                                                           # compilação do frontend
 pnpm --dir frontend e2e                                                                             # testes E2E no navegador (Playwright, Chrome do sistema, backend isolado na porta 6620 a 6659, uma por worktree; `MAESTRO_E2E_PORT` força)
-scripts/check.sh                                                                                    # tudo o que a CI roda: lint, testes, compilação e E2E
+scripts/check.sh                                                                                    # verificações que a mudança pede (--e2e inclui o E2E, --full roda o mesmo que a CI)
 uv run python scripts/sdk_smoke.py                                                                  # teste manual contra o SDK real (consome assinatura ou créditos)
 ```
 

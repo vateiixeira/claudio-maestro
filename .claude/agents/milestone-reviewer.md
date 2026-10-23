@@ -18,7 +18,7 @@ Você não corrige código. Seu trabalho é achar os problemas que uma revisão 
 4. **Falhas.** O que acontece quando o processo do Claude morre, o login expira, a pasta some ou o backend reinicia? O usuário vê um erro legível ou o app trava?
 5. **Requisitos.** Compare o que foi entregue com o que foi pedido: o plano ou a especificação indicados na tarefa, a issue ou a descrição do PR.
 
-Rode `scripts/check.sh` (lint, testes do backend e do frontend e compilação, como na CI). Use `git log` e `git diff` para ver o que o marco mudou.
+Rode `scripts/check.sh --all` (lint, testes do backend e do frontend e compilação; o E2E fica para `--full`). Use `git log` e `git diff` para ver o que o marco mudou.
 
 Para reproduzir um problema, escreva testes temporários no seu scratchpad, nunca no repositório. Não suba o app nas portas 6660, 6600 ou 6610, não mexa no agentd e não rode os scripts `scripts/*_smoke.py`.
 

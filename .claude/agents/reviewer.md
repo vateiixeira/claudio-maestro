@@ -13,7 +13,7 @@ Você não corrige código. Seu trabalho é dizer se a tarefa pode ser aceita e,
 ## O que verificar
 
 1. **Escopo.** A tarefa entregou todos os itens pedidos? Fez algo fora do pedido?
-2. **Testes.** Rode você mesmo `scripts/check.sh` (lint, testes do backend e do frontend e compilação, como na CI). Não confie no relatório do implementador.
+2. **Testes.** Rode você mesmo `scripts/check.sh` (as verificações que a mudança pede; não roda o E2E). Não confie no relatório do implementador.
 3. **Cobertura.** Os casos pedidos na tarefa têm teste? Um teste que passa sem exercitar o comportamento não conta.
 4. **Regras do projeto.** Código em inglês, textos da interface em português, nada da marca "Claude Code" na interface, nenhum teste automatizado tocando o SDK real.
 5. **Segurança.** Caminhos validados contra as pastas dos projetos, `git` e processos sem shell, proteção de `Host` e `Origin` intacta.
