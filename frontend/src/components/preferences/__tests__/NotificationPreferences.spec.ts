@@ -76,6 +76,8 @@ describe('preferências de notificações', () => {
     expect(box(w, 'question').element.checked).toBe(true)
     expect(box(w, 'plan').element.checked).toBe(true)
     expect(box(w, 'finished').element.checked).toBe(false)
+    expect(box(w, 'specialistNotice').element.checked).toBe(true)
+    expect(w.text()).toContain('Avisos dos agentes')
     // "Subagente falhou" fica fora da tela enquanto a lista de sessões não traz essa informação.
     expect(box(w, 'subagentFailed').exists()).toBe(false)
     expect(w.text()).not.toContain('Subagente')

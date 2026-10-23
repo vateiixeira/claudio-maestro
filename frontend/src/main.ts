@@ -8,8 +8,9 @@ import { useEventSocket } from './api/socket'
 import { bindRealtime } from './stores/realtime'
 import { applyUiScale, uiScale } from './uiScale'
 import { applyTheme, theme } from './theme'
-import { bindNotifications } from './notifications'
+import { bindNotifications, bindSpecialistNotifications } from './notifications'
 import { useSessionsStore } from './stores/sessions'
+import { useSpecialistsStore } from './stores/specialists'
 import { startLive } from './liveStart'
 
 const router = createAppRouter()
@@ -23,6 +24,8 @@ void startLive(router, () => {
 
   // System notifications when a conversation needs the user. Permission is only asked from Preferences.
   bindNotifications(useSessionsStore(), (id) => void router.push({ name: 'session', params: { id } }))
+  // The same for the notices the agents leave; with no conversation to open, the click goes to the Inbox.
+  bindSpecialistNotifications(useSpecialistsStore(), (id) => void router.push(id ? { name: 'session', params: { id } } : '/inbox'))
 })
 
 applyUiScale(uiScale.value)

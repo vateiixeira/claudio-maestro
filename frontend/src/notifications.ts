@@ -2,7 +2,8 @@ import { ref, watch } from 'vue'
 import { hasRequest, isDiscarded } from './conversation/marks'
 import { needsYou } from './conversation/needsYou'
 import { notificationPrefs, type NotificationPrefs } from './notificationPrefs'
-import type { Session } from './types/api'
+import type { useSpecialistsStore } from './stores/specialists'
+import type { Session, SpecialistNotice } from './types/api'
 
 /** Why the user is told: a request from Claude (permission, question, plan), the end of a turn, or a failed subagent. */
 export type NotifyKind = 'permission' | 'question' | 'plan' | 'finished' | 'subagent'
@@ -155,6 +156,39 @@ export function notifySession(kind: NotifyKind, session: Session, open: (session
   }
   if (prefs.sound && SOUND_KINDS.includes(kind)) playAlertSound()
   return true
+}
+
+/**
+ * Shows the notification of a notice an agent left, under the same options as the sessions' (permission granted,
+ * "Avisos dos agentes" on, "só fora de foco"), without the beep. Clicking it calls `open` with the session of the
+ * notice, or `null` when it has none (the Inbox).
+ */
+export function notifySpecialistNotice(
+  notice: SpecialistNotice,
+  agentName: string | null,
+  open: (sessionId: string | null) => void,
+): boolean {
+  const prefs = notificationPrefs.value
+  if (!prefs.specialistNotice || notice.read_at !== null) return false
+  if (prefs.onlyWhenHidden && !document.hidden) return false
+  const shown = show(agentName || 'Agente', clip(notice.text), `specialist-notice-${notice.id}`)
+  if (!shown) return false
+  shown.onclick = () => {
+    window.focus()
+    shown.close()
+    open(notice.session_id)
+  }
+  return true
+}
+
+/** Notifies each notice that arrives by event. Returns the function that stops it. */
+export function bindSpecialistNotifications(
+  store: ReturnType<typeof useSpecialistsStore>,
+  open: (sessionId: string | null) => void,
+): () => void {
+  return store.onNewNotice((notice) => {
+    notifySpecialistNotice(notice, store.byId(notice.specialist_id)?.name ?? null, open)
+  })
 }
 
 /** The "Testar" button: shows right away, whatever the options. */

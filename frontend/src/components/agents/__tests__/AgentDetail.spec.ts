@@ -425,8 +425,8 @@ describe('AgentDetail', () => {
     it('mostra a tabela e remove por linha', async () => {
       const { wrapper, fetch } = await mountDetail(makeSpecialist(), {
         'GET /api/specialists/1/items': () => jsonResponse([item(), item({ key: 'grupo/SENTRY 2', link: 'javascript:alert(1)', note: null })]),
-        'DELETE /api/specialists/1/items/SENTRY-1': () => new Response(null, { status: 204 }),
-        'DELETE /api/specialists/1/items/grupo/SENTRY%202': () => new Response(null, { status: 204 }),
+        'DELETE /api/specialists/1/items?key=SENTRY-1': () => new Response(null, { status: 204 }),
+        'DELETE /api/specialists/1/items?key=grupo%2FSENTRY%202': () => new Response(null, { status: 204 }),
       })
       const rows = wrapper.findAll('[data-test="item-row"]')
       expect(rows).toHaveLength(2)
@@ -438,7 +438,7 @@ describe('AgentDetail', () => {
       expect(rows[1]!.find('a').exists()).toBe(false)
       await rows[1]!.get('[data-test="item-remove"]').trigger('click')
       await flushPromises()
-      expect(fetch.mock.calls.some(([u, init]) => u === '/api/specialists/1/items/grupo/SENTRY%202' && init?.method === 'DELETE')).toBe(true)
+      expect(fetch.mock.calls.some(([u, init]) => u === '/api/specialists/1/items?key=grupo%2FSENTRY%202' && init?.method === 'DELETE')).toBe(true)
       expect(wrapper.findAll('[data-test="item-row"]')).toHaveLength(1)
     })
 

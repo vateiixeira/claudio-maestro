@@ -14,6 +14,7 @@ const OPTIONS: Array<{ key: keyof NotificationPrefs; label: string }> = [
   { key: 'question', label: 'Pergunta' },
   { key: 'plan', label: 'Plano para aprovar' },
   { key: 'finished', label: 'Turno concluído' },
+  { key: 'specialistNotice', label: 'Avisos dos agentes' },
 ]
 
 // The permission can change in the browser's own settings while this screen stays closed.

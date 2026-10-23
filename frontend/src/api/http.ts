@@ -551,9 +551,8 @@ export function listSpecialistItems(id: number): Promise<SpecialistItem[]> {
 }
 
 export function deleteSpecialistItem(id: number, key: string): Promise<void> {
-  // The route takes the key as a path: keep its slashes, encode the rest.
-  const path = key.split('/').map(encodeURIComponent).join('/')
-  return request('DELETE', `/api/specialists/${id}/items/${path}`)
+  // The key goes in the query string, whole: it can hold slashes and dots that a path would reinterpret.
+  return request('DELETE', `/api/specialists/${id}/items?key=${encodeURIComponent(key)}`)
 }
 
 export function listSpecialistRuns(id: number, limit = 50): Promise<SpecialistRun[]> {

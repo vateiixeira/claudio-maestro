@@ -28,6 +28,7 @@ export const useSpecialistsStore = defineStore('specialists', () => {
   /** Bumped by every `specialist.changed` of an agent: the detail rereads its files when it moves. */
   const changes = ref<Record<number, number>>({})
   let ticket = 0
+  const noticeListeners = new Set<(notice: SpecialistNotice) => void>()
 
   const unreadCount = computed(() => notices.value.filter((n) => n.read_at === null).length)
 
@@ -145,11 +146,18 @@ export const useSpecialistsStore = defineStore('specialists', () => {
     }
     if (!isNotice(data) || notices.value.some((n) => n.id === data.id)) return
     notices.value = [data, ...notices.value]
+    for (const listener of [...noticeListeners]) listener(data)
+  }
+
+  /** Calls `listener` for each notice that arrives by event (not the ones the list loads). Returns the function that stops it. */
+  function onNewNotice(listener: (notice: SpecialistNotice) => void): () => void {
+    noticeListeners.add(listener)
+    return () => { noticeListeners.delete(listener) }
   }
 
   return {
     list, loaded, error, notices, noticesError, runs, changes, unreadCount,
     byId, runsOf, load, loadRuns, loadNotices, create, update, remove, runNow, markRead,
-    applyChanged, applyRun, applyNotice,
+    applyChanged, applyRun, applyNotice, onNewNotice,
   }
 })

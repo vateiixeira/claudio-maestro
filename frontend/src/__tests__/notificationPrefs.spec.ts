@@ -9,6 +9,7 @@ const DEFAULTS = {
   plan: true,
   finished: false,
   subagentFailed: true,
+  specialistNotice: true,
   onlyWhenHidden: true,
   sound: false,
 }

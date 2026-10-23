@@ -126,6 +126,22 @@ describe('specialists store', () => {
     expect(store.notices).toHaveLength(2)
   })
 
+  it('avisa os ouvintes só de um aviso novo, nunca de read_ids, de repetido ou do que veio da lista', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/specialist-notices': () => jsonResponse([makeSpecialistNotice({ id: 1 })]) }))
+    const store = useSpecialistsStore()
+    const heard: number[] = []
+    const off = store.onNewNotice((n) => heard.push(n.id))
+    await store.loadNotices()
+    store.applyNotice({ read_ids: [1] })
+    store.applyNotice(makeSpecialistNotice({ id: 2 }))
+    store.applyNotice(makeSpecialistNotice({ id: 2 }))
+    store.applyNotice({ foo: 1 })
+    expect(heard).toEqual([2])
+    off()
+    store.applyNotice(makeSpecialistNotice({ id: 3 }))
+    expect(heard).toEqual([2])
+  })
+
   it('specialist.notice com read_ids marca como lidos', () => {
     const store = useSpecialistsStore()
     store.notices = [makeSpecialistNotice({ id: 1 }), makeSpecialistNotice({ id: 2 }), makeSpecialistNotice({ id: 3 })]

@@ -14,6 +14,8 @@ export interface NotificationPrefs {
   finished: boolean
   /** A subagent failed. */
   subagentFailed: boolean
+  /** An agent left a notice. */
+  specialistNotice: boolean
   /** Only while the app is not in the foreground. */
   onlyWhenHidden: boolean
   /** A short beep with permission, question and plan. */
@@ -26,6 +28,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   plan: true,
   finished: false,
   subagentFailed: true,
+  specialistNotice: true,
   onlyWhenHidden: true,
   sound: false,
 }

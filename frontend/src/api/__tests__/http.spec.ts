@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, closeTerminal, createProject, deleteProject, listCommands, listDirs, listProjects, runInTerminal, searchFiles, suggestSessionTitles } from '../http'
+import { ApiError, closeTerminal, createProject, deleteProject, deleteSpecialistItem, listCommands, listDirs, listProjects, runInTerminal, searchFiles, suggestSessionTitles } from '../http'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -180,5 +180,16 @@ describe('terminal da sessão', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(closeTerminal('s1')).resolves.toBeUndefined()
     expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s1/terminal', expect.objectContaining({ method: 'DELETE' }))
+  })
+})
+
+describe('registro dos agentes', () => {
+  it('manda a chave do item na query, codificada, e não no caminho', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await deleteSpecialistItem(3, 'a/../b')
+    expect(fetchMock).toHaveBeenCalledWith('/api/specialists/3/items?key=a%2F..%2Fb', expect.objectContaining({ method: 'DELETE' }))
+    await deleteSpecialistItem(3, 'SENTRY 1&x=2')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/specialists/3/items?key=SENTRY%201%26x%3D2', expect.objectContaining({ method: 'DELETE' }))
   })
 })

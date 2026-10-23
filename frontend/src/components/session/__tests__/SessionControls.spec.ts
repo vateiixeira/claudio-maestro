@@ -599,3 +599,28 @@ describe('Remote Control', () => {
     expect(patches).toEqual([])
   })
 })
+
+describe('sessão de agente', () => {
+  const EXPLANATION = 'Sessões de agente ficam no modo padrão; as ações para fora seguem a autonomia do agente.'
+
+  it('o seletor de modo fica desabilitado, com a explicação', async () => {
+    setup()
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', specialist_id: 3 })])
+    const w = await mountControls()
+    expect(button(w, 'Permissões').attributes('disabled')).toBeDefined()
+    expect(button(w, 'Permissões').attributes('title')).toBe(EXPLANATION)
+    await button(w, 'Permissões').trigger('click')
+    expect(body().find('[role="menu"]').exists()).toBe(false)
+    expect(patches).toEqual([])
+    // os outros seletores seguem ativos
+    expect(button(w, 'Modelo').attributes('disabled')).toBeUndefined()
+  })
+
+  it('numa sessão comum o seletor de modo continua ativo e sem a explicação', async () => {
+    setup()
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', specialist_id: null })])
+    const w = await mountControls()
+    expect(button(w, 'Permissões').attributes('disabled')).toBeUndefined()
+    expect(button(w, 'Permissões').attributes('title')).toBeUndefined()
+  })
+})

@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { FakeAudioContext, FakeNotification, installFakeNotification } from '../test/fakeNotification'
-import { makeSession } from '../test/factories'
+import { makeSession, makeSpecialist, makeSpecialistNotice } from '../test/factories'
 import { useSessionsStore } from '../stores/sessions'
+import { useSpecialistsStore } from '../stores/specialists'
 import { notificationPrefs, setNotificationPref, DEFAULT_NOTIFICATION_PREFS } from '../notificationPrefs'
 import {
   bindNotifications,
+  bindSpecialistNotifications,
+  notifySpecialistNotice,
   notificationPermission,
   notifySession,
   playAlertSound,
@@ -364,5 +367,100 @@ describe('sessão descartada não avisa', () => {
   })
   it('restaurar uma sessão com pedido já visto não avisa de novo', () => {
     expect(transitionKind(snapshotOf(asking({ mark: 'discarded' })), snapshotOf(asking()))).toBeNull()
+  })
+})
+
+describe('avisos dos agentes', () => {
+  const open = vi.fn()
+  beforeEach(() => open.mockReset())
+
+  it('mostra o nome do agente e o texto do aviso', () => {
+    const fake = installFakeNotification('granted')
+    const notice = makeSpecialistNotice({ id: 4, text: 'Tratei 2 erros.' })
+    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(true)
+    expect(fake.instances[0]!.title).toBe('Sentry')
+    expect(fake.instances[0]!.options.body).toBe('Tratei 2 erros.')
+    expect(fake.instances[0]!.options.tag).toBe('specialist-notice-4')
+  })
+
+  it('sem o agente carregado o título é "Agente", e o texto é cortado como nas outras', () => {
+    const fake = installFakeNotification('granted')
+    notifySpecialistNotice(makeSpecialistNotice({ text: 'x'.repeat(300) }), null, open)
+    expect(fake.instances[0]!.title).toBe('Agente')
+    expect(fake.instances[0]!.options.body).toBe(`${'x'.repeat(99)}…`)
+  })
+
+  it('clicar abre a conversa, ou a Inbox quando o aviso não tem sessão', () => {
+    const fake = installFakeNotification('granted')
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => {})
+    notifySpecialistNotice(makeSpecialistNotice({ session_id: 'abc' }), 'Sentry', open)
+    notifySpecialistNotice(makeSpecialistNotice({ id: 2, session_id: null }), 'Sentry', open)
+    fake.instances[0]!.click()
+    fake.instances[1]!.click()
+    expect(focus).toHaveBeenCalledTimes(2)
+    expect(open).toHaveBeenNthCalledWith(1, 'abc')
+    expect(open).toHaveBeenNthCalledWith(2, null)
+  })
+
+  it('respeita a permissão, a preferência e o "só fora de foco", sem tocar som', () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    setNotificationPref('sound', true)
+    const notice = makeSpecialistNotice()
+    installFakeNotification('default')
+    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(false)
+    const fake = installFakeNotification('granted')
+    setNotificationPref('specialistNotice', false)
+    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(false)
+    setNotificationPref('specialistNotice', true)
+    setHidden(false)
+    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(false)
+    setHidden(true)
+    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(true)
+    expect(fake.instances).toHaveLength(1)
+    expect(FakeAudioContext.created).toHaveLength(0)
+  })
+
+  it('não notifica um aviso já lido', () => {
+    const fake = installFakeNotification('granted')
+    expect(notifySpecialistNotice(makeSpecialistNotice({ read_at: 1_790_000_100 }), 'Sentry', open)).toBe(false)
+    expect(fake.instances).toHaveLength(0)
+  })
+
+  describe('bindSpecialistNotifications', () => {
+    let stop: () => void
+    let store: ReturnType<typeof useSpecialistsStore>
+    beforeEach(() => {
+      setActivePinia(createPinia())
+      store = useSpecialistsStore()
+      store.list = [makeSpecialist({ id: 7, name: 'Filmes' })]
+    })
+    afterEach(() => stop?.())
+
+    it('um aviso novo notifica com o nome do agente; read_ids não', () => {
+      const fake = installFakeNotification('granted')
+      stop = bindSpecialistNotifications(store, open)
+      store.applyNotice({ read_ids: [1] })
+      expect(fake.instances).toHaveLength(0)
+      store.applyNotice(makeSpecialistNotice({ id: 5, specialist_id: 7, text: 'Achei um filme.' }))
+      expect(fake.instances).toHaveLength(1)
+      expect(fake.instances[0]!.title).toBe('Filmes')
+      expect(fake.instances[0]!.options.body).toBe('Achei um filme.')
+    })
+
+    it('com a preferência desligada não notifica', () => {
+      const fake = installFakeNotification('granted')
+      setNotificationPref('specialistNotice', false)
+      stop = bindSpecialistNotifications(store, open)
+      store.applyNotice(makeSpecialistNotice({ id: 5, specialist_id: 7 }))
+      expect(fake.instances).toHaveLength(0)
+    })
+
+    it('depois de parar, não notifica mais', () => {
+      const fake = installFakeNotification('granted')
+      stop = bindSpecialistNotifications(store, open)
+      stop()
+      store.applyNotice(makeSpecialistNotice({ id: 5, specialist_id: 7 }))
+      expect(fake.instances).toHaveLength(0)
+    })
   })
 })
