@@ -39,6 +39,8 @@ from claudio_maestro.config import (
 )
 from claudio_maestro.digest.model import DigestModelError, DigestRequest
 from claudio_maestro.runmode import RunMode
+from claudio_maestro.specialists import store as specialist_store
+from claudio_maestro.specialists.files import SpecialistFiles
 from claudio_maestro.updates import ReleaseInfo
 from claudio_maestro.usage import UsageReport
 
@@ -117,6 +119,24 @@ GIT_SCENARIO = [
     {"name": "Sincronia Demo", "slug": "sincronia-demo", "color": "#58a6ff", "git": "sync"},
     {"name": "Ramos Demo", "slug": "ramos-demo", "color": "#f0883e", "git": "branches"},
 ]
+
+
+# The agent the "Agentes" and Inbox specs expect (seeded by `_seed_specialists`).
+TRIAGEM_PROJECT = "Loja Demo"
+TRIAGEM_FAILURE_REASON = "O token do repositório expirou."
+TRIAGEM_ALERT_TEXT = "A Triagem falhou nas últimas execuções."
+TRIAGEM_SUMMARY_TEXT = "Triagem concluída: 3 itens novos."
+TRIAGEM_SKILL = """---
+name: Triagem
+description: Separa os chamados novos por urgência e responde os simples.
+---
+
+# Triagem
+
+1. Leia os chamados abertos desde a última execução.
+2. Marque como urgentes os que citam queda ou cobrança em duplicidade.
+3. Responda os pedidos simples e deixe o resto para uma pessoa.
+"""
 
 
 class E2EError(Exception):
@@ -483,6 +503,36 @@ def seed_git(root: Path, home: Path, conn) -> None:
         )
 
 
+def _seed_specialists(settings, conn, now: datetime) -> None:
+    """Seed the "Triagem" agent (with a skill, a schedule, two runs and two notices), so the
+    Agentes page and the Inbox have something to show. Everything goes under the temporary
+    data folder: no route creates notices, only the service during a run."""
+    stamp = int(now.timestamp())
+    project = next(p for p in projects.list_projects(conn) if p.name == TRIAGEM_PROJECT)
+    files = SpecialistFiles(settings.data_dir / "specialists")
+    files.create("triagem", "Triagem")
+    files.write_skill("triagem", TRIAGEM_SKILL)
+    agent = specialist_store.create_specialist(
+        conn, slug="triagem", name="Triagem", project_id=project.id, now=stamp
+    )
+    specialist_store.replace_schedules(conn, agent.id, [("12345", "03:00")], stamp)
+    for hours_ago, outcome, reason in ((26, "concluded", None), (2, "failed", TRIAGEM_FAILURE_REASON)):
+        started = stamp - hours_ago * 3600
+        specialist_store.insert_run(
+            conn, specialist_id=agent.id, trigger="schedule", started_at=started,
+            scheduled_for=started, outcome=outcome, reason=reason, ended_at=started + 120,
+        )
+    specialist_store.add_notice(
+        conn, specialist_id=agent.id, session_id=None, kind="alert",
+        text=TRIAGEM_ALERT_TEXT, now=stamp - 3600,
+    )
+    summary = specialist_store.add_notice(
+        conn, specialist_id=agent.id, session_id=None, kind="summary",
+        text=TRIAGEM_SUMMARY_TEXT, now=stamp - 25 * 3600,
+    )
+    specialist_store.mark_notices_read(conn, [summary.id], stamp - 24 * 3600)
+
+
 def seed(root: Path) -> None:
     """Create the database, the projects and the conversations of `SCENARIO`, and the git
     projects of `GIT_SCENARIO`.
@@ -520,6 +570,7 @@ def seed(root: Path) -> None:
                     started, conversation.get("subagents"), conversation.get("filler_turns", 0),
                 )
         seed_git(root, settings.home_dir, conn)
+        _seed_specialists(settings, conn, now)
 
 
 def refuse_agent(options: AgentOptions) -> AgentClient:
