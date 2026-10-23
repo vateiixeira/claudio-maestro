@@ -79,7 +79,7 @@ def make_project(tmp_path: Path, *, changelog: str = CHANGELOG, tag: str | None 
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
     repo = tmp_path / "work"
     repo.mkdir()
-    run(repo, "init", "-q", "-b", "main")
+    run(repo, "init", "-q", "-b", "develop")
     run(repo, "config", "user.name", "Teste")
     run(repo, "config", "user.email", "teste@example.com")
     run(repo, "config", "commit.gpgsign", "false")
@@ -88,7 +88,8 @@ def make_project(tmp_path: Path, *, changelog: str = CHANGELOG, tag: str | None 
     (repo / "CHANGELOG.md").write_text(changelog)
     commit_all(repo, "inicial")
     run(repo, "remote", "add", "origin", str(bare))
-    run(repo, "push", "-q", "-u", "origin", "main")
+    run(repo, "push", "-q", "-u", "origin", "develop")
+    run(repo, "push", "-q", "origin", "develop:main")
     if tag:
         run(repo, "tag", "-a", tag, "-m", tag)
         run(repo, "push", "-q", "origin", tag)
@@ -99,7 +100,7 @@ def set_version(repo: Path, version: str) -> None:
     path = repo / "pyproject.toml"
     path.write_text(path.read_text().replace('version = "0.1.0"', f'version = "{version}"', 1))
     commit_all(repo, "versão")
-    run(repo, "push", "-q", "origin", "main")
+    run(repo, "push", "-q", "origin", "develop")
 
 
 @pytest.fixture
@@ -229,54 +230,56 @@ def test_check_fails_with_modified_tracked_file(repo):
         release.check(repo, "minor")
 
 
-def test_check_fails_when_head_is_ahead_of_origin_main(repo):
+def test_check_fails_when_head_is_ahead_of_origin_develop(repo):
     (repo / "a.txt").write_text("a")
     commit_all(repo)
-    with pytest.raises(release.ReleaseError, match="origin/main"):
+    with pytest.raises(release.ReleaseError, match="origin/develop"):
         release.check(repo, "minor")
 
 
-def test_check_fails_when_head_is_behind_origin_main(repo):
+def test_check_fails_when_head_is_behind_origin_develop(repo):
     (repo / "a.txt").write_text("a")
     commit_all(repo)
-    run(repo, "push", "-q", "origin", "main")
+    run(repo, "push", "-q", "origin", "develop")
     run(repo, "reset", "-q", "--hard", "HEAD~1")
-    with pytest.raises(release.ReleaseError, match="origin/main"):
+    with pytest.raises(release.ReleaseError, match="origin/develop"):
         release.check(repo, "minor")
 
 
-def test_check_fails_when_origin_main_moved_after_local_clone(repo, tmp_path):
+def clone_other(tmp_path: Path) -> Path:
     other = tmp_path / "other"
     subprocess.run(["git", "clone", "-q", str(tmp_path / "origin.git"), str(other)], check=True)
     run(other, "config", "user.name", "Outro")
     run(other, "config", "user.email", "outro@example.com")
     run(other, "config", "commit.gpgsign", "false")
+    return other
+
+
+def test_check_fails_when_origin_develop_moved_after_local_clone(repo, tmp_path):
+    other = clone_other(tmp_path)
+    run(other, "checkout", "-q", "develop")
+    (other / "b.txt").write_text("b")
+    commit_all(other)
+    run(other, "push", "-q", "origin", "develop")
+    # O fetch do check traz o avanço e o HEAD local deixa de ser o origin/develop.
+    with pytest.raises(release.ReleaseError, match="origin/develop"):
+        release.check(repo, "minor")
+
+
+def test_check_fails_when_main_is_not_ancestor_of_develop(repo, tmp_path):
+    other = clone_other(tmp_path)  # o clone começa na main
     (other / "b.txt").write_text("b")
     commit_all(other)
     run(other, "push", "-q", "origin", "main")
-    # O fetch do check traz o avanço e o HEAD local deixa de ser o origin/main.
-    with pytest.raises(release.ReleaseError, match="origin/main"):
+    with pytest.raises(release.ReleaseError, match="fast-forward"):
         release.check(repo, "minor")
 
 
-def test_check_fails_when_unreleased_is_empty(tmp_path):
-    changelog = CHANGELOG.split("### Adicionado")[0] + "## [0.1.0] - 2026-10-01\n\n- Algo.\n"
-    repo = make_project(tmp_path, changelog=changelog)
-    with pytest.raises(release.ReleaseError, match="Não lançado.*vazia"):
-        release.check(repo, "minor")
-
-
-def test_check_fails_when_unreleased_has_only_headings(tmp_path):
-    changelog = CHANGELOG.replace("- Item novo A.\n- Item novo B.\n", "").replace("- Correção X.\n", "")
-    repo = make_project(tmp_path, changelog=changelog)
-    with pytest.raises(release.ReleaseError, match="Não lançado.*vazia"):
-        release.check(repo, "minor")
-
-
-def test_check_fails_when_unreleased_section_is_missing(tmp_path):
-    repo = make_project(tmp_path, changelog="# Changelog\n\n## [0.1.0] - 2026-10-01\n\n- Algo.\n")
-    with pytest.raises(release.ReleaseError, match="Não lançado"):
-        release.check(repo, "minor")
+def test_check_passes_when_main_is_behind_develop(repo):
+    (repo / "a.txt").write_text("a")
+    commit_all(repo)
+    run(repo, "push", "-q", "origin", "develop")
+    assert release.check(repo, "minor")[0] == "0.2.0"
 
 
 def test_ensure_tag_absent_detects_local_tag(repo):
@@ -540,3 +543,109 @@ def test_prepare_writes_nothing_when_notes_file_cannot_be_written(repo, tmp_path
     assert "erro:" in capsys.readouterr().err
     assert (repo / "pyproject.toml").read_text() == PYPROJECT
     assert (repo / "CHANGELOG.md").read_text() == CHANGELOG
+
+
+# ---- notes -------------------------------------------------------------------
+
+
+def test_release_notes_returns_section_body():
+    assert release.release_notes(CHANGELOG, "0.1.0") == (
+        "Primeira versão pública.\n\n### Adicionado\n\n- Algo antigo.\n"
+    )
+
+
+def test_release_notes_stops_at_next_section():
+    text = CHANGELOG + "\n## [0.0.9] - 2026-09-01\n\nAnterior.\n"
+    assert release.release_notes(text, "0.1.0") == (
+        "Primeira versão pública.\n\n### Adicionado\n\n- Algo antigo.\n"
+    )
+    assert release.release_notes(text, "0.0.9") == "Anterior.\n"
+
+
+def test_release_notes_last_section_until_end():
+    text = "# Changelog\n\n## [0.2.0] - 2026-10-05\n\n\n### Corrigido\n\n- Só isto.\n\n\n"
+    assert release.release_notes(text, "0.2.0") == "### Corrigido\n\n- Só isto.\n"
+
+
+def test_release_notes_ignores_unreleased_and_other_versions():
+    with pytest.raises(release.ReleaseError, match=r"0\.1\.00"):
+        release.release_notes(CHANGELOG, "0.1.00")
+
+
+def test_release_notes_missing_version_raises():
+    with pytest.raises(release.ReleaseError, match=r"0\.9\.9"):
+        release.release_notes(CHANGELOG, "0.9.9")
+
+
+def test_notes_round_trip_with_prepare(repo, tmp_path):
+    code, notes = prepare(repo, tmp_path, "--summary", "Resumo.")
+    assert code == 0
+    assert release.release_notes((repo / "CHANGELOG.md").read_text(), "0.2.0") == notes.read_text()
+
+
+def test_main_notes_prints_and_writes_file(repo, tmp_path, capsys):
+    _, notes = prepare(repo, tmp_path, "--summary", "Resumo.")
+    capsys.readouterr()
+    assert release.main(["--repo", str(repo), "notes", "0.2.0"]) == 0
+    assert capsys.readouterr().out == notes.read_text()
+    out = tmp_path / "saida.md"
+    assert release.main(["--repo", str(repo), "notes", "0.2.0", "--out", str(out)]) == 0
+    assert capsys.readouterr().out == ""
+    assert out.read_text() == notes.read_text()
+
+
+def test_main_notes_missing_version_exits_one(repo, capsys):
+    assert release.main(["--repo", str(repo), "notes", "0.9.9"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "0.9.9" in captured.err
+
+
+def test_main_notes_does_not_touch_git(tmp_path, capsys):
+    (tmp_path / "CHANGELOG.md").write_text(CHANGELOG)  # sem repositório git
+    assert release.main(["--repo", str(tmp_path), "notes", "0.1.0"]) == 0
+    assert "Primeira versão pública." in capsys.readouterr().out
+
+
+# ---- pending -----------------------------------------------------------------
+
+
+def stamp_and_push(repo: Path, tmp_path: Path) -> None:
+    prepare(repo, tmp_path)
+    commit_all(repo, "versão 0.2.0")
+    run(repo, "push", "-q", "origin", "develop")
+
+
+def test_pending_none_when_nothing_stamped(repo):
+    assert release.pending(repo) is None
+
+
+def test_pending_none_when_version_bumped_but_not_stamped(repo):
+    set_version(repo, "0.2.0")
+    assert release.pending(repo) is None
+
+
+def test_pending_returns_stamped_untagged_version(repo, tmp_path):
+    stamp_and_push(repo, tmp_path)
+    assert release.pending(repo) == "0.2.0"
+
+
+def test_pending_none_after_tag(repo, tmp_path):
+    stamp_and_push(repo, tmp_path)
+    run(repo, "tag", "-a", "v0.2.0", "-m", "v0.2.0")
+    run(repo, "push", "-q", "origin", "v0.2.0")
+    assert release.pending(repo) is None
+
+
+def test_pending_without_tags_when_changelog_has_current_section(tmp_path):
+    repo = make_project(tmp_path, tag=None)
+    assert release.pending(repo) == "0.1.0"
+
+
+def test_main_pending_prints_line(repo, tmp_path, capsys):
+    assert release.main(["--repo", str(repo), "pending"]) == 0
+    assert capsys.readouterr().out == "pending=\n"
+    stamp_and_push(repo, tmp_path)
+    capsys.readouterr()
+    assert release.main(["--repo", str(repo), "pending"]) == 0
+    assert capsys.readouterr().out == "pending=0.2.0\n"

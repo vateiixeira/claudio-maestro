@@ -4,6 +4,8 @@ Subcommands:
   suggest   suggests the release kind (patch, minor or atual) and the new version
   check     computes the new version and validates that a release can start
   prepare   bumps the version in pyproject.toml and stamps the CHANGELOG
+  notes     prints (or writes) the CHANGELOG notes of a version; no git, no fetch
+  pending   prints `pending=X.Y.Z` when a version is stamped but not tagged yet
 
 This is a maintainer tool and only operates on the project's own repository, so it
 calls git directly with argument lists and no shell. It deliberately does not use
@@ -81,13 +83,26 @@ def ensure_clean_tree(repo: Path) -> None:
         )
 
 
-def ensure_head_is_origin_main(repo: Path) -> None:
+def ensure_head_is_origin_develop(repo: Path) -> None:
     head = git(repo, "rev-parse", "HEAD").stdout.strip()
-    remote = git(repo, "rev-parse", "--verify", "--quiet", "origin/main", check=False)
+    remote = git(repo, "rev-parse", "--verify", "--quiet", "origin/develop", check=False)
     if remote.returncode != 0 or remote.stdout.strip() != head:
         raise ReleaseError(
-            "o HEAD não é o mesmo commit de origin/main; crie a worktree de lançamento "
-            "a partir de `origin/main` atualizado (ou faça `git rebase origin/main`)."
+            "o HEAD não é o mesmo commit de origin/develop; crie a worktree de lançamento "
+            "a partir de `origin/develop` atualizado (ou faça `git rebase origin/develop`)."
+        )
+
+
+def ensure_main_is_ancestor_of_develop(repo: Path) -> None:
+    for name in ("origin/main", "origin/develop"):
+        found = git(repo, "rev-parse", "--verify", "--quiet", name, check=False)
+        if found.returncode != 0:
+            raise ReleaseError(f"não achei `{name}`; confira o remoto e rode `git fetch origin`.")
+    result = git(repo, "merge-base", "--is-ancestor", "origin/main", "origin/develop", check=False)
+    if result.returncode != 0:
+        raise ReleaseError(
+            "a main tem commits que não estão na develop; o push da release não seria "
+            "fast-forward. Investigue antes de lançar."
         )
 
 
@@ -135,6 +150,27 @@ def split_unreleased(text: str) -> tuple[str, str, str]:
     return "".join(lines[: start + 1]), "".join(lines[start + 1 : end]), "".join(lines[end:])
 
 
+def release_notes(text: str, version: str) -> str:
+    """Return the body of the `## [version]` section, up to the next `## [` heading."""
+    lines = text.splitlines(keepends=True)
+    prefix = f"## [{version}]"
+    start = next((i for i, line in enumerate(lines) if line.startswith(prefix)), None)
+    if start is None:
+        raise ReleaseError(f"o CHANGELOG.md não tem a seção da versão {version}.")
+    end = next(
+        (i for i in range(start + 1, len(lines)) if lines[i].startswith("## [")), len(lines)
+    )
+    return "".join(lines[start + 1 : end]).strip("\n") + "\n"
+
+
+def read_changelog(repo: Path) -> str:
+    path = repo / "CHANGELOG.md"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ReleaseError(f"não consegui ler {path}: {error}.") from error
+
+
 def unreleased_counts(body: str) -> dict[str, int]:
     """Count `- ` items per `###` subsection of the "Não lançado" body."""
     counts: dict[str, int] = {}
@@ -149,12 +185,7 @@ def unreleased_counts(body: str) -> dict[str, int]:
 
 
 def read_unreleased_counts(repo: Path) -> dict[str, int]:
-    path = repo / "CHANGELOG.md"
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise ReleaseError(f"não consegui ler {path}: {error}.") from error
-    counts = unreleased_counts(split_unreleased(text)[1])
+    counts = unreleased_counts(split_unreleased(read_changelog(repo))[1])
     if sum(counts.values()) == 0:
         raise ReleaseError(
             f"a seção `{UNRELEASED_HEADING}` do CHANGELOG.md está vazia; nada para lançar."
@@ -203,7 +234,8 @@ def check(repo: Path, kind: str) -> tuple[str, list[str]]:
     current, tag = current_state(repo)
     version = compute_version(kind, current, tag)
     ensure_clean_tree(repo)
-    ensure_head_is_origin_main(repo)
+    ensure_head_is_origin_develop(repo)
+    ensure_main_is_ancestor_of_develop(repo)
     ensure_tag_absent(repo, version)
     new = parse_version(version)
     if tag is not None and new <= tag:
@@ -231,6 +263,22 @@ def suggest(repo: Path) -> tuple[str, str, str]:
     else:
         kind, reason = "patch", f"só correções ({summary})"
     return kind, compute_version(kind, current, tag), reason
+
+
+def pending(repo: Path) -> str | None:
+    """Return the version stamped in the CHANGELOG but not tagged yet, if any.
+
+    This is the state of a release that reached the branch but was held by the CI:
+    the pyproject is ahead of the latest tag and the CHANGELOG already has its section.
+    """
+    current, tag = current_state(repo)
+    if tag is not None and current <= tag:
+        return None
+    version = fmt(current)
+    text = read_changelog(repo)
+    if any(line.startswith(f"## [{version}]") for line in text.splitlines()):
+        return version
+    return None
 
 
 # ---- prepare -----------------------------------------------------------------
@@ -311,6 +359,10 @@ def build_parser() -> argparse.ArgumentParser:
     prep.add_argument("--date", default=None, help="AAAA-MM-DD (padrão: hoje)")
     prep.add_argument("--summary", default="", help="resumo de 1 ou 2 frases da versão")
     prep.add_argument("--notes-out", type=Path, required=True, help="arquivo das notas da release")
+    notes_parser = sub.add_parser("notes", help="mostra as notas de uma versão do CHANGELOG")
+    notes_parser.add_argument("version", help="versão, no formato X.Y.Z")
+    notes_parser.add_argument("--out", type=Path, default=None, help="grava no arquivo em vez do stdout")
+    sub.add_parser("pending", help="mostra a versão carimbada que ainda não tem tag")
     return parser
 
 
@@ -328,6 +380,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"suggest={kind}")
             print(f"version={version}")
             print(f"motivo: {reason}")
+        elif args.command == "notes":
+            notes = release_notes(read_changelog(repo), args.version)
+            if args.out is None:
+                sys.stdout.write(notes)
+            else:
+                try:
+                    args.out.write_text(notes, encoding="utf-8")
+                except OSError as error:
+                    raise ReleaseError(f"não consegui gravar {args.out}: {error}.") from error
+        elif args.command == "pending":
+            print(f"pending={pending(repo) or ''}")
         else:
             date = args.date or datetime.date.today().isoformat()
             prepare(repo, args.version, date, args.summary, args.notes_out)
