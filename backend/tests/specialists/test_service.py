@@ -17,7 +17,7 @@ import pytest
 from claude_agent_sdk import ToolPermissionContext
 from test_sessions import Recorder, fake_history, make_project, wait_until
 
-from claudio_maestro import db
+from claudio_maestro import db, projects
 from claudio_maestro.agent.fake import (
     FakeAgentFactory,
     PauseStep,
@@ -1312,3 +1312,159 @@ async def test_is_agent_pr_compares_without_slash_fragment_or_query(world, url):
         )
 
     assert world.service.is_agent_pr(url) == specialist_id
+
+
+# Main conversation ----------------------------------------------------------
+
+
+def delete_session_row(world: World, session_id: str) -> None:
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+
+
+async def test_ensure_main_creates_once(world):
+    specialist_id = world.add_specialist(model="haiku", effort="low")
+
+    first, second = await asyncio.gather(
+        world.service.ensure_main(specialist_id), world.service.ensure_main(specialist_id)
+    )
+
+    assert first == second
+    assert world.specialist(specialist_id).main_session_id == first
+    record = world.record(first)
+    assert (record.specialist_id, record.title) == (specialist_id, "Revisor · conversa")
+    assert (record.model, record.effort) == ("haiku", "low")
+    assert world.service.is_main(first) is True
+    assert world.runs(specialist_id) == []  # a conversation is not a run
+    assert {"id": specialist_id} in world.published("specialist.changed")
+    assert await world.service.ensure_main(specialist_id) == first
+
+
+async def test_ensure_main_recreates_when_deleted(world):
+    specialist_id = world.add_specialist()
+    first = await world.service.ensure_main(specialist_id)
+    delete_session_row(world, first)
+
+    second = await world.service.ensure_main(specialist_id)
+
+    assert second != first
+    assert world.specialist(specialist_id).main_session_id == second
+    assert world.service.is_main(first) is False
+
+
+async def test_ensure_main_keeps_a_finished_session(world):
+    specialist_id = world.add_specialist()
+    first = await world.service.ensure_main(specialist_id)
+    await world.manager.update(first, finished=True)
+
+    assert await world.service.ensure_main(specialist_id) == first
+
+
+async def test_ensure_main_with_a_missing_or_unavailable_project(world, monkeypatch):
+    from claudio_maestro.sessions import ProjectUnavailableError
+    from claudio_maestro.specialists.service import PROJECT_MISSING, PROJECT_UNAVAILABLE
+
+    specialist_id = world.add_specialist()
+    shutil.rmtree(world.project.path)
+    with pytest.raises(ProjectUnavailableError, match=PROJECT_UNAVAILABLE):
+        await world.service.ensure_main(specialist_id)
+
+    def gone(conn, project_id):
+        raise projects.ProjectNotFoundError("sumiu")
+
+    monkeypatch.setattr(projects, "get_project", gone)
+    with pytest.raises(ProjectUnavailableError, match=PROJECT_MISSING):
+        await world.service.ensure_main(specialist_id)
+    assert world.specialist(specialist_id).main_session_id is None
+
+
+async def test_is_main_false_for_other_sessions(world):
+    specialist_id = world.add_specialist()
+    run = await started(world, specialist_id)
+
+    assert world.service.is_main(run.session_id) is False
+    assert world.service.is_main("desconhecida") is False
+
+
+async def test_main_session_setup_has_main_prompt_and_no_concluir(world):
+    specialist_id = world.add_specialist()
+    main_id = await world.service.ensure_main(specialist_id)
+    run = await started(world, specialist_id)
+
+    main = world.service.session_setup(world.record(main_id))
+    isolated = world.service.session_setup(world.record(run.session_id))
+
+    assert "## Esta é a conversa principal" in main.system_prompt_append
+    assert "`concluir`" not in main.system_prompt_append
+    assert "## Esta é a conversa principal" not in isolated.system_prompt_append
+    assert "`concluir`" in isolated.system_prompt_append
+
+
+async def test_closure_ignores_main_session(world):
+    specialist_id = world.add_specialist(close_by_check=True)
+    main_id = await world.service.ensure_main(specialist_id)
+
+    for verdict in ("can_close", "user_action", "incomplete"):
+        await world.service.on_closure(
+            fresh(main_id, verdict=verdict, evidence="e", user_actions=["x"], missing=["y"])
+        )
+    await asyncio.sleep(0.05)
+
+    assert world.record(main_id).finished is False
+    assert world.notices() == []
+    assert world.runs(specialist_id) == []
+
+
+async def test_finishing_the_main_session_creates_no_run(world):
+    specialist_id = world.add_specialist()
+    main_id = await world.service.ensure_main(specialist_id)
+
+    await world.manager.update(main_id, finished=True)
+
+    assert world.runs(specialist_id) == []
+    assert world.specialist(specialist_id).main_session_id == main_id
+
+
+async def test_is_busy_ignores_main_with_pending_prompt(world):
+    specialist_id = world.add_specialist()
+    world.turns = lambda sid: [
+        init_message(sid),
+        PermissionStep("Bash", {"command": "git push origin main"}),
+        *text_turn(sid, "ok")[1:],
+    ]
+    main_id = await world.service.ensure_main(specialist_id)
+    await world.manager.send(main_id, "oi")
+    await wait_until(lambda: world.manager.get(main_id).state == "awaiting_decision")
+
+    assert world.service.is_busy(specialist_id) is False
+
+
+async def test_is_busy_ignores_comment_runs(world):
+    specialist_id = world.add_specialist()
+    pause = PauseStep()
+    world.turns = lambda sid: [init_message(sid), pause, *text_turn(sid, "ok")[1:]]
+    run = await world.service.start_run(specialist_id, trigger="manual")
+    await asyncio.wait_for(pause.reached.wait(), 2)
+    assert world.service.is_busy(specialist_id) is True
+
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        conn.execute("UPDATE specialist_runs SET trigger = 'comment' WHERE id = ?", (run.id,))
+    assert world.service.is_busy(specialist_id) is False
+
+    pause.release.set()
+    await wait_until(lambda: world.manager.get(run.session_id).state == "idle")
+
+
+async def test_is_busy_ignores_an_isolated_session_whose_run_ended(world):
+    specialist_id = world.add_specialist()
+    pause = PauseStep()
+    world.turns = lambda sid: [init_message(sid), pause, *text_turn(sid, "ok")[1:]]
+    run = await world.service.start_run(specialist_id, trigger="manual")
+    await asyncio.wait_for(pause.reached.wait(), 2)
+
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.finish_run(conn, run.id, outcome="concluded", ended_at=NOW, reason=None)
+    assert world.service.is_busy(specialist_id) is False
+
+    pause.release.set()
+    await wait_until(lambda: world.manager.get(run.session_id).state == "idle")

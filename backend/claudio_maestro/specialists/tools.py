@@ -97,7 +97,10 @@ def _safe(
     return wrapper
 
 
-def build_tools(host: ToolHost, *, specialist_id: int, session_id: str) -> list[SdkMcpTool[Any]]:
+def build_tools(
+    host: ToolHost, *, specialist_id: int, session_id: str, main: bool = False
+) -> list[SdkMcpTool[Any]]:
+    """The agent's tools. The main conversation never ends, so it has no `concluir`."""
     @tool(
         "registro_consultar",
         "Consulta o registro do agente: o que já foi tratado, com situação, link, nota e data. "
@@ -223,9 +226,12 @@ def build_tools(host: ToolHost, *, specialist_id: int, session_id: str) -> list[
         await host.conclude(session_id, summary)
         return _ok("Sessão concluída.")
 
-    return [registro_consultar, registro_gravar, aprendizados_reescrever, avisar, concluir]
+    common = [registro_consultar, registro_gravar, aprendizados_reescrever, avisar]
+    return common if main else [*common, concluir]
 
 
-def build_server(host: ToolHost, *, specialist_id: int, session_id: str) -> McpSdkServerConfig:
-    tools = build_tools(host, specialist_id=specialist_id, session_id=session_id)
+def build_server(
+    host: ToolHost, *, specialist_id: int, session_id: str, main: bool = False
+) -> McpSdkServerConfig:
+    tools = build_tools(host, specialist_id=specialist_id, session_id=session_id, main=main)
     return create_sdk_mcp_server(SERVER_NAME, tools=tools)

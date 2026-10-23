@@ -2,6 +2,7 @@
 Uses the scripted fake agent; the real SDK is never touched."""
 
 import json
+import shutil
 import time
 from collections.abc import Callable
 from contextlib import closing
@@ -508,7 +509,7 @@ def test_skill_get_and_put(api, agent):
         ("---\nname: A\ndescription: B\n---\n" + "x" * 100_001, "A skill passou de 100 KB."),
     ],
 )
-def test_invalid_skill_is_422_with_the_message_and_keeps_the_old_one(api, agent, text, message):
+def test_invalid_skill_is_409_with_the_message_and_keeps_the_old_one(api, agent, text, message):
     before = api.get(f"/api/specialists/{agent['id']}/skill").json()
     response = api.put(f"/api/specialists/{agent['id']}/skill", json={"text": text})
     assert response.status_code == 422
@@ -555,7 +556,7 @@ def test_learnings_put_sends_the_changed_event(api, agent, events):
     } in events
 
 
-def test_learnings_too_long_is_422_with_the_message(api, agent):
+def test_learnings_too_long_is_409_with_the_message(api, agent):
     url = f"/api/specialists/{agent['id']}/learnings"
     api.put(url, json={"text": "ok"})
     response = api.put(url, json={"text": "x" * 4001})
@@ -626,7 +627,7 @@ def test_an_invalid_secret_name_is_never_echoed(api, agent, body):
 
 
 @pytest.mark.parametrize("name", ["PATH", "LD_PRELOAD", "ANTHROPIC_API_KEY", "MAESTRO_PORT", "CLAUDECODE"])
-def test_a_reserved_secret_name_is_422_with_a_fixed_message(api, agent, name):
+def test_a_reserved_secret_name_is_409_with_a_fixed_message(api, agent, name):
     url = f"/api/specialists/{agent['id']}/secrets"
 
     response = api.put(url, json={"values": {name: SECRET}})
@@ -898,6 +899,44 @@ def test_deleting_a_project_takes_it_out_of_the_other_agents_extra_projects(api,
         assert store.get_specialist(conn, other["id"]).extra_project_ids == []
     changed = [e["data"]["id"] for e in events if e["type"] == "specialist.changed"]
     assert changed == [agent["id"]]
+
+
+# Main conversation ---------------------------------------------------------------------------------------------
+
+
+def test_api_main_endpoint_requires_origin(api, agent):
+    url = f"/api/specialists/{agent['id']}/main"
+    assert api.request("POST", url, headers={"origin": "http://evil.example"}).status_code == 403
+    with without_header(api, "origin"):
+        assert api.post(url).status_code == 403
+    with conn_of(api) as conn:
+        assert store.get_specialist(conn, agent["id"]).main_session_id is None
+
+    first = api.post(url)
+    second = api.post(url)
+
+    assert first.status_code == 200 and second.status_code == 200
+    session_id = first.json()["session_id"]
+    assert second.json() == {"session_id": session_id}
+    assert api.get("/api/specialists").json()[0]["main_session_id"] == session_id
+
+
+def test_agents_come_with_a_null_main_session_id_until_the_conversation_exists(api, agent):
+    assert agent["main_session_id"] is None
+    assert api.get("/api/specialists").json()[0]["main_session_id"] is None
+
+
+def test_main_endpoint_for_an_unknown_agent_is_404(api):
+    assert api.post("/api/specialists/999/main").status_code == 404
+
+
+def test_main_endpoint_with_the_project_folder_gone_is_409(api, agent, project):
+    shutil.rmtree(project["path"])
+
+    response = api.post(f"/api/specialists/{agent['id']}/main")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "A pasta do projeto não está disponível."
 
 
 # Auth ------------------------------------------------------------------------------------------------------

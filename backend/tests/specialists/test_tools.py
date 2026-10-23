@@ -245,3 +245,16 @@ def test_lookup_rejects_key_longer_than_max_key():
     assert result["is_error"] is True
     assert str(MAX_KEY) in _text(result)
     assert host.calls == []
+
+
+def test_main_tools_without_concluir():
+    names = [t.name for t in build_tools(FakeHost(), specialist_id=7, session_id="s", main=True)]
+
+    assert "concluir" not in names
+    assert names == ["registro_consultar", "registro_gravar", "aprendizados_reescrever", "avisar"]
+
+
+def test_isolated_tools_keep_concluir():
+    names = [t.name for t in build_tools(FakeHost(), specialist_id=7, session_id="s")]
+
+    assert "concluir" in names

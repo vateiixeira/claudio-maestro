@@ -14,6 +14,7 @@ Você é o agente "Revisor" do Cláudio Maestro. Siga a skill abaixo.
 ## Regras do Maestro
 - Ao subir uma branch, diga sempre o nome: `git push -u origin <branch>`. Push sem o nome da branch pede ok.
 - Merge, push para a branch padrão e push forçado sempre pedem ok. Não tente contornar.
+- Não comente no GitHub (PR, issue, revisão). Responda na conversa principal.
 
 ## Projetos que você pode ler
 """
@@ -61,3 +62,40 @@ def test_build_append_trims_blank_edges_of_skill_and_learnings():
 
     assert "\n## Skill\n# Skill\n\ncorpo\n\n## Aprendizados\nnota" in text
     assert text.endswith("nota")
+
+
+NO_GITHUB = "- Não comente no GitHub (PR, issue, revisão). Responda na conversa principal.\n"
+MAIN_SECTION = (
+    "## Esta é a conversa principal\n"
+    "Aqui você conversa com a pessoa que usa o Maestro, a qualquer hora. Não é uma execução "
+    "agendada: faça o que ela pedir. Os resultados das execuções chegam como anúncios no "
+    "bloco <maestro-anuncios>.\n\n"
+)
+
+
+def test_build_append_has_the_github_rule_in_both_modes():
+    for main in (False, True):
+        text = build_append(
+            name="Revisor", skill_body="Faça X.", learnings="", extra_projects=[], main=main
+        )
+        assert NO_GITHUB in text
+        assert text.index("## Regras do Maestro") < text.index(NO_GITHUB) < text.index(
+            "## Projetos que você pode ler"
+        )
+
+
+def test_build_append_main_has_no_concluir_and_has_the_main_section():
+    text = build_append(
+        name="Revisor", skill_body="Faça X.", learnings="", extra_projects=[], main=True
+    )
+
+    assert "concluir" not in text
+    assert MAIN_SECTION + "## Skill\nFaça X." in text
+    assert "- `avisar`: mande à pessoa que usa o Maestro o que ela precisa saber agora.\n\n" in text
+
+
+def test_build_append_isolated_has_concluir_and_no_main_section():
+    text = build_append(name="Revisor", skill_body="Faça X.", learnings="", extra_projects=[])
+
+    assert "- `concluir`: quando a tarefa inteira terminar" in text
+    assert "conversa principal\nAqui" not in text

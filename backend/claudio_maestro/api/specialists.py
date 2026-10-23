@@ -18,7 +18,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from claudio_maestro import db
 from claudio_maestro.api.deps import DbDep
-from claudio_maestro.sessions import MODEL_PATTERN
+from claudio_maestro.sessions import (
+    MODEL_PATTERN,
+    InvalidDecisionError,
+    ProjectUnavailableError,
+)
 from claudio_maestro.specialists import store
 from claudio_maestro.specialists.files import (
     SLUG_MAX_LENGTH,
@@ -232,6 +236,7 @@ def _out(
         "schedules": [_schedule_out(s) for s in store.list_schedules(conn, specialist.id)],
         "last_run": asdict(runs[0]) if runs else None,
         "open_sessions": open_sessions,
+        "main_session_id": specialist.main_session_id,
     }
 
 
@@ -529,6 +534,19 @@ async def run_specialist(
     except store.SpecialistNotFoundError as exc:
         raise _not_found(str(exc)) from exc
     return asdict(run)
+
+
+@router.post("/specialists/{specialist_id}/main")
+async def open_main(specialist_id: int, request: Request, conn: DbDep) -> dict[str, str]:
+    """The agent's main conversation, created on first use."""
+    _get(conn, specialist_id)
+    try:
+        session_id = await request.app.state.specialists.ensure_main(specialist_id)
+    except store.SpecialistNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+    except (ProjectUnavailableError, InvalidDecisionError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return {"session_id": session_id}
 
 
 # Notices -------------------------------------------------------------------------------------------------

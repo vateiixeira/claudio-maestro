@@ -106,6 +106,8 @@ class SpecialistService:
         # session id -> text of the last "needs you" alert, so the same check does not
         # warn twice. Memory only: after a restart the same alert may come once more.
         self._last_alert: dict[str, str] = {}
+        # agent id -> lock of `ensure_main`, so two callers never create two conversations.
+        self._main_locks: dict[int, asyncio.Lock] = {}
 
     async def shutdown(self) -> None:
         tasks = list(self._tasks)
@@ -121,6 +123,7 @@ class SpecialistService:
         Errors here never quote the contents of `secrets.env`."""
         if record.specialist_id is None:
             return None
+        main = self.is_main(record.session_id)
         with closing(db.connect(self._db_path)) as conn:
             specialist = store.get_specialist(conn, record.specialist_id)
             extra = self._extra_projects(conn, specialist)
@@ -130,6 +133,7 @@ class SpecialistService:
             skill_body=skill.body,
             learnings=self._files.read_learnings(specialist.slug),
             extra_projects=[(project.name, project.path) for project in extra],
+            main=main,
         )
         rules = ask_rules(specialist.outward_patterns, specialist.always_ask_patterns)
         return SessionExtras(
@@ -138,7 +142,7 @@ class SpecialistService:
             env=self._files.read_secrets(specialist.slug),
             mcp_servers={
                 SERVER_NAME: build_server(
-                    self, specialist_id=specialist.id, session_id=record.session_id
+                    self, specialist_id=specialist.id, session_id=record.session_id, main=main
                 )
             },
             settings=json.dumps(
@@ -242,6 +246,52 @@ class SpecialistService:
             return at_start
         return [*specialist.denied_tools, *at_start]
 
+    # Main conversation -------------------------------------------------------------
+
+    async def ensure_main(self, specialist_id: int) -> str:
+        """The id of the agent's main conversation: the permanent session where its owner
+        talks to it. Created on first use, and again if it was deleted. A finished one is
+        kept: sending to it reopens it. It is not a run, so it records none."""
+        lock = self._main_locks.setdefault(specialist_id, asyncio.Lock())
+        async with lock:
+            with closing(db.connect(self._db_path)) as conn:
+                specialist = store.get_specialist(conn, specialist_id)
+                try:
+                    project = projects.get_project(conn, specialist.project_id)
+                except projects.ProjectNotFoundError:
+                    project = None
+            if specialist.main_session_id is not None:
+                try:
+                    self._sessions.find_record(specialist.main_session_id)
+                    return specialist.main_session_id
+                except SessionNotFoundError:
+                    pass  # deleted: a new one takes its place
+            if project is None:
+                raise ProjectUnavailableError(PROJECT_MISSING)
+            if not project.available:
+                raise ProjectUnavailableError(PROJECT_UNAVAILABLE)
+            record = self._sessions.create_session(
+                project, specialist_id=specialist.id, model=specialist.model, effort=specialist.effort
+            )
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                store.set_main_session(conn, specialist.id, record.session_id)
+            self._publish(
+                {"session_id": None, "seq": 0, "type": "specialist.changed",
+                 "data": {"id": specialist.id}}
+            )
+            try:
+                await self._sessions.update(record.session_id, title=f"{specialist.name} · conversa")
+            except Exception:
+                logger.exception("Falha ao dar título à conversa principal de %s", specialist.slug)
+            return record.session_id
+
+    def is_main(self, session_id: str) -> bool:
+        """Whether the session is some agent's main conversation."""
+        with closing(db.connect(self._db_path)) as conn:
+            return conn.execute(
+                "SELECT 1 FROM specialists WHERE main_session_id = ?", (session_id,)
+            ).fetchone() is not None
+
     # Starting a run ----------------------------------------------------------------
 
     async def start_run(
@@ -342,8 +392,9 @@ class SpecialistService:
         return self._add_notice(specialist_id, None, "alert", text)
 
     def is_busy(self, specialist_id: int) -> bool:
-        """Whether an unfinished session of the agent has a turn open or a pending
-        permission or question."""
+        """Whether an unfinished session of one of the agent's scheduled or manual runs
+        has a turn open or a pending permission or question. The main conversation and
+        the sessions of comment runs do not count: they must never hold back a schedule."""
         for session_id in self._sessions.active_ids():
             try:
                 session = self._sessions.get(session_id)
@@ -353,9 +404,19 @@ class SpecialistService:
                 session.record.specialist_id == specialist_id
                 and not session.record.finished
                 and session.state in TURN_OPEN_STATES
+                and self._counts_as_busy(session_id)
             ):
                 return True
         return False
+
+    def _counts_as_busy(self, session_id: str) -> bool:
+        with closing(db.connect(self._db_path)) as conn:
+            run = store.run_for_session(conn, session_id)
+        return (
+            run is not None
+            and run.trigger in ("schedule", "manual")
+            and run.outcome in OPEN_OUTCOMES
+        )
 
     def _record_without_session(
         self,
@@ -426,6 +487,8 @@ class SpecialistService:
         only thing left is a finish still pending (lost in a restart of the backend)."""
         if closure.verdict not in ("can_close", "user_action", "incomplete"):
             return
+        if self.is_main(closure.session_id):
+            return  # the main conversation never closes by itself, nor alerts
         try:
             record = self._sessions.find_record(closure.session_id)
         except SessionNotFoundError:
