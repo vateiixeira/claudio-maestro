@@ -64,6 +64,27 @@ def preview_port() -> int | None:
     return validate_port(raw, "MAESTRO_PREVIEW_PORT") if raw else None
 
 
+def hooks_port() -> int | None:
+    """Port of the GitHub webhook listener: `MAESTRO_HOOKS_PORT`.
+
+    Off unless set. It must be a port of its own: the listener is reached from outside
+    (public proxy and SSH tunnel) and must never share a socket with the app.
+    """
+    raw = os.environ.get("MAESTRO_HOOKS_PORT")
+    if not raw:
+        return None
+    port = validate_port(raw, "MAESTRO_HOOKS_PORT")
+    taken = {
+        "MAESTRO_PORT": backend_port(),
+        "MAESTRO_DEV_PORT": dev_port(),
+        "MAESTRO_PREVIEW_PORT": preview_port(),
+    }
+    for name, other in taken.items():
+        if other == port:
+            raise PortError(f"MAESTRO_HOOKS_PORT não pode ser igual a {name} ({port}).")
+    return port
+
+
 def app_ports(backend: int) -> tuple[int, ...]:
     """Ports whose pages are the app's own: Vite, the backend and, if set, the preview."""
     preview = preview_port()
@@ -107,6 +128,9 @@ class Settings:
     # Start the agents at their scheduled times (`MAESTRO_SPECIALISTS_SCHEDULER=0` turns it
     # off; "Rodar agora" still works). Off in an isolated instance on a copy of the database.
     specialists_scheduler: bool = True
+    # Port of the listener that receives signed GitHub webhooks (`MAESTRO_HOOKS_PORT`).
+    # None: no listener.
+    hooks_port: int | None = None
     # Folder where the CLI saves conversations, watched for real-time updates.
     # None: `$CLAUDE_CONFIG_DIR/projects` or `~/.claude/projects`, resolved at startup.
     claude_projects_dir: Path | None = None
@@ -209,6 +233,7 @@ def load_settings() -> Settings:
     `MAESTRO_USAGE_CHECK=0` turns off the read of the subscription usage.
     `MAESTRO_CLAUDE_CHECK=0` turns off the daily read of the newest `claude` version.
     `MAESTRO_SPECIALISTS_SCHEDULER=0` keeps the agents from starting at their scheduled times.
+    `MAESTRO_HOOKS_PORT` turns on the GitHub webhook listener on that port.
     """
     home_env = os.environ.get("MAESTRO_HOME")
     home = Path(home_env) if home_env else Path.home()
@@ -225,6 +250,7 @@ def load_settings() -> Settings:
         usage_check=os.environ.get("MAESTRO_USAGE_CHECK", "1") != "0",
         claude_check=os.environ.get("MAESTRO_CLAUDE_CHECK", "1") != "0",
         specialists_scheduler=os.environ.get("MAESTRO_SPECIALISTS_SCHEDULER", "1") != "0",
+        hooks_port=hooks_port(),
     )
 
 

@@ -184,6 +184,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MAESTRO_PORT", raising=False)
     monkeypatch.delenv("MAESTRO_DEV_PORT", raising=False)
     monkeypatch.delenv("MAESTRO_PREVIEW_PORT", raising=False)
+    monkeypatch.delenv("MAESTRO_HOOKS_PORT", raising=False)
     # Tests that start the app with the real agent must not launch an agentd process.
     monkeypatch.setenv("MAESTRO_AGENTD", "0")
     # The update check never runs by default in tests (no request to GitHub).

@@ -52,6 +52,11 @@ from claudio_maestro.sessions import (
     SessionManager,
 )
 from claudio_maestro.specialists.files import SpecialistFiles
+from claudio_maestro.specialists.github_hooks import (
+    build_hooks_app,
+    serve_hooks,
+    stop_hooks,
+)
 from claudio_maestro.specialists.scheduler import Scheduler
 from claudio_maestro.specialists.service import SpecialistService
 from claudio_maestro.terminal import TerminalManager
@@ -70,6 +75,31 @@ def publish_synced(publish: Callable[[dict[str, Any]], None], project_ids: set[i
             {"session_id": None, "seq": 0, "type": "project.synced",
              "data": {"project_id": project_id}}
         )
+
+
+def start_hooks_listener(app: FastAPI, app_ports_in_use: tuple[int, ...]) -> "asyncio.Task[None] | None":
+    """Start the GitHub webhook listener when `MAESTRO_HOOKS_PORT` is set.
+
+    It has a port of its own, never one of the app's. Returns its task, or None.
+    """
+    settings = app.state.settings
+    port = settings.hooks_port
+    if port is None:
+        return None
+    if port in app_ports_in_use:
+        logger.error(
+            "MAESTRO_HOOKS_PORT (%s) é igual a uma porta do app; o receptor de webhooks não sobe.", port
+        )
+        return None
+    hooks_app = build_hooks_app(
+        db_path=settings.db_path,
+        data_dir=settings.data_dir,
+        # Task 8 wires these to the agents service and its dispatcher; until then no PR
+        # belongs to an agent, so every delivery is accepted and ignored.
+        is_agent_pr=lambda pr_url: None,
+        on_queued=lambda: None,
+    )
+    return serve_hooks(hooks_app, port)
 
 
 def create_app(
@@ -403,6 +433,7 @@ def create_app(
                 logger.exception("Falha ao religar o Remote Control das sessões")
 
         tasks.append(asyncio.create_task(reconnect_remote()))
+        app.state.hooks_task = start_hooks_listener(app, ports)
         claude_projects = (
             app.state.settings.claude_projects_dir or claude_projects_dir()
         )
@@ -430,6 +461,8 @@ def create_app(
             for task in list(app.state.background):
                 with suppress(asyncio.CancelledError):
                     await task
+            if app.state.hooks_task is not None:
+                await stop_hooks(app.state.hooks_task)
             await app.state.specialists.shutdown()
             await app.state.commands.aclose()
             await app.state.terminals.aclose()

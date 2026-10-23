@@ -99,3 +99,41 @@ def test_claude_check_timing_defaults():
     settings = load_settings()
     assert settings.claude_check_delay_seconds == 60
     assert settings.claude_check_interval_seconds == 24 * 3600
+
+
+def test_hooks_port_off_by_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("MAESTRO_HOOKS_PORT", raising=False)
+    assert config.hooks_port() is None
+    assert load_settings().hooks_port is None
+    monkeypatch.setenv("MAESTRO_HOOKS_PORT", "")
+    assert config.hooks_port() is None
+
+
+def test_hooks_port_from_environment(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MAESTRO_HOOKS_PORT", "6680")
+    assert config.hooks_port() == 6680
+    assert load_settings().hooks_port == 6680
+
+
+@pytest.mark.parametrize("raw", ["6667", "80", "70000", "abc"])
+def test_hooks_port_rejects_blocked_range(monkeypatch: pytest.MonkeyPatch, raw: str):
+    monkeypatch.setenv("MAESTRO_HOOKS_PORT", raw)
+    with pytest.raises(config.PortError, match="MAESTRO_HOOKS_PORT"):
+        config.hooks_port()
+
+
+@pytest.mark.parametrize(
+    "other", ["MAESTRO_PORT", "MAESTRO_DEV_PORT", "MAESTRO_PREVIEW_PORT"]
+)
+def test_hooks_port_must_differ_from_app_ports(monkeypatch: pytest.MonkeyPatch, other: str):
+    monkeypatch.setenv(other, "6680")
+    monkeypatch.setenv("MAESTRO_HOOKS_PORT", "6680")
+    with pytest.raises(config.PortError, match=other):
+        config.hooks_port()
+
+
+def test_hooks_port_must_differ_from_default_ports(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("MAESTRO_PORT", raising=False)
+    monkeypatch.setenv("MAESTRO_HOOKS_PORT", "6660")
+    with pytest.raises(config.PortError, match="MAESTRO_PORT"):
+        config.hooks_port()
