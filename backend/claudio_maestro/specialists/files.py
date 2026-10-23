@@ -7,7 +7,9 @@ Each agent has a folder `<root>/<slug>/` (mode 700) with:
   are tolerated and ignored.
 - `aprendizados.md`: free text the agent keeps between sessions (capped).
 - `secrets.env`: `NAME=<json string>` lines (mode 600). Values never leave this
-  module except through `read_secrets`, meant only to build a session's `env`.
+  module except through `read_secrets`, meant only to build a session's `env`. Names
+  that would change how the process runs (`PATH`, `LD_*`, `CLAUDE*`...) are refused
+  on write and skipped on read.
 
 The slug is validated before any disk access, so it can never point outside
 `root`.
@@ -27,6 +29,11 @@ LEARNINGS_MAX_CHARS = 4000
 SLUG_MAX_LENGTH = 40
 SLUG_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 SECRET_NAME_PATTERN = re.compile(r"[A-Z_][A-Z0-9_]*")
+# Names a secret may not take: they would change how the session's process (the CLI,
+# node, the dynamic loader, python) or the Maestro itself behaves.
+RESERVED_SECRET_NAMES = frozenset({"PATH", "HOME", "USER", "SHELL", "PWD", "TMPDIR", "NODE_OPTIONS"})
+RESERVED_SECRET_PREFIXES = ("CLAUDE", "ANTHROPIC_", "LD_", "DYLD_", "PYTHON", "MAESTRO_")
+RESERVED_SECRET_TEXT = "Este nome é reservado pelo sistema. Escolha outro nome para o segredo."
 _YAML_BLOCK_SCALAR = re.compile(r"[>|][+-]?\d*")
 
 SKILL_FILE = "SKILL.md"
@@ -143,10 +150,16 @@ def _check_secret_value(name: str, value: object) -> None:
         raise InvalidSecretValueError(f"Valor inválido para o segredo {name}: use texto sem o caractere nulo.")
 
 
-def _check_secret_name(name: str) -> None:
+def is_reserved_secret_name(name: str) -> bool:
+    return name in RESERVED_SECRET_NAMES or name.startswith(RESERVED_SECRET_PREFIXES)
+
+
+def _check_secret_name(name: str, *, setting: bool) -> None:
+    # Never quotes the name: it may be a token pasted in the wrong field.
     if not isinstance(name, str) or not SECRET_NAME_PATTERN.fullmatch(name):
-        # Never quotes the name: it may be a token pasted in the wrong field.
         raise InvalidSecretNameError("Nome de segredo inválido: use letras maiúsculas, números e _.")
+    if setting and is_reserved_secret_name(name):
+        raise InvalidSecretNameError(RESERVED_SECRET_TEXT)
 
 
 class SpecialistFiles:
@@ -204,7 +217,7 @@ class SpecialistFiles:
         secrets: dict[str, str] = {}
         for line in raw.splitlines():
             name, sep, encoded = line.partition("=")
-            if not sep or not SECRET_NAME_PATTERN.fullmatch(name):
+            if not sep or not SECRET_NAME_PATTERN.fullmatch(name) or is_reserved_secret_name(name):
                 continue
             try:
                 value = json.loads(encoded)
@@ -220,8 +233,8 @@ class SpecialistFiles:
     def write_secrets(self, slug: str, values: dict[str, str | None]) -> None:
         """Merge `values` into the stored secrets; a `None` value deletes that name."""
         folder = self._dir(slug)
-        for name in values:
-            _check_secret_name(name)
+        for name, value in values.items():
+            _check_secret_name(name, setting=value is not None)
         for name, value in values.items():
             if value is not None:
                 _check_secret_value(name, value)

@@ -31,7 +31,7 @@ MAESTRO_PREVIEW_PORT=6610 uv run uvicorn claudio_maestro.app:app --host 127.0.0.
 MAESTRO_DEV_PORT=6610 pnpm --dir <worktree>/frontend dev                                        # preview da worktree
 ```
 
-Acesse **http://localhost:6610**. O preview usa os dados reais do backend: o que você fizer nele vale de verdade. Mudanças de backend da worktree não aparecem aqui; para elas, suba outra instância com `MAESTRO_DATA_DIR` próprio.
+Acesse **http://localhost:6610**. O preview usa os dados reais do backend: o que você fizer nele vale de verdade. Mudanças de backend da worktree não aparecem aqui; para elas, suba outra instância com `MAESTRO_DATA_DIR` próprio. Na instância isolada com cópia do banco, use `MAESTRO_SPECIALISTS_SCHEDULER=0`, para os agentes não rodarem nos horários marcados também por ela.
 
 ## Testes e verificações
 

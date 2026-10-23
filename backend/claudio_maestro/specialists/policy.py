@@ -1,8 +1,13 @@
 """Which shell commands a specialist's session may run without the user's ok.
 
 The app, not the skill text, enforces this. A specialist session runs with a
-permission callback that asks `classify` about every Bash command: "allow" runs it,
-"ask" turns it into a pending permission for the user.
+permission callback that asks `classify` about every shell command a tool runs (Bash,
+Monitor...): "allow" runs it, "ask" turns it into a pending permission for the user.
+
+A push is judged by the folder it runs in, which the command line itself must name
+(`cd <dir> && git push`, `git -C <dir> push`): the folder the CLI keeps between Bash
+calls is unknown here. So a push without a destination branch and without a folder in
+the command always asks; one that names its destination branch is judged by the name.
 
 The threat model is the agent's mistake, not an adversary (the projects and
 everything the agents read belong to the user). So the matching below catches the
@@ -18,12 +23,15 @@ Known limits (a distracted agent rarely produces these; only a sandbox would sto
   refspec from a feature branch to main.
 - `sudo`, `xargs`, `eval`, `find -exec` and other wrappers that run a command.
 - Variable and `$(...)` expansion, aliases and scripts: only the typed text is read.
+- A relative `cd`/`-C` resolves against the session's folder, though the CLI may have
+  kept another one from an earlier call; `CDPATH` is not followed.
 """
 
 import os
 import re
 import shlex
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -62,6 +70,8 @@ _GH_VALUE_OPTIONS = frozenset({"-R", "--repo"})
 _ENV_VALUE_OPTIONS = frozenset({"-u", "--unset", "-C", "--chdir", "-S", "--split-string"})
 _TIMEOUT_VALUE_OPTIONS = frozenset({"-s", "--signal", "-k", "--kill-after"})
 _PUSH_VALUE_OPTIONS = frozenset({"-o", "--push-option", "--repo", "--receive-pack", "--exec"})
+# Environment variables that name the repository instead of the folder.
+_GIT_LOCATION_VARIABLES = frozenset({"GIT_DIR", "GIT_WORK_TREE"})
 
 
 @dataclass(frozen=True)
@@ -70,6 +80,9 @@ class GitContext:
 
     default_branch: str | None
     current_branch: str | None
+
+
+GitReader = Callable[[Path], Awaitable[GitContext]]
 
 
 async def read_git_context(work_dir: Path) -> GitContext:
@@ -100,24 +113,32 @@ def ask_rules(outward: list[str], always: list[str]) -> list[str]:
     return rules
 
 
-def classify(
+async def classify(
     command: str,
     *,
     autonomy: str,
     outward: list[str],
     always: list[str],
-    git: GitContext,
+    work_dir: Path,
+    read_git: GitReader | None = None,
 ) -> Literal["allow", "ask"]:
-    """"ask" when the user must approve the command, "allow" when it may just run."""
-    segments = _segments(command)
+    """"ask" when the user must approve the command, "allow" when it may just run.
+
+    `work_dir` is the session's folder. A push is judged by the folder it runs in: the
+    one a `cd` earlier in the same command line, `git -C` or both name. A push without
+    a destination branch and without a folder in the command asks, because the folder
+    the CLI keeps between calls is unknown. The repository is only read for a push."""
+    segments = _segments(command, _Place.start(work_dir))
     always_patterns = [_words(p) for p in (*ALWAYS_DEFAULTS, *always)]
-    if any(_matches(seg, pattern) for seg in segments for pattern in always_patterns):
-        return "ask"
-    if any(seg[:2] == ["git", "push"] and _push_needs_ok(seg[2:], git) for seg in segments):
+    if any(_matches(seg.words, pattern) for seg in segments for pattern in always_patterns):
         return "ask"
     if autonomy == "ask":
         outward_patterns = [_words(p) for p in (*OUTWARD_DEFAULTS, *outward)]
-        if any(_matches(seg, pattern) for seg in segments for pattern in outward_patterns):
+        if any(_matches(seg.words, pattern) for seg in segments for pattern in outward_patterns):
+            return "ask"
+    contexts = _Contexts(work_dir, read_git or read_git_context)
+    for seg in segments:
+        if seg.words[:2] == ["git", "push"] and await _push_needs_ok(seg, contexts):
             return "ask"
     return "allow"
 
@@ -133,14 +154,21 @@ def _words(text: str) -> list[str]:
         return text.split()
 
 
-def _split_unquoted(command: str) -> list[str]:
+# Splitting -------------------------------------------------------------------------------
+
+
+def _split_unquoted(command: str) -> list[tuple[str, str]]:
     """Cuts at `&&`, `||`, `;`, `|`, `&`, line breaks, parentheses and backticks that are
-    not inside quotes, so text such as `echo "git push"` stays one argument."""
-    parts: list[str] = []
+    not inside quotes, so text such as `echo "git push"` stays one argument. Each part
+    comes with the separator that ends it ("" for the last one)."""
+    parts: list[tuple[str, str]] = []
     current: list[str] = []
     quote = ""
     escaped = False
-    for index, char in enumerate(command):
+    index = 0
+    while index < len(command):
+        char = command[index]
+        index += 1
         if escaped:
             current.append(char)
             escaped = False
@@ -154,14 +182,20 @@ def _split_unquoted(command: str) -> list[str]:
         elif char in "'\"":
             current.append(char)
             quote = char
-        elif char == "&" and _is_redirection_ampersand(command, index):
+        elif char == "&" and _is_redirection_ampersand(command, index - 1):
             current.append(char)
         elif char in _SEPARATORS:
-            parts.append("".join(current))
+            separator = char
+            if char in "&|" and command[index : index + 1] == char:
+                separator = char * 2
+                index += 1
+            elif char == "|" and command[index : index + 1] == "&":
+                index += 1  # `|&` pipes stderr too: still a pipe
+            parts.append(("".join(current), separator))
             current = []
         else:
             current.append(char)
-    parts.append("".join(current))
+    parts.append(("".join(current), ""))
     return parts
 
 
@@ -188,19 +222,171 @@ def _drop_redirections(words: list[str]) -> list[str]:
     return kept
 
 
-def _segments(command: str, depth: int = 0) -> list[list[str]]:
-    """Every simple command in `command` as a clean word list (git/gh options removed)."""
-    result: list[list[str]] = []
-    for part in _split_unquoted(command):
-        words = _clean(_drop_redirections(_words(part)))
-        if not words:
-            continue
-        result.append(words)
-        if depth < _MAX_NESTING and words[0] in _SHELLS:
-            script = _shell_script(words)
-            if script is not None:
-                result.extend(_segments(script, depth + 1))
+# Where each command runs -------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Place:
+    """The folder of the shell at some point of the command line.
+
+    `folder`: the folder, when the command named it (a `cd`); None when unknown.
+    `base`: what a relative path resolves against: `folder`, or the session's folder
+    before any `cd`; None once the folder is unknown.
+    `conditional`: the `cd` that set `folder` may not have run (it came after `&&` or
+    inside an `if`/loop body), so the folder only holds along the same `&&` chain."""
+
+    folder: Path | None
+    base: Path | None
+    conditional: bool = False
+
+    @staticmethod
+    def start(work_dir: Path) -> "_Place":
+        return _Place(folder=None, base=work_dir)
+
+    @property
+    def moved(self) -> bool:
+        return self.folder is not None or self.base is None
+
+    def to(self, target: str | None) -> "_Place":
+        """The place after `cd <target>` (None: a target that cannot be read)."""
+        folder = _resolve(self.base, target)
+        return _Place(folder=folder, base=folder) if folder is not None else _UNKNOWN
+
+    def through(self, separator: str) -> "_Place":
+        """The place for the next command, past `separator`."""
+        if not self.moved:
+            return self
+        if separator in _UNSURE_AFTER:
+            return _UNKNOWN
+        if self.conditional and separator not in ("&&", "|"):
+            return _UNKNOWN
+        return self
+
+
+_UNKNOWN = _Place(folder=None, base=None)
+# Past these, an earlier `cd` may not hold any more: the end of a subshell or of a
+# command substitution, a command sent to the background, or `||` (what follows runs
+# when something before it failed, maybe the `cd` itself).
+_UNSURE_AFTER = frozenset({")", "`", "&", "||"})
+# A `cd` with one of these before or after it may not change the folder of the commands
+# that follow (a pipeline element runs in a subshell; `||` and `&` may skip it or run it
+# apart).
+_CD_UNSURE_BEFORE = frozenset({"|", "||", "&", "`", ")"})
+_CD_UNSURE_AFTER = frozenset({"|", "||", "&", "`", "("})
+# Shell keywords whose body may not run.
+_CONDITIONAL_KEYWORDS = frozenset({"then", "else", "elif", "do"})
+_CD_COMMANDS = frozenset({"cd", "pushd"})
+_UNREADABLE_PATH = re.compile(r"[$`*?\[\]{}]")
+_HEREDOC = re.compile(r"^\d*<<(?!<)")
+
+
+def _resolve(base: Path | None, target: str | None) -> Path | None:
+    """The folder `target` names, from `base`; None when it cannot be known from the
+    text (variables, globs, `cd -`, `~user`) or is relative to an unknown folder."""
+    if target is None or target == "-" or _UNREADABLE_PATH.search(target):
+        return None
+    if target == "~" or target.startswith("~/"):
+        return Path.home() / target[2:]
+    if target.startswith("~"):
+        return None
+    path = Path(target)
+    if path.is_absolute():
+        return path
+    return base / path if base is not None else None
+
+
+def _cd_target(program: str, args: list[str]) -> str | None:
+    """The folder of `cd`/`pushd` arguments; `~` without one (as the shell does). None
+    for `pushd +N`/`-N`, which turn the folder stack."""
+    if program == "pushd" and any(arg[:1] in "+-" for arg in args):
+        return None
+    index = 0
+    while index < len(args) and args[index].startswith("-") and args[index] != "-":
+        if args[index] == "--":
+            index += 1
+            break
+        index += 1
+    if index >= len(args):
+        return "~"
+    return args[index]
+
+
+@dataclass
+class _Segment:
+    """One simple command: its words (git/gh options removed) and the folder it runs in
+    (None when the command line does not say)."""
+
+    words: list[str]
+    folder: Path | None
+
+
+@dataclass
+class _Cleaned:
+    words: list[str]
+    # `git -C`/`env -C` folders, in order.
+    chdirs: list[str] = field(default_factory=list)
+    # `--git-dir`, `--work-tree`, `GIT_DIR=`...: the repository is named some other way.
+    elsewhere: bool = False
+    # A shell keyword whose body may not run came first.
+    conditional: bool = False
+    # `!` came first: what follows runs when this command failed.
+    negated: bool = False
+
+
+def _segments(command: str, place: _Place, depth: int = 0) -> list[_Segment]:
+    """Every simple command in `command`, with the folder it runs in."""
+    result: list[_Segment] = []
+    before = ""
+    # Past a here-document its lines are text, not commands: no folder is trusted then.
+    lost = False
+    for part, after in _split_unquoted(command):
+        raw = _words(part)
+        cleaned = _clean(_drop_redirections(raw))
+        words = cleaned.words
+        if words:
+            if lost:
+                place = _UNKNOWN
+            elif words[0] in _CD_COMMANDS:
+                if (
+                    before in _CD_UNSURE_BEFORE
+                    or after in _CD_UNSURE_AFTER
+                    or cleaned.negated
+                ):
+                    place = _UNKNOWN
+                else:
+                    moved = place.to(_cd_target(words[0], words[1:]))
+                    conditional = (
+                        moved.folder is not None
+                        and (cleaned.conditional or before == "&&" or place.conditional)
+                    )
+                    place = _Place(moved.folder, moved.base, conditional)
+            elif words[0] == "popd":
+                place = _UNKNOWN
+            result.append(_Segment(words, _folder_of(place, cleaned)))
+            if depth < _MAX_NESTING and words[0] in _SHELLS:
+                script = _shell_script(words)
+                if script is not None:
+                    # A child shell starts where this one is; its `cd` stays inside it.
+                    result.extend(_segments(script, place, depth + 1))
+        lost |= any(_HEREDOC.match(word) for word in raw)
+        place = _UNKNOWN if lost else place.through(after)
+        before = after
     return result
+
+
+def _folder_of(place: _Place, cleaned: _Cleaned) -> Path | None:
+    """The folder a command runs in: the shell's, moved by `git -C`/`env -C` (each
+    relative one from the previous, as git does)."""
+    if cleaned.elsewhere:
+        return None
+    folder, base = place.folder, place.base
+    for target in cleaned.chdirs:
+        if target == "":
+            continue  # git ignores an empty -C
+        folder = base = _resolve(base, target)
+        if folder is None:
+            return None
+    return folder
 
 
 def _shell_script(words: list[str]) -> str | None:
@@ -213,13 +399,20 @@ def _shell_script(words: list[str]) -> str | None:
     return None
 
 
-def _clean(words: list[str]) -> list[str]:
+def _clean(words: list[str]) -> _Cleaned:
     """Drops `NAME=value` prefixes, `env`/`command`/... wrappers and, for git and gh,
-    the global options that come before the subcommand."""
+    the global options that come before the subcommand, keeping what tells where the
+    command runs."""
     words = list(words)
+    cleaned = _Cleaned(words=[])
     while words:
         head = words[0]
-        if _ASSIGNMENT.match(head) or head in _KEYWORDS:
+        if _ASSIGNMENT.match(head):
+            cleaned.elsewhere |= head.split("=", 1)[0] in _GIT_LOCATION_VARIABLES
+            words.pop(0)
+        elif head in _KEYWORDS:
+            cleaned.conditional |= head in _CONDITIONAL_KEYWORDS
+            cleaned.negated |= head == "!"
             words.pop(0)
         elif head == "timeout":
             words.pop(0)
@@ -233,22 +426,52 @@ def _clean(words: list[str]) -> list[str]:
             words.pop(0)
             while words and (_ASSIGNMENT.match(words[0]) or words[0].startswith("-")):
                 option = words.pop(0)
-                if option in _ENV_VALUE_OPTIONS and words:
+                if _ASSIGNMENT.match(option):
+                    cleaned.elsewhere |= option.split("=", 1)[0] in _GIT_LOCATION_VARIABLES
+                elif option in ("-C", "--chdir") and words:
+                    cleaned.chdirs.append(words.pop(0))
+                elif option.startswith("--chdir="):
+                    cleaned.chdirs.append(option.removeprefix("--chdir="))
+                elif option in _ENV_VALUE_OPTIONS and words:
                     words.pop(0)
-        elif head in _PREFIX_COMMANDS:
+        elif head in _PREFIX_COMMANDS or head == "builtin":
             words.pop(0)
             while words and words[0].startswith("-"):
                 words.pop(0)
         else:
             break
     if not words:
-        return words
+        return cleaned
     program = _program(words[0])
     if program == "git":
-        return ["git", *_strip_options(words[1:], _GIT_VALUE_OPTIONS)]
-    if program == "gh":
-        return ["gh", *_strip_options(words[1:], _GH_VALUE_OPTIONS)]
-    return [program, *words[1:]]
+        rest, chdirs, elsewhere = _git_globals(words[1:])
+        cleaned.words = ["git", *rest]
+        cleaned.chdirs.extend(chdirs)
+        cleaned.elsewhere |= elsewhere
+    elif program == "gh":
+        cleaned.words = ["gh", *_strip_options(words[1:], _GH_VALUE_OPTIONS)]
+    else:
+        cleaned.words = [program, *words[1:]]
+    return cleaned
+
+
+def _git_globals(words: list[str]) -> tuple[list[str], list[str], bool]:
+    """git's global options: the words after them, the `-C` folders and whether the
+    repository is named some other way (`--git-dir`, `--work-tree`)."""
+    chdirs: list[str] = []
+    elsewhere = False
+    index = 0
+    while index < len(words) and words[index].startswith("-"):
+        option = words[index]
+        name = option.split("=", 1)[0]
+        elsewhere |= name in ("--git-dir", "--work-tree")
+        if option in _GIT_VALUE_OPTIONS:
+            if option == "-C" and index + 1 < len(words):
+                chdirs.append(words[index + 1])
+            index += 2
+        else:
+            index += 1
+    return words[index:], chdirs, elsewhere
 
 
 def _skip_options(words: list[str], value_options: frozenset[str]) -> None:
@@ -268,12 +491,38 @@ def _strip_options(words: list[str], value_options: frozenset[str]) -> list[str]
     return words[index:]
 
 
-def _push_needs_ok(args: list[str], git: GitContext) -> bool:
+# Pushes ----------------------------------------------------------------------------------------
+
+
+class _Contexts:
+    """The repositories read for one command, each once."""
+
+    def __init__(self, work_dir: Path, read_git: GitReader) -> None:
+        self._work_dir = work_dir
+        self._read_git = read_git
+        self._cache: dict[Path, GitContext] = {}
+
+    async def of(self, folder: Path) -> GitContext:
+        if folder not in self._cache:
+            self._cache[folder] = await self._read_git(folder)
+        return self._cache[folder]
+
+    async def protected(self, folder: Path | None) -> set[str]:
+        """The default branch (of `folder` when known and readable, else of the
+        session's folder) and the usual names of one."""
+        default = (await self.of(folder)).default_branch if folder is not None else None
+        if default is None:
+            default = (await self.of(self._work_dir)).default_branch
+        return {b for b in (default, *_FALLBACK_PROTECTED) if b}
+
+
+async def _push_needs_ok(segment: _Segment, contexts: _Contexts) -> bool:
     """A `git push` that must ask in any autonomy: forced, aimed at the default branch,
-    or without refspec while the current branch is the default one."""
-    protected = {b for b in (git.default_branch, *_FALLBACK_PROTECTED) if b}
+    or without destination branch from a folder that is unknown or on the default
+    branch."""
     positional: list[str] = []
     options_ended = False
+    args = segment.words[2:]
     index = 0
     while index < len(args):
         arg = args[index]
@@ -289,14 +538,22 @@ def _push_needs_ok(args: list[str], git: GitContext) -> bool:
         elif not arg.startswith("--") and "f" in arg[1:]:
             return True
     refspecs = positional[1:]
-    if not refspecs:
-        return git.current_branch is None or git.current_branch in protected
-    for refspec in refspecs:
-        if refspec.startswith("+"):
-            return True
-        destination = refspec.rsplit(":", 1)[-1].removeprefix("refs/heads/")
-        if ":" not in refspec and destination in ("HEAD", "@"):
-            destination = git.current_branch or "main"
-        if destination in protected:
-            return True
+    if any(refspec.startswith("+") for refspec in refspecs):
+        return True
+    implicit = not refspecs or any(r in ("HEAD", "@") for r in refspecs)
+    named = [
+        refspec.rsplit(":", 1)[-1].removeprefix("refs/heads/")
+        for refspec in refspecs
+        if refspec not in ("HEAD", "@")
+    ]
+    if implicit and segment.folder is None:
+        # It goes wherever the current branch goes, in a folder the command does not
+        # name: the one the CLI kept from an earlier call is unknown here.
+        return True
+    protected = await contexts.protected(segment.folder)
+    if any(destination in protected for destination in named):
+        return True
+    if implicit and segment.folder is not None:
+        current = (await contexts.of(segment.folder)).current_branch
+        return current is None or current in protected
     return False

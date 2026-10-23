@@ -2,13 +2,14 @@
 
 import asyncio
 import logging
+import time
 from dataclasses import asdict
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from claudio_maestro import groups, projects
+from claudio_maestro import db, groups, projects
 from claudio_maestro.api.deps import DbDep, SettingsDep
 from claudio_maestro.specialists import store
 
@@ -138,14 +139,18 @@ async def delete_project(project_id: int, conn: DbDep, request: Request) -> Resp
         # The cascade takes the project's agents out of the database; their folders
         # (skill, learnings, secrets) go too.
         orphans = [s for s in store.list_specialists(conn) if s.project_id == project_id]
-        projects.delete_project(conn, project_id)
+        with db.transaction(conn):
+            projects.delete_project(conn, project_id)
+            # The id may be given to a project added later: no agent may read that one.
+            pruned = store.remove_extra_project(conn, project_id, int(time.time()))
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
     for specialist in orphans:
         request.app.state.specialist_files.delete(specialist.slug)
+    for specialist_id in [s.id for s in orphans] + pruned:
         request.app.state.hub.publish(
             {"session_id": None, "seq": 0, "type": "specialist.changed",
-             "data": {"id": specialist.id}}
+             "data": {"id": specialist_id}}
         )
     # The cascade took the project's sessions, and their labels, out of the database.
     manager.reconcile_label_ids()

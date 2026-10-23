@@ -104,6 +104,9 @@ class Settings:
     usage_check: bool = True
     usage_check_delay_seconds: float = 5
     usage_check_interval_seconds: float = 180
+    # Start the agents at their scheduled times (`MAESTRO_SPECIALISTS_SCHEDULER=0` turns it
+    # off; "Rodar agora" still works). Off in an isolated instance on a copy of the database.
+    specialists_scheduler: bool = True
     # Folder where the CLI saves conversations, watched for real-time updates.
     # None: `$CLAUDE_CONFIG_DIR/projects` or `~/.claude/projects`, resolved at startup.
     claude_projects_dir: Path | None = None
@@ -205,6 +208,7 @@ def load_settings() -> Settings:
     `MAESTRO_UPDATE_CHECK=0` turns off the daily check for a newer release.
     `MAESTRO_USAGE_CHECK=0` turns off the read of the subscription usage.
     `MAESTRO_CLAUDE_CHECK=0` turns off the daily read of the newest `claude` version.
+    `MAESTRO_SPECIALISTS_SCHEDULER=0` keeps the agents from starting at their scheduled times.
     """
     home_env = os.environ.get("MAESTRO_HOME")
     home = Path(home_env) if home_env else Path.home()
@@ -220,6 +224,7 @@ def load_settings() -> Settings:
         update_check=os.environ.get("MAESTRO_UPDATE_CHECK", "1") != "0",
         usage_check=os.environ.get("MAESTRO_USAGE_CHECK", "1") != "0",
         claude_check=os.environ.get("MAESTRO_CLAUDE_CHECK", "1") != "0",
+        specialists_scheduler=os.environ.get("MAESTRO_SPECIALISTS_SCHEDULER", "1") != "0",
     )
 
 

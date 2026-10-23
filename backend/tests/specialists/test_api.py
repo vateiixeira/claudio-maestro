@@ -256,6 +256,39 @@ def test_patch_refuses_invalid_fields(api, agent, body):
     assert api.get("/api/specialists").json() == [agent]
 
 
+PATTERN_TEXT = (
+    "Os padrões aceitam só letras, números, espaço e os sinais - _ . / :, "
+    "com até 100 caracteres cada."
+)
+
+
+@pytest.mark.parametrize("field", ["outward_patterns", "always_ask_patterns"])
+@pytest.mark.parametrize(
+    "pattern",
+    ["rm -rf *", "echo $(x)", 'git push "x"', "git push 'x'", "a; b", "a | b", "a && b",
+     "a`b`", "x" * 101, "deploy\tprod", "a\nb"],
+)
+def test_patch_refuses_patterns_with_other_characters_or_too_long(api, agent, field, pattern):
+    response = api.patch(f"/api/specialists/{agent['id']}", json={field: ["ok", pattern]})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == PATTERN_TEXT
+    assert api.get("/api/specialists").json() == [agent]
+
+
+@pytest.mark.parametrize("field", ["outward_patterns", "always_ask_patterns"])
+def test_patch_accepts_patterns_with_the_allowed_characters(api, agent, field):
+    patterns = [
+        "python3 filmes.py baixar", "kubectl -n prod apply", "gh api repos/o/r:x",
+        "implantação_rápida", "y" * 100,
+    ]
+
+    response = api.patch(f"/api/specialists/{agent['id']}", json={field: patterns})
+
+    assert response.status_code == 200
+    assert response.json()[field] == patterns
+
+
 def test_patch_unknown_agent_is_404(api):
     assert patch(api, 999, name="x").status_code == 404
 
@@ -522,6 +555,20 @@ def test_an_invalid_secret_name_is_never_echoed(api, agent, body):
     )
 
 
+@pytest.mark.parametrize("name", ["PATH", "LD_PRELOAD", "ANTHROPIC_API_KEY", "MAESTRO_PORT", "CLAUDECODE"])
+def test_a_reserved_secret_name_is_422_with_a_fixed_message(api, agent, name):
+    url = f"/api/specialists/{agent['id']}/secrets"
+
+    response = api.put(url, json={"values": {name: SECRET}})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "Este nome é reservado pelo sistema. Escolha outro nome para o segredo."
+    )
+    assert name not in response.text and SECRET not in response.text
+    assert api.get(url).json() == {"names": []}
+
+
 def test_secrets_with_a_broken_body_do_not_echo_it(api, agent):
     url = f"/api/specialists/{agent['id']}/secrets"
     response = api.put(url, content=f'{{"values": {{"A": "{SECRET}"', headers={"content-type": "application/json"})
@@ -581,11 +628,34 @@ def test_items_list_and_delete(api, agent):
         "created_at": 5, "updated_at": 5,
     }
 
-    assert api.delete(f"/api/specialists/{aid}/items/PR-1").status_code == 204
-    assert api.delete(f"/api/specialists/{aid}/items/org/repo%233").status_code == 204
-    assert [item["key"] for item in api.get(f"/api/specialists/{aid}/items").json()] == ["PR-2"]
-    assert api.delete("/api/specialists/999/items/PR-2").status_code == 404
+    url = f"/api/specialists/{aid}/items"
+    assert api.delete(url, params={"key": "PR-1"}).status_code == 204
+    assert api.delete(url, params={"key": "org/repo#3"}).status_code == 204
+    assert [item["key"] for item in api.get(url).json()] == ["PR-2"]
+    assert api.delete("/api/specialists/999/items", params={"key": "PR-2"}).status_code == 404
     assert api.get("/api/specialists/999/items").status_code == 404
+
+
+def test_item_delete_takes_the_key_from_the_query_as_is(api, agent):
+    aid = agent["id"]
+    with conn_of(api) as conn, db.transaction(conn):
+        for key in ("a/../b", "b", "a", "a/b"):
+            store.upsert_item(conn, aid, key=key, status="visto", link=None, note=None, now=4)
+    url = f"/api/specialists/{aid}/items"
+
+    assert api.delete(url, params={"key": "a/../b"}).status_code == 204
+
+    assert sorted(item["key"] for item in api.get(url).json()) == ["a", "a/b", "b"]
+
+
+def test_item_delete_needs_the_key_and_the_old_route_is_gone(api, agent):
+    aid = agent["id"]
+    with conn_of(api) as conn, db.transaction(conn):
+        store.upsert_item(conn, aid, key="PR-1", status="visto", link=None, note=None, now=4)
+
+    assert api.delete(f"/api/specialists/{aid}/items").status_code == 422
+    assert api.delete(f"/api/specialists/{aid}/items/PR-1").status_code in (404, 405)
+    assert [item["key"] for item in api.get(f"/api/specialists/{aid}/items").json()] == ["PR-1"]
 
 
 def test_runs_newest_first_with_a_limit(api, agent):
@@ -742,6 +812,24 @@ def test_deleting_a_project_removes_its_agents_and_their_folders(api, home):
     assert not (agents_dir(api) / "do-outro").exists()
 
 
+def test_deleting_a_project_takes_it_out_of_the_other_agents_extra_projects(api, home, events):
+    first = make_project(api, home, "primeiro")
+    second = make_project(api, home, "segundo")
+    agent = create_agent(api, first["id"], "leitor")
+    other = create_agent(api, first["id"], "outro")
+    patch(api, agent["id"], extra_project_ids=[second["id"]])
+    patch(api, other["id"], extra_project_ids=[])
+    events.clear()
+
+    assert api.delete(f"/api/projects/{second['id']}").status_code == 204
+
+    with conn_of(api) as conn:
+        assert store.get_specialist(conn, agent["id"]).extra_project_ids == []
+        assert store.get_specialist(conn, other["id"]).extra_project_ids == []
+    changed = [e["data"]["id"] for e in events if e["type"] == "specialist.changed"]
+    assert changed == [agent["id"]]
+
+
 # Auth ------------------------------------------------------------------------------------------------------
 
 
@@ -754,7 +842,7 @@ def mutating_requests(agent_id: int) -> list[tuple[str, str, dict | None]]:
         ("PUT", f"{base}/skill", {"text": "x"}),
         ("PUT", f"{base}/learnings", {"text": "x"}),
         ("PUT", f"{base}/secrets", {"values": {"A": "b"}}),
-        ("DELETE", f"{base}/items/k", None),
+        ("DELETE", f"{base}/items?key=k", None),
         ("POST", f"{base}/run", {}),
         ("POST", "/api/specialist-notices/read", {"ids": [1]}),
     ]
@@ -875,3 +963,61 @@ def test_the_scheduler_runs_with_the_app_and_stops_with_it(factory, monkeypatch)
         assert app.state.scheduler_task is not None and not app.state.scheduler_task.done()
     assert calls[-1] == "shutdown"
     assert app.state.scheduler_task.done()
+
+
+def test_scheduler_switch_off_keeps_it_from_running_but_run_now_works(factory, monkeypatch, home):
+    calls: list[str] = []
+
+    async def tick(self) -> None:
+        calls.append("tick")
+
+    monkeypatch.setattr("claudio_maestro.specialists.scheduler.Scheduler.tick", tick)
+    monkeypatch.setenv("MAESTRO_SPECIALISTS_SCHEDULER", "0")
+    app = create_app(agent_factory=factory)
+    with TestClient(
+        app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}
+    ) as client:
+        assert app.state.settings.specialists_scheduler is False
+        assert app.state.scheduler_task is None
+        agent = create_agent(client, make_project(client, home)["id"])
+        response = client.post(f"/api/specialists/{agent['id']}/run", json={})
+        assert response.status_code == 202
+        assert response.json()["session_id"] is not None
+        time.sleep(0.1)
+    assert calls == []
+
+
+def test_load_settings_reads_the_scheduler_switch(monkeypatch):
+    from claudio_maestro.config import load_settings
+
+    monkeypatch.setenv("MAESTRO_SPECIALISTS_SCHEDULER", "0")
+    assert load_settings().specialists_scheduler is False
+    monkeypatch.setenv("MAESTRO_SPECIALISTS_SCHEDULER", "1")
+    assert load_settings().specialists_scheduler is True
+    monkeypatch.delenv("MAESTRO_SPECIALISTS_SCHEDULER")
+    assert load_settings().specialists_scheduler is True
+
+
+def test_startup_recovers_lost_finishes_after_reattaching_the_sessions(factory, monkeypatch):
+    calls: list[str] = []
+
+    async def reattach_all(self):
+        calls.append("reattach")
+        return set()
+
+    async def recover(self) -> None:
+        calls.append("recover")
+
+    monkeypatch.setattr("claudio_maestro.sessions.SessionManager.reattach_all", reattach_all)
+    monkeypatch.setattr(SpecialistService, "recover", recover)
+    with TestClient(create_app(agent_factory=factory), base_url=BACKEND_URL):
+        assert calls == ["reattach", "recover"]
+
+
+def test_a_failing_recover_does_not_stop_the_app(factory, monkeypatch):
+    async def recover(self) -> None:
+        raise RuntimeError("quebrou")
+
+    monkeypatch.setattr(SpecialistService, "recover", recover)
+    with TestClient(create_app(agent_factory=factory), base_url=BACKEND_URL) as client:
+        assert client.get("/api/specialists", headers={"x-maestro": "1"}).status_code == 200

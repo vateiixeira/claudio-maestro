@@ -304,3 +304,36 @@ def test_notice_survives_session_deletion(conn):
     conn.execute("DELETE FROM sessions WHERE session_id = 's1'")
     [notice] = store.list_notices(conn)
     assert notice.session_id is None
+
+
+def test_pending_finishes_round_trip(conn):
+    assert store.pending_finishes(conn) == []
+
+    store.mark_finish_pending(conn, "s1")
+    store.mark_finish_pending(conn, "s2")
+    store.mark_finish_pending(conn, "s1")
+    conn.execute("INSERT INTO app_state (key, value) VALUES ('outra', 'x')")
+
+    assert sorted(store.pending_finishes(conn)) == ["s1", "s2"]
+    assert store.is_finish_pending(conn, "s1")
+    store.clear_finish_pending(conn, "s1")
+    store.clear_finish_pending(conn, "nao-existe")
+    assert store.pending_finishes(conn) == ["s2"]
+    assert not store.is_finish_pending(conn, "s1")
+    assert conn.execute("SELECT value FROM app_state WHERE key = 'outra'").fetchone()[0] == "x"
+
+
+def test_remove_extra_project_from_every_agent(conn):
+    first = make(conn, "um")
+    second = make(conn, "dois")
+    third = make(conn, "tres")
+    store.update_specialist(conn, first.id, now=1, extra_project_ids=[2, 7])
+    store.update_specialist(conn, second.id, now=1, extra_project_ids=[7])
+
+    changed = store.remove_extra_project(conn, 2, now=50)
+
+    assert changed == [first.id]
+    assert store.get_specialist(conn, first.id).extra_project_ids == [7]
+    assert store.get_specialist(conn, first.id).updated_at == 50
+    assert store.get_specialist(conn, second.id).extra_project_ids == [7]
+    assert store.get_specialist(conn, third.id).updated_at == 100

@@ -1,5 +1,6 @@
 """Permission policy for specialist sessions: which commands need the user's ok."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -17,11 +18,20 @@ from claudio_maestro.specialists.policy import (
 
 NO_GIT = GitContext(default_branch=None, current_branch=None)
 ON_FEATURE = GitContext(default_branch="main", current_branch="fix/a")
+SESSION_DIR = Path("/sessao")
 
 
 def decide(command, autonomy="full", *, outward=(), always=(), git_ctx=ON_FEATURE):
-    return classify(
-        command, autonomy=autonomy, outward=list(outward), always=list(always), git=git_ctx
+    """Every folder (the session's or one named in the command) reads as `git_ctx`."""
+
+    async def read_git(work_dir: Path) -> GitContext:
+        return git_ctx
+
+    return asyncio.run(
+        classify(
+            command, autonomy=autonomy, outward=list(outward), always=list(always),
+            work_dir=SESSION_DIR, read_git=read_git,
+        )
     )
 
 
@@ -86,7 +96,8 @@ def test_defaults_are_the_documented_values():
             GitContext(default_branch="main", current_branch="fix/a"),
             "allow",
         ),
-        # a push without refspec goes to wherever the current branch goes
+        # a push without refspec goes to wherever the current branch goes; with no folder
+        # in the command, the folder the CLI kept between calls is unknown, so it asks
         ("git push", "full", GitContext("main", "main"), "ask"),
         ("git push", "full", GitContext(None, "main"), "ask"),
         ("git push", "full", GitContext(None, "master"), "ask"),
@@ -94,8 +105,12 @@ def test_defaults_are_the_documented_values():
         ("git push origin", "full", GitContext("main", "main"), "ask"),
         ("git push -u origin", "full", GitContext("main", "main"), "ask"),
         ("git push origin HEAD", "full", GitContext("main", "main"), "ask"),
-        ("git push", "full", GitContext("main", "fix/a"), "allow"),
-        ("git push origin HEAD", "full", GitContext("main", "fix/a"), "allow"),
+        ("git push", "full", GitContext("main", "fix/a"), "ask"),
+        ("git push origin HEAD", "full", GitContext("main", "fix/a"), "ask"),
+        ("git push -u origin @", "full", GitContext("main", "fix/a"), "ask"),
+        ("cd sub && git push", "full", GitContext("main", "fix/a"), "allow"),
+        ("git -C sub push -u origin HEAD", "full", GitContext("main", "fix/a"), "allow"),
+        ("cd sub && git push", "full", GitContext("main", "main"), "ask"),
         ("git push", "full", NO_GIT, "ask"),  # unknown branch: cannot prove it is not main
         # gh
         ("gh pr merge 12 --squash", "full", ON_FEATURE, "ask"),
@@ -235,3 +250,183 @@ def test_module_does_not_call_git_directly():
     source = Path(policy.__file__).read_text()
     assert "subprocess" not in source
     assert "create_subprocess" not in source
+
+
+# The folder the command runs in ----------------------------------------------------------
+
+
+class Repos:
+    """`origin` (bare, default `main`), the session's clone `repo` on `feat/foo`, a worktree
+    `wt-main` on `main` and a worktree `wt-feature` on `feat/bar`."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.repo = make_repo(root / "repo", branch="main")
+        origin = root / "origin.git"
+        git(root, "init", "-q", "--bare", "-b", "main", str(origin))
+        git(self.repo, "remote", "add", "origin", str(origin))
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "fetch", "-q", "origin")
+        git(self.repo, "remote", "set-head", "origin", "main")
+        git(self.repo, "checkout", "-q", "-b", "feat/foo")
+        self.wt_main = root / "wt-main"
+        git(self.repo, "worktree", "add", "-q", str(self.wt_main), "main")
+        self.wt_feature = root / "wt-feature"
+        git(self.repo, "worktree", "add", "-q", "-b", "feat/bar", str(self.wt_feature), "main")
+
+
+@pytest.fixture
+def repos(tmp_path: Path) -> Repos:
+    return Repos(tmp_path)
+
+
+def judge(command: str, work_dir: Path, autonomy: str = "full", **kwargs) -> str:
+    return asyncio.run(
+        classify(command, autonomy=autonomy, outward=[], always=[], work_dir=work_dir, **kwargs)
+    )
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "cd {wt_main} && git push",
+        "git -C {wt_main} push",
+        "cd {wt_main} && git push -u origin HEAD",
+        "git push",
+    ],
+)
+def test_implicit_push_judged_by_the_folder_it_runs_in(repos, template):
+    command = template.format(wt_main=repos.wt_main)
+    assert judge(command, repos.repo) == "ask"  # the session is on feat/foo
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "cd {wt_feature} && git push -u origin HEAD",
+        "cd {wt_feature}; git push -u origin HEAD",
+        "git -C {wt_feature} push",
+        "git -C {root} -C wt-feature push",
+        "cd {root} && git -C wt-feature push -u origin HEAD",
+        "if cd {wt_feature}; then git push; fi",
+        "(cd {wt_feature} && git push -u origin HEAD)",
+        "cd {wt_feature} && git log --oneline | head -3 && git push",
+    ],
+)
+def test_implicit_push_from_a_named_feature_folder_is_allowed(repos, template):
+    command = template.format(wt_feature=repos.wt_feature, root=repos.root)
+    wt_main = repos.wt_main  # the session sits on main
+    assert judge(command, wt_main) == "allow"
+    assert judge(command, wt_main, autonomy="ask") == "ask"
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        # the cd may not have happened, or happened in another shell
+        "(cd {wt_feature} && make); git push",
+        "(cd {wt_feature}); git push -u origin HEAD",
+        "false && cd {wt_feature}; git push",
+        "cd {wt_feature} || true; git push",
+        "true || cd {wt_feature} && git push",
+        "cd {wt_feature} && make || git push",
+        "echo x | cd {wt_feature} && git push",
+        "cd {wt_feature} | cat && git push",
+        "cd {wt_feature} && make & git push",
+        "bash -c 'cd {wt_feature}' && git push",
+        "if true; then cd {wt_feature}; fi; git push",
+        "cd {wt_feature} && cd - && git push",
+        "cd $WT && git push",
+        "pushd {wt_feature} && popd && git push",
+        "! cd {wt_feature} && git push",
+        "pushd -1 && git push",
+        "pushd +1 && git push",
+        "cat <<EOF\ncd {wt_feature}\nEOF\ngit push -u origin HEAD",
+        "cat <<'EOF' > x.txt\ncd {wt_feature} && git push\nEOF",
+        # other ways to name the repository: not followed
+        "git --git-dir={wt_feature}/.git push",
+        "GIT_DIR={wt_feature}/.git git push",
+        # a folder that does not exist or is not a repository
+        "cd {root}/missing && git push -u origin HEAD",
+        "cd {root} && git push -u origin HEAD",
+        "git -C {root}/missing push",
+    ],
+)
+def test_implicit_push_asks_when_the_folder_is_unsure(repos, template):
+    command = template.format(wt_feature=repos.wt_feature, root=repos.root)
+    assert judge(command, repos.wt_feature) == "ask"
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "git push -u origin feat/x",
+        "cd {wt_main} && git push -u origin feat/x",
+        "git -C {wt_main} push origin HEAD:feat/x",
+        "cd {root}/missing && git push origin refs/heads/feat/x",
+    ],
+)
+def test_named_destination_is_judged_by_its_name_in_any_folder(repos, template):
+    command = template.format(wt_main=repos.wt_main, root=repos.root)
+    for work_dir in (repos.repo, repos.wt_main):
+        assert judge(command, work_dir) == "allow"
+
+
+def test_named_destination_compares_with_the_default_of_the_folder_it_runs_in(tmp_path):
+    session = make_repo(tmp_path / "session", branch="feat/s")
+    other = make_repo(tmp_path / "other", branch="feat/o")
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "develop", str(remote))
+    git(other, "remote", "add", "origin", str(remote))
+    git(other, "push", "-q", "origin", "feat/o:develop")
+    git(other, "fetch", "-q", "origin")
+    git(other, "remote", "set-head", "origin", "develop")
+
+    assert judge(f"git -C {other} push origin develop", session) == "ask"
+    assert judge(f"cd {other} && git push origin HEAD:develop", session) == "ask"
+    assert judge("git push origin develop", session) == "allow"
+
+
+def test_git_dash_c_accumulates_like_git(tmp_path):
+    seen: list[Path] = []
+
+    async def spy(work_dir: Path) -> GitContext:
+        seen.append(work_dir)
+        return GitContext("main", "feat/x")
+
+    session = tmp_path / "s"
+    asyncio.run(classify(
+        "git -C /a -C b -C ../c push", autonomy="full", outward=[], always=[],
+        work_dir=session, read_git=spy,
+    ))
+    asyncio.run(classify(
+        "cd /x && git -C y -C /z -C w push", autonomy="full", outward=[], always=[],
+        work_dir=session, read_git=spy,
+    ))
+    asyncio.run(classify(
+        "git -C rel push", autonomy="full", outward=[], always=[],
+        work_dir=session, read_git=spy,
+    ))
+
+    assert Path("/a/b/../c") in seen
+    assert Path("/z/w") in seen
+    assert session / "rel" in seen
+
+
+def test_git_dash_c_resolves_against_a_real_tree(tmp_path):
+    (tmp_path / "a").mkdir()
+    make_repo(tmp_path / "a" / "b", branch="feat/b")
+    on_main = make_repo(tmp_path / "m", branch="main")
+
+    assert judge(f"git -C {tmp_path}/a -C b push", on_main) == "allow"
+    assert judge(f"git -C {tmp_path}/a -C {on_main} push", on_main) == "ask"
+
+
+def test_no_git_is_read_for_commands_without_a_push(tmp_path):
+    async def spy(work_dir: Path) -> GitContext:
+        raise AssertionError("git read without a push")
+
+    for command in ("ls", "git status", "cd /x && git log", "gh pr view 3"):
+        assert judge(command, tmp_path, read_git=spy) == "allow"
+    # "ask" autonomy asks for any push before reading the repository
+    assert judge("git push origin feat/x", tmp_path, autonomy="ask", read_git=spy) == "ask"

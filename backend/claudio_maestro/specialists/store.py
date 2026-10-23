@@ -182,6 +182,17 @@ def update_specialist(
     return get_specialist(conn, specialist_id)
 
 
+def remove_extra_project(conn: sqlite3.Connection, project_id: int, now: int) -> list[int]:
+    """Take `project_id` out of every agent's additional projects; the ids changed."""
+    changed: list[int] = []
+    for specialist in list_specialists(conn):
+        if project_id in specialist.extra_project_ids:
+            extras = [i for i in specialist.extra_project_ids if i != project_id]
+            update_specialist(conn, specialist.id, now=now, extra_project_ids=extras)
+            changed.append(specialist.id)
+    return changed
+
+
 def delete_specialist(conn: sqlite3.Connection, specialist_id: int) -> None:
     cursor = conn.execute("DELETE FROM specialists WHERE id = ?", (specialist_id,))
     if cursor.rowcount == 0:
@@ -425,3 +436,39 @@ def mark_notices_read(conn: sqlite3.Connection, ids: list[int], now: int) -> int
         (now, *ids),
     )
     return cursor.rowcount
+
+
+# Sessions still to be finished ---------------------------------------------------------
+#
+# A concluded (or closed) run finishes its session once the turn ends, from a task kept in
+# memory. The mark below survives a restart of the backend, so the finish can be done
+# then; it goes away when the session is finished (by anyone) or the person takes the
+# session back before that. Kept in `app_state`, one key per session.
+
+_FINISH_PREFIX = "specialist_finish:"
+
+
+def mark_finish_pending(conn: sqlite3.Connection, session_id: str) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO app_state (key, value) VALUES (?, '1')",
+        (_FINISH_PREFIX + session_id,),
+    )
+
+
+def clear_finish_pending(conn: sqlite3.Connection, session_id: str) -> None:
+    conn.execute("DELETE FROM app_state WHERE key = ?", (_FINISH_PREFIX + session_id,))
+
+
+def is_finish_pending(conn: sqlite3.Connection, session_id: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM app_state WHERE key = ?", (_FINISH_PREFIX + session_id,)
+    ).fetchone()
+    return row is not None
+
+
+def pending_finishes(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT key FROM app_state WHERE substr(key, 1, ?) = ? ORDER BY key",
+        (len(_FINISH_PREFIX), _FINISH_PREFIX),
+    ).fetchall()
+    return [row[0][len(_FINISH_PREFIX):] for row in rows]

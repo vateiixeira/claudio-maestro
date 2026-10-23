@@ -2,9 +2,11 @@
 scripted fake agent; the real SDK is never touched."""
 
 import asyncio
+import dataclasses
 import json
 import logging
 import shutil
+import time
 from collections.abc import Callable
 from contextlib import closing
 from datetime import datetime
@@ -117,6 +119,12 @@ async def world(tmp_path: Path):
     yield built
     await built.service.shutdown()
     await built.manager.shutdown()
+
+
+def fresh(session_id: str, **fields: Any) -> Closure:
+    """A closure checked now, after everything the session did so far."""
+    fields.setdefault("checked_at", int(time.time()))
+    return Closure(session_id, **fields)
 
 
 async def started(world: World, specialist_id: int, **kwargs: Any) -> store.Run:
@@ -246,7 +254,7 @@ async def test_session_stays_finished_after_turn_that_concluded_ends(world):
     await wait_until(lambda: session.state == "idle" and world.record(run.session_id).finished)
 
     # A check after the end of the turn changes nothing either.
-    await world.service.on_closure(Closure(run.session_id, verdict="can_close", evidence="ok"))
+    await world.service.on_closure(fresh(run.session_id, verdict="can_close", evidence="ok"))
     await asyncio.sleep(0.05)
 
     assert world.record(run.session_id).finished is True
@@ -300,7 +308,7 @@ async def test_closure_can_close_after_a_turn_error_closes_the_run(world):
     run = await started(world, specialist_id)
     world.service.on_turn_error(run.session_id, "O turno terminou com erro.")
 
-    await world.service.on_closure(Closure(run.session_id, verdict="can_close", evidence="ok"))
+    await world.service.on_closure(fresh(run.session_id, verdict="can_close", evidence="ok"))
 
     assert world.run_of(run.session_id).outcome == "closed"
     await wait_until(lambda: world.record(run.session_id).finished)
@@ -311,7 +319,7 @@ async def test_closure_user_action_after_a_turn_error_marks_waiting(world):
     run = await started(world, specialist_id)
     world.service.on_turn_error(run.session_id, "O turno terminou com erro.")
 
-    await world.service.on_closure(Closure(run.session_id, verdict="user_action", user_actions=["A"]))
+    await world.service.on_closure(fresh(run.session_id, verdict="user_action", user_actions=["A"]))
 
     saved = world.run_of(run.session_id)
     assert saved.outcome == "waiting" and saved.ended_at is None
@@ -460,7 +468,7 @@ async def test_closure_can_close_finishes_when_close_by_check(world):
     specialist_id = world.add_specialist(close_by_check=True)
     run = await started(world, specialist_id)
 
-    await world.service.on_closure(Closure(run.session_id, verdict="can_close", evidence="tudo certo"))
+    await world.service.on_closure(fresh(run.session_id, verdict="can_close", evidence="tudo certo"))
 
     await wait_until(lambda: world.record(run.session_id).finished)
     saved = world.run_of(run.session_id)
@@ -473,7 +481,7 @@ async def test_closure_can_close_ignored_when_close_by_check_off(world):
     specialist_id = world.add_specialist(close_by_check=False)
     run = await started(world, specialist_id)
 
-    await world.service.on_closure(Closure(run.session_id, verdict="can_close", evidence="tudo certo"))
+    await world.service.on_closure(fresh(run.session_id, verdict="can_close", evidence="tudo certo"))
     await asyncio.sleep(0.05)
 
     assert world.run_of(run.session_id).outcome == "running"
@@ -484,7 +492,7 @@ async def test_closure_can_close_ignored_when_close_by_check_off(world):
 async def test_closure_user_action_marks_waiting_and_alerts_once(world):
     specialist_id = world.add_specialist()
     run = await started(world, specialist_id)
-    closure = Closure(
+    closure = fresh(
         run.session_id, verdict="user_action",
         user_actions=["Reiniciar o serviço"], missing=["Teste do login"],
     )
@@ -504,7 +512,7 @@ async def test_closure_incomplete_marks_waiting_and_alerts(world):
     run = await started(world, specialist_id)
 
     await world.service.on_closure(
-        Closure(run.session_id, verdict="incomplete", missing=["Rodar os testes"])
+        fresh(run.session_id, verdict="incomplete", missing=["Rodar os testes"])
     )
 
     assert world.run_of(run.session_id).outcome == "waiting"
@@ -516,8 +524,8 @@ async def test_closure_new_items_alert_again(world):
     specialist_id = world.add_specialist()
     run = await started(world, specialist_id)
 
-    await world.service.on_closure(Closure(run.session_id, verdict="user_action", user_actions=["A"]))
-    await world.service.on_closure(Closure(run.session_id, verdict="user_action", user_actions=["B"]))
+    await world.service.on_closure(fresh(run.session_id, verdict="user_action", user_actions=["A"]))
+    await world.service.on_closure(fresh(run.session_id, verdict="user_action", user_actions=["B"]))
 
     assert len(world.notices()) == 2
 
@@ -526,8 +534,8 @@ async def test_closure_in_progress_and_without_verdict_do_nothing(world):
     specialist_id = world.add_specialist(close_by_check=True)
     run = await started(world, specialist_id)
 
-    await world.service.on_closure(Closure(run.session_id, verdict="in_progress"))
-    await world.service.on_closure(Closure(run.session_id, verdict=None, error="falhou"))
+    await world.service.on_closure(fresh(run.session_id, verdict="in_progress"))
+    await world.service.on_closure(fresh(run.session_id, verdict=None, error="falhou"))
 
     assert world.run_of(run.session_id).outcome == "running"
     assert world.notices() == []
@@ -537,8 +545,8 @@ async def test_closure_of_an_ordinary_session_is_ignored(world):
     world.add_specialist(close_by_check=True)
     record = world.manager.create_session(world.project)
 
-    await world.service.on_closure(Closure(record.session_id, verdict="can_close", evidence="x"))
-    await world.service.on_closure(Closure("nao-existe", verdict="can_close", evidence="x"))
+    await world.service.on_closure(fresh(record.session_id, verdict="can_close", evidence="x"))
+    await world.service.on_closure(fresh("nao-existe", verdict="can_close", evidence="x"))
 
     assert world.notices() == []
     assert world.record(record.session_id).finished is False
@@ -549,10 +557,208 @@ async def test_closure_after_the_run_ended_is_ignored(world):
     run = await started(world, specialist_id)
     await world.service.conclude(run.session_id, "Pronto.")
 
-    await world.service.on_closure(Closure(run.session_id, verdict="user_action", user_actions=["A"]))
+    await world.service.on_closure(fresh(run.session_id, verdict="user_action", user_actions=["A"]))
 
     assert world.run_of(run.session_id).outcome == "concluded"
     assert [n.kind for n in world.notices()] == ["summary"]
+
+
+# A stale verdict is ignored ---------------------------------------------------------------
+
+
+async def stale_closure(world: World, session_id: str, **fields: Any) -> Closure:
+    """A closure whose check started before the person's last message."""
+    checked_at = world.record(session_id).last_activity_at
+    await world.manager.send(session_id, "Mais uma coisa.")
+    session = world.manager.get(session_id)
+    await wait_until(lambda: session.state == "idle" and len(world.factory.clients[0].sent) == 2)
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        # The message came after the check started (same second is not "after").
+        conn.execute(
+            "UPDATE sessions SET last_activity_at = ? WHERE session_id = ?",
+            (checked_at + 5, session_id),
+        )
+    session.record = dataclasses.replace(session.record, last_activity_at=checked_at + 5)
+    return Closure(session_id, checked_at=checked_at, **fields)
+
+
+async def test_stale_can_close_does_not_finish(world):
+    specialist_id = world.add_specialist(close_by_check=True)
+    run = await started(world, specialist_id)
+    closure = await stale_closure(world, run.session_id, verdict="can_close", evidence="ok")
+
+    await world.service.on_closure(closure)
+    await asyncio.sleep(0.05)
+
+    assert world.run_of(run.session_id).outcome == "running"
+    assert world.record(run.session_id).finished is False
+    assert world.notices() == []
+
+
+async def test_stale_user_action_does_not_alert(world):
+    specialist_id = world.add_specialist()
+    run = await started(world, specialist_id)
+    closure = await stale_closure(world, run.session_id, verdict="user_action", user_actions=["A"])
+
+    await world.service.on_closure(closure)
+
+    assert world.run_of(run.session_id).outcome == "running"
+    assert world.notices() == []
+
+
+async def test_closure_without_check_time_is_ignored(world):
+    specialist_id = world.add_specialist(close_by_check=True)
+    run = await started(world, specialist_id)
+
+    await world.service.on_closure(Closure(run.session_id, verdict="can_close", evidence="ok"))
+
+    assert world.run_of(run.session_id).outcome == "running"
+    assert world.notices() == []
+
+
+# A finish lost in a restart ------------------------------------------------------------------
+
+
+def restarted(world: World) -> SpecialistService:
+    """A new service over the same data: what the backend has after a restart (the
+    sessions' hooks keep calling the old one, which shares the database)."""
+    return SpecialistService(
+        world.db_path, files=world.files, sessions=world.manager, publish=world.recorder,
+        clock=lambda: world.now, finish_poll=0.005,
+    )
+
+
+async def concluded_and_lost(world: World, **fields: Any) -> tuple[str, PauseStep]:
+    """An agent concludes inside its turn and the backend goes down before the turn
+    ends, so the task that would finish the session is gone. The turn stays paused."""
+    specialist_id = world.add_specialist(**fields)
+    pause = paused_turn(world)
+    run = await world.service.start_run(specialist_id, trigger="manual")
+    await asyncio.wait_for(pause.reached.wait(), 2)
+    await world.service.conclude(run.session_id, "Pronto.")
+    await world.service.shutdown()
+    return run.session_id, pause
+
+
+@pytest.mark.parametrize("verdict", ["can_close", "user_action", "incomplete"])
+async def test_closure_finishes_a_concluded_session_whose_finish_was_lost(world, verdict):
+    session_id, pause = await concluded_and_lost(world)
+    pause.release.set()
+    await wait_until(lambda: world.manager.get(session_id).state == "idle")
+    assert world.record(session_id).finished is False
+    service = restarted(world)
+
+    await service.on_closure(fresh(session_id, verdict=verdict, user_actions=["A"], evidence="ok"))
+
+    assert world.record(session_id).finished is True
+    assert world.run_of(session_id).outcome == "concluded"
+    assert [n.kind for n in world.notices()] == ["summary"]
+    await service.shutdown()
+
+
+async def test_closure_does_not_finish_a_concluded_session_with_its_turn_open(world):
+    session_id, pause = await concluded_and_lost(world)
+    service = restarted(world)
+
+    await service.on_closure(fresh(session_id, verdict="can_close", evidence="ok"))
+    pause.release.set()
+    await wait_until(lambda: world.manager.get(session_id).state == "idle")
+    await asyncio.sleep(0.05)
+    assert world.record(session_id).finished is False
+
+    await service.on_closure(fresh(session_id, verdict="can_close", evidence="ok"))
+    assert world.record(session_id).finished is True
+    await service.shutdown()
+
+
+async def test_closure_does_not_finish_a_session_the_person_took_back(world):
+    specialist_id = world.add_specialist(close_by_check=True)
+    pause = paused_turn(world)
+    run = await world.service.start_run(specialist_id, trigger="manual")
+    await asyncio.wait_for(pause.reached.wait(), 2)
+    session = world.manager.get(run.session_id)
+    await world.service.conclude(run.session_id, "Pronto.")
+    await world.manager.send(run.session_id, "Na verdade, faça mais uma coisa.")
+    pause.release.set()
+    await wait_until(lambda: session.state == "idle" and len(world.factory.clients[0].sent) == 2)
+    await wait_until(lambda: not world.service._tasks)
+
+    await world.service.on_closure(fresh(run.session_id, verdict="can_close", evidence="ok"))
+    await restarted(world).on_closure(fresh(run.session_id, verdict="can_close", evidence="ok"))
+
+    assert world.record(run.session_id).finished is False
+
+
+async def test_closure_does_not_finish_again_a_session_reopened_after_the_finish(world):
+    specialist_id = world.add_specialist()
+    run = await started(world, specialist_id)
+    await world.service.conclude(run.session_id, "Pronto.")
+    await wait_until(lambda: world.record(run.session_id).finished)
+    await world.manager.update(run.session_id, finished=False)
+
+    await world.service.on_closure(fresh(run.session_id, verdict="can_close", evidence="ok"))
+    await restarted(world).on_closure(fresh(run.session_id, verdict="can_close", evidence="ok"))
+
+    assert world.record(run.session_id).finished is False
+
+
+async def test_recover_finishes_a_concluded_session_after_its_turn(world):
+    session_id, pause = await concluded_and_lost(world)
+    service = restarted(world)
+
+    await service.recover()
+    await asyncio.sleep(0.05)
+    assert world.record(session_id).finished is False  # never with the turn open
+    pause.release.set()
+
+    await wait_until(lambda: world.record(session_id).finished)
+    assert [n.kind for n in world.notices()] == ["summary"]
+    await service.shutdown()
+
+
+async def test_recover_finishes_a_session_closed_by_the_check(world):
+    specialist_id = world.add_specialist(close_by_check=True)
+    pause = paused_turn(world)
+    run = await world.service.start_run(specialist_id, trigger="manual")
+    await asyncio.wait_for(pause.reached.wait(), 2)
+    await world.service.on_closure(fresh(run.session_id, verdict="can_close", evidence="ok"))
+    await world.service.shutdown()  # the finishing task is lost
+    pause.release.set()
+    await wait_until(lambda: world.manager.get(run.session_id).state == "idle")
+    assert world.run_of(run.session_id).outcome == "closed"
+    assert world.record(run.session_id).finished is False
+    service = restarted(world)
+
+    await service.recover()
+
+    await wait_until(lambda: world.record(run.session_id).finished)
+    await service.shutdown()
+
+
+async def test_recover_leaves_reopened_and_taken_back_sessions_alone(world):
+    specialist_id = world.add_specialist()
+    run = await started(world, specialist_id)
+    await world.service.conclude(run.session_id, "Pronto.")
+    await wait_until(lambda: world.record(run.session_id).finished)
+    await world.manager.update(run.session_id, finished=False)
+    service = restarted(world)
+
+    await service.recover()
+    await asyncio.sleep(0.05)
+
+    assert world.record(run.session_id).finished is False
+    assert not service._tasks
+
+
+async def test_recover_without_pending_finishes_does_nothing(world):
+    specialist_id = world.add_specialist()
+    run = await started(world, specialist_id)
+    service = restarted(world)
+
+    await service.recover()
+
+    assert not service._tasks
+    assert world.record(run.session_id).finished is False
 
 
 # Finish by the user ---------------------------------------------------------------
@@ -573,7 +779,7 @@ async def test_user_finish_concludes_run(world):
 async def test_user_finish_of_a_waiting_run_concludes_it(world):
     specialist_id = world.add_specialist()
     run = await started(world, specialist_id)
-    await world.service.on_closure(Closure(run.session_id, verdict="incomplete", missing=["X"]))
+    await world.service.on_closure(fresh(run.session_id, verdict="incomplete", missing=["X"]))
 
     await world.manager.update(run.session_id, finished=True)
 
@@ -583,7 +789,7 @@ async def test_user_finish_of_a_waiting_run_concludes_it(world):
 async def test_user_finish_keeps_the_outcome_of_an_ended_run(world):
     specialist_id = world.add_specialist(close_by_check=True)
     run = await started(world, specialist_id)
-    await world.service.on_closure(Closure(run.session_id, verdict="can_close", evidence="ok"))
+    await world.service.on_closure(fresh(run.session_id, verdict="can_close", evidence="ok"))
     await wait_until(lambda: world.record(run.session_id).finished)
 
     world.service.on_finished(run.session_id, NOW + 5)
@@ -818,21 +1024,69 @@ async def test_decide_uses_the_autonomy_and_patterns_of_the_agent(world, monkeyp
     assert await decide("Bash", {"command": "gh pr comment 1 --body oi"}) == "allow"
 
 
-async def test_decide_reads_the_work_dir_at_each_call(world, monkeypatch):
+async def test_decide_reads_the_live_record_at_each_call(world, monkeypatch):
     seen: list[Path] = []
 
     async def spy(work_dir: Path) -> GitContext:
         seen.append(work_dir)
-        return GitContext(None, None)
+        return GitContext("main", None)
 
     monkeypatch.setattr("claudio_maestro.specialists.service.read_git_context", spy)
-    decide, record = make_decide(world)
+    decide, record = make_decide(world, autonomy="full")
+    session = world.manager.get(record.session_id)
 
-    await decide("Bash", {"command": "git status"})
-    record.cwd = "/outra/pasta"  # the session moved (a worktree, say)
-    await decide("Bash", {"command": "git status"})
+    await decide("Bash", {"command": "git push origin feat/x"})
+    # The history sync and external changes put a new record object in the session.
+    session.record = dataclasses.replace(session.record, cwd="/outra/pasta")
+    await decide("Bash", {"command": "git push origin feat/x"})
 
     assert seen == [Path(world.project.path), Path("/outra/pasta")]
+
+
+async def test_decide_reads_the_agent_configuration_at_each_call(world, monkeypatch):
+    async def on_feature(work_dir: Path) -> GitContext:
+        return GitContext("main", "feature")
+
+    monkeypatch.setattr("claudio_maestro.specialists.service.read_git_context", on_feature)
+    decide, record = make_decide(world, autonomy="full")
+    assert await decide("Bash", {"command": "git push origin feature"}) == "allow"
+    assert await decide("Bash", {"command": "terraform destroy"}) == "allow"
+
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_specialist(
+            conn, record.specialist_id, now=2, autonomy="ask",
+            always_ask_patterns=["terraform destroy"],
+        )
+
+    assert await decide("Bash", {"command": "git push origin feature"}) == "ask"
+    assert await decide("Bash", {"command": "terraform destroy"}) == "ask"
+
+
+async def test_decide_asks_when_the_agent_or_the_session_is_gone(world, monkeypatch):
+    async def on_feature(work_dir: Path) -> GitContext:
+        return GitContext("main", "feature")
+
+    monkeypatch.setattr("claudio_maestro.specialists.service.read_git_context", on_feature)
+    decide, record = make_decide(world, autonomy="full")
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.delete_specialist(conn, record.specialist_id)
+    world.manager.refresh_records({record.session_id})
+
+    assert await decide("Bash", {"command": "ls"}) == "ask"
+
+
+async def test_decide_runs_every_tool_with_a_command_through_the_policy(world, monkeypatch):
+    async def on_feature(work_dir: Path) -> GitContext:
+        return GitContext("main", "feature")
+
+    monkeypatch.setattr("claudio_maestro.specialists.service.read_git_context", on_feature)
+    decide, _ = make_decide(world, autonomy="full")
+
+    assert await decide("Monitor", {"command": "git push origin main", "description": "x"}) == "ask"
+    assert await decide("Monitor", {"command": "tail -f log"}) == "allow"
+    assert await decide("PowerShell", {"command": "gh pr merge 3"}) == "ask"
+    assert await decide("Monitor", {"command": ["git", "push"]}) == "ask"
+    assert await decide("mcp__maestro__avisar", {"command": "git push origin main"}) == "allow"
 
 
 async def test_decide_does_not_read_git_for_other_tools(world, monkeypatch):

@@ -35,15 +35,20 @@ router = APIRouter(prefix="/api")
 
 MAX_NAME = 100
 MAX_PATTERNS = 100
-MAX_PATTERN = 200
+MAX_PATTERN = 100
+# What reaches the check below; past this the framework refuses it on its own.
+MAX_PATTERN_INPUT = 1000
 MAX_RUN_TEXT = 5000
 MAX_SCHEDULES = 50
 MAX_EXTRA_PROJECTS = 50
 MAX_SECRETS_PER_REQUEST = 50
 MAX_SECRET_VALUE = 20_000
 MAX_NOTICE_IDS = 500
+MAX_ITEM_KEY = 1000
 DAYS = "1234567"
 TIME_PATTERN = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
+# A command pattern is plain words: no quotes, globs, parentheses or shell operators.
+COMMAND_PATTERN = re.compile(r"[\w .:/-]+")
 
 AGENT_NOT_FOUND = "Agente não encontrado."
 PROJECT_NOT_FOUND = "Projeto não encontrado."
@@ -56,11 +61,15 @@ BUSY_TEXT = (
     "O agente tem uma conversa com turno em andamento ou esperando você. "
     "Finalize-a antes de excluir o agente."
 )
+BAD_PATTERN = (
+    "Os padrões aceitam só letras, números, espaço e os sinais - _ . / :, "
+    "com até 100 caracteres cada."
+)
 BAD_SECRETS_BODY = 'Envie {"values": {"NOME": "valor" ou null}}.'
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NAME)]
 Pattern = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_PATTERN)
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_PATTERN_INPUT)
 ]
 Patterns = Annotated[list[Pattern], Field(max_length=MAX_PATTERNS)]
 RunText = Annotated[
@@ -242,6 +251,13 @@ def _clean_schedules(items: list[ScheduleIn]) -> list[tuple[str, str]]:
     return cleaned
 
 
+def _clean_patterns(patterns: list[str]) -> list[str]:
+    for pattern in patterns:
+        if len(pattern) > MAX_PATTERN or not COMMAND_PATTERN.fullmatch(pattern):
+            raise _unprocessable(BAD_PATTERN)
+    return _dedupe(patterns)
+
+
 def _require_project(conn: sqlite3.Connection, project_id: int) -> None:
     if project_id not in _project_ids(conn):
         raise _not_found(PROJECT_NOT_FOUND)
@@ -297,10 +313,9 @@ async def update_specialist(
         if value is None and name not in _NULLABLE:
             raise _unprocessable(f"O campo “{name}” não aceita valor nulo.")
     schedules = _clean_schedules(given.pop("schedules")) if "schedules" in given else None
-    if "outward_patterns" in given:
-        given["outward_patterns"] = _dedupe(given["outward_patterns"])
-    if "always_ask_patterns" in given:
-        given["always_ask_patterns"] = _dedupe(given["always_ask_patterns"])
+    for field in ("outward_patterns", "always_ask_patterns"):
+        if field in given:
+            given[field] = _clean_patterns(given[field])
     now = _now()
     try:
         with db.transaction(conn):
@@ -457,10 +472,15 @@ async def list_items(specialist_id: int, conn: DbDep) -> list[dict[str, Any]]:
     return [asdict(item) for item in store.list_items(conn, specialist_id)]
 
 
-@router.delete(
-    "/specialists/{specialist_id}/items/{key:path}", status_code=status.HTTP_204_NO_CONTENT
-)
-async def delete_item(specialist_id: int, key: str, request: Request, conn: DbDep) -> Response:
+@router.delete("/specialists/{specialist_id}/items", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item(
+    specialist_id: int,
+    key: Annotated[str, Query(min_length=1, max_length=MAX_ITEM_KEY)],
+    request: Request,
+    conn: DbDep,
+) -> Response:
+    """The key travels in the query, as is: in the path, `..` or `%2F` could be changed
+    on the way."""
     _get(conn, specialist_id)
     with db.transaction(conn):
         store.delete_item(conn, specialist_id, key)

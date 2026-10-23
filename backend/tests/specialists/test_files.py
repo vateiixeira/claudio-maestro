@@ -281,3 +281,45 @@ def test_parse_skill_rejects_yaml_block_scalars(marker: str) -> None:
 def test_parse_skill_accepts_quoted_block_marker_text() -> None:
     meta = parse_skill('---\nname: abc\ndescription: ">"\n---\n')
     assert meta.description == ">"
+
+
+RESERVED_TEXT = "Este nome é reservado pelo sistema. Escolha outro nome para o segredo."
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "PATH", "HOME", "USER", "SHELL", "PWD", "TMPDIR", "NODE_OPTIONS",
+        "CLAUDE", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CONFIG_DIR",
+        "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "LD_PRELOAD", "LD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES", "PYTHONPATH", "PYTHON", "PYTHONSTARTUP",
+        "MAESTRO_DATA_DIR", "MAESTRO_",
+    ],
+)
+def test_secret_reserved_name_rejected_with_a_fixed_message(files: SpecialistFiles, name: str) -> None:
+    files.create("filmes", "Filmes")
+    files.write_secrets("filmes", {"OK": "1"})
+
+    with pytest.raises(InvalidSecretNameError) as info:
+        files.write_secrets("filmes", {"NOVO": "2", name: "x"})
+
+    assert str(info.value) == RESERVED_TEXT
+    assert files.read_secrets("filmes") == {"OK": "1"}
+
+
+@pytest.mark.parametrize("name", ["PATHS", "MY_PATH", "HOMEPAGE", "USERNAME", "ANTHROPIC", "LD", "MAESTRO", "NODE_ENV"])
+def test_secret_names_that_only_look_reserved_are_accepted(files: SpecialistFiles, name: str) -> None:
+    files.create("filmes", "Filmes")
+    files.write_secrets("filmes", {name: "v"})
+    assert files.secret_names("filmes") == [name]
+
+
+def test_reserved_names_in_the_file_never_reach_the_session(files: SpecialistFiles) -> None:
+    files.create("filmes", "Filmes")
+    (files.root / "filmes" / "secrets.env").write_text(
+        'PATH="/tmp/mal"\nLD_PRELOAD="x.so"\nTOKEN="ok"\n', encoding="utf-8"
+    )
+
+    assert files.read_secrets("filmes") == {"TOKEN": "ok"}
+    files.write_secrets("filmes", {"PATH": None})  # removing one is harmless
+    assert files.secret_names("filmes") == ["TOKEN"]

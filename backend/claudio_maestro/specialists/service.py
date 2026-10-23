@@ -52,6 +52,8 @@ RECOVERABLE_OUTCOMES = (*OPEN_OUTCOMES, "failed")
 # States of a session with a turn in progress (a pending permission or question is part
 # of the turn).
 TURN_OPEN_STATES = ("connecting", "running", "awaiting_decision")
+# Outcomes of a run whose session is finished by this service once its turn ends.
+FINISHING_OUTCOMES = ("concluded", "closed")
 PROBLEM_OUTCOMES = ("failed", "skipped")
 REASON_MAX_CHARS = 500
 # A concluded session is finished when its turn ends. The wait has no limit (a session is
@@ -125,7 +127,7 @@ class SpecialistService:
                 )
             },
             settings=json.dumps({"permissions": {"ask": rules}}),
-            decide=self._decider(record, specialist),
+            decide=self._decider(record.session_id),
         )
 
     @staticmethod
@@ -145,25 +147,36 @@ class SpecialistService:
                 found.append(project)
         return found
 
-    def _decider(self, record: SessionRecord, specialist: store.Specialist):
-        autonomy = specialist.autonomy
-        outward = list(specialist.outward_patterns)
-        always = list(specialist.always_ask_patterns)
-
+    def _decider(self, session_id: str):
         async def decide(tool_name: str, tool_input: dict[str, Any]) -> Literal["allow", "ask"]:
             if tool_name.startswith(TOOL_PREFIX):
                 return "allow"
             if tool_name in ALWAYS_ASK_TOOLS:
                 return "ask"
-            if tool_name != "Bash":
+            # Bash, Monitor, PowerShell...: whatever runs a shell command, by its input.
+            if tool_name != "Bash" and "command" not in tool_input:
                 return "allow"
             command = tool_input.get("command")
             if not isinstance(command, str):
                 return "ask"
-            # The folder is read now: the session may have moved into a worktree since it
-            # started, and a push is judged by the branch of the folder it runs in.
-            git = await read_git_context(Path(record.work_dir()))
-            return classify(command, autonomy=autonomy, outward=outward, always=always, git=git)
+            # Both are read now: the history sync and external changes put a new record
+            # in the session (it may have moved into a worktree), and the person may have
+            # changed the agent's autonomy or patterns since the session started.
+            try:
+                record = self._sessions.find_record(session_id)
+            except SessionNotFoundError:
+                return "ask"
+            specialist = self._specialist_by_id(record.specialist_id)
+            if specialist is None:
+                return "ask"
+            return await classify(
+                command,
+                autonomy=specialist.autonomy,
+                outward=list(specialist.outward_patterns),
+                always=list(specialist.always_ask_patterns),
+                work_dir=Path(record.work_dir()),
+                read_git=read_git_context,
+            )
 
         return decide
 
@@ -346,14 +359,25 @@ class SpecialistService:
     # Hooks of the sessions and of the closure check ------------------------------------
 
     async def on_closure(self, closure: Closure) -> None:
-        """What the closure check found in an agent's session. Ignored once the run ended."""
+        """What the closure check found in an agent's session. A verdict older than the
+        session's last activity is ignored, like the screen does. Once the run ended, the
+        only thing left is a finish still pending (lost in a restart of the backend)."""
         if closure.verdict not in ("can_close", "user_action", "incomplete"):
             return
-        specialist = self._specialist_of(closure.session_id)
+        try:
+            record = self._sessions.find_record(closure.session_id)
+        except SessionNotFoundError:
+            return
+        if closure.is_stale(record.last_activity_at):
+            return
+        specialist = self._specialist_by_id(record.specialist_id)
         if specialist is None:
             return
         with closing(db.connect(self._db_path)) as conn:
             run = store.run_for_session(conn, closure.session_id)
+        if run is not None and run.outcome in FINISHING_OUTCOMES:
+            await self._finish_if_pending(closure.session_id, record)
+            return
         if run is not None and run.outcome not in RECOVERABLE_OUTCOMES:
             return
         if closure.verdict == "can_close":
@@ -380,8 +404,29 @@ class SpecialistService:
             self._last_alert[closure.session_id] = text
             self._add_notice(specialist.id, closure.session_id, "alert", text)
 
+    async def recover(self) -> None:
+        """At startup, after the sessions kept by the agentd are attached again: finish,
+        once their turn ends, the sessions whose run ended but whose finish was lost
+        (the backend went down before the turn ended)."""
+        with closing(db.connect(self._db_path)) as conn:
+            pending = store.pending_finishes(conn)
+        for session_id in pending:
+            try:
+                record = self._sessions.find_record(session_id)
+            except SessionNotFoundError:
+                self._clear_pending(session_id)
+                continue
+            with closing(db.connect(self._db_path)) as conn:
+                run = store.run_for_session(conn, session_id)
+            if record.finished or run is None or run.outcome not in FINISHING_OUTCOMES:
+                self._clear_pending(session_id)
+                continue
+            self._finish_later(session_id)
+
     def on_finished(self, session_id: str, finished_at: int) -> None:
-        """The person finished the session: a run still open counts as concluded."""
+        """The session was finished (by the person or by this service): a run still open
+        counts as concluded, and no finish is pending any more."""
+        self._clear_pending(session_id)
         self._set_outcome(
             session_id, "concluded", FINISHED_BY_USER, only_from=OPEN_OUTCOMES, ended_at=finished_at
         )
@@ -413,11 +458,14 @@ class SpecialistService:
             record = self._sessions.find_record(session_id)
         except SessionNotFoundError:
             return None
-        if record.specialist_id is None:
+        return self._specialist_by_id(record.specialist_id)
+
+    def _specialist_by_id(self, specialist_id: int | None) -> store.Specialist | None:
+        if specialist_id is None:
             return None
         with closing(db.connect(self._db_path)) as conn:
             try:
-                return store.get_specialist(conn, record.specialist_id)
+                return store.get_specialist(conn, specialist_id)
             except store.SpecialistNotFoundError:
                 return None
 
@@ -491,13 +539,16 @@ class SpecialistService:
     def _finish_later(self, session_id: str) -> None:
         """Finish the session once its turn is over, in the background (the caller may be
         a tool running inside that very turn). Nothing is finished if the person wrote,
-        or finished and reopened the session, after this point. The task lives in memory:
-        a backend restart in the middle loses it, which is accepted; the closure check
-        is the safety net that finishes such a session later."""
+        or finished and reopened the session, after this point. The task lives in memory;
+        a mark in the database survives a restart of the backend, and `recover` (or the
+        next closure verdict) finishes the session then."""
         try:
             session = self._sessions.get(session_id)
         except SessionNotFoundError:
+            self._clear_pending(session_id)
             return
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.mark_finish_pending(conn, session_id)
         task = asyncio.get_running_loop().create_task(
             self._finish_when_turn_ends(session_id, session, session.activity_marker)
         )
@@ -514,9 +565,13 @@ class SpecialistService:
                 try:
                     current = self._sessions.get(session_id)
                 except SessionNotFoundError:
+                    self._clear_pending(session_id)
                     return
-                if current is not session or session.activity_marker != marker:
-                    return  # forgotten, or the person took the session back
+                if current is not session:
+                    return  # forgotten from memory: the mark stays for `recover`
+                if session.activity_marker != marker:
+                    self._clear_pending(session_id)
+                    return  # the person took the session back
                 if session.state not in TURN_OPEN_STATES:
                     break
                 await asyncio.sleep(self._finish_poll)
@@ -528,7 +583,29 @@ class SpecialistService:
                         session_id,
                     )
             await self._sessions.update(session_id, finished=True)
+            self._clear_pending(session_id)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Falha ao finalizar a sessão de agente %s", session_id)
+
+    async def _finish_if_pending(self, session_id: str, record: SessionRecord) -> None:
+        """Finish now a session whose finish is still pending, when its turn is closed
+        (no turn running, no permission or question waiting)."""
+        if record.finished:
+            return
+        with closing(db.connect(self._db_path)) as conn:
+            if not store.is_finish_pending(conn, session_id):
+                return
+        if session_id in self._sessions.active_ids():
+            try:
+                if self._sessions.get(session_id).state in TURN_OPEN_STATES:
+                    return
+            except SessionNotFoundError:
+                return
+        await self._sessions.update(session_id, finished=True)
+        self._clear_pending(session_id)
+
+    def _clear_pending(self, session_id: str) -> None:
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.clear_finish_pending(conn, session_id)

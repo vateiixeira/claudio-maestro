@@ -150,6 +150,7 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 | `MAESTRO_UPDATE_CHECK` | Com `0`, o app não consulta o GitHub para saber se há versão nova | ligado |
 | `MAESTRO_USAGE_CHECK` | Com `0`, o app não consulta o consumo da assinatura | ligado |
 | `MAESTRO_CLAUDE_CHECK` | Com `0`, o app não consulta qual é a última versão do Claude (o aviso no menu lateral some) | ligado |
+| `MAESTRO_SPECIALISTS_SCHEDULER` | Com `0`, os agentes não rodam nos horários marcados (o "Rodar agora" continua valendo). Use numa instância isolada com cópia do banco, para os agentes não rodarem em dobro | ligado |
 | `MAESTRO_CLAUDE_CLI` | `bundled` faz o app usar sempre o Claude embutido no SDK, em vez do instalado no sistema | escolhe sozinho |
 | `MAESTRO_CPU_WEIGHT` | Peso de CPU do serviço systemd, de 1 a 10000: em disputa, o desktop e o navegador passam à frente das sessões. Só vale no serviço, depois de rodar `service install` | `20` |
 | `MAESTRO_CPU_QUOTA` | Teto de CPU de todas as sessões somadas, no serviço systemd: `auto` (60% dos núcleos, no mínimo 1), `off` ou um percentual (`800` = 8 núcleos) | `auto` |
@@ -176,7 +177,7 @@ Onde ficam os arquivos: cada agente tem uma pasta `<pasta de dados>/specialists/
 Como ele roda:
 
 - A sessão do agente aparece nas conversas do projeto, com o selo "Agente · nome". Ela fica no modo de permissão `default` e não pede ok para editar nem para rodar comandos locais.
-- As ações para fora (`git push`, `gh pr create`, `gh pr merge`, `gh issue comment`, `gh issue close`, `gh release` e as que você acrescentar) pedem ok quando a autonomia é "Pede ok antes de agir para fora". O merge (`gh pr merge`), o push para a branch padrão e o push forçado pedem ok sempre, qualquer que seja a autonomia.
+- As ações para fora (`git push`, `gh pr create`, `gh pr merge`, `gh issue comment`, `gh issue close`, `gh release` e as que você acrescentar) pedem ok quando a autonomia é "Pede ok antes de agir para fora". O merge (`gh pr merge`), o push para a branch padrão e o push forçado pedem ok sempre, qualquer que seja a autonomia. Um push sem o nome da branch só passa sem ok quando o próprio comando diz a pasta (`cd <pasta> && git push`, `git -C <pasta> push`) e ela não está na branch padrão.
 - O agente fecha a própria execução com a ferramenta `concluir`. Se ele não fechar, o Maestro confere o desfecho no fim da sessão.
 - O agendador pula a execução se a anterior ainda estiver rodando ou esperando você, ou se o uso da assinatura estiver em 90% ou mais. Se o app estava desligado no horário, grava uma execução "perdida". Duas execuções seguidas sem sucesso geram um alerta.
 - Os avisos que o agente deixa aparecem na Inbox. O histórico das execuções não entra no contexto do agente: o registro é consultado por ferramenta, só quando ele precisa.

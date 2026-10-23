@@ -278,6 +278,12 @@ def create_app(
         except Exception:
             # Sessions that could not be reattached show as interrupted; the app must start.
             logger.exception("Falha ao religar as sessões do agentd")
+        try:
+            # Agents' sessions whose finish was lost when the backend went down; after the
+            # reattach, so a session kept by the agentd is only finished when its turn ends.
+            await app.state.specialists.recover()
+        except Exception:
+            logger.exception("Falha ao retomar a finalização das sessões de agente")
         app.state.commands = CommandCatalog(app.state.sessions.agent_factory)
 
         async def send_terminal_message(session_id: str, text: str) -> bool:
@@ -353,8 +359,10 @@ def create_app(
             ),
             asyncio.create_task(app.state.digest.run()),
         ]
-        app.state.scheduler_task = asyncio.create_task(app.state.scheduler.run())
-        tasks.append(app.state.scheduler_task)
+        app.state.scheduler_task = None
+        if app.state.settings.specialists_scheduler:
+            app.state.scheduler_task = asyncio.create_task(app.state.scheduler.run())
+            tasks.append(app.state.scheduler_task)
         if refresh_models if refresh_models is not None else agent_factory is None:
             tasks.append(
                 asyncio.create_task(
