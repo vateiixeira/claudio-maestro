@@ -9,10 +9,13 @@ from git_helpers import git, make_repo
 from claudio_maestro.specialists import policy
 from claudio_maestro.specialists.policy import (
     ALWAYS_DEFAULTS,
+    COMMENT_COMMANDS,
+    COMMENT_DENIED,
     OUTWARD_DEFAULTS,
     GitContext,
     ask_rules,
     classify,
+    denies_tool,
     read_git_context,
 )
 
@@ -37,8 +40,11 @@ def decide(command, autonomy="full", *, outward=(), always=(), git_ctx=ON_FEATUR
 
 def test_defaults_are_the_documented_values():
     assert OUTWARD_DEFAULTS == (
-        "git push", "gh pr create", "gh pr merge", "gh issue comment", "gh issue close",
-        "gh release",
+        "git push", "gh pr create", "gh pr merge", "gh issue close", "gh release",
+    )
+    assert COMMENT_COMMANDS == ("gh pr comment", "gh pr review", "gh issue comment")
+    assert COMMENT_DENIED == (
+        "Agentes não comentam no GitHub. Responda na conversa principal do agente."
     )
     assert ALWAYS_DEFAULTS == ("gh pr merge",)
 
@@ -118,8 +124,8 @@ def test_defaults_are_the_documented_values():
         ("gh --repo owner/repo pr merge 12", "full", ON_FEATURE, "ask"),
         ("gh pr create --fill", "full", ON_FEATURE, "allow"),
         ("gh pr create --fill", "ask", ON_FEATURE, "ask"),
-        ("gh issue comment 3 -b ok", "ask", ON_FEATURE, "ask"),
-        ("gh issue comment 3 -b ok", "full", ON_FEATURE, "allow"),
+        ("gh issue comment 3 -b ok", "ask", ON_FEATURE, "deny"),
+        ("gh issue comment 3 -b ok", "full", ON_FEATURE, "deny"),
         ("gh release create v1", "ask", ON_FEATURE, "ask"),
         ("gh pr view 12", "ask", ON_FEATURE, "allow"),
         # redirections are not refspecs
@@ -199,9 +205,11 @@ def test_ask_rules_union_without_duplicates():
         "Bash(git push:*)",
         "Bash(gh pr create:*)",
         "Bash(gh pr merge:*)",
-        "Bash(gh issue comment:*)",
         "Bash(gh issue close:*)",
         "Bash(gh release:*)",
+        "Bash(gh pr comment:*)",
+        "Bash(gh pr review:*)",
+        "Bash(gh api:*)",
         "Bash(python3 filmes.py baixar:*)",
         "Bash(terraform apply:*)",
     ]
@@ -209,7 +217,90 @@ def test_ask_rules_union_without_duplicates():
 
 
 def test_ask_rules_with_no_extras_are_the_defaults():
-    assert ask_rules([], []) == [f"Bash({p}:*)" for p in OUTWARD_DEFAULTS]
+    assert ask_rules([], []) == [
+        *(f"Bash({p}:*)" for p in OUTWARD_DEFAULTS),
+        "Bash(gh pr comment:*)",
+        "Bash(gh pr review:*)",
+        "Bash(gh api:*)",
+    ]
+
+
+# Comments on GitHub are denied --------------------------------------------------------------
+
+
+@pytest.mark.parametrize("autonomy", ["ask", "full"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gh pr comment 7 -b oi",
+        "gh issue comment 7 --body x",
+        "gh pr review 7 --comment -b x",
+        "gh -R o/r pr comment 7 -b oi",
+        "cd /r && gh api -X POST repos/o/r/issues/7/comments -f body=x",
+        "gh api repos/o/r/pulls/7/reviews -f event=COMMENT",
+        "gh api repos/o/r/pulls/7/comments/55/replies -f body=x",
+        "gh api --method PATCH repos/o/r/issues/comments/55 -f body=x",
+        "gh api repos/o/r/issues/7/comments --input body.json",
+        "gh api -X POST repos/o/r/issues/7/comments",
+        "gh api --method=post repos/o/r/issues/7/comments",
+        "gh api -XPOST repos/o/r/issues/7/comments",
+        "gh api repos/o/r/issues/7/comments -F body=@msg.md",
+        'bash -c "gh pr comment 7 -b x"',
+        "make test && gh pr review 7 --approve",
+        "gh api graphql -f query='mutation{addComment(input:{}){clientMutationId}}'",
+        "gh api graphql -f query='mutation{addPullRequestReviewThreadReply(input:{}){x}}'",
+        "gh api graphql -f query='mutation{submitPullRequestReview(input:{}){x}}'",
+    ],
+)
+def test_comment_commands_are_denied(command, autonomy):
+    assert decide(command, autonomy) == "deny"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gh api repos/o/r/pulls/7/comments",
+        "gh api repos/o/r/issues/7/comments --paginate",
+        "gh api -X GET repos/o/r/issues/7/comments",
+        "gh api --method GET repos/o/r/pulls/7/reviews",
+        "gh api repos/o/r/issues/7/comments -X GET -f per_page=100",
+        "gh api --method=get -F per_page=1 repos/o/r/issues/7/comments",
+        "gh api -XGET repos/o/r/pulls/7/comments -f per_page=100",
+        "gh api -X get repos/o/r/pulls/7/reviews -f per_page=100",
+        "gh pr view 7 --comments",
+        "gh api repos/o/r/pulls/7",
+        "gh api repos/o/r/pulls/7 -X PATCH -f state=closed",
+        "gh api graphql -f query='query{repository{name}}'",
+        "echo gh pr comment",
+    ],
+)
+def test_reads_and_other_writes_are_not_denied(command):
+    assert decide(command, "full") == "allow"
+
+
+def test_a_deny_wins_over_an_ask():
+    assert decide("gh pr merge 7 && gh pr comment 7 -b x", "full") == "deny"
+
+
+@pytest.mark.parametrize(
+    ("tool", "expected"),
+    [
+        ("mcp__github__add_issue_comment", True),
+        ("mcp__github__create_pull_request_review", True),
+        ("mcp__github__add_pull_request_review_comment", True),
+        ("mcp__github__submit_pull_request_review", True),
+        ("mcp__GitHub__reply_to_review_comment", True),
+        ("mcp__plugin_github_github__create_issue_comment", True),
+        ("mcp__github__update_issue_comment", True),
+        ("mcp__github__get_pull_request_comments", False),
+        ("mcp__github__create_pull_request", False),
+        ("mcp__Sentry__search_issues", False),
+        ("mcp__other__add_comment", False),
+        ("Bash", False),
+    ],
+)
+def test_denies_tool(tool, expected):
+    assert denies_tool(tool) is expected
 
 
 @pytest.mark.anyio

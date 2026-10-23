@@ -21,6 +21,7 @@ from typing import Any, Literal
 from claudio_maestro import db, projects
 from claudio_maestro.digest.closure_store import Closure
 from claudio_maestro.sessions import (
+    BLOCKED_TOOL_MESSAGE,
     ActiveSession,
     InvalidDecisionError,
     ProjectUnavailableError,
@@ -32,8 +33,11 @@ from claudio_maestro.sessions import (
 from claudio_maestro.specialists import store
 from claudio_maestro.specialists.files import SpecialistFiles, parse_skill
 from claudio_maestro.specialists.policy import (
+    COMMENT_COMMANDS,
+    COMMENT_DENIED,
     ask_rules,
     classify,
+    denies_tool,
     is_blocked,
     read_git_context,
 )
@@ -132,9 +136,18 @@ class SpecialistService:
                 )
             },
             settings=json.dumps(
-                {"permissions": {"ask": rules, "deny": list(specialist.denied_tools)}}
+                {
+                    "permissions": {
+                        "ask": rules,
+                        "deny": [
+                            *specialist.denied_tools,
+                            *(f"Bash({pattern}:*)" for pattern in COMMENT_COMMANDS),
+                        ],
+                    }
+                }
             ),
             decide=self._decider(record.session_id, list(specialist.denied_tools)),
+            deny_message=self._deny_message(record.session_id, list(specialist.denied_tools)),
         )
 
     @staticmethod
@@ -166,6 +179,8 @@ class SpecialistService:
             # for good once the session gets a new process.
             if is_blocked(tool_name, self._denied_tools(session_id, denied_at_start)):
                 return "deny"
+            if denies_tool(tool_name):
+                return "deny"
             if tool_name.startswith(TOOL_PREFIX):
                 return "allow"
             if tool_name in ALWAYS_ASK_TOOLS:
@@ -196,6 +211,17 @@ class SpecialistService:
             )
 
         return decide
+
+    def _deny_message(self, session_id: str, denied_at_start: list[str]):
+        """Why the decider refused a call: the decider refuses only a blocked tool or a
+        comment on GitHub, so anything not blocked now is a comment."""
+
+        def message(tool_name: str, tool_input: dict[str, Any]) -> str:
+            if is_blocked(tool_name, self._denied_tools(session_id, denied_at_start)):
+                return BLOCKED_TOOL_MESSAGE
+            return COMMENT_DENIED
+
+        return message
 
     def _denied_tools(self, session_id: str, at_start: list[str]) -> list[str]:
         """The tools blocked for the session's agent now; the ones from the start of the

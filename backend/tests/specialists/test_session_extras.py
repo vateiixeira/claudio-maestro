@@ -33,8 +33,11 @@ SETTINGS = '{"permissions": {"ask": ["Bash(git push:*)"]}}'
 class Setup:
     """Stub `session_setup`: records the records it saw and the tool calls `decide` got."""
 
-    def __init__(self, decision: Any = "ask", setup_error: Exception | None = None) -> None:
+    def __init__(
+        self, decision: Any = "ask", setup_error: Exception | None = None, deny_message: str = ""
+    ) -> None:
         self.decision = decision
+        self.deny_message = deny_message
         self.setup_error = setup_error
         self.records: list[Any] = []
         self.decided: list[tuple[str, dict[str, Any]]] = []
@@ -57,6 +60,7 @@ class Setup:
             mcp_servers={"maestro": self.server},
             settings=SETTINGS,
             decide=self.decide,
+            deny_message=(lambda _name, _input: self.deny_message) if self.deny_message else None,
         )
 
 
@@ -216,6 +220,19 @@ async def test_specialist_session_deny_refuses_without_a_prompt(make_env, env_cl
     assert isinstance(result, PermissionResultDeny)
     assert "bloqueada" in result.message
     assert result.interrupt is False
+    assert session.prompts == {}
+    assert env.recorder.of(session.session_id, "prompt.request") == []
+
+
+@pytest.mark.anyio
+async def test_policy_deny_returns_permission_deny_without_prompt(make_env, env_cleanup):
+    setup = Setup("deny", deny_message="Agentes não comentam no GitHub.")
+    env, session, can_use_tool = await connected_specialist_session(make_env, env_cleanup, setup)
+
+    result = await can_use_tool("Bash", {"command": "gh pr comment 7 -b x"}, ask_context())
+
+    assert isinstance(result, PermissionResultDeny)
+    assert result.message == "Agentes não comentam no GitHub."
     assert session.prompts == {}
     assert env.recorder.of(session.session_id, "prompt.request") == []
 

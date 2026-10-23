@@ -42,10 +42,16 @@ OUTWARD_DEFAULTS = (
     "git push",
     "gh pr create",
     "gh pr merge",
-    "gh issue comment",
     "gh issue close",
     "gh release",
 )
+# Agents act on GitHub as the owner, so a comment would trigger the PR webhook against
+# the agent itself. They never comment: these are denied in every autonomy.
+COMMENT_COMMANDS = ("gh pr comment", "gh pr review", "gh issue comment")
+COMMENT_DENIED = "Agentes não comentam no GitHub. Responda na conversa principal do agente."
+# Commands the CLI must always route through the policy, which then checks the shape
+# (`gh api` only denies a write to a comment, review or reply).
+_CONSULT_DEFAULTS = ("gh pr comment", "gh pr review", "gh api")
 # Actions that ask in every autonomy. The other "always" cases (a push to the default
 # branch, a forced push) depend on the command and on the repository, so they are code.
 ALWAYS_DEFAULTS = ("gh pr merge",)
@@ -61,6 +67,24 @@ _KEYWORDS = frozenset(
 )
 _REDIRECTION = re.compile(r"^(?:\d*|&)[<>]+[&|]?")
 _MAX_NESTING = 3
+
+# `gh api` options that take the next word as their value.
+_GH_API_VALUE_OPTIONS = frozenset(
+    {
+        "-X", "--method", "-f", "--raw-field", "-F", "--field", "--input", "-H", "--header",
+        "-q", "--jq", "-t", "--template", "--hostname", "--cache", "-p", "--preview",
+    }
+)
+_GH_API_FIELD_OPTIONS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
+_COMMENT_PATH = re.compile(r"/(comments|reviews|replies)(/|$|\?)")
+_COMMENT_MUTATIONS = (
+    "addComment",
+    "addPullRequestReview",
+    "addPullRequestReviewComment",
+    "addPullRequestReviewThreadReply",
+    "submitPullRequestReview",
+)
+_COMMENT_TOOL = re.compile(r"(add|create|update|submit|reply)_?\w*(comment|review)")
 
 # Global options that take the next word as their value.
 _GIT_VALUE_OPTIONS = frozenset(
@@ -106,7 +130,7 @@ async def _git_line(work_dir: Path, *args: str) -> str | None:
 def ask_rules(outward: list[str], always: list[str]) -> list[str]:
     """`Bash(<prefix>:*)` for every outward and always pattern, defaults first."""
     rules: list[str] = []
-    for pattern in (*OUTWARD_DEFAULTS, *ALWAYS_DEFAULTS, *outward, *always):
+    for pattern in (*OUTWARD_DEFAULTS, *ALWAYS_DEFAULTS, *_CONSULT_DEFAULTS, *outward, *always):
         rule = f"Bash({pattern}:*)"
         if rule not in rules:
             rules.append(rule)
@@ -143,14 +167,17 @@ async def classify(
     always: list[str],
     work_dir: Path,
     read_git: GitReader | None = None,
-) -> Literal["allow", "ask"]:
-    """"ask" when the user must approve the command, "allow" when it may just run.
+) -> Literal["allow", "ask", "deny"]:
+    """"deny" for a comment on GitHub (in any autonomy), "ask" when the user must approve
+    the command, "allow" when it may just run.
 
     `work_dir` is the session's folder. A push is judged by the folder it runs in: the
     one a `cd` earlier in the same command line, `git -C` or both name. A push without
     a destination branch and without a folder in the command asks, because the folder
     the CLI keeps between calls is unknown. The repository is only read for a push."""
     segments = _segments(command, _Place.start(work_dir))
+    if any(_comments_on_github(seg.words) for seg in segments):
+        return "deny"
     always_patterns = [_words(p) for p in (*ALWAYS_DEFAULTS, *always)]
     if any(_matches(seg.words, pattern) for seg in segments for pattern in always_patterns):
         return "ask"
@@ -163,6 +190,57 @@ async def classify(
         if seg.words[:2] == ["git", "push"] and await _push_needs_ok(seg, contexts):
             return "ask"
     return "allow"
+
+
+def denies_tool(tool_name: str) -> bool:
+    """A tool of a GitHub MCP server that writes a comment or a review."""
+    if not tool_name.startswith("mcp__") or "github" not in tool_name.lower():
+        return False
+    return _COMMENT_TOOL.match(tool_name.rsplit("__", 1)[-1]) is not None
+
+
+def _comments_on_github(words: list[str]) -> bool:
+    if any(_matches(words, _words(pattern)) for pattern in COMMENT_COMMANDS):
+        return True
+    return words[:2] == ["gh", "api"] and _api_writes_comment(words[2:])
+
+
+def _api_writes_comment(args: list[str]) -> bool:
+    """A `gh api` call that writes (a method other than GET, or any field or input) and
+    aims at a comment, review or reply path, or sends a comment mutation to graphql."""
+    method: str | None = None
+    has_body = False
+    positional: list[str] = []
+    fields: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        name, equals, attached = arg.partition("=")
+        if arg.startswith("--") and equals:
+            value = attached
+        elif not arg.startswith("--") and arg[:2] in ("-X", "-f", "-F") and len(arg) > 2:
+            name, value = arg[:2], arg[2:]  # `-XPOST`, `-fbody=x`
+        elif name in _GH_API_VALUE_OPTIONS:
+            value = args[index] if index < len(args) else ""
+            index += 1
+        elif arg.startswith("-"):
+            continue
+        else:
+            positional.append(arg)
+            continue
+        if name in ("-X", "--method"):
+            method = value.upper()
+        elif name in _GH_API_FIELD_OPTIONS:
+            has_body = True
+            fields.append(value)
+    endpoint = positional[0] if positional else ""
+    if endpoint == "graphql":
+        return any(mutation in field for field in fields for mutation in _COMMENT_MUTATIONS)
+    # An explicit method decides (with `-X GET` the fields go in the query string);
+    # without one, fields or an input make gh POST.
+    writes = has_body if method is None else method != "GET"
+    return writes and _COMMENT_PATH.search(endpoint) is not None
 
 
 def _matches(segment: list[str], pattern: list[str]) -> bool:

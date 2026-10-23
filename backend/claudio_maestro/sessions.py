@@ -960,7 +960,8 @@ class SessionExtras:
     (appended to the system prompt), extra folders, environment, in-process MCP servers,
     the `--settings` JSON with the `ask` and `deny` rules, and `decide`, the agent's policy
     that answers `allow` (no prompt), `ask` (a pending prompt in the Inbox) or `deny` (the
-    tool is refused, no prompt) per tool call."""
+    tool is refused, no prompt) per tool call. `deny_message` says why a refused call was
+    refused; without it, the tool is reported as blocked."""
 
     system_prompt_append: str
     add_dirs: list[Path]
@@ -968,6 +969,7 @@ class SessionExtras:
     mcp_servers: dict[str, Any]
     settings: str
     decide: Callable[[str, dict[str, Any]], Awaitable[Literal["allow", "ask", "deny"]]]
+    deny_message: Callable[[str, dict[str, Any]], str] | None = None
 
 
 # Called by every new client of a session with a `specialist_id`; None: no extras.
@@ -3151,7 +3153,10 @@ class ActiveSession:
             if decision == "allow":
                 return PermissionResultAllow()
             if decision == "deny":
-                return PermissionResultDeny(message=BLOCKED_TOOL_MESSAGE)
+                message = (
+                    extras.deny_message(tool_name, tool_input) if extras.deny_message else ""
+                )
+                return PermissionResultDeny(message=message or BLOCKED_TOOL_MESSAGE)
         prompt = PendingPrompt(
             prompt_id=uuid.uuid4().hex,
             future=asyncio.get_running_loop().create_future(),

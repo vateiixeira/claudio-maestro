@@ -26,10 +26,10 @@ from claudio_maestro.agent.fake import (
     text_turn,
 )
 from claudio_maestro.digest.closure_store import Closure
-from claudio_maestro.sessions import SessionManager
+from claudio_maestro.sessions import BLOCKED_TOOL_MESSAGE, SessionManager
 from claudio_maestro.specialists import store
 from claudio_maestro.specialists.files import SpecialistFiles
-from claudio_maestro.specialists.policy import GitContext
+from claudio_maestro.specialists.policy import COMMENT_DENIED, GitContext
 from claudio_maestro.specialists.service import SpecialistService
 from claudio_maestro.specialists.tools import SERVER_NAME
 
@@ -920,7 +920,9 @@ async def test_session_setup_env_has_secrets_and_prompt_has_no_secret_values(wor
     assert list(extras.mcp_servers) == [SERVER_NAME]
     rules = json.loads(extras.settings)["permissions"]["ask"]
     assert "Bash(terraform apply:*)" in rules and "Bash(rm -rf:*)" in rules
-    assert json.loads(extras.settings)["permissions"]["deny"] == []
+    assert json.loads(extras.settings)["permissions"]["deny"] == [
+        "Bash(gh pr comment:*)", "Bash(gh pr review:*)", "Bash(gh issue comment:*)",
+    ]
 
 
 async def test_session_setup_settings_deny_the_blocked_tools(world):
@@ -936,8 +938,47 @@ async def test_session_setup_settings_deny_the_blocked_tools(world):
 
     assert extras is not None
     permissions = json.loads(extras.settings)["permissions"]
-    assert permissions["deny"] == ["mcp__kbgen-issues__editar_issue", "mcp__outro", "WebFetch"]
+    assert permissions["deny"] == [
+        "mcp__kbgen-issues__editar_issue", "mcp__outro", "WebFetch",
+        "Bash(gh pr comment:*)", "Bash(gh pr review:*)", "Bash(gh issue comment:*)",
+    ]
     assert "ask" in permissions
+    assert extras.deny_message is not None
+    assert extras.deny_message("WebFetch", {}) == BLOCKED_TOOL_MESSAGE
+    assert extras.deny_message("mcp__outro__qualquer", {}) == BLOCKED_TOOL_MESSAGE
+    assert extras.deny_message("Bash", {"command": "gh pr comment 7 -b x"}) == COMMENT_DENIED
+
+
+async def test_setup_settings_have_deny_rules(world):
+    specialist_id = world.add_specialist()
+    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+
+    extras = world.service.session_setup(record)
+
+    assert extras is not None
+    permissions = json.loads(extras.settings)["permissions"]
+    assert permissions["deny"] == [
+        "Bash(gh pr comment:*)", "Bash(gh pr review:*)", "Bash(gh issue comment:*)",
+    ]
+    assert {"Bash(gh pr comment:*)", "Bash(gh pr review:*)", "Bash(gh api:*)"} <= set(
+        permissions["ask"]
+    )
+    assert extras.deny_message is not None
+    assert extras.deny_message("Bash", {"command": "gh pr comment 7 -b x"}) == COMMENT_DENIED
+    assert extras.deny_message("mcp__github__add_issue_comment", {}) == COMMENT_DENIED
+
+
+async def test_decider_denies_comments_before_allowing_the_maestro_server(world):
+    specialist_id = world.add_specialist(autonomy="full")
+    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+    extras = world.service.session_setup(record)
+    assert extras is not None
+
+    assert await extras.decide("mcp__github__add_issue_comment", {}) == "deny"
+    assert await extras.decide("mcp__github__get_issue", {}) == "allow"
+    assert await extras.decide("mcp__maestro__anything", {}) == "allow"
+    assert await extras.decide("Bash", {"command": "gh pr comment 7 -b x"}) == "deny"
+    assert await extras.decide("Bash", {"command": "gh pr view 7 --comments"}) == "allow"
 
 
 async def test_session_setup_skips_unavailable_extra_projects(world):
@@ -1093,7 +1134,7 @@ async def test_decide_uses_the_autonomy_and_patterns_of_the_agent(world, monkeyp
     decide, _ = make_decide(world, autonomy="full", always_ask_patterns=["terraform destroy"])
 
     assert await decide("Bash", {"command": "terraform destroy"}) == "ask"
-    assert await decide("Bash", {"command": "gh pr comment 1 --body oi"}) == "allow"
+    assert await decide("Bash", {"command": "gh pr create --fill"}) == "allow"
 
 
 async def test_decide_reads_the_live_record_at_each_call(world, monkeypatch):
