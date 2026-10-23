@@ -11,6 +11,7 @@ import { useLayoutStore } from './layout'
 import { useModelsStore } from './models'
 import { useProjectsStore } from './projects'
 import { useSessionsStore } from './sessions'
+import { useSpecialistsStore } from './specialists'
 import { useUpdatesStore } from './updates'
 import { useUsageStore } from './usage'
 
@@ -76,7 +77,12 @@ export function bindRealtime(socket: EventSocket): () => void {
     socket.on('session.closure', (event) => useClosureStore().applyClosure(event.data)),
     // A delivery record was created or changed (global event).
     socket.on('delivery.updated', (event) => useDeliveriesStore().applyEvent(event.data)),
+    // Agents: something changed, a run started or ended, a notice came or was read (global events).
+    socket.on('specialist.changed', (event) => useSpecialistsStore().applyChanged(event.data)),
+    socket.on('specialist.run', (event) => useSpecialistsStore().applyRun(event.data)),
+    socket.on('specialist.notice', (event) => useSpecialistsStore().applyNotice(event.data)),
     socket.onReconnect(() => {
+      useSpecialistsStore().reload()
       useDigestStore().invalidate()
       useClosureStore().invalidate()
       void useDigestStore().refreshStatus()

@@ -62,8 +62,14 @@ describe('menu lateral', () => {
     expect(wrapper.find('[data-test="nav-inbox"]').attributes('href')).toBe('/inbox')
     expect(wrapper.find('[data-test="nav-conversations"]').attributes('href')).toBe('/sessions')
     expect(wrapper.find('[data-test="nav-deliveries"]').attributes('href')).toBe('/entregas')
+    expect(wrapper.find('[data-test="nav-agents"]').attributes('href')).toBe('/agentes')
     expect(wrapper.find('[data-test="preferences"]').attributes('href')).toBe('/preferencias')
     expect(wrapper.find('[data-test="new-project"]').attributes('href')).toBe('/projects/new')
+  })
+
+  it('"Agentes" vem logo depois de "Entregas"', () => {
+    const links = mountSidebar().findAll('[data-test^="nav-"]').map((l) => l.attributes('data-test'))
+    expect(links.indexOf('nav-agents')).toBe(links.indexOf('nav-deliveries') + 1)
   })
 
   it('conta na Inbox as conversas que aguardam você', () => {
@@ -206,7 +212,7 @@ describe('menu lateral', () => {
 
   it('Inbox, Dashboard, Conversas, Entregas e Preferências têm ícone', () => {
     const w = mountSidebar()
-    for (const id of ['nav-inbox', 'nav-dashboard', 'nav-conversations', 'nav-deliveries', 'preferences']) {
+    for (const id of ['nav-inbox', 'nav-dashboard', 'nav-conversations', 'nav-deliveries', 'nav-agents', 'preferences']) {
       expect(w.find(`[data-test="${id}"] svg`).exists(), id).toBe(true)
     }
   })

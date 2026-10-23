@@ -4,6 +4,7 @@ import {
   type RouteRecordRaw,
   type RouterHistory,
 } from 'vue-router'
+import AgentsView from '../views/AgentsView.vue'
 import ConversationView from '../views/ConversationView.vue'
 import ConversationsView from '../views/ConversationsView.vue'
 import DashboardView from '../views/DashboardView.vue'
@@ -20,6 +21,8 @@ export const routes: RouteRecordRaw[] = [
   { path: '/dashboard', name: 'dashboard', component: DashboardView },
   { path: '/sessions', name: 'sessions', component: ConversationsView },
   { path: '/entregas', name: 'deliveries', component: DeliveriesView },
+  // `/agentes` is the list; `/agentes/:id` opens one agent beside it.
+  { path: '/agentes/:id?', name: 'agents', component: AgentsView, props: true },
   { path: '/sessions/:id', name: 'session', component: ConversationView, props: true },
   // Reader page of a markdown file, opened in its own tab: no sidebar, no live connection.
   { path: '/sessions/:id/ver', name: 'markdown-view', component: MarkdownView, props: true, meta: { bare: true } },

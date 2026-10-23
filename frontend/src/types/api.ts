@@ -684,3 +684,98 @@ export interface ClaudeCliInfo {
   latest: { version: string; channel: string; checked_at: number } | null
   update_available: boolean
 }
+
+// Agents (specialists)
+
+export type SpecialistRunOutcome = 'running' | 'concluded' | 'closed' | 'waiting' | 'failed' | 'skipped' | 'missed'
+export type SpecialistTrigger = 'schedule' | 'manual'
+export type SpecialistAutonomy = 'ask' | 'full'
+
+export interface SpecialistSchedule {
+  id: number
+  /** ISO weekday digits, "1" = Monday ... "7" = Sunday. */
+  days: string
+  /** "HH:MM", local time. */
+  time: string
+  last_fired_at: number | null
+}
+
+export interface SpecialistRun {
+  id: number
+  specialist_id: number
+  session_id: string | null
+  trigger: SpecialistTrigger
+  scheduled_for: number | null
+  started_at: number
+  ended_at: number | null
+  outcome: SpecialistRunOutcome
+  reason: string | null
+}
+
+export interface Specialist {
+  id: number
+  slug: string
+  name: string
+  /** The `description` of the SKILL.md frontmatter; empty when unreadable. */
+  description: string
+  project_id: number
+  extra_project_ids: number[]
+  autonomy: SpecialistAutonomy
+  /** Only the ones added by the user; the factory defaults are fixed in the backend. */
+  outward_patterns: string[]
+  always_ask_patterns: string[]
+  close_by_check: boolean
+  model: string | null
+  effort: Effort | null
+  run_text: string
+  enabled: boolean
+  /** MCP servers found in the last run. */
+  last_mcp: { name?: string; status?: string }[]
+  schedules: SpecialistSchedule[]
+  last_run: SpecialistRun | null
+  /** Number of unfinished sessions of the agent. */
+  open_sessions: number
+}
+
+export interface SpecialistCreate {
+  name: string
+  slug: string
+  project_id: number
+}
+
+export interface SpecialistUpdate {
+  name?: string
+  project_id?: number
+  extra_project_ids?: number[]
+  autonomy?: SpecialistAutonomy
+  outward_patterns?: string[]
+  always_ask_patterns?: string[]
+  close_by_check?: boolean
+  /** `null` goes back to the default. */
+  model?: string | null
+  effort?: Effort | null
+  run_text?: string
+  enabled?: boolean
+  schedules?: { days: string; time: string }[]
+}
+
+export interface SpecialistItem {
+  key: string
+  status: string
+  link: string | null
+  note: string | null
+  created_at: number
+  updated_at: number
+}
+
+export type SpecialistNoticeKind = 'notice' | 'summary' | 'alert'
+
+export interface SpecialistNotice {
+  id: number
+  specialist_id: number
+  session_id: string | null
+  kind: SpecialistNoticeKind
+  text: string
+  created_at: number
+  read_at: number | null
+}

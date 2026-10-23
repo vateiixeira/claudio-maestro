@@ -40,6 +40,12 @@ import type {
   SessionDigest,
   SessionGroup,
   SessionUpdate,
+  Specialist,
+  SpecialistCreate,
+  SpecialistItem,
+  SpecialistNotice,
+  SpecialistRun,
+  SpecialistUpdate,
   UpdateJob,
   UpdateState,
   UsageSnapshot,
@@ -494,4 +500,74 @@ export function runInTerminal(sessionId: string, command: string): Promise<{ run
 /** Ends the session's terminal (the shell and whatever runs in it). */
 export function closeTerminal(sessionId: string): Promise<void> {
   return request('DELETE', `/api/sessions/${encodeURIComponent(sessionId)}/terminal`)
+}
+
+// Agents (specialists)
+
+export function listSpecialists(): Promise<Specialist[]> {
+  return request('GET', '/api/specialists')
+}
+
+export function createSpecialist(body: SpecialistCreate): Promise<Specialist> {
+  return request('POST', '/api/specialists', body)
+}
+
+export function updateSpecialist(id: number, body: SpecialistUpdate): Promise<Specialist> {
+  return request('PATCH', `/api/specialists/${id}`, body)
+}
+
+export function deleteSpecialist(id: number): Promise<void> {
+  return request('DELETE', `/api/specialists/${id}`)
+}
+
+export function getSpecialistSkill(id: number): Promise<{ text: string }> {
+  return request('GET', `/api/specialists/${id}/skill`)
+}
+
+export function putSpecialistSkill(id: number, text: string): Promise<{ name: string; description: string }> {
+  return request('PUT', `/api/specialists/${id}/skill`, { text })
+}
+
+export function getSpecialistLearnings(id: number): Promise<{ text: string }> {
+  return request('GET', `/api/specialists/${id}/learnings`)
+}
+
+export function putSpecialistLearnings(id: number, text: string): Promise<{ text: string }> {
+  return request('PUT', `/api/specialists/${id}/learnings`, { text })
+}
+
+/** The names of the secrets; the backend never sends a value. */
+export function getSpecialistSecrets(id: number): Promise<{ names: string[] }> {
+  return request('GET', `/api/specialists/${id}/secrets`)
+}
+
+/** `null` removes the secret. */
+export function putSpecialistSecrets(id: number, values: Record<string, string | null>): Promise<{ names: string[] }> {
+  return request('PUT', `/api/specialists/${id}/secrets`, { values })
+}
+
+export function listSpecialistItems(id: number): Promise<SpecialistItem[]> {
+  return request('GET', `/api/specialists/${id}/items`)
+}
+
+export function deleteSpecialistItem(id: number, key: string): Promise<void> {
+  // The route takes the key as a path: keep its slashes, encode the rest.
+  const path = key.split('/').map(encodeURIComponent).join('/')
+  return request('DELETE', `/api/specialists/${id}/items/${path}`)
+}
+
+export function listSpecialistRuns(id: number, limit = 50): Promise<SpecialistRun[]> {
+  return request('GET', `/api/specialists/${id}/runs?limit=${limit}`)
+}
+
+export function runSpecialist(id: number, text?: string): Promise<SpecialistRun> {
+  return request('POST', `/api/specialists/${id}/run`, text === undefined ? {} : { text })
+}
+
+export function listSpecialistNotices(unreadOnly = false): Promise<SpecialistNotice[]> {
+  return request('GET', unreadOnly ? '/api/specialist-notices?unread=true' : '/api/specialist-notices')
+}
+
+export function markSpecialistNoticesRead(ids: number[]): Promise<{ updated: number }> {
+  return request('POST', '/api/specialist-notices/read', { ids })
 }

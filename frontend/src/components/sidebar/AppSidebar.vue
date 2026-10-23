@@ -29,6 +29,7 @@ import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useUpdatesStore } from '../../stores/updates'
 import type { GitRepo, Project, Session, SessionGroup } from '../../types/api'
+import IconAgents from '../icons/IconAgents.vue'
 import IconArrowDown from '../icons/IconArrowDown.vue'
 import IconChat from '../icons/IconChat.vue'
 import IconChevron from '../icons/IconChevron.vue'
@@ -198,6 +199,9 @@ const itemClass = sidebarItemClass
       </RouterLink>
       <RouterLink to="/entregas" data-test="nav-deliveries" :class="itemClass(route.name === 'deliveries')" :aria-current="route.name === 'deliveries' ? 'page' : undefined">
         <IconDeliveries /><span class="grow">Entregas</span>
+      </RouterLink>
+      <RouterLink to="/agentes" data-test="nav-agents" :class="itemClass(route.name === 'agents')" :aria-current="route.name === 'agents' ? 'page' : undefined">
+        <IconAgents /><span class="grow">Agentes</span>
       </RouterLink>
     </div>
 
