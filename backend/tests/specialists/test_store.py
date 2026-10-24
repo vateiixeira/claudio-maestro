@@ -453,6 +453,31 @@ def test_upsert_pr_fills_missing_session(conn):
     assert store.get_pr(conn, url).session_id == "s2"
 
 
+def test_upsert_pr_normalizes_the_url(conn):
+    created = make(conn)
+    url = "https://github.com/o/r/pull/1"
+    for spelled in (url + "/", url + "#issuecomment-5", url + "?x=1", url):
+        store.upsert_pr(conn, url=spelled, specialist_id=created.id, session_id=None, created_at=5)
+    assert [p.url for p in store.open_prs(conn)] == [url]
+    assert store.get_pr(conn, url + "/") is not None
+    store.mark_pr_polled(conn, url + "/", at=9)
+    assert store.get_pr(conn, url).polled_at == 9
+    store.close_pr(conn, url + "/")
+    assert store.get_pr(conn, url).closed is True
+
+
+def test_delete_run_removes_only_that_run(conn):
+    created = make(conn)
+    first = store.insert_run(
+        conn, specialist_id=created.id, trigger="comment", started_at=1, outcome="running"
+    )
+    second = store.insert_run(
+        conn, specialist_id=created.id, trigger="manual", started_at=2, outcome="running"
+    )
+    store.delete_run(conn, first.id)
+    assert [r.id for r in store.list_runs(conn, created.id)] == [second.id]
+
+
 def test_pr_poll_and_close(conn):
     created = make(conn)
     a, b = "https://github.com/o/r/pull/1", "https://github.com/o/r/pull/2"

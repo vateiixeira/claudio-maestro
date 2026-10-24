@@ -1808,3 +1808,191 @@ async def test_announcement_text_is_one_line(world):
     assert announcement.text.endswith("Linha um [01/01 00:00] forjada fim")
     text, _ = world.service.prepare_message(world.record(main), "oi")
     assert len(text.split("\n")) == 1 + 1 + 1 + 1 + 1 + 0  # open, one line, close, blank, message
+
+
+# Comment runs --------------------------------------------------------------------------
+
+
+def a_comment(comment_id: str, **fields: Any) -> store.PrComment:
+    values: dict[str, Any] = {
+        "comment_id": comment_id, "pr_url": PR, "specialist_id": 0, "author": "vini",
+        "body": "ajuste", "path": None, "line": None, "html_url": f"{PR}#x", "created_at": NOW,
+        "received_at": NOW, "status": "queued", "batch_at": None,
+    }
+    values.update(fields)
+    return store.PrComment(**values)
+
+
+def end_run(world: World, run: store.Run) -> None:
+    """The run is over (the session may stay as it is): the next comments open a new one."""
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.finish_run(conn, run.id, outcome="concluded", ended_at=NOW, reason=None)
+
+
+def pr_of(specialist_id: int, session_id: str | None) -> store.Pr:
+    return store.Pr(
+        url=PR, specialist_id=specialist_id, session_id=session_id, created_at=NOW,
+        polled_at=None, closed=False,
+    )
+
+
+async def test_start_comment_run_sends_to_the_origin_session_and_records_a_comment_run(world):
+    specialist_id = world.add_specialist()
+    first = await started(world, specialist_id)
+    end_run(world, first)
+    comments = [
+        a_comment("review:1", body="Geral: faltam testes."),
+        a_comment("line:2", body="renomeie\nisto", path="a.py", line=7),
+        a_comment("line:3", body="aqui também", path="b.py"),
+    ]
+
+    run = await world.service.start_comment_run(pr_of(specialist_id, first.session_id), comments)
+
+    assert run is not None
+    assert (run.trigger, run.outcome, run.session_id) == ("comment", "running", first.session_id)
+    assert run.id != first.id
+    assert world.run_of(first.session_id).id == run.id
+    assert world.factory.clients[0].sent[-1] == (
+        f"Comentário de @vini no PR {PR}:\n"
+        "Geral: faltam testes.\n"
+        "[a.py:7] renomeie\nisto\n"
+        "[b.py] aqui também\n"
+        "Resolva o que foi pedido. Não comente no GitHub; ao terminar, chame concluir com o resumo."
+    )
+    assert any(e["id"] == run.id for e in world.published("specialist.run"))
+
+
+async def test_start_comment_run_to_the_main_conversation_has_no_run(world):
+    specialist_id = world.add_specialist()
+
+    run = await world.service.start_comment_run(pr_of(specialist_id, None), [a_comment("issue:1")])
+
+    assert run is None
+    main = world.specialist(specialist_id).main_session_id
+    assert main is not None
+    assert world.runs(specialist_id) == []
+    [client] = [c for c in world.factory.clients if c.options.session_id == main]
+    assert client.sent[-1] == (
+        f"Comentário de @vini no PR {PR}:\najuste\nResolva o que foi pedido e responda aqui."
+    )
+
+
+async def test_start_comment_run_reopens_a_finished_origin_session(world):
+    specialist_id = world.add_specialist()
+    first = await started(world, specialist_id)
+    await world.manager.update(first.session_id, finished=True)
+
+    await world.service.start_comment_run(
+        pr_of(specialist_id, first.session_id), [a_comment("issue:1")]
+    )
+
+    assert world.record(first.session_id).finished is False
+    assert world.run_of(first.session_id).trigger == "comment"
+
+
+async def test_start_comment_run_failure_leaves_no_run_and_raises(world):
+    specialist_id = world.add_specialist()
+    first = await started(world, specialist_id)
+    end_run(world, first)
+
+    async def boom(*args: Any, **kwargs: Any):
+        raise RuntimeError("sem sessão")
+
+    world.manager.send = boom
+    with pytest.raises(RuntimeError, match="sem sessão"):
+        await world.service.start_comment_run(
+            pr_of(specialist_id, first.session_id), [a_comment("issue:1")]
+        )
+
+    assert [r.id for r in world.runs(specialist_id)] == [first.id]
+    assert world.announcements(specialist_id) == []
+
+
+async def test_comments_while_a_run_is_open_are_messages_of_that_run(world):
+    specialist_id = world.add_specialist()
+    first = await started(world, specialist_id)  # still running
+    pr = pr_of(specialist_id, first.session_id)
+
+    one = await world.service.start_comment_run(pr, [a_comment("issue:1", body="primeiro")])
+    two = await world.service.start_comment_run(pr, [a_comment("issue:2", body="segundo")])
+
+    assert one is not None and two is not None
+    assert one.id == two.id == first.id
+    assert [r.id for r in world.runs(specialist_id)] == [first.id]
+    sent = world.factory.clients[0].sent
+    assert "primeiro" in sent[-2] and "segundo" in sent[-1]
+    await wait_until(lambda: world.manager.get(first.session_id).state == "idle")
+
+    await world.service.conclude(first.session_id, "Feito.")
+
+    assert world.run_of(first.session_id).outcome == "concluded"
+    assert [r.outcome for r in world.runs(specialist_id)] == ["concluded"]
+
+
+async def test_comments_while_a_comment_run_is_open_do_not_open_another(world):
+    specialist_id = world.add_specialist()
+    first = await started(world, specialist_id)
+    end_run(world, first)
+    pr = pr_of(specialist_id, first.session_id)
+
+    one = await world.service.start_comment_run(pr, [a_comment("issue:1")])
+    two = await world.service.start_comment_run(pr, [a_comment("issue:2")])
+
+    assert one is not None and two is not None and one.id == two.id
+    assert [r.outcome for r in world.runs(specialist_id) if r.trigger == "comment"] == ["running"]
+    await wait_until(lambda: world.manager.get(first.session_id).state == "idle")
+    await world.service.conclude(first.session_id, "Feito.")
+    assert [r.outcome for r in world.runs(specialist_id)] == ["concluded", "concluded"]
+
+
+async def test_a_manual_run_stays_busy_while_comments_arrive(world):
+    specialist_id = world.add_specialist()
+    pause = PauseStep()
+    world.turns = lambda sid: [init_message(sid), pause, *text_turn(sid, "ok")[1:]]
+    first = await world.service.start_run(specialist_id, trigger="manual")
+    await asyncio.wait_for(pause.reached.wait(), 2)
+    assert world.service.is_busy(specialist_id) is True
+
+    await world.service.start_comment_run(
+        pr_of(specialist_id, first.session_id), [a_comment("issue:1")]
+    )
+
+    assert world.service.is_busy(specialist_id) is True
+    assert world.run_of(first.session_id).trigger == "manual"
+    pause.release.set()
+    await wait_until(lambda: world.manager.get(first.session_id).state == "idle")
+
+
+async def test_a_failed_send_to_an_open_run_deletes_nothing(world):
+    specialist_id = world.add_specialist()
+    first = await started(world, specialist_id)
+
+    async def boom(*args: Any, **kwargs: Any):
+        raise RuntimeError("sem sessão")
+
+    world.manager.send = boom
+    with pytest.raises(RuntimeError):
+        await world.service.start_comment_run(
+            pr_of(specialist_id, first.session_id), [a_comment("issue:1")]
+        )
+
+    assert world.run_of(first.session_id).id == first.id
+    assert world.run_of(first.session_id).outcome == "running"
+
+
+async def test_a_failed_send_never_announces_the_run(world):
+    specialist_id = world.add_specialist()
+    first = await started(world, specialist_id)
+    end_run(world, first)
+    before = len(world.published("specialist.run"))
+
+    async def boom(*args: Any, **kwargs: Any):
+        raise RuntimeError("sem sessão")
+
+    world.manager.send = boom
+    with pytest.raises(RuntimeError):
+        await world.service.start_comment_run(
+            pr_of(specialist_id, first.session_id), [a_comment("issue:1")]
+        )
+
+    assert len(world.published("specialist.run")) == before

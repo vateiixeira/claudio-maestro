@@ -383,7 +383,7 @@ def test_app_serves_hooks_only_with_a_port(home: Path, data_dir: Path):
     app = _app_with_hooks_port(home, data_dir, port)
     with TestClient(app, base_url="http://127.0.0.1:6660", headers={"x-maestro": "1"}):
         assert app.state.hooks_task is not None
-        # The agents service is not wired yet: the delivery is accepted and ignored.
+        # No PR belongs to an agent here, so the delivery is accepted and ignored.
         assert _wait_for(port).status_code == 202
         task = app.state.hooks_task
     assert task.done()
@@ -393,6 +393,45 @@ def test_app_serves_hooks_only_with_a_port(home: Path, data_dir: Path):
     off = _app_with_hooks_port(home, data_dir, None)
     with TestClient(off, base_url="http://127.0.0.1:6660", headers={"x-maestro": "1"}):
         assert off.state.hooks_task is None
+
+
+def test_app_wires_the_hooks_to_the_agents_and_the_dispatcher(home: Path, data_dir: Path, monkeypatch):
+    from claudio_maestro.specialists.comments import CommentDispatcher
+
+    port = free_port()
+    woken: list[int] = []
+    monkeypatch.setattr(CommentDispatcher, "wake", lambda self: woken.append(1))
+    github_hooks.write_secret(data_dir, SECRET)
+    app = _app_with_hooks_port(home, data_dir, port)
+    # The agent, its PR and the owner exist before the app starts.
+    from claudio_maestro.config import Settings
+
+    db_path = Settings(home_dir=home, data_dir=data_dir).db_path
+    db.init_db(db_path)
+    with closing(db.connect(db_path)) as conn, db.transaction(conn):
+        conn.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/tmp/p', '#fff', 0, 0)"
+        )
+        agent = store.create_specialist(conn, slug="revisor", name="Revisor", project_id=1, now=1)
+        store.upsert_pr(
+            conn, url=PR_URL, specialist_id=agent.id, session_id=None, created_at=1
+        )
+        github_hooks.set_owner(conn, OWNER)
+
+    with TestClient(app, base_url="http://127.0.0.1:6660", headers={"x-maestro": "1"}):
+        assert _wait_for(port).status_code == 202
+        stranger = json.dumps({**issue_comment(), "issue": {
+            "html_url": "https://github.com/acme/repo/pull/99",
+            "pull_request": {"html_url": "https://github.com/acme/repo/pull/99"},
+        }}).encode()
+        headers = {"X-GitHub-Event": "issue_comment", "X-Hub-Signature-256": sign(SECRET, stranger)}
+        httpx.post(f"http://127.0.0.1:{port}/github", content=stranger, headers=headers)
+
+    with closing(db.connect(db_path)) as conn:
+        [queued] = store.queued_comments(conn)
+    assert (queued.comment_id, queued.pr_url, queued.specialist_id) == ("issue:101", PR_URL, agent.id)
+    assert woken == [1]  # only the comment on the agent's PR woke the dispatcher
 
 
 def test_app_refuses_hooks_port_equal_to_an_app_port(home: Path, data_dir: Path):

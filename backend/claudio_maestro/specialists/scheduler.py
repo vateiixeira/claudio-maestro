@@ -34,6 +34,29 @@ BUSY_REASON = "Uma execução anterior ainda está rodando ou esperando você."
 MISSED_REASON = "O horário passou e o Maestro não disparou o agente (estava desligado ou ocupado)."
 
 
+def limits_over(usage: UsageChecker, now: float) -> list[dict[str, Any]]:
+    """Limits at or over the threshold whose window has not renewed yet; empty without a
+    usable reading (usage check off or failed)."""
+    snapshot = usage.snapshot()
+    if not snapshot["enabled"] or snapshot["error"]:
+        return []
+    return [
+        limit
+        for limit in snapshot["limits"]
+        if limit["percent"] >= USAGE_LIMIT_PERCENT
+        and (limit["resets_at"] is None or limit["resets_at"] > now)
+    ]
+
+
+def limit_over(usage: UsageChecker, now: float) -> tuple[int, str] | None:
+    """The fullest limit over the threshold as (percent, label), or None."""
+    over = limits_over(usage, now)
+    if not over:
+        return None
+    top = max(over, key=lambda limit: limit["percent"])
+    return top["percent"], top["label"]
+
+
 def due_slot(schedule: store.Schedule, now: datetime) -> datetime | None:
     """The newest time of the schedule that is `<= now` and after `last_fired_at`, or None.
     Days are ISO ("1" = Monday) and the times are the system's local time. `now` may be
@@ -134,7 +157,7 @@ class Scheduler:
         if self._service.is_busy(specialist_id):
             self._service.record_skipped(specialist_id, BUSY_REASON, scheduled_for=slot)
             return
-        over = self._limit_over(now)
+        over = limit_over(self._usage, now)
         if over is not None:
             percent, label = over
             self._service.record_skipped(
@@ -144,30 +167,9 @@ class Scheduler:
             return
         await self._service.start_run(specialist_id, trigger="schedule", scheduled_for=slot)
 
-    def _limits_over(self, now: float) -> list[dict[str, Any]]:
-        """Limits at or over the threshold whose window has not renewed yet; empty without
-        a usable reading (usage check off or failed)."""
-        snapshot = self._usage.snapshot()
-        if not snapshot["enabled"] or snapshot["error"]:
-            return []
-        return [
-            limit
-            for limit in snapshot["limits"]
-            if limit["percent"] >= USAGE_LIMIT_PERCENT
-            and (limit["resets_at"] is None or limit["resets_at"] > now)
-        ]
-
-    def _limit_over(self, now: float) -> tuple[int, str] | None:
-        """The fullest limit over the threshold, or None."""
-        over = self._limits_over(now)
-        if not over:
-            return None
-        top = max(over, key=lambda limit: limit["percent"])
-        return top["percent"], top["label"]
-
     def _warn_usage(self, specialist_id: int, now: float) -> None:
         """One `alert` per window of each limit over the threshold."""
-        for limit in self._limits_over(now):
+        for limit in limits_over(self._usage, now):
             label, resets_at = limit["label"], limit["resets_at"]
             if label in self._usage_alerted and self._usage_alerted[label] == resets_at:
                 continue

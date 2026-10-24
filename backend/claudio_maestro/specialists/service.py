@@ -43,6 +43,7 @@ from claudio_maestro.specialists.policy import (
     read_git_context,
 )
 from claudio_maestro.specialists.prompt import build_append
+from claudio_maestro.specialists.store import normalize_pr_url
 from claudio_maestro.specialists.tools import SERVER_NAME, TOOL_PREFIX, build_server
 
 logger = logging.getLogger(__name__)
@@ -102,14 +103,27 @@ def _announcement_text(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
+COMMENT_ASK_ORIGIN = (
+    "Resolva o que foi pedido. Não comente no GitHub; ao terminar, chame concluir com o resumo."
+)
+COMMENT_ASK_MAIN = "Resolva o que foi pedido e responda aqui."
+
+
+def _comment_message(pr: store.Pr, comments: list[store.PrComment], *, main: bool) -> str:
+    """What an agent's session receives for a batch of the owner's comments on a PR."""
+    lines = [f"Comentário de @{comments[0].author} no PR {pr.url}:"]
+    for comment in comments:
+        if comment.path:
+            where = f"{comment.path}:{comment.line}" if comment.line else comment.path
+            lines.append(f"[{where}] {comment.body}")
+        else:
+            lines.append(comment.body)
+    lines.append(COMMENT_ASK_MAIN if main else COMMENT_ASK_ORIGIN)
+    return "\n".join(lines)
+
+
 def _noop() -> None:
     return None
-
-
-def normalize_pr_url(url: str) -> str:
-    """A PR URL without query, fragment or trailing slash: the one form the registry
-    keeps and compares, so a PR is never stored twice."""
-    return url.split("#", 1)[0].split("?", 1)[0].rstrip("/")
 
 
 class SpecialistService:
@@ -437,6 +451,59 @@ class SpecialistService:
             self._check_streak(specialist)
         with closing(db.connect(self._db_path)) as conn:
             return store.get_run(conn, run.id)
+
+    async def start_comment_run(
+        self, pr: store.Pr, comments: list[store.PrComment]
+    ) -> store.Run | None:
+        """Send the owner's comments on `pr` to the session that opened it, which a new
+        `comment` run follows (unless it is still on an open run: then it is a message of
+        that run). When that session is gone (never known, or deleted), or is
+        itself the main conversation, they go to the main conversation, which has no run.
+        A message that cannot be sent raises and leaves nothing behind: the caller keeps
+        the comments queued and tries again."""
+        target = self._comment_target(pr)
+        if target is None or self.is_main(target):
+            main_id = target or await self.ensure_main(pr.specialist_id)
+            await self._sessions.send(main_id, _comment_message(pr, comments, main=True))
+            return None
+        with closing(db.connect(self._db_path)) as conn:
+            open_run = store.run_for_session(conn, target)
+        if open_run is not None and open_run.outcome in OPEN_OUTCOMES:
+            # The session is still on a run (a schedule, a manual one or an earlier batch):
+            # the comments are one more message of it, and it keeps being the only open run
+            # (the whole life cycle follows the newest run of a session).
+            await self._sessions.send(target, _comment_message(pr, comments, main=False))
+            return open_run
+        # The run is recorded before the send (the agent may conclude at once), but only
+        # announced once the send worked: a send that fails leaves nothing on the screen.
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            run = store.insert_run(
+                conn,
+                specialist_id=pr.specialist_id,
+                trigger="comment",
+                started_at=self._now(),
+                outcome="running",
+                session_id=target,
+            )
+        try:
+            await self._sessions.send(target, _comment_message(pr, comments, main=False))
+        except BaseException:
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                store.delete_run(conn, run.id)
+            raise
+        self._publish_run(run)
+        with closing(db.connect(self._db_path)) as conn:
+            return store.get_run(conn, run.id)
+
+    def _comment_target(self, pr: store.Pr) -> str | None:
+        """The session that opened the PR, if it still exists."""
+        if pr.session_id is None:
+            return None
+        try:
+            self._sessions.find_record(pr.session_id)
+        except SessionNotFoundError:
+            return None
+        return pr.session_id
 
     def record_skipped(
         self, specialist_id: int, reason: str, *, scheduled_for: int | None = None

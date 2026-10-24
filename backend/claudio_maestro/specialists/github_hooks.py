@@ -23,7 +23,6 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urldefrag
 
 import uvicorn
 from starlette.applications import Starlette
@@ -124,7 +123,7 @@ def _build(
     html_url = item.get("html_url")
     return PrComment(
         comment_id=comment_id,
-        pr_url=urldefrag(pr_url)[0],
+        pr_url=store.normalize_pr_url(pr_url),
         specialist_id=0,  # the receiver fills it in from `is_agent_pr`
         author=login,
         body=body if isinstance(body, str) else "",

@@ -1,6 +1,7 @@
 """API of the agents (specialists): CRUD, files, runs, notices, events and the app wiring.
 Uses the scripted fake agent; the real SDK is never touched."""
 
+import dataclasses
 import json
 import shutil
 import time
@@ -1196,3 +1197,248 @@ def test_a_failing_recover_does_not_stop_the_app(factory, monkeypatch):
     monkeypatch.setattr(SpecialistService, "recover", recover)
     with TestClient(create_app(agent_factory=factory), base_url=BACKEND_URL) as client:
         assert client.get("/api/specialists", headers={"x-maestro": "1"}).status_code == 200
+
+
+# GitHub settings (owner login and webhook secret) --------------------------------------------------------------
+
+GITHUB = "/api/specialists/github"
+WEBHOOK_SECRET = "segredo-do-webhook-1234567890"
+
+
+def test_github_settings_start_empty(api):
+    response = api.get(GITHUB)
+
+    assert response.status_code == 200
+    assert response.json() == {"login": None, "secret_set": False, "hooks_port": None, "queued": 0}
+
+
+def test_github_settings_api(api, caplog):
+    caplog.set_level("DEBUG")
+
+    response = api.put(GITHUB, json={"login": "vini-7", "secret": WEBHOOK_SECRET})
+
+    assert response.status_code == 200
+    assert response.json() == {"login": "vini-7", "secret_set": True, "hooks_port": None, "queued": 0}
+    assert WEBHOOK_SECRET not in response.text
+    got = api.get(GITHUB)
+    assert got.json() == response.json()
+    assert WEBHOOK_SECRET not in got.text
+    data_dir = api.app.state.settings.data_dir
+    from claudio_maestro.specialists import github_hooks
+
+    assert github_hooks.read_secret(data_dir) == WEBHOOK_SECRET.encode()
+    assert ((data_dir / github_hooks.SECRET_FILE).stat().st_mode & 0o777) == 0o600
+    with conn_of(api) as conn:
+        assert github_hooks.get_owner(conn) == "vini-7"
+    assert WEBHOOK_SECRET not in caplog.text
+
+
+def test_github_settings_accept_one_field_at_a_time(api):
+    assert api.put(GITHUB, json={"login": "vini"}).json()["secret_set"] is False
+    after_secret = api.put(GITHUB, json={"secret": WEBHOOK_SECRET}).json()
+    assert after_secret["login"] == "vini" and after_secret["secret_set"] is True
+    assert api.put(GITHUB, json={"login": "outro"}).json()["secret_set"] is True
+
+
+def test_github_settings_report_the_hooks_port_and_the_queue(api):
+    api.app.state.settings = dataclasses.replace(api.app.state.settings, hooks_port=6680)
+    with conn_of(api) as conn, db.transaction(conn):
+        created = store.create_specialist(conn, slug="x", name="X", project_id=_any_project(conn), now=1)
+        for number, status in enumerate(["queued", "queued", "delivered"]):
+            store.insert_comment(conn, store.PrComment(
+                comment_id=f"issue:{number}", pr_url="https://github.com/a/b/pull/1",
+                specialist_id=created.id, author="vini", body="x", path=None, line=None,
+                html_url="h", created_at=1, received_at=1, status=status, batch_at=None,
+            ))
+
+    assert api.get(GITHUB).json()["hooks_port"] == 6680
+    assert api.get(GITHUB).json()["queued"] == 2
+
+
+def _any_project(conn) -> int:
+    row = conn.execute("SELECT id FROM projects LIMIT 1").fetchone()
+    if row:
+        return row["id"]
+    conn.execute(
+        "INSERT INTO projects (id, name, path, color, position, created_at)"
+        " VALUES (1, 'p', '/tmp/p', '#fff', 0, 0)"
+    )
+    return 1
+
+
+@pytest.mark.parametrize(
+    "login", ["", " ", "a b", "x" * 40, "-ok/../x", "vini_7", "vini@", "viní", "a\n", 7, None]
+)
+def test_github_login_is_validated(api, login):
+    response = api.put(GITHUB, json={"login": login})
+
+    assert response.status_code == 422
+    assert api.get(GITHUB).json()["login"] is None
+
+
+@pytest.mark.parametrize(
+    "secret", [" " + "x" * 20, "x" * 20 + "\n", " " * 16, "\t" * 20, "x" * 10 + " " * 10]
+)
+def test_github_secret_with_padding_or_blank_is_refused_without_echo(api, secret):
+    response = api.put(GITHUB, json={"secret": secret})
+
+    assert response.status_code == 422
+    assert "xxxxxxxx" not in response.text
+    assert api.get(GITHUB).json()["secret_set"] is False
+
+
+@pytest.mark.parametrize("secret", ["", "curto", "x" * 15, "x" * 257, 12345678901234567, None, ["a" * 20]])
+def test_github_secret_is_validated_and_never_echoed(api, secret):
+    response = api.put(GITHUB, json={"secret": secret})
+
+    assert response.status_code == 422
+    assert "curto" not in response.text
+    assert api.get(GITHUB).json()["secret_set"] is False
+
+
+@pytest.mark.parametrize(
+    "body", [{}, {"outro": "x"}, {"login": "vini", "outro": 1}, [1], "texto", 3]
+)
+def test_github_settings_refuse_a_wrong_body(api, body):
+    assert api.put(GITHUB, json=body).status_code == 422
+
+
+def test_github_secret_edges_are_accepted(api):
+    assert api.put(GITHUB, json={"secret": "x" * 16}).status_code == 200
+    assert api.put(GITHUB, json={"secret": "y" * 256}).status_code == 200
+
+
+def test_github_settings_with_a_broken_body_do_not_echo_it(api):
+    response = api.put(GITHUB, content=b'{"secret": "curto"', headers={"content-type": "application/json"})
+
+    assert response.status_code == 422
+    assert "curto" not in response.text
+
+
+def test_github_settings_write_requires_origin_and_the_app_header(api):
+    body = {"login": "vini", "secret": WEBHOOK_SECRET}
+    assert api.put(GITHUB, json=body, headers={"origin": "http://evil.example"}).status_code == 403
+    with without_header(api, "origin"):
+        assert api.put(GITHUB, json=body).status_code == 403
+    with without_header(api, "x-maestro"):
+        assert api.put(GITHUB, json=body).status_code == 403
+        assert api.get(GITHUB).status_code == 403
+    assert api.get(GITHUB).json()["login"] is None
+    assert api.get(GITHUB).json()["secret_set"] is False
+
+
+def test_github_secret_is_not_in_any_event(api, events):
+    events.clear()
+    api.put(GITHUB, json={"login": "vini", "secret": WEBHOOK_SECRET})
+    assert WEBHOOK_SECRET not in json.dumps(events, default=str)
+
+
+# Wiring of the comments in the app ------------------------------------------------------------------------------
+
+
+def test_a_pr_opened_by_an_agent_session_is_registered(factory, home):
+    from claudio_maestro.agent.fake import tool_turn
+
+    pr_url = "https://github.com/acme/app/pull/9"
+    factory.script = lambda content: tool_turn(
+        factory.clients[-1].options.session_id, tool_name="Bash",
+        tool_input={"command": "gh pr create --fill"}, result_content=f"{pr_url}\n",
+    )
+    app = create_app(agent_factory=factory)
+    headers = {"origin": APP_ORIGIN, "x-maestro": "1"}
+    with TestClient(app, base_url=BACKEND_URL, headers=headers) as client:
+        agent = create_agent(client, make_project(client, home)["id"])
+        run = client.post(f"/api/specialists/{agent['id']}/run", json={}).json()
+
+        def registered():
+            with conn_of(client) as conn:
+                return store.get_pr(conn, pr_url)
+
+        pr = wait_for(registered)
+    assert (pr.specialist_id, pr.session_id) == (agent["id"], run["session_id"])
+
+
+def test_the_comment_dispatcher_runs_with_the_app_and_stops_with_it(factory, monkeypatch):
+    calls: list[str] = []
+
+    async def tick(self) -> None:
+        calls.append("tick")
+
+    monkeypatch.setattr("claudio_maestro.specialists.comments.CommentDispatcher.tick", tick)
+    app = create_app(agent_factory=factory)
+    with TestClient(app, base_url=BACKEND_URL):
+        wait_for(lambda: "tick" in calls)
+        assert not app.state.comments_task.done()
+        assert not app.state.comment_poll_task.done()
+    assert app.state.comments_task.done() and app.state.comment_poll_task.done()
+
+
+def test_comments_switch_off_with_the_scheduler(factory, monkeypatch):
+    calls: list[str] = []
+
+    async def tick(self) -> None:
+        calls.append("tick")
+
+    monkeypatch.setattr("claudio_maestro.specialists.comments.CommentDispatcher.tick", tick)
+    monkeypatch.setenv("MAESTRO_SPECIALISTS_SCHEDULER", "0")
+    app = create_app(agent_factory=factory)
+    with TestClient(app, base_url=BACKEND_URL):
+        time.sleep(0.1)
+        assert app.state.comments_task is None and app.state.comment_poll_task is None
+    assert calls == []
+
+
+def seed_pr_with_owner(settings, *, owner: str | None = "vini") -> int:
+    """A project, an agent and its open PR in the database the app is about to open."""
+    from claudio_maestro.specialists import github_hooks
+
+    db.init_db(settings.db_path)
+    with closing(db.connect(settings.db_path)) as conn, db.transaction(conn):
+        conn.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/tmp/p', '#fff', 0, 0)"
+        )
+        created = store.create_specialist(conn, slug="rev", name="Rev", project_id=1, now=1)
+        store.upsert_pr(
+            conn, url="https://github.com/acme/app/pull/7", specialist_id=created.id,
+            session_id=None, created_at=int(time.time()),
+        )
+        if owner:
+            github_hooks.set_owner(conn, owner)
+    return created.id
+
+
+def test_startup_sweeps_the_comments_with_gh(factory, home, data_dir):
+    from claudio_maestro.config import Settings
+
+    settings = Settings(home_dir=home, data_dir=data_dir)
+    seed_pr_with_owner(settings)
+    calls: list[list[str]] = []
+
+    async def fake_gh(args: list[str]) -> tuple[int, str]:
+        calls.append(args)
+        if args[:2] == ["pr", "view"]:
+            return 0, json.dumps({"state": "MERGED"})
+        return 0, "[]"
+
+    app = create_app(settings=settings, agent_factory=factory, gh_runner=fake_gh)
+    with TestClient(app, base_url=BACKEND_URL):
+        wait_for(lambda: calls)
+    assert calls[0][:2] == ["pr", "view"]
+
+
+def test_startup_does_not_sweep_without_an_owner(factory, home, data_dir):
+    from claudio_maestro.config import Settings
+
+    settings = Settings(home_dir=home, data_dir=data_dir)
+    seed_pr_with_owner(settings, owner=None)
+    calls: list[list[str]] = []
+
+    async def fake_gh(args: list[str]) -> tuple[int, str]:
+        calls.append(args)
+        return 0, "[]"
+
+    app = create_app(settings=settings, agent_factory=factory, gh_runner=fake_gh)
+    with TestClient(app, base_url=BACKEND_URL):
+        time.sleep(0.2)
+    assert calls == []

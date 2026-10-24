@@ -346,6 +346,11 @@ def finish_run(
     )
 
 
+def delete_run(conn: sqlite3.Connection, run_id: int) -> None:
+    """Drop a run that never really started (its first message could not be sent)."""
+    conn.execute("DELETE FROM specialist_runs WHERE id = ?", (run_id,))
+
+
 def run_for_session(conn: sqlite3.Connection, session_id: str) -> Run | None:
     """The most recent run that used this session."""
     row = conn.execute(
@@ -589,6 +594,12 @@ def _pr(row: sqlite3.Row) -> Pr:
     return Pr(**fields)
 
 
+def normalize_pr_url(url: str) -> str:
+    """A PR URL without query, fragment or trailing slash: the one form the registry
+    keeps and compares, so a PR is never stored twice."""
+    return url.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+
+
 def upsert_pr(
     conn: sqlite3.Connection,
     *,
@@ -597,7 +608,9 @@ def upsert_pr(
     session_id: str | None,
     created_at: int,
 ) -> None:
-    """Register a PR. A known session is never overwritten by a missing one."""
+    """Register a PR under its normalized URL. A known session is never overwritten by a
+    missing one."""
+    url = normalize_pr_url(url)
     conn.execute(
         "INSERT INTO specialist_prs (url, specialist_id, session_id, created_at)"
         " VALUES (?, ?, ?, ?)"
@@ -608,7 +621,9 @@ def upsert_pr(
 
 
 def get_pr(conn: sqlite3.Connection, url: str) -> Pr | None:
-    row = conn.execute(f"SELECT {_PR_COLUMNS} FROM specialist_prs WHERE url = ?", (url,)).fetchone()
+    row = conn.execute(
+        f"SELECT {_PR_COLUMNS} FROM specialist_prs WHERE url = ?", (normalize_pr_url(url),)
+    ).fetchone()
     return _pr(row) if row else None
 
 
@@ -620,11 +635,13 @@ def open_prs(conn: sqlite3.Connection) -> list[Pr]:
 
 
 def mark_pr_polled(conn: sqlite3.Connection, url: str, at: int) -> None:
-    conn.execute("UPDATE specialist_prs SET polled_at = ? WHERE url = ?", (at, url))
+    conn.execute(
+        "UPDATE specialist_prs SET polled_at = ? WHERE url = ?", (at, normalize_pr_url(url))
+    )
 
 
 def close_pr(conn: sqlite3.Connection, url: str) -> None:
-    conn.execute("UPDATE specialist_prs SET closed = 1 WHERE url = ?", (url,))
+    conn.execute("UPDATE specialist_prs SET closed = 1 WHERE url = ?", (normalize_pr_url(url),))
 
 
 def _comment(row: sqlite3.Row) -> PrComment:

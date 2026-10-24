@@ -23,7 +23,7 @@ from claudio_maestro.sessions import (
     InvalidDecisionError,
     ProjectUnavailableError,
 )
-from claudio_maestro.specialists import store
+from claudio_maestro.specialists import github_hooks, store
 from claudio_maestro.specialists.files import (
     SLUG_MAX_LENGTH,
     SLUG_PATTERN,
@@ -74,6 +74,13 @@ BAD_TOOL = (
     "Use o nome da ferramenta (ex.: WebFetch ou mcp__servidor__ferramenta) ou o servidor "
     f"inteiro (mcp__servidor), com até {MAX_TOOL_NAME} caracteres. "
     "Sem parênteses, espaços nem curingas."
+)
+LOGIN_PATTERN = re.compile(r"[A-Za-z0-9-]{1,39}")
+SECRET_MIN, SECRET_MAX = 16, 256
+BAD_GITHUB_BODY = (
+    'Envie {"login": "usuario-do-github", "secret": "segredo"}, com um ou os dois campos. '
+    f"O login tem até 39 letras, números ou hífens; o segredo tem de {SECRET_MIN} a {SECRET_MAX} "
+    "caracteres, sem espaço no começo nem no fim."
 )
 BAD_SECRETS_BODY = 'Envie {"values": {"NOME": "valor" ou null}}.'
 
@@ -610,3 +617,53 @@ async def read_notices(body: NoticesRead, request: Request, conn: DbDep) -> dict
         # other screens what to mark.
         _publish(request, "specialist.notice", {"read_ids": [i for i in ids if i in changing]})
     return {"updated": updated}
+
+
+# GitHub: the owner whose PR comments are accepted, and the webhook secret ---------------------------
+
+
+def _github_state(request: Request, conn: sqlite3.Connection) -> dict[str, Any]:
+    """The settings as the screen sees them. The secret is only ever written."""
+    settings = request.app.state.settings
+    queued = conn.execute(
+        "SELECT COUNT(*) FROM specialist_pr_comments WHERE status = 'queued'"
+    ).fetchone()[0]
+    return {
+        "login": github_hooks.get_owner(conn),
+        "secret_set": github_hooks.read_secret(settings.data_dir) is not None,
+        "hooks_port": settings.hooks_port,
+        "queued": queued,
+    }
+
+
+@router.get("/specialists/github")
+async def get_github(request: Request, conn: DbDep) -> dict[str, Any]:
+    return _github_state(request, conn)
+
+
+@router.put("/specialists/github")
+async def put_github(request: Request, conn: DbDep) -> dict[str, Any]:
+    # Read by hand: the validation errors of the framework quote the input back, and the
+    # secret must not come back in any response.
+    try:
+        body = await request.json()
+    except ValueError as exc:
+        raise _unprocessable(BAD_GITHUB_BODY) from exc
+    if not isinstance(body, dict) or not body or not set(body) <= {"login", "secret"}:
+        raise _unprocessable(BAD_GITHUB_BODY)
+    login, secret = body.get("login"), body.get("secret")
+    if "login" in body and not (isinstance(login, str) and LOGIN_PATTERN.fullmatch(login)):
+        raise _unprocessable(BAD_GITHUB_BODY)
+    if "secret" in body and not (
+        isinstance(secret, str)
+        and SECRET_MIN <= len(secret) <= SECRET_MAX
+        # The receiver reads it back trimmed: padding would never match the signature.
+        and secret == secret.strip()
+    ):
+        raise _unprocessable(BAD_GITHUB_BODY)
+    if isinstance(secret, str):
+        github_hooks.write_secret(request.app.state.settings.data_dir, secret)
+    if isinstance(login, str):
+        with db.transaction(conn):
+            github_hooks.set_owner(conn, login)
+    return _github_state(request, conn)

@@ -7,6 +7,7 @@ Nothing here uses the Claude subscription.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -46,12 +47,21 @@ async def run_gh(args: list[str]) -> tuple[int, str]:
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), GH_TIMEOUT_SECONDS)
     except TimeoutError:
-        proc.kill()
-        await proc.wait()
+        await _kill(proc)
         return 124, ""
+    except asyncio.CancelledError:
+        # The sweep was cancelled (the app is stopping): no `gh` is left running behind it.
+        await _kill(proc)
+        raise
     return proc.returncode if proc.returncode is not None else 1, stdout.decode(
         "utf-8", errors="replace"
     )
+
+
+async def _kill(proc: "asyncio.subprocess.Process") -> None:
+    with contextlib.suppress(ProcessLookupError):
+        proc.kill()
+    await proc.wait()
 
 
 def clean_pr_url(url: str) -> str:
@@ -164,12 +174,19 @@ async def _sweep_pr(
     return "open", found
 
 
-async def poll_comments(db_path: Path, *, owner: str, run_gh: GhRunner, now: float) -> int:
+async def poll_comments(
+    db_path: Path, *, owner: str | None, run_gh: GhRunner, now: float
+) -> int:
     """Queue the owner's new comments on the open PRs. Returns how many entered the queue.
+
+    Without an owner nothing is read: there is no one whose comments count, and an item
+    without a login must not pass as the owner's.
 
     A PR that fails (network, `gh` signed out, odd output) is logged and left as it was, so the
     next sweep reads the same period again; the others carry on.
     """
+    if not owner:
+        return 0
     with closing(db.connect(db_path)) as conn:
         prs = store.open_prs(conn)
 

@@ -51,7 +51,10 @@ from claudio_maestro.sessions import (
     SessionError,
     SessionManager,
 )
+from claudio_maestro.specialists.comments import CommentDispatcher, run_poll
 from claudio_maestro.specialists.files import SpecialistFiles
+from claudio_maestro.specialists.gh_comments import GhRunner
+from claudio_maestro.specialists.gh_comments import run_gh as default_run_gh
 from claudio_maestro.specialists.github_hooks import (
     build_hooks_app,
     serve_hooks,
@@ -94,10 +97,8 @@ def start_hooks_listener(app: FastAPI, app_ports_in_use: tuple[int, ...]) -> "as
     hooks_app = build_hooks_app(
         db_path=settings.db_path,
         data_dir=settings.data_dir,
-        # Task 8 wires these to the agents service and its dispatcher; until then no PR
-        # belongs to an agent, so every delivery is accepted and ignored.
-        is_agent_pr=lambda pr_url: None,
-        on_queued=lambda: None,
+        is_agent_pr=app.state.specialists.is_agent_pr,
+        on_queued=app.state.comments.wake,
     )
     return serve_hooks(hooks_app, port)
 
@@ -127,6 +128,7 @@ def create_app(
     self_updater: Callable[..., Any] | None = None,
     claude_cli: ClaudeCliResolver | None = None,
     terminal_env_overrides: dict[str, str] | None = None,
+    gh_runner: GhRunner | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -151,6 +153,7 @@ def create_app(
     machine when running the real agent).
     `terminal_env_overrides`: environment variables set in the shells of the session terminals
     (tests pass a temporary `HOME`, so the user's `~/.bashrc` stays out of them).
+    `gh_runner`: runs `gh` for the sweep of PR comments (tests pass fakes; None runs the real one).
     """
 
     @asynccontextmanager
@@ -289,6 +292,9 @@ def create_app(
             prepare_message=lambda record, text: app.state.specialists.prepare_message(
                 record, text
             ),
+            on_pr_created=lambda session_id, url: app.state.specialists.on_pr_created(
+                session_id, url
+            ),
         )
         app.state.specialist_files = SpecialistFiles(app.state.settings.data_dir / "specialists")
         app.state.specialists = SpecialistService(
@@ -300,6 +306,12 @@ def create_app(
         app.state.scheduler = Scheduler(
             app.state.specialists,
             app.state.sessions,
+            app.state.usage,
+            app.state.settings.db_path,
+            time.time,
+        )
+        app.state.comments = CommentDispatcher(
+            app.state.specialists,
             app.state.usage,
             app.state.settings.db_path,
             time.time,
@@ -394,9 +406,22 @@ def create_app(
             asyncio.create_task(app.state.digest.run()),
         ]
         app.state.scheduler_task = None
+        app.state.comments_task = None
+        app.state.comment_poll_task = None
         if app.state.settings.specialists_scheduler:
             app.state.scheduler_task = asyncio.create_task(app.state.scheduler.run())
             tasks.append(app.state.scheduler_task)
+            # The owner's PR comments: delivered to the agents (a tick at startup treats what
+            # stayed in the queue) and swept with `gh` at startup and every hour.
+            app.state.comments_task = asyncio.create_task(app.state.comments.run())
+            app.state.comment_poll_task = asyncio.create_task(
+                run_poll(
+                    app.state.settings.db_path,
+                    run_gh=gh_runner or default_run_gh,
+                    on_queued=app.state.comments.wake,
+                )
+            )
+            tasks.extend([app.state.comments_task, app.state.comment_poll_task])
         if refresh_models if refresh_models is not None else agent_factory is None:
             tasks.append(
                 asyncio.create_task(

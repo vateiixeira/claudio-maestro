@@ -179,6 +179,17 @@ def test_poll_dedupes_with_webhook(db_path):
     assert poll(db_path, gh, now=T0 + 7200) == 0  # a second sweep brings nothing new
 
 
+def test_poll_without_an_owner_skips_the_sweep(db_path):
+    gh = FakeGh(issue=[issue_comment(1, author="")])
+    for owner in ("", None):
+        assert asyncio.run(
+            gh_comments.poll_comments(db_path, owner=owner, run_gh=gh, now=T0 + 3600)
+        ) == 0
+    assert gh.calls == []
+    assert read(db_path)[0] == []
+    assert read(db_path)[1].polled_at is None
+
+
 def test_poll_continues_after_one_pr_fails(db_path):
     other = "https://github.com/acme/other/pull/3"
     with closing(db.connect(db_path)) as conn:
@@ -323,3 +334,68 @@ def test_run_gh_kills_process_on_timeout(monkeypatch):
     assert proc.killed is True
 
 
+
+
+def test_run_gh_kills_process_when_cancelled(monkeypatch):
+    proc = FakeProc(hang=True)
+    proc.waited = False
+
+    async def wait():
+        proc.waited = True
+        return -9
+
+    proc.wait = wait
+
+    async def fake_exec(*args, **kwargs):
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    async def scenario():
+        task = asyncio.create_task(gh_comments.run_gh(["pr", "view"]))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+
+    assert proc.killed is True and proc.waited is True
+
+
+# The webhook and the sweep must name a comment the same way (R2) ------------------------
+
+
+def swept_ids(db_path, **sources):
+    """The ids the sweep queues for these GitHub items."""
+    poll(db_path, FakeGh(**sources))
+    return [c.comment_id for c in read(db_path)[0]]
+
+
+@pytest.mark.parametrize("kind", ["issue", "line", "review"])
+def test_webhook_and_sweep_give_the_same_comment_id(db_path, kind):
+    from claudio_maestro.specialists import github_hooks
+
+    pull = {"html_url": PR_URL}
+    if kind == "issue":
+        item = issue_comment(31)
+        sources = {"issue": [item]}
+        event, payload = "issue_comment", {
+            "action": "created", "issue": {"pull_request": pull, "html_url": PR_URL}, "comment": item,
+        }
+    elif kind == "line":
+        item = line_comment(32)
+        sources = {"line": [item]}
+        event, payload = "pull_request_review_comment", {
+            "action": "created", "pull_request": pull, "comment": item,
+        }
+    else:
+        item = review(33)
+        sources = {"review": [item]}
+        event, payload = "pull_request_review", {
+            "action": "submitted", "pull_request": pull, "review": item,
+        }
+
+    hook_ids = [c.comment_id for c in github_hooks.parse_event(event, payload)]
+
+    assert hook_ids == swept_ids(db_path, **sources) == [f"{kind}:{item['id']}"]
