@@ -41,9 +41,10 @@ def test_failed_work_migration_rolls_back_schema_and_version(tmp_path, monkeypat
                 statement(conn) if callable(statement) else conn.execute(statement)
         conn.execute(f'PRAGMA user_version = {previous}')
         conn.execute("INSERT INTO projects VALUES (1, 'kept', '/kept', '#fff', 0, 0)")
+        tables_before = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         monkeypatch.setattr(db, 'MIGRATIONS', [*db.MIGRATIONS[:-1], [*db.MIGRATIONS[-1], 'NOT VALID SQL']])
         with pytest.raises(sqlite3.OperationalError):
             db.migrate(conn)
         assert db.schema_version(conn) == previous
-        assert conn.execute("SELECT 1 FROM sqlite_master WHERE name='work_items'").fetchone() is None
+        assert {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")} == tables_before
         assert conn.execute('SELECT name FROM projects').fetchone()[0] == 'kept'

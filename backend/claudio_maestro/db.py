@@ -565,6 +565,31 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
     ],
 ]
 
+MIGRATIONS.append([
+    """CREATE TABLE work_project_modes (
+        project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+        paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
+        updated_at INTEGER NOT NULL
+    )""",
+    """CREATE TABLE work_specs (
+        work_item_id INTEGER PRIMARY KEY REFERENCES work_items(id) ON DELETE CASCADE,
+        dossier_ref TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('investigator', 'implementer', 'reviewer'))
+    )""",
+    """CREATE TABLE work_attempt_signals (
+        attempt_id INTEGER PRIMARY KEY REFERENCES work_attempts(id) ON DELETE CASCADE,
+        result_seen INTEGER NOT NULL DEFAULT 0,
+        quiescent INTEGER NOT NULL DEFAULT 0,
+        error_seen INTEGER NOT NULL DEFAULT 0,
+        proven_unsent INTEGER NOT NULL DEFAULT 0,
+        terminal_kind TEXT NOT NULL DEFAULT 'unknown',
+        limit_reached INTEGER NOT NULL DEFAULT 0,
+        started_at INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+    )""",
+])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 
