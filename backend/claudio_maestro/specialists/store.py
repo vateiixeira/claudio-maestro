@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 Autonomy = Literal["ask", "full"]
 Trigger = Literal["schedule", "manual", "comment"]
-CommentStatus = Literal["queued", "delivered", "dropped"]
+CommentStatus = Literal["queued", "dispatching", "uncertain", "delivered", "dropped"]
 Outcome = Literal["running", "concluded", "closed", "waiting", "failed", "skipped", "missed"]
 NoticeKind = Literal["notice", "summary", "alert"]
 

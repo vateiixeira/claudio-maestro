@@ -408,6 +408,30 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         """,
         "CREATE INDEX specialist_pr_comments_status_pr ON specialist_pr_comments(status, pr_url)",
     ],
+    # A durable reservation prevents replay after an interrupted comment send.
+    [
+        """
+        CREATE TABLE specialist_pr_comments_new (
+          comment_id     TEXT PRIMARY KEY,
+          pr_url         TEXT NOT NULL,
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          author         TEXT NOT NULL,
+          body           TEXT NOT NULL,
+          path           TEXT,
+          line           INTEGER,
+          html_url       TEXT NOT NULL,
+          created_at     INTEGER NOT NULL,
+          received_at    INTEGER NOT NULL,
+          status         TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'dispatching', 'uncertain', 'delivered', 'dropped')),
+          batch_at       INTEGER
+        )
+
+        """,
+        "INSERT INTO specialist_pr_comments_new SELECT * FROM specialist_pr_comments",
+        "DROP TABLE specialist_pr_comments",
+        "ALTER TABLE specialist_pr_comments_new RENAME TO specialist_pr_comments",
+        "CREATE INDEX specialist_pr_comments_status_pr ON specialist_pr_comments(status, pr_url)",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

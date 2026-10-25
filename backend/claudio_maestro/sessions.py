@@ -1138,6 +1138,7 @@ class ActiveSession:
         self._quiet_connect = False
         self._reader: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+        self._message_lock = asyncio.Lock()
         self._sent_messages = 0
         # How many times `finished` changed in this instance (finish, reopen).
         self._finish_changes = 0
@@ -1599,7 +1600,13 @@ class ActiveSession:
 
     # Sending ---------------------------------------------------------------
 
-    async def send(self, text: str, images: list[dict[str, Any]] | None = None) -> None:
+    async def send(self, text: str, images: list[dict[str, Any]] | None = None) -> bool:
+        # Preparing announcements and committing their receipt share the same lock:
+        # concurrent messages cannot pick up the same pending announcements.
+        async with self._message_lock:
+            return await self._send_message(text, images)
+
+    async def _send_message(self, text: str, images: list[dict[str, Any]] | None = None) -> bool:
         """Record the message, connect if needed and send it.
 
         `images` are `{media_type, data}` in base64; they go as content blocks and
@@ -1618,10 +1625,6 @@ class ActiveSession:
         # The user's message is recorded first so it is never lost.
         sent_text, commit = self._prepare(text)
         self._emit_events(self.builder.add_user_message(sent_text, markers))
-        try:
-            commit()
-        except Exception:
-            logger.exception("Falha ao confirmar os anúncios da sessão %s", self.session_id)
         self._touch()
         self._reopen_if_finished()
         self.emit_updated()
@@ -1635,12 +1638,12 @@ class ActiveSession:
             # two processes would run the same session.
             await self._wait_disposal()
             if self._final:
-                return
+                return False
             if self.client is None and not await self._connect():
-                return
+                return False
             # A new effort still pending is applied before this turn.
             if not await self._reconnect_for_effort():
-                return
+                return False
             client = self.client
             assert client is not None
             self.pending_turns += 1
@@ -1661,13 +1664,20 @@ class ActiveSession:
                 ]
             try:
                 await client.send(content)
+                try:
+                    commit()
+                except Exception:
+                    logger.exception("Falha ao confirmar os anúncios da sessão %s", self.session_id)
             except AgentError as error:
                 # If close() discarded this client meanwhile, the error is expected.
                 if self.client is client:
                     await self._fail(error.message_pt)
+            # True means client.send was entered. An error there may have happened
+            # after delivery; callers must not blindly retry that uncertain send.
+            return True
 
     def _prepare(self, text: str) -> tuple[str, Callable[[], None]]:
-        """The text to record and send, and what to call once it is recorded. Whatever
+        """The text to record and send, and what to call once its send is acknowledged. Whatever
         goes wrong here, the person's own message goes through as written."""
         if self._prepare_message is None or self.record.specialist_id is None:
             return text, _no_commit
@@ -3900,8 +3910,8 @@ class SessionManager:
                 await session.reload_if_modified()
                 await self.refresh_file_info(session)
                 external = session.external_activity
-            await session.send(text, images)
-            return {"state": session.state, "external_activity": external}
+            send_started = await session.send(text, images)
+            return {"state": session.state, "external_activity": external, "send_started": send_started}
         finally:
             session.users -= 1
 

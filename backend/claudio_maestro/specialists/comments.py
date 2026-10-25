@@ -20,7 +20,7 @@ from claudio_maestro import db
 from claudio_maestro.specialists import github_hooks, store
 from claudio_maestro.specialists.gh_comments import GhRunner, poll_comments
 from claudio_maestro.specialists.scheduler import limits_over
-from claudio_maestro.specialists.service import SpecialistService
+from claudio_maestro.specialists.service import CommentNotSentError, SpecialistService
 from claudio_maestro.usage import UsageChecker
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,7 @@ class CommentDispatcher:
         # One tick at a time: two overlapping ticks must not deliver a batch twice.
         self._lock = asyncio.Lock()
         self._wake = asyncio.Event()
+        self._recovered = False
 
     def wake(self) -> None:
         """A comment entered the queue: look at it without waiting for the next tick."""
@@ -91,6 +92,9 @@ class CommentDispatcher:
 
     async def _tick(self) -> None:
         now = self._clock()
+        if not self._recovered:
+            self._recover_dispatches()
+            self._recovered = True
         with closing(db.connect(self._db_path)) as conn:
             queued = store.queued_comments(conn)
         ordered = sorted(queued, key=lambda comment: store.normalize_pr_url(comment.pr_url))
@@ -135,10 +139,46 @@ class CommentDispatcher:
                 url=url, specialist_id=specialist_id, session_id=None,
                 created_at=int(now), polled_at=None, closed=False,
             )
-        await self._service.start_comment_run(pr, comments)
+        ids = [comment.comment_id for comment in comments]
+        marks = ", ".join("?" for _ in ids)
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            count = conn.execute(
+                f"SELECT COUNT(*) FROM specialist_pr_comments WHERE status = 'queued'"
+                f" AND comment_id IN ({marks})", ids,
+            ).fetchone()[0]
+            if count != len(ids):
+                return
+            store.mark_comments(conn, ids, "dispatching", int(now))
+        try:
+            await self._service.start_comment_run(pr, comments)
+        except BaseException as error:
+            safe_to_retry = isinstance(error, CommentNotSentError)
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                store.mark_comments(conn, ids, "queued" if safe_to_retry else "uncertain",
+                                    None if safe_to_retry else int(now))
+            if not safe_to_retry:
+                self._uncertain_alert(specialist_id, url)
+            raise
         self._failed.discard(url)
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             store.mark_comments(conn, [c.comment_id for c in comments], "delivered", int(now))
+
+    def _uncertain_alert(self, specialist_id: int, url: str) -> None:
+        self._service.add_alert(
+            specialist_id,
+            f"Envio de comentários no PR {_number(url)} sem confirmação. "
+            "Confira a conversa antes de reenviar; não haverá repetição automática.",
+        )
+
+    def _recover_dispatches(self) -> None:
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            rows = conn.execute(
+                "SELECT DISTINCT specialist_id, pr_url FROM specialist_pr_comments"
+                " WHERE status = 'dispatching'"
+            ).fetchall()
+            conn.execute("UPDATE specialist_pr_comments SET status = 'uncertain' WHERE status = 'dispatching'")
+        for row in rows:
+            self._uncertain_alert(row["specialist_id"], row["pr_url"])
 
     def _delivery_failed(self, url: str, specialist_id: int, error: Exception) -> None:
         """The first failure of a PR warns the person and logs the traceback; the retries

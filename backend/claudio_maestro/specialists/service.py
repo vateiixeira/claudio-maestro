@@ -82,6 +82,10 @@ ANNOUNCEMENTS_CLOSE = "</maestro-anuncios>"
 FINISH_POLL_SECONDS = 0.25
 FINISH_WARN_SECONDS = 300.0
 
+class CommentNotSentError(RuntimeError):
+    """The provider was not called: the queued comments can safely be tried again."""
+
+
 Trigger = Literal["schedule", "manual"]
 Publish = Callable[[dict[str, Any]], None]
 
@@ -464,7 +468,7 @@ class SpecialistService:
         target = self._comment_target(pr)
         if target is None or self.is_main(target):
             main_id = target or await self.ensure_main(pr.specialist_id)
-            await self._sessions.send(main_id, _comment_message(pr, comments, main=True))
+            await self._send_comment_message(main_id, _comment_message(pr, comments, main=True))
             return None
         with closing(db.connect(self._db_path)) as conn:
             open_run = store.run_for_session(conn, target)
@@ -472,7 +476,7 @@ class SpecialistService:
             # The session is still on a run (a schedule, a manual one or an earlier batch):
             # the comments are one more message of it, and it keeps being the only open run
             # (the whole life cycle follows the newest run of a session).
-            await self._sessions.send(target, _comment_message(pr, comments, main=False))
+            await self._send_comment_message(target, _comment_message(pr, comments, main=False))
             return open_run
         # The run is recorded before the send (the agent may conclude at once), but only
         # announced once the send worked: a send that fails leaves nothing on the screen.
@@ -486,14 +490,32 @@ class SpecialistService:
                 session_id=target,
             )
         try:
-            await self._sessions.send(target, _comment_message(pr, comments, main=False))
-        except BaseException:
+            await self._send_comment_message(target, _comment_message(pr, comments, main=False))
+        except BaseException as error:
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
-                store.delete_run(conn, run.id)
+                if isinstance(error, CommentNotSentError):
+                    store.delete_run(conn, run.id)
+                else:
+                    # The agent may still finish work after cancellation or a lost
+                    # acknowledgement. Keep its run so conclude/recovery can track it.
+                    conn.execute(
+                        "UPDATE specialist_runs SET reason = ? WHERE id = ?",
+                        ("Envio sem confirmação; confira a conversa antes de reenviar.", run.id),
+                    )
+                    current = store.get_run(conn, run.id)
+            if not isinstance(error, CommentNotSentError):
+                self._publish_run(current)
             raise
         self._publish_run(run)
         with closing(db.connect(self._db_path)) as conn:
             return store.get_run(conn, run.id)
+
+    async def _send_comment_message(self, session_id: str, text: str) -> None:
+        result = await self._sessions.send(session_id, text)
+        if result.get("send_started") is False:
+            raise CommentNotSentError("Não foi possível conectar ao agente antes de enviar.")
+        if result.get("state") == "error":
+            raise RuntimeError("O envio não foi confirmado; confira a conversa antes de reenviar.")
 
     def _comment_target(self, pr: store.Pr) -> str | None:
         """The session that opened the PR, if it still exists."""

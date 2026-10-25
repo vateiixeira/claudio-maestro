@@ -30,7 +30,7 @@ from claudio_maestro.sessions import BLOCKED_TOOL_MESSAGE, SessionManager
 from claudio_maestro.specialists import store
 from claudio_maestro.specialists.files import SpecialistFiles
 from claudio_maestro.specialists.policy import COMMENT_DENIED, GitContext
-from claudio_maestro.specialists.service import SpecialistService
+from claudio_maestro.specialists.service import CommentNotSentError, SpecialistService
 from claudio_maestro.specialists.tools import SERVER_NAME
 
 pytestmark = pytest.mark.anyio
@@ -1896,7 +1896,7 @@ async def test_start_comment_run_failure_leaves_no_run_and_raises(world):
     end_run(world, first)
 
     async def boom(*args: Any, **kwargs: Any):
-        raise RuntimeError("sem sessão")
+        raise CommentNotSentError("sem sessão")
 
     world.manager.send = boom
     with pytest.raises(RuntimeError, match="sem sessão"):
@@ -1968,7 +1968,7 @@ async def test_a_failed_send_to_an_open_run_deletes_nothing(world):
     first = await started(world, specialist_id)
 
     async def boom(*args: Any, **kwargs: Any):
-        raise RuntimeError("sem sessão")
+        raise CommentNotSentError("sem sessão")
 
     world.manager.send = boom
     with pytest.raises(RuntimeError):
@@ -1987,7 +1987,7 @@ async def test_a_failed_send_never_announces_the_run(world):
     before = len(world.published("specialist.run"))
 
     async def boom(*args: Any, **kwargs: Any):
-        raise RuntimeError("sem sessão")
+        raise CommentNotSentError("sem sessão")
 
     world.manager.send = boom
     with pytest.raises(RuntimeError):
@@ -1996,3 +1996,38 @@ async def test_a_failed_send_never_announces_the_run(world):
         )
 
     assert len(world.published("specialist.run")) == before
+
+
+async def test_connect_failure_keeps_announcements_pending(world):
+    from claudio_maestro.agent.base import AgentError
+
+    agent = world.add_specialist()
+    main = await world.service.ensure_main(agent)
+    pending_announcement(world, agent, "Resultado ainda não entregue")
+    world.factory.connect_error = AgentError("Falha antes de enviar")
+    await world.manager.send(main, "Explique")
+    assert not world.factory.clients[-1].sent
+    assert world.announcements(agent)[0].delivered_at is None
+
+
+async def test_concurrent_main_sends_deliver_each_announcement_once(world):
+    agent = world.add_specialist()
+    main = await world.service.ensure_main(agent)
+    pending_announcement(world, agent, "Anúncio único")
+    reached, release = asyncio.Event(), asyncio.Event()
+    real_connect = world.manager.get(main)._connect
+
+    async def slow_connect():
+        reached.set()
+        await release.wait()
+        return await real_connect()
+
+    world.manager.get(main)._connect = slow_connect
+    first = asyncio.create_task(world.manager.send(main, "Primeira"))
+    await reached.wait()
+    second = asyncio.create_task(world.manager.send(main, "Segunda"))
+    await asyncio.sleep(0)
+    release.set()
+    await asyncio.gather(first, second)
+    messages = world.factory.clients[0].sent
+    assert sum("Anúncio único" in text for text in messages) == 1

@@ -399,3 +399,25 @@ def test_migration_creates_conversation_tables(tmp_path: Path):
         indexes = {row["name"] for row in conn.execute("PRAGMA index_list(specialist_pr_comments)")}
     assert "main_session_id" in cols
     assert "specialist_pr_comments_status_pr" in indexes
+
+
+def test_comment_dispatch_migration_preserves_queued_comments(tmp_path: Path):
+    with open_db(tmp_path / "test.db") as conn:
+        before = next(i + 1 for i, statements in enumerate(db.MIGRATIONS)
+                      if any("CREATE TABLE specialist_pr_comments (" in str(sql) for sql in statements))
+        for statements in db.MIGRATIONS[:before]:
+            for sql in statements:
+                if callable(sql):
+                    sql(conn)
+                else:
+                    conn.execute(sql)
+        conn.execute(f"PRAGMA user_version = {before}")
+        conn.execute("INSERT INTO projects (name, path, color, position, created_at) VALUES ('p','/p','x',0,0)")
+        conn.execute("INSERT INTO specialists (slug, name, project_id, created_at, updated_at) VALUES ('a','A',1,0,0)")
+        conn.execute("INSERT INTO specialist_pr_comments (comment_id, pr_url, specialist_id, author, body, html_url, created_at, received_at) VALUES ('issue:1','https://github.com/o/r/pull/1',1,'vini','ajuste','url',1,2)")
+        db.migrate(conn)
+        conn.execute("UPDATE specialist_pr_comments SET status = 'dispatching' WHERE comment_id = 'issue:1'")
+        row = conn.execute("SELECT body, status FROM specialist_pr_comments").fetchone()
+        assert (row['body'], row['status']) == ('ajuste', 'dispatching')
+        conn.execute("UPDATE specialist_pr_comments SET status = 'uncertain'")
+        assert conn.execute('PRAGMA foreign_key_check').fetchall() == []

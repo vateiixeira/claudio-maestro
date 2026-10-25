@@ -19,6 +19,7 @@ from claudio_maestro.specialists.comments import (
     QUIET_SECONDS,
     CommentDispatcher,
 )
+from claudio_maestro.specialists.service import CommentNotSentError
 from specialists.test_service import (  # noqa: F401
     NOW,
     PR,
@@ -335,7 +336,7 @@ async def test_a_failed_delivery_stays_queued_and_the_next_tick_retries(world, c
 
     async def send(session_id, text, images=None):
         if failing:
-            raise RuntimeError("a sessão não abriu")
+            raise CommentNotSentError("a sessão não abriu")
         return await real_send(session_id, text, images)
 
     world.manager.send = send
@@ -384,7 +385,7 @@ async def test_a_failure_in_one_pr_does_not_stop_the_others(world):
 
     async def start(pr, comments):
         if pr.url == PR:
-            raise RuntimeError("falhou")
+            raise CommentNotSentError("falhou")
         return await real(pr, comments)
 
     world.service.start_comment_run = start
@@ -489,3 +490,77 @@ async def test_two_batches_while_the_run_is_open_leave_one_open_run(world):
     await wait_until(lambda: world.manager.get(session_id).state == "idle")
     await world.service.conclude(session_id, "Feito.")
     assert [r.outcome for r in world.runs(specialist_id)] == ["concluded"]
+
+
+async def test_connect_failure_keeps_the_comment_queued(world):
+    from claudio_maestro.agent.base import AgentError
+
+    agent = world.add_specialist()
+    register_pr(world, agent, None)
+    queue(world, agent, "issue:connect", at=NOW - 120)
+    world.factory.connect_error = AgentError("Falha antes de enviar")
+    await dispatcher(world).tick()
+    assert statuses(world)["issue:connect"] == ("queued", None)
+    assert not world.factory.clients[-1].sent
+
+
+async def test_restart_does_not_replay_a_comment_with_uncertain_dispatch(world):
+    agent = world.add_specialist()
+    register_pr(world, agent, None)
+    queue(world, agent, "issue:interrupted", at=NOW - 120)
+    sent_once = asyncio.Event()
+    real_send = world.manager.send
+
+    async def interrupted_send(*args, **kwargs):
+        result = await real_send(*args, **kwargs)
+        sent_once.set()
+        await asyncio.Event().wait()
+        return result
+
+    world.manager.send = interrupted_send
+    task = asyncio.create_task(dispatcher(world).tick())
+    await sent_once.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    world.manager.send = real_send
+    await dispatcher(world).tick()
+    assert sum(len(client.sent) for client in world.factory.clients) == 1
+    assert statuses(world)["issue:interrupted"][0] == "uncertain"
+    assert any("confira" in notice.text.lower() for notice in world.notices())
+
+
+async def test_restart_preserves_the_run_of_an_uncertain_comment_send(world):
+    agent, origin = await agent_with_pr(world)
+    queue(world, agent, "issue:uncertain-run", at=NOW - 120)
+    reached = asyncio.Event()
+    real_send = world.manager.send
+
+    async def interrupted_send(*args, **kwargs):
+        result = await real_send(*args, **kwargs)
+        reached.set()
+        await asyncio.Event().wait()
+        return result
+
+    world.manager.send = interrupted_send
+    task = asyncio.create_task(dispatcher(world).tick())
+    await reached.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    run = world.run_of(origin)
+    assert run.trigger == "comment"
+    assert any(event["id"] == run.id for event in world.published("specialist.run"))
+    await world.service.conclude(origin, "Comentário atendido")
+    assert world.run_of(origin).outcome == "concluded"
+    assert any("Comentário atendido" in a.text for a in world.announcements(agent))
+
+
+async def test_recovery_holds_a_dispatch_reserved_before_process_exit(world):
+    agent = world.add_specialist()
+    register_pr(world, agent, None)
+    queue(world, agent, "issue:reserved", at=NOW - 120, status="dispatching", batch_at=NOW - 10)
+    await dispatcher(world).tick()
+    assert statuses(world)["issue:reserved"][0] == "uncertain"
+    assert not world.factory.clients
+    assert any("confira" in notice.text.lower() for notice in world.notices())
