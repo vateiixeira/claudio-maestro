@@ -41,3 +41,23 @@ it('mantém a lista e mostra erro quando não consegue abrir', async () => {
   expect(wrapper.get('[role="alert"]').text()).toContain('A pasta não está disponível.')
   expect(router.currentRoute.value.fullPath).toBe('/agentes/1')
 })
+
+it('destaca a principal e permite localizar outro assunto sem misturar os contextos', async () => {
+  const { useSpecialistsStore } = await import('../../../stores/specialists')
+  const { makeSpecialist } = await import('../../../test/factories')
+  useSpecialistsStore().list = [makeSpecialist({ main_session_id: 'main' })]
+  vi.stubGlobal('fetch', routeFetch({
+    'GET /api/specialists/1/conversations': () => jsonResponse([
+      { session_id: 'main', title: 'Sentry · conversa', finished: false, created_at: 1, last_activity_at: 2 },
+      ...['Pagamentos', 'Autenticação', 'Clientes', 'Relatórios'].map((title, i) => ({ session_id: `chat-${i}`, title, finished: false, created_at: 1, last_activity_at: 2 })),
+    ]),
+  }))
+  const router = createAppRouter(createMemoryHistory())
+  await router.push('/agentes/1')
+  const w = mount(AgentConversations, { props: { agentId: 1 }, global: { plugins: [router] } })
+  await flushPromises()
+  expect(w.get('[data-test="agent-main-conversation"]').text()).toContain('Conversa principal')
+  await w.get('[data-test="agent-chat-search"]').setValue('pagamentos')
+  expect(w.findAll('[data-test="agent-chat-row"]')).toHaveLength(1)
+  expect(w.get('[data-test="agent-chat-row"]').text()).toContain('Pagamentos')
+})

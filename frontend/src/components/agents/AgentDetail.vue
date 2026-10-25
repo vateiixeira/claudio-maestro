@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { nextRunLabel } from '../../agents'
+import { useMinuteClock } from '../../minuteClock'
+import IconAgents from '../icons/IconAgents.vue'
+import IconPlay from '../icons/IconPlay.vue'
 import { errorMessage } from '../../api/http'
 import { useProjectsStore } from '../../stores/projects'
 import { useSpecialistsStore } from '../../stores/specialists'
@@ -23,6 +27,19 @@ const projects = useProjectsStore()
 const router = useRouter()
 const route = useRoute()
 const tab = ref('conversations')
+const visited = ref(new Set<string>())
+const tabList = ref<HTMLElement | null>(null)
+const now = useMinuteClock()
+const nextScheduled = computed(() => nextRunLabel(props.agent.schedules, props.agent.enabled, new Date(now.value)))
+const activityLabel = computed(() => {
+  switch (props.agent.last_run?.outcome) {
+    case 'running': case 'starting': return 'Em execução'
+    case 'waiting': return 'Aguarda você'
+    case 'failed': return 'Última execução falhou'
+    case 'missed': return 'Último horário perdido'
+    default: return 'Agente'
+  }
+})
 const tabs = [
   { id: 'conversations', label: 'Conversas' },
   { id: 'runs', label: 'Execuções' },
@@ -30,12 +47,25 @@ const tabs = [
 ]
 watch(() => route.query.aba, (value) => {
   tab.value = tabs.some((t) => t.id === value) ? String(value) : 'conversations'
+  visited.value.add(tab.value)
 }, { immediate: true })
 function chooseTab(id: string) {
   tab.value = id
+  visited.value.add(id)
   void router.replace({ query: { ...route.query, aba: id } })
 }
 
+function onTabKey(event: KeyboardEvent, index: number) {
+  let next = index
+  if (event.key === 'ArrowRight') next = (index + 1) % tabs.length
+  else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length
+  else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = tabs.length - 1
+  else return
+  event.preventDefault()
+  chooseTab(tabs[next]!.id)
+  void nextTick(() => tabList.value?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus())
+}
 
 /** The message of the last action that failed (a setting, a run, a removal), shown under the header. */
 const actionError = ref<string | null>(null)
@@ -171,57 +201,78 @@ watch(() => props.agent.id, () => { actionError.value = null; actionStatus.value
 </script>
 
 <template>
-  <article class="flex min-w-0 flex-col gap-5" :aria-label="`Agente ${agent.name}`">
-    <header class="flex flex-col gap-3">
-      <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
-        <div class="flex min-w-0 basis-48 grow flex-col gap-0.5">
-          <h2 data-test="agent-name" class="m-0 truncate text-[1.25rem] font-semibold tracking-tight">{{ agent.name }}</h2>
-          <p data-test="agent-description" class="m-0 text-sm" :class="agent.description ? 'text-fg-muted' : 'text-fg-subtle'">{{ agent.description || 'Sem descrição.' }}</p>
+  <article class="agent-detail" :aria-label="`Agente ${agent.name}`">
+    <header class="agent-profile">
+      <div class="profile-identity">
+        <span class="agent-avatar" aria-hidden="true"><IconAgents :size="24" /></span>
+        <div class="profile-copy">
+          <p data-test="agent-activity" class="profile-eyebrow"><span class="activity-dot" :class="{ 'is-running': activityLabel === 'Em execução', 'is-waiting': activityLabel === 'Aguarda você', 'is-failed': agent.last_run?.outcome === 'failed' }" />{{ activityLabel }}</p>
+          <h2 data-test="agent-name">{{ agent.name }}</h2>
+          <p data-test="agent-description" class="profile-description">{{ agent.description || 'Defina como este agente trabalha em Configuração.' }}</p>
         </div>
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <button
-            type="button"
-            role="switch"
-            data-test="agent-enabled"
-            :aria-checked="agent.enabled"
-            class="flex h-9 items-center gap-2 rounded-lg px-1 text-sm text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
-            @click="toggleEnabled"
-          >
-            <span class="relative h-5 w-9 rounded-full transition-colors" :class="agent.enabled ? 'bg-primary' : 'bg-elevated'" aria-hidden="true">
-              <span class="absolute top-0.5 left-0.5 size-4 rounded-full bg-fg transition-transform motion-reduce:transition-none" :class="agent.enabled ? 'translate-x-4 bg-primary-fg' : ''" />
-            </span>
-            Horários ligados
+      </div>
+      <div class="profile-actions">
+        <button type="button" data-test="run-now" :class="[BTN, 'run-button']" @click="openRun"><IconPlay :size="14" />Rodar agora</button>
+        <div ref="menuRoot" class="relative">
+          <button type="button" data-test="agent-menu" aria-label="Mais ações" aria-haspopup="menu" :aria-expanded="menuOpen" :class="[BTN, 'px-2.5']" @click="toggleMenu">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
           </button>
-          <button type="button" data-test="run-now" :class="BTN" @click="openRun">Rodar agora</button>
-          <div ref="menuRoot" class="relative">
-            <button type="button" data-test="agent-menu" aria-label="Mais ações" aria-haspopup="menu" :aria-expanded="menuOpen" :class="[BTN, 'px-2.5']" @click="toggleMenu">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
-            </button>
-            <div v-if="menuOpen" role="menu" class="absolute right-0 z-20 mt-1 flex min-w-44 flex-col rounded-lg border border-line-strong bg-card p-1 shadow-lg">
-              <button type="button" role="menuitem" data-test="agent-delete" class="rounded-md px-2.5 py-1.5 text-left text-sm text-diff-del-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary" @click="askDelete">Excluir agente</button>
-            </div>
+          <div v-if="menuOpen" role="menu" class="absolute right-0 z-20 mt-1 flex min-w-44 flex-col rounded-lg border border-line-strong bg-card p-1 shadow-lg">
+            <button type="button" role="menuitem" data-test="agent-delete" class="rounded-md px-2.5 py-2 text-left text-sm text-diff-del-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary" @click="askDelete">Excluir agente</button>
           </div>
         </div>
       </div>
-      <div class="flex flex-col gap-1">
-        <div class="flex flex-wrap items-center gap-3">
-          <span data-test="queue-state" class="text-sm text-fg-muted">{{ agent.queue_paused ? 'Fila pausada' : 'Fila ativa' }}</span>
-          <button type="button" data-test="queue-toggle" :class="BTN" :disabled="queueChanging" @click="toggleQueue">{{ agent.queue_paused ? 'Retomar fila' : 'Pausar fila' }}</button>
-        </div>
-        <p class="m-0 text-xs text-fg-subtle">A pausa segura as próximas execuções e não interrompe a atual.</p>
-      </div>
-      <p v-if="actionError" data-test="action-error" role="alert" :class="ERROR">{{ actionError }}</p>
-      <p v-if="actionStatus" data-test="action-status" role="status" class="m-0 text-sm text-fg-muted">{{ actionStatus }}</p>
     </header>
 
-    <nav aria-label="Seções do agente" class="flex gap-1 border-b border-line">
-      <button v-for="item in tabs" :key="item.id" type="button" :data-test="`agent-tab-${item.id}`" :aria-current="tab === item.id ? 'page' : undefined" class="rounded-t-md px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary" :class="tab === item.id ? 'bg-card font-semibold text-fg' : 'text-fg-muted hover:text-fg'" @click="chooseTab(item.id)">{{ item.label }}</button>
-    </nav>
-    <AgentConversations v-if="tab === 'conversations'" :agent-id="agent.id" />
-    <AgentRuns v-else-if="tab === 'runs'" :agent-id="agent.id" />
-    <div v-else class="flex flex-col gap-5">
-    <AgentSkill :agent-id="agent.id" />
+    <div class="agent-operations">
+      <div class="queue-control">
+        <span data-test="queue-state" class="queue-label" :class="{ 'is-paused': agent.queue_paused }">
+          <svg v-if="agent.queue_paused" width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 4v12M14 4v12" /></svg>
+          <span v-else class="queue-indicator" aria-hidden="true" />
+          {{ agent.queue_paused ? 'Fila pausada' : 'Fila ativa' }}
+        </span>
+        <button type="button" data-test="queue-toggle" aria-describedby="queue-help" class="queue-toggle" :disabled="queueChanging" :title="agent.queue_paused ? 'Retomar os pedidos pendentes' : 'Segurar os próximos pedidos sem interromper o atual'" @click="toggleQueue">{{ queueChanging ? 'Salvando…' : agent.queue_paused ? 'Retomar fila' : 'Pausar fila' }}</button>
+      </div>
+      <span id="queue-help" class="sr-only">A pausa segura as próximas execuções e não interrompe a atual.</span>
+      <div class="schedule-control">
+        <span class="next-schedule">{{ nextScheduled }}</span>
+        <button type="button" role="switch" data-test="agent-enabled" :aria-checked="agent.enabled" class="schedule-switch" @click="toggleEnabled">
+          <span class="switch-track" :class="{ 'is-enabled': agent.enabled }" aria-hidden="true"><span /></span>
+          <span>Horários ligados</span>
+        </button>
+      </div>
+    </div>
+    <p v-if="actionError" data-test="action-error" role="alert" :class="[ERROR, 'action-feedback']">{{ actionError }}</p>
+    <p v-if="actionStatus" data-test="action-status" role="status" class="action-feedback text-primary-soft">{{ actionStatus }}</p>
 
+    <nav class="agent-tabs" aria-label="Seções do agente">
+      <div ref="tabList" role="tablist" aria-label="Seções do agente">
+        <button v-for="(item, index) in tabs" :id="`agent-tab-${item.id}`" :key="item.id" type="button" role="tab" :data-test="`agent-tab-${item.id}`" :aria-current="tab === item.id ? 'page' : undefined" :aria-selected="tab === item.id" :aria-controls="`agent-panel-${item.id}`" :tabindex="tab === item.id ? 0 : -1" @keydown="onTabKey($event, index)" @click="chooseTab(item.id)">{{ item.label }}</button>
+      </div>
+    </nav>
+    <div v-if="visited.has('conversations')" v-show="tab === 'conversations'" id="agent-panel-conversations" role="tabpanel" aria-labelledby="agent-tab-conversations" class="agent-panel"><AgentConversations :agent-id="agent.id" /></div>
+    <div v-if="visited.has('runs')" v-show="tab === 'runs'" id="agent-panel-runs" role="tabpanel" aria-labelledby="agent-tab-runs" class="agent-panel"><AgentRuns :agent-id="agent.id" /></div>
+    <div v-if="visited.has('settings')" v-show="tab === 'settings'" id="agent-panel-settings" role="tabpanel" aria-labelledby="agent-tab-settings" class="agent-panel agent-settings">
+      <nav aria-label="Navegar pela configuração" class="settings-jump-nav">
+        <a href="#agent-settings-instructions">Instruções</a><a href="#agent-settings-execution">Execução</a><a href="#agent-settings-access">Acessos</a><a href="#agent-settings-memory">Memória</a>
+      </nav>
+      <section id="agent-settings-instructions" class="settings-group" aria-labelledby="agent-settings-title-instructions">
+        <h3 id="agent-settings-title-instructions" class="settings-group-title">Instruções</h3>
+    <AgentSkill :agent-id="agent.id" />
+      </section>
+      <section id="agent-settings-execution" class="settings-group" aria-labelledby="agent-settings-title-execution">
+        <h3 id="agent-settings-title-execution" class="settings-group-title">Execução</h3>
+    <AgentSchedules :agent="agent" :save="saveOrThrow" />
+    <AgentModel :agent="agent" :save="save" />
+    <AgentSection title="Fechamento">
+      <label class="flex cursor-pointer items-start gap-2 text-sm">
+        <input data-test="close-by-check" type="checkbox" class="mt-1 accent-[var(--color-primary)]" :checked="agent.close_by_check" @change="toggleCloseByCheck" />
+        <span><span class="font-medium">Fechar sozinha quando a verificação disser que pode</span><span class="block text-xs text-fg-subtle">Ao terminar, uma verificação confere se o trabalho está completo e, se estiver, a conversa é finalizada sem esperar você.</span></span>
+      </label>
+    </AgentSection>
+      </section>
+      <section id="agent-settings-access" class="settings-group" aria-labelledby="agent-settings-title-access">
+        <h3 id="agent-settings-title-access" class="settings-group-title">Acessos</h3>
     <AgentSection title="Pasta e projetos" hint="O agente abre as conversas na pasta do projeto de origem e enxerga também os projetos adicionais.">
       <label class="flex flex-col gap-1 text-sm">
         <span class="text-fg-muted">Projeto de origem</span>
@@ -246,22 +297,8 @@ watch(() => props.agent.id, () => { actionError.value = null; actionStatus.value
         </select>
       </div>
     </AgentSection>
-
     <AgentAutonomy :agent="agent" :save="save" />
-
-    <AgentSchedules :agent="agent" :save="saveOrThrow" />
-
-    <AgentSection title="Fechamento">
-      <label class="flex cursor-pointer items-start gap-2 text-sm">
-        <input data-test="close-by-check" type="checkbox" class="mt-1 accent-[var(--color-primary)]" :checked="agent.close_by_check" @change="toggleCloseByCheck" />
-        <span><span class="font-medium">Fechar sozinha quando a verificação disser que pode</span><span class="block text-xs text-fg-subtle">Ao terminar, uma verificação confere se o trabalho está completo e, se estiver, a conversa é finalizada sem esperar você.</span></span>
-      </label>
-    </AgentSection>
-
-    <AgentModel :agent="agent" :save="save" />
-
     <AgentSecrets :agent-id="agent.id" />
-
     <AgentSection title="MCPs na última execução">
       <ul v-if="agent.last_mcp.length" class="m-0 flex list-none flex-col gap-1 p-0">
         <li v-for="(server, index) in agent.last_mcp" :key="`${server.name}-${index}`" data-test="mcp-item" class="flex gap-2 text-sm">
@@ -270,9 +307,11 @@ watch(() => props.agent.id, () => { actionError.value = null; actionStatus.value
       </ul>
       <p v-else data-test="mcp-empty" class="m-0 text-sm text-fg-muted">Aparece depois da primeira execução.</p>
     </AgentSection>
-
+      </section>
+      <section id="agent-settings-memory" class="settings-group" aria-labelledby="agent-settings-title-memory">
+        <h3 id="agent-settings-title-memory" class="settings-group-title">Memória</h3>
     <AgentMemory :agent-id="agent.id" />
-
+      </section>
     </div>
 
     <ConfirmDialog v-if="runOpen" title="Rodar agora" confirm-label="Rodar" :confirm-disabled="running" :autofocus="false" @confirm="confirmRun" @cancel="runOpen = false">
@@ -287,3 +326,55 @@ watch(() => props.agent.id, () => { actionError.value = null; actionStatus.value
     </ConfirmDialog>
   </article>
 </template>
+
+<style scoped>
+.agent-detail { min-width:0; padding:30px 0 48px; }
+.agent-profile { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; }
+.profile-identity { display:flex; min-width:0; align-items:flex-start; gap:18px; }
+.agent-avatar { display:flex; width:52px; height:52px; flex-shrink:0; align-items:center; justify-content:center; border:1px solid var(--color-line-strong); border-radius:15px; background:var(--color-panel); color:var(--color-fg-muted); }
+.profile-copy { min-width:0; }
+.profile-eyebrow { display:flex; align-items:center; gap:7px; margin:0 0 6px; color:var(--color-fg-subtle); font-size:11px; }
+.activity-dot { width:6px; height:6px; border-radius:50%; background:var(--color-fg-subtle); }
+.activity-dot.is-running { background:var(--color-primary); }
+.activity-dot.is-failed { background:var(--color-diff-del-fg); }
+.activity-dot.is-waiting { background:var(--color-secondary); }
+.profile-copy h2 { margin:0; overflow-wrap:anywhere; font-size:28px; font-weight:600; line-height:1.25; letter-spacing:-.035em; }
+.profile-description { max-width:65ch; margin:9px 0 0; color:var(--color-fg-muted); font-size:13px; line-height:1.65; overflow-wrap:anywhere; }
+.profile-actions { display:flex; flex-shrink:0; align-items:center; gap:8px; padding-top:17px; }
+.run-button { display:inline-flex; align-items:center; gap:8px; }
+.agent-operations { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 24px; margin-top:28px; padding:15px 0; color:var(--color-fg-muted); }
+.queue-control,.schedule-control { display:flex; flex-wrap:wrap; align-items:center; gap:14px; }
+.queue-label { display:inline-flex; align-items:center; gap:7px; color:var(--color-fg-muted); font-size:12px; }
+.queue-label.is-paused { color:var(--color-secondary-soft); }
+.queue-indicator { width:7px; height:7px; border:1px solid var(--color-fg-subtle); border-radius:50%; }
+.queue-toggle { min-height:28px; cursor:pointer; border:0; border-radius:5px; background:transparent; padding:0 7px; color:var(--color-fg-subtle); font-size:11px; text-decoration:underline; text-underline-offset:3px; }
+.queue-toggle:hover { color:var(--color-fg); background:var(--color-card); }
+.queue-toggle:disabled { opacity:.5; cursor:wait; }
+.next-schedule { font-size:11px; color:var(--color-fg-subtle); }
+.schedule-switch { display:inline-flex; min-height:32px; cursor:pointer; align-items:center; gap:7px; border:0; border-radius:5px; background:transparent; color:var(--color-fg-muted); font-size:11px; }
+.switch-track { display:inline-flex; width:27px; height:16px; flex-shrink:0; align-items:center; padding:2px; border:1px solid var(--color-line-strong); border-radius:20px; background:var(--color-elevated); }
+.switch-track>span { width:10px; height:10px; border-radius:50%; background:var(--color-fg-subtle); transition:transform 160ms ease-out; }
+.switch-track.is-enabled { border-color:var(--color-primary); background:var(--color-primary); }
+.switch-track.is-enabled>span { background:var(--color-primary-fg); transform:translateX(11px); }
+.action-feedback { margin:0 0 16px; font-size:12px; }
+.agent-tabs { position:sticky; top:0; z-index:10; border-bottom:1px solid var(--color-line); background:var(--color-surface); }
+.agent-tabs>[role=tablist] { display:flex; gap:28px; }
+.agent-tabs button { position:relative; display:flex; min-height:48px; cursor:pointer; align-items:center; justify-content:center; border:0; padding:0 1px; background:transparent; color:var(--color-fg-subtle); font-size:13px; font-weight:500; }
+.agent-tabs button:hover { color:var(--color-fg); }
+.agent-tabs button[aria-selected=true] { color:var(--color-fg); }
+.agent-tabs button[aria-selected=true]::after { position:absolute; right:0; bottom:-1px; left:0; height:2px; background:var(--color-fg); content:''; }
+.agent-tabs button:focus-visible,.queue-toggle:focus-visible,.schedule-switch:focus-visible,.settings-jump-nav a:focus-visible { outline:2px solid var(--color-primary); outline-offset:4px; }
+.agent-panel { min-width:0; }
+.agent-settings { padding-top:28px; }
+.settings-jump-nav { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 30px; padding:4px; width:fit-content; max-width:100%; border:1px solid var(--color-line); border-radius:9px; background:var(--color-panel); }
+.settings-jump-nav a { display:flex; min-height:32px; align-items:center; border-radius:5px; padding:0 12px; color:var(--color-fg-muted); font-size:12px; text-decoration:none; }
+.settings-jump-nav a:hover { background:var(--color-elevated); color:var(--color-fg); }
+.settings-group { scroll-margin-top:70px; margin-top:32px; }
+.settings-group-title { margin:0 0 16px; color:var(--color-fg-subtle); font-size:11px; font-weight:500; letter-spacing:.07em; text-transform:uppercase; }
+.agent-settings :deep(input:not([type=radio]):not([type=checkbox])),.agent-settings :deep(select),.agent-settings :deep(textarea) { max-width:100%; border-radius:7px; }
+.agent-settings :deep(textarea) { background:var(--color-panel); line-height:1.7; }
+.agent-settings :deep(form) { min-width:0; }
+@container (max-width:620px) { .agent-profile { flex-direction:column; gap:18px; } .profile-actions { padding:0 0 0 70px; } .agent-operations { margin-top:20px; gap:10px; } .profile-copy h2 { font-size:26px; } .schedule-control { gap:8px 12px; } }
+@container (max-width:420px) { .agent-detail { padding-top:22px; } .profile-identity { gap:13px; } .agent-avatar { width:44px; height:44px; border-radius:12px; } .profile-actions { padding-left:57px; } .agent-tabs>[role=tablist] { gap:24px; } .agent-settings { padding-top:22px; } .agent-operations { margin-top:12px; padding:10px 0; } .agent-profile { gap:14px; } .settings-jump-nav a { padding:0 9px; font-size:11px; } }
+@media (prefers-reduced-motion:reduce) { .switch-track>span { transition:none; } }
+</style>

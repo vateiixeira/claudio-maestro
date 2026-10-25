@@ -69,3 +69,12 @@ describe('AgentList', () => {
     expect(w.text()).toContain('Nenhum agente ainda')
   })
 })
+
+it('oferece um seletor compacto de agente e ações de criação e GitHub', async () => {
+  const w = await mountList([makeSpecialist({ id: 1 }), makeSpecialist({ id: 2, name: 'Filmes' })], 2)
+  expect(w.get('[data-test="agent-picker-toggle"]').text()).toContain('Filmes')
+  expect(w.find('[data-test="agent-new"]').exists()).toBe(true)
+  expect(w.find('[data-test="agents-github-open"]').exists()).toBe(true)
+  await w.get('[data-test="agent-picker-toggle"]').trigger('click')
+  expect(w.findAll('[data-test="agent-item"]')).toHaveLength(2)
+})

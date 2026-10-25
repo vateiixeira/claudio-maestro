@@ -53,7 +53,7 @@ describe('AgentDetail', () => {
   it('mostra as seções na ordem do desenho', async () => {
     const { wrapper } = await mountDetail()
     expect(wrapper.findAll('[data-test="section-title"]').map((t) => t.text().toLowerCase())).toEqual([
-      'skill', 'pasta e projetos', 'autonomia', 'horários', 'fechamento', 'modelo e raciocínio', 'segredos',
+      'skill', 'horários', 'modelo e raciocínio', 'fechamento', 'pasta e projetos', 'autonomia', 'segredos',
       'mcps na última execução', 'aprendizados', 'registro',
     ])
     expect(wrapper.get('[data-test="agent-name"]').text()).toBe('Sentry')
@@ -661,4 +661,41 @@ describe('AgentDetail', () => {
     await flushPromises()
     expect(wrapper.get('[data-test="action-error"]').text()).toContain('Projeto não encontrado.')
   })
+})
+
+it('organiza a configuração em grupos com atalhos para cada destino', async () => {
+  const { wrapper } = await mountDetail()
+  const nav = wrapper.get('[aria-label="Navegar pela configuração"]')
+  for (const [id, label] of [['instructions', 'Instruções'], ['execution', 'Execução'], ['access', 'Acessos'], ['memory', 'Memória']]) {
+    const link = nav.get(`a[href="#agent-settings-${id}"]`)
+    expect(link.text()).toContain(label)
+    expect(wrapper.find(`#agent-settings-${id}`).exists()).toBe(true)
+  }
+})
+
+it('preserva a edição da skill ao alternar entre as seções do agente', async () => {
+  const { wrapper, fetch } = await mountDetail()
+  await wrapper.get('[data-test="skill-text"]').setValue('Instruções ainda não salvas')
+  await wrapper.get('[data-test="agent-tab-runs"]').trigger('click')
+  await flushPromises()
+  await wrapper.get('[data-test="agent-tab-settings"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get<HTMLTextAreaElement>('[data-test="skill-text"]').element.value).toBe('Instruções ainda não salvas')
+  expect(bodies(fetch, 'PUT', '/api/specialists/1/skill')).toHaveLength(0)
+})
+
+it('permite navegar entre as seções pelas setas do teclado', async () => {
+  const { wrapper } = await mountDetail()
+  await wrapper.get('[data-test="agent-tab-settings"]').trigger('keydown', { key: 'Home' })
+  await flushPromises()
+  expect(wrapper.get('[data-test="agent-tab-conversations"]').attributes('aria-selected')).toBe('true')
+  await wrapper.get('[data-test="agent-tab-conversations"]').trigger('keydown', { key: 'ArrowRight' })
+  await flushPromises()
+  expect(wrapper.get('[data-test="agent-tab-runs"]').attributes('aria-selected')).toBe('true')
+})
+
+it('sinaliza a falha da última execução no cabeçalho sem alterar o controle da fila', async () => {
+  const { wrapper } = await mountDetail(makeSpecialist({ last_run: makeSpecialistRun({ outcome: 'failed' }) }))
+  expect(wrapper.get('[data-test="agent-activity"]').text()).toBe('Última execução falhou')
+  expect(wrapper.get('[data-test="queue-state"]').text()).toBe('Fila ativa')
 })

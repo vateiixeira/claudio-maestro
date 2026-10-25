@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch, watchEffect } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
+import { AGENTS_NAVIGATION_KEY } from './agentsNavigation'
 import AppSidebar from './components/sidebar/AppSidebar.vue'
 import { loadEverything } from './stores/realtime'
 import { useLayoutStore } from './stores/layout'
@@ -22,6 +23,31 @@ const sessions = useSessionsStore()
 const waiting = computed(() => sessions.all.filter((s) => s.display_state === 'waiting' && needsYou(s) && !isDiscarded(s)).length)
 const route = useRoute()
 const router = useRouter()
+const compactViewport = ref(window.innerWidth < 1024)
+const agentsMenuOpen = ref(false)
+const agentsCompactNavigation = computed(() => route.name === 'agents' && compactViewport.value)
+let agentsMenuTrigger: HTMLElement | null = null
+function closeAgentsMenu(restoreFocus = true) {
+  agentsMenuOpen.value = false
+  if (restoreFocus) void nextTick(() => agentsMenuTrigger?.isConnected && agentsMenuTrigger.focus())
+}
+function resizeAgentsNavigation() {
+  compactViewport.value = window.innerWidth < 1024
+  if (!compactViewport.value) closeAgentsMenu(false)
+}
+provide(AGENTS_NAVIGATION_KEY, {
+  enabled: agentsCompactNavigation,
+  open: agentsMenuOpen,
+  toggle(trigger) {
+    if (agentsMenuOpen.value) return closeAgentsMenu()
+    agentsMenuTrigger = trigger
+    agentsMenuOpen.value = true
+    void nextTick(() => document.querySelector<HTMLElement>('.agents-mobile-sidebar a[href]')?.focus())
+  },
+})
+watch(() => route.fullPath, () => closeAgentsMenu(false))
+onMounted(() => window.addEventListener('resize', resizeAgentsNavigation))
+onBeforeUnmount(() => window.removeEventListener('resize', resizeAgentsNavigation))
 // The reader page (route meta `bare`) is the document alone: no shell, no live connection.
 const ready = ref(false)
 const bare = computed(() => route.meta.bare === true)
@@ -49,6 +75,16 @@ function currentSessionId(): string | null {
   return null
 }
 function onKey(event: KeyboardEvent) {
+  if (agentsCompactNavigation.value && agentsMenuOpen.value) {
+    if (event.key === 'Escape') { event.preventDefault(); closeAgentsMenu() }
+    else if (event.key === 'Tab') {
+      const focusable = [...document.querySelectorAll<HTMLElement>('.agents-mobile-sidebar a[href], .agents-mobile-sidebar button:not([disabled]), .agents-mobile-sidebar [tabindex="0"]')].filter((element) => element.getClientRects().length > 0)
+      const first = focusable[0], last = focusable.at(-1)
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+    return
+  }
   if (bare.value) return
   if (newConversation.isOpen) return
   if (shouldOpenNewConversation(event)) {
@@ -82,11 +118,18 @@ onMounted(async () => {
     <RouterView />
   </div>
   <div v-else-if="ready" class="flex h-full overflow-hidden bg-bg text-sm leading-[1.45] text-fg">
-    <AppSidebar />
-    <main class="relative min-w-0 flex-1 overflow-y-auto bg-surface">
+    <button v-if="agentsCompactNavigation && agentsMenuOpen" type="button" class="agents-nav-backdrop" aria-label="Fechar navegação" @click="closeAgentsMenu()" />
+    <AppSidebar :class="{ 'agents-mobile-sidebar': agentsCompactNavigation, 'is-open': agentsCompactNavigation && agentsMenuOpen }" :role="agentsCompactNavigation && agentsMenuOpen ? 'dialog' : undefined" :aria-modal="agentsCompactNavigation && agentsMenuOpen ? true : undefined" />
+    <main :inert="agentsCompactNavigation && agentsMenuOpen" class="relative min-w-0 flex-1 overflow-y-auto bg-surface">
       <RouterView />
     </main>
     <NewConversationModal v-if="newConversation.isOpen" />
     <UpdateModal v-if="updates.modalOpen" />
   </div>
 </template>
+
+<style scoped>
+.agents-mobile-sidebar { position:fixed; inset:0 auto 0 0; z-index:50; max-width:calc(100vw - 48px); box-shadow:12px 0 36px oklch(10% 0.005 250 / .2); }
+.agents-mobile-sidebar:not(.is-open) { display:none; }
+.agents-nav-backdrop { position:fixed; inset:0; z-index:40; border:0; background:oklch(10% 0.005 250 / .55); }
+</style>

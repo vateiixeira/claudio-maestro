@@ -692,7 +692,7 @@ export interface ClaudeCliInfo {
 // Agents (specialists)
 
 export type SpecialistRunOutcome = 'queued' | 'starting' | 'running' | 'concluded' | 'closed' | 'waiting' | 'failed' | 'skipped' | 'missed' | 'cancelled'
-export type SpecialistTrigger = 'schedule' | 'manual'
+export type SpecialistTrigger = 'schedule' | 'manual' | 'comment'
 export type SpecialistAutonomy = 'ask' | 'full'
 
 export interface SpecialistSchedule {

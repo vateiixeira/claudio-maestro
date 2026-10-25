@@ -31,6 +31,7 @@ async function createAgent(page: Page, name: string) {
 
 test('mostra o agente semeado com a skill, o horário e as execuções', async ({ page }) => {
   await page.goto('/agentes')
+  await page.getByTestId('agent-picker-toggle').click()
   await page.getByTestId('agent-item').filter({ hasText: 'Triagem' }).click()
   await expect(page.getByTestId('agent-name')).toHaveText('Triagem')
   await page.getByTestId('agent-tab-settings').click()
@@ -55,7 +56,7 @@ test('cria um agente pela tela, com o identificador sugerido pelo nome', async (
   await dialog.getByRole('button', { name: 'Criar' }).click()
   await expect(page).toHaveURL(/\/agentes\/\d+$/)
   await expect(page.getByTestId('agent-name')).toHaveText(name)
-  await expect(page.getByTestId('agent-item').filter({ hasText: name })).toBeVisible()
+  await expect(page.getByTestId('agent-picker-toggle')).toContainText(name)
 })
 
 test('edita e salva a skill; frontmatter inválido mostra o erro sem perder o texto', async ({ page, consoleErrors }) => {
@@ -94,7 +95,8 @@ test('adiciona um horário e salva', async ({ page }) => {
   await page.reload()
   await expect(page.getByTestId('schedule-row')).toHaveCount(1)
   await expect(page.getByTestId('schedule-time')).toHaveValue('07:15')
-  await expect(page.getByTestId('agent-item').first().getByTestId('agent-next')).not.toBeEmpty()
+  await page.getByTestId('agent-picker-toggle').click()
+  await expect(page.getByTestId('agent-item').filter({ hasText: 'Horario' }).getByTestId('agent-next')).not.toBeEmpty()
 })
 
 test('guarda um segredo sem mostrar o valor em lugar nenhum', async ({ page }) => {
@@ -164,6 +166,7 @@ for (const width of [1280, 800]) {
   test(`a página de agentes cabe e os controles ficam alcançáveis em ${width} px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 })
     await page.goto('/agentes')
+    await page.getByTestId('agent-picker-toggle').click()
     await page.getByTestId('agent-item').filter({ hasText: 'Triagem' }).click()
     await expect(page.getByTestId('agent-name')).toHaveText('Triagem')
     await page.getByTestId('agent-tab-runs').click()
@@ -194,8 +197,10 @@ for (const width of [1280, 800]) {
     await page.setViewportSize({ width, height: 800 })
     const name = uniqueName('Outro')
     await createAgent(page, name)
+    await page.getByTestId('agent-picker-toggle').click()
     await page.getByTestId('agent-item').filter({ hasText: 'Triagem' }).click()
     await expect(page.getByTestId('agent-name')).toHaveText('Triagem')
+    await page.getByTestId('agent-picker-toggle').click()
     await page.getByTestId('agent-item').filter({ hasText: name }).click()
     await expect(page.getByTestId('agent-name')).toHaveText(name)
   })

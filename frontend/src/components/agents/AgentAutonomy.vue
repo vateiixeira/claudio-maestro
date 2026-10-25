@@ -16,12 +16,12 @@ async function choose(autonomy: 'ask' | 'full', event: Event): Promise<void> {
 
 <template>
   <AgentSection title="Autonomia">
-    <div role="radiogroup" aria-label="Autonomia do agente" class="flex flex-col gap-1.5">
-      <label class="flex cursor-pointer items-start gap-2 text-sm">
+    <div role="radiogroup" aria-label="Autonomia do agente" class="autonomy-options">
+      <label class="autonomy-option">
         <input data-test="autonomy-ask" type="radio" name="autonomy" value="ask" class="mt-1 accent-[var(--color-primary)]" :checked="agent.autonomy === 'ask'" @change="choose('ask', $event)" />
         <span><span class="font-medium">Pede ok antes de agir para fora</span><span class="block text-xs text-fg-subtle">Comandos que saem da máquina, como enviar uma branch ou abrir um PR, esperam o seu ok.</span></span>
       </label>
-      <label class="flex cursor-pointer items-start gap-2 text-sm">
+      <label class="autonomy-option">
         <input data-test="autonomy-full" type="radio" name="autonomy" value="full" class="mt-1 accent-[var(--color-primary)]" :checked="agent.autonomy === 'full'" @change="choose('full', $event)" />
         <span><span class="font-medium">Vai até o fim</span><span class="block text-xs text-fg-subtle">Faz as ações para fora sem perguntar. Só a lista de baixo ainda pede ok.</span></span>
       </label>
@@ -64,3 +64,13 @@ async function choose(autonomy: 'ask' | 'full', event: Event): Promise<void> {
     </AgentPatterns>
   </AgentSection>
 </template>
+
+<style scoped>
+.autonomy-options { display:flex; flex-direction:column; border:1px solid var(--color-line); border-radius:8px; overflow:hidden; }
+.autonomy-option { display:flex; align-items:flex-start; gap:12px; padding:16px; cursor:pointer; font-size:13px; }
+.autonomy-option+.autonomy-option { border-top:1px solid var(--color-line); }
+.autonomy-option:has(input:checked) { background:var(--color-panel); }
+.autonomy-option:hover { background:var(--color-card); }
+.autonomy-option:focus-within { outline:2px solid var(--color-primary); outline-offset:-2px; }
+.autonomy-option span>span:last-child { margin-top:5px; line-height:1.7; }
+</style>

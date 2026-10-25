@@ -48,10 +48,10 @@ async function remove(pattern: string): Promise<void> {
     <h4 class="m-0 text-sm font-medium text-fg">{{ label }}</h4>
     <slot name="hint" />
     <ul class="m-0 flex list-none flex-wrap gap-1.5 p-0">
-      <li v-for="pattern in defaults" :key="`d-${pattern}`" :data-test="`${kind}-default`" class="rounded-md border border-line bg-surface px-2 py-0.5 font-mono text-xs text-fg-muted" title="Padrão de fábrica">{{ pattern }}</li>
-      <li v-for="pattern in custom" :key="`c-${pattern}`" :data-test="`${kind}-custom`" class="flex items-center gap-1 rounded-md border border-line-strong bg-card py-0.5 pr-0.5 pl-2 font-mono text-xs text-fg">
-        <span>{{ pattern }}</span>
-        <button type="button" data-test="pattern-remove" :aria-label="`Remover ${pattern}`" class="flex size-5 items-center justify-center rounded text-fg-subtle hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary" :disabled="busy" @click="remove(pattern)">
+      <li v-for="pattern in defaults" :key="`d-${pattern}`" :data-test="`${kind}-default`" class="rounded-md border border-line bg-surface px-2 py-0.5 font-mono text-xs break-all text-fg-muted" title="Padrão de fábrica">{{ pattern }}</li>
+      <li v-for="pattern in custom" :key="`c-${pattern}`" :data-test="`${kind}-custom`" class="flex items-center gap-1 rounded-md border border-line-strong bg-card py-0.5 pr-0.5 pl-2 min-w-0 font-mono text-xs text-fg">
+        <span class="min-w-0 break-all">{{ pattern }}</span>
+        <button type="button" data-test="pattern-remove" :aria-label="`Remover ${pattern}`" class="flex size-5 shrink-0 items-center justify-center rounded text-fg-subtle hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary" :disabled="busy" @click="remove(pattern)">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
       </li>

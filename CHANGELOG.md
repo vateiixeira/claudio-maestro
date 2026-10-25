@@ -13,6 +13,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - Agentes: fila persistente por agente para pedidos manuais e horários, com pausa, retomada e cancelamento de pendências. Reiniciar preserva os pedidos; envios de resultado incerto pausam a fila e pedem revisão, sem reenviar automaticamente.
 - Agentes: o campo "Ferramentas bloqueadas", na seção Autonomia, impede o agente de usar uma ferramenta em qualquer autonomia, pelo nome (`mcp__servidor__ferramenta`, `WebFetch`) ou pelo servidor MCP inteiro (`mcp__servidor`).
 
+### Alterado
+
+- Página do agente redesenhada: seletor compacto, conversa principal em destaque, busca de assuntos, fila separada do histórico e filtro de problemas. Configuração em quatro grupos com atalhos, rascunhos preservados entre abas e navegação adaptada a celulares.
+
 ### Corrigido
 
 - A fila, a conversa principal e os comentários de PR agora coordenam os turnos do mesmo agente. Finalizar uma conversa ainda em execução não libera uma segunda tarefa, e falhas de conexão preservam o pedido para retomar a fila.

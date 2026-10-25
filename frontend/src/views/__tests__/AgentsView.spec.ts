@@ -64,13 +64,11 @@ describe('Agentes', () => {
     expect(wrapper.text()).toContain('Nenhum agente ainda')
   })
 
-  it('o layout segue a largura da área (container query), não a da janela: estreito empilha a lista', async () => {
+  it('permite escolher um agente no seletor e na visão geral', async () => {
     const { wrapper } = await mountAt('/agentes', { 'GET /api/specialists': () => jsonResponse([makeSpecialist()]) })
-    expect(wrapper.classes()).toContain('@container')
-    const grid = wrapper.get('.grid')
-    expect(grid.classes()).toContain('grid-cols-[minmax(0,1fr)]')
-    expect(grid.classes().some((c) => c.startsWith('@4xl:grid-cols-'))).toBe(true)
-    expect(wrapper.get('nav').classes()).toContain('@4xl:border-r')
+    expect(wrapper.get('[data-test="agent-picker-toggle"]').text()).toContain('Escolher agente')
+    expect(wrapper.get('[data-test="agent-overview-item"]').attributes('href')).toBe('/agentes/1')
+    expect(wrapper.find('[aria-label="Detalhe do agente"]').exists()).toBe(true)
   })
 
   it('abre o detalhe do agente da rota', async () => {
