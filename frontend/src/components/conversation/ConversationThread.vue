@@ -15,6 +15,8 @@ import TurnLiveLine from './TurnLiveLine.vue'
 import TurnTasks from './TurnTasks.vue'
 import UserMessage from './UserMessage.vue'
 import PendingAnnouncements from './PendingAnnouncements.vue'
+import AgentExecutions from '../agents/AgentExecutions.vue'
+import { useSpecialistsStore } from '../../stores/specialists'
 import { findLastMessage, MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { buildItemTree, deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
 import { buildTurns, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
@@ -35,6 +37,8 @@ const emit = defineEmits<{ missing: []; 'find-done': [] }>()
 const conversations = useConversationStore()
 const changesPanel = useChangesPanelStore()
 const projects = useProjectsStore()
+const specialists = useSpecialistsStore()
+const mainAgent = computed(() => specialists.isMainSession(props.id))
 const socket = useEventSocket()
 
 const loadError = ref<string | null>(null)
@@ -525,7 +529,7 @@ function resolvePrompt(promptId: string) {
             data-test="history-truncated"
             class="m-0 rounded-md border border-line bg-card px-3 py-1.5 text-center text-xs text-fg-muted"
           >Mostrando as mensagens mais recentes.</p>
-          <p v-if="rows.length === 0" class="m-0 py-8 text-center text-sm text-fg-muted">
+          <p v-if="rows.length === 0 && !mainAgent" class="m-0 py-8 text-center text-sm text-fg-muted">
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
           <template v-for="({ turn, done, last, waiting, summary, failed, tasks, showTasks }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
@@ -601,6 +605,7 @@ function resolvePrompt(promptId: string) {
             </div>
           </template>
           <PendingAnnouncements :session-id="id" />
+          <AgentExecutions v-if="mainAgent" :key="mainAgent.id" :agent-id="mainAgent.id" :main-session-id="id" @reveal="onReveal" />
           <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
             <QuestionCard
               data-prompt-card

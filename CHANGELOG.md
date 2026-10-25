@@ -15,6 +15,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- A conversa principal do agente agora mostra suas execuções no mesmo lugar: rodadas em andamento abertas com atualização ao vivo e histórico expansível, sem trocar o contexto das mensagens.
+
 - Página do agente redesenhada: seletor compacto, conversa principal em destaque, busca de assuntos, fila separada do histórico e filtro de problemas. Configuração em quatro grupos com atalhos, rascunhos preservados entre abas e navegação adaptada a celulares.
 
 ### Corrigido
