@@ -84,6 +84,7 @@ export function bindRealtime(socket: EventSocket): () => void {
     socket.on('delivery.updated', (event) => useDeliveriesStore().applyEvent(event.data)),
     // Agents: something changed, a run started or ended, a notice came or was read (global events).
     socket.on('specialist.changed', (event) => useSpecialistsStore().applyChanged(event.data)),
+    socket.on('specialist.announcement', (event) => useSpecialistsStore().applyAnnouncement(event.data)),
     socket.on('specialist.run', (event) => useSpecialistsStore().applyRun(event.data)),
     socket.on('specialist.notice', (event) => useSpecialistsStore().applyNotice(event.data)),
     socket.onReconnect(() => {

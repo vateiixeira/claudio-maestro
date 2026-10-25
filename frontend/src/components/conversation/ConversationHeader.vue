@@ -24,6 +24,7 @@ import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import { useSpecialistsStore } from '../../stores/specialists'
 import { useTerminalStore } from '../../stores/terminal'
 import { displayStateLabel } from '../../sessionState'
 import { worktreeLabel } from '../../worktree'
@@ -33,6 +34,7 @@ import { worktreeLabel } from '../../worktree'
 const props = withDefaults(defineProps<{ id: string; detailsOpen?: boolean; showPath?: boolean }>(), { detailsOpen: false, showPath: true })
 
 const sessions = useSessionsStore()
+const specialists = useSpecialistsStore()
 const conversations = useConversationStore()
 const projects = useProjectsStore()
 const git = useGitStore()
@@ -41,6 +43,8 @@ const terminal = useTerminalStore()
 const now = useMinuteClock()
 
 const listed = computed(() => sessions.find(props.id))
+// The agent whose main conversation this is: the header links to its settings.
+const mainOf = computed(() => specialists.isMainSession(props.id))
 const conv = computed(() => conversations.get(props.id))
 const title = computed(() => conv.value?.title ?? listed.value?.title ?? '')
 const projectId = computed(() => listed.value?.project_id ?? conv.value?.projectId ?? null)
@@ -198,10 +202,10 @@ async function openProject() {
 <template>
   <header class="flex w-full flex-col border-b border-line">
     <span data-test="state-live" role="status" aria-live="polite" class="sr-only">{{ stateLabel }}</span>
-    <div data-test="header-strip" class="flex min-h-14 items-center gap-3 px-4 py-2">
+    <div data-test="header-strip" class="flex min-h-14 flex-wrap items-center gap-3 px-4 py-2">
       <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="!needsYou(listed)" />
-      <!-- Trilha e título dividem só a sobra: as ações ficam com a largura delas e só quebram linha quando não cabem. -->
-      <div data-test="header-title" class="flex min-w-0 grow basis-0 items-center gap-3">
+      <!-- O título e as ações passam para linhas próprias quando falta espaço. -->
+      <div data-test="header-title" class="flex min-w-0 grow basis-64 items-center gap-3">
         <nav v-if="showPath" data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 shrink items-center gap-1 text-xs text-fg-muted max-sm:hidden">
           <RouterLink to="/sessions" class="inline-flex min-h-8 shrink-0 items-center no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
           <template v-if="project">
@@ -244,6 +248,7 @@ async function openProject() {
         </button>
         <span v-if="listed?.priority" data-test="header-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" :size="13" /></span>
         <span v-if="copied" role="status" class="shrink-0 text-xs text-primary-soft">ID copiado</span>
+        <RouterLink v-if="mainOf" :to="`/agentes/${mainOf.id}`" data-test="configure-agent" class="flex h-8 shrink-0 items-center rounded-md border border-line-strong px-3 text-sm font-medium text-fg no-underline hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">Configurar agente</RouterLink>
         <NextNeedsYou v-if="showPath" :current-id="id" />
         <button v-if="listed" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
         <button

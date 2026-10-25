@@ -23,7 +23,7 @@ import { useUpdatesStore } from '../../../stores/updates'
 import { useUsageStore } from '../../../stores/usage'
 import { setCollapsed, setSectionCollapsed, setSectionOpened } from '../../../sidebarCollapse'
 import { sidebarWidth } from '../../../sidebarWidthPref'
-import { makeGitRepo, makeGroup, makeProject, makeSession, makeSpecialistNotice } from '../../../test/factories'
+import { makeGitRepo, makeGroup, makeProject, makeSession, makeSpecialist, makeSpecialistNotice } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -757,5 +757,32 @@ describe('contador de avisos no item Agentes', () => {
   it('não aparece sem avisos não lidos', () => {
     useSpecialistsStore(pinia).notices = [makeSpecialistNotice({ id: 1, read_at: 9 })]
     expect(mountSidebar().find('[data-test="agents-count"]').exists()).toBe(false)
+  })
+})
+
+describe('seção Agentes no topo', () => {
+  it('fica acima de "Em andamento" e tira as sessões de agente das listas por projeto', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'Loja' })]
+    useProjectsStore(pinia).loaded = true
+    useSpecialistsStore(pinia).list = [makeSpecialist({ id: 3, name: 'Triagem', main_session_id: 'main' })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', project_id: 1, display_state: 'running' }),
+      makeSession({ session_id: 'main', project_id: 1, display_state: 'running', specialist_id: 3 }),
+      makeSession({ session_id: 'run', project_id: 1, display_state: 'waiting', specialist_id: 3, pending_kind: 'tool' }),
+    ])
+    const w = mountSidebar()
+    const titles = w.findAll('[data-test="section-title"]').map((t) => t.text())
+    expect(titles.slice(0, 2)).toEqual(['Agentes', 'Em andamento'])
+    expect(w.findAll('[data-test="project-session"]').map((r) => r.attributes('href'))).toEqual(['/sessions/a'])
+    expect(w.find('[data-test="project-waiting"]').exists()).toBe(false)
+    // o pedido de ok da execução continua na Inbox e entra no contador do agente
+    expect(w.get('[data-test="inbox-count"]').text()).toBe('1')
+    expect(w.get('[data-test="sidebar-agent-unseen"]').text()).toBe('1')
+  })
+
+  it('as faixas Para revisar e Depois seguem com as sessões de agente marcadas', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'rev', specialist_id: 3, mark: 'review' })])
+    expect(mountSidebar().findAll('[data-test="lane-review-row"]')).toHaveLength(1)
   })
 })

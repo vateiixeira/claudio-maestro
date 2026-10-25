@@ -57,6 +57,8 @@ Os specs ficam em `frontend/e2e/` e usam o Playwright com o Google Chrome instal
 
 Para explorar uma tela à mão, rode `uv run python scripts/e2e_server.py` de dentro da worktree (ele recusa se o `uv run` servir outro checkout) e abra `http://127.0.0.1:6620`, a porta padrão do servidor manual; pare-o antes de rodar o `pnpm --dir frontend e2e`. Com o Claude Code, o agente `e2e-tester` faz isso e escreve os specs (o [Playwright CLI](https://github.com/microsoft/playwright-cli) ajuda a descobrir seletores).
 
+O receptor opcional de comentários do GitHub usa `MAESTRO_HOOKS_PORT`, em uma porta de loopback própria. Use outra porta que a dos serviços, do preview e do E2E. Os testes substituem o `gh` e não acessam o GitHub real.
+
 ## agentd
 
 O agentd é o processo auxiliar que mantém os processos do agente vivos quando o backend reinicia. O código fica em `backend/claudio_maestro/agentd/`, só usa a biblioteca padrão do Python, e o protocolo tem versão (`PROTOCOL`).

@@ -7,7 +7,7 @@ import IconPlus from '../icons/IconPlus.vue'
 import AgentRunIcon from './AgentRunIcon.vue'
 
 defineProps<{ agents: Specialist[]; selectedId: number | null; loading?: boolean }>()
-defineEmits<{ new: [] }>()
+defineEmits<{ new: []; github: [] }>()
 
 const now = useMinuteClock()
 </script>
@@ -42,5 +42,6 @@ const now = useMinuteClock()
         </RouterLink>
       </li>
     </ul>
+    <button type="button" data-test="agents-github-open" class="mt-auto min-h-9 rounded-lg px-2.5 text-left text-xs text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary" @click="$emit('github')">Comentários do GitHub</button>
   </nav>
 </template>

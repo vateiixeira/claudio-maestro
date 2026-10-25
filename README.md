@@ -176,11 +176,34 @@ Onde ficam os arquivos: cada agente tem uma pasta `<pasta de dados>/specialists/
 
 Como ele roda:
 
-- A sessão do agente aparece nas conversas do projeto, com o selo "Agente · nome". Ela fica no modo de permissão `default` e não pede ok para editar nem para rodar comandos locais.
-- As ações para fora (`git push`, `gh pr create`, `gh pr merge`, `gh issue comment`, `gh issue close`, `gh release` e as que você acrescentar) pedem ok quando a autonomia é "Pede ok antes de agir para fora". O merge (`gh pr merge`), o push para a branch padrão e o push forçado pedem ok sempre, qualquer que seja a autonomia. Um push sem o nome da branch só passa sem ok quando o próprio comando diz a pasta (`cd <pasta> && git push`, `git -C <pasta> push`) e ela não está na branch padrão.
+- Cada agente tem uma conversa principal permanente no topo da barra lateral. Abra-a para pedir algo ou acompanhar os anúncios das execuções; o link "Configurar agente" abre as preferências dele. As execuções ficam no histórico da página Agentes, com o selo "Agente · nome". Ela fica no modo de permissão `default` e não pede ok para editar nem para rodar comandos locais.
+- As ações para fora (`git push`, `gh pr create`, `gh pr merge`, `gh issue close`, `gh release` e as que você acrescentar) pedem ok quando a autonomia é "Pede ok antes de agir para fora". O merge (`gh pr merge`), o push para a branch padrão e o push forçado pedem ok sempre, qualquer que seja a autonomia. Um push sem o nome da branch só passa sem ok quando o próprio comando diz a pasta (`cd <pasta> && git push`, `git -C <pasta> push`) e ela não está na branch padrão.
+- Agentes não comentam no GitHub: comentários e revisões são recusados, inclusive na autonomia "Vai até o fim". A resposta fica na conversa principal.
 - O agente fecha a própria execução com a ferramenta `concluir`. Se ele não fechar, o Maestro confere o desfecho no fim da sessão.
 - O agendador pula a execução se a anterior ainda estiver rodando ou esperando você, ou se o uso da assinatura estiver em 90% ou mais. Se o app estava desligado no horário, grava uma execução "perdida". Duas execuções seguidas sem sucesso geram um alerta.
 - Os avisos que o agente deixa aparecem na Inbox. O histórico das execuções não entra no contexto do agente: o registro é consultado por ferramenta, só quando ele precisa.
+
+### Comentários no PR
+
+Comentários seus nos PRs abertos por um agente voltam à conversa que abriu o PR. Se ela não existir mais, vão à conversa principal. O Maestro consulta os comentários ao iniciar e a cada hora, usando o `gh` já autenticado. Em **Agentes → Comentários do GitHub**, salve o seu login do GitHub para selecionar o autor aceito.
+
+Para receber os comentários sem esperar a consulta:
+
+1. Defina `MAESTRO_HOOKS_PORT` com uma porta livre na máquina do Maestro (por exemplo, `6670`) e reinicie o backend. O receptor escuta só em `127.0.0.1`, separado da API.
+2. Salve um segredo em **Comentários do GitHub**. Ele fica em `github-webhook.secret` na pasta de dados, com permissão `600`; a tela só informa se está definido.
+3. Se usar um servidor público com Caddy e um túnel SSH até ele, encaminhe apenas o receptor. Exemplo no bloco do domínio no Caddy:
+
+   ```caddyfile
+   handle /maestro-hooks/github {
+       uri strip_prefix /maestro-hooks
+       reverse_proxy 127.0.0.1:6670
+   }
+   ```
+
+   Na máquina do Maestro, abra o encaminhamento remoto no SSH: `ssh -N -R 127.0.0.1:6670:127.0.0.1:6670 usuario@servidor`. A porta remota precisa coincidir com a do proxy; o último endereço é o receptor local.
+4. No repositório do GitHub, crie um webhook com a URL `https://seu-dominio/maestro-hooks/github`, conteúdo `application/json`, o mesmo segredo e os eventos **Issue comments**, **Pull request review comments** e **Pull request reviews**.
+
+O receptor aceita só `POST /github` com assinatura HMAC válida. A API e a interface continuam locais. O Maestro agrupa comentários do mesmo PR por 60 segundos; uso da assinatura a partir de 90% mantém os comentários na fila. O limite é de dez lotes por PR por dia. Comentários repetidos são ignorados, e a fila sobrevive ao reinício. Se um envio for interrompido sem confirmação, o Maestro avisa na Inbox para conferir a conversa e não repete o pedido automaticamente.
 
 ## Segurança
 

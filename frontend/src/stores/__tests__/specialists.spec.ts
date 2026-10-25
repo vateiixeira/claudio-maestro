@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSpecialistsStore } from '../specialists'
-import { jsonResponse, makeSpecialist, makeSpecialistNotice, makeSpecialistRun, routeFetch } from '../../test/factories'
+import { useSessionsStore } from '../sessions'
+import { nextTick } from 'vue'
+import { jsonResponse, makeSession, makeSpecialist, makeSpecialistNotice, makeSpecialistRun, routeFetch } from '../../test/factories'
 import { EventSocket, type SocketLike } from '../../api/socket'
 import { bindRealtime } from '../realtime'
 
@@ -174,6 +176,122 @@ describe('specialists store', () => {
   })
 })
 
+describe('specialists store: conversa principal', () => {
+  it('openMain cria a conversa, guarda o id e navega para ela', async () => {
+    const fetch = routeFetch({ 'POST /api/specialists/1/main': () => jsonResponse({ session_id: 'conv-1' }) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useSpecialistsStore()
+    store.list = [makeSpecialist()]
+    const router = { push: vi.fn(async () => undefined) }
+    await store.openMain(1, router)
+    expect(store.byId(1)?.main_session_id).toBe('conv-1')
+    expect(router.push).toHaveBeenCalledWith({ name: 'session', params: { id: 'conv-1' } })
+  })
+
+  it('openMain resolve de novo uma conversa apagada mesmo com id em cache', async () => {
+    const fetch = routeFetch({ 'POST /api/specialists/1/main': () => jsonResponse({ session_id: 'conv-2' }) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useSpecialistsStore()
+    store.list = [makeSpecialist({ main_session_id: 'conv-1' })]
+    const router = { push: vi.fn(async () => undefined) }
+    await store.openMain(1, router)
+    expect(fetch).toHaveBeenCalled()
+    expect(store.byId(1)?.main_session_id).toBe('conv-2')
+    expect(router.push).toHaveBeenCalledWith({ name: 'session', params: { id: 'conv-2' } })
+  })
+
+  it('openMain deixa o erro subir e não navega', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'POST /api/specialists/1/main': () => jsonResponse({ detail: 'Sem pasta.' }, 409) }))
+    const store = useSpecialistsStore()
+    store.list = [makeSpecialist()]
+    const router = { push: vi.fn(async () => undefined) }
+    await expect(store.openMain(1, router)).rejects.toThrow('Sem pasta.')
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('isMainSession acha o agente dono da conversa principal', () => {
+    const store = useSpecialistsStore()
+    store.list = [makeSpecialist({ id: 1, main_session_id: 'conv-1' }), makeSpecialist({ id: 2, slug: 'b', main_session_id: null })]
+    expect(store.isMainSession('conv-1')?.id).toBe(1)
+    expect(store.isMainSession('outra')).toBeUndefined()
+  })
+
+  it('specialist.announcement relê a lista e atualiza o contador unseen', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/specialists': () => jsonResponse([makeSpecialist({ unseen: 3 })]) }))
+    const store = useSpecialistsStore()
+    store.list = [makeSpecialist({ unseen: 2 })]
+    store.applyAnnouncement({ id: 9, specialist_id: 1, run_id: 4, session_id: 's', text: 'ok', created_at: 1, delivered_at: null })
+    await vi.waitFor(() => expect(store.byId(1)?.unseen).toBe(3))
+  })
+
+  it('specialist.changed também atualiza o unseen', async () => {
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/specialists': () => jsonResponse([makeSpecialist({ unseen: 0, main_session_id: 'conv-1' })]) }))
+    const store = useSpecialistsStore()
+    store.list = [makeSpecialist({ unseen: 2 })]
+    store.applyChanged({ id: 1 })
+    await vi.waitFor(() => expect(store.byId(1)?.unseen).toBe(0))
+  })
+})
+
+describe('specialists store: espera da conversa principal', () => {
+  it('relê a lista quando a principal passa a pedir ok e quando deixa de pedir, e o contador acompanha', async () => {
+    let unseen = 0
+    const fetch = routeFetch({ 'GET /api/specialists': () => jsonResponse([makeSpecialist({ unseen, main_session_id: 'main' })]) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useSpecialistsStore()
+    const sessions = useSessionsStore()
+    store.list = [makeSpecialist({ unseen: 0, main_session_id: 'main' })]
+    sessions.setForProject(1, [makeSession({ session_id: 'main', specialist_id: 1 })])
+    await nextTick()
+    expect(fetch).not.toHaveBeenCalled()
+
+    // pede ok: o backend passa a contar +1, sem publicar nada
+    unseen = 1
+    sessions.setForProject(1, [makeSession({ session_id: 'main', specialist_id: 1, pending_kind: 'tool' })])
+    await vi.waitFor(() => expect(store.byId(1)?.unseen).toBe(1))
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    // a espera termina: o contador cai
+    unseen = 0
+    sessions.setForProject(1, [makeSession({ session_id: 'main', specialist_id: 1, pending_kind: null })])
+    await vi.waitFor(() => expect(store.byId(1)?.unseen).toBe(0))
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('o estado awaiting_decision também conta, e a espera de uma execução não dispara nada', async () => {
+    const fetch = routeFetch({ 'GET /api/specialists': () => jsonResponse([makeSpecialist({ main_session_id: 'main' })]) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useSpecialistsStore()
+    const sessions = useSessionsStore()
+    store.list = [makeSpecialist({ main_session_id: 'main' })]
+    sessions.setForProject(1, [makeSession({ session_id: 'run', specialist_id: 1, pending_kind: 'tool' })])
+    await nextTick()
+    expect(fetch).not.toHaveBeenCalled()
+    sessions.setForProject(1, [makeSession({ session_id: 'main', specialist_id: 1, state: 'awaiting_decision' })])
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('api de anúncios e do GitHub', () => {
+  it('listAnnouncements, getGithubSettings e putGithubSettings usam as rotas do backend', async () => {
+    const fetch = routeFetch({
+      'GET /api/specialists/1/announcements?pending=1': () => jsonResponse([{ id: 1, run_id: 2, session_id: 's', text: 'x', created_at: 1, delivered_at: null }]),
+      'GET /api/specialists/1/announcements': () => jsonResponse([]),
+      'GET /api/specialists/github': () => jsonResponse({ login: 'vi', secret_set: true, hooks_port: 6670, queued: 0 }),
+      'PUT /api/specialists/github': (init) => {
+        expect(JSON.parse(String(init?.body))).toEqual({ login: 'novo' })
+        return jsonResponse({ login: 'novo', secret_set: true, hooks_port: 6670, queued: 0 })
+      },
+    })
+    vi.stubGlobal('fetch', fetch)
+    const api = await import('../../api/http')
+    expect(await api.listAnnouncements(1, true)).toHaveLength(1)
+    expect(await api.listAnnouncements(1, false)).toEqual([])
+    expect((await api.getGithubSettings()).login).toBe('vi')
+    expect((await api.putGithubSettings({ login: 'novo' })).login).toBe('novo')
+  })
+})
+
 class FakeSocket implements SocketLike {
   onopen: ((ev: never) => void) | null = null
   onclose: ((ev: never) => void) | null = null
@@ -202,7 +320,56 @@ describe('specialists store: eventos do WebSocket', () => {
     expect(store.unreadCount).toBe(0)
     send('specialist.changed', { id: 1 })
     await vi.waitFor(() => expect(store.byId(1)?.name).toBe('Do servidor'))
+    store.list = [makeSpecialist({ unseen: 0 })]
+    send('specialist.announcement', { id: 1, specialist_id: 1, run_id: 4, session_id: 's', text: 'ok', created_at: 1, delivered_at: null })
+    await vi.waitFor(() => expect(store.byId(1)?.name).toBe('Do servidor'))
     off()
     socket.close()
   })
+})
+
+
+it('preserva eventos recebidos durante a leitura inicial das execuções', async () => {
+  let resolve!: (response: Response) => void
+  vi.stubGlobal('fetch', routeFetch({
+    'GET /api/specialists/1/runs?limit=50': () => new Promise<Response>((r) => { resolve = r }),
+  }))
+  const store = useSpecialistsStore()
+  const loading = store.loadRuns(1)
+  const cancelled = makeSpecialistRun({ id: 9, outcome: 'concluded' })
+  store.applyRun(cancelled)
+  resolve(jsonResponse([{ ...cancelled, outcome: 'queued' }]))
+  await loading
+  expect(store.runsOf(1)[0]?.outcome).toBe('concluded')
+})
+
+it('leituras concorrentes de agentes diferentes preservam ambos os históricos', async () => {
+  const resolvers: Record<number, (response: Response) => void> = {}
+  vi.stubGlobal('fetch', routeFetch(Object.fromEntries([1, 2].map((id) => [
+    `GET /api/specialists/${id}/runs?limit=50`, () => new Promise<Response>((r) => { resolvers[id] = r }),
+  ]))))
+  const store = useSpecialistsStore()
+  const first = store.loadRuns(1)
+  const second = store.loadRuns(2)
+  resolvers[2]!(jsonResponse([makeSpecialistRun({ id: 2, specialist_id: 2 })]))
+  await second
+  resolvers[1]!(jsonResponse([makeSpecialistRun({ id: 1 })]))
+  await first
+  expect(store.runsOf(1)).toHaveLength(1)
+  expect(store.runsOf(2)).toHaveLength(1)
+})
+
+it('a resposta atrasada de uma leitura anterior não substitui o histórico novo', async () => {
+  const resolvers: ((response: Response) => void)[] = []
+  vi.stubGlobal('fetch', routeFetch({
+    'GET /api/specialists/1/runs?limit=50': () => new Promise<Response>((r) => { resolvers.push(r) }),
+  }))
+  const store = useSpecialistsStore()
+  const first = store.loadRuns(1)
+  const second = store.loadRuns(1)
+  resolvers[1]!(jsonResponse([makeSpecialistRun({ id: 9, outcome: 'concluded' })]))
+  await second
+  resolvers[0]!(jsonResponse([makeSpecialistRun({ id: 9, outcome: 'running' })]))
+  await first
+  expect(store.runsOf(1)[0]?.outcome).toBe('concluded')
 })

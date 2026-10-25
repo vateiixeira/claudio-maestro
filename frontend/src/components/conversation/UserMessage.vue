@@ -4,10 +4,15 @@ import { MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { localImagesFor } from '../../conversation/localImages'
 import type { Attachment, UserItem } from '../../types/conversation'
 import BashPane from './BashPane.vue'
+import AnnouncementCard from './AnnouncementCard.vue'
+import { splitAnnouncements } from '../../conversation/announcements'
 import TerminalRunBox from './TerminalRunBox.vue'
 import WorkHeader from './WorkHeader.vue'
 
+defineOptions({ inheritAttrs: false })
 const props = defineProps<{ item: UserItem }>()
+const content = computed(() => splitAnnouncements(props.item.text))
+const hasBubble = computed(() => content.value.rest || props.item.images?.length || props.item.terminal_snippets?.length)
 // Thumbnails exist only for images sent from this tab; the history keeps type and size.
 const previews = computed(() => localImagesFor(props.item.id))
 // The search took the user here: the message is marked for a moment.
@@ -36,6 +41,7 @@ function label(attachment: Attachment): string {
 <template>
   <!-- Output of a command run in the terminal: like Claude's own actions, on the left and without the bubble. -->
   <TerminalRunBox
+    v-bind="$attrs"
     v-if="item.terminal_run"
     :run="item.terminal_run"
     :data-item-id="item.id"
@@ -45,7 +51,9 @@ function label(attachment: Attachment): string {
     :class="highlighted ? 'ring-2 ring-primary' : ''"
   />
   <!-- Like a messenger: what the user sends sits on the right, the model's replies on the left. -->
-  <div v-else data-test="user-message-row" class="flex w-full justify-end pl-10">
+  <template v-else>
+  <AnnouncementCard v-for="(announcement, index) in content.announcements" :key="index" :announcement="announcement" />
+  <div v-if="hasBubble" v-bind="$attrs" data-test="user-message-row" class="flex w-full justify-end pl-10">
     <div
       data-test="user-message-card"
       :data-item-id="item.id"
@@ -65,10 +73,10 @@ function label(attachment: Attachment): string {
         <BashPane label="OUT" name="Trecho do terminal" copy-label="Copiar trecho" :text="snippet" :preview="4" class="border-t border-line" />
       </div>
       <div
-        v-if="item.text"
+        v-if="content.rest"
         data-test="user-message"
         class="self-stretch text-sm leading-[1.55] whitespace-pre-wrap break-words text-fg"
-      >{{ item.text }}</div>
+      >{{ content.rest }}</div>
       <div v-if="previews?.length" class="flex flex-wrap justify-end gap-1.5">
         <img
           v-for="(url, index) in previews"
@@ -95,4 +103,5 @@ function label(attachment: Attachment): string {
       >via Remote Control</span>
     </div>
   </div>
+  </template>
 </template>

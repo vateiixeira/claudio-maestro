@@ -40,6 +40,8 @@ import type {
   SessionDigest,
   SessionGroup,
   SessionUpdate,
+  Announcement,
+  GithubSettings,
   Specialist,
   SpecialistCreate,
   SpecialistItem,
@@ -561,6 +563,25 @@ export function listSpecialistRuns(id: number, limit = 50): Promise<SpecialistRu
 
 export function runSpecialist(id: number, text?: string): Promise<SpecialistRun> {
   return request('POST', `/api/specialists/${id}/run`, text === undefined ? {} : { text })
+}
+
+/** The agent's main conversation, created on first use. */
+export function openAgentMain(id: number): Promise<{ session_id: string }> {
+  return request('POST', `/api/specialists/${id}/main`)
+}
+
+/** What the runs announced to the main conversation, newest first; `pending` keeps the ones it has not received. */
+export function listAnnouncements(id: number, pending = false): Promise<Announcement[]> {
+  return request('GET', pending ? `/api/specialists/${id}/announcements?pending=1` : `/api/specialists/${id}/announcements`)
+}
+
+export function getGithubSettings(): Promise<GithubSettings> {
+  return request('GET', '/api/specialists/github')
+}
+
+/** The secret is only written: the answer says whether one is set, never its value. */
+export function putGithubSettings(body: { login?: string; secret?: string }): Promise<GithubSettings> {
+  return request('PUT', '/api/specialists/github', body)
 }
 
 export function listSpecialistNotices(unreadOnly = false): Promise<SpecialistNotice[]> {

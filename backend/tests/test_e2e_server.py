@@ -158,6 +158,9 @@ def test_seed_creates_the_triagem_agent_with_schedule_runs_and_notices(tmp_path,
         schedules = store.list_schedules(conn, agents[0].id)
         runs = store.list_runs(conn, agents[0].id)
         notices = store.list_notices(conn)
+        announcements = store.pending_announcements(conn, agents[0].id)
+    assert len(announcements) == 1
+    assert announcements[0].text == e2e.TRIAGEM_SUMMARY_TEXT
     assert [(s.days, s.time) for s in schedules] == [("12345", "03:00")]
     assert sorted(r.outcome for r in runs) == ["concluded", "failed"]
     failed = next(r for r in runs if r.outcome == "failed")

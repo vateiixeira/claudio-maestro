@@ -150,3 +150,15 @@ describe('Agentes', () => {
     })
   })
 })
+
+it('abre as configurações do GitHub pelo rodapé da lista e volta ao agente', async () => {
+  const { wrapper, router } = await mountAt('/agentes', {
+    'GET /api/specialists': () => jsonResponse([makeSpecialist()]),
+    'GET /api/specialists/github': () => jsonResponse({ login: 'vini', secret_set: true, hooks_port: 0, queued: 0 }),
+  })
+  expect(wrapper.find('[data-test="github-login"]').exists()).toBe(true)
+  await wrapper.get('[data-test="agents-github-open"]').trigger('click')
+  await flushPromises()
+  expect(router.currentRoute.value.query.github).toBe('1')
+  expect(wrapper.find('[data-test="github-login"]').exists()).toBe(true)
+})

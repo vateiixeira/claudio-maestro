@@ -404,3 +404,27 @@ describe('selo de agente no cabeçalho', () => {
     expect(mountAgentHeader(null).find('[data-test="agent-badge"]').exists()).toBe(false)
   })
 })
+
+describe('link para configurar o agente', () => {
+  function mountMain(mainId: string | null) {
+    useSpecialistsStore(pinia).list = [makeSpecialist({ id: 4, name: 'Triagem', main_session_id: mainId })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', specialist_id: 4 })])
+    return mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+  }
+
+  it('header shows configure link only on main session', () => {
+    const link = mountMain('s1').get('[data-test="configure-agent"]')
+    expect(link.text()).toBe('Configurar agente')
+    expect(link.attributes('href')).toBe('/agentes/4')
+  })
+
+  it('uma execução do agente não tem o link', () => {
+    expect(mountMain('outra').find('[data-test="configure-agent"]').exists()).toBe(false)
+  })
+
+  it('uma sessão comum não tem o link', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1' })])
+    const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    expect(wrapper.find('[data-test="configure-agent"]').exists()).toBe(false)
+  })
+})

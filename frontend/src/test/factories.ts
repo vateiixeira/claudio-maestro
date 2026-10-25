@@ -195,6 +195,8 @@ export function makeSpecialist(overrides: Partial<import('../types/api').Special
     schedules: [],
     last_run: null,
     open_sessions: 0,
+    main_session_id: null,
+    unseen: 0,
     ...overrides,
   }
 }

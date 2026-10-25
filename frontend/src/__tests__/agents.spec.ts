@@ -60,6 +60,7 @@ describe('toggleDay', () => {
 describe('padrões de fábrica', () => {
   it('espelham os do backend', () => {
     expect(OUTWARD_DEFAULTS).toContain('git push')
+    expect(OUTWARD_DEFAULTS).not.toContain('gh issue comment') // comentar no GitHub é sempre recusado
     expect(ALWAYS_DEFAULTS).toEqual(['gh pr merge'])
   })
 })

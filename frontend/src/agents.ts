@@ -1,8 +1,9 @@
-import type { SpecialistRunOutcome, SpecialistSchedule } from './types/api'
+import { isActive } from './groupList'
+import type { Session, Specialist, SpecialistRunOutcome, SpecialistSchedule } from './types/api'
 
 // Mirrors `OUTWARD_DEFAULTS` and `ALWAYS_DEFAULTS` of `backend/claudio_maestro/specialists/policy.py`:
 // the API only returns the patterns a person added, the factory ones are always in force.
-export const OUTWARD_DEFAULTS = ['git push', 'gh pr create', 'gh pr merge', 'gh issue comment', 'gh issue close', 'gh release'] as const
+export const OUTWARD_DEFAULTS = ['git push', 'gh pr create', 'gh pr merge', 'gh issue close', 'gh release'] as const
 export const ALWAYS_DEFAULTS = ['gh pr merge'] as const
 
 /** `LEARNINGS_MAX_CHARS` of the backend. */
@@ -107,3 +108,19 @@ export function safeLink(link: string | null): string | null {
 
 const thousands = new Intl.NumberFormat('pt-BR')
 export const formatCount = (n: number) => thousands.format(n)
+
+/**
+ * What the agent has for you, for the sidebar: the announcements and the wait of its main conversation (`unseen`, which
+ * the backend already counts) plus the runs that wait for an ok. The main conversation is left out of the second part,
+ * since `unseen` has it.
+ */
+export function agentAttention(agent: Pick<Specialist, 'id' | 'unseen' | 'main_session_id'>, sessions: Session[]): number {
+  const waiting = sessions.filter(
+    (s) =>
+      s.specialist_id === agent.id &&
+      s.session_id !== agent.main_session_id &&
+      isActive(s) &&
+      (Boolean(s.pending_kind) || s.state === 'awaiting_decision'),
+  ).length
+  return agent.unseen + waiting
+}

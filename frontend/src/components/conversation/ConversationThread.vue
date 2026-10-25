@@ -14,6 +14,7 @@ import SubagentStrip from './SubagentStrip.vue'
 import TurnLiveLine from './TurnLiveLine.vue'
 import TurnTasks from './TurnTasks.vue'
 import UserMessage from './UserMessage.vue'
+import PendingAnnouncements from './PendingAnnouncements.vue'
 import { findLastMessage, MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { buildItemTree, deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
 import { buildTurns, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
@@ -599,6 +600,7 @@ function resolvePrompt(promptId: string) {
               </div>
             </div>
           </template>
+          <PendingAnnouncements :session-id="id" />
           <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
             <QuestionCard
               data-prompt-card

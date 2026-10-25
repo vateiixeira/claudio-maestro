@@ -737,8 +737,34 @@ export interface Specialist {
   last_mcp: { name?: string; status?: string }[]
   schedules: SpecialistSchedule[]
   last_run: SpecialistRun | null
-  /** Number of unfinished sessions of the agent. */
+  /** Number of unfinished sessions of the agent, counting the main conversation. */
   open_sessions: number
+  /** The permanent main conversation; null until it is first opened. */
+  main_session_id: string | null
+  /** Announcements the main conversation has not received yet, plus one while it waits for an answer. */
+  unseen: number
+}
+
+/** What a run announced to the agent's main conversation (`GET /api/specialists/{id}/announcements`). */
+export interface Announcement {
+  id: number
+  run_id: number | null
+  session_id: string | null
+  text: string
+  created_at: number
+  /** Null while the main conversation has not received it. */
+  delivered_at: number | null
+  /** Absent in the list of an agent; present in the `specialist.announcement` event. */
+  specialist_id?: number
+}
+
+/** `GET /api/specialists/github`: the owner whose PR comments are accepted and the webhook state. The secret is only written. */
+export interface GithubSettings {
+  login: string | null
+  secret_set: boolean
+  hooks_port: number | null
+  /** PR comments waiting to be handled. */
+  queued: number
 }
 
 export interface SpecialistCreate {

@@ -531,6 +531,10 @@ def _seed_specialists(settings, conn, now: datetime) -> None:
         text=TRIAGEM_SUMMARY_TEXT, now=stamp - 25 * 3600,
     )
     specialist_store.mark_notices_read(conn, [summary.id], stamp - 24 * 3600)
+    specialist_store.add_announcement(
+        conn, specialist_id=agent.id, run_id=None, session_id=None,
+        text=TRIAGEM_SUMMARY_TEXT, created_at=stamp - 25 * 3600,
+    )
 
 
 def seed(root: Path) -> None:

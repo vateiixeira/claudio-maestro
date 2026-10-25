@@ -125,7 +125,7 @@ test('Rodar agora abre a conversa do agente com o selo', async ({ page, baseURL 
   await page.getByTestId('run-now').click()
   await page.getByRole('dialog').getByRole('button', { name: 'Rodar' }).click()
   await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+/)
-  await expect(page.getByTestId('agent-badge').first()).toHaveText(`Agente · ${name}`)
+  await expect(page.getByTestId('agent-badge').filter({ hasText: name }).first()).toHaveText(`Agente · ${name}`)
 
   // The run leaves a conversation in the shared database: stop and finish it so other specs do not see it.
   const id = /\/sessions\/([0-9a-f-]+)/.exec(page.url())![1]

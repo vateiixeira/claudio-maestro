@@ -5,6 +5,7 @@ import BrandMark from '../BrandMark.vue'
 import ConnectionIndicator from '../ConnectionIndicator.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import SessionSearch from './SessionSearch.vue'
+import SidebarAgents from './SidebarAgents.vue'
 import SidebarGroups from './SidebarGroups.vue'
 import SidebarLane from './SidebarLane.vue'
 import SidebarSessionRow from './SidebarSessionRow.vue'
@@ -82,11 +83,13 @@ function resetResize() {
 // Only the waits that need you count; an ordinary wait with nothing new is not a reason to look.
 const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s) && !isDiscarded(s)
 const waitingCount = computed(() => sessions.all.filter(isWaitingOnYou).length)
+// The agents' sessions are listed (and counted) in the "Agentes" section, not under their project.
+const isOrdinary = (s: Session) => s.specialist_id == null
 function waitingIn(projectId: number): number {
-  return sessions.forProject(projectId).filter(isWaitingOnYou).length
+  return sessions.forProject(projectId).filter((s) => isOrdinary(s) && isWaitingOnYou(s)).length
 }
 function runningIn(projectId: number): boolean {
-  return sessions.forProject(projectId).some((s) => s.display_state === 'running' && !isDiscarded(s))
+  return sessions.forProject(projectId).some((s) => isOrdinary(s) && s.display_state === 'running' && !isDiscarded(s))
 }
 // Groups under each project: those created in it and those holding one of its conversations.
 const groupsByProject = computed(() => {
@@ -211,6 +214,8 @@ const itemClass = sidebarItemClass
     </div>
 
     <div data-test="sidebar-sections" class="relative flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-2.5 pt-3.5 pb-2">
+      <SidebarAgents />
+
       <section aria-labelledby="sidebar-active-title" class="flex flex-col gap-px">
         <div class="flex h-[30px] items-center pr-1 pl-2.5">
           <h2 id="sidebar-active-title" data-test="section-title" class="grow font-mono text-[0.6875rem] font-normal tracking-[0.08em] text-fg-subtle uppercase">Em andamento</h2>

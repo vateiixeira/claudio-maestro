@@ -93,3 +93,27 @@ describe('sessões descartadas na árvore do menu', () => {
     expect(tree).toEqual([])
   })
 })
+
+describe('sessões de agente fora da árvore', () => {
+  it('sidebarTree excludes specialist sessions', () => {
+    const sessions = [
+      makeSession({ session_id: 'a1', group_id: 1, display_state: 'running' }),
+      makeSession({ session_id: 'ag', group_id: 1, display_state: 'running', specialist_id: 3 }),
+      makeSession({ session_id: 'solo', group_id: 2, display_state: 'running', specialist_id: 3 }),
+    ]
+    const tree = projectTree([makeGroup({ id: 1 }), makeGroup({ id: 2 })], sessions)
+    expect(tree.map((g) => g.group.id)).toEqual([1])
+    expect(tree[0]!.sessions.map((s) => s.session_id)).toEqual(['a1'])
+  })
+
+  it('um projeto só com sessões de agente não conta como "em andamento"', () => {
+    const projects = [makeProject({ id: 1 }), makeProject({ id: 2 })]
+    const sessions = [
+      makeSession({ session_id: 'a', project_id: 1, display_state: 'running', specialist_id: 3 }),
+      makeSession({ session_id: 'b', project_id: 2, display_state: 'running' }),
+    ]
+    const { active, others } = splitProjects(projects, sessions)
+    expect(active.map((p) => p.id)).toEqual([2])
+    expect(others.map((p) => p.id)).toEqual([1])
+  })
+})

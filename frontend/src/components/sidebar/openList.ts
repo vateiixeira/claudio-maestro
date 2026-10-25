@@ -25,7 +25,8 @@ export function laneSessions(all: Session[], lane: 'review' | 'later'): Session[
 /**
  * Open conversations of one project that sit outside its groups (those show under their group),
  * in that order. A session whose group no longer exists counts as loose.
+ * The ones an agent started (its runs and its main conversation) have their own place: the "Agentes" section.
  */
 export function looseOpenSessions(all: Session[], projectId: number, groupIds: ReadonlySet<number>): Session[] {
-  return openSessions(all.filter((s) => s.project_id === projectId && (s.group_id == null || !groupIds.has(s.group_id))))
+  return openSessions(all.filter((s) => s.specialist_id == null && s.project_id === projectId && (s.group_id == null || !groupIds.has(s.group_id))))
 }

@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import * as api from '../api/http'
+import { useSessionsStore } from './sessions'
+import type { Router } from 'vue-router'
 import type { Specialist, SpecialistCreate, SpecialistNotice, SpecialistRun, SpecialistUpdate } from '../types/api'
 
 const RUNS_LIMIT = 50
@@ -27,6 +29,7 @@ export const useSpecialistsStore = defineStore('specialists', () => {
   const runs = ref<Record<number, SpecialistRun[]>>({})
   /** Bumped by every `specialist.changed` of an agent: the detail rereads its files when it moves. */
   const changes = ref<Record<number, number>>({})
+  const runLoads = new Map<number, { events: Map<number, SpecialistRun> }>()
   let ticket = 0
   const noticeListeners = new Set<(notice: SpecialistNotice) => void>()
 
@@ -55,8 +58,36 @@ export const useSpecialistsStore = defineStore('specialists', () => {
     }
   }
 
+  /**
+   * Opens the agent's main conversation (the backend creates it on first use) and goes to it.
+   * `router` is the caller's; without it only the session id is resolved. Errors propagate: the caller shows them.
+   */
+  async function openMain(id: number, router?: Pick<Router, 'push'>): Promise<string> {
+    const sessionId = (await api.openAgentMain(id)).session_id
+    const agent = byId(id)
+    if (agent) agent.main_session_id = sessionId
+    await router?.push({ name: 'session', params: { id: sessionId } })
+    return sessionId
+  }
+
+  /** The agent whose main conversation is this session, if any. */
+  function isMainSession(sessionId: string): Specialist | undefined {
+    return list.value.find((s) => s.main_session_id === sessionId)
+  }
+
   async function loadRuns(id: number): Promise<void> {
-    runs.value = { ...runs.value, [id]: await api.listSpecialistRuns(id, RUNS_LIMIT) }
+    const request = { events: new Map<number, SpecialistRun>() }
+    runLoads.set(id, request)
+    try {
+      const fresh = await api.listSpecialistRuns(id, RUNS_LIMIT)
+      if (runLoads.get(id) !== request) return
+      const merged = new Map(fresh.map((run) => [run.id, run]))
+      for (const [key, run] of request.events) merged.set(key, run)
+      const next = [...merged.values()].sort((a, b) => b.started_at - a.started_at || b.id - a.id)
+      runs.value = { ...runs.value, [id]: next.slice(0, RUNS_LIMIT) }
+    } finally {
+      if (runLoads.get(id) === request) runLoads.delete(id)
+    }
   }
 
   async function loadNotices(): Promise<void> {
@@ -91,6 +122,7 @@ export const useSpecialistsStore = defineStore('specialists', () => {
   async function remove(id: number): Promise<void> {
     await api.deleteSpecialist(id)
     list.value = list.value.filter((s) => s.id !== id)
+    runLoads.delete(id)
     const { [id]: _, ...rest } = runs.value
     runs.value = rest
   }
@@ -114,6 +146,20 @@ export const useSpecialistsStore = defineStore('specialists', () => {
     notices.value = notices.value.map((n) => (wanted.has(n.id) && n.read_at === null ? { ...n, read_at: now } : n))
   }
 
+  // The backend counts a main conversation that waits for an answer in `unseen`, but only when the list is read and
+  // it publishes nothing when the wait begins or ends. So the store rereads the list when that wait changes.
+  // The key holds just the mains that wait now: a list reload that changes nothing about it does not fire again.
+  const sessions = useSessionsStore()
+  const waitingMains = computed(() => {
+    const mains = new Set(list.value.map((s) => s.main_session_id).filter((id): id is string => id != null))
+    return sessions.all
+      .filter((s) => mains.has(s.session_id) && (Boolean(s.pending_kind) || s.state === 'awaiting_decision'))
+      .map((s) => s.session_id)
+      .sort()
+      .join(',')
+  })
+  watch(waitingMains, () => { void load() })
+
   // Events -------------------------------------------------------------------
 
   /** `specialist.changed`: something about the agent (or it being removed) changed; the list is small, reread it. */
@@ -123,9 +169,17 @@ export const useSpecialistsStore = defineStore('specialists', () => {
     void load()
   }
 
+  /** `specialist.announcement`: a run announced something. The same announcement can be rewritten in place, so the `unseen` count is reread instead of incremented. */
+  function applyAnnouncement(data: unknown): void {
+    const id = (data as { specialist_id?: unknown } | null)?.specialist_id
+    if (typeof id === 'number') changes.value = { ...changes.value, [id]: (changes.value[id] ?? 0) + 1 }
+    void load()
+  }
+
   /** `specialist.run`: a run started or ended. */
   function applyRun(data: unknown): void {
     if (!isRun(data)) return
+    runLoads.get(data.specialist_id)?.events.set(data.id, data)
     const agent = byId(data.specialist_id)
     if (agent && (!agent.last_run || data.id >= agent.last_run.id)) agent.last_run = data
     const known = runs.value[data.specialist_id]
@@ -157,7 +211,7 @@ export const useSpecialistsStore = defineStore('specialists', () => {
 
   return {
     list, loaded, error, notices, noticesError, runs, changes, unreadCount,
-    byId, runsOf, load, loadRuns, loadNotices, create, update, remove, runNow, markRead,
-    applyChanged, applyRun, applyNotice, onNewNotice,
+    byId, runsOf, isMainSession, openMain, load, loadRuns, loadNotices, create, update, remove, runNow, markRead,
+    applyChanged, applyAnnouncement, applyRun, applyNotice, onNewNotice,
   }
 })
