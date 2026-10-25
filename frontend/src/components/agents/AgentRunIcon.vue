@@ -12,6 +12,7 @@ const shape = computed(() => (props.outcome ? outcomeShape(props.outcome) : 'non
 const label = computed(() => (props.outcome ? OUTCOME_LABELS[props.outcome] : 'Sem execuções'))
 const stroke = computed(() => ({
   spinner: 'stroke-primary motion-safe:animate-spin',
+  clock: 'stroke-fg-muted',
   check: 'stroke-fg-muted',
   triangle: 'stroke-secondary',
   cross: 'stroke-diff-del-fg',
@@ -24,6 +25,9 @@ const stroke = computed(() => ({
   <span class="inline-flex shrink-0 items-center gap-1.5" :data-shape="shape">
     <svg :width="size" :height="size" viewBox="0 0 24 24" fill="none" :class="stroke" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path v-if="shape === 'spinner'" d="M12 3a9 9 0 1 1-9 9" />
+      <template v-else-if="shape === 'clock'">
+        <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+      </template>
       <path v-else-if="shape === 'check'" d="M5 12.5 10 17 19 7" />
       <template v-else-if="shape === 'triangle'">
         <path d="M12 3 2 20h20L12 3z" /><line x1="12" y1="10" x2="12" y2="14" /><line x1="12" y1="17" x2="12" y2="17.01" />

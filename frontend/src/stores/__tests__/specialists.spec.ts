@@ -9,6 +9,20 @@ beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => vi.unstubAllGlobals())
 
 describe('specialists store', () => {
+  it('guarda o cancelamento de uma execução na fila', async () => {
+    const queued = makeSpecialistRun({ id: 9, outcome: 'queued', session_id: null })
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/specialists/1/runs?limit=50': () => jsonResponse([queued]),
+      'POST /api/specialists/1/runs/9/cancel': () => jsonResponse({ ...queued, outcome: 'cancelled' }),
+    }))
+    const store = useSpecialistsStore()
+    store.list = [makeSpecialist({ last_run: queued })]
+    await store.loadRuns(1)
+    await store.cancelRun(1, 9)
+    expect(store.runsOf(1)[0]?.outcome).toBe('cancelled')
+    expect(store.byId(1)?.last_run?.outcome).toBe('cancelled')
+  })
+
   it('carrega a lista e acha por id', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/specialists': () => jsonResponse([makeSpecialist(), makeSpecialist({ id: 2, slug: 'filmes', name: 'Filmes' })]) }))
     const store = useSpecialistsStore()
@@ -115,6 +129,66 @@ describe('specialists store', () => {
     expect(store.byId(1)?.last_run?.id).toBe(5)
   })
 
+  it('reordena pela hora de início quando uma pendência antiga começa', () => {
+    const store = useSpecialistsStore()
+    const queued = makeSpecialistRun({ id: 2, started_at: 10, outcome: 'queued', session_id: null })
+    const requestedLater = makeSpecialistRun({ id: 3, started_at: 20, outcome: 'queued', session_id: null })
+    store.list = [makeSpecialist({ last_run: requestedLater })]
+    store.runs = { 1: [requestedLater, queued] }
+
+    const starting = { ...queued, started_at: 30, outcome: 'starting' as const, session_id: 's2' }
+    store.applyRun(starting)
+
+    expect(store.byId(1)?.last_run).toEqual(starting)
+    expect(store.runsOf(1).map((run) => run.id)).toEqual([2, 3])
+  })
+
+  it('um id maior com início mais antigo não substitui a última execução', () => {
+    const store = useSpecialistsStore()
+    const latest = makeSpecialistRun({ id: 2, started_at: 30 })
+    store.list = [makeSpecialist({ last_run: latest })]
+    store.runs = { 1: [latest] }
+
+    store.applyRun(makeSpecialistRun({ id: 3, started_at: 20, outcome: 'queued', session_id: null }))
+
+    expect(store.byId(1)?.last_run).toEqual(latest)
+    expect(store.runsOf(1).map((run) => run.id)).toEqual([2, 3])
+  })
+
+  it('ordena antes de limitar o histórico quando uma execução antiga muda a hora de início', () => {
+    const store = useSpecialistsStore()
+    const queued = makeSpecialistRun({ id: 1, started_at: 1, outcome: 'queued', session_id: null })
+    const history = Array.from({ length: 50 }, (_, index) => makeSpecialistRun({ id: 51 - index, started_at: 51 - index, outcome: 'concluded' }))
+    store.list = [makeSpecialist({ last_run: history[0]! })]
+    store.runs = { 1: [...history, queued] }
+
+    store.applyRun({ ...queued, started_at: 100, outcome: 'concluded', session_id: 's1' })
+
+    expect(store.runsOf(1)).toHaveLength(50)
+    expect(store.runsOf(1)[0]?.id).toBe(1)
+    expect(store.runsOf(1).some((run) => run.id === 2)).toBe(false)
+  })
+
+  it('mantém todas as pendências ao limitar o histórico atualizado por eventos', () => {
+    const store = useSpecialistsStore()
+    store.list = [makeSpecialist()]
+    const queued = makeSpecialistRun({ id: 1, outcome: 'queued', session_id: null })
+    const starting = makeSpecialistRun({ id: 2, outcome: 'starting', session_id: 's2' })
+    store.runs = { 1: [starting, queued] }
+
+    for (let id = 3; id <= 56; id++) store.applyRun(makeSpecialistRun({ id, outcome: 'concluded' }))
+
+    expect(store.runsOf(1)).toHaveLength(52)
+    expect(store.runsOf(1).filter((run) => run.outcome === 'concluded')).toHaveLength(50)
+    expect(store.runsOf(1)).toContainEqual(queued)
+    expect(store.runsOf(1)).toContainEqual(starting)
+
+    store.applyRun({ ...queued, outcome: 'cancelled' })
+    expect(store.runsOf(1)).toHaveLength(51)
+    expect(store.runsOf(1)).toContainEqual(starting)
+    expect(store.runsOf(1).filter((run) => run.outcome !== 'starting')).toHaveLength(50)
+  })
+
   it('specialist.notice com um aviso novo entra no começo e conta como não lido', () => {
     const store = useSpecialistsStore()
     store.notices = [makeSpecialistNotice({ id: 1, read_at: 1_790_000_100 })]
@@ -205,4 +279,62 @@ describe('specialists store: eventos do WebSocket', () => {
     off()
     socket.close()
   })
+})
+
+
+it('preserva eventos recebidos durante a leitura inicial das execuções', async () => {
+  let resolve!: (response: Response) => void
+  vi.stubGlobal('fetch', routeFetch({
+    'GET /api/specialists/1/runs?limit=50': () => new Promise<Response>((r) => { resolve = r }),
+  }))
+  const store = useSpecialistsStore()
+  const loading = store.loadRuns(1)
+  const cancelled = makeSpecialistRun({ id: 9, outcome: 'cancelled' })
+  store.applyRun(cancelled)
+  resolve(jsonResponse([{ ...cancelled, outcome: 'queued' }]))
+  await loading
+  expect(store.runsOf(1)[0]?.outcome).toBe('cancelled')
+})
+
+it('leituras concorrentes de agentes diferentes preservam ambos os históricos', async () => {
+  const resolvers: Record<number, (response: Response) => void> = {}
+  vi.stubGlobal('fetch', routeFetch(Object.fromEntries([1, 2].map((id) => [
+    `GET /api/specialists/${id}/runs?limit=50`, () => new Promise<Response>((r) => { resolvers[id] = r }),
+  ]))))
+  const store = useSpecialistsStore()
+  const first = store.loadRuns(1)
+  const second = store.loadRuns(2)
+  resolvers[2]!(jsonResponse([makeSpecialistRun({ id: 2, specialist_id: 2 })]))
+  await second
+  resolvers[1]!(jsonResponse([makeSpecialistRun({ id: 1 })]))
+  await first
+  expect(store.runsOf(1)).toHaveLength(1)
+  expect(store.runsOf(2)).toHaveLength(1)
+})
+
+it('a resposta atrasada de uma leitura anterior não substitui o histórico novo', async () => {
+  const resolvers: ((response: Response) => void)[] = []
+  vi.stubGlobal('fetch', routeFetch({
+    'GET /api/specialists/1/runs?limit=50': () => new Promise<Response>((r) => { resolvers.push(r) }),
+  }))
+  const store = useSpecialistsStore()
+  const first = store.loadRuns(1)
+  const second = store.loadRuns(1)
+  resolvers[1]!(jsonResponse([makeSpecialistRun({ id: 9, outcome: 'concluded' })]))
+  await second
+  resolvers[0]!(jsonResponse([makeSpecialistRun({ id: 9, outcome: 'running' })]))
+  await first
+  expect(store.runsOf(1)[0]?.outcome).toBe('concluded')
+})
+
+it('preserva pedidos antigos na fila além das cinquenta execuções recentes', async () => {
+  const queued = makeSpecialistRun({ id: 1, started_at: 1, outcome: 'queued', session_id: null })
+  const history = Array.from({ length: 50 }, (_, i) => makeSpecialistRun({ id: i + 2, started_at: 100 + i, outcome: 'concluded' }))
+  vi.stubGlobal('fetch', routeFetch({
+    'GET /api/specialists/1/runs?limit=50': () => jsonResponse([...history, queued]),
+  }))
+  const store = useSpecialistsStore()
+  await store.loadRuns(1)
+  expect(store.runsOf(1)).toHaveLength(51)
+  expect(store.runsOf(1).find((run) => run.id === 1)?.outcome).toBe('queued')
 })

@@ -6,9 +6,14 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Agentes: conversa direta com contexto preservado, nova conversa e continuação dos resultados de rotinas. Mensagens e imagens seguem a fila persistente, com prévia e cancelamento no chat; a página separa Conversas, Execuções e Configuração.
+
+- Agentes: fila persistente por agente para pedidos manuais e horários, com pausa, retomada e cancelamento de pendências. Reiniciar preserva os pedidos; envios de resultado incerto pausam a fila e pedem revisão, sem reenviar automaticamente.
 - Agentes: o campo "Ferramentas bloqueadas", na seção Autonomia, impede o agente de usar uma ferramenta em qualquer autonomia, pelo nome (`mcp__servidor__ferramenta`, `WebFetch`) ou pelo servidor MCP inteiro (`mcp__servidor`).
 
 ### Corrigido
+
+- O cabeçalho da conversa acomoda o nome do agente e as ações em linhas separadas quando falta espaço, sem sobrepor os controles.
 
 - A barra de uso da assinatura não some mais depois de reiniciar o app (mostra a última leitura, com o aviso no tooltip) e espera antes de consultar de novo quando a Anthropic limita as consultas.
 

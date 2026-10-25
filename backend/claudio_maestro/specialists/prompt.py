@@ -28,6 +28,7 @@ def build_append(
     skill_body: str,
     learnings: str,
     extra_projects: list[tuple[str, str]],
+    conversation: bool = False,
 ) -> str:
     """The agent's prompt: tools, readable projects, skill and learnings. Never carries
     secrets: those only reach the process environment."""
@@ -37,7 +38,11 @@ def build_append(
         else NO_EXTRA_PROJECTS
     )
     return (
-        _HEAD.format(name=name)
+        (_HEAD.format(name=name).replace(
+            "Isso encerra esta sessão.",
+            "Nesta conversa, concluir registra o resultado e não encerra a sessão. "
+            "Responda às próximas mensagens mantendo o contexto.",
+        ) if conversation else _HEAD.format(name=name))
         + f"{projects}\n\n"
         + f"## Skill\n{skill_body.strip()}\n\n"
         + f"## Aprendizados\n{learnings.strip() or NO_LEARNINGS}"

@@ -198,7 +198,8 @@ async def test_start_run_send_failure_records_failed(world):
 
     run = await world.service.start_run(specialist_id, trigger="manual")
 
-    assert run.outcome == "failed" and "sem conexão" in (run.reason or "")
+    assert run.outcome == "failed" and "Confira a conversa" in (run.reason or "")
+    assert world.specialist(specialist_id).queue_paused is True
 
 
 # conclude / notify ------------------------------------------------------------

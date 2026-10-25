@@ -39,6 +39,47 @@ def mark_custom_titles(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE sessions SET title_custom = 1 WHERE session_id = ?", (session_id,))
 
 
+def migrate_specialist_queue(conn: sqlite3.Connection) -> None:
+    """Extend run states without losing runs, references or the AUTOINCREMENT watermark."""
+    sequence = conn.execute(
+        "SELECT seq FROM sqlite_sequence WHERE name = 'specialist_runs'"
+    ).fetchone()
+    conn.execute(
+        """
+        CREATE TABLE specialist_runs_queue (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          specialist_id  INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE,
+          session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+          trigger        TEXT NOT NULL CHECK (trigger IN ('schedule', 'manual')),
+          scheduled_for  INTEGER,
+          started_at     INTEGER NOT NULL,
+          ended_at       INTEGER,
+          outcome        TEXT NOT NULL CHECK (
+            outcome IN ('running', 'concluded', 'closed', 'waiting', 'failed', 'skipped',
+                        'missed', 'queued', 'starting', 'cancelled')
+          ),
+          reason         TEXT
+        )
+        """
+    )
+    conn.execute("INSERT INTO specialist_runs_queue SELECT * FROM specialist_runs")
+    conn.execute("DROP TABLE specialist_runs")
+    conn.execute("ALTER TABLE specialist_runs_queue RENAME TO specialist_runs")
+    conn.execute(
+        "CREATE INDEX specialist_runs_specialist_started ON specialist_runs(specialist_id, started_at)"
+    )
+    conn.execute("CREATE INDEX specialist_runs_session ON specialist_runs(session_id)")
+    conn.execute(
+        "CREATE INDEX specialist_runs_pending ON specialist_runs(outcome, specialist_id, id)"
+    )
+    if sequence is not None:
+        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'specialist_runs'")
+        conn.execute(
+            "INSERT INTO sqlite_sequence (name, seq) VALUES ('specialist_runs', ?)",
+            (sequence[0],),
+        )
+
+
 # Each migration is a list of SQL statements or functions of the connection.
 # Migration N (1-based) brings the schema to `user_version = N`. Never edit a
 # migration that has shipped; append a new one instead.
@@ -334,6 +375,18 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
     ],
     # Tools an agent can never use (names in the CLI's permission rule form), JSON text.
     ["ALTER TABLE specialists ADD COLUMN denied_tools TEXT NOT NULL DEFAULT '[]'"],
+    [
+        "ALTER TABLE specialists ADD COLUMN queue_paused INTEGER NOT NULL DEFAULT 0",
+        migrate_specialist_queue,
+    ],
+    [
+        "ALTER TABLE specialist_runs ADD COLUMN message INTEGER NOT NULL DEFAULT 0",
+        """CREATE TABLE specialist_chats (
+            session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+            specialist_id INTEGER NOT NULL REFERENCES specialists(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX specialist_chats_agent ON specialist_chats(specialist_id)",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

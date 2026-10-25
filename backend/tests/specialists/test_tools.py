@@ -226,7 +226,7 @@ def test_server_lists_five_tools_with_prefix():
     ]
     by_name = {t.name: t for t in tools}
     assert by_name["concluir"].description.startswith("Chame só quando a tarefa inteira terminou.")
-    assert "Encerra esta sessão." in by_name["concluir"].description
+    assert "mantém a conversa aberta" in by_name["concluir"].description
     # Optional fields stay optional in the schema the model sees.
     assert by_name["registro_gravar"].input_schema["required"] == ["chave", "situacao"]
 

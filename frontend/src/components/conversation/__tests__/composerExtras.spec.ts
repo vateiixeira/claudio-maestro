@@ -280,3 +280,21 @@ describe('imagens no campo: leituras em andamento', () => {
     expect(names(w)).toEqual([expect.stringContaining('b.png')])
   })
 })
+
+
+it('não deixa a miniatura de uma imagem enfileirada para o próximo envio', async () => {
+  const { ta } = setup()
+  let queued = true
+  vi.stubGlobal('fetch', routeFetch({
+    'POST /api/sessions/s1/messages': () => jsonResponse(queued ? { queued: true } : {}, 202),
+  }))
+  await paste(ta, [png('cancelada.png', 3)])
+  await ta.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  queued = false
+  await paste(ta, [new File(['BBB'], 'nova.png', { type: 'image/png' })])
+  await ta.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  claimLocalImages('s1', { type: 'user', id: 'nova', text: '', images: [{ type: 'image', media_type: 'image/png', size: 3 }] })
+  expect(localImagesFor('nova')).toEqual(['data:image/png;base64,QkJC'])
+})

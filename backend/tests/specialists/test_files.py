@@ -323,3 +323,111 @@ def test_reserved_names_in_the_file_never_reach_the_session(files: SpecialistFil
     assert files.read_secrets("filmes") == {"TOKEN": "ok"}
     files.write_secrets("filmes", {"PATH": None})  # removing one is harmless
     assert files.secret_names("filmes") == ["TOKEN"]
+
+
+def test_run_text_is_private_atomic_and_removed_idempotently(files):
+    files.create("filmes", "Filmes")
+    folder = files.root / "filmes"
+    folder.chmod(0o755)
+    files.write_run_text("filmes", 12, "Pedido com ação 🎬\nna linha seguinte")
+    assert files.read_run_text("filmes", 12) == "Pedido com ação 🎬\nna linha seguinte"
+    assert mode(folder / "pending-12.txt") == 0o600
+    assert mode(folder) == 0o700
+    files.write_run_text("filmes", 12, "Outro pedido")
+    assert files.read_run_text("filmes", 12) == "Outro pedido"
+    assert sorted(p.name for p in folder.iterdir()) == ["SKILL.md", "pending-12.txt"]
+    files.delete_run_text("filmes", 12)
+    files.delete_run_text("filmes", 12)
+    with pytest.raises(FileNotFoundError):
+        files.read_run_text("filmes", 12)
+
+
+@pytest.mark.parametrize("run_id", [0, -1, True, "../secrets.env", "1", 1.0])
+def test_run_text_rejects_invalid_ids_before_disk_access(files, run_id):
+    for call in (
+        lambda: files.write_run_text("filmes", run_id, "texto"),
+        lambda: files.read_run_text("filmes", run_id),
+        lambda: files.delete_run_text("filmes", run_id),
+    ):
+        with pytest.raises(ValueError):
+            call()
+    assert not files.root.exists()
+
+
+def test_run_text_refuses_invalid_slugs_and_symlink_folders(files, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    files.root.mkdir()
+    (files.root / "filmes").symlink_to(outside, target_is_directory=True)
+    for slug in ("../outside", "filmes"):
+        for call in (
+            lambda: files.write_run_text(slug, 1, "texto"),
+            lambda: files.read_run_text(slug, 1),
+            lambda: files.delete_run_text(slug, 1),
+        ):
+            with pytest.raises((ValueError, OSError)):
+                call()
+    assert list(outside.iterdir()) == []
+
+
+def test_run_text_never_reads_a_symlink_and_replaces_only_the_link(files, tmp_path):
+    files.create("filmes", "Filmes")
+    outside = tmp_path / "private"
+    outside.write_text("Segredo", encoding="utf-8")
+    target = files.root / "filmes" / "pending-1.txt"
+    target.symlink_to(outside)
+    with pytest.raises(OSError):
+        files.read_run_text("filmes", 1)
+    files.write_run_text("filmes", 1, "Pedido")
+    assert files.read_run_text("filmes", 1) == "Pedido"
+    assert outside.read_text(encoding="utf-8") == "Segredo"
+
+
+def test_run_text_rejects_large_or_empty_payloads_and_bounds_reads(files):
+    files.create("filmes", "Filmes")
+    files.write_run_text("filmes", 1, "🎬" * 5000)
+    assert files.read_run_text("filmes", 1) == "🎬" * 5000
+    for text in ("", "   ", "x" * 5001):
+        with pytest.raises(ValueError):
+            files.write_run_text("filmes", 1, text)
+    (files.root / "filmes" / "pending-1.txt").write_bytes(b"x" * 20001)
+    with pytest.raises(ValueError):
+        files.read_run_text("filmes", 1)
+
+
+def test_run_text_refuses_non_regular_files_without_waiting(files):
+    files.create("filmes", "Filmes")
+    os.mkfifo(files.root / "filmes" / "pending-1.txt")
+    with pytest.raises(ValueError):
+        files.read_run_text("filmes", 1)
+
+
+def test_message_payload_keeps_images_private_and_previews_long_unicode_text(files):
+    files.create("filmes", "Filmes")
+    text = "🎬" * 100_000
+    images = [{"media_type": "image/png", "data": "payload" * 100_000}]
+    files.write_message("filmes", 1, text, images)
+    assert mode(files.root / "filmes" / "pending-1.txt") == 0o600
+    assert files.read_message("filmes", 1) == (text, images)
+    assert files.message_preview("filmes", 1) == "🎬" * 500 + "…"
+
+
+def test_message_preview_rejects_symlinks_and_non_regular_files(files, tmp_path):
+    files.create("filmes", "Filmes")
+    outside = tmp_path / "private.json"
+    outside.write_text('{"text": "Segredo", "images": []}')
+    target = files.root / "filmes" / "pending-1.txt"
+    target.symlink_to(outside)
+    with pytest.raises(OSError):
+        files.message_preview("filmes", 1)
+    target.unlink()
+    os.mkfifo(target)
+    with pytest.raises(ValueError):
+        files.message_preview("filmes", 1)
+
+
+def test_message_preview_accepts_the_maximum_json_escape_expansion(files):
+    files.create("filmes", "Filmes")
+    text = "\x00" * 100_000
+    files.write_message("filmes", 1, text, [])
+    assert files.message_preview("filmes", 1) == text[:500] + "…"

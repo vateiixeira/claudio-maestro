@@ -20,12 +20,18 @@ import json
 import os
 import re
 import shutil
+import stat
 import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 SKILL_MAX_BYTES = 100_000
 LEARNINGS_MAX_CHARS = 4000
+# Same instruction limit as the API; four bytes is the largest UTF-8 code point.
+RUN_TEXT_MAX_CHARS = 5000
+RUN_TEXT_MAX_BYTES = RUN_TEXT_MAX_CHARS * 4
 SLUG_MAX_LENGTH = 40
 SLUG_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 SECRET_NAME_PATTERN = re.compile(r"[A-Z_][A-Z0-9_]*")
@@ -207,6 +213,103 @@ class SpecialistFiles:
         if len(text) > LEARNINGS_MAX_CHARS:
             raise LearningsTooLongError
         _write_atomic(folder / LEARNINGS_FILE, text)
+
+    @contextlib.contextmanager
+    def _run_folder(self, slug: str, run_id: int) -> Iterator[tuple[int, str]]:
+        """Anchor queue operations to the open agent folder, never following a symlink."""
+        _check_slug(slug)
+        if type(run_id) is not int or run_id <= 0:
+            raise ValueError("Identificador de execução inválido.")
+        root_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            folder_fd = os.open(
+                slug, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd
+            )
+            try:
+                yield folder_fd, f"pending-{run_id}.txt"
+            finally:
+                os.close(folder_fd)
+        finally:
+            os.close(root_fd)
+
+    @staticmethod
+    def _check_run_text(text: str) -> None:
+        if not isinstance(text, str) or not text.strip() or len(text) > RUN_TEXT_MAX_CHARS:
+            raise ValueError("O pedido da execução precisa ter de 1 a 5.000 caracteres.")
+
+    def write_run_text(self, slug: str, run_id: int, text: str) -> None:
+        """Save a private pending instruction atomically; SQLite holds only its run id."""
+        self._check_run_text(text)
+        self._write_pending(slug, run_id, text)
+
+    def _write_pending(self, slug: str, run_id: int, text: str) -> None:
+        with self._run_folder(slug, run_id) as (folder_fd, name):
+            os.fchmod(folder_fd, 0o700)
+            temporary = f".{name}.{uuid4().hex}"
+            fd = os.open(
+                temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
+                0o600, dir_fd=folder_fd,
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                    handle.write(text)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, name, src_dir_fd=folder_fd, dst_dir_fd=folder_fd)
+                os.fsync(folder_fd)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(temporary, dir_fd=folder_fd)
+                raise
+
+    def write_message(self, slug: str, run_id: int, text: str, images: list[dict]) -> None:
+        payload = json.dumps({"text": text, "images": images}, ensure_ascii=False)
+        if len(payload.encode("utf-8")) > 45 * 1024 * 1024:
+            raise ValueError("A mensagem passou do tamanho permitido.")
+        self._write_pending(slug, run_id, payload)
+
+    def read_message(self, slug: str, run_id: int) -> tuple[str, list[dict]]:
+        value = json.loads(self._read_pending(slug, run_id, 45 * 1024 * 1024))
+        if not isinstance(value, dict) or not isinstance(value.get("text"), str) or not isinstance(value.get("images"), list):
+            raise ValueError("Mensagem inválida na fila.")
+        return value["text"], value["images"]
+
+    def message_preview(self, slug: str, run_id: int) -> str:
+        # JSON writes text first. Decode only its first string, never the image bodies.
+        # 100k characters need at most 600k JSON bytes (escaped control characters).
+        with self._run_folder(slug, run_id) as (folder_fd, name):
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder_fd)
+            with os.fdopen(fd, "rb") as handle:
+                if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                    raise ValueError("Mensagem inválida na fila.")
+                prefix = handle.read(600_020).decode("utf-8", "ignore")
+        if not prefix.startswith('{"text": '):
+            raise ValueError("Mensagem inválida na fila.")
+        text, _ = json.JSONDecoder().raw_decode(prefix, 9)
+        if not isinstance(text, str):
+            raise ValueError("Mensagem inválida na fila.")
+        return text[:500] + ("…" if len(text) > 500 else "")
+
+    def _read_pending(self, slug: str, run_id: int, limit: int) -> str:
+        with self._run_folder(slug, run_id) as (folder_fd, name):
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder_fd)
+            with os.fdopen(fd, "rb") as handle:
+                if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                    raise ValueError("O pedido da execução precisa ser um arquivo comum.")
+                raw = handle.read(limit + 1)
+            if len(raw) > limit:
+                raise ValueError("O pedido da execução passou do tamanho permitido.")
+            return raw.decode("utf-8")
+
+    def read_run_text(self, slug: str, run_id: int) -> str:
+        text = self._read_pending(slug, run_id, RUN_TEXT_MAX_BYTES)
+        self._check_run_text(text)
+        return text
+
+    def delete_run_text(self, slug: str, run_id: int) -> None:
+        with self._run_folder(slug, run_id) as (folder_fd, name):
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(name, dir_fd=folder_fd)
 
     def read_secrets(self, slug: str) -> dict[str, str]:
         """Names and values, only to build the session `env`."""

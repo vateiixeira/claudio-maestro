@@ -12,5 +12,5 @@ const label = computed(() => {
 </script>
 
 <template>
-  <span data-test="agent-badge" class="shrink-0 rounded-full border border-line-strong px-1.5 font-mono text-[0.6875rem] text-fg-muted">{{ label }}</span>
+  <span data-test="agent-badge" :title="label" class="max-w-48 shrink-0 truncate rounded-full border border-line-strong px-1.5 font-mono text-[0.6875rem] text-fg-muted">{{ label }}</span>
 </template>

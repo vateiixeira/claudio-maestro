@@ -271,6 +271,7 @@ def create_app(
             app.state.settings.db_path,
             time.time,
         )
+        app.state.scheduler.enabled = app.state.settings.specialists_scheduler
         # What the agentd may still hold, for the Remote Control reconnect below; `None`
         # when it could not be asked (nothing is reconnected then).
         agentd_held: set[str] | None = None

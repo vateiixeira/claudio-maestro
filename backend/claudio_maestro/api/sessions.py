@@ -404,9 +404,27 @@ async def _wait_for_disconnect(request: Request) -> None:
 
 
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
-async def send_message(session_id: str, body: MessageIn, manager: ManagerDep) -> dict[str, Any]:
-    _get_session(manager, session_id)
+async def send_message(session_id: str, body: MessageIn, manager: ManagerDep, request: Request) -> dict[str, Any]:
+    session = _get_session(manager, session_id)
     try:
+        if session.record.specialist_id is not None:
+            from claudio_maestro.specialists.service import QueueFullError
+            from claudio_maestro.specialists.store import (
+                SpecialistError,
+                SpecialistNotFoundError,
+            )
+
+            try:
+                run = await request.app.state.specialists.send_message(
+                    session_id, body.text, [image.model_dump() for image in body.images]
+                )
+            except SpecialistNotFoundError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except QueueFullError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except SpecialistError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            return {"state": session.state, "external_activity": False, "queued": True, "run_id": run.id}
         return await manager.send(
             session_id, body.text, [image.model_dump() for image in body.images]
         )

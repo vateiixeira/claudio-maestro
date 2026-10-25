@@ -239,6 +239,8 @@ export type DisplayState = 'running' | 'waiting' | 'finished'
 export interface SendResult {
   state: SessionState
   external_activity: boolean
+  queued?: boolean
+  run_id?: number
 }
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -689,7 +691,7 @@ export interface ClaudeCliInfo {
 
 // Agents (specialists)
 
-export type SpecialistRunOutcome = 'running' | 'concluded' | 'closed' | 'waiting' | 'failed' | 'skipped' | 'missed'
+export type SpecialistRunOutcome = 'queued' | 'starting' | 'running' | 'concluded' | 'closed' | 'waiting' | 'failed' | 'skipped' | 'missed' | 'cancelled'
 export type SpecialistTrigger = 'schedule' | 'manual'
 export type SpecialistAutonomy = 'ask' | 'full'
 
@@ -702,7 +704,16 @@ export interface SpecialistSchedule {
   last_fired_at: number | null
 }
 
+export interface SpecialistConversation {
+  session_id: string
+  title: string
+  finished: boolean
+  created_at: number
+  last_activity_at: number
+}
+
 export interface SpecialistRun {
+  message?: boolean
   id: number
   specialist_id: number
   session_id: string | null
@@ -733,6 +744,8 @@ export interface Specialist {
   effort: Effort | null
   run_text: string
   enabled: boolean
+  /** Holds new runs without interrupting the current one or disabling schedules. */
+  queue_paused: boolean
   /** MCP servers found in the last run. */
   last_mcp: { name?: string; status?: string }[]
   schedules: SpecialistSchedule[]
@@ -761,6 +774,7 @@ export interface SpecialistUpdate {
   effort?: Effort | null
   run_text?: string
   enabled?: boolean
+  queue_paused?: boolean
   schedules?: { days: string; time: string }[]
 }
 

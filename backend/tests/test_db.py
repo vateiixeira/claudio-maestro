@@ -27,6 +27,47 @@ def test_migrate_creates_tables(tmp_path: Path):
         assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
 
 
+@pytest.mark.parametrize("keep_run", [True, False])
+def test_queue_migration_preserves_runs_foreign_keys_and_deleted_id_sequence(tmp_path, keep_run):
+    with open_db(tmp_path / "old-queue.db") as conn:
+        before = next(
+            index for index, statements in enumerate(db.MIGRATIONS)
+            if any("queue_paused" in str(statement) for statement in statements)
+        )
+        for statements in db.MIGRATIONS[:before]:
+            for statement in statements:
+                statement(conn) if callable(statement) else conn.execute(statement)
+        conn.execute(f"PRAGMA user_version = {before}")
+        conn.execute("INSERT INTO projects VALUES (1, 'p', '/p', '#fff', 0, 0)")
+        conn.execute("INSERT INTO specialists (id, slug, name, project_id, created_at, updated_at) VALUES (1, 'rev', 'Rev', 1, 0, 0)")
+        conn.execute("INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at, specialist_id) VALUES ('s', 1, '/p', 't', 0, 0, 1)")
+        conn.execute("INSERT INTO specialist_runs VALUES (7, 1, 's', 'manual', NULL, 10, 11, 'concluded', 'feito')")
+        conn.execute("INSERT INTO specialist_runs VALUES (99, 1, NULL, 'schedule', 5, 10, 11, 'skipped', 'sem uso')")
+        conn.execute("DELETE FROM specialist_runs WHERE id = 99")
+        if not keep_run:
+            conn.execute("DELETE FROM specialist_runs WHERE id = 7")
+
+        db.migrate(conn)
+
+        if keep_run:
+            assert dict(conn.execute("SELECT * FROM specialist_runs WHERE id = 7").fetchone()) == {
+                "id": 7, "specialist_id": 1, "session_id": "s", "trigger": "manual", "scheduled_for": None,
+                "started_at": 10, "ended_at": 11, "outcome": "concluded", "reason": "feito", "message": 0,
+            }
+        assert conn.execute("SELECT queue_paused FROM specialists").fetchone()[0] == 0
+        for outcome in ("queued", "starting", "cancelled"):
+            cursor = conn.execute("INSERT INTO specialist_runs (specialist_id, trigger, started_at, outcome) VALUES (1, 'manual', 20, ?)", (outcome,))
+            assert cursor.lastrowid > 99
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        indexes = {r["name"] for r in conn.execute("PRAGMA index_list(specialist_runs)")}
+        assert {"specialist_runs_specialist_started", "specialist_runs_session"} <= indexes
+        conn.execute("DELETE FROM sessions WHERE session_id = 's'")
+        if keep_run:
+            assert conn.execute("SELECT session_id FROM specialist_runs WHERE id = 7").fetchone()[0] is None
+        conn.execute("DELETE FROM specialists WHERE id = 1")
+        assert conn.execute("SELECT COUNT(*) FROM specialist_runs").fetchone()[0] == 0
+
+
 def test_sessions_have_worktree_columns(tmp_path: Path):
     with open_db(tmp_path / "test.db") as conn:
         db.migrate(conn)

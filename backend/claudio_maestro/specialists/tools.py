@@ -209,7 +209,8 @@ def build_tools(host: ToolHost, *, specialist_id: int, session_id: str) -> list[
 
     @tool(
         "concluir",
-        "Chame só quando a tarefa inteira terminou. Encerra esta sessão. "
+        "Chame só quando a tarefa inteira terminou. Registra o resultado. "
+        "Em uma rotina, encerra a sessão; em um chat, mantém a conversa aberta. "
         f"Passe um resumo do que foi feito, até {_n(MAX_SUMMARY)} caracteres.",
         {
             "type": "object",
@@ -221,7 +222,7 @@ def build_tools(host: ToolHost, *, specialist_id: int, session_id: str) -> list[
     async def concluir(args: dict[str, Any]) -> ToolResult:
         summary = _text_arg(args, "resumo", MAX_SUMMARY)
         await host.conclude(session_id, summary)
-        return _ok("Sessão concluída.")
+        return _ok("Resultado registrado.")
 
     return [registro_consultar, registro_gravar, aprendizados_reescrever, avisar, concluir]
 

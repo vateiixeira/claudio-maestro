@@ -19,6 +19,7 @@ async function createAgent(page: Page, name: string) {
   await page.getByTestId('new-name').fill(name)
   await page.getByRole('dialog').getByRole('button', { name: 'Criar' }).click()
   await expect(page.getByTestId('agent-name')).toHaveText(name)
+  await page.getByTestId('agent-tab-settings').click()
 }
 
 test('bloqueia ferramentas: acrescenta, persiste ao recarregar e remove', async ({ page }) => {

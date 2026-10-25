@@ -127,10 +127,10 @@ describe('página da conversa', () => {
     expect(actions.find('[data-test="toggle-details"]').exists()).toBe(true)
   })
 
-  it('trilha e título ocupam só a sobra, para um título longo não fazer as ações quebrarem linha', async () => {
+  it('trilha e título podem mudar de linha sem sobrepor as ações', async () => {
     const { wrapper } = await mountAt('/sessions/s1')
     const title = wrapper.get('[data-test="header-title"]')
-    expect(title.classes()).toEqual(expect.arrayContaining(['min-w-0', 'grow', 'basis-0']))
+    expect(title.classes()).toEqual(expect.arrayContaining(['min-w-0', 'grow', 'basis-64']))
     expect(title.find('[data-test="breadcrumb"]').exists()).toBe(true)
     expect(title.find('[data-test="conversation-title"]').exists()).toBe(true)
   })

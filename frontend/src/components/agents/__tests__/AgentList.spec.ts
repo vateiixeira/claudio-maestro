@@ -17,6 +17,9 @@ async function mountList(agents: Specialist[], selectedId: number | null = null,
 describe('AgentList', () => {
   it.each<[SpecialistRunOutcome, string]>([
     ['running', 'spinner'],
+    ['starting', 'spinner'],
+    ['queued', 'clock'],
+    ['cancelled', 'dash'],
     ['concluded', 'check'],
     ['closed', 'check'],
     ['waiting', 'triangle'],

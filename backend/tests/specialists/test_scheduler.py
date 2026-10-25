@@ -175,6 +175,13 @@ class World:
         with closing(db.connect(self.db_path)) as conn:
             return list(reversed(store.list_runs(conn, specialist_id)))
 
+    async def wait_dispatched(self, specialist_id: int, count: int = 1) -> None:
+        def ready() -> bool:
+            runs = self.runs(specialist_id)
+            return len(runs) == count and all(r.outcome not in ("queued", "starting") for r in runs)
+
+        await wait_until(ready)
+
     def schedules(self, specialist_id: int) -> list[store.Schedule]:
         with closing(db.connect(self.db_path)) as conn:
             return store.list_schedules(conn, specialist_id)
@@ -199,6 +206,38 @@ def limit(percent: int, label: str = "Sessão", resets_at: float | None = FUTURE
 # tick ---------------------------------------------------------------------------
 
 
+async def test_slow_scheduled_start_does_not_block_another_agents_due_slot(world):
+    first = world.add_specialist()
+    other = world.add_specialist(slug="outro", schedules=((EVERY_DAY, "09:00"), (EVERY_DAY, "09:01")))
+    reached, release = asyncio.Event(), asyncio.Event()
+    real_send = world.manager.send
+
+    async def slow_send(session_id, text, *args, **kwargs):
+        if world.manager.find_record(session_id).specialist_id == first:
+            reached.set()
+            await release.wait()
+        return await real_send(session_id, text, *args, **kwargs)
+
+    world.manager.send = slow_send
+    world.move_to(at(MONDAY, 9, 0, 5))
+    task = asyncio.create_task(world.scheduler.tick())
+    try:
+        await asyncio.wait_for(reached.wait(), 2)
+        await asyncio.wait_for(asyncio.shield(task), 1)
+        await wait_until(lambda: bool(world.runs(other)) and world.runs(other)[0].session_id is not None)
+        other_run = world.runs(other)[0]
+        await wait_until(lambda: world.manager.get(other_run.session_id).state == "idle")
+        assert world.schedules(other)[0].last_fired_at == int(world.now)
+        assert next(c for c in world.factory.clients if c.options.session_id == other_run.session_id).sent
+        world.move_to(at(MONDAY, 9, 1, 5))
+        await asyncio.wait_for(world.scheduler.tick(), 1)
+        await wait_until(lambda: len(world.runs(other)) == 2 and world.runs(other)[1].session_id is not None)
+        assert not release.is_set()
+    finally:
+        release.set()
+        await task
+
+
 async def test_tick_does_nothing_before_the_slot(world):
     specialist_id = world.add_specialist()
     world.move_to(at(MONDAY, 8, 59))
@@ -216,6 +255,7 @@ async def test_tick_fires_once_per_slot(world):
     await world.scheduler.tick()
     await world.scheduler.tick()
 
+    await world.wait_dispatched(specialist_id)
     [run] = world.runs(specialist_id)
     assert run.outcome == "running" and run.trigger == "schedule"
     assert run.scheduled_for == ts(at(MONDAY, 9))
@@ -236,6 +276,7 @@ async def test_late_but_inside_the_grace_still_fires(world):
 
     await world.scheduler.tick()
 
+    await world.wait_dispatched(specialist_id)
     [run] = world.runs(specialist_id)
     assert run.outcome == "running" and run.scheduled_for == ts(at(MONDAY, 9))
 
@@ -314,11 +355,12 @@ async def test_reenabled_specialist_records_no_missed_and_fires_the_next_slot(wo
 
     world.move_to(at(29, 9, 0, 5))
     await world.scheduler.tick()
+    await world.wait_dispatched(specialist_id)
     [run] = world.runs(specialist_id)
     assert run.outcome == "running" and run.scheduled_for == ts(at(29, 9))
 
 
-async def test_skips_when_running(world):
+async def test_queues_when_running_without_duplicating_the_slot(world):
     specialist_id = world.add_specialist()
     pause = PauseStep()
     world.turns = lambda sid: [init_message(sid), pause, *text_turn(sid, "ok")[1:]]
@@ -328,21 +370,20 @@ async def test_skips_when_running(world):
 
     await world.scheduler.tick()
 
-    skipped = [r for r in world.runs(specialist_id) if r.outcome == "skipped"]
-    assert len(skipped) == 1
-    assert skipped[0].reason == "Uma execução anterior ainda está rodando ou esperando você."
-    assert skipped[0].scheduled_for == ts(at(MONDAY, 9))
-    assert skipped[0].trigger == "schedule" and skipped[0].session_id is None
+    queued = [r for r in world.runs(specialist_id) if r.outcome == "queued"]
+    assert len(queued) == 1
+    assert queued[0].scheduled_for == ts(at(MONDAY, 9))
+    assert queued[0].trigger == "schedule" and queued[0].session_id is None
     assert len(world.factory.clients) == 1
     assert world.schedules(specialist_id)[0].last_fired_at == int(world.now)
 
-    # Marked as fired: it does not record a second skip for the same slot.
+    # Marked as fired: it does not queue a second copy of the same slot.
     await world.scheduler.tick()
-    assert len([r for r in world.runs(specialist_id) if r.outcome == "skipped"]) == 1
+    assert len([r for r in world.runs(specialist_id) if r.outcome == "queued"]) == 1
     pause.release.set()
 
 
-async def test_skips_when_a_decision_is_pending(world):
+async def test_queues_when_a_decision_is_pending(world):
     specialist_id = world.add_specialist()
     world.turns = lambda sid: [
         init_message(sid),
@@ -356,7 +397,38 @@ async def test_skips_when_a_decision_is_pending(world):
     await world.scheduler.tick()
 
     outcomes = [r.outcome for r in world.runs(specialist_id)]
-    assert outcomes == ["running", "skipped"]
+    assert outcomes == ["running", "queued"]
+
+
+async def test_queued_schedule_rechecks_usage_before_dispatch(world):
+    specialist_id = world.add_specialist()
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_specialist(conn, specialist_id, now=1, queue_paused=True)
+    world.move_to(at(MONDAY, 9, 0, 5))
+    await world.scheduler.tick()
+    await world.set_usage(limit(95))
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_specialist(conn, specialist_id, now=1, queue_paused=False)
+    await world.service.drain_queue()
+    assert world.runs(specialist_id)[0].outcome == "queued"
+    assert not world.factory.clients
+    await world.set_usage(limit(20))
+    await world.service.drain_queue()
+    assert world.runs(specialist_id)[0].outcome == "running"
+
+
+async def test_disabling_scheduler_also_holds_previously_queued_schedules(world):
+    specialist_id = world.add_specialist()
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_specialist(conn, specialist_id, now=1, queue_paused=True)
+    run = await world.service.start_run(specialist_id, trigger="schedule")
+    world.scheduler.enabled = False
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_specialist(conn, specialist_id, now=1, queue_paused=False)
+    await world.service.recover()
+    assert not world.factory.clients
+    assert world.runs(specialist_id)[0].id == run.id
+    assert world.runs(specialist_id)[0].outcome == "queued"
 
 
 async def test_runs_when_the_previous_session_is_idle(world):
@@ -367,6 +439,7 @@ async def test_runs_when_the_previous_session_is_idle(world):
 
     await world.scheduler.tick()
 
+    await world.wait_dispatched(specialist_id, 2)
     assert [r.outcome for r in world.runs(specialist_id)] == ["running", "running"]
 
 
@@ -405,6 +478,7 @@ async def test_usage_below_the_limit_runs_and_at_the_limit_skips(world):
     await world.set_usage(limit(89))
     world.move_to(at(MONDAY, 9, 0, 5))
     await world.scheduler.tick()
+    await world.wait_dispatched(specialist_id)
     assert [r.outcome for r in world.runs(specialist_id)] == ["running"]
 
     await wait_until(lambda: world.manager.get(world.runs(specialist_id)[0].session_id).state == "idle")
@@ -420,6 +494,7 @@ async def test_fires_when_usage_is_off_or_failed(world):
     world.limits = [limit(99)]
     world.move_to(at(MONDAY, 9, 0, 5))
     await world.scheduler.tick()
+    await world.wait_dispatched(specialist_id)
     assert [r.outcome for r in world.runs(specialist_id)] == ["running"]
     await wait_until(lambda: world.manager.get(world.runs(specialist_id)[0].session_id).state == "idle")
 
@@ -430,6 +505,7 @@ async def test_fires_when_usage_is_off_or_failed(world):
     assert world.usage.snapshot()["error"]
     world.move_to(at(27, 9, 0, 5))
     await world.scheduler.tick()
+    await world.wait_dispatched(specialist_id, 2)
     assert [r.outcome for r in world.runs(specialist_id)] == ["running", "running"]
 
 
@@ -442,6 +518,8 @@ async def test_one_failing_agent_does_not_stop_the_others(world):
 
     await world.scheduler.tick()
 
+    await world.wait_dispatched(first)
+    await world.wait_dispatched(second)
     assert [r.outcome for r in world.runs(first)] == ["failed"]
     assert [r.outcome for r in world.runs(second)] == ["failed"]
 
@@ -519,6 +597,7 @@ async def test_usage_limit_already_renewed_is_ignored(world):
 
     await world.scheduler.tick()
 
+    await world.wait_dispatched(specialist_id)
     assert [r.outcome for r in world.runs(specialist_id)] == ["running"]
     assert world.notices() == []
 
@@ -555,7 +634,7 @@ async def test_concurrent_ticks_fire_once(world):
     assert len(world.runs(specialist_id)) == 1
 
 
-async def test_start_run_raising_keeps_the_slot_fired_and_goes_on(world):
+async def test_start_run_raising_keeps_the_slot_retryable_and_goes_on(world):
     first = world.add_specialist()
     second = world.add_specialist(slug="outro")
     real_start_run = world.service.start_run
@@ -571,7 +650,8 @@ async def test_start_run_raising_keeps_the_slot_fired_and_goes_on(world):
     await world.scheduler.tick()
     await world.scheduler.tick()
 
-    assert world.schedules(first)[0].last_fired_at == int(world.now)
+    await world.wait_dispatched(second)
+    assert world.schedules(first)[0].last_fired_at < ts(at(MONDAY, 9))
     assert world.runs(first) == []
     assert [r.outcome for r in world.runs(second)] == ["running"]
 
@@ -594,6 +674,7 @@ async def test_failing_mark_fired_of_a_disabled_agent_does_not_stop_the_others(
 
     await world.scheduler.tick()
 
+    await world.wait_dispatched(other)
     assert world.runs(disabled) == []
     assert [r.outcome for r in world.runs(other)] == ["running"]
 
@@ -646,6 +727,7 @@ async def test_tick_records_no_false_missed_when_dst_ends(world, new_york):
     specialist_id = world.add_specialist()
     world.move_to(datetime(2026, 10, 31, 9, 0, 5))
     await world.scheduler.tick()
+    await world.wait_dispatched(specialist_id)
     [run] = world.runs(specialist_id)
     assert run.outcome == "running"
     await wait_until(lambda: world.manager.get(run.session_id).state == "idle")
@@ -656,6 +738,7 @@ async def test_tick_records_no_false_missed_when_dst_ends(world, new_york):
 
     world.move_to(datetime(2026, 11, 1, 9, 0, 5))
     await world.scheduler.tick()
+    await world.wait_dispatched(specialist_id, 2)
     assert [r.outcome for r in world.runs(specialist_id)] == ["running", "running"]
 
 
@@ -664,6 +747,7 @@ async def test_tick_records_no_false_missed_when_dst_starts(world, new_york):
     specialist_id = world.add_specialist()
     world.move_to(datetime(2026, 3, 7, 9, 0, 5))
     await world.scheduler.tick()
+    await world.wait_dispatched(specialist_id)
     [run] = world.runs(specialist_id)
     await wait_until(lambda: world.manager.get(run.session_id).state == "idle")
 
@@ -673,6 +757,30 @@ async def test_tick_records_no_false_missed_when_dst_starts(world, new_york):
 
     world.move_to(datetime(2026, 3, 8, 9, 0, 5))
     await world.scheduler.tick()
+    await world.wait_dispatched(specialist_id, 2)
     runs = world.runs(specialist_id)
     assert [r.outcome for r in runs] == ["running", "running"]
     assert runs[1].scheduled_for == ts(datetime(2026, 3, 8, 9))
+
+
+@pytest.mark.parametrize("hold", ["scheduler_disabled", "agent_disabled", "usage_limit"])
+async def test_held_schedule_does_not_block_a_manual_conversation(world, hold):
+    agent = world.add_specialist()
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_specialist(conn, agent, now=int(world.now), queue_paused=True)
+    scheduled = await world.service.start_run(agent, trigger="schedule", text="Rotina", scheduled_for=int(world.now))
+    chat = await world.service.open_conversation(agent)
+    if hold == "scheduler_disabled":
+        world.scheduler.enabled = False
+    elif hold == "agent_disabled":
+        with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+            store.update_specialist(conn, agent, now=int(world.now), enabled=False)
+    else:
+        await world.set_usage(limit(95))
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_specialist(conn, agent, now=int(world.now), queue_paused=False)
+    await world.service.send_message(chat.session_id, "Pergunta manual")
+    await wait_until(lambda: world.factory.clients and world.factory.clients[0].sent)
+    assert world.factory.clients[0].sent == ["Pergunta manual"]
+    with closing(db.connect(world.db_path)) as conn:
+        assert store.get_run(conn, scheduled.id).outcome == "queued"

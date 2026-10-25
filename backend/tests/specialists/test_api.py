@@ -739,7 +739,7 @@ def test_runs_newest_first_with_a_limit(api, agent):
     assert [run["started_at"] for run in runs] == [104, 103, 102, 101, 100]
     assert set(runs[0]) == {
         "id", "specialist_id", "session_id", "trigger", "scheduled_for", "started_at",
-        "ended_at", "outcome", "reason",
+        "ended_at", "outcome", "reason", "message",
     }
     assert len(api.get(f"/api/specialists/{aid}/runs?limit=2").json()) == 2
     assert api.get(f"/api/specialists/{aid}/runs?limit=0").status_code == 422

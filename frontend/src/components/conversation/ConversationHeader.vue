@@ -198,10 +198,10 @@ async function openProject() {
 <template>
   <header class="flex w-full flex-col border-b border-line">
     <span data-test="state-live" role="status" aria-live="polite" class="sr-only">{{ stateLabel }}</span>
-    <div data-test="header-strip" class="flex min-h-14 items-center gap-3 px-4 py-2">
+    <div data-test="header-strip" class="flex min-h-14 flex-wrap items-center gap-3 px-4 py-2">
       <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="!needsYou(listed)" />
       <!-- Trilha e título dividem só a sobra: as ações ficam com a largura delas e só quebram linha quando não cabem. -->
-      <div data-test="header-title" class="flex min-w-0 grow basis-0 items-center gap-3">
+      <div data-test="header-title" class="flex min-w-0 grow basis-64 items-center gap-3">
         <nav v-if="showPath" data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 shrink items-center gap-1 text-xs text-fg-muted max-sm:hidden">
           <RouterLink to="/sessions" class="inline-flex min-h-8 shrink-0 items-center no-underline text-fg-muted hover:text-fg">Conversas</RouterLink>
           <template v-if="project">
@@ -235,7 +235,7 @@ async function openProject() {
           >{{ title }}</button>
         </h1>
         <AgentBadge v-if="listed?.specialist_id != null" :specialist-id="listed.specialist_id" />
-        <LabelBadges :ids="listed?.label_ids" />
+        <LabelBadges :ids="listed?.label_ids" class="[&>[data-test=label-badge]]:min-w-0 [&>[data-test=label-badge]]:shrink" />
       </div>
       <!-- Quebram linha numa coluna estreita: shrink-0 em fila única vazava e fazia a página rolar. -->
       <div data-test="header-actions" class="flex min-w-0 flex-wrap items-center justify-end gap-3">

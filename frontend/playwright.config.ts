@@ -34,6 +34,8 @@ export default defineConfig({
   },
   webServer: {
     command: 'uv run python scripts/e2e_server.py',
+    // Specialist chats get deterministic replies; ordinary sessions still refuse the agent.
+    env: { MAESTRO_E2E_CHAT: '1' },
     cwd: '..',
     // The root serves index.html, so it answers 200 as soon as the app is up.
     url: `http://127.0.0.1:${port}/`,
