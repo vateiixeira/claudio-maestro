@@ -988,6 +988,21 @@ class SessionExtras:
 
 # Called by every new client of a session with a `specialist_id`; None: no extras.
 SessionSetup = Callable[[SessionRecord], SessionExtras | None]
+
+
+@dataclass
+class SessionContext:
+    """Work context for a normal project session, without a tool policy.
+
+    The SDK still loads the project's settings, MCPs, hooks and permission mode.
+    Only the work instructions and in-process orchestration server are added.
+    """
+
+    system_prompt_append: str
+    mcp_servers: dict[str, Any]
+
+
+ContextSetup = Callable[[SessionRecord], SessionContext | None]
 # What the manager asks of the agents feature before a message is recorded: the text that
 # really goes in (the main conversation of an agent gets its announcements in front), and
 # a `commit` to call once that text is recorded.
@@ -1027,6 +1042,12 @@ class ActiveSession:
         cli_running: Callable[[str], bool] | None = None,
         agentd_held: set[str] | None = None,
         session_setup: SessionSetup | None = None,
+        context_setup: ContextSetup | None = None,
+        on_session_turn_end: Callable[[str], None] | None = None,
+        on_session_result: Callable[[str, dict[str, Any]], None] | None = None,
+        on_session_error: Callable[[str, str], None] | None = None,
+        on_session_init: Callable[[str, list[dict[str, str]]], None] | None = None,
+        on_session_pr_created: Callable[[str, str], None] | None = None,
         on_turn_error: Callable[[str, str], None] | None = None,
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
         on_pr_created: Callable[[str, str], None] | None = None,
@@ -1045,6 +1066,12 @@ class ActiveSession:
         # Extras of the agent this session belongs to, rebuilt with every client (attached
         # ones too, since the MCP server lives in this process); None for ordinary sessions.
         self._session_setup = session_setup
+        self._context_setup = context_setup
+        self._on_session_turn_end = on_session_turn_end
+        self._on_session_result = on_session_result
+        self._on_session_error = on_session_error
+        self._on_session_init = on_session_init
+        self._on_session_pr_created = on_session_pr_created
         self._extras: SessionExtras | None = None
         # The manager's signals for the automatic Remote Control reconnect: a terminal
         # `claude` is running in this conversation, and the sessions whose process the
@@ -1910,6 +1937,14 @@ class ActiveSession:
                 )
                 raise AgentError(SPECIALIST_SETUP_FAILED_TEXT) from None
         self._extras = extras
+        context = None
+        if self._context_setup is not None and not specialist:
+            try:
+                context = self._context_setup(self.record)
+            except Exception:
+                # Provider errors can include private task material: screen gets a fixed text.
+                logger.exception("Falha ao preparar o contexto da sessão %s", self.session_id)
+                raise AgentError("Não foi possível preparar o contexto da sessão.") from None
         return self._agent_factory(
             AgentOptions(
                 cwd=Path(self.record.work_dir()),
@@ -1933,6 +1968,10 @@ class ActiveSession:
                     "env": extras.env,
                     "mcp_servers": extras.mcp_servers,
                     "settings": extras.settings,
+                }),
+                **({} if context is None else {
+                    "system_prompt_append": context.system_prompt_append,
+                    "mcp_servers": context.mcp_servers,
                 }),
             )
         )
@@ -2061,6 +2100,11 @@ class ActiveSession:
                 self._refresh_state()
                 self.sync_subagents()
                 if isinstance(message, ResultMessage):
+                    self._notify_session_hook(self._on_session_result, {
+                        "is_error": message.is_error,
+                        "terminal_reason": message.terminal_reason,
+                    })
+                    self._notify_session_hook(self._on_session_turn_end)
                     # After every event of the turn: this only writes the database.
                     await self._record_app_mtime()
         except asyncio.CancelledError:
@@ -2702,6 +2746,7 @@ class ActiveSession:
                 self._on_init(self.session_id, list(init.mcp_servers))
             except Exception:
                 logger.exception("Falha ao registrar os MCPs da sessão de agente %s", self.session_id)
+        self._notify_session_hook(self._on_session_init, list(init.mcp_servers))
 
     async def set_options(
         self,
@@ -2883,7 +2928,10 @@ class ActiveSession:
 
     def _note_pr_use(self, message: AssistantMessage) -> None:
         """Keep the Bash calls that run `gh pr create` until their result arrives."""
-        if self._on_pr_created is None or self.record.specialist_id is None:
+        if (
+            (self._on_pr_created is None or self.record.specialist_id is None)
+            and self._on_session_pr_created is None
+        ):
             return
         for block in message.content:
             if not isinstance(block, ToolUseBlock) or block.name != "Bash":
@@ -2903,15 +2951,17 @@ class ActiveSession:
             if not isinstance(block, ToolResultBlock) or block.tool_use_id not in self._pr_creates:
                 continue
             self._pr_creates.discard(block.tool_use_id)
-            if block.is_error or self._on_pr_created is None:
+            if block.is_error:
                 continue
             found = PR_URL_RE.search(_tool_result_text(block.content))
             if found is None:
                 continue
-            try:
-                self._on_pr_created(self.session_id, found.group(0))
-            except Exception:
-                logger.exception("Falha ao registrar o PR da sessão de agente %s", self.session_id)
+            if self._on_pr_created is not None and self.record.specialist_id is not None:
+                try:
+                    self._on_pr_created(self.session_id, found.group(0))
+                except Exception:
+                    logger.exception("Falha ao registrar o PR da sessão de agente %s", self.session_id)
+            self._notify_session_hook(self._on_session_pr_created, found.group(0))
 
     def _schedule_plan_refresh(self) -> None:
         if self._refresh_plan is None or not self.record.plan_path:
@@ -3006,12 +3056,20 @@ class ActiveSession:
 
     def _report_turn_error(self, text: str) -> None:
         """Tell the agents feature that this agent's turn or session ended in error."""
-        if self._on_turn_error is None or self.record.specialist_id is None:
-            return
-        try:
-            self._on_turn_error(self.session_id, text)
-        except Exception:
-            logger.exception("Falha ao registrar o erro da sessão de agente %s", self.session_id)
+        if self._on_turn_error is not None and self.record.specialist_id is not None:
+            try:
+                self._on_turn_error(self.session_id, text)
+            except Exception:
+                logger.exception("Falha ao registrar o erro da sessão de agente %s", self.session_id)
+        self._notify_session_hook(self._on_session_error, text)
+
+    def _notify_session_hook(self, callback: Callable[..., None] | None, *args: Any) -> None:
+        """Lifecycle observers cannot interrupt the session's reader or error handling."""
+        if callback is not None:
+            try:
+                callback(self.session_id, *args)
+            except Exception:
+                logger.exception("Falha ao registrar a atividade da sessão %s", self.session_id)
 
     async def close(self, *, final: bool = False, record_mtime: bool = True) -> None:
         """Close the client, if any. The session goes back to `closed`.
@@ -3397,6 +3455,12 @@ class SessionManager:
         cli_identity: Callable[[], dict[str, Any]] | None = None,
         text_index: TextSearch | None = None,
         session_setup: SessionSetup | None = None,
+        context_setup: ContextSetup | None = None,
+        on_session_turn_end: Callable[[str], None] | None = None,
+        on_session_result: Callable[[str, dict[str, Any]], None] | None = None,
+        on_session_error: Callable[[str, str], None] | None = None,
+        on_session_init: Callable[[str, list[dict[str, str]]], None] | None = None,
+        on_session_pr_created: Callable[[str, str], None] | None = None,
         on_turn_error: Callable[[str, str], None] | None = None,
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
         on_pr_created: Callable[[str, str], None] | None = None,
@@ -3404,6 +3468,12 @@ class SessionManager:
     ) -> None:
         # Gives the sessions of an agent their skill, folders, MCP server and policy.
         self._session_setup = session_setup
+        self._context_setup = context_setup
+        self._on_session_turn_end = on_session_turn_end
+        self._on_session_result = on_session_result
+        self._on_session_error = on_session_error
+        self._on_session_init = on_session_init
+        self._on_session_pr_created = on_session_pr_created
         # Errors and inits of the sessions of an agent (see `ActiveSession`).
         self._on_turn_error = on_turn_error
         self._on_init = on_init
@@ -3704,6 +3774,12 @@ class SessionManager:
             cli_running=self._cli_running,
             agentd_held=self._agentd_held,
             session_setup=self._session_setup,
+            context_setup=self._context_setup,
+            on_session_turn_end=self._on_session_turn_end,
+            on_session_result=self._on_session_result,
+            on_session_error=self._on_session_error,
+            on_session_init=self._on_session_init,
+            on_session_pr_created=self._on_session_pr_created,
             on_turn_error=self._on_turn_error,
             on_init=self._on_init,
             on_pr_created=self._on_pr_created,
