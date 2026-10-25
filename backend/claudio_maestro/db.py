@@ -494,6 +494,75 @@ MIGRATIONS: list[list[str | Callable[[sqlite3.Connection], None]]] = [
         )""",
         "CREATE INDEX specialist_chats_agent ON specialist_chats(specialist_id)",
     ],
+    [
+        """CREATE TABLE work_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            parent_id INTEGER REFERENCES work_items(id) ON DELETE SET NULL,
+            source TEXT NOT NULL,
+            source_instance TEXT NOT NULL,
+            source_project TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            source_revision TEXT,
+            title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 160),
+            priority TEXT NOT NULL CHECK (priority IN ('urgent', 'high', 'normal', 'low')),
+            status TEXT NOT NULL CHECK (status IN ('backlog', 'ready', 'active', 'waiting', 'blocked', 'review', 'done', 'cancelled')),
+            phase TEXT NOT NULL CHECK (phase IN ('investigation', 'implementation', 'testing', 'review')),
+            revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE (project_id, source, source_instance, source_project, external_id)
+        )""",
+        "CREATE INDEX work_items_project_status ON work_items(project_id, status, id)",
+        """CREATE TABLE work_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+            session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+            role TEXT NOT NULL CHECK (role IN ('investigator', 'implementer', 'reviewer')),
+            state TEXT NOT NULL CHECK (state IN ('starting', 'dispatching', 'running', 'waiting', 'uncertain', 'succeeded', 'failed', 'cancelled')),
+            work_revision INTEGER NOT NULL,
+            result_kind TEXT CHECK (result_kind IN ('investigation', 'implementation', 'review', 'decision')),
+            result_ref TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            ended_at INTEGER
+        )""",
+        """CREATE UNIQUE INDEX work_attempts_one_active ON work_attempts(work_item_id)
+            WHERE state IN ('starting', 'dispatching', 'running', 'waiting', 'uncertain')""",
+        "CREATE UNIQUE INDEX work_attempts_session ON work_attempts(session_id)",
+        "CREATE INDEX work_attempts_item ON work_attempts(work_item_id, id)",
+        """CREATE TABLE work_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+            attempt_id INTEGER REFERENCES work_attempts(id) ON DELETE SET NULL,
+            kind TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            data TEXT NOT NULL CHECK (length(data) <= 4000),
+            created_at INTEGER NOT NULL,
+            delivered_at INTEGER
+        )""",
+        "CREATE INDEX work_events_pending ON work_events(delivered_at, id)",
+        "CREATE INDEX work_events_item ON work_events(work_item_id, id)",
+        """CREATE TABLE work_resource_claims (
+            resource TEXT PRIMARY KEY,
+            attempt_id INTEGER NOT NULL REFERENCES work_attempts(id) ON DELETE CASCADE,
+            created_at INTEGER NOT NULL
+        )""",
+        "CREATE INDEX work_resource_claims_attempt ON work_resource_claims(attempt_id)",
+        """CREATE TABLE work_dependencies (
+            work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+            depends_on_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (work_item_id, depends_on_id),
+            CHECK (work_item_id != depends_on_id)
+        )""",
+        """CREATE TABLE work_coordinators (
+            project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+            session_id TEXT NOT NULL UNIQUE REFERENCES sessions(session_id) ON DELETE CASCADE,
+            created_at INTEGER NOT NULL
+        )""",
+    ],
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)
