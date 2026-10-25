@@ -7,6 +7,11 @@ import type { Specialist, SpecialistCreate, SpecialistNotice, SpecialistRun, Spe
 
 const RUNS_LIMIT = 50
 
+/** Match the backend's started_at DESC, id DESC ordering. */
+function compareRuns(a: SpecialistRun, b: SpecialistRun): number {
+  return b.started_at - a.started_at || b.id - a.id
+}
+
 function isRun(value: unknown): value is SpecialistRun {
   const v = value as Partial<SpecialistRun> | null
   return !!v && typeof v === 'object' && typeof v.id === 'number' && typeof v.specialist_id === 'number' && typeof v.outcome === 'string'
@@ -84,7 +89,10 @@ export const useSpecialistsStore = defineStore('specialists', () => {
       const merged = new Map(fresh.map((run) => [run.id, run]))
       for (const [key, run] of request.events) merged.set(key, run)
       const next = [...merged.values()].sort((a, b) => b.started_at - a.started_at || b.id - a.id)
-      runs.value = { ...runs.value, [id]: next.slice(0, RUNS_LIMIT) }
+      let completed = 0
+      runs.value = { ...runs.value, [id]: next.filter((run) =>
+        run.outcome === 'queued' || run.outcome === 'starting' || completed++ < RUNS_LIMIT,
+      ) }
     } finally {
       if (runLoads.get(id) === request) runLoads.delete(id)
     }
@@ -127,11 +135,15 @@ export const useSpecialistsStore = defineStore('specialists', () => {
     runs.value = rest
   }
 
-  /** The run can come back already `failed` with no session (folder gone or unavailable): the caller shows `reason`. */
+  /** A queued run has no session yet; a failed one carries the reason to show. */
   async function runNow(id: number, text?: string): Promise<SpecialistRun> {
     const run = await api.runSpecialist(id, text)
     applyRun(run)
     return run
+  }
+
+  async function cancelRun(id: number, runId: number): Promise<void> {
+    applyRun(await api.cancelSpecialistRun(id, runId))
   }
 
   async function markRead(ids: number[]): Promise<void> {
@@ -181,14 +193,18 @@ export const useSpecialistsStore = defineStore('specialists', () => {
     if (!isRun(data)) return
     runLoads.get(data.specialist_id)?.events.set(data.id, data)
     const agent = byId(data.specialist_id)
-    if (agent && (!agent.last_run || data.id >= agent.last_run.id)) agent.last_run = data
+    if (agent && (!agent.last_run || compareRuns(data, agent.last_run) <= 0)) agent.last_run = data
     const known = runs.value[data.specialist_id]
     if (!known) return
     const index = known.findIndex((r) => r.id === data.id)
     const next = [...known]
     if (index >= 0) next.splice(index, 1, data)
     else next.unshift(data)
-    runs.value = { ...runs.value, [data.specialist_id]: next.slice(0, RUNS_LIMIT) }
+    next.sort(compareRuns)
+    let historyCount = 0
+    // Pending work must stay available to cancel even after many newer runs finish.
+    const kept = next.filter((run) => run.outcome === 'queued' || run.outcome === 'starting' || historyCount++ < RUNS_LIMIT)
+    runs.value = { ...runs.value, [data.specialist_id]: kept }
   }
 
   /** `specialist.notice`: a new notice (the object) or `{read_ids}` when some were marked as read. */
@@ -211,7 +227,7 @@ export const useSpecialistsStore = defineStore('specialists', () => {
 
   return {
     list, loaded, error, notices, noticesError, runs, changes, unreadCount,
-    byId, runsOf, isMainSession, openMain, load, loadRuns, loadNotices, create, update, remove, runNow, markRead,
+    byId, runsOf, isMainSession, openMain, load, loadRuns, loadNotices, create, update, remove, runNow, cancelRun, markRead,
     applyChanged, applyAnnouncement, applyRun, applyNotice, onNewNotice,
   }
 })

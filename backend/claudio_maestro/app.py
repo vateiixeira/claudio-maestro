@@ -51,6 +51,7 @@ from claudio_maestro.sessions import (
     SessionError,
     SessionManager,
 )
+from claudio_maestro.specialists import store
 from claudio_maestro.specialists.comments import CommentDispatcher, run_poll
 from claudio_maestro.specialists.files import SpecialistFiles
 from claudio_maestro.specialists.gh_comments import GhRunner
@@ -316,6 +317,7 @@ def create_app(
             app.state.settings.db_path,
             time.time,
         )
+        app.state.scheduler.enabled = app.state.settings.specialists_scheduler
         # What the agentd may still hold, for the Remote Control reconnect below; `None`
         # when it could not be asked (nothing is reconnected then).
         agentd_held: set[str] | None = None
@@ -335,8 +337,12 @@ def create_app(
         async def send_terminal_message(session_id: str, text: str) -> bool:
             """The output of a play button run goes to the session as a user message."""
             try:
-                await app.state.sessions.send(session_id, text)
-            except SessionError:
+                record = app.state.sessions.find_record(session_id)
+                if record.specialist_id is not None:
+                    await app.state.specialists.send_message(session_id, text)
+                else:
+                    await app.state.sessions.send(session_id, text)
+            except (SessionError, store.SpecialistError):
                 return False
             return True
 

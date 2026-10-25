@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { errorMessage } from '../../api/http'
 import { useProjectsStore } from '../../stores/projects'
 import { useSpecialistsStore } from '../../stores/specialists'
 import type { Specialist, SpecialistUpdate } from '../../types/api'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import AgentAutonomy from './AgentAutonomy.vue'
+import AgentConversations from './AgentConversations.vue'
 import AgentMemory from './AgentMemory.vue'
 import AgentModel from './AgentModel.vue'
 import AgentRuns from './AgentRuns.vue'
@@ -20,9 +21,25 @@ const props = defineProps<{ agent: Specialist }>()
 const store = useSpecialistsStore()
 const projects = useProjectsStore()
 const router = useRouter()
+const route = useRoute()
+const tab = ref('conversations')
+const tabs = [
+  { id: 'conversations', label: 'Conversas' },
+  { id: 'runs', label: 'Execuções' },
+  { id: 'settings', label: 'Configuração' },
+]
+watch(() => route.query.aba, (value) => {
+  tab.value = tabs.some((t) => t.id === value) ? String(value) : 'conversations'
+}, { immediate: true })
+function chooseTab(id: string) {
+  tab.value = id
+  void router.replace({ query: { ...route.query, aba: id } })
+}
+
 
 /** The message of the last action that failed (a setting, a run, a removal), shown under the header. */
 const actionError = ref<string | null>(null)
+const actionStatus = ref<string | null>(null)
 
 /** Saves a setting. Rejects with the API message (the 422 texts are already in Portuguese). */
 function saveOrThrow(changes: SpecialistUpdate): Promise<unknown> {
@@ -43,6 +60,17 @@ async function save(changes: SpecialistUpdate): Promise<boolean> {
 
 // Header: the schedules switch ---------------------------------------------------------------------------
 const toggleEnabled = () => save({ enabled: !props.agent.enabled })
+
+const queueChanging = ref(false)
+async function toggleQueue(): Promise<void> {
+  if (queueChanging.value) return
+  queueChanging.value = true
+  try {
+    await save({ queue_paused: !props.agent.queue_paused })
+  } finally {
+    queueChanging.value = false
+  }
+}
 
 // Header: menu -----------------------------------------------------------------------------------------
 const menuOpen = ref(false)
@@ -71,6 +99,7 @@ const runOpen = ref(false)
 const runText = ref('')
 const running = ref(false)
 function openRun(): void {
+  actionStatus.value = null
   runText.value = props.agent.run_text
   runOpen.value = true
 }
@@ -81,7 +110,11 @@ async function confirmRun(): Promise<void> {
   try {
     const run = await store.runNow(props.agent.id, text || undefined)
     runOpen.value = false
-    if (run.session_id) {
+    if (run.outcome === 'queued') {
+      actionError.value = null
+      actionStatus.value = 'Execução adicionada à fila.'
+      chooseTab('runs')
+    } else if (run.session_id) {
       actionError.value = null
       await router.push({ name: 'session', params: { id: run.session_id } })
     } else {
@@ -134,7 +167,7 @@ async function toggleCloseByCheck(event: Event): Promise<void> {
   if (!(await save({ close_by_check: box.checked }))) box.checked = props.agent.close_by_check
 }
 
-watch(() => props.agent.id, () => { actionError.value = null })
+watch(() => props.agent.id, () => { actionError.value = null; actionStatus.value = null })
 </script>
 
 <template>
@@ -170,9 +203,23 @@ watch(() => props.agent.id, () => { actionError.value = null })
           </div>
         </div>
       </div>
+      <div class="flex flex-col gap-1">
+        <div class="flex flex-wrap items-center gap-3">
+          <span data-test="queue-state" class="text-sm text-fg-muted">{{ agent.queue_paused ? 'Fila pausada' : 'Fila ativa' }}</span>
+          <button type="button" data-test="queue-toggle" :class="BTN" :disabled="queueChanging" @click="toggleQueue">{{ agent.queue_paused ? 'Retomar fila' : 'Pausar fila' }}</button>
+        </div>
+        <p class="m-0 text-xs text-fg-subtle">A pausa segura as próximas execuções e não interrompe a atual.</p>
+      </div>
       <p v-if="actionError" data-test="action-error" role="alert" :class="ERROR">{{ actionError }}</p>
+      <p v-if="actionStatus" data-test="action-status" role="status" class="m-0 text-sm text-fg-muted">{{ actionStatus }}</p>
     </header>
 
+    <nav aria-label="Seções do agente" class="flex gap-1 border-b border-line">
+      <button v-for="item in tabs" :key="item.id" type="button" :data-test="`agent-tab-${item.id}`" :aria-current="tab === item.id ? 'page' : undefined" class="rounded-t-md px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary" :class="tab === item.id ? 'bg-card font-semibold text-fg' : 'text-fg-muted hover:text-fg'" @click="chooseTab(item.id)">{{ item.label }}</button>
+    </nav>
+    <AgentConversations v-if="tab === 'conversations'" :agent-id="agent.id" />
+    <AgentRuns v-else-if="tab === 'runs'" :agent-id="agent.id" />
+    <div v-else class="flex flex-col gap-5">
     <AgentSkill :agent-id="agent.id" />
 
     <AgentSection title="Pasta e projetos" hint="O agente abre as conversas na pasta do projeto de origem e enxerga também os projetos adicionais.">
@@ -226,7 +273,7 @@ watch(() => props.agent.id, () => { actionError.value = null })
 
     <AgentMemory :agent-id="agent.id" />
 
-    <AgentRuns :agent-id="agent.id" />
+    </div>
 
     <ConfirmDialog v-if="runOpen" title="Rodar agora" confirm-label="Rodar" :confirm-disabled="running" :autofocus="false" @confirm="confirmRun" @cancel="runOpen = false">
       <label class="flex flex-col gap-1.5 text-sm">

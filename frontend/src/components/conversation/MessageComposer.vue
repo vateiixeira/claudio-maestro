@@ -187,6 +187,7 @@ async function send() {
       formatTerminalAttachments(sentSnippets, message),
       attached.map((i) => ({ media_type: i.mediaType, data: base64Of(i) })),
     )
+    if (result?.queued) forget()
     if (result?.external_activity) useConversationStore().noteExternalActivity(props.sessionId)
     // Only clear if the user did not keep typing meanwhile.
     if (text.value === message) text.value = ''

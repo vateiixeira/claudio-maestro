@@ -186,6 +186,7 @@ def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, st
             "CLAUDE_CONFIG_DIR": str(root / "claude-config"),
             "MAESTRO_PORT": str(port),
             "MAESTRO_AGENTD": "0",
+            "MAESTRO_E2E_CHAT": "1" if base.get("MAESTRO_E2E_CHAT") == "1" else "0",
             "MAESTRO_UPDATE_CHECK": "0",
             "MAESTRO_USAGE_CHECK": "0",
             "MAESTRO_CLAUDE_CHECK": "0",
@@ -645,10 +646,28 @@ def build_app(port: int) -> FastAPI:
     (inside the temporary root), their sessions go through `agent_factory` and their
     schedules read the usage through `fetch_usage`, so nothing of theirs reaches real data.
     """
+    from claudio_maestro.agent.fake import FakeAgentClient, text_turn
     from claudio_maestro.app import create_app
+    from claudio_maestro.commands import NO_HOOKS
 
+    clients: list[FakeAgentClient] = []
+
+    def chat_agent(options: AgentOptions) -> AgentClient:
+        # Specialist chats and read-only command probes use the fake. Ordinary
+        # conversations retain the refusal that the existing specs exercise.
+        if not options.system_prompt_append and options.settings != NO_HOOKS:
+            return refuse_agent(options)
+        client = FakeAgentClient(
+            options, script=lambda content: text_turn(options.session_id, f"Resposta de teste: {content}")
+        )
+        clients.append(client)
+        return client
+
+    chat_enabled = os.environ.get("MAESTRO_E2E_CHAT") == "1"
     return create_app(
-        agent_factory=refuse_agent,
+        agent_factory=chat_agent if chat_enabled else refuse_agent,
+        rename_session=(lambda *args: None) if chat_enabled else None,
+        history_exists=(lambda sid, cwd: any(c.options.session_id == sid and c.sent for c in clients)) if chat_enabled else None,
         spawn_editor=_refuse_editor,
         pick_folder=_refuse_picker,
         refresh_models=False,

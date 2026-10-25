@@ -12,7 +12,10 @@ from typing import Any, Literal
 Autonomy = Literal["ask", "full"]
 Trigger = Literal["schedule", "manual", "comment"]
 CommentStatus = Literal["queued", "dispatching", "uncertain", "delivered", "dropped"]
-Outcome = Literal["running", "concluded", "closed", "waiting", "failed", "skipped", "missed"]
+Outcome = Literal[
+    "running", "concluded", "closed", "waiting", "failed", "skipped", "missed",
+    "queued", "starting", "cancelled",
+]
 NoticeKind = Literal["notice", "summary", "alert"]
 
 DEFAULT_RUN_TEXT = "Execute a rotina agendada."
@@ -32,6 +35,11 @@ class DuplicateSlugError(SpecialistError):
     pass
 
 
+class RunNotQueuedError(SpecialistError):
+    def __init__(self) -> None:
+        super().__init__("Só é possível cancelar uma execução que ainda está na fila.")
+
+
 @dataclass(frozen=True)
 class Specialist:
     id: int
@@ -48,6 +56,7 @@ class Specialist:
     effort: str | None
     run_text: str
     enabled: bool
+    queue_paused: bool
     last_mcp: list[dict[str, str]]
     main_session_id: str | None
     created_at: int
@@ -74,6 +83,7 @@ class Run:
     ended_at: int | None
     outcome: Outcome
     reason: str | None
+    message: bool = False
 
 
 @dataclass(frozen=True)
@@ -139,7 +149,7 @@ class Notice:
 _JSON_FIELDS = (
     "extra_project_ids", "outward_patterns", "always_ask_patterns", "denied_tools", "last_mcp",
 )
-_BOOL_FIELDS = ("close_by_check", "enabled")
+_BOOL_FIELDS = ("close_by_check", "enabled", "queue_paused")
 _UPDATABLE = (
     "slug", "name", "project_id", "autonomy", "model", "effort", "run_text",
     *_JSON_FIELDS, *_BOOL_FIELDS,
@@ -147,7 +157,7 @@ _UPDATABLE = (
 _COLUMNS = (
     "id, slug, name, project_id, extra_project_ids, autonomy, outward_patterns,"
     " always_ask_patterns, denied_tools, close_by_check, model, effort, run_text, enabled,"
-    " last_mcp, main_session_id, created_at, updated_at"
+    " last_mcp, main_session_id, created_at, updated_at, queue_paused"
 )
 
 
@@ -295,11 +305,11 @@ def mark_fired(conn: sqlite3.Connection, schedule_id: int, at: int) -> None:
 
 # Runs -------------------------------------------------------------------------
 
-_RUN_COLUMNS = "id, specialist_id, session_id, trigger, scheduled_for, started_at, ended_at, outcome, reason"
+_RUN_COLUMNS = "id, specialist_id, session_id, trigger, scheduled_for, started_at, ended_at, outcome, reason, message"
 
 
 def _run(row: sqlite3.Row) -> Run:
-    return Run(**{key: row[key] for key in row.keys()})
+    return Run(**{key: bool(row[key]) if key == "message" else row[key] for key in row.keys()})
 
 
 def insert_run(
@@ -313,11 +323,12 @@ def insert_run(
     scheduled_for: int | None = None,
     reason: str | None = None,
     ended_at: int | None = None,
+    message: bool = False,
 ) -> Run:
     cursor = conn.execute(
         "INSERT INTO specialist_runs (specialist_id, session_id, trigger, scheduled_for,"
-        " started_at, ended_at, outcome, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (specialist_id, session_id, trigger, scheduled_for, started_at, ended_at, outcome, reason),
+        " started_at, ended_at, outcome, reason, message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (specialist_id, session_id, trigger, scheduled_for, started_at, ended_at, outcome, reason, message),
     )
     row = conn.execute(
         f"SELECT {_RUN_COLUMNS} FROM specialist_runs WHERE id = ?", (cursor.lastrowid,)
@@ -330,6 +341,33 @@ def get_run(conn: sqlite3.Connection, run_id: int) -> Run:
     if row is None:
         raise SpecialistNotFoundError("Execução não encontrada.")
     return _run(row)
+
+
+def list_pending_runs(
+    conn: sqlite3.Connection, specialist_id: int | None = None
+) -> list[Run]:
+    """Queued and starting deliveries in insertion order, independent of the clock."""
+    where = "outcome IN ('queued', 'starting')"
+    values: tuple[int, ...] = ()
+    if specialist_id is not None:
+        where += " AND specialist_id = ?"
+        values = (specialist_id,)
+    rows = conn.execute(
+        f"SELECT {_RUN_COLUMNS} FROM specialist_runs WHERE {where} ORDER BY id", values
+    ).fetchall()
+    return [_run(row) for row in rows]
+
+
+def claim_run(
+    conn: sqlite3.Connection, run_id: int, session_id: str, now: int
+) -> bool:
+    """Claim one queued delivery once; caller owns the surrounding transaction."""
+    cursor = conn.execute(
+        "UPDATE specialist_runs SET outcome = 'starting', session_id = ?, started_at = ?"
+        " WHERE id = ? AND outcome = 'queued'",
+        (session_id, now, run_id),
+    )
+    return cursor.rowcount == 1
 
 
 def finish_run(
@@ -355,6 +393,7 @@ def run_for_session(conn: sqlite3.Connection, session_id: str) -> Run | None:
     """The most recent run that used this session."""
     row = conn.execute(
         f"SELECT {_RUN_COLUMNS} FROM specialist_runs WHERE session_id = ?"
+        " AND outcome NOT IN ('queued', 'cancelled')"
         " ORDER BY started_at DESC, id DESC LIMIT 1",
         (session_id,),
     ).fetchone()
@@ -362,11 +401,15 @@ def run_for_session(conn: sqlite3.Connection, session_id: str) -> Run | None:
 
 
 def list_runs(conn: sqlite3.Connection, specialist_id: int, limit: int = 50) -> list[Run]:
-    """Newest first."""
+    """Newest first: every pending delivery plus up to `limit` other runs."""
     rows = conn.execute(
-        f"SELECT {_RUN_COLUMNS} FROM specialist_runs WHERE specialist_id = ?"
-        " ORDER BY started_at DESC, id DESC LIMIT ?",
-        (specialist_id, limit),
+        f"SELECT {_RUN_COLUMNS} FROM specialist_runs WHERE specialist_id = ? AND ("
+        " outcome IN ('queued', 'starting') OR id IN ("
+        " SELECT id FROM specialist_runs WHERE specialist_id = ?"
+        " AND outcome NOT IN ('queued', 'starting')"
+        " ORDER BY started_at DESC, id DESC LIMIT ?))"
+        " ORDER BY started_at DESC, id DESC",
+        (specialist_id, specialist_id, limit),
     ).fetchall()
     return [_run(row) for row in rows]
 

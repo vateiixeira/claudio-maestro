@@ -193,6 +193,7 @@ export function makeSpecialist(overrides: Partial<import('../types/api').Special
     enabled: true,
     last_mcp: [],
     schedules: [],
+    queue_paused: false,
     last_run: null,
     open_sessions: 0,
     main_session_id: null,

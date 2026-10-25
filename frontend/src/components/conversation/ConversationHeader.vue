@@ -239,7 +239,7 @@ async function openProject() {
           >{{ title }}</button>
         </h1>
         <AgentBadge v-if="listed?.specialist_id != null" :specialist-id="listed.specialist_id" />
-        <LabelBadges :ids="listed?.label_ids" />
+        <LabelBadges :ids="listed?.label_ids" class="[&>[data-test=label-badge]]:min-w-0 [&>[data-test=label-badge]]:shrink" />
       </div>
       <!-- Quebram linha numa coluna estreita: shrink-0 em fila única vazava e fazia a página rolar. -->
       <div data-test="header-actions" class="flex min-w-0 flex-wrap items-center justify-end gap-3">
@@ -248,7 +248,7 @@ async function openProject() {
         </button>
         <span v-if="listed?.priority" data-test="header-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" :size="13" /></span>
         <span v-if="copied" role="status" class="shrink-0 text-xs text-primary-soft">ID copiado</span>
-        <RouterLink v-if="mainOf" :to="`/agentes/${mainOf.id}`" data-test="configure-agent" class="flex h-8 shrink-0 items-center rounded-md border border-line-strong px-3 text-sm font-medium text-fg no-underline hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">Configurar agente</RouterLink>
+        <RouterLink v-if="mainOf" :to="{ name: 'agents', params: { id: mainOf.id }, query: { aba: 'settings' } }" data-test="configure-agent" class="flex h-8 shrink-0 items-center rounded-md border border-line-strong px-3 text-sm font-medium text-fg no-underline hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">Configurar agente</RouterLink>
         <NextNeedsYou v-if="showPath" :current-id="id" />
         <button v-if="listed" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
         <button

@@ -212,7 +212,8 @@ def build_tools(
 
     @tool(
         "concluir",
-        "Chame só quando a tarefa inteira terminou. Encerra esta sessão. "
+        "Chame só quando a tarefa inteira terminou. Registra o resultado. "
+        "Em uma rotina, encerra a sessão; em um chat, mantém a conversa aberta. "
         f"Passe um resumo do que foi feito, até {_n(MAX_SUMMARY)} caracteres.",
         {
             "type": "object",
@@ -224,7 +225,7 @@ def build_tools(
     async def concluir(args: dict[str, Any]) -> ToolResult:
         summary = _text_arg(args, "resumo", MAX_SUMMARY)
         await host.conclude(session_id, summary)
-        return _ok("Sessão concluída.")
+        return _ok("Resultado registrado.")
 
     common = [registro_consultar, registro_gravar, aprendizados_reescrever, avisar]
     return common if main else [*common, concluir]

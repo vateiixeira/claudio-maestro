@@ -2,9 +2,9 @@
 
 `due_slot` finds the newest scheduled time that has come and not been fired yet. The
 `Scheduler` checks every agent's schedules on each tick: a slot that is too late is only
-recorded as `missed`; otherwise the run is skipped when the agent is still busy or the
-subscription is nearly spent, and started when neither holds. A slot is marked as fired
-before anything else, so it never fires twice.
+recorded as `missed`; a subscription near its limit skips the run. Other slots are
+persisted in the FIFO together with their fired timestamp. The queue worker handles
+delivery independently, so session startup never holds up the next scheduler tick.
 """
 
 import asyncio
@@ -97,6 +97,17 @@ class Scheduler:
         self._usage_alerted: dict[str, float | None] = {}
         # One tick at a time: two overlapping ticks must not fire the same slot twice.
         self._lock = asyncio.Lock()
+        self.enabled = True
+        self._service.queue_gate = self._may_dispatch
+
+    def _may_dispatch(self, run: store.Run) -> bool:
+        if run.trigger != "schedule":
+            return True
+        if not self.enabled:
+            return False
+        with closing(db.connect(self._db_path)) as conn:
+            specialist = store.get_specialist(conn, run.specialist_id)
+        return specialist.enabled and limit_over(self._usage, self._clock()) is None
 
     async def run(self, interval: float = TICK_SECONDS) -> None:
         while True:
@@ -147,25 +158,26 @@ class Scheduler:
         await self._fire(schedule, int(slot.timestamp()), now)
 
     async def _fire(self, schedule: store.Schedule, slot: int, now: float) -> None:
-        # Marked first: whatever happens next, this slot is not fired again.
-        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
-            store.mark_fired(conn, schedule.id, int(now))
         specialist_id = schedule.specialist_id
         if now - slot > GRACE_SECONDS:
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                store.mark_fired(conn, schedule.id, int(now))
             self._service.record_missed(specialist_id, MISSED_REASON, scheduled_for=slot)
-            return
-        if self._service.is_busy(specialist_id):
-            self._service.record_skipped(specialist_id, BUSY_REASON, scheduled_for=slot)
             return
         over = limit_over(self._usage, now)
         if over is not None:
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                store.mark_fired(conn, schedule.id, int(now))
             percent, label = over
             self._service.record_skipped(
                 specialist_id, f"Uso da assinatura em {percent}% ({label}).", scheduled_for=slot
             )
             self._warn_usage(specialist_id, now)
             return
-        await self._service.start_run(specialist_id, trigger="schedule", scheduled_for=slot)
+        await self._service.start_run(
+            specialist_id, trigger="schedule", scheduled_for=slot, schedule_id=schedule.id,
+            defer_dispatch=True
+        )
 
     def _warn_usage(self, specialist_id: int, now: float) -> None:
         """One `alert` per window of each limit over the threshold."""

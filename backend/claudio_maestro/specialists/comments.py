@@ -20,7 +20,11 @@ from claudio_maestro import db
 from claudio_maestro.specialists import github_hooks, store
 from claudio_maestro.specialists.gh_comments import GhRunner, poll_comments
 from claudio_maestro.specialists.scheduler import limits_over
-from claudio_maestro.specialists.service import CommentNotSentError, SpecialistService
+from claudio_maestro.specialists.service import (
+    CommentDeferredError,
+    CommentNotSentError,
+    SpecialistService,
+)
 from claudio_maestro.usage import UsageChecker
 
 logger = logging.getLogger(__name__)
@@ -106,6 +110,8 @@ class CommentDispatcher:
                 await self._deliver(url, comments, now)
             except asyncio.CancelledError:
                 raise
+            except CommentDeferredError:
+                continue
             except Exception as error:
                 # They stay queued, unmarked: the next tick tries again.
                 self._delivery_failed(url, comments[0].specialist_id, error)

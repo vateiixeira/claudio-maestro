@@ -16,7 +16,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from claudio_maestro import db
+from claudio_maestro import db, projects
 from claudio_maestro.api.deps import DbDep
 from claudio_maestro.sessions import (
     MODEL_PATTERN,
@@ -35,6 +35,7 @@ from claudio_maestro.specialists.files import (
     parse_skill,
 )
 from claudio_maestro.specialists.policy import MAX_TOOL_NAME, is_tool_name
+from claudio_maestro.specialists.service import QueueFullError
 
 router = APIRouter(prefix="/api")
 
@@ -117,6 +118,13 @@ class ScheduleIn(BaseModel):
     time: str = Field(max_length=20)
 
 
+class ConversationIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: Annotated[str, StringConstraints(min_length=1, max_length=100)] | None = None
+    new: bool = False
+
+
 class SpecialistPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -135,6 +143,7 @@ class SpecialistPatch(BaseModel):
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     run_text: RunText | None = None
     enabled: bool | None = None
+    queue_paused: bool | None = None
     schedules: Annotated[list[ScheduleIn], Field(max_length=MAX_SCHEDULES)] | None = None
 
 
@@ -240,6 +249,7 @@ def _out(
         "effort": specialist.effort,
         "run_text": specialist.run_text,
         "enabled": specialist.enabled,
+        "queue_paused": specialist.queue_paused,
         "last_mcp": specialist.last_mcp,
         "schedules": [_schedule_out(s) for s in store.list_schedules(conn, specialist.id)],
         "last_run": asdict(runs[0]) if runs else None,
@@ -385,6 +395,9 @@ async def update_specialist(
     except store.SpecialistNotFoundError as exc:
         raise _not_found(str(exc)) from exc
     _changed(request, specialist_id)
+    if given.get("queue_paused") is False:
+        await request.app.state.specialists.drain_queue(specialist_id)
+        request.app.state.specialists.wake_queue()
     return _one(request, conn, specialist_id)
 
 
@@ -532,6 +545,42 @@ async def delete_item(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.get("/specialists/{specialist_id}/messages")
+async def pending_messages(
+    specialist_id: int, request: Request, conn: DbDep,
+    session_id: Annotated[str, Query(min_length=1, max_length=100)],
+) -> list[dict[str, Any]]:
+    _get(conn, specialist_id)
+    try:
+        return request.app.state.specialists.pending_messages(specialist_id, session_id)
+    except store.SpecialistNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+
+
+@router.get("/specialists/{specialist_id}/conversations")
+async def list_conversations(specialist_id: int, request: Request, conn: DbDep) -> list[dict[str, Any]]:
+    _get(conn, specialist_id)
+    return request.app.state.specialists.conversations(specialist_id)
+
+
+@router.post("/specialists/{specialist_id}/conversations", status_code=status.HTTP_201_CREATED)
+async def open_conversation(
+    specialist_id: int, request: Request, conn: DbDep, body: ConversationIn | None = None
+) -> dict[str, Any]:
+    _get(conn, specialist_id)
+    from claudio_maestro.sessions import ProjectUnavailableError
+
+    try:
+        record = await request.app.state.specialists.open_conversation(
+            specialist_id, session_id=body.session_id if body else None, new=body.new if body else False
+        )
+    except store.SpecialistNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+    except (ProjectUnavailableError, projects.ProjectNotFoundError) as exc:
+        raise HTTPException(status_code=409, detail="A pasta do projeto não está disponível.") from exc
+    return {"session_id": record.session_id}
+
+
 @router.get("/specialists/{specialist_id}/runs")
 async def list_runs(
     specialist_id: int, conn: DbDep, limit: Annotated[int, Query(ge=1, le=200)] = 50
@@ -551,6 +600,22 @@ async def run_specialist(
         )
     except store.SpecialistNotFoundError as exc:
         raise _not_found(str(exc)) from exc
+    except QueueFullError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except store.SpecialistError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return asdict(run)
+
+
+@router.post("/specialists/{specialist_id}/runs/{run_id}/cancel")
+async def cancel_run(specialist_id: int, run_id: int, request: Request, conn: DbDep) -> dict[str, Any]:
+    _get(conn, specialist_id)
+    try:
+        run = await request.app.state.specialists.cancel_run(specialist_id, run_id)
+    except store.SpecialistNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+    except store.RunNotQueuedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return asdict(run)
 
 

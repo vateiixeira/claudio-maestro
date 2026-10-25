@@ -23,6 +23,8 @@ export const DAYS = [
 ] as const
 
 export const OUTCOME_LABELS: Record<SpecialistRunOutcome, string> = {
+  queued: 'Na fila',
+  starting: 'Iniciando',
   running: 'Rodando',
   concluded: 'Concluída',
   closed: 'Fechada',
@@ -30,12 +32,15 @@ export const OUTCOME_LABELS: Record<SpecialistRunOutcome, string> = {
   failed: 'Falhou',
   skipped: 'Pulada',
   missed: 'Perdida',
+  cancelled: 'Cancelada',
 }
 
-export type OutcomeShape = 'spinner' | 'check' | 'triangle' | 'cross' | 'dash'
+export type OutcomeShape = 'spinner' | 'clock' | 'check' | 'triangle' | 'cross' | 'dash'
 
 export function outcomeShape(outcome: SpecialistRunOutcome): OutcomeShape {
   switch (outcome) {
+    case 'queued': return 'clock'
+    case 'starting':
     case 'running': return 'spinner'
     case 'concluded':
     case 'closed': return 'check'

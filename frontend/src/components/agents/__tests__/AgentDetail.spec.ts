@@ -24,6 +24,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 type Routes = Record<string, () => Response | Promise<Response>>
 const baseRoutes = (over: Routes = {}): Routes => ({
+  'GET /api/specialists/1/conversations': () => jsonResponse([]),
   'GET /api/models': () => jsonResponse([]),
   'GET /api/specialists/1/skill': () => jsonResponse({ text: '---\nname: sentry\n---\nCorpo' }),
   'GET /api/specialists/1/learnings': () => jsonResponse({ text: 'Usar o filtro X.' }),
@@ -41,6 +42,8 @@ async function mountDetail(agent: Specialist = makeSpecialist(), routes: Routes 
   await router.push(`/agentes/${agent.id}`)
   const wrapper = mount(AgentDetail, { props: { agent }, global: { plugins: [pinia, router] }, attachTo: document.body })
   await flushPromises()
+  await wrapper.get('[data-test="agent-tab-settings"]').trigger('click')
+  await flushPromises()
   return { wrapper, fetch, router }
 }
 const bodies = (fetch: ReturnType<typeof routeFetch>, method: string, url: string) =>
@@ -51,7 +54,7 @@ describe('AgentDetail', () => {
     const { wrapper } = await mountDetail()
     expect(wrapper.findAll('[data-test="section-title"]').map((t) => t.text().toLowerCase())).toEqual([
       'skill', 'pasta e projetos', 'autonomia', 'horários', 'fechamento', 'modelo e raciocínio', 'segredos',
-      'mcps na última execução', 'aprendizados', 'registro', 'execuções',
+      'mcps na última execução', 'aprendizados', 'registro',
     ])
     expect(wrapper.get('[data-test="agent-name"]').text()).toBe('Sentry')
     expect(wrapper.get('[data-test="agent-description"]').text()).toBe('Trata os erros novos do Sentry')
@@ -94,6 +97,20 @@ describe('AgentDetail', () => {
   })
 
   describe('rodar agora', () => {
+    it('confirma uma execução na fila sem abrir uma conversa nem mostrar erro', async () => {
+      const { wrapper, router } = await mountDetail(makeSpecialist(), {
+        'GET /api/specialists/1/runs?limit=50': () => jsonResponse([makeSpecialistRun({ id: 9, session_id: null, outcome: 'queued' })]),
+        'POST /api/specialists/1/run': () => jsonResponse(makeSpecialistRun({ id: 9, session_id: null, outcome: 'queued' }), 202),
+      })
+      await wrapper.get('[data-test="run-now"]').trigger('click')
+      await wrapper.get('[data-test="confirm-ok"]').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe('/agentes/1')
+      expect(wrapper.get('[data-test="action-status"]').text()).toBe('Execução adicionada à fila.')
+      expect(wrapper.find('[data-test="action-error"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="run-row"]').text()).toContain('Na fila')
+    })
+
     it('abre a caixa com o texto do agente, manda o texto editado e abre a sessão criada', async () => {
       const { wrapper, fetch, router } = await mountDetail(makeSpecialist({ run_text: 'Siga a skill.' }), {
         'POST /api/specialists/1/run': () => jsonResponse(makeSpecialistRun({ id: 3, session_id: 's42' }), 202),
@@ -123,7 +140,7 @@ describe('AgentDetail', () => {
       await wrapper.get('[data-test="run-now"]').trigger('click')
       await wrapper.get('[data-test="confirm-ok"]').trigger('click')
       await flushPromises()
-      expect(router.currentRoute.value.fullPath).toBe('/agentes/1')
+      expect(router.currentRoute.value.path).toBe('/agentes/1')
       expect(wrapper.get('[data-test="action-error"]').text()).toContain('A pasta do projeto não está disponível.')
     })
 
@@ -487,6 +504,35 @@ describe('AgentDetail', () => {
   })
 
   describe('execuções', () => {
+    it('cancela só uma execução que ainda está na fila e atualiza o desfecho', async () => {
+      const queued = makeSpecialistRun({ id: 9, outcome: 'queued', session_id: null })
+      const { wrapper, fetch } = await mountDetail(makeSpecialist(), {
+        'GET /api/specialists/1/runs?limit=50': () => jsonResponse([queued, makeSpecialistRun({ id: 8 })]),
+        'POST /api/specialists/1/runs/9/cancel': () => jsonResponse({ ...queued, outcome: 'cancelled' }),
+      })
+      await wrapper.get('[data-test="agent-tab-runs"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.findAll('[data-test="run-cancel"]')).toHaveLength(1)
+      await wrapper.get('[data-test="run-cancel"]').trigger('click')
+      await flushPromises()
+      expect(bodies(fetch, 'POST', '/api/specialists/1/runs/9/cancel')).toEqual([{}])
+      expect(wrapper.findAll('[data-test="run-row"]')[0]!.text()).toContain('Cancelada')
+      expect(wrapper.find('[data-test="run-cancel"]').exists()).toBe(false)
+    })
+
+    it('mostra o conflito se a execução começou antes do cancelamento', async () => {
+      const queued = makeSpecialistRun({ id: 9, outcome: 'queued', session_id: null })
+      const { wrapper } = await mountDetail(makeSpecialist(), {
+        'GET /api/specialists/1/runs?limit=50': () => jsonResponse([queued]),
+        'POST /api/specialists/1/runs/9/cancel': () => jsonResponse({ detail: 'Esta execução já começou.' }, 409),
+      })
+      await wrapper.get('[data-test="agent-tab-runs"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-test="run-cancel"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-test="runs-error"]').text()).toBe('Esta execução já começou.')
+    })
+
     it('lista data, gatilho, desfecho, motivo e link para a sessão', async () => {
       const { wrapper } = await mountDetail(makeSpecialist(), {
         'GET /api/specialists/1/runs?limit=50': () => jsonResponse([
@@ -494,6 +540,8 @@ describe('AgentDetail', () => {
           makeSpecialistRun({ id: 1, trigger: 'manual', outcome: 'failed', session_id: null, reason: 'A pasta do projeto não está disponível.' }),
         ]),
       })
+      await wrapper.get('[data-test="agent-tab-runs"]').trigger('click')
+      await flushPromises()
       const rows = wrapper.findAll('[data-test="run-row"]')
       expect(rows).toHaveLength(2)
       expect(rows[0]!.text()).toContain('Horário')
@@ -503,6 +551,34 @@ describe('AgentDetail', () => {
       expect(rows[1]!.text()).toContain('Falhou')
       expect(rows[1]!.text()).toContain('A pasta do projeto não está disponível.')
       expect(rows[1]!.find('a').exists()).toBe(false)
+    })
+  })
+
+  describe('fila', () => {
+    it('pausa as próximas execuções sem desligar os horários', async () => {
+      const agent = makeSpecialist()
+      const { wrapper, fetch } = await mountDetail(agent, {
+        'PATCH /api/specialists/1': () => jsonResponse({ ...agent, queue_paused: true }),
+      })
+      expect(wrapper.get('[data-test="queue-toggle"]').text()).toBe('Pausar fila')
+      await wrapper.get('[data-test="queue-toggle"]').trigger('click')
+      await flushPromises()
+      expect(bodies(fetch, 'PATCH', '/api/specialists/1')).toEqual([{ queue_paused: true }])
+      expect(wrapper.text()).toContain('A pausa segura as próximas execuções e não interrompe a atual.')
+    })
+
+    it('retoma a fila e mostra a falha sem mudar o estado salvo', async () => {
+      const agent = makeSpecialist({ queue_paused: true })
+      const { wrapper, fetch } = await mountDetail(agent, {
+        'PATCH /api/specialists/1': () => jsonResponse({ detail: 'Não foi possível retomar.' }, 500),
+      })
+      expect(wrapper.get('[data-test="queue-state"]').text()).toBe('Fila pausada')
+      await wrapper.get('[data-test="queue-toggle"]').trigger('click')
+      await flushPromises()
+      expect(bodies(fetch, 'PATCH', '/api/specialists/1')).toEqual([{ queue_paused: false }])
+      expect(wrapper.get('[data-test="queue-state"]').text()).toBe('Fila pausada')
+      expect(wrapper.get('[data-test="queue-toggle"]').text()).toBe('Retomar fila')
+      expect(wrapper.get('[data-test="action-error"]').text()).toContain('Não foi possível retomar.')
     })
   })
 
@@ -572,7 +648,7 @@ describe('AgentDetail', () => {
       await wrapper.get('[data-test="agent-delete"]').trigger('click')
       await wrapper.get('[data-test="confirm-ok"]').trigger('click')
       await flushPromises()
-      expect(router.currentRoute.value.fullPath).toBe('/agentes/1')
+      expect(router.currentRoute.value.path).toBe('/agentes/1')
       expect(wrapper.get('[data-test="action-error"]').text()).toContain('Finalize-a antes de excluir o agente.')
     })
   })

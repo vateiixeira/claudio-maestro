@@ -55,6 +55,44 @@ def test_create_and_get_round_trip(conn):
     assert store.list_specialists(conn) == [created]
 
 
+def test_queue_pause_is_independent_of_schedules(conn):
+    created = make(conn)
+    assert created.queue_paused is False
+    paused = store.update_specialist(conn, created.id, now=200, queue_paused=True)
+    assert paused.queue_paused is True and paused.enabled is True
+    assert store.get_specialist(conn, created.id).queue_paused is True
+
+
+def test_pending_runs_are_in_fifo_order_and_claim_once(conn):
+    agent = make(conn)
+    other = make(conn, slug="outro")
+    add_session(conn, "session", agent.id)
+    first = store.insert_run(conn, specialist_id=agent.id, trigger="manual", started_at=200, outcome="queued")
+    second = store.insert_run(conn, specialist_id=agent.id, trigger="schedule", started_at=100, outcome="queued")
+    third = store.insert_run(conn, specialist_id=other.id, trigger="manual", started_at=100, outcome="queued")
+    assert [r.id for r in store.list_pending_runs(conn, agent.id)] == [first.id, second.id]
+    assert [r.id for r in store.list_pending_runs(conn)] == [first.id, second.id, third.id]
+    assert store.claim_run(conn, first.id, "session", 300)
+    assert not store.claim_run(conn, first.id, "session", 400)
+    claimed = store.get_run(conn, first.id)
+    assert (claimed.outcome, claimed.session_id, claimed.started_at) == ("starting", "session", 300)
+
+
+def test_run_history_always_includes_old_pending_deliveries(conn):
+    agent = make(conn)
+    old = store.insert_run(conn, specialist_id=agent.id, trigger="manual", started_at=1, outcome="queued")
+    for index in range(60):
+        store.insert_run(conn, specialist_id=agent.id, trigger="schedule", started_at=100 + index, outcome="skipped")
+    rows = store.list_runs(conn, agent.id, limit=50)
+    assert len(rows) == 51
+    assert rows[-1] == old
+    assert len({run.id for run in rows}) == len(rows)
+
+
+def test_run_not_queued_error_has_a_portuguese_message():
+    assert "fila" in str(store.RunNotQueuedError()).lower()
+
+
 def test_update_specialist_round_trips_lists_and_flags(conn):
     created = make(conn)
     updated = store.update_specialist(

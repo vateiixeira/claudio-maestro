@@ -26,15 +26,18 @@ async function createAgent(page: Page, name: string) {
   await page.getByTestId('new-name').fill(name)
   await page.getByRole('dialog').getByRole('button', { name: 'Criar' }).click()
   await expect(page.getByTestId('agent-name')).toHaveText(name)
+  await page.getByTestId('agent-tab-settings').click()
 }
 
 test('mostra o agente semeado com a skill, o horário e as execuções', async ({ page }) => {
   await page.goto('/agentes')
   await page.getByTestId('agent-item').filter({ hasText: 'Triagem' }).click()
   await expect(page.getByTestId('agent-name')).toHaveText('Triagem')
+  await page.getByTestId('agent-tab-settings').click()
   await expect(page.getByTestId('skill-text')).toHaveValue(new RegExp(SKILL_DESCRIPTION))
   await expect(page.getByTestId('schedule-row')).toHaveCount(1)
   await expect(page.getByTestId('schedule-time')).toHaveValue('03:00')
+  await page.getByTestId('agent-tab-runs').click()
   const rows = page.getByTestId('run-row')
   await expect(rows).toHaveCount(2)
   await expect(rows.filter({ hasText: FAILURE_REASON })).toHaveCount(1)
@@ -163,11 +166,13 @@ for (const width of [1280, 800]) {
     await page.goto('/agentes')
     await page.getByTestId('agent-item').filter({ hasText: 'Triagem' }).click()
     await expect(page.getByTestId('agent-name')).toHaveText('Triagem')
+    await page.getByTestId('agent-tab-runs').click()
     await expect(page.getByTestId('run-row').first()).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     expect(overflow).toBeLessThanOrEqual(0)
     const region = page.getByRole('region', { name: 'Detalhe do agente' })
     expect(await region.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0)
+    await page.getByTestId('agent-tab-settings').click()
     for (const id of ['run-now', 'agent-menu', 'secret-new-name', 'secret-new-value']) {
       await page.getByTestId(id).scrollIntoViewIfNeeded()
       await expect(page.getByTestId(id)).toBeInViewport({ ratio: 1 })

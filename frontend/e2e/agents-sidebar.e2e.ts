@@ -42,8 +42,9 @@ test('abre a conversa principal pela barra lateral, com o link de configuração
   await expect(page.getByRole('navigation').getByRole('link', { name: new RegExp(name) })).toHaveCount(0)
 
   await page.getByTestId('configure-agent').click()
-  await expect(page).toHaveURL(new RegExp(`/agentes/${id}$`))
+  await expect(page).toHaveURL(new RegExp(`/agentes/${id}\\?aba=settings$`))
   await expect(page.getByTestId('agent-name')).toHaveText(name)
+  await expect(page.getByTestId('agent-tab-settings')).toHaveAttribute('aria-current', 'page')
 })
 
 test('outras conversas não têm o link "Configurar agente"', async ({ page }) => {

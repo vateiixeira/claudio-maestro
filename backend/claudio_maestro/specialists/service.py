@@ -12,6 +12,7 @@ import logging
 import re
 import sqlite3
 import time
+from collections import defaultdict
 from collections.abc import Callable
 from contextlib import closing
 from dataclasses import asdict
@@ -56,7 +57,7 @@ FINISHED_BY_USER = "Finalizada por você"
 # to answer in the CLI, and approving them without a screen would skip the question.
 ALWAYS_ASK_TOOLS = frozenset({"AskUserQuestion", "ExitPlanMode"})
 # Outcomes of a run still in flight.
-OPEN_OUTCOMES = ("running", "waiting")
+OPEN_OUTCOMES = ("starting", "running", "waiting")
 # A failed run can still end well: the agent went on after the error and concluded, or
 # the closure check found the work done or the person's turn.
 RECOVERABLE_OUTCOMES = (*OPEN_OUTCOMES, "failed")
@@ -86,8 +87,19 @@ class CommentNotSentError(RuntimeError):
     """The provider was not called: the queued comments can safely be tried again."""
 
 
+class CommentDeferredError(CommentNotSentError):
+    """The agent is busy or paused; defer silently without attempting delivery."""
+
+
 Trigger = Literal["schedule", "manual"]
 Publish = Callable[[dict[str, Any]], None]
+MAX_QUEUED_RUNS = 50
+UNCERTAIN_SEND = "O envio foi interrompido. Confira a conversa antes de retomar a fila ou rodar de novo."
+
+
+class QueueFullError(store.SpecialistError):
+    def __init__(self) -> None:
+        super().__init__("A fila já tem 50 execuções. Cancele uma pendência antes de adicionar outra.")
 
 
 def _cut(text: str, limit: int = REASON_MAX_CHARS) -> str:
@@ -148,6 +160,13 @@ class SpecialistService:
         self._clock = clock
         self._finish_poll = finish_poll
         self._tasks: set[asyncio.Task[None]] = set()
+        self._queue_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._queue_task: asyncio.Task[None] | None = None
+        self._queue_dispatches: dict[int, asyncio.Task[None]] = {}
+        self._queue_wake = asyncio.Event()
+        self._stopping = False
+        # The scheduler supplies the usage/disabled gate; manual requests remain available.
+        self.queue_gate: Callable[[store.Run], bool] = lambda run: True
         # session id -> text of the last "needs you" alert, so the same check does not
         # warn twice. Memory only: after a restart the same alert may come once more.
         self._last_alert: dict[str, str] = {}
@@ -155,6 +174,7 @@ class SpecialistService:
         self._main_locks: dict[int, asyncio.Lock] = {}
 
     async def shutdown(self) -> None:
+        self._stopping = True
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()
@@ -179,6 +199,7 @@ class SpecialistService:
             learnings=self._files.read_learnings(specialist.slug),
             extra_projects=[(project.name, project.path) for project in extra],
             main=main,
+            conversation=self.is_conversation(record.session_id),
         )
         rules = ask_rules(specialist.outward_patterns, specialist.always_ask_patterns)
         return SessionExtras(
@@ -391,6 +412,122 @@ class SpecialistService:
 
     # Starting a run ----------------------------------------------------------------
 
+    def is_conversation(self, session_id: str) -> bool:
+        if self.is_main(session_id):
+            return True
+        with closing(db.connect(self._db_path)) as conn:
+            return conn.execute("SELECT 1 FROM specialist_chats WHERE session_id = ?", (session_id,)).fetchone() is not None
+
+    def conversations(self, specialist_id: int) -> list[dict[str, Any]]:
+        with closing(db.connect(self._db_path)) as conn:
+            store.get_specialist(conn, specialist_id)
+            rows = conn.execute(
+                "SELECT session_id, title, finished, created_at, last_activity_at FROM sessions"
+                " WHERE specialist_id = ? ORDER BY last_activity_at DESC, session_id DESC LIMIT 100",
+                (specialist_id,),
+            ).fetchall()
+        return [{**dict(row), "finished": bool(row["finished"])} for row in rows]
+
+    def pending_messages(self, specialist_id: int, session_id: str) -> list[dict[str, Any]]:
+        try:
+            record = self._sessions.find_record(session_id)
+        except SessionNotFoundError as error:
+            raise store.SpecialistNotFoundError("Conversa não encontrada.") from error
+        if record.specialist_id != specialist_id:
+            raise store.SpecialistNotFoundError("Conversa não encontrada.")
+        with closing(db.connect(self._db_path)) as conn:
+            specialist = store.get_specialist(conn, specialist_id)
+            pending = store.list_pending_runs(conn, specialist_id)
+        result = []
+        for run in pending:
+            if run.message and run.session_id == session_id:
+                try:
+                    preview = self._files.message_preview(specialist.slug, run.id)
+                except (OSError, ValueError):
+                    preview = "Mensagem indisponível."
+                result.append({"id": run.id, "text": preview})
+        return result
+
+    async def open_conversation(
+        self, specialist_id: int, *, session_id: str | None = None, new: bool = False
+    ) -> SessionRecord:
+        if session_id is None and not new:
+            session_id = await self.ensure_main(specialist_id)
+        with closing(db.connect(self._db_path)) as conn:
+            specialist = store.get_specialist(conn, specialist_id)
+            if session_id is None:
+                project = projects.get_project(conn, specialist.project_id)
+                record = self._sessions.create_session(
+                    project, specialist_id=specialist_id, model=specialist.model, effort=specialist.effort
+                )
+            else:
+                try:
+                    record = self._sessions.find_record(session_id)
+                except SessionNotFoundError as error:
+                    raise store.SpecialistNotFoundError("Conversa não encontrada.") from error
+                if record.specialist_id != specialist_id:
+                    raise store.SpecialistNotFoundError("Conversa não encontrada.")
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            conn.execute("INSERT OR IGNORE INTO specialist_chats VALUES (?, ?)", (record.session_id, specialist_id))
+            store.clear_finish_pending(conn, record.session_id)
+        self._publish({"session_id": None, "seq": 0, "type": "specialist.changed", "data": {"id": specialist_id}})
+        return record
+
+    async def send_message(
+        self, session_id: str, text: str, images: list[dict[str, Any]] | None = None
+    ) -> store.Run:
+        from claudio_maestro.sessions import EmptyMessageError, validate_images
+
+        record = self._sessions.find_record(session_id)
+        if record.specialist_id is None:
+            raise store.SpecialistNotFoundError("Esta conversa não pertence a um agente.")
+        images = list(images or [])
+        validate_images(images)
+        if not text.strip() and not images:
+            raise EmptyMessageError("A mensagem está vazia.")
+        if len(text) > 100_000:
+            raise EmptyMessageError("A mensagem pode ter até 100.000 caracteres.")
+        await self.open_conversation(record.specialist_id, session_id=session_id)
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            specialist = store.get_specialist(conn, record.specialist_id)
+            if len(store.list_pending_runs(conn, specialist.id)) >= MAX_QUEUED_RUNS:
+                raise QueueFullError
+            run = store.insert_run(conn, specialist_id=specialist.id, trigger="manual",
+                                   started_at=self._now(), outcome="queued", session_id=session_id, message=True)
+            try:
+                self._files.write_message(specialist.slug, run.id, text, images)
+            except OSError as error:
+                raise store.SpecialistError("Não foi possível guardar a mensagem na fila.") from error
+        self._publish_run(run)
+        # Enqueue immediately, including while a session is starting or waiting for input.
+        self.wake_queue()
+        return run
+
+    def _complete_messages(self) -> None:
+        with closing(db.connect(self._db_path)) as conn:
+            rows = conn.execute("SELECT id, session_id FROM specialist_runs WHERE message = 1 AND outcome = 'running'").fetchall()
+        for row in rows:
+            try:
+                if row["session_id"] is None:
+                    raise SessionNotFoundError("Conversa não encontrada.")
+                session = self._sessions.get(row["session_id"])
+            except SessionNotFoundError:
+                with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                    store.finish_run(conn, row["id"], outcome="failed", ended_at=self._now(), reason="A conversa não está mais disponível.")
+                    run = store.get_run(conn, row["id"])
+                self._publish_run(run)
+                continue
+            if session.client is not None:
+                if session.state != "idle":
+                    continue
+            elif session.record.turn_open:
+                continue
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                conn.execute("UPDATE specialist_runs SET outcome = 'concluded', ended_at = ? WHERE id = ? AND outcome = 'running'",
+                             (self._now(), row["id"]))
+                run = store.get_run(conn, row["id"])
+            self._publish_run(run)
+
     async def start_run(
         self,
         specialist_id: int,
@@ -398,65 +535,284 @@ class SpecialistService:
         trigger: Trigger,
         text: str | None = None,
         scheduled_for: int | None = None,
+        schedule_id: int | None = None,
+        defer_dispatch: bool = False,
     ) -> store.Run:
-        """Create the agent's session, record the run and send it the run text. A project
-        that is gone or a failure to send ends the run as `failed` with the reason."""
+        """Persist a request before delivery. Manual and scheduled work share this FIFO.
+
+        The private pending file holds the input; SQLite holds only delivery metadata.
+        A scheduled occurrence and its queue entry commit together. Enqueueing has
+        no await; only delivery takes the per-agent lock. The scheduler defers
+        delivery to the worker so session startup never holds up a later tick.
+        """
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            specialist = store.get_specialist(conn, specialist_id)
+            if schedule_id is not None:
+                schedule = next((s for s in store.list_schedules(conn, specialist_id)
+                                 if s.id == schedule_id), None)
+                if schedule is None or not specialist.enabled:
+                    raise store.SpecialistNotFoundError("O horário foi removido ou desligado.")
+                if schedule.last_fired_at is not None and scheduled_for is not None and (
+                    schedule.last_fired_at >= scheduled_for
+                ):
+                    raise store.SpecialistError("Este horário já foi registrado.")
+                store.mark_fired(conn, schedule_id, self._now())
+            pending = store.list_pending_runs(conn, specialist_id)
+            # Several missed occurrences must not become a burst of identical routines.
+            previous = next((r for r in pending if r.trigger == "schedule"), None)
+            if trigger == "schedule" and previous is not None:
+                return previous
+            if len(pending) >= MAX_QUEUED_RUNS:
+                raise QueueFullError
+            run = store.insert_run(
+                conn, specialist_id=specialist_id, trigger=trigger,
+                started_at=self._now(), outcome="queued", scheduled_for=scheduled_for,
+            )
+            try:
+                self._files.write_run_text(specialist.slug, run.id, text or specialist.run_text)
+            except OSError as error:
+                raise store.SpecialistError("Não foi possível guardar a execução na fila.") from error
+        self._publish_run(run)
+        if not defer_dispatch:
+            async with self._queue_locks[specialist_id]:
+                await self._drain_agent(specialist_id)
+                with closing(db.connect(self._db_path)) as conn:
+                    run = store.get_run(conn, run.id)
+        self.wake_queue()
+        return run
+
+    def wake_queue(self) -> None:
+        """Wake one service-wide worker, only while there are pending requests."""
+        if self._stopping:
+            return
+        with closing(db.connect(self._db_path)) as conn:
+            if not store.list_pending_runs(conn) and not conn.execute(
+                "SELECT 1 FROM specialist_runs WHERE message = 1 AND outcome = 'running' LIMIT 1"
+            ).fetchone():
+                return
+        self._queue_wake.set()
+        if self._queue_task is None or self._queue_task.done():
+            self._queue_task = asyncio.create_task(self._watch_queue())
+            self._tasks.add(self._queue_task)
+            self._queue_task.add_done_callback(self._tasks.discard)
+
+    async def _watch_queue(self) -> None:
+        while not self._stopping:
+            self._queue_wake.clear()
+            try:
+                self._complete_messages()
+                with closing(db.connect(self._db_path)) as conn:
+                    pending = store.list_pending_runs(conn)
+                    messages_open = conn.execute("SELECT 1 FROM specialist_runs WHERE message = 1 AND outcome = 'running' LIMIT 1").fetchone()
+                if not pending and not messages_open:
+                    return
+                for agent_id in dict.fromkeys(run.specialist_id for run in pending):
+                    active = self._queue_dispatches.get(agent_id)
+                    if active is not None and not active.done():
+                        continue
+                    # A slow session start must not hold the next delivery of other agents.
+                    task = asyncio.create_task(self.drain_queue(agent_id))
+                    self._queue_dispatches[agent_id] = task
+                    self._tasks.add(task)
+                    task.add_done_callback(self._tasks.discard)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Falha ao acompanhar a fila dos agentes")
+            try:
+                await asyncio.wait_for(self._queue_wake.wait(), max(0.02, self._finish_poll * 4))
+            except TimeoutError:
+                pass
+
+    async def drain_queue(self, specialist_id: int | None = None) -> None:
+        with closing(db.connect(self._db_path)) as conn:
+            agent_ids = list(dict.fromkeys(
+                r.specialist_id for r in store.list_pending_runs(conn, specialist_id)
+            ))
+        results = await asyncio.gather(
+            *(self._drain_locked(agent_id) for agent_id in agent_ids), return_exceptions=True
+        )
+        for agent_id, result in zip(agent_ids, results, strict=True):
+            if isinstance(result, Exception):
+                logger.error("Falha ao disparar a fila do agente %s", agent_id,
+                             exc_info=(type(result), result, result.__traceback__))
+
+    async def _drain_locked(self, specialist_id: int) -> None:
+        async with self._queue_locks[specialist_id]:
+            if self._specialist_by_id(specialist_id) is not None:
+                await self._drain_agent(specialist_id)
+
+    @staticmethod
+    def _waiting_sessions(conn: sqlite3.Connection, specialist_id: int) -> set[str]:
+        return {
+            row["session_id"] for row in conn.execute(
+                "SELECT r.session_id FROM specialist_runs r"
+                " JOIN sessions s ON s.session_id = r.session_id"
+                " WHERE r.specialist_id = ? AND r.outcome = 'waiting' AND s.finished = 0"
+                " AND r.id = (SELECT rr.id FROM specialist_runs rr WHERE rr.session_id = r.session_id"
+                " AND rr.outcome NOT IN ('queued', 'cancelled')"
+                " ORDER BY rr.started_at DESC, rr.id DESC LIMIT 1)",
+                (specialist_id,),
+            )
+        }
+
+    async def _drain_agent(self, specialist_id: int) -> None:
+        """Under the queue lock: bind before sending, and never replay a bound request."""
         with closing(db.connect(self._db_path)) as conn:
             specialist = store.get_specialist(conn, specialist_id)
+            pending = store.list_pending_runs(conn, specialist_id)
+            waiting_sessions = self._waiting_sessions(conn, specialist_id)
+        if specialist.queue_paused or self.is_busy(specialist_id):
+            return
+        # An uncertain dispatch must be recovered before anything else can start.
+        if any(run.outcome == "starting" for run in pending):
+            return
+        # Keep FIFO among eligible requests. A reply can resolve a waiting session even
+        # with routines ahead of it; a held schedule must not lock manual work behind it.
+        run = next((
+            candidate for candidate in pending
+            if self.queue_gate(candidate)
+            and (not waiting_sessions or (
+                candidate.message and candidate.session_id in waiting_sessions
+            ))
+        ), None)
+        if run is None:
+            return
+        try:
+            images: list[dict[str, Any]] = []
+            if run.message:
+                text, images = self._files.read_message(specialist.slug, run.id)
+            else:
+                text = self._files.read_run_text(specialist.slug, run.id)
+        except (OSError, ValueError):
+            self._fail_queued(run, specialist, "O texto da execução não está disponível. Adicione o pedido novamente.")
+            return
+        with closing(db.connect(self._db_path)) as conn:
             try:
                 project = projects.get_project(conn, specialist.project_id)
             except projects.ProjectNotFoundError:
                 project = None
-        if project is None:
-            return self._record_without_session(
-                specialist, trigger, "failed", PROJECT_MISSING, scheduled_for
-            )
-        if not project.available:
-            return self._record_without_session(
-                specialist, trigger, "failed", PROJECT_UNAVAILABLE, scheduled_for
-            )
+        if project is None or not project.available:
+            self._fail_queued(run, specialist, PROJECT_MISSING if project is None else PROJECT_UNAVAILABLE)
+            return
         try:
-            record = self._sessions.create_session(
-                project, specialist_id=specialist.id, model=specialist.model, effort=specialist.effort
-            )
-        except (InvalidDecisionError, ProjectUnavailableError) as error:
-            return self._record_without_session(
-                specialist, trigger, "failed", str(error), scheduled_for
-            )
+            if run.session_id is not None:
+                record = self._sessions.find_record(run.session_id)
+                if record.specialist_id != specialist.id:
+                    raise ProjectUnavailableError("Conversa não encontrada.")
+            else:
+                record = self._sessions.create_session(
+                    project, specialist_id=specialist.id, model=specialist.model, effort=specialist.effort
+                )
+        except (InvalidDecisionError, ProjectUnavailableError):
+            self._fail_queued(run, specialist, PROJECT_UNAVAILABLE)
+            return
         except Exception:
             logger.exception("Falha ao criar a sessão do agente %s", specialist.slug)
-            return self._record_without_session(
-                specialist, trigger, "failed", SESSION_NOT_CREATED, scheduled_for
-            )
+            self._fail_queued(run, specialist, SESSION_NOT_CREATED)
+            return
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
-            run = store.insert_run(
-                conn,
-                specialist_id=specialist.id,
-                trigger=trigger,
-                started_at=self._now(),
-                outcome="running",
-                session_id=record.session_id,
-                scheduled_for=scheduled_for,
-            )
-        self._publish_run(run)
+            if not store.claim_run(conn, run.id, record.session_id, self._now()):
+                return
+            self._publish_run(store.get_run(conn, run.id))
         title = f"{specialist.name} · {datetime.fromtimestamp(self._now()):%d/%m %H:%M}"
         try:
-            await self._sessions.update(record.session_id, title=title)
+            if not run.message:
+                await self._sessions.update(record.session_id, title=title)
         except Exception:
             logger.exception("Falha ao dar título à sessão do agente %s", specialist.slug)
         try:
-            await self._sessions.send(record.session_id, text or specialist.run_text)
-        except Exception as error:
-            logger.exception("Falha ao enviar a execução ao agente %s", specialist.slug)
-            self._set_outcome(
-                record.session_id, "failed", _cut(f"Não foi possível enviar a mensagem: {error}"),
-                only_from=("running",),
+            if run.message:
+                result = await self._sessions.send(record.session_id, text, images)
+            else:
+                result = await self._sessions.send(record.session_id, text)
+        except asyncio.CancelledError:
+            # A lost acknowledgement cannot prove that the provider did not start work.
+            raise
+        except Exception:
+            self._uncertain_run(run, specialist)
+            return
+        if isinstance(result, dict):
+            if result.get("send_started") is False:
+                self._restore_unsent(run, specialist)
+                return
+            if result.get("state") == "error":
+                self._uncertain_run(run, specialist)
+                return
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            conn.execute("UPDATE specialist_runs SET outcome = 'running' WHERE id = ? AND outcome = 'starting'", (run.id,))
+            current = store.get_run(conn, run.id)
+        self._publish_run(current)
+        self._files.delete_run_text(specialist.slug, run.id)
+
+    def _restore_unsent(self, run: store.Run, specialist: store.Specialist) -> None:
+        reason = "Não foi possível conectar ao agente. O pedido foi preservado; retome a fila para tentar novamente."
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            conn.execute(
+                "UPDATE specialist_runs SET outcome = 'queued', ended_at = NULL, reason = ? WHERE id = ?",
+                (reason, run.id),
             )
-            self._check_streak(specialist)
-        with closing(db.connect(self._db_path)) as conn:
-            return store.get_run(conn, run.id)
+            store.update_specialist(conn, specialist.id, now=self._now(), queue_paused=True)
+            current = store.get_run(conn, run.id)
+        self._publish_run(current)
+        self._add_notice(specialist.id, current.session_id, "alert", reason)
+        self._publish({"session_id": None, "seq": 0, "type": "specialist.changed", "data": {"id": specialist.id}})
+
+    def _fail_queued(self, run: store.Run, specialist: store.Specialist, reason: str) -> None:
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.finish_run(conn, run.id, outcome="failed", ended_at=self._now(), reason=reason)
+            current = store.get_run(conn, run.id)
+            announcement = self._announce(conn, current, reason)
+        self._publish_run(current)
+        self._publish_announcement(announcement)
+        self._files.delete_run_text(specialist.slug, run.id)
+        self._check_streak(specialist)
+
+    def _uncertain_run(self, run: store.Run, specialist: store.Specialist) -> None:
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            run = store.get_run(conn, run.id)
+            store.update_specialist(conn, specialist.id, now=self._now(), queue_paused=True)
+        self._fail_queued(run, specialist, UNCERTAIN_SEND)
+        self._add_notice(specialist.id, run.session_id, "alert", UNCERTAIN_SEND)
+        self._publish({"session_id": None, "seq": 0, "type": "specialist.changed", "data": {"id": specialist.id}})
+
+    async def cancel_run(self, specialist_id: int, run_id: int) -> store.Run:
+        async with self._queue_locks[specialist_id]:
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                specialist = store.get_specialist(conn, specialist_id)
+                run = store.get_run(conn, run_id)
+                if run.specialist_id != specialist_id:
+                    raise store.SpecialistNotFoundError("Execução não encontrada.")
+                if run.outcome == "cancelled":
+                    return run
+                if run.outcome != "queued":
+                    raise store.RunNotQueuedError
+                store.finish_run(conn, run_id, outcome="cancelled", ended_at=self._now())
+                run = store.get_run(conn, run_id)
+            self._files.delete_run_text(specialist.slug, run_id)
+            self._publish_run(run)
+            return run
 
     async def start_comment_run(
+        self, pr: store.Pr, comments: list[store.PrComment]
+    ) -> store.Run | None:
+        lock = self._queue_locks[pr.specialist_id]
+        if lock.locked():
+            raise CommentDeferredError("O comentário aguarda a fila do agente.")
+        async with lock:
+            specialist = self._specialist_by_id(pr.specialist_id)
+            if specialist is None:
+                raise store.SpecialistNotFoundError("Agente não encontrado.")
+            if specialist.queue_paused or self.is_busy(pr.specialist_id):
+                raise CommentDeferredError("O comentário aguarda a fila do agente.")
+            with closing(db.connect(self._db_path)) as conn:
+                waiting = self._waiting_sessions(conn, pr.specialist_id)
+            target = self._comment_target(pr) or specialist.main_session_id
+            if waiting and target not in waiting:
+                raise CommentDeferredError("O comentário aguarda a resposta à conversa pendente.")
+            return await self._start_comment_run(pr, comments)
+
+    async def _start_comment_run(
         self, pr: store.Pr, comments: list[store.PrComment]
     ) -> store.Run | None:
         """Send the owner's comments on `pr` to the session that opened it, which a new
@@ -560,9 +916,10 @@ class SpecialistService:
         return self._add_notice(specialist_id, None, "alert", text)
 
     def is_busy(self, specialist_id: int) -> bool:
-        """Whether an unfinished session of one of the agent's scheduled or manual runs
-        has a turn open or a pending permission or question. The main conversation and
-        the sessions of comment runs do not count: they must never hold back a schedule."""
+        """Every active turn, including the main and PR comments, holds this agent's queue."""
+        with closing(db.connect(self._db_path)) as conn:
+            if any(r.outcome == "starting" for r in store.list_pending_runs(conn, specialist_id)):
+                return True
         for session_id in self._sessions.active_ids():
             try:
                 session = self._sessions.get(session_id)
@@ -570,21 +927,10 @@ class SpecialistService:
                 continue
             if (
                 session.record.specialist_id == specialist_id
-                and not session.record.finished
                 and session.state in TURN_OPEN_STATES
-                and self._counts_as_busy(session_id)
             ):
                 return True
         return False
-
-    def _counts_as_busy(self, session_id: str) -> bool:
-        with closing(db.connect(self._db_path)) as conn:
-            run = store.run_for_session(conn, session_id)
-        return (
-            run is not None
-            and run.trigger in ("schedule", "manual")
-            and run.outcome in OPEN_OUTCOMES
-        )
 
     def _record_without_session(
         self,
@@ -625,7 +971,8 @@ class SpecialistService:
         self._set_outcome(
             session_id, "concluded", None, only_from=RECOVERABLE_OUTCOMES, announce=summary
         )
-        self._finish_later(session_id)
+        if not self.is_conversation(session_id):
+            self._finish_later(session_id)
 
     async def notify(self, session_id: str, text: str) -> None:
         specialist = self._specialist_of(session_id)
@@ -657,6 +1004,8 @@ class SpecialistService:
         """What the closure check found in an agent's session. A verdict older than the
         session's last activity is ignored, like the screen does. Once the run ended, the
         only thing left is a finish still pending (lost in a restart of the backend)."""
+        if self.is_conversation(closure.session_id):
+            return
         if closure.verdict not in ("can_close", "user_action", "incomplete"):
             return
         if self.is_main(closure.session_id):
@@ -709,7 +1058,51 @@ class SpecialistService:
         once their turn ends, the sessions whose run ended but whose finish was lost
         (the backend went down before the turn ended)."""
         with closing(db.connect(self._db_path)) as conn:
+            deliveries = store.list_pending_runs(conn)
+        for pending_run in deliveries:
+            if pending_run.outcome != "starting":
+                continue
+            async with self._queue_locks[pending_run.specialist_id]:
+                with closing(db.connect(self._db_path)) as conn:
+                    run = store.get_run(conn, pending_run.id)
+                if run.outcome != "starting":
+                    continue
+                specialist = self._specialist_by_id(run.specialist_id)
+                if specialist is None:
+                    continue
+                if not run.message and run.session_id in self._sessions.active_ids() and (
+                    self._sessions.get(run.session_id).client is not None
+                ) and (
+                    self._sessions.get(run.session_id).state in (*TURN_OPEN_STATES, "idle")
+                ):
+                    with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                        conn.execute("UPDATE specialist_runs SET outcome = 'running' WHERE id = ?", (run.id,))
+                        self._publish_run(store.get_run(conn, run.id))
+                    self._files.delete_run_text(specialist.slug, run.id)
+                else:
+                    self._uncertain_run(run, specialist)
+        with closing(db.connect(self._db_path)) as conn:
             pending = store.pending_finishes(conn)
+            interrupted = conn.execute(
+                "SELECT r.id, r.session_id FROM specialist_runs r"
+                " JOIN sessions s ON s.session_id = r.session_id"
+                " WHERE r.outcome IN ('running', 'failed') AND s.turn_open = 1 AND s.finished = 0"
+                " AND r.id = (SELECT rr.id FROM specialist_runs rr WHERE rr.session_id = r.session_id"
+                " AND rr.outcome NOT IN ('queued', 'cancelled')"
+                " ORDER BY rr.started_at DESC, rr.id DESC LIMIT 1)"
+            ).fetchall()
+        for row in interrupted:
+            session_id = row["session_id"]
+            if session_id in self._sessions.active_ids() and (
+                self._sessions.get(session_id).client is not None
+                and self._sessions.get(session_id).state in (*TURN_OPEN_STATES, "idle")
+            ):
+                continue
+            run = self._set_outcome(
+                session_id, "waiting", UNCERTAIN_SEND, only_from=("running", "failed")
+            )
+            if run is not None:
+                self._add_notice(run.specialist_id, session_id, "alert", UNCERTAIN_SEND)
         for session_id in pending:
             try:
                 record = self._sessions.find_record(session_id)
@@ -722,6 +1115,7 @@ class SpecialistService:
                 self._clear_pending(session_id)
                 continue
             self._finish_later(session_id)
+        self.wake_queue()
 
     def on_finished(self, session_id: str, finished_at: int) -> None:
         """The session was finished (by the person or by this service): a run still open
@@ -734,7 +1128,7 @@ class SpecialistService:
 
     def on_turn_error(self, session_id: str, error: str) -> None:
         """A turn or the session ended in error: a run still `running` failed."""
-        run = self._set_outcome(session_id, "failed", _cut(error), only_from=("running",))
+        run = self._set_outcome(session_id, "failed", _cut(error), only_from=("starting", "running"))
         if run is not None:
             specialist = self._specialist_of(session_id)
             if specialist is not None:
@@ -860,7 +1254,7 @@ class SpecialistService:
         """Record the run's announcement, in the transaction that changed its outcome. A
         run has one: a later outcome (a failed run that concluded) rewrites it while it is
         still pending, and leaves it alone once delivered. None when nothing changed."""
-        if run.outcome not in ANNOUNCED_OUTCOMES:
+        if run.message or run.outcome not in ANNOUNCED_OUTCOMES:
             return None
         body = _announcement_text(text or "", ANNOUNCEMENT_MAX_CHARS)
         full = f"{self._run_label(conn, run)} {ANNOUNCED_OUTCOMES[run.outcome]}: {body}"
@@ -948,6 +1342,9 @@ class SpecialistService:
             waited = 0.0
             warned = False
             while True:
+                if self.is_conversation(session_id):
+                    self._clear_pending(session_id)
+                    return
                 try:
                     current = self._sessions.get(session_id)
                 except SessionNotFoundError:

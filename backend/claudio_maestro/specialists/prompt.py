@@ -24,7 +24,7 @@ _CONCLUDE = (
 )
 
 _MAIN = """## Esta é a conversa principal
-Aqui você conversa com a pessoa que usa o Maestro, a qualquer hora. Não é uma execução agendada: faça o que ela pedir. Os resultados das execuções chegam como anúncios no bloco <maestro-anuncios>.
+Aqui você conversa com a pessoa que usa o Maestro, a qualquer hora. Não é uma execução agendada: faça o que ela pedir. O fim de um turno não encerra esta conversa. Os resultados das execuções chegam como anúncios no bloco <maestro-anuncios>.
 
 """
 
@@ -39,6 +39,7 @@ def build_append(
     learnings: str,
     extra_projects: list[tuple[str, str]],
     main: bool = False,
+    conversation: bool = False,
 ) -> str:
     """The agent's prompt: tools, readable projects, skill and learnings. Never carries
     secrets: those only reach the process environment. The main conversation has no
@@ -49,7 +50,11 @@ def build_append(
         else NO_EXTRA_PROJECTS
     )
     return (
-        _HEAD.format(name=name, concluir="" if main else _CONCLUDE)
+        _HEAD.format(name=name, concluir="" if main else (
+            _CONCLUDE.replace("Isso encerra esta sessão.",
+                              "Nesta conversa, concluir registra o resultado e não encerra a sessão.")
+            if conversation else _CONCLUDE
+        ))
         + f"{projects}\n\n"
         + (_MAIN if main else "")
         + f"## Skill\n{skill_body.strip()}\n\n"

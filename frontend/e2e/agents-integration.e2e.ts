@@ -1,0 +1,38 @@
+import { expect, test } from './fixtures'
+
+test('barra lateral e página do agente abrem a mesma principal, com fila compartilhada', async ({ page, baseURL }) => {
+  const headers = { 'X-Maestro': '1', Origin: baseURL! }
+  const unique = Date.now().toString(36)
+  const response = await page.request.post('/api/specialists', { headers, data: { name: `Integrado ${unique}`, slug: `integrado-${unique}`, project_id: 1 } })
+  expect(response.ok()).toBeTruthy()
+  const agent = await response.json()
+  try {
+    await page.goto(`/agentes/${agent.id}`)
+    await page.getByTestId('sidebar-agent-row').filter({ hasText: agent.name }).click()
+    await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/)
+    const mainUrl = page.url()
+    await page.getByTestId('configure-agent').click()
+    await expect(page.getByTestId('agent-tab-settings')).toHaveAttribute('aria-current', 'page')
+    await page.getByTestId('agent-tab-conversations').click()
+    await page.getByTestId('agent-chat-open').click()
+    await expect(page).toHaveURL(mainUrl)
+    await page.goto(`/agentes/${agent.id}`)
+    await page.getByTestId('queue-toggle').click()
+    await page.getByTestId('sidebar-agent-row').filter({ hasText: agent.name }).click()
+    await page.getByPlaceholder('Mensagem (Ctrl+V cola imagens)').fill('Pedido na principal pela fila unificada')
+    await page.getByTestId('send').click()
+    await expect(page.getByTestId('chat-queued-message')).toContainText('Pedido na principal pela fila unificada')
+    await page.reload()
+    await expect(page.getByTestId('chat-queued-message')).toContainText('Pedido na principal pela fila unificada')
+    await page.getByTestId('chat-queue-cancel').click()
+    await expect(page.getByTestId('chat-queued-message')).toHaveCount(0)
+    await page.goto(`/agentes/${agent.id}`)
+    await page.getByTestId('agent-chat-new').click()
+    await expect(page).not.toHaveURL(mainUrl)
+    await page.getByTestId('sidebar-agent-row').filter({ hasText: agent.name }).click()
+    await expect(page).toHaveURL(mainUrl)
+  } finally {
+    await page.goto('/agentes')
+    await page.request.delete(`/api/specialists/${agent.id}`, { headers })
+  }
+})

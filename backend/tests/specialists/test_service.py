@@ -205,7 +205,8 @@ async def test_start_run_send_failure_records_failed(world):
 
     run = await world.service.start_run(specialist_id, trigger="manual")
 
-    assert run.outcome == "failed" and "sem conexão" in (run.reason or "")
+    assert run.outcome == "failed" and "Confira a conversa" in (run.reason or "")
+    assert world.specialist(specialist_id).queue_paused is True
 
 
 # conclude / notify ------------------------------------------------------------
@@ -1431,7 +1432,7 @@ async def test_finishing_the_main_session_creates_no_run(world):
     assert world.specialist(specialist_id).main_session_id == main_id
 
 
-async def test_is_busy_ignores_main_with_pending_prompt(world):
+async def test_is_busy_includes_main_with_pending_prompt(world):
     specialist_id = world.add_specialist()
     world.turns = lambda sid: [
         init_message(sid),
@@ -1442,10 +1443,10 @@ async def test_is_busy_ignores_main_with_pending_prompt(world):
     await world.manager.send(main_id, "oi")
     await wait_until(lambda: world.manager.get(main_id).state == "awaiting_decision")
 
-    assert world.service.is_busy(specialist_id) is False
+    assert world.service.is_busy(specialist_id) is True
 
 
-async def test_is_busy_ignores_comment_runs(world):
+async def test_is_busy_includes_comment_runs(world):
     specialist_id = world.add_specialist()
     pause = PauseStep()
     world.turns = lambda sid: [init_message(sid), pause, *text_turn(sid, "ok")[1:]]
@@ -1455,13 +1456,13 @@ async def test_is_busy_ignores_comment_runs(world):
 
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
         conn.execute("UPDATE specialist_runs SET trigger = 'comment' WHERE id = ?", (run.id,))
-    assert world.service.is_busy(specialist_id) is False
+    assert world.service.is_busy(specialist_id) is True
 
     pause.release.set()
     await wait_until(lambda: world.manager.get(run.session_id).state == "idle")
 
 
-async def test_is_busy_ignores_an_isolated_session_whose_run_ended(world):
+async def test_is_busy_keeps_a_concluded_run_until_its_turn_ends(world):
     specialist_id = world.add_specialist()
     pause = PauseStep()
     world.turns = lambda sid: [init_message(sid), pause, *text_turn(sid, "ok")[1:]]
@@ -1470,7 +1471,7 @@ async def test_is_busy_ignores_an_isolated_session_whose_run_ended(world):
 
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
         store.finish_run(conn, run.id, outcome="concluded", ended_at=NOW, reason=None)
-    assert world.service.is_busy(specialist_id) is False
+    assert world.service.is_busy(specialist_id) is True
 
     pause.release.set()
     await wait_until(lambda: world.manager.get(run.session_id).state == "idle")
@@ -1914,6 +1915,7 @@ async def test_comments_while_a_run_is_open_are_messages_of_that_run(world):
     pr = pr_of(specialist_id, first.session_id)
 
     one = await world.service.start_comment_run(pr, [a_comment("issue:1", body="primeiro")])
+    await wait_until(lambda: world.manager.get(first.session_id).state == "idle")
     two = await world.service.start_comment_run(pr, [a_comment("issue:2", body="segundo")])
 
     assert one is not None and two is not None
@@ -1936,6 +1938,7 @@ async def test_comments_while_a_comment_run_is_open_do_not_open_another(world):
     pr = pr_of(specialist_id, first.session_id)
 
     one = await world.service.start_comment_run(pr, [a_comment("issue:1")])
+    await wait_until(lambda: world.manager.get(first.session_id).state == "idle")
     two = await world.service.start_comment_run(pr, [a_comment("issue:2")])
 
     assert one is not None and two is not None and one.id == two.id
@@ -1953,9 +1956,10 @@ async def test_a_manual_run_stays_busy_while_comments_arrive(world):
     await asyncio.wait_for(pause.reached.wait(), 2)
     assert world.service.is_busy(specialist_id) is True
 
-    await world.service.start_comment_run(
-        pr_of(specialist_id, first.session_id), [a_comment("issue:1")]
-    )
+    with pytest.raises(CommentNotSentError):
+        await world.service.start_comment_run(
+            pr_of(specialist_id, first.session_id), [a_comment("issue:1")]
+        )
 
     assert world.service.is_busy(specialist_id) is True
     assert world.run_of(first.session_id).trigger == "manual"

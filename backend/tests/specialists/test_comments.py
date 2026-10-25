@@ -366,6 +366,8 @@ async def test_a_failed_delivery_stays_queued_and_the_next_tick_retries(world, c
     assert statuses(world)["issue:1"][0] == "delivered"
     assert len(comment_runs(world, specialist_id)) == 1
 
+    # The next dispatch waits for the current turn to end.
+    await wait_until(lambda: world.manager.get(session_id).state == "idle")
     # Delivered once: a later failure of the same PR warns again.
     failing = True
     queue(world, specialist_id, "issue:2", at=world.now)

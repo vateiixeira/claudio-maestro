@@ -584,10 +584,26 @@ export function putGithubSettings(body: { login?: string; secret?: string }): Pr
   return request('PUT', '/api/specialists/github', body)
 }
 
+export function cancelSpecialistRun(id: number, runId: number): Promise<SpecialistRun> {
+  return request('POST', `/api/specialists/${id}/runs/${runId}/cancel`, {})
+}
+
 export function listSpecialistNotices(unreadOnly = false): Promise<SpecialistNotice[]> {
   return request('GET', unreadOnly ? '/api/specialist-notices?unread=true' : '/api/specialist-notices')
 }
 
 export function markSpecialistNoticesRead(ids: number[]): Promise<{ updated: number }> {
   return request('POST', '/api/specialist-notices/read', { ids })
+}
+
+export function listSpecialistConversations(id: number): Promise<import('../types/api').SpecialistConversation[]> {
+  return request('GET', `/api/specialists/${id}/conversations`)
+}
+
+export function openSpecialistConversation(id: number, input: { session_id?: string; new?: boolean } = {}): Promise<{ session_id: string }> {
+  return request('POST', `/api/specialists/${id}/conversations`, input)
+}
+
+export function listSpecialistMessages(id: number, sessionId: string): Promise<{ id: number; text: string }[]> {
+  return request('GET', `/api/specialists/${id}/messages?session_id=${encodeURIComponent(sessionId)}`)
 }

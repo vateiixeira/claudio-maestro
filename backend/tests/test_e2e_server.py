@@ -619,3 +619,18 @@ def test_main_cleans_the_temporary_folder_when_interrupted_while_seeding(
 
     assert e2e.main() == 1
     assert not root.exists()
+
+
+def test_chat_e2e_uses_only_the_opt_in_fake_client(tmp_path, monkeypatch):
+    env = e2e.isolated_env({'MAESTRO_E2E_CHAT': '1'}, tmp_path, 6620)
+    assert env['MAESTRO_E2E_CHAT'] == '1'
+    apply_env(monkeypatch, env)
+    e2e.seed(tmp_path)
+    attempts = forbid_claude(monkeypatch)
+    with TestClient(e2e.build_app(6620), base_url="http://127.0.0.1:6620",
+                    headers={"x-maestro": "1", "origin": "http://localhost:6620"}) as client:
+        assert client.app.state.sessions.agent_factory.__name__ == "chat_agent"
+        assert client.app.state.agentd is None
+        project_id = client.get("/api/projects").json()[0]["id"]
+        assert client.get(f"/api/projects/{project_id}/commands").status_code == 200
+    assert attempts == []

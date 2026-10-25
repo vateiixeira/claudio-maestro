@@ -165,22 +165,31 @@ O comando que abre arquivos no editor (padrão: `code`) fica nas Preferências d
 
 Um agente é uma rotina que você descreve uma vez e o Maestro roda por você, na hora ou nos horários marcados: triar issues, revisar PRs, conferir um deploy. Cadastre na página **Agentes**; cada um tem:
 
+- **Conversas.** Converse diretamente com o agente, retome um assunto ou comece outro contexto. Em Execuções, "Continuar" abre o resultado de uma rotina para perguntas e ajustes.
 - **Skill.** O passo a passo que ele segue, num `SKILL.md`.
 - **Projetos.** A pasta onde ele trabalha e os outros projetos que ele pode ler.
 - **Autonomia.** "Pede ok antes de agir para fora" ou "Vai até o fim".
 - **Horários.** Dias da semana e hora. Também dá para rodar na hora, com "Rodar agora".
+- **Fila.** Mensagens, pedidos manuais e horários entram na mesma fila. Dá para pausar os próximos disparos, retomar e cancelar o que ainda não começou, sem interromper a execução atual.
 - **Segredos.** Variáveis de ambiente (um token, por exemplo) que só a sessão do agente enxerga.
 - **Memória.** Os aprendizados que ele reescreve entre execuções e o registro do que já fez, que ele consulta quando precisa.
 
 Onde ficam os arquivos: cada agente tem uma pasta `<pasta de dados>/specialists/<nome>/` (permissão 700), com `SKILL.md`, `aprendizados.md` (até 4.000 caracteres) e `secrets.env` (permissão 600). Os segredos entram só como variáveis de ambiente da sessão do agente, nunca no prompt, e a tela nunca mostra os valores.
+
+A página do agente separa **Conversas**, **Execuções** e **Configuração**. Abrir uma conversa não dispara o modelo; ele só roda quando você envia uma mensagem. O chat mantém o contexto da sessão, enquanto cada rotina começa numa sessão própria. As mensagens pendentes aparecem no chat, com prévia e cancelamento, inclusive depois de recarregar.
 
 Como ele roda:
 
 - Cada agente tem uma conversa principal permanente no topo da barra lateral. Abra-a para pedir algo ou acompanhar os anúncios das execuções; o link "Configurar agente" abre as preferências dele. As execuções ficam no histórico da página Agentes, com o selo "Agente · nome". Ela fica no modo de permissão `default` e não pede ok para editar nem para rodar comandos locais.
 - As ações para fora (`git push`, `gh pr create`, `gh pr merge`, `gh issue close`, `gh release` e as que você acrescentar) pedem ok quando a autonomia é "Pede ok antes de agir para fora". O merge (`gh pr merge`), o push para a branch padrão e o push forçado pedem ok sempre, qualquer que seja a autonomia. Um push sem o nome da branch só passa sem ok quando o próprio comando diz a pasta (`cd <pasta> && git push`, `git -C <pasta> push`) e ela não está na branch padrão.
 - Agentes não comentam no GitHub: comentários e revisões são recusados, inclusive na autonomia "Vai até o fim". A resposta fica na conversa principal.
-- O agente fecha a própria execução com a ferramenta `concluir`. Se ele não fechar, o Maestro confere o desfecho no fim da sessão.
-- O agendador pula a execução se a anterior ainda estiver rodando ou esperando você, ou se o uso da assinatura estiver em 90% ou mais. Se o app estava desligado no horário, grava uma execução "perdida". Duas execuções seguidas sem sucesso geram um alerta.
+- Na página do agente, "Conversar com o agente" abre a mesma conversa principal da barra lateral. "Nova conversa" começa outro contexto. As conversas adicionais podem registrar resultados sem se encerrar; rotinas mantêm sessões próprias.
+- Nas rotinas, o agente fecha a própria execução com a ferramenta `concluir`. Se ele não fechar, o Maestro confere o desfecho no fim da sessão.
+- Se a execução anterior ainda estiver rodando ou esperando uma decisão, o pedido aguarda na fila. Uma execução marcada como "Esperando você" pela verificação de fechamento também segura a fila até você enviar uma resposta nessa conversa ou finalizá-la. Cada agente executa uma tarefa por vez; agentes diferentes continuam trabalhando em paralelo.
+- A fila guarda até 50 pendências por agente. Horários sucessivos se juntam em uma única rotina agendada pendente, para não disparar uma sequência de tarefas iguais ao voltar. O histórico sempre mostra todas as pendências, além das últimas 50 outras execuções.
+- A pausa da fila é independente de "Horários ligados": impede os próximos disparos, inclusive os manuais, e mantém as pendências. Desligar os horários também segura as rotinas agendadas que já estavam na fila. As novas sessões das rotinas usam a configuração do agente vigente quando começam; o texto do pedido é o que foi guardado ao enfileirar.
+- O agendador pula um novo horário se o uso da assinatura estiver em 90% ou mais e revalida esse limite antes de começar uma rotina que estava na fila. Se o app estava desligado no horário, grava uma execução "perdida". Duas execuções seguidas sem sucesso geram um alerta.
+- Os pedidos ainda não enviados sobrevivem ao reinício. Se o envio começou, mas não dá para confirmar o recebimento da mensagem, a fila pausa e deixa um aviso para conferir a conversa antes de retomar ou rodar de novo. O Maestro nunca reenvia automaticamente esse pedido. O texto e as imagens pendentes ficam num arquivo privado `pending-<id>.txt` na pasta do agente e é removido após o envio ou cancelamento; esse conteúdo não entra no SQLite.
 - Os avisos que o agente deixa aparecem na Inbox. O histórico das execuções não entra no contexto do agente: o registro é consultado por ferramenta, só quando ele precisa.
 
 ### Comentários no PR
@@ -203,7 +212,7 @@ Para receber os comentários sem esperar a consulta:
    Na máquina do Maestro, abra o encaminhamento remoto no SSH: `ssh -N -R 127.0.0.1:6670:127.0.0.1:6670 usuario@servidor`. A porta remota precisa coincidir com a do proxy; o último endereço é o receptor local.
 4. No repositório do GitHub, crie um webhook com a URL `https://seu-dominio/maestro-hooks/github`, conteúdo `application/json`, o mesmo segredo e os eventos **Issue comments**, **Pull request review comments** e **Pull request reviews**.
 
-O receptor aceita só `POST /github` com assinatura HMAC válida. A API e a interface continuam locais. O Maestro agrupa comentários do mesmo PR por 60 segundos; uso da assinatura a partir de 90% mantém os comentários na fila. O limite é de dez lotes por PR por dia. Comentários repetidos são ignorados, e a fila sobrevive ao reinício. Se um envio for interrompido sem confirmação, o Maestro avisa na Inbox para conferir a conversa e não repete o pedido automaticamente.
+O receptor aceita só `POST /github` com assinatura HMAC válida. A API e a interface continuam locais. Comentários também aguardam enquanto o agente trabalha ou sua fila está pausada. O Maestro agrupa comentários do mesmo PR por 60 segundos; uso da assinatura a partir de 90% mantém os comentários na fila. O limite é de dez lotes por PR por dia. Comentários repetidos são ignorados, e a fila sobrevive ao reinício. Se um envio for interrompido sem confirmação, o Maestro avisa na Inbox para conferir a conversa e não repete o pedido automaticamente.
 
 ## Segurança
 

@@ -68,7 +68,7 @@ NO_GITHUB = "- Não comente no GitHub (PR, issue, revisão). Responda na convers
 MAIN_SECTION = (
     "## Esta é a conversa principal\n"
     "Aqui você conversa com a pessoa que usa o Maestro, a qualquer hora. Não é uma execução "
-    "agendada: faça o que ela pedir. Os resultados das execuções chegam como anúncios no "
+    "agendada: faça o que ela pedir. O fim de um turno não encerra esta conversa. Os resultados das execuções chegam como anúncios no "
     "bloco <maestro-anuncios>.\n\n"
 )
 
