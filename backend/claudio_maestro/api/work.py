@@ -31,6 +31,14 @@ class WorkCreate(BaseModel):
     ready: bool = True
 
 
+class CollectionCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    source: Literal['sentry', 'kbgen']
+    source_instance: str = Field(min_length=1, max_length=200)
+    source_project: str = Field(min_length=1, max_length=200)
+    query: str = Field(default='', max_length=2000)
+
+
 class WorkPatch(BaseModel):
     model_config = ConfigDict(extra='forbid')
     expected_revision: int = Field(gt=0)
@@ -128,6 +136,8 @@ async def edit_work_item(item_id: int, body: WorkPatch, request: Request, conn: 
             service.assert_item_mutation_allowed(item_id, conn=conn)
         if body.status == 'ready':
             service._activate_project(conn, store.get_item(conn, item_id).project_id)
+            if store.get_item(conn, item_id).status != 'ready':
+                service._executor_capacity(conn, store.get_item(conn, item_id).project_id)
         updated = store.update_item_in_transaction(conn, item_id,
             expected_revision=body.expected_revision, now=int(time.time()),
             dossier_changed=dossier_change,
@@ -190,3 +200,26 @@ async def set_work_mode(project_id: int, body: ModeIn, request: Request, conn: D
         actions[body.action](project_id)
     request.app.state.hub.publish({'session_id': None, 'seq': 0, 'type': 'work.mode', 'data': {'project_id': project_id, **service.project_mode(project_id)}})
     return service.project_mode(project_id)
+
+
+@router.post('/projects/{project_id}/collections', status_code=202)
+async def create_collection(project_id: int, body: CollectionCreate, request: Request, conn: DbDep):
+    _project(conn, project_id)
+    return request.app.state.work.create_collection(project_id=project_id, **body.model_dump())
+
+
+@router.get('/projects/{project_id}/collections')
+async def list_collections(project_id: int, request: Request, conn: DbDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 25, offset: Annotated[int, Query(ge=0)] = 0):
+    _project(conn, project_id)
+    return request.app.state.work.collections(project_id, limit=limit, offset=offset)
+
+
+@router.get('/projects/{project_id}/collections/{collection_id}')
+async def get_collection(project_id: int, collection_id: str, request: Request, conn: DbDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 25, offset: Annotated[int, Query(ge=0)] = 0):
+    _project(conn, project_id)
+    value = request.app.state.work.collection(collection_id, limit=limit, offset=offset)
+    if value['project_id'] != project_id:
+        raise HTTPException(status_code=404, detail='Coleta não encontrada neste projeto.')
+    return value

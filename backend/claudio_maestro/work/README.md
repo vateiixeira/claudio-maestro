@@ -89,7 +89,8 @@ não bastam para aceitar uma entrega após reinício.
 - `assert_deletion_allowed(project_id=... ou session_id=...)` deve rodar antes
   de fechar/remover sessões ou projetos; envio incerto conserva suas reservas.
 
-`max_tasks` limita tarefas pendentes do projeto, não todo o histórico.
+`max_tasks` limita tarefas admitidas (`ready/active/waiting/review`), sem contar
+backlog, gerações técnicas de coleta ou histórico.
 `max_attempts` limita tentativas por tarefa; atingir esse limite bloqueia somente
 ela. `max_seconds` limita a duração de cada turno enviado; a interrupção independe
 conseguir escrever um relatório em disco. Checkout é reservado pelo serviço;
@@ -176,3 +177,87 @@ já mantido pelo agentd preserva contexto/MCP e permite inspecionar ou conciliar
 trabalho cercado ou incerto, sem iniciar outro processo nem enviar turno. Assim,
 Remote Control ou uma reconexão atrasada de modelo/esforço não recriam o contexto
 antigo entre o fechamento do SDK e a alteração dos projetos adicionais.
+
+## Coleta delegada de fontes (fase 3)
+
+`create_collection(project_id, source, source_instance, source_project, query='')`
+cria uma geração efêmera de coleta e uma tarefa técnica na mesma transação que o
+modo, o evento e o dossiê privado. `source` aceita `sentry` ou `kbgen`. O dispatcher
+usa uma sessão normal do projeto, com responsabilidade `investigator` e dossiê
+`kind=collection`; não cadastra um especialista nem altera ferramentas, MCPs,
+credenciais ou permissões. O prompt desta sessão pede somente descoberta e não
+alteração de código. Não há um novo sandbox de comandos por papel.
+
+O CTO usa `collect_source` para iniciar essa sessão separada. Uma fonte que só
+retorna corpos completos pode ser consultada pelo coletor: tais respostas ficam
+na conversa dele, nunca são copiadas automaticamente para o CTO. `publish_collection`
+captura sessão, tarefa, projeto e identidade composta da fonte no servidor. Seu
+contrato fechado é:
+
+```json
+{
+  "items": [{
+    "external_id": "50", "title": "Rastrear guardas", "priority": "normal",
+    "source_revision": "2026-10-25T12:00:00Z", "url": "https://issues.example/50"
+  }],
+  "cursor": "", "next_cursor": null
+}
+```
+
+Cada item aceita ainda `expected_revision` local para confirmar uma substituição
+após conflito; `get_source_metadata(external_id)` permite ao coletor reler somente
+os metadados no escopo capturado, sem consultar dossiês de outras tarefas. Campos extras, inclusive descrição, stack e corpo, são rejeitados.
+Títulos têm até 160 caracteres; id/revisão até 200; URL HTTPS até 1000, sem
+credenciais. Há no máximo 25 itens por página, 100 páginas por geração e 2000
+metadados de fontes por projeto. Os cursores têm até 500 caracteres e não podem
+repetir uma página com conteúdo diferente nem formar ciclo. Ultrapassar limite
+mantém a coleta incompleta; refine o filtro antes de iniciar outra geração.
+
+Página repetida com o mesmo conteúdo retorna seu recibo sem duplicação. Página,
+links, tarefas canônicas e referências de dossiês são atômicos: falha de arquivo
+ou SQL reverte todos os registros da página. Arquivos são privados (`0600`) e
+substituídos atomicamente. Uma falha SQL posterior pode deixar um arquivo privado
+órfão, nunca uma tarefa canônica sem dossiê. A identidade da issue não depende da
+geração: projeto local + fonte + instalação + projeto externo + id externo.
+
+A publicação final (`next_cursor=null`) aceita zero issues e registra um resultado
+técnico com recibo privado. Só o serviço encerra essa tarefa de coleta como `done`,
+após Result positivo, quiescência comprovada e validação do recibo final. `conclude`
+livre não substitui o recibo. Result negativo/interrupção ou recibo perdido não
+confirma coleta. Uma investigação/implementação de issue continua indo a `review`.
+
+Issues coletadas entram em `backlog`. Backlog e tarefas técnicas de coleta não
+consomem `max_tasks`: o teto de executores conta `ready/active/waiting/review`.
+`start_work(work_item_id, expected_revision)` captura o CTO e admite a issue;
+`reevaluate_work(work_item_id, expected_revision, reason, code_reference)` reabre a
+mesma entrada após mudança no código, inclusive com revisão externa idêntica.
+Entrada e dossiê mudam por CAS; dossiê anterior e tentativas antigas permanecem.
+O snapshot de revisão capturado no início da coleta impede sobrescrever uma
+reavaliação concorrente. Revisão externa diferente invalida parecer anterior,
+mas não encerra o único executor ativo nem cria outro. Uma página aceita
+emite `work.changed` mesmo sem mudar a revisão, para invalidar consultas da UI.
+
+`get_work` retorna metadados e referências, sem corpos dos resultados; omitir id
+retorna `{items,total,limit,offset}` (padrão 25, máximo 200). `get_work_evidence`
+carrega dossiê/resultados de uma única tarefa sob demanda, com validação de escopo.
+`conclude` aceita `delivery_type` opcional: `investigation_complete`,
+`implementation_complete`, `technical_followup`, `product_decision`,
+`policy_blocked`. Isso descreve a entrega, sem alterar papel ou permissão. Uma
+lacuna técnica continua em revisão; análise completa não exige PR artificial.
+
+API HTTP (protegida pelo mesmo Host/Origin/X-Maestro do app):
+
+- `POST /api/projects/{id}/collections` recebe `{source,source_instance,source_project,query?}`;
+  retorna `202` com geração, tarefa técnica, cursor, estado e página de links.
+- `GET /api/projects/{id}/collections?limit=25&offset=0` retorna
+  `{items,total,limit,offset}` de gerações.
+- `GET /api/projects/{id}/collections/{collection_id}?limit=25&offset=0`
+  retorna `{id,work_item_id,source,source_instance,source_project,cursor,finalized,total,
+  created_at,project_id,status,items:[{work_item_id,source_revision}],limit,offset}`.
+  `finalized` indica publicação final; `status=done` comprova também fim positivo.
+
+Não há cliente HTTP específico para Sentry/KBGen nem nomes externos de MCP
+presumidos; disponibilidade e autenticação vêm do projeto. Publicação não prova
+que a fonte devolveu tudo: o coletor precisa consultar e declarar o fim de forma
+fundamentada. Feed/outbox ao CTO, despertar automático, revisão independente,
+decisões humanas completas e continuidade de PR pertencem à fase 4.

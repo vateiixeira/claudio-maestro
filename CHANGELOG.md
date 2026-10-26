@@ -6,6 +6,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Fontes Sentry e KBGen: coleta delegada em conversa própria, metadados paginados no backlog e reavaliação da mesma issue após mudanças na fonte ou no código, preservando evidências anteriores.
+
 - Trabalho por projeto: conversa persistente do CTO, tarefas por issue e execuções com contexto separado. Resultados e retomadas preservam evidências, e envios incertos não são repetidos automaticamente.
 
 - Agentes: conversa principal permanente no topo da barra lateral, anúncios dos resultados na conversa e comentários seus nos PRs entregues à sessão que abriu o PR, por consulta periódica ou webhook assinado. Login e segredo configuráveis na página Agentes; os agentes respondem na conversa e não comentam no GitHub.

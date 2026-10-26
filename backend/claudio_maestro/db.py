@@ -599,6 +599,46 @@ MIGRATIONS.append([
     )""",
 ])
 
+# Phase 3: collection generations and their compact publication receipts.
+MIGRATIONS.append([
+    """CREATE TABLE work_collections (
+        id TEXT PRIMARY KEY,
+        work_item_id INTEGER NOT NULL UNIQUE REFERENCES work_items(id) ON DELETE CASCADE,
+        source TEXT NOT NULL,
+        source_instance TEXT NOT NULL,
+        source_project TEXT NOT NULL,
+        cursor TEXT NOT NULL DEFAULT '',
+        finalized INTEGER NOT NULL DEFAULT 0,
+        total INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+    )""",
+    """CREATE TABLE work_collection_pages (
+        collection_id TEXT NOT NULL REFERENCES work_collections(id) ON DELETE CASCADE,
+        cursor TEXT NOT NULL,
+        digest TEXT NOT NULL,
+        receipt_ref TEXT NOT NULL,
+        PRIMARY KEY (collection_id, cursor)
+    )""",
+    """CREATE TABLE work_collection_items (
+        collection_id TEXT NOT NULL REFERENCES work_collections(id) ON DELETE CASCADE,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        source_revision TEXT,
+        PRIMARY KEY (collection_id, work_item_id)
+    )""",
+    """CREATE TABLE work_collection_inputs (
+        collection_id TEXT NOT NULL REFERENCES work_collections(id) ON DELETE CASCADE,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL,
+        PRIMARY KEY (collection_id, work_item_id)
+    )""",
+    """CREATE TABLE work_input_history (
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL,
+        dossier_ref TEXT NOT NULL,
+        PRIMARY KEY (work_item_id, revision)
+    )""",
+])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

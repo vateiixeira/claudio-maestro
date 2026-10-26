@@ -176,8 +176,8 @@ def create_item_in_transaction(conn: sqlite3.Connection, *, project_id: int, tit
                             (project_id, source, source_instance, source_project, external_id)).fetchone()
     if existing:
         return get_item(conn, existing['id']), False
-    if max_active is not None and conn.execute(
-        "SELECT COUNT(*) FROM work_items WHERE project_id = ? AND status NOT IN ('done', 'cancelled')",
+    if status == 'ready' and max_active is not None and conn.execute(
+        "SELECT COUNT(*) FROM work_items WHERE project_id = ? AND status IN ('ready','active','waiting','review') AND id NOT IN (SELECT work_item_id FROM work_collections)",
         (project_id,),
     ).fetchone()[0] >= max_active:
         raise WorkConflictError('Limite de tarefas pendentes deste projeto atingido.')
@@ -398,7 +398,10 @@ def finish_attempt(conn: sqlite3.Connection, attempt_id: int, *, outcome: str,
         item = get_item(conn, attempt.work_item_id)
         current = item.revision == attempt.work_revision
         if current:
-            target = 'review' if outcome == 'succeeded' else ('cancelled' if outcome == 'cancelled' else 'blocked')
+            collection = conn.execute('SELECT finalized FROM work_collections WHERE work_item_id=?', (item.id,)).fetchone()
+            if collection and outcome == 'succeeded' and not collection['finalized']:
+                raise WorkConflictError('A coleta ainda não publicou sua página final.')
+            target = ('done' if collection else 'review') if outcome == 'succeeded' else ('cancelled' if outcome == 'cancelled' else 'blocked')
         else:
             target = 'ready' if item.status in ('active', 'waiting') else item.status
         conn.execute('UPDATE work_attempts SET state = ?, result_kind = ?, result_ref = ?, updated_at = ?, ended_at = ? WHERE id = ?',

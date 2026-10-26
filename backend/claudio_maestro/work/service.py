@@ -27,12 +27,13 @@ from claudio_maestro.sessions import (
 
 from . import prompt, store
 from .files import WorkFiles
+from .sources import SourcesMixin
 
 logger = logging.getLogger(__name__)
 TURN_OPEN = ('connecting', 'running', 'awaiting_decision')
 
 
-class WorkService:
+class WorkService(SourcesMixin):
     def __init__(self, db_path: Path, *, sessions: SessionManager, files: WorkFiles,
                  publish: Callable[[dict], None], clock: Callable[[], float] = time.time,
                  legacy_busy: Callable[[sqlite3.Connection, int], bool] | None = None,
@@ -197,7 +198,8 @@ class WorkService:
         if identity['work_role'] == 'coordinator':
             text = prompt.COORDINATOR
         else:
-            text = prompt.worker(identity['work_role'], identity['work_item_id'], self.dossier(identity['work_item_id']))
+            dossier = self.dossier(identity['work_item_id'])
+            text = prompt.collector(dossier) if dossier.get('kind') == 'collection' else prompt.worker(identity['work_role'], identity['work_item_id'], dossier)
         return SessionContext(system_prompt_append=text, mcp_servers={'maestro_work': build_server(self, record.session_id)})
 
     @staticmethod
@@ -240,16 +242,18 @@ class WorkService:
         return item
 
     def start(self, item_id: int, *, expected_revision: int) -> store.WorkItem:
-        with closing(db.connect(self.db_path)) as conn:
+        with closing(db.connect(self.db_path)) as conn, db.transaction(conn):
             item = store.get_item(conn, item_id)
             if item.revision != expected_revision:
                 raise store.WorkConflictError('A tarefa mudou. Atualize antes de iniciar.')
-            if item.status not in ('backlog', 'blocked', 'ready') or any(a.state in store.ACTIVE_STATES for a in store.list_attempts(conn, item_id)):
+            self.assert_item_mutation_allowed(item_id, conn=conn)
+            if item.status not in ('backlog', 'blocked', 'ready'):
                 raise store.WorkConflictError('A tarefa não admite uma nova tentativa agora.')
-            self.activate_project(item.project_id)
+            self._activate_project(conn, item.project_id)
             self.dossier(item.id)
             if item.status != 'ready':
-                item = store.update_item(conn, item.id, expected_revision=expected_revision,
+                self._executor_capacity(conn, item.project_id)
+                item = store.update_item_in_transaction(conn, item.id, expected_revision=expected_revision,
                                          status='ready', now=self._now())
         self._changed(item)
         self._wake.set()
@@ -280,17 +284,24 @@ class WorkService:
             if identity is None or identity['project_id'] != item.project_id or (identity['work_role'] != 'coordinator' and identity['work_item_id'] != item_id):
                 raise store.WorkValidationError('Esta sessão não acompanha a tarefa solicitada.')
             attempts = store.list_attempts(conn, item_id)
-        return {'item': asdict(item), 'attempts': [{**asdict(a), 'result': self.result(a.id)} for a in attempts]}
+        return {'item': asdict(item), 'attempts': [{**asdict(a), 'result': self._compact_result(a)} for a in attempts]}
 
-    def list_work(self, session_id: str) -> dict:
+    def _compact_result(self, attempt: store.Attempt) -> dict | None:
+        value = self.result(attempt.id)
+        if value is None or value.get('unavailable'):
+            return value
+        return {'available': True, 'result_kind': attempt.result_kind}
+
+    def list_work(self, session_id: str, *, limit: int = 25, offset: int = 0) -> dict:
         identity = self.session_identity(session_id)
         if identity is None:
             raise store.WorkValidationError('Conversa de trabalho não encontrada.')
         with closing(db.connect(self.db_path)) as conn:
-            items = store.list_items(conn, project_id=identity['project_id'], limit=25)
+            items = store.list_items(conn, project_id=identity['project_id'], limit=limit, offset=offset)
+            total = conn.execute('SELECT COUNT(*) FROM work_items WHERE project_id=?', (identity['project_id'],)).fetchone()[0]
         if identity['work_role'] != 'coordinator':
             items = [item for item in items if item.id == identity['work_item_id']]
-        return {'items': [asdict(item) for item in items]}
+        return {'items': [asdict(item) for item in items], 'total': total, 'limit': limit, 'offset': offset}
 
     def _active(self) -> list[store.Attempt]:
         with closing(db.connect(self.db_path)) as conn:
@@ -405,21 +416,26 @@ class WorkService:
 
     async def conclude(self, session_id: str, *, result_kind: str, summary: str,
                        evidence: list[str] | None = None, tests: list[str] | None = None,
-                       next_action: str = '', blockers: str = '') -> None:
+                       next_action: str = '', blockers: str = '', delivery_type: str | None = None) -> None:
         identity = self.session_identity(session_id)
         if identity is None or identity['work_role'] == 'coordinator':
             raise store.WorkValidationError('A conclusão precisa vir da tentativa responsável.')
+        if self.dossier(identity['work_item_id']).get('kind') == 'collection' and result_kind != 'decision':
+            raise store.WorkValidationError('A entrega da coleta exige publish_collection e seu recibo final.')
         if result_kind not in ('investigation', 'implementation', 'review', 'decision'):
             raise store.WorkValidationError('Tipo de entrega inválido.')
         if (result_kind == 'review' and identity['work_role'] != 'reviewer') or (identity['work_role'] == 'reviewer' and result_kind not in ('review', 'decision')):
             raise store.WorkValidationError('O parecer precisa vir da tentativa de revisão independente.')
+        delivery_type = delivery_type or {'implementation': 'implementation_complete', 'decision': 'product_decision'}.get(result_kind, 'investigation_complete')
+        if delivery_type not in ('investigation_complete', 'implementation_complete', 'technical_followup', 'product_decision', 'policy_blocked'):
+            raise store.WorkValidationError('Categoria de entrega inválida.')
         summary = self._text(summary, 'Resumo', 4000)
         next_action = self._text(next_action, 'Próximo passo', 1500, empty=True)
         blockers = self._text(blockers, 'Bloqueio', 1500, empty=True)
         for values in ([] if evidence is None else evidence, [] if tests is None else tests):
             if not isinstance(values, list) or len(values) > 12 or any(not isinstance(v, str) or len(v) > 500 for v in values):
                 raise store.WorkValidationError('Evidências ou testes inválidos.')
-        value = {'summary': summary, 'result_kind': result_kind, 'evidence': evidence or [], 'tests': tests or [], 'next_action': next_action, 'blockers': blockers}
+        value = {'summary': summary, 'result_kind': result_kind, 'evidence': evidence or [], 'tests': tests or [], 'next_action': next_action, 'blockers': blockers, 'delivery_type': delivery_type}
         with closing(db.connect(self.db_path)) as conn:
             current = store.get_attempt(conn, identity['work_attempt_id'])
             if current.state not in ('dispatching', 'running', 'waiting'):
@@ -537,7 +553,8 @@ class WorkService:
                         if attempt.state == 'waiting' and self.project_mode(item.project_id)['paused']:
                             continue
                         try:
-                            self.files.read(attempt.result_ref)
+                            document = self.files.read(attempt.result_ref)
+                            self._validate_collection_result(conn, item, document)
                         except (OSError, ValueError, store.WorkError):
                             # Positive quiescence is already durable: failure of
                             # evidence cannot be accepted as success, but no live

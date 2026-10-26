@@ -457,3 +457,17 @@ def test_held_process_reattaches_under_fence_without_starting_a_new_turn(api, ho
     assert client.sent == []
     if kind != 'legacy':
         assert 'maestro_work' in client.options.mcp_servers
+
+
+def test_collection_http_is_project_scoped_compact_and_closed(api, home):
+    project = make_project(api, home)
+    other = make_project(api, home, name='other')
+    body = {'source': 'kbgen', 'source_instance': 'local', 'source_project': 'app', 'query': 'status:open'}
+    response = api.post(f"/api/projects/{project['id']}/collections", json=body)
+    assert response.status_code == 202, response.text
+    collection = response.json()
+    assert collection['project_id'] == project['id'] and collection['items'] == []
+    assert api.get(f"/api/projects/{project['id']}/collections", params={'limit': 1}).json()['total'] == 1
+    assert api.get(f"/api/projects/{other['id']}/collections/{collection['id']}").status_code == 404
+    assert api.post(f"/api/projects/{project['id']}/collections", json={**body, 'description': 'no body'}).status_code == 422
+    assert api.get(f"/api/projects/{project['id']}/collections/{collection['id']}", params={'limit': 201}).status_code == 422
