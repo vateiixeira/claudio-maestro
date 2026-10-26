@@ -6,6 +6,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Trabalho por projeto: conversa persistente do CTO, tarefas por issue e execuções com contexto separado. Resultados e retomadas preservam evidências, e envios incertos não são repetidos automaticamente.
+
 - Agentes: conversa principal permanente no topo da barra lateral, anúncios dos resultados na conversa e comentários seus nos PRs entregues à sessão que abriu o PR, por consulta periódica ou webhook assinado. Login e segredo configuráveis na página Agentes; os agentes respondem na conversa e não comentam no GitHub.
 
 - Agentes: conversa direta com contexto preservado, nova conversa e continuação dos resultados de rotinas. Mensagens e imagens seguem a fila persistente, com prévia e cancelamento no chat; a página separa Conversas, Execuções e Configuração.

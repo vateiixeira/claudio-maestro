@@ -25,6 +25,7 @@ from claudio_maestro.api import (
     terminal,
     updates,
     usage,
+    work,
     ws,
 )
 
@@ -52,3 +53,5 @@ router.include_router(agentd.router)
 router.include_router(usage.router)
 router.include_router(terminal.router)
 router.include_router(ws.router)
+
+router.include_router(work.router)

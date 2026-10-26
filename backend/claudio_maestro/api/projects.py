@@ -128,21 +128,37 @@ def update_project(project_id: int, body: ProjectUpdate, conn: DbDep) -> project
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_project(project_id: int, conn: DbDep, request: Request) -> Response:
+async def delete_project(project_id: int, conn: DbDep, request: Request, fence_id: str | None = None) -> Response:
     """Close the project's active sessions (pending prompts cancelled), then delete it."""
     manager = request.app.state.sessions
     try:
         projects.get_project(conn, project_id)
-        await manager.close_project(project_id)
-        # Their groups die with the project: remember who sat in them from other projects.
-        released = groups.foreign_members(conn, project_id)
-        # The cascade takes the project's agents out of the database; their folders
-        # (skill, learnings, secrets) go too.
-        orphans = [s for s in store.list_specialists(conn) if s.project_id == project_id]
-        with db.transaction(conn):
-            projects.delete_project(conn, project_id)
-            # The id may be given to a project added later: no agent may read that one.
-            pruned = store.remove_extra_project(conn, project_id, int(time.time()))
+        work = request.app.state.work
+        receipt = work.reserve_project_deletion(project_id, fence_id=fence_id)
+        try:
+            # The fence still covers the old extra-project registry here. Close
+            # cached idle contexts in other projects before pruning that registry.
+            affected = {owner.id for owner in request.app.state.specialists.owners_for_project(conn, project_id)}
+            for sid in manager.active_ids():
+                session = manager.get(sid)
+                if session.record.specialist_id in affected and session.record.project_id != project_id and session.client is not None:
+                    await session.close()
+            await manager.close_project(project_id)
+            # Their groups die with the project: remember who sat in them from other projects.
+            released = groups.foreign_members(conn, project_id)
+            # The cascade takes the project's agents out of the database; their folders
+            # (skill, learnings, secrets) go too.
+            orphans = [s for s in store.list_specialists(conn) if s.project_id == project_id]
+            with db.transaction(conn):
+                fence = conn.execute('SELECT fence_id FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone()
+                if fence is None or fence['fence_id'] != receipt:
+                    from claudio_maestro.work.store import WorkConflictError
+                    raise WorkConflictError('O recibo da exclusão mudou.')
+                projects.delete_project(conn, project_id)
+                # The id may be given to a project added later: no agent may read that one.
+                pruned = store.remove_extra_project(conn, project_id, int(time.time()))
+        finally:
+            work.release_deletion_owner(project_id)
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
     for specialist in orphans:

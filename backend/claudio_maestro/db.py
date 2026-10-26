@@ -590,6 +590,15 @@ MIGRATIONS.append([
     )""",
 ])
 
+MIGRATIONS.append([
+    """CREATE TABLE work_project_fences (
+        project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        fence_id TEXT NOT NULL UNIQUE,
+        reason TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    )""",
+])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

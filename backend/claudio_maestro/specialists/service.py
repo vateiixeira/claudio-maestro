@@ -91,6 +91,10 @@ class CommentDeferredError(CommentNotSentError):
     """The agent is busy or paused; defer silently without attempting delivery."""
 
 
+class LegacyWorkModeError(store.SpecialistError, CommentDeferredError):
+    """Project work owns admission; no legacy send was attempted."""
+
+
 Trigger = Literal["schedule", "manual"]
 Publish = Callable[[dict[str, Any]], None]
 MAX_QUEUED_RUNS = 50
@@ -172,6 +176,105 @@ class SpecialistService:
         self._last_alert: dict[str, str] = {}
         # agent id -> lock of `ensure_main`, so two callers never create two conversations.
         self._main_locks: dict[int, asyncio.Lock] = {}
+        # Distinct from queue locks: a normal dispatch holds a queue lock too.
+        self._routing_mutations: set[int] = set()
+
+    def assert_legacy_admission(self, conn: sqlite3.Connection, specialist: store.Specialist, *, session_id: str | None = None, allow_routing_mutation: bool = False) -> None:
+        """Use the caller's transaction so activation and queue admission serialize.
+
+        This is routing ownership, not authorization of the project's tools.
+        """
+        if specialist.id in self._routing_mutations and not allow_routing_mutation:
+            raise LegacyWorkModeError('O contexto deste agente está sendo atualizado. Aguarde antes de iniciar ou reconfigurar sua sessão.')
+        project_ids = [specialist.project_id, *specialist.extra_project_ids]
+        if session_id is not None:
+            origin = conn.execute('SELECT project_id FROM sessions WHERE session_id=?', (session_id,)).fetchone()
+            if origin and origin['project_id'] not in project_ids:
+                project_ids.append(origin['project_id'])
+        # A live process retains its add_dirs until closed. Old registry edits
+        # must not hide that cached scope from a new fence or CTO ownership.
+        cached = set()
+        for sid in self._sessions.active_ids():
+            session = self._sessions.get(sid)
+            if session.record.specialist_id == specialist.id and session.client is not None:
+                extras = getattr(session, '_extras', None)
+                if extras:
+                    cached.update(str(path) for path in extras.add_dirs)
+        if cached:
+            for row in conn.execute('SELECT id, path FROM projects'):
+                if row['path'] in cached and row['id'] not in project_ids:
+                    project_ids.append(row['id'])
+        marks = ",".join("?" for _ in project_ids)
+        if conn.execute(f"SELECT 1 FROM work_project_fences WHERE project_id IN ({marks})", project_ids).fetchone() or conn.execute(
+            f"SELECT 1 FROM work_project_modes WHERE enabled = 1 AND project_id IN ({marks})",
+            project_ids,
+        ).fetchone():
+            raise LegacyWorkModeError(
+                "O trabalho deste projeto é coordenado pelo CTO. A rotina legada permanece em espera."
+            )
+
+    def legacy_available(self, specialist_id: int) -> bool:
+        """A cheap scheduler gate; writes still recheck inside their transaction."""
+        with closing(db.connect(self._db_path)) as conn:
+            try:
+                specialist = store.get_specialist(conn, specialist_id)
+                self.assert_legacy_admission(conn, specialist)
+            except (LegacyWorkModeError, store.SpecialistNotFoundError):
+                return False
+        return True
+
+    def assert_origin_change_safe(self, conn, specialist_id: int, *, known_closed=None) -> dict[int, str]:
+        """Require no pending/uncertain work; remember positively idle live runs."""
+        from claudio_maestro.work.store import WorkConflictError
+
+        known_closed = known_closed or {}
+        positive = dict(known_closed)
+        for sid in self._sessions.active_ids():
+            session = self._sessions.get(sid)
+            if session.record.specialist_id == specialist_id and (
+                session.users or getattr(session, '_connecting', False) or session.state in TURN_OPEN_STATES or session.record.turn_open or session.subagents_running
+            ):
+                raise WorkConflictError('O agente ainda tem um turno, envio ou subagente ativo.')
+        if self.is_busy(specialist_id) or conn.execute(
+            "SELECT 1 FROM specialist_runs WHERE specialist_id=? AND (outcome IN ('queued','starting','waiting') OR (outcome='failed' AND reason=?))",
+            (specialist_id, UNCERTAIN_SEND),
+        ).fetchone() or conn.execute(
+            'SELECT 1 FROM sessions WHERE specialist_id=? AND turn_open=1', (specialist_id,),
+        ).fetchone() or conn.execute(
+            "SELECT 1 FROM specialist_pr_comments WHERE specialist_id=? AND status IN ('queued','dispatching','uncertain')",
+            (specialist_id,),
+        ).fetchone():
+            raise WorkConflictError('O agente tem trabalho pendente ou envio incerto. Concilie antes de alterar sua origem ou removê-lo.')
+        for row in conn.execute("SELECT id, session_id FROM specialist_runs WHERE specialist_id=? AND outcome='running'", (specialist_id,)):
+            sid = row['session_id']
+            if known_closed.get(row['id']) == sid:
+                continue
+            session = self._sessions.get(sid) if sid in self._sessions.active_ids() else None
+            # Preserve explicit removal of a known idle legacy client, but never
+            # interpret a detached/missing process as a completed run.
+            if session is None or session.client is None or session.state != 'idle' or session.record.turn_open or session.subagents_running or session.users:
+                raise WorkConflictError('Há uma execução legada sem encerramento conciliado. Confira a conversa antes de alterar sua origem ou removê-la.')
+
+            positive[row['id']] = sid
+        return positive
+
+    def owners_for_project(self, conn, project_id: int) -> list[store.Specialist]:
+        project = projects.get_project(conn, project_id)
+        selected = {owner.id for owner in store.list_specialists(conn)
+                    if owner.project_id == project_id or project_id in owner.extra_project_ids}
+        # Existing live SDK options are also provenance, even if an older app
+        # already edited the registry. Do not infer idle from a missing client.
+        for sid in self._sessions.active_ids():
+            session = self._sessions.get(sid)
+            owner = session.record.specialist_id
+            extras = getattr(session, '_extras', None)
+            cached = {str(path) for path in extras.add_dirs} if extras else set()
+            if owner is not None and (session.client is not None or session.record.turn_open or session.users):
+                if session.record.project_id == project_id or project.path in cached:
+                    selected.add(owner)
+        rows = conn.execute("SELECT DISTINCT s.specialist_id FROM sessions s JOIN specialist_runs r ON r.session_id=s.session_id WHERE s.project_id=? AND s.specialist_id IS NOT NULL AND (r.outcome IN ('queued','starting','running','waiting') OR (r.outcome='failed' AND r.reason=?))", (project_id, UNCERTAIN_SEND))
+        selected.update(row[0] for row in rows)
+        return [owner for owner in store.list_specialists(conn) if owner.id in selected]
 
     async def shutdown(self) -> None:
         self._stopping = True
@@ -487,9 +590,12 @@ class SpecialistService:
             raise EmptyMessageError("A mensagem está vazia.")
         if len(text) > 100_000:
             raise EmptyMessageError("A mensagem pode ter até 100.000 caracteres.")
+        with closing(db.connect(self._db_path)) as conn:
+            self.assert_legacy_admission(conn, store.get_specialist(conn, record.specialist_id), session_id=record.session_id)
         await self.open_conversation(record.specialist_id, session_id=session_id)
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             specialist = store.get_specialist(conn, record.specialist_id)
+            self.assert_legacy_admission(conn, specialist, session_id=record.session_id)
             if len(store.list_pending_runs(conn, specialist.id)) >= MAX_QUEUED_RUNS:
                 raise QueueFullError
             run = store.insert_run(conn, specialist_id=specialist.id, trigger="manual",
@@ -547,6 +653,7 @@ class SpecialistService:
         """
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             specialist = store.get_specialist(conn, specialist_id)
+            self.assert_legacy_admission(conn, specialist)
             if schedule_id is not None:
                 schedule = next((s for s in store.list_schedules(conn, specialist_id)
                                  if s.id == schedule_id), None)
@@ -660,6 +767,10 @@ class SpecialistService:
         """Under the queue lock: bind before sending, and never replay a bound request."""
         with closing(db.connect(self._db_path)) as conn:
             specialist = store.get_specialist(conn, specialist_id)
+            try:
+                self.assert_legacy_admission(conn, specialist)
+            except LegacyWorkModeError:
+                return
             pending = store.list_pending_runs(conn, specialist_id)
             waiting_sessions = self._waiting_sessions(conn, specialist_id)
         if specialist.queue_paused or self.is_busy(specialist_id):
@@ -712,6 +823,10 @@ class SpecialistService:
             self._fail_queued(run, specialist, SESSION_NOT_CREATED)
             return
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            try:
+                self.assert_legacy_admission(conn, store.get_specialist(conn, specialist_id), session_id=record.session_id)
+            except LegacyWorkModeError:
+                return
             if not store.claim_run(conn, run.id, record.session_id, self._now()):
                 return
             self._publish_run(store.get_run(conn, run.id))
@@ -806,6 +921,7 @@ class SpecialistService:
             if specialist.queue_paused or self.is_busy(pr.specialist_id):
                 raise CommentDeferredError("O comentário aguarda a fila do agente.")
             with closing(db.connect(self._db_path)) as conn:
+                self.assert_legacy_admission(conn, store.get_specialist(conn, pr.specialist_id), session_id=pr.session_id)
                 waiting = self._waiting_sessions(conn, pr.specialist_id)
             target = self._comment_target(pr) or specialist.main_session_id
             if waiting and target not in waiting:
@@ -837,6 +953,7 @@ class SpecialistService:
         # The run is recorded before the send (the agent may conclude at once), but only
         # announced once the send worked: a send that fails leaves nothing on the screen.
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            self.assert_legacy_admission(conn, store.get_specialist(conn, pr.specialist_id), session_id=target)
             run = store.insert_run(
                 conn,
                 specialist_id=pr.specialist_id,
@@ -867,6 +984,10 @@ class SpecialistService:
             return store.get_run(conn, run.id)
 
     async def _send_comment_message(self, session_id: str, text: str) -> None:
+        record = self._sessions.find_record(session_id)
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            specialist = store.get_specialist(conn, record.specialist_id)
+            self.assert_legacy_admission(conn, specialist, session_id=session_id)
         result = await self._sessions.send(session_id, text)
         if result.get("send_started") is False:
             raise CommentNotSentError("Não foi possível conectar ao agente antes de enviar.")

@@ -1043,6 +1043,8 @@ class ActiveSession:
         agentd_held: set[str] | None = None,
         session_setup: SessionSetup | None = None,
         context_setup: ContextSetup | None = None,
+        connection_admission: Callable[[SessionRecord], None] | None = None,
+        remote_reconnect_allowed: Callable[[SessionRecord], bool] | None = None,
         on_session_turn_end: Callable[[str], None] | None = None,
         on_session_result: Callable[[str, dict[str, Any]], None] | None = None,
         on_session_error: Callable[[str, str], None] | None = None,
@@ -1067,6 +1069,8 @@ class ActiveSession:
         # ones too, since the MCP server lives in this process); None for ordinary sessions.
         self._session_setup = session_setup
         self._context_setup = context_setup
+        self._connection_admission = connection_admission
+        self._remote_reconnect_allowed = remote_reconnect_allowed
         self._on_session_turn_end = on_session_turn_end
         self._on_session_result = on_session_result
         self._on_session_error = on_session_error
@@ -1921,6 +1925,12 @@ class ActiveSession:
         self._emit_options()
 
     def _new_client(self, resume: bool, attach: AttachInfo | None = None) -> AgentClient:
+        if attach is None and self._connection_admission is not None:
+            try:
+                self._connection_admission(self.record)
+            except Exception:
+                logger.exception("Admissão de nova conexão recusada: %s", self.session_id)
+                raise AgentError("Não foi possível iniciar a sessão neste contexto.") from None
         model = self.record.model
         if attach is None and self.record.spawn_version != SPAWN_VERSION:
             # A process started now has what Remote Control needs from this version on.
@@ -2554,6 +2564,15 @@ class ActiveSession:
                     )
         return True
 
+    def _automatic_remote_allowed(self) -> bool:
+        if self._remote_reconnect_allowed is None:
+            return True
+        try:
+            return self._remote_reconnect_allowed(self.record)
+        except Exception:
+            logger.exception('Falha ao conferir a admissão da reconexão da sessão %s', self.session_id)
+            return False
+
     async def reconnect_remote(self, *, automatic: bool = False) -> bool:
         """Startup: the session is marked, nothing holds its conversation and it is not
         finished. Start a process (resuming the conversation) and turn Remote Control on,
@@ -2564,6 +2583,8 @@ class ActiveSession:
         again (see `_connect`). Neither runs when the agentd may still hold the process
         or when a terminal `claude` is running in the conversation (`elsewhere`)."""
         if not self.record.remote_control or self.record.finished or self._final:
+            return False
+        if not self._automatic_remote_allowed():
             return False
         async with self._lock:
             await self._wait_disposal()
@@ -2595,6 +2616,8 @@ class ActiveSession:
             # Before the connect: once it ran, the saved conversation is not read (the
             # live stream is taken as the whole of it) and the chat would open empty.
             await self.ensure_history()
+            if not self._automatic_remote_allowed():
+                return False
             if not await self._connect(enable_remote=False, quiet=automatic):
                 if self.record.remote_control and self.error is not None:
                     self._set_remote("failed", error=self.error)
@@ -3456,6 +3479,8 @@ class SessionManager:
         text_index: TextSearch | None = None,
         session_setup: SessionSetup | None = None,
         context_setup: ContextSetup | None = None,
+        connection_admission: Callable[[SessionRecord], None] | None = None,
+        remote_reconnect_allowed: Callable[[SessionRecord], bool] | None = None,
         on_session_turn_end: Callable[[str], None] | None = None,
         on_session_result: Callable[[str, dict[str, Any]], None] | None = None,
         on_session_error: Callable[[str, str], None] | None = None,
@@ -3469,6 +3494,8 @@ class SessionManager:
         # Gives the sessions of an agent their skill, folders, MCP server and policy.
         self._session_setup = session_setup
         self._context_setup = context_setup
+        self._connection_admission = connection_admission
+        self._remote_reconnect_allowed = remote_reconnect_allowed
         self._on_session_turn_end = on_session_turn_end
         self._on_session_result = on_session_result
         self._on_session_error = on_session_error
@@ -3775,6 +3802,8 @@ class SessionManager:
             agentd_held=self._agentd_held,
             session_setup=self._session_setup,
             context_setup=self._context_setup,
+            connection_admission=self._connection_admission,
+            remote_reconnect_allowed=self._remote_reconnect_allowed,
             on_session_turn_end=self._on_session_turn_end,
             on_session_result=self._on_session_result,
             on_session_error=self._on_session_error,
@@ -5049,6 +5078,8 @@ class SessionManager:
             async with gate:
                 try:
                     session = self.get(session_id)
+                    if not session._automatic_remote_allowed():
+                        return
                     if session.client is None and not session.active:
                         await session.reconnect_remote()
                 except SessionNotFoundError:

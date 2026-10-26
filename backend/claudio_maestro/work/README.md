@@ -100,4 +100,79 @@ e `request_decision` sem filtrar as ferramentas normais do projeto. A identidade
 vem da sessão capturada no servidor. A fase de decisões/revisão ainda deve criar
 o contrato de resposta humana, aceitação independente e retorno de PR;
 `request_decision` nesta camada registra a pendência e conserva a tentativa.
-As rotas HTTP e a ligação ao ciclo de vida do app pertencem à integração seguinte.
+## API e ciclo de vida
+
+O app constrói o serviço antes de religar as sessões, conecta os callbacks de
+contexto/resultado/fim/erro e chama `recover()` após a reanexação. Seu acompanhamento
+faz parte das tarefas do processo existente. Mensagens e saídas do terminal de
+sessões gerenciadas passam por `send_message`; finalização manual não encerra
+implicitamente uma tentativa ativa ou incerta.
+
+- `GET /api/work-items?project_id=&status=&source=&limit=100&offset=0` retorna
+  `{items, total, limit, offset}`. Os filtros são aplicados antes da paginação.
+- `POST /api/work-items` recebe projeto, título, objetivo, aceite, papel inicial,
+  proveniência e `ready`; retorna a tarefa canônica. Objetivo/aceite ficam privados.
+- `GET /api/work-items/{id}` retorna `{item, dossier, attempts, events, dependencies}`.
+  Cada tentativa inclui `result`; documentos ausentes geram `unavailable`, sem
+  transformar falta de evidência em sucesso nem impedir a leitura do histórico.
+- `PATCH /api/work-items/{id}` exige `expected_revision`. Metadados e referência
+  do dossiê mudam na mesma transação; `update_item_in_transaction` é o helper
+  explícito que permite essa composição. Alterar entrada invalida resultado antigo.
+- `POST /api/work-items/{id}/start` exige `expected_revision` e retorna aceitação.
+- `GET /api/work/sessions` retorna mapa por `session_id` com `work_role`, projeto,
+  tarefa e tentativa. A UI pode separar trabalhadores das conversas manuais.
+- `POST /api/projects/{id}/cto` abre ou retoma a mesma conversa do projeto,
+  devolvendo `{session_id, project_id}`; não inicia um turno.
+- `GET/POST /api/projects/{id}/work-mode` consulta ou altera `enabled/paused`.
+  Ações: `enable`, `disable`, `pause`, `resume` e `cancel_delete`.
+
+Gates legados ficam dentro das transações de admissão/reserva, incluindo projetos
+adicionais e o projeto persistido da sessão histórica. A ativação considera fila,
+incerteza, comentários e estado em memória; editar a configuração não apaga a
+proveniência de execuções anteriores. O agendador adia ocorrências enquanto o
+CTO assume o projeto, sem consumir o horário nem tentar despachá-lo repetidamente.
+
+### Exclusão de projeto
+
+Antes de aguardar o fechamento de sessões, a API reserva uma cerca durável em
+`work_project_fences`. Create/start/CTO/send, claims e legado recusam nova admissão;
+nenhuma transação SQLite permanece aberta durante o `await`. Sucesso no DELETE
+remove a cerca por cascade. Falha ou reinício conserva o recibo, sem expiração.
+
+`GET work-mode` então também retorna `deleting`, `fence_id` e `reason`. A pessoa
+pode retomar `DELETE /api/projects/{id}?fence_id=<recibo>` ou usar `cancel_delete`
+com o `fence_id` atual, depois de conciliar trabalho ativo/incerto. Um recibo antigo
+não cancela uma exclusão nova. A reserva de um pedido ainda em execução não pode
+ser cancelada por outro pedido concorrente.
+
+O dispatcher também respeita `MAESTRO_WORK_DISPATCHER`: `0` impede `dispatch_once`
+de iniciar trabalho mesmo se houver fila pronta persistida. Sem override explícito,
+acompanha `MAESTRO_SPECIALISTS_SCHEDULER`, preservando a configuração segura de
+instância isolada com cópia do banco. `GET /api/work/runtime` informa
+`dispatcher_enabled`. Isso não transforma mensagens manuais em automatismos nem
+libera envios incertos. No E2E, somente a opção de chat falso habilita o dispatcher.
+
+A reconexão automática de Remote Control passa por admissão própria, inclusive
+após aguardar leitura do histórico. Sessões de trabalho não reiniciam processos
+com dispatcher desligado; legadas respeitam agendador, modo e cercas dos projetos
+principais/adicionais; conversas manuais respeitam sua cerca.
+`MAESTRO_REMOTE_RECONNECT=0` desliga somente esse startup/retry automático também
+para conversas manuais e completa a receita segura para cópias. O padrão continua
+ligado; mensagens e ativações manuais seguem explícitas e operacionais.
+
+Mudanças de projeto/adicionais de especialistas mantêm o lock do proprietário
+e o escopo antigo até todos os clientes comprovadamente ociosos serem fechados.
+A transação revalida a ausência de nova fila antes de alterar o cadastro. Exclusão
+de projeto adicional verifica também seus proprietários e fecha os contextos
+cacheados antes de podar referências. Busy/incerto exige conciliação; apagar
+metadados nunca é usado como revogação de um processo ainda vivo.
+
+Essa mutação mantém também um marcador explícito por proprietário até o commit,
+distinto do lock da fila (um dispatch legítimo também usa esse lock). Controles
+de SDK e reconexões automáticas recusam o marcador. Uma admissão síncrona final,
+após os awaits e antes da factory de nova conexão, revalida sessão/projeto, fences,
+modo CTO, estado da tentativa e escopo legado completo. A reanexação de um processo
+já mantido pelo agentd preserva contexto/MCP e permite inspecionar ou conciliar
+trabalho cercado ou incerto, sem iniciar outro processo nem enviar turno. Assim,
+Remote Control ou uma reconexão atrasada de modelo/esforço não recriam o contexto
+antigo entre o fechamento do SDK e a alteração dos projetos adicionais.

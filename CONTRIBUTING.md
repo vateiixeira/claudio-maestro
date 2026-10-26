@@ -31,7 +31,7 @@ MAESTRO_PREVIEW_PORT=6610 uv run uvicorn claudio_maestro.app:app --host 127.0.0.
 MAESTRO_DEV_PORT=6610 pnpm --dir <worktree>/frontend dev                                        # preview da worktree
 ```
 
-Acesse **http://localhost:6610**. O preview usa os dados reais do backend: o que você fizer nele vale de verdade. Mudanças de backend da worktree não aparecem aqui; para elas, suba outra instância com `MAESTRO_DATA_DIR` próprio. Na instância isolada com cópia do banco, use `MAESTRO_SPECIALISTS_SCHEDULER=0`, para os agentes não rodarem nos horários marcados também por ela.
+Acesse **http://localhost:6610**. O preview usa os dados reais do backend: o que você fizer nele vale de verdade. Mudanças de backend da worktree não aparecem aqui; para elas, suba outra instância com `MAESTRO_DATA_DIR` próprio. Na instância isolada com cópia do banco, use `MAESTRO_SPECIALISTS_SCHEDULER=0`, `MAESTRO_WORK_DISPATCHER=0` e `MAESTRO_REMOTE_RECONNECT=0`, para não disparar horários, tarefas prontas nem reconexões automáticas de conversas marcadas na cópia. Quando `MAESTRO_WORK_DISPATCHER` não estiver definido, ele acompanha o valor de `MAESTRO_SPECIALISTS_SCHEDULER`, preservando esse modo seguro. Mensagens manuais continuam sendo ações explícitas: não as envie a sessões reais na cópia. O E2E só habilita o dispatcher com `MAESTRO_E2E_CHAT=1`, usando exclusivamente o cliente falso.
 
 ## Testes e verificações
 

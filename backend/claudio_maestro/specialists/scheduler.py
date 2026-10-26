@@ -18,7 +18,7 @@ from typing import Any
 from claudio_maestro import db
 from claudio_maestro.sessions import SessionManager
 from claudio_maestro.specialists import store
-from claudio_maestro.specialists.service import SpecialistService
+from claudio_maestro.specialists.service import LegacyWorkModeError, SpecialistService
 from claudio_maestro.usage import UsageChecker
 
 logger = logging.getLogger(__name__)
@@ -101,6 +101,8 @@ class Scheduler:
         self._service.queue_gate = self._may_dispatch
 
     def _may_dispatch(self, run: store.Run) -> bool:
+        if not self._service.legacy_available(run.specialist_id):
+            return False
         if run.trigger != "schedule":
             return True
         if not self.enabled:
@@ -136,6 +138,9 @@ class Scheduler:
                 await self._handle(schedule, enabled[schedule.specialist_id], local, now)
             except asyncio.CancelledError:
                 raise
+            except LegacyWorkModeError:
+                # A mode switch may also race the disabled-agent path.
+                continue
             except Exception:
                 logger.exception(
                     "Falha ao disparar o agendamento %s do agente %s",
@@ -149,24 +154,43 @@ class Scheduler:
         slot = due_slot(schedule, local)
         if slot is None:
             return
+        # A CTO-owned project preserves the legacy occurrence. Deactivation can
+        # later evaluate it normally; it is neither fired nor silently missed.
+        if not self._service.legacy_available(schedule.specialist_id):
+            return
         if not enabled:
             # A disabled agent never runs. The slot is still consumed, silently, so
             # enabling the agent later does not record a `missed` for old slots.
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                self._service.assert_legacy_admission(
+                    conn, store.get_specialist(conn, schedule.specialist_id)
+                )
                 store.mark_fired(conn, schedule.id, int(now))
             return
         await self._fire(schedule, int(slot.timestamp()), now)
 
     async def _fire(self, schedule: store.Schedule, slot: int, now: float) -> None:
+        if not self._service.legacy_available(schedule.specialist_id):
+            return
+        try:
+            await self._fire_available(schedule, slot, now)
+        except LegacyWorkModeError:
+            # Activation raced the early check. start_run/mark_fired share its
+            # transaction, so nothing was sent and the occurrence remains due.
+            return
+
+    async def _fire_available(self, schedule: store.Schedule, slot: int, now: float) -> None:
         specialist_id = schedule.specialist_id
         if now - slot > GRACE_SECONDS:
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                self._service.assert_legacy_admission(conn, store.get_specialist(conn, specialist_id))
                 store.mark_fired(conn, schedule.id, int(now))
             self._service.record_missed(specialist_id, MISSED_REASON, scheduled_for=slot)
             return
         over = limit_over(self._usage, now)
         if over is not None:
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                self._service.assert_legacy_admission(conn, store.get_specialist(conn, specialist_id))
                 store.mark_fired(conn, schedule.id, int(now))
             percent, label = over
             self._service.record_skipped(

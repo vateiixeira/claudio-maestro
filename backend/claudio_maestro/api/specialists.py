@@ -10,6 +10,7 @@ the framework echoes the input) and no response or event ever carries a value.
 import re
 import sqlite3
 import time
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Annotated, Any, Literal
 
@@ -35,7 +36,11 @@ from claudio_maestro.specialists.files import (
     parse_skill,
 )
 from claudio_maestro.specialists.policy import MAX_TOOL_NAME, is_tool_name
-from claudio_maestro.specialists.service import QueueFullError
+from claudio_maestro.specialists.service import (
+    LegacyWorkModeError,
+    QueueFullError,
+)
+from claudio_maestro.work.store import WorkConflictError
 
 router = APIRouter(prefix="/api")
 
@@ -356,6 +361,37 @@ async def create_specialist(
     return _one(request, conn, specialist.id)
 
 
+def _require_origin_change_safe(conn, service, specialist_id: int, *, known_closed=None):
+    return service.assert_origin_change_safe(conn, specialist_id, known_closed=known_closed)
+
+
+@asynccontextmanager
+async def _close_routing_context(request: Request, conn, specialist_id: int, *, needed: bool):
+    if not needed:
+        yield {}
+        return
+    service = request.app.state.specialists
+    lock = service._queue_locks[specialist_id]
+    if lock.locked():
+        raise WorkConflictError('O agente está admitindo trabalho. Aguarde antes de alterar sua origem.')
+    async with lock:
+        specialist = _get(conn, specialist_id)
+        service.assert_legacy_admission(conn, specialist)
+        known = service.assert_origin_change_safe(conn, specialist_id)
+        # Keep the old scope and an explicit mutation marker until every cached
+        # context is gone. The marker also blocks SDK controls/automatic reconnect,
+        # which do not use the dispatcher queue lock.
+        service._routing_mutations.add(specialist_id)
+        try:
+            for sid in request.app.state.sessions.active_ids():
+                session = request.app.state.sessions.get(sid)
+                if session.record.specialist_id == specialist_id and session.client is not None:
+                    await session.close()
+            yield known
+        finally:
+            service._routing_mutations.discard(specialist_id)
+
+
 @router.patch("/specialists/{specialist_id}")
 async def update_specialist(
     specialist_id: int, body: SpecialistPatch, request: Request, conn: DbDep
@@ -370,28 +406,36 @@ async def update_specialist(
             given[field] = _clean_patterns(given[field])
     if "denied_tools" in given:
         given["denied_tools"] = _clean_tools(given["denied_tools"])
+    if 'project_id' in given:
+        _require_project(conn, given['project_id'])
+    if 'extra_project_ids' in given and set(given['extra_project_ids']) - _project_ids(conn):
+        raise _unprocessable("Um dos projetos adicionais não existe.")
     now = _now()
     try:
-        with db.transaction(conn):
-            previous = store.get_specialist(conn, specialist_id)
-            if "project_id" in given:
-                _require_project(conn, given["project_id"])
-            project_id = given.get("project_id", previous.project_id)
-            if "extra_project_ids" in given or "project_id" in given:
-                extras = _dedupe(given.get("extra_project_ids", previous.extra_project_ids))
-                if "extra_project_ids" in given:
-                    missing = set(extras) - _project_ids(conn)
-                    if missing:
-                        raise _unprocessable("Um dos projetos adicionais não existe.")
-                given["extra_project_ids"] = [i for i in extras if i != project_id]
-            if given:
-                store.update_specialist(conn, specialist_id, now=now, **given)
-            if schedules is not None:
-                store.replace_schedules(conn, specialist_id, schedules, now)
-            if given.get("enabled") is True and not previous.enabled:
-                # Slots of the period it was off are not "missed": start from now.
-                for schedule in store.list_schedules(conn, specialist_id):
-                    store.mark_fired(conn, schedule.id, now)
+        async with _close_routing_context(request, conn, specialist_id, needed=bool({'project_id', 'extra_project_ids'} & set(given))) as known_closed:
+            with db.transaction(conn):
+                previous = store.get_specialist(conn, specialist_id)
+                if {'project_id', 'extra_project_ids'} & set(given):
+                    _require_origin_change_safe(conn, request.app.state.specialists, specialist_id, known_closed=known_closed)
+                    request.app.state.specialists.assert_legacy_admission(conn, previous, allow_routing_mutation=True)
+                if "project_id" in given:
+                    _require_project(conn, given["project_id"])
+                project_id = given.get("project_id", previous.project_id)
+                if "extra_project_ids" in given or "project_id" in given:
+                    extras = _dedupe(given.get("extra_project_ids", previous.extra_project_ids))
+                    if "extra_project_ids" in given:
+                        missing = set(extras) - _project_ids(conn)
+                        if missing:
+                            raise _unprocessable("Um dos projetos adicionais não existe.")
+                    given["extra_project_ids"] = [i for i in extras if i != project_id]
+                if given:
+                    store.update_specialist(conn, specialist_id, now=now, **given)
+                if schedules is not None:
+                    store.replace_schedules(conn, specialist_id, schedules, now)
+                if given.get("enabled") is True and not previous.enabled:
+                    # Slots of the period it was off are not "missed": start from now.
+                    for schedule in store.list_schedules(conn, specialist_id):
+                        store.mark_fired(conn, schedule.id, now)
     except store.SpecialistNotFoundError as exc:
         raise _not_found(str(exc)) from exc
     _changed(request, specialist_id)
@@ -404,6 +448,7 @@ async def update_specialist(
 @router.delete("/specialists/{specialist_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_specialist(specialist_id: int, request: Request, conn: DbDep) -> Response:
     specialist = _get(conn, specialist_id)
+    request.app.state.specialists.assert_legacy_admission(conn, specialist)
     if request.app.state.specialists.is_busy(specialist_id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BUSY_TEXT)
     session_ids = {
@@ -413,9 +458,12 @@ async def delete_specialist(specialist_id: int, request: Request, conn: DbDep) -
         )
     }
     try:
-        with db.transaction(conn):
-            # The sessions stay: the schema unlinks them (`ON DELETE SET NULL`).
-            store.delete_specialist(conn, specialist_id)
+        async with _close_routing_context(request, conn, specialist_id, needed=True) as known_closed:
+            with db.transaction(conn):
+                # The sessions stay: the schema unlinks them (`ON DELETE SET NULL`).
+                _require_origin_change_safe(conn, request.app.state.specialists, specialist_id, known_closed=known_closed)
+                request.app.state.specialists.assert_legacy_admission(conn, specialist, allow_routing_mutation=True)
+                store.delete_specialist(conn, specialist_id)
     except store.SpecialistNotFoundError as exc:
         raise _not_found(str(exc)) from exc
     _files(request).delete(specialist.slug)
@@ -600,7 +648,7 @@ async def run_specialist(
         )
     except store.SpecialistNotFoundError as exc:
         raise _not_found(str(exc)) from exc
-    except QueueFullError as exc:
+    except (QueueFullError, LegacyWorkModeError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except store.SpecialistError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc

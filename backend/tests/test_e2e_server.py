@@ -118,6 +118,8 @@ def test_isolated_env_keeps_the_git_config_of_whoever_runs_it_out(tmp_path):
 
 def test_isolated_env_turns_off_outside_work(tmp_path):
     env = e2e.isolated_env({}, tmp_path, 6620)
+    assert env['MAESTRO_WORK_DISPATCHER'] == '0'
+    assert env['MAESTRO_REMOTE_RECONNECT'] == '0'
 
     assert env["MAESTRO_AGENTD"] == "0"
     assert env["MAESTRO_UPDATE_CHECK"] == "0"
@@ -624,6 +626,7 @@ def test_main_cleans_the_temporary_folder_when_interrupted_while_seeding(
 def test_chat_e2e_uses_only_the_opt_in_fake_client(tmp_path, monkeypatch):
     env = e2e.isolated_env({'MAESTRO_E2E_CHAT': '1'}, tmp_path, 6620)
     assert env['MAESTRO_E2E_CHAT'] == '1'
+    assert env['MAESTRO_WORK_DISPATCHER'] == '1'
     apply_env(monkeypatch, env)
     e2e.seed(tmp_path)
     attempts = forbid_claude(monkeypatch)

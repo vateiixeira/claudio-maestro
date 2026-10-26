@@ -15,6 +15,7 @@ from contextlib import closing, suppress
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from claudio_maestro import db, projects
 from claudio_maestro.sessions import (
@@ -35,17 +36,21 @@ class WorkService:
     def __init__(self, db_path: Path, *, sessions: SessionManager, files: WorkFiles,
                  publish: Callable[[dict], None], clock: Callable[[], float] = time.time,
                  legacy_busy: Callable[[sqlite3.Connection, int], bool] | None = None,
+                 legacy_deletion_busy: Callable[[sqlite3.Connection, int], bool] | None = None,
                  max_tasks: int = 25, max_attempts: int = 3, max_seconds: int = 3600,
                  resource_keys: Callable[[projects.Project], list[str]] | None = None):
         self.db_path, self.sessions, self.files = db_path, sessions, files
         self.publish, self.clock = publish, clock
         self.legacy_busy = legacy_busy or self._legacy_busy
+        self.legacy_deletion_busy = legacy_deletion_busy or self.legacy_busy
         self.max_tasks, self.max_attempts, self.max_seconds = max_tasks, max_attempts, max_seconds
         self.resource_keys = resource_keys or (lambda project: [f'checkout:{Path(project.path).resolve()}'])
         self._dispatch_lock = asyncio.Lock()
         self._coordinator_lock = threading.Lock()
         self._wake = asyncio.Event()
         self._closed = False
+        self.dispatch_enabled = True
+        self._deletion_owners: set[int] = set()
         self._sending: set[int] = set()
         self._errors: set[str] = set()
 
@@ -55,6 +60,8 @@ class WorkService:
     @staticmethod
     def can_legacy_dispatch(conn: sqlite3.Connection, project_id: int) -> bool:
         """Read inside the legacy caller's own write transaction; never nests one."""
+        if conn.execute('SELECT 1 FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone():
+            return False
         row = conn.execute('SELECT enabled FROM work_project_modes WHERE project_id = ?', (project_id,)).fetchone()
         return row is None or not row['enabled']
 
@@ -75,13 +82,23 @@ class WorkService:
                 return True
         return False
 
-    def project_mode(self, project_id: int) -> dict[str, bool]:
+    def project_mode(self, project_id: int) -> dict[str, Any]:
         with closing(db.connect(self.db_path)) as conn:
             row = conn.execute('SELECT enabled, paused FROM work_project_modes WHERE project_id = ?', (project_id,)).fetchone()
-            return {'enabled': bool(row['enabled']) if row else False, 'paused': bool(row['paused']) if row else False}
+            result = {'enabled': bool(row['enabled']) if row else False, 'paused': bool(row['paused']) if row else False}
+            fence = conn.execute('SELECT fence_id, reason FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone()
+            if fence:
+                result.update(paused=True, deleting=True, fence_id=fence['fence_id'], reason=fence['reason'])
+            return result
+
+    @staticmethod
+    def assert_project_admission(conn: sqlite3.Connection, project_id: int) -> None:
+        if conn.execute('SELECT 1 FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone():
+            raise store.WorkConflictError('A exclusão deste projeto está reservada. Conclua ou cancele a exclusão antes de admitir trabalho.')
 
     def _activate_project(self, conn: sqlite3.Connection, project_id: int) -> None:
         projects.get_project(conn, project_id)
+        self.assert_project_admission(conn, project_id)
         mode = conn.execute('SELECT enabled FROM work_project_modes WHERE project_id = ?', (project_id,)).fetchone()
         if mode and mode['enabled']:
             return
@@ -117,6 +134,7 @@ class WorkService:
         with self._coordinator_lock:
             with closing(db.connect(self.db_path)) as conn:
                 project = projects.get_project(conn, project_id)
+                self.assert_project_admission(conn, project_id)
                 existing = store.coordinator_session(conn, project_id)
             if existing:
                 return self.sessions.find_record(existing)
@@ -137,16 +155,44 @@ class WorkService:
 
     def session_catalog(self) -> dict[str, dict]:
         with closing(db.connect(self.db_path)) as conn:
-            ids = [r[0] for r in conn.execute('SELECT session_id FROM work_coordinators UNION SELECT session_id FROM work_attempts WHERE session_id IS NOT NULL')]
-        return {sid: identity for sid in ids if (identity := self.session_identity(sid)) is not None}
+            result = {row['session_id']: {'work_role': 'coordinator', 'project_id': row['project_id'],
+                'work_item_id': None, 'work_attempt_id': None}
+                for row in conn.execute('SELECT session_id, project_id FROM work_coordinators')}
+            for row in conn.execute('SELECT a.session_id, a.id, a.role, i.id AS item_id, i.project_id FROM work_attempts a JOIN work_items i ON i.id=a.work_item_id WHERE a.session_id IS NOT NULL'):
+                result[row['session_id']] = {'work_role': row['role'], 'project_id': row['project_id'],
+                    'work_item_id': row['item_id'], 'work_attempt_id': row['id']}
+            return result
+
+    def assert_session_start(self, record: SessionRecord) -> None:
+        """Admit a new process; attaching a held process uses context only."""
+        with closing(db.connect(self.db_path)) as conn:
+            current = conn.execute('SELECT project_id, specialist_id FROM sessions WHERE session_id=?', (record.session_id,)).fetchone()
+            if current is None or current['project_id'] != record.project_id or current['specialist_id'] != record.specialist_id:
+                raise store.WorkConflictError('A sessão foi removida ou seu vínculo de projeto mudou.')
+            projects.get_project(conn, record.project_id)
+            self.assert_project_admission(conn, record.project_id)
+            identity = self.session_identity(record.session_id)
+            if identity is None:
+                return
+            if identity['project_id'] != record.project_id:
+                raise store.WorkConflictError('A tarefa não pertence mais ao projeto desta sessão.')
+            mode = self.project_mode(record.project_id)
+            if not mode['enabled']:
+                raise store.WorkConflictError('O modo CTO está desativado.')
+            if identity['work_role'] != 'coordinator':
+                attempt = store.get_attempt(conn, identity['work_attempt_id'])
+                if attempt.state not in ('starting', 'dispatching', 'running', 'waiting') or mode['paused']:
+                    raise store.WorkConflictError('A tentativa está encerrada, incerta ou pausada.')
 
     def session_context(self, record: SessionRecord):
         from claudio_maestro.sessions import SessionContext
 
         from .tools import build_server
 
+        if record.specialist_id is not None:
+            return None
         identity = self.session_identity(record.session_id)
-        if identity is None or record.specialist_id is not None:
+        if identity is None:
             return None
         if identity['work_role'] == 'coordinator':
             text = prompt.COORDINATOR
@@ -258,9 +304,11 @@ class WorkService:
             session = self.sessions.get(session_id)
         except SessionNotFoundError:
             return True
-        return session.state in TURN_OPEN or session.subagents_running or session.record.turn_open
+        return getattr(session, '_connecting', False) or session.state in TURN_OPEN or session.subagents_running or session.record.turn_open
 
     async def dispatch_once(self) -> store.Attempt | None:
+        if not self.dispatch_enabled:
+            return None
         async with self._dispatch_lock:
             active = self._active()
             busy = [a for a in active if a.state in ('dispatching', 'uncertain') or (a.state != 'starting' and self._open(a.session_id))]
@@ -569,6 +617,63 @@ class WorkService:
                 self._wake.set()
             self._changed_item_id(identity['work_item_id'])
             return result
+
+    def assert_item_mutation_allowed(self, item_id: int, *, conn=None) -> None:
+        """State changes never release a live or uncertain worker implicitly."""
+        if conn is None:
+            with closing(db.connect(self.db_path)) as connection:
+                return self.assert_item_mutation_allowed(item_id, conn=connection)
+        store.get_item(conn, item_id)
+        if conn.execute("SELECT 1 FROM work_attempts WHERE work_item_id=? AND state IN ('starting','dispatching','running','waiting','uncertain')", (item_id,)).fetchone():
+            raise store.WorkConflictError('A tarefa tem uma execução ativa ou incerta. Concilie antes de alterar seu estado.')
+
+    def reserve_project_deletion(self, project_id: int, *, fence_id: str | None = None) -> str:
+        """Fence admission before any awaited close; failures keep the receipt."""
+        if project_id in self._deletion_owners:
+            raise store.WorkConflictError('A exclusão deste projeto ainda está em andamento.')
+        self.assert_deletion_allowed(project_id=project_id)
+        for sid in self.sessions.active_ids():
+            session = self.sessions.get(sid)
+            if session.record.project_id == project_id and session.users:
+                raise store.WorkConflictError('Há um envio de mensagem em andamento neste projeto.')
+        with closing(db.connect(self.db_path)) as conn, db.transaction(conn):
+            projects.get_project(conn, project_id)
+            if self.legacy_deletion_busy(conn, project_id):
+                raise store.WorkConflictError('Um agente que usa este projeto tem trabalho ativo, pendente ou incerto. Concilie antes de excluir.')
+            if conn.execute("SELECT 1 FROM work_attempts a JOIN work_items i ON i.id=a.work_item_id WHERE i.project_id=? AND a.state IN ('starting','dispatching','running','waiting','uncertain')", (project_id,)).fetchone():
+                raise store.WorkConflictError('Há trabalho ativo ou incerto neste projeto.')
+            current = conn.execute('SELECT fence_id FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone()
+            if current:
+                if fence_id != current['fence_id']:
+                    raise store.WorkConflictError('Há uma exclusão reservada. Use seu recibo atual para retomar ou cancelar.')
+                chosen = current['fence_id']
+            else:
+                if fence_id is not None:
+                    raise store.WorkConflictError('O recibo de exclusão não é mais válido.')
+                chosen = str(uuid4())
+                conn.execute('INSERT INTO work_project_fences VALUES (?, ?, ?, ?)',
+                    (project_id, chosen, 'Exclusão do projeto reservada; novas execuções estão suspensas.', self._now()))
+        self._deletion_owners.add(project_id)
+        return chosen
+
+    def release_deletion_owner(self, project_id: int) -> None:
+        """Only releases the live request, never the durable admission fence."""
+        self._deletion_owners.discard(project_id)
+
+    def cancel_project_deletion(self, project_id: int, *, fence_id: str) -> None:
+        if project_id in self._deletion_owners:
+            raise store.WorkConflictError('A exclusão ainda está em andamento. Aguarde seu encerramento.')
+        self.assert_deletion_allowed(project_id=project_id)
+        with closing(db.connect(self.db_path)) as conn, db.transaction(conn):
+            row = conn.execute('SELECT fence_id FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone()
+            if row is None or row['fence_id'] != fence_id:
+                raise store.WorkConflictError('O recibo de exclusão mudou. Atualize o projeto antes de cancelar.')
+            # A lost legacy send cannot be turned into permission to resume by
+            # cancelling a deletion. Proven queued work may resume afterwards.
+            if conn.execute("SELECT 1 FROM specialist_runs r JOIN sessions s ON s.session_id=r.session_id WHERE s.project_id=? AND r.outcome='failed' AND r.reason LIKE '%envio foi interrompido%'", (project_id,)).fetchone():
+                raise store.WorkConflictError('Há um envio legado incerto. Concilie antes de cancelar a exclusão.')
+            conn.execute('DELETE FROM work_project_fences WHERE project_id=? AND fence_id=?', (project_id, fence_id))
+        self._wake.set()
 
     def assert_deletion_allowed(self, *, project_id: int | None = None, session_id: str | None = None) -> None:
         with closing(db.connect(self.db_path)) as conn:

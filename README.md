@@ -151,6 +151,8 @@ A Anthropic orienta que produtos de terceiros feitos com o Agent SDK usem [auten
 | `MAESTRO_USAGE_CHECK` | Com `0`, o app não consulta o consumo da assinatura | ligado |
 | `MAESTRO_CLAUDE_CHECK` | Com `0`, o app não consulta qual é a última versão do Claude (o aviso no menu lateral some) | ligado |
 | `MAESTRO_SPECIALISTS_SCHEDULER` | Com `0`, os agentes não rodam nos horários marcados (o "Rodar agora" continua valendo). Use numa instância isolada com cópia do banco, para os agentes não rodarem em dobro | ligado |
+| `MAESTRO_WORK_DISPATCHER` | Com `0`, não inicia tarefas prontas ou novas tentativas automaticamente; mensagens manuais continuam explícitas. Use `0` em cópia do banco. Sem valor explícito, acompanha `MAESTRO_SPECIALISTS_SCHEDULER` | acompanha o agendador |
+| `MAESTRO_REMOTE_RECONNECT` | Com `0`, não reinicia automaticamente sessões marcadas para Remote Control no início ou após falhas. Não impede mensagens ou ativação manuais. Use `0` em cópia do banco | ligado |
 | `MAESTRO_CLAUDE_CLI` | `bundled` faz o app usar sempre o Claude embutido no SDK, em vez do instalado no sistema | escolhe sozinho |
 | `MAESTRO_CPU_WEIGHT` | Peso de CPU do serviço systemd, de 1 a 10000: em disputa, o desktop e o navegador passam à frente das sessões. Só vale no serviço, depois de rodar `service install` | `20` |
 | `MAESTRO_CPU_QUOTA` | Teto de CPU de todas as sessões somadas, no serviço systemd: `auto` (60% dos núcleos, no mínimo 1), `off` ou um percentual (`800` = 8 núcleos) | `auto` |

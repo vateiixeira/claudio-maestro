@@ -221,3 +221,23 @@ async def test_result_observer_failure_does_not_skip_turn_end(world):
     await wait_until(lambda: bool(world.ends))
     assert observed == [(session.session_id, {'is_error': False, 'terminal_reason': 'completed'})]
     assert session.error is None
+
+
+async def test_new_connection_admission_does_not_block_existing_process_attach(world):
+    calls = []
+
+    def refuse(record):
+        calls.append(record.session_id)
+        raise RuntimeError('Projeto cercado para exclusão')
+
+    world.manager._connection_admission = refuse
+    session = world.new_session()
+    assert await session.send('novo processo') is False
+    assert not world.factory.clients
+    assert calls == [session.session_id]
+    child = SimpleNamespace(id='kept-child', pid=os.getpid(), ack=0, init=None)
+    assert await session.reattach(child)
+    assert len(world.factory.clients) == 1
+    assert world.factory.clients[0].options.attach is not None
+    assert calls == [session.session_id]
+    assert world.factory.clients[0].sent == []

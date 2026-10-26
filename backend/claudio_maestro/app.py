@@ -5,11 +5,12 @@ import logging
 import os
 import time
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager, closing, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from claudio_maestro import db, gitinfo, history, runmode, selfupdate
 from claudio_maestro.activity import ActivityReader, SessionFile
@@ -62,12 +63,19 @@ from claudio_maestro.specialists.github_hooks import (
     stop_hooks,
 )
 from claudio_maestro.specialists.scheduler import Scheduler
-from claudio_maestro.specialists.service import SpecialistService
+from claudio_maestro.specialists.service import (
+    UNCERTAIN_SEND,
+    LegacyWorkModeError,
+    SpecialistService,
+)
 from claudio_maestro.terminal import TerminalManager
 from claudio_maestro.textindex import INDEX_FILENAME, TextIndex
 from claudio_maestro.updates import FetchRelease, UpdateChecker, fetch_latest_release
 from claudio_maestro.usage import FetchUsage, UsageChecker
 from claudio_maestro.usage import fetch_usage as default_fetch_usage
+from claudio_maestro.work import store as work_store
+from claudio_maestro.work.files import WorkFiles
+from claudio_maestro.work.service import WorkService
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +272,39 @@ def create_app(
         app.state.textindex = TextIndex(
             app.state.settings.db_path, app.state.settings.data_dir / INDEX_FILENAME, session_file
         )
+        def remote_reconnect_allowed(record) -> bool:
+            # This gates automatic starts only, not project tools or manual sends.
+            if not app.state.settings.remote_reconnect:
+                return False
+            with closing(db.connect(app.state.settings.db_path)) as conn:
+                try:
+                    app.state.work.assert_project_admission(conn, record.project_id)
+                    identity = app.state.work.session_identity(record.session_id)
+                    if identity is not None:
+                        if identity['work_role'] != 'coordinator':
+                            attempt = work_store.get_attempt(conn, identity['work_attempt_id'])
+                            if attempt.state not in ('starting', 'dispatching', 'running', 'waiting'):
+                                return False
+                        mode = app.state.work.project_mode(record.project_id)
+                        return app.state.work.dispatch_enabled and mode['enabled'] and not mode['paused']
+                    if record.specialist_id is not None:
+                        if not app.state.settings.specialists_scheduler:
+                            return False
+                        owner = store.get_specialist(conn, record.specialist_id)
+                        app.state.specialists.assert_legacy_admission(conn, owner, session_id=record.session_id)
+                except (work_store.WorkError, store.SpecialistError):
+                    return False
+            return True
+
+        def connection_admission(record):
+            # No await between this final check and the client factory. Held
+            # processes bypass this hook so recovery can inspect/close them.
+            app.state.work.assert_session_start(record)
+            if record.specialist_id is not None:
+                with closing(db.connect(app.state.settings.db_path)) as conn:
+                    owner = store.get_specialist(conn, record.specialist_id)
+                    app.state.specialists.assert_legacy_admission(conn, owner, session_id=record.session_id)
+
         app.state.sessions = SessionManager(
             app.state.settings.db_path,
             app.state.hub.publish,
@@ -283,6 +324,12 @@ def create_app(
             text_index=app.state.textindex,
             # The agents service is built right after the manager (it needs it); the
             # hooks look it up when called.
+            connection_admission=connection_admission,
+            context_setup=lambda record: app.state.work.session_context(record),
+            remote_reconnect_allowed=remote_reconnect_allowed,
+            on_session_result=lambda sid, result: app.state.work.on_session_result(sid, result),
+            on_session_turn_end=lambda sid: app.state.work.on_session_turn_end(sid),
+            on_session_error=lambda sid, error: app.state.work.on_session_error(sid, error),
             session_setup=lambda record: app.state.specialists.session_setup(record),
             on_turn_error=lambda session_id, error: app.state.specialists.on_turn_error(
                 session_id, error
@@ -304,6 +351,52 @@ def create_app(
             sessions=app.state.sessions,
             publish=app.state.hub.publish,
         )
+        def legacy_busy(conn, project_id: int) -> bool:
+            # A configuration edited by an older version does not rewrite the
+            # project of the sessions/runs it already dispatched.
+            if conn.execute("SELECT 1 FROM specialist_runs r JOIN sessions s ON s.session_id=r.session_id WHERE s.project_id=? AND (r.outcome IN ('queued','starting','running','waiting') OR (r.outcome='failed' AND r.reason=?))", (project_id, UNCERTAIN_SEND)).fetchone():
+                return True
+            if conn.execute("SELECT 1 FROM specialist_pr_comments c JOIN specialist_prs p ON p.url=c.pr_url JOIN sessions s ON s.session_id=p.session_id WHERE s.project_id=? AND c.status IN ('queued','dispatching','uncertain')", (project_id,)).fetchone():
+                return True
+            if conn.execute('SELECT 1 FROM sessions WHERE project_id=? AND specialist_id IS NOT NULL AND turn_open=1', (project_id,)).fetchone():
+                return True
+            for sid in app.state.sessions.active_ids():
+                session = app.state.sessions.get(sid)
+                if session.record.specialist_id is not None and session.record.project_id == project_id:
+                    if session.users or getattr(session, '_connecting', False) or session.state in ('connecting', 'running', 'awaiting_decision') or session.subagents_running or session.record.turn_open:
+                        return True
+            owners = [specialist for specialist in store.list_specialists(conn)
+                      if project_id == specialist.project_id or project_id in specialist.extra_project_ids]
+            for specialist in owners:
+                if conn.execute("SELECT 1 FROM specialist_runs WHERE specialist_id=? AND (outcome IN ('queued','starting','running','waiting') OR (outcome='failed' AND reason=?))", (specialist.id, UNCERTAIN_SEND)).fetchone():
+                    return True
+                if conn.execute("SELECT 1 FROM specialist_pr_comments WHERE specialist_id=? AND status IN ('queued','dispatching','uncertain')", (specialist.id,)).fetchone():
+                    return True
+                if conn.execute('SELECT 1 FROM sessions WHERE specialist_id=? AND turn_open=1', (specialist.id,)).fetchone():
+                    return True
+                lock = app.state.specialists._queue_locks.get(specialist.id)
+                if (lock and lock.locked()) or app.state.specialists.is_busy(specialist.id):
+                    return True
+            return False
+
+        def legacy_deletion_busy(conn, project_id: int) -> bool:
+            try:
+                for owner in app.state.specialists.owners_for_project(conn, project_id):
+                    lock = app.state.specialists._queue_locks.get(owner.id)
+                    if lock and lock.locked():
+                        return True
+                    app.state.specialists.assert_origin_change_safe(conn, owner.id)
+            except work_store.WorkConflictError:
+                return True
+            return False
+
+        app.state.work = WorkService(
+            app.state.settings.db_path, sessions=app.state.sessions,
+            files=WorkFiles(app.state.settings.data_dir / 'work'),
+            publish=app.state.hub.publish, legacy_busy=legacy_busy,
+            legacy_deletion_busy=legacy_deletion_busy,
+        )
+        app.state.work.dispatch_enabled = app.state.settings.work_dispatcher_enabled
         app.state.scheduler = Scheduler(
             app.state.specialists,
             app.state.sessions,
@@ -332,17 +425,25 @@ def create_app(
             await app.state.specialists.recover()
         except Exception:
             logger.exception("Falha ao retomar a finalização das sessões de agente")
+        try:
+            await app.state.work.recover()
+        except Exception:
+            logger.exception("Falha ao recuperar as tarefas do projeto")
         app.state.commands = CommandCatalog(app.state.sessions.agent_factory)
 
         async def send_terminal_message(session_id: str, text: str) -> bool:
             """The output of a play button run goes to the session as a user message."""
             try:
                 record = app.state.sessions.find_record(session_id)
+                with closing(db.connect(app.state.settings.db_path)) as conn:
+                    app.state.work.assert_project_admission(conn, record.project_id)
                 if record.specialist_id is not None:
                     await app.state.specialists.send_message(session_id, text)
+                elif app.state.work.session_identity(session_id) is not None:
+                    await app.state.work.send_message(session_id, text)
                 else:
                     await app.state.sessions.send(session_id, text)
-            except (SessionError, store.SpecialistError):
+            except (SessionError, store.SpecialistError, work_store.WorkError):
                 return False
             return True
 
@@ -410,6 +511,7 @@ def create_app(
                 )
             ),
             asyncio.create_task(app.state.digest.run()),
+            asyncio.create_task(app.state.work.run()),
         ]
         app.state.scheduler_task = None
         app.state.comments_task = None
@@ -497,6 +599,7 @@ def create_app(
                     await task
             if app.state.hooks_task is not None:
                 await stop_hooks(app.state.hooks_task)
+            await app.state.work.shutdown()
             await app.state.specialists.shutdown()
             await app.state.commands.aclose()
             await app.state.terminals.aclose()
@@ -513,6 +616,15 @@ def create_app(
         allowed_hosts=allowed_hosts(ports),
         allowed_origins=allowed_origins(ports),
     )
+    @app.exception_handler(LegacyWorkModeError)
+    async def legacy_work_error(request: Request, error: LegacyWorkModeError):
+        return JSONResponse(status_code=409, content={"detail": str(error)})
+
+    @app.exception_handler(work_store.WorkError)
+    async def work_error(request: Request, error: work_store.WorkError):
+        code = 404 if isinstance(error, work_store.WorkNotFoundError) else (409 if isinstance(error, work_store.WorkConflictError) else 422)
+        return JSONResponse(status_code=code, content={"detail": str(error)})
+
     app.include_router(router)
     if frontend_dir is not None:
         # Registered after the API so its routes win.

@@ -186,7 +186,11 @@ def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, st
             "CLAUDE_CONFIG_DIR": str(root / "claude-config"),
             "MAESTRO_PORT": str(port),
             "MAESTRO_AGENTD": "0",
+            "MAESTRO_REMOTE_RECONNECT": "0",
             "MAESTRO_E2E_CHAT": "1" if base.get("MAESTRO_E2E_CHAT") == "1" else "0",
+            # Only the opt-in fake chat harness may start queued work. An
+            # inherited dispatcher override never leaks into this environment.
+            "MAESTRO_WORK_DISPATCHER": "1" if base.get("MAESTRO_E2E_CHAT") == "1" else "0",
             "MAESTRO_UPDATE_CHECK": "0",
             "MAESTRO_USAGE_CHECK": "0",
             "MAESTRO_CLAUDE_CHECK": "0",

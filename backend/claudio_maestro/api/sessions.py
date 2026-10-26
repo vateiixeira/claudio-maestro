@@ -2,12 +2,13 @@
 
 import asyncio
 import sqlite3
+from contextlib import closing
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from claudio_maestro import groups, labels, projects, sessions
+from claudio_maestro import db, groups, labels, projects, sessions
 from claudio_maestro.api.deps import DbDep
 
 router = APIRouter(prefix="/api")
@@ -279,6 +280,8 @@ async def create_session(
     body: Annotated[SessionCreate | None, Body()] = None,
 ) -> dict[str, Any]:
     project = _get_project(conn, project_id)
+    from claudio_maestro.work.service import WorkService
+    WorkService.assert_project_admission(conn, project_id)
     try:
         record = manager.create_session(project, group_id=body.group_id if body else None)
     except sessions.SessionError as exc:
@@ -317,6 +320,15 @@ async def update_session(
     session_id: str, body: SessionPatch, request: Request, manager: ManagerDep
 ) -> dict[str, Any]:
     try:
+        record = manager.find_record(session_id)
+        with closing(db.connect(request.app.state.settings.db_path)) as conn:
+            request.app.state.work.assert_project_admission(conn, record.project_id)
+            if record.specialist_id is not None and any(value is not None for value in (body.remote_control, body.model, body.effort, body.permission_mode)):
+                from claudio_maestro.specialists import store as specialist_store
+                owner = specialist_store.get_specialist(conn, record.specialist_id)
+                request.app.state.specialists.assert_legacy_admission(conn, owner, session_id=session_id)
+        if body.finished is True:
+            request.app.state.work.assert_deletion_allowed(session_id=session_id)
         updated = await manager.update(
             session_id,
             finished=body.finished,
@@ -406,9 +418,17 @@ async def _wait_for_disconnect(request: Request) -> None:
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
 async def send_message(session_id: str, body: MessageIn, manager: ManagerDep, request: Request) -> dict[str, Any]:
     session = _get_session(manager, session_id)
+    from contextlib import closing
+
+    from claudio_maestro import db
+    with closing(db.connect(request.app.state.settings.db_path)) as conn:
+        request.app.state.work.assert_project_admission(conn, session.record.project_id)
     try:
         if session.record.specialist_id is not None:
-            from claudio_maestro.specialists.service import QueueFullError
+            from claudio_maestro.specialists.service import (
+                LegacyWorkModeError,
+                QueueFullError,
+            )
             from claudio_maestro.specialists.store import (
                 SpecialistError,
                 SpecialistNotFoundError,
@@ -420,11 +440,15 @@ async def send_message(session_id: str, body: MessageIn, manager: ManagerDep, re
                 )
             except SpecialistNotFoundError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
-            except QueueFullError as exc:
+            except (QueueFullError, LegacyWorkModeError) as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             except SpecialistError as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
             return {"state": session.state, "external_activity": False, "queued": True, "run_id": run.id}
+        if request.app.state.work.session_identity(session_id) is not None:
+            return await request.app.state.work.send_message(
+                session_id, body.text, [image.model_dump() for image in body.images]
+            )
         return await manager.send(
             session_id, body.text, [image.model_dump() for image in body.images]
         )

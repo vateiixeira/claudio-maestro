@@ -209,7 +209,20 @@ def update_item(conn: sqlite3.Connection, item_id: int, *, expected_revision: in
                 title: str | None = None, status: Status | None = None,
                 phase: Phase | None = None, priority: Priority | None = None,
                 source_revision: str | None = None, actor: str = 'user') -> WorkItem:
-    """Compare-and-set task metadata; changing the revision invalidates old results."""
+    """Compare-and-set task metadata in its own transaction."""
+    with transaction(conn):
+        return update_item_in_transaction(conn, item_id, expected_revision=expected_revision, now=now,
+            title=title, status=status, phase=phase, priority=priority,
+            source_revision=source_revision, actor=actor)
+
+
+def update_item_in_transaction(conn: sqlite3.Connection, item_id: int, *, expected_revision: int, now: int,
+                title: str | None = None, status: Status | None = None,
+                phase: Phase | None = None, priority: Priority | None = None,
+                source_revision: str | None = None, actor: str = 'user', dossier_changed: bool = False) -> WorkItem:
+    """Update task and optional private dossier in the caller's transaction."""
+    if not conn.in_transaction:
+        raise RuntimeError("A alteração exige uma transação ativa.")
     changes: dict[str, Any] = {}
     if title is not None:
         changes['title'] = _text(title, 'Título', 160)
@@ -219,21 +232,20 @@ def update_item(conn: sqlite3.Connection, item_id: int, *, expected_revision: in
             changes[key] = value
     if source_revision is not None:
         changes['source_revision'] = _text(source_revision, 'Revisão da fonte', 200)
-    with transaction(conn):
-        item = get_item(conn, item_id)
-        if item.revision != expected_revision:
-            raise WorkConflictError('A tarefa mudou. Atualize antes de continuar.')
-        if not changes:
-            return item
-        # Done is a reviewed result, never a manual shortcut past the reviewer.
-        if status == 'done':
-            raise WorkConflictError('Concluir a tarefa exige uma revisão independente.')
-        assignments = ', '.join(f'{key} = ?' for key in changes)
-        conn.execute(f'UPDATE work_items SET {assignments}, revision = revision + 1, updated_at = ? WHERE id = ?',
-                     [*changes.values(), now, item_id])
-        updated = get_item(conn, item_id)
-        _event(conn, updated, 'item_updated', now, actor=actor, data=changes)
-        return updated
+    item = get_item(conn, item_id)
+    if item.revision != expected_revision:
+        raise WorkConflictError('A tarefa mudou. Atualize antes de continuar.')
+    if not changes and not dossier_changed:
+        return item
+    # Done is a reviewed result, never a manual shortcut past the reviewer.
+    if status == 'done':
+        raise WorkConflictError('Concluir a tarefa exige uma revisão independente.')
+    assignments = ''.join(f'{key} = ?, ' for key in changes)
+    conn.execute(f'UPDATE work_items SET {assignments}revision = revision + 1, updated_at = ? WHERE id = ?',
+                 [*changes.values(), now, item_id])
+    updated = get_item(conn, item_id)
+    _event(conn, updated, 'item_updated', now, actor=actor, data={**changes, **({'dossier_changed': True} if dossier_changed else {})})
+    return updated
 
 
 def list_attempts(conn: sqlite3.Connection, item_id: int) -> list[Attempt]:
@@ -482,6 +494,8 @@ def restore_continuation_unsent(conn: sqlite3.Connection, attempt_id: int, *, no
 
 
 def _admit_dispatch(conn: sqlite3.Connection, project_id: int, *, exclude_attempt: int = -1) -> None:
+    if conn.execute('SELECT 1 FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone():
+        raise WorkConflictError('A exclusão do projeto impede novos envios.')
     mode = conn.execute('SELECT enabled, paused FROM work_project_modes WHERE project_id=?', (project_id,)).fetchone()
     if mode is None or not mode['enabled'] or mode['paused']:
         raise WorkConflictError('O projeto não está habilitado para novos envios.')
