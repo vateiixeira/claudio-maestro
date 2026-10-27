@@ -482,6 +482,294 @@ def test_migration_30_renames_specialist_id(tmp_path: Path):
         assert "agent_id" in columns and "specialist_id" not in columns
         assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = 's'").fetchone()[0] == 7
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-        # The foreign key to specialists survives the rename.
-        conn.execute("DELETE FROM specialists WHERE id = 7")
+        # The foreign key survives the rename; migration 31 moved it from specialists to agents.
+        conn.execute("DELETE FROM agents WHERE id = 7")
         assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = 's'").fetchone()[0] is None
+
+
+def _build_v30_with_specialist(conn) -> None:
+    """A database at version 30 with one specialist and everything that hangs from it."""
+    for statements in db.MIGRATIONS[:30]:
+        for statement in statements:
+            statement(conn) if callable(statement) else conn.execute(statement)
+    conn.execute("PRAGMA user_version = 30")
+    for pid in (1, 2):
+        conn.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            f" VALUES ({pid}, 'p', '/p{pid}', '#fff', 0, 0)"
+        )
+    for sid in ("main", "s-run", "s-msg"):
+        conn.execute(
+            "INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at)"
+            f" VALUES ('{sid}', 1, '/p1', 't', 0, 0)"
+        )
+    conn.execute(
+        "INSERT INTO specialists (id, slug, name, project_id, extra_project_ids, model, effort,"
+        " run_text, denied_tools, enabled, main_session_id, created_at, updated_at)"
+        " VALUES (7, 'sentry', 'Sentry', 1, '[2]', 'opus', 'high', 'Execute a rotina.',"
+        " '[\"WebFetch\"]', 1, 'main', 11, 12)"
+    )
+    conn.execute("UPDATE sessions SET agent_id = 7 WHERE session_id IN ('main', 's-run', 's-msg')")
+    conn.execute("INSERT INTO specialist_schedules (id, specialist_id, days, time, last_fired_at) VALUES (4, 7, '12345', '09:00', 100)")
+    conn.execute("INSERT INTO specialist_schedules (id, specialist_id, days, time) VALUES (5, 7, '67', '10:30')")
+    conn.execute("INSERT INTO specialist_items VALUES (7, 'SENTRY-1', 'handled', 'http://x', 'nota', 1, 2)")
+
+    def run(rid, session, trigger, started, outcome, message=0, reason=None, ended=None):
+        conn.execute(
+            "INSERT INTO specialist_runs (id, specialist_id, session_id, trigger, scheduled_for,"
+            " started_at, ended_at, outcome, reason, message) VALUES (?, 7, ?, ?, NULL, ?, ?, ?, ?, ?)",
+            (rid, session, trigger, started, ended, outcome, reason, message),
+        )
+
+    run(1, "s-run", "schedule", 10, "concluded", ended=20, reason="feito")
+    run(2, "s-run", "comment", 30, "running")  # same session as run 1: the latest keeps it
+    run(3, None, "manual", 40, "queued")
+    run(4, "s-msg", "manual", 50, "concluded", message=1, ended=60)
+    run(5, None, "schedule", 70, "missed", reason="atrasou")
+    conn.execute("INSERT INTO specialist_notices (id, specialist_id, session_id, kind, text, created_at) VALUES (1, 7, 's-run', 'summary', 'resumo', 25)")
+    conn.execute("INSERT INTO specialist_notices (id, specialist_id, session_id, kind, text, created_at, read_at) VALUES (2, 7, 's-msg', 'notice', 'da conversa', 55, 56)")
+    conn.execute("INSERT INTO specialist_notices (id, specialist_id, session_id, kind, text, created_at) VALUES (3, 7, NULL, 'alert', 'sem sessão', 57)")
+    conn.execute("INSERT INTO specialist_announcements (id, specialist_id, run_id, session_id, text, created_at) VALUES (1, 7, 1, 's-run', 'anuncio', 21)")
+    conn.execute("INSERT INTO specialist_announcements (id, specialist_id, run_id, session_id, text, created_at) VALUES (2, 7, 4, 's-msg', 'da mensagem', 61)")
+    conn.execute("INSERT INTO specialist_chats VALUES ('s-msg', 7)")
+    conn.execute("INSERT INTO specialist_prs VALUES ('https://github.com/o/r/pull/1', 7, 's-run', 1, 2, 0)")
+    conn.execute(
+        "INSERT INTO specialist_pr_comments VALUES ('issue:1', 'https://github.com/o/r/pull/1', 7,"
+        " 'vi', 'ajuste', NULL, NULL, 'u', 1, 2, 'uncertain', 3)"
+    )
+
+
+def test_migration_31_copies_specialists_into_agents(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v30_with_specialist(conn)
+
+        db.migrate(conn)
+
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
+        agents = conn.execute("SELECT * FROM agents").fetchall()
+        assert len(agents) == 1
+        agent = agents[0]
+        assert (agent["id"], agent["slug"], agent["name"], agent["project_id"]) == (7, "sentry", "Sentry", 1)
+        assert (agent["enabled"], agent["main_session_id"], agent["reports_to"]) == (1, "main", None)
+        assert (agent["created_at"], agent["updated_at"], agent["definition_hash"]) == (11, 12, None)
+        import json
+        assert json.loads(agent["legacy_json"]) == {
+            "model": "opus", "effort": "high", "denied_tools": ["WebFetch"],
+            "extra_project_ids": [2],
+        }
+
+        routine = conn.execute("SELECT * FROM routines").fetchone()
+        assert conn.execute("SELECT COUNT(*) FROM routines").fetchone()[0] == 1
+        assert (routine["agent_id"], routine["project_id"], routine["name"]) == (7, 1, "Sentry")
+        assert (routine["instruction"], routine["enabled"]) == ("Execute a rotina.", 1)
+        schedules = conn.execute("SELECT id, routine_id, days, time, last_fired_at FROM routine_schedules ORDER BY id").fetchall()
+        assert [tuple(row) for row in schedules] == [
+            (4, routine["id"], "12345", "09:00", 100), (5, routine["id"], "67", "10:30", None),
+        ]
+        item = conn.execute("SELECT * FROM registry").fetchone()
+        assert (item["agent_id"], item["key"], item["status"], item["link"], item["note"]) == (
+            7, "SENTRY-1", "handled", "http://x", "nota",
+        )
+
+        # Runs keep their ids; message runs are gone; the queued one is cancelled; `schedule`
+        # becomes `routine` (linked to the routine); runs may share a session.
+        runs = {row["id"]: row for row in conn.execute("SELECT * FROM runs")}
+        assert sorted(runs) == [1, 2, 3, 5]
+        assert (runs[1]["source"], runs[1]["routine_id"], runs[1]["outcome"], runs[1]["session_id"]) == ("routine", 7, "concluded", "s-run")
+        assert (runs[2]["source"], runs[2]["routine_id"], runs[2]["outcome"], runs[2]["session_id"]) == ("comment", None, "running", "s-run")
+        assert (runs[3]["outcome"], runs[3]["reason"], runs[3]["source"], runs[3]["ended_at"]) == ("cancelled", "Fila migrada", "manual", 40)
+        assert (runs[5]["outcome"], runs[5]["reason"]) == ("missed", "atrasou")
+        assert conn.execute("SELECT COUNT(*) FROM wakeups").fetchone()[0] == 0
+
+        # Notices point at the latest copied run of their session; announcements of dropped runs unlink.
+        notices = {row["id"]: row["run_id"] for row in conn.execute("SELECT id, run_id FROM notices")}
+        assert notices == {1: 2, 2: None, 3: None}
+        assert conn.execute("SELECT read_at FROM notices WHERE id = 2").fetchone()[0] == 56
+        announcements = {row["id"]: row["run_id"] for row in conn.execute("SELECT id, run_id FROM announcements")}
+        assert announcements == {1: 1, 2: None}
+        assert conn.execute("SELECT session_id, agent_id FROM agent_chats").fetchone()[:] == ("s-msg", 7)
+        pr = conn.execute("SELECT * FROM agent_prs").fetchone()
+        assert (pr["agent_id"], pr["session_id"], pr["polled_at"], pr["closed"]) == (7, "s-run", 2, 0)
+        comment = conn.execute("SELECT * FROM agent_pr_comments").fetchone()
+        assert (comment["agent_id"], comment["status"], comment["batch_at"]) == (7, "uncertain", 3)
+
+        # The old tables stay (the end of the milestone removes them) and the sessions still point at the agent id.
+        assert "specialists" in table_names(conn) and "specialist_runs" in table_names(conn)
+        assert conn.execute("SELECT COUNT(*) FROM specialists").fetchone()[0] == 1
+        assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = 'main'").fetchone()[0] == 7
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+        # New ids continue after the old ones (no reuse of ids deleted before the copy).
+        new = conn.execute(
+            "INSERT INTO runs (agent_id, source, started_at, outcome) VALUES (7, 'manual', 1, 'skipped')"
+        )
+        assert new.lastrowid > 5
+
+
+def test_migration_31_keeps_autoincrement_watermark(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v30_with_specialist(conn)
+        conn.execute("INSERT INTO specialist_runs (id, specialist_id, trigger, started_at, outcome) VALUES (90, 7, 'manual', 1, 'skipped')")
+        conn.execute("DELETE FROM specialist_runs WHERE id = 90")
+
+        db.migrate(conn)
+
+        cursor = conn.execute(
+            "INSERT INTO runs (agent_id, source, started_at, outcome) VALUES (7, 'manual', 1, 'skipped')"
+        )
+        assert cursor.lastrowid == 91
+
+
+def test_migration_31_clamps_text_to_the_new_checks(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v30_with_specialist(conn)
+        conn.execute("UPDATE specialists SET run_text = '  ', name = ?", ("n" * 120,))
+
+        db.migrate(conn)
+
+        row = conn.execute("SELECT name, instruction FROM routines").fetchone()
+        assert (len(row["name"]), row["instruction"]) == (80, "Execute a rotina agendada.")
+
+
+def test_migration_31_runs_on_a_database_without_specialists(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        for statements in db.MIGRATIONS[:30]:
+            for statement in statements:
+                statement(conn) if callable(statement) else conn.execute(statement)
+        conn.execute("PRAGMA user_version = 30")
+
+        db.migrate(conn)
+
+        for table in ("agents", "routines", "runs", "notices", "registry"):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+
+
+def test_migration_is_idempotent_on_rows(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v30_with_specialist(conn)
+
+        db.migrate(conn)
+        before = {
+            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in ("agents", "routines", "routine_schedules", "runs", "registry",
+                          "notices", "announcements", "agent_chats", "agent_prs", "agent_pr_comments")
+        }
+        db.migrate(conn)
+        after = {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in before}
+
+        assert before == after
+        assert before["agents"] == 1 and before["routines"] == 1 and before["runs"] == 4
+
+
+def test_agent_tables_cascade_from_project(tmp_path: Path):
+    with open_db(tmp_path / "t.db") as conn:
+        db.migrate(conn)
+        conn.execute("INSERT INTO projects (id, name, path, color, position, created_at) VALUES (1, 'p', '/p', '#fff', 0, 0)")
+        conn.execute("INSERT INTO agents (id, slug, name, project_id, created_at, updated_at) VALUES (1, 'a', 'A', 1, 0, 0)")
+        conn.execute("INSERT INTO routines (project_id, agent_id, name, instruction, created_at, updated_at) VALUES (1, 1, 'r', 'i', 0, 0)")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO routines (project_id, agent_id, name, instruction, created_at, updated_at) VALUES (1, 1, '', 'i', 0, 0)")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO wakeups (agent_id, source, priority, payload, created_at) VALUES (1, 'manual', 0, ?, 0)", ("x" * 20001,))
+        conn.execute("DELETE FROM projects WHERE id = 1")
+        for table in ("agents", "routines"):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+
+
+def _agent_sessions_db(conn) -> None:
+    _build_v30_with_specialist(conn)
+    db.migrate(conn)
+
+
+def test_sessions_agent_fk_points_at_agents_after_migration_31(tmp_path: Path):
+    from claudio_maestro.org import store
+
+    with open_db(tmp_path / "old.db") as conn:
+        _agent_sessions_db(conn)
+        sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'sessions'").fetchone()[0]
+        assert "agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL" in sql
+        assert "REFERENCES specialists" not in sql
+        # (a) an agent created now (no specialist with that id) can own a session.
+        fresh = store.create_agent(conn, slug="novo", name="Novo", project_id=1, reports_to=None, now=1)
+        assert fresh.id not in {row[0] for row in conn.execute("SELECT id FROM specialists")}
+        conn.execute("UPDATE sessions SET agent_id = ? WHERE session_id = 's-run'", (fresh.id,))
+        # a made-up id is still refused.
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE sessions SET agent_id = 999 WHERE session_id = 's-run'")
+        # (b) deleting the agent leaves the session without owner, through the FK.
+        store.delete_agent(conn, fresh.id)
+        assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = 's-run'").fetchone()[0] is None
+        # (c) the old table no longer matters to sessions: dropping it (what the end of the
+        # milestone does) leaves `sessions.agent_id` and the agents alone.
+        conn.execute("DROP TABLE specialists")
+        assert conn.execute("SELECT COUNT(*) FROM agents WHERE id = 7").fetchone()[0] == 1
+        assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = 'main'").fetchone()[0] == 7
+        # (d) the file is sound and the rewritten schema is seen by every new statement.
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_sessions_agent_fk_is_seen_by_other_connections(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _agent_sessions_db(conn)
+        with open_db(tmp_path / "old.db") as other:
+            other.execute("PRAGMA foreign_keys = ON")
+            sql = other.execute("SELECT sql FROM sqlite_master WHERE name = 'sessions'").fetchone()[0]
+            assert "REFERENCES agents(id)" in sql
+            other.execute("DELETE FROM agents WHERE id = 7")
+            assert other.execute("SELECT agent_id FROM sessions WHERE session_id = 'main'").fetchone()[0] is None
+
+
+def test_rebind_sessions_agent_fk_refuses_unknown_schema(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _agent_sessions_db(conn)
+        # Already rewritten: the snippet is gone, so a second run must fail loudly, not guess.
+        with pytest.raises(RuntimeError, match="tabela de sessões"):
+            with db.transaction(conn):
+                db.rebind_sessions_agent_fk(conn)
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_rebind_sessions_agent_fk_rejects_orphan_agent_ids(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v30_with_specialist(conn)
+        # A session owned by an id the copy did not carry over cannot satisfy the new FK.
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("UPDATE sessions SET agent_id = 55 WHERE session_id = 's-run'")
+        conn.execute("PRAGMA foreign_keys = ON")
+        with pytest.raises(sqlite3.IntegrityError):
+            db.migrate(conn)
+        assert db.schema_version(conn) == 30
+
+
+def test_legacy_specialists_are_mirrored_into_agents_until_the_old_tables_go(tmp_path: Path):
+    """The old specialist service still runs: its sessions need a row in `agents` too."""
+    with open_db(tmp_path / "old.db") as conn:
+        _agent_sessions_db(conn)
+        conn.execute(
+            "INSERT INTO specialists (id, slug, name, project_id, enabled, created_at, updated_at)"
+            " VALUES (20, 'novo', 'Novo', 2, 1, 5, 6)"
+        )
+        agent = conn.execute("SELECT * FROM agents WHERE id = 20").fetchone()
+        assert (agent["slug"], agent["name"], agent["project_id"], agent["enabled"]) == ("novo", "Novo", 2, 1)
+        assert (agent["created_at"], agent["updated_at"]) == (5, 6)
+        conn.execute("UPDATE sessions SET agent_id = 20 WHERE session_id = 's-run'")
+
+        conn.execute(
+            "UPDATE specialists SET slug = 'outro', name = 'Outro', enabled = 0, main_session_id = 's-msg',"
+            " updated_at = 9 WHERE id = 20"
+        )
+        agent = conn.execute("SELECT * FROM agents WHERE id = 20").fetchone()
+        assert (agent["slug"], agent["name"], agent["enabled"], agent["main_session_id"], agent["updated_at"]) == (
+            "outro", "Outro", 0, "s-msg", 9,
+        )
+
+        conn.execute("DELETE FROM specialists WHERE id = 20")
+        assert conn.execute("SELECT COUNT(*) FROM agents WHERE id = 20").fetchone()[0] == 0
+        assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = 's-run'").fetchone()[0] is None
+
+        # Dropping the table drops its triggers; the agents stay.
+        conn.execute("DROP TABLE specialists")
+        names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
+        assert not {name for name in names if name.startswith("specialists_mirror")}
+        assert conn.execute("SELECT COUNT(*) FROM agents").fetchone()[0] == 1

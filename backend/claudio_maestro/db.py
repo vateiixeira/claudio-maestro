@@ -713,6 +713,340 @@ MIGRATIONS.append(POOL_SCHEMA)
 # The owner of a session is an agent now, not only a legacy specialist.
 MIGRATIONS.append(["ALTER TABLE sessions RENAME COLUMN specialist_id TO agent_id"])
 
+
+_WAKE_SOURCES = "'routine', 'message', 'assignment', 'comment', 'decision', 'manual'"
+
+
+def carry_agent_sequences(conn: sqlite3.Connection) -> None:
+    """Keep the AUTOINCREMENT watermark of the old tables on the new ones, so ids of rows
+    deleted before the copy are not reused (runs and notices are referenced from outside)."""
+    pairs = (
+        ("specialists", "agents"),
+        ("specialists", "routines"),
+        ("specialist_schedules", "routine_schedules"),
+        ("specialist_runs", "runs"),
+        ("specialist_notices", "notices"),
+        ("specialist_announcements", "announcements"),
+    )
+    for old, new in pairs:
+        row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = ?", (old,)).fetchone()
+        if row is None:
+            continue
+        if conn.execute("SELECT 1 FROM sqlite_sequence WHERE name = ?", (new,)).fetchone():
+            conn.execute(
+                "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = ?", (row[0], new)
+            )
+        else:
+            conn.execute("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)", (new, row[0]))
+
+
+_SESSIONS_AGENT_FK_OLD = "agent_id INTEGER REFERENCES specialists(id) ON DELETE SET NULL"
+_SESSIONS_AGENT_FK_NEW = "agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL"
+
+
+def rebind_sessions_agent_fk(conn: sqlite3.Connection) -> None:
+    """Point `sessions.agent_id` at `agents` instead of `specialists`, without rebuilding the
+    table (21 tables reference `sessions`, several with CASCADE).
+
+    This is the "Making Other Kinds Of Table Schema Changes" procedure of the SQLite docs: the
+    table text is edited in `sqlite_schema` and `schema_version` is bumped so every connection
+    reparses it. It is safe here because the column and its type stay the same, only the parent
+    table of the foreign key changes, and the ids already match (the copy kept them). Runs inside
+    the transaction of `migrate`; the caller must have copied `agents` first.
+    """
+    row = conn.execute("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'sessions'")
+    sql = row.fetchone()[0]
+    if sql.count(_SESSIONS_AGENT_FK_OLD) != 1:
+        raise RuntimeError(
+            "Não foi possível migrar a tabela de sessões: a coluna agent_id não tem a forma"
+            " esperada. Nada foi alterado."
+        )
+    # Refuse before touching the schema if some session points at an id the copy lacks.
+    orphans = conn.execute(
+        "SELECT COUNT(*) FROM sessions WHERE agent_id IS NOT NULL"
+        " AND agent_id NOT IN (SELECT id FROM agents)"
+    ).fetchone()[0]
+    if orphans:
+        raise sqlite3.IntegrityError(
+            f"{orphans} sessão(ões) apontam para um agente que não existe; a migração foi desfeita."
+        )
+    version = conn.execute("PRAGMA schema_version").fetchone()[0]
+    conn.execute("PRAGMA writable_schema = ON")
+    try:
+        conn.execute(
+            "UPDATE sqlite_schema SET sql = replace(sql, ?, ?)"
+            " WHERE type = 'table' AND name = 'sessions'",
+            (_SESSIONS_AGENT_FK_OLD, _SESSIONS_AGENT_FK_NEW),
+        )
+        conn.execute(f"PRAGMA schema_version = {version + 1}")
+    finally:
+        conn.execute("PRAGMA writable_schema = OFF")
+    if conn.execute("PRAGMA foreign_key_check(sessions)").fetchall():
+        raise sqlite3.IntegrityError("A chave estrangeira de sessions.agent_id ficou inconsistente.")
+
+
+# Organização de agentes: o agente passa a ser um `AGENT.md` mais estas tabelas. Os dados
+# das `specialist_*` são copiados aqui (ids preservados, para `sessions.agent_id`, anúncios e
+# avisos continuarem apontando para a mesma coisa); as tabelas antigas ficam até o fim do marco.
+MIGRATIONS.append([
+    """
+    CREATE TABLE agents (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug             TEXT NOT NULL UNIQUE,
+      name             TEXT NOT NULL,
+      project_id       INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      reports_to       INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      enabled          INTEGER NOT NULL DEFAULT 1,
+      main_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      definition_hash  TEXT,
+      legacy_json      TEXT,
+      created_at       INTEGER NOT NULL,
+      updated_at       INTEGER NOT NULL
+    )
+    """,
+    "CREATE INDEX agents_project ON agents(project_id)",
+    "CREATE INDEX agents_reports_to ON agents(reports_to)",
+    """
+    CREATE TABLE routines (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      agent_id     INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      name         TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+      instruction  TEXT NOT NULL CHECK (length(instruction) BETWEEN 1 AND 5000),
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      created_at   INTEGER NOT NULL,
+      updated_at   INTEGER NOT NULL
+    )
+    """,
+    "CREATE INDEX routines_agent ON routines(agent_id)",
+    "CREATE INDEX routines_project ON routines(project_id)",
+    """
+    CREATE TABLE routine_schedules (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      routine_id     INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
+      days           TEXT NOT NULL,
+      time           TEXT NOT NULL,
+      last_fired_at  INTEGER
+    )
+    """,
+    "CREATE INDEX routine_schedules_routine ON routine_schedules(routine_id)",
+    f"""
+    CREATE TABLE runs (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id       INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      source         TEXT NOT NULL CHECK (source IN ({_WAKE_SOURCES})),
+      routine_id     INTEGER REFERENCES routines(id) ON DELETE SET NULL,
+      scheduled_for  INTEGER,
+      started_at     INTEGER NOT NULL,
+      ended_at       INTEGER,
+      outcome        TEXT NOT NULL CHECK (
+        outcome IN ('starting', 'running', 'waiting', 'concluded', 'closed', 'failed',
+                    'skipped', 'missed', 'cancelled')
+      ),
+      reason         TEXT
+    )
+    """,
+    "CREATE INDEX runs_agent ON runs(agent_id, id)",
+    "CREATE INDEX runs_session ON runs(session_id)",
+    f"""
+    CREATE TABLE wakeups (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id    INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      source      TEXT NOT NULL CHECK (source IN ({_WAKE_SOURCES})),
+      priority    INTEGER NOT NULL,
+      routine_id  INTEGER REFERENCES routines(id) ON DELETE SET NULL,
+      payload     TEXT CHECK (payload IS NULL OR length(payload) <= 20000),
+      state       TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'taken', 'dropped')),
+      run_id      INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+      created_at  INTEGER NOT NULL,
+      taken_at    INTEGER
+    )
+    """,
+    "CREATE INDEX wakeups_queue ON wakeups(agent_id, state, priority, id)",
+    """
+    CREATE TABLE registry (
+      agent_id    INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      key         TEXT NOT NULL,
+      status      TEXT NOT NULL,
+      link        TEXT,
+      note        TEXT,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, key)
+    )
+    """,
+    """
+    CREATE TABLE notices (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id    INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      run_id      INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+      kind        TEXT NOT NULL CHECK (kind IN ('notice', 'summary', 'alert')),
+      text        TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      read_at     INTEGER
+    )
+    """,
+    "CREATE INDEX notices_read ON notices(read_at)",
+    """
+    CREATE TABLE announcements (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id      INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      run_id        INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+      session_id    TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      text          TEXT NOT NULL,
+      created_at    INTEGER NOT NULL,
+      delivered_at  INTEGER
+    )
+    """,
+    "CREATE INDEX announcements_pending ON announcements(agent_id, delivered_at)",
+    """
+    CREATE TABLE agent_chats (
+      session_id  TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+      agent_id    INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX agent_chats_agent ON agent_chats(agent_id)",
+    """
+    CREATE TABLE agent_prs (
+      url         TEXT PRIMARY KEY,
+      agent_id    INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      created_at  INTEGER NOT NULL,
+      polled_at   INTEGER,
+      closed      INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE agent_pr_comments (
+      comment_id   TEXT PRIMARY KEY,
+      pr_url       TEXT NOT NULL,
+      agent_id     INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      author       TEXT NOT NULL,
+      body         TEXT NOT NULL,
+      path         TEXT,
+      line         INTEGER,
+      html_url     TEXT NOT NULL,
+      created_at   INTEGER NOT NULL,
+      received_at  INTEGER NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'queued' CHECK (
+        status IN ('queued', 'dispatching', 'uncertain', 'delivered', 'dropped')
+      ),
+      batch_at     INTEGER
+    )
+    """,
+    "CREATE INDEX agent_pr_comments_status_pr ON agent_pr_comments(status, pr_url)",
+    # --- Cópia dos dados das `specialist_*` ---
+    # `legacy_json` leva o que o `AGENT.md` vai absorver depois (model, effort, denied_tools,
+    # extra_project_ids); `migrate_files` o apaga.
+    """
+    INSERT INTO agents (id, slug, name, project_id, enabled, main_session_id, legacy_json,
+                        created_at, updated_at)
+    SELECT id, slug, name, project_id, enabled, main_session_id,
+           json_object('model', model, 'effort', effort, 'denied_tools', json(denied_tools),
+                       'extra_project_ids', json(extra_project_ids)),
+           created_at, updated_at
+    FROM specialists
+    """,
+    # One routine per specialist (same id), holding all its schedules. `run_text` and the name
+    # are clamped to the new CHECKs so no row is lost.
+    """
+    INSERT INTO routines (id, project_id, agent_id, name, instruction, enabled, created_at,
+                          updated_at)
+    SELECT id, project_id, id,
+           CASE WHEN trim(name) = '' THEN 'Rotina' ELSE substr(name, 1, 80) END,
+           CASE WHEN trim(run_text) = '' THEN 'Execute a rotina agendada.'
+                ELSE substr(run_text, 1, 5000) END,
+           1, created_at, updated_at
+    FROM specialists
+    """,
+    """
+    INSERT INTO routine_schedules (id, routine_id, days, time, last_fired_at)
+    SELECT id, specialist_id, days, time, last_fired_at FROM specialist_schedules
+    """,
+    # Runs: chat messages (`message = 1`) are not runs any more and are dropped; `queued` becomes
+    # `cancelled` (the old queue is not carried over); `schedule` becomes `routine`. Several runs
+    # may share a session, so `session_id` is copied as it was.
+    """
+    INSERT INTO runs (id, agent_id, session_id, source, routine_id, scheduled_for, started_at,
+                      ended_at, outcome, reason)
+    SELECT r.id, r.specialist_id,
+           CASE WHEN r.outcome = 'queued' THEN NULL ELSE r.session_id END,
+           CASE r.trigger WHEN 'schedule' THEN 'routine' ELSE r.trigger END,
+           CASE WHEN r.trigger = 'schedule' THEN r.specialist_id END,
+           r.scheduled_for, r.started_at,
+           CASE WHEN r.outcome = 'queued' THEN COALESCE(r.ended_at, r.started_at)
+                ELSE r.ended_at END,
+           CASE r.outcome WHEN 'queued' THEN 'cancelled' ELSE r.outcome END,
+           CASE WHEN r.outcome = 'queued' THEN 'Fila migrada' ELSE r.reason END
+    FROM specialist_runs r
+    WHERE r.message = 0
+    """,
+    """
+    INSERT INTO registry (agent_id, key, status, link, note, created_at, updated_at)
+    SELECT specialist_id, key, status, link, note, created_at, updated_at FROM specialist_items
+    """,
+    # Notices point at a run now, not at a session: the latest copied run of the notice's session.
+    """
+    INSERT INTO notices (id, agent_id, run_id, kind, text, created_at, read_at)
+    SELECT n.id, n.specialist_id,
+           (SELECT r.id FROM specialist_runs r JOIN runs c ON c.id = r.id
+            WHERE n.session_id IS NOT NULL AND r.session_id = n.session_id
+            ORDER BY r.started_at DESC, r.id DESC LIMIT 1),
+           n.kind, n.text, n.created_at, n.read_at
+    FROM specialist_notices n
+    """,
+    """
+    INSERT INTO announcements (id, agent_id, run_id, session_id, text, created_at, delivered_at)
+    SELECT a.id, a.specialist_id, (SELECT id FROM runs WHERE id = a.run_id), a.session_id, a.text,
+           a.created_at, a.delivered_at
+    FROM specialist_announcements a
+    """,
+    "INSERT INTO agent_chats (session_id, agent_id) SELECT session_id, specialist_id FROM specialist_chats",
+    """
+    INSERT INTO agent_prs (url, agent_id, session_id, created_at, polled_at, closed)
+    SELECT url, specialist_id, session_id, created_at, polled_at, closed FROM specialist_prs
+    """,
+    """
+    INSERT INTO agent_pr_comments (comment_id, pr_url, agent_id, author, body, path, line,
+                                   html_url, created_at, received_at, status, batch_at)
+    SELECT comment_id, pr_url, specialist_id, author, body, path, line, html_url, created_at,
+           received_at, status, batch_at
+    FROM specialist_pr_comments
+    """,
+    carry_agent_sequences,
+    rebind_sessions_agent_fk,
+    # Transitional: `sessions.agent_id` now needs a row in `agents`, but the old specialist
+    # service still creates and edits `specialists` until it is removed at the end of the
+    # milestone. These triggers mirror it (same id) so its sessions keep working; dropping the
+    # `specialists` table drops them.
+    """
+    CREATE TRIGGER specialists_mirror_insert AFTER INSERT ON specialists
+    BEGIN
+      INSERT INTO agents (id, slug, name, project_id, enabled, main_session_id, created_at,
+                          updated_at)
+      VALUES (new.id, new.slug, new.name, new.project_id, new.enabled, new.main_session_id,
+              new.created_at, new.updated_at);
+    END
+    """,
+    """
+    CREATE TRIGGER specialists_mirror_update
+    AFTER UPDATE OF slug, name, project_id, enabled, main_session_id, updated_at ON specialists
+    BEGIN
+      UPDATE agents SET slug = new.slug, name = new.name, project_id = new.project_id,
+                        enabled = new.enabled, main_session_id = new.main_session_id,
+                        updated_at = new.updated_at
+      WHERE id = new.id;
+    END
+    """,
+    """
+    CREATE TRIGGER specialists_mirror_delete AFTER DELETE ON specialists
+    BEGIN
+      DELETE FROM agents WHERE id = old.id;
+    END
+    """,
+])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

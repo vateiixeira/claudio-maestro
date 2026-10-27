@@ -17,7 +17,7 @@ def test_consistent_temporary_backup_preserves_all_legacy_work_rows_and_private_
     result = private.write({'result_kind': 'investigation', 'summary': 'Prova sintética preservada'})
     with closing(db.connect(old_db)) as conn:
         conn.execute('PRAGMA journal_mode=WAL')
-        previous = len(db.MIGRATIONS) - 1
+        previous = 29  # Before the rename of sessions.specialist_id (migration 30).
         for statements in db.MIGRATIONS[:previous]:
             for statement in statements:
                 statement(conn) if callable(statement) else conn.execute(statement)
