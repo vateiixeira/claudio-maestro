@@ -18,6 +18,7 @@ import MarkdownView from '../views/MarkdownView.vue'
 import NewProjectView from '../views/NewProjectView.vue'
 import PreferencesView from '../views/PreferencesView.vue'
 import ProjectView from '../views/ProjectView.vue'
+import ProjectsView from '../views/ProjectsView.vue'
 
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/inicio' },
@@ -34,6 +35,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/sessions/:id', name: 'session', component: ConversationView, props: true },
   // Reader page of a markdown file, opened in its own tab: no sidebar, no live connection.
   { path: '/sessions/:id/ver', name: 'markdown-view', component: MarkdownView, props: true, meta: { bare: true } },
+  { path: '/projects', name: 'projects', component: ProjectsView },
   { path: '/projects/new', name: 'project-new', component: NewProjectView },
   {
     path: '/projects/:id(\\d+)',

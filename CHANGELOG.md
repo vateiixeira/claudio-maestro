@@ -6,6 +6,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Tela Projetos no menu lateral, com todos os projetos cadastrados, caminhos das pastas e edição do nome no Maestro sem renomear a pasta.
+
 - Início, Tarefas e conversa persistente do CTO por projeto: objetivos, decisões prioritárias, filtros, tentativas com andamento ao vivo e resultados próprios, mantendo conversas e URLs anteriores.
 - Tarefas por issue com contextos separados, revisão independente, evidências de execução e decisões humanas ligadas à ação e à revisão exatas. Retomadas conservam o histórico; envios incertos não são repetidos automaticamente.
 - Fontes Sentry e KBGen: coleta delegada em conversa própria, metadados paginados no backlog e reavaliação após mudanças na fonte ou no código.

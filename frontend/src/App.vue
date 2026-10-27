@@ -26,7 +26,7 @@ const route = useRoute()
 const router = useRouter()
 const compactViewport = ref(window.innerWidth < 1024)
 const agentsMenuOpen = ref(false)
-const agentsCompactNavigation = computed(() => ['agents', 'start', 'tasks', 'task', 'cto'].includes(String(route.name)) && compactViewport.value)
+const agentsCompactNavigation = computed(() => ['agents', 'start', 'tasks', 'task', 'cto', 'projects'].includes(String(route.name)) && compactViewport.value)
 let agentsMenuTrigger: HTMLElement | null = null
 function closeAgentsMenu(restoreFocus = true) {
   agentsMenuOpen.value = false

@@ -198,6 +198,7 @@ const itemClass = sidebarItemClass
       <RouterLink to="/inicio" data-test="nav-start" :class="itemClass(route.name === 'start')" :aria-current="route.name === 'start' ? 'page' : undefined"><IconInbox /><span class="grow">Início</span></RouterLink>
       <RouterLink to="/tarefas" data-test="nav-tasks" :class="itemClass(route.name === 'tasks' || route.name === 'task')" :aria-current="route.name === 'tasks' || route.name === 'task' ? 'page' : undefined"><IconDeliveries /><span class="grow">Tarefas</span></RouterLink>
       <RouterLink to="/cto" data-test="nav-cto" :class="itemClass(route.name === 'cto')" :aria-current="route.name === 'cto' ? 'page' : undefined"><IconAgents /><span class="grow">CTO</span></RouterLink>
+      <RouterLink to="/projects" data-test="nav-projects" :class="itemClass(route.name === 'projects' || route.name === 'project-new')" :aria-current="route.name === 'projects' ? 'page' : undefined"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg><span class="grow">Projetos</span></RouterLink>
       <details class="mt-2 text-fg-muted"><summary class="cursor-pointer px-2.5 py-2 text-xs text-fg-subtle">Mais ferramentas</summary>
       <RouterLink to="/inbox" data-test="nav-inbox" :class="itemClass(route.name === 'inbox')" :aria-current="route.name === 'inbox' ? 'page' : undefined">
         <IconInbox />

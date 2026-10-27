@@ -59,6 +59,8 @@ describe('menu lateral', () => {
 
   it('tem as entradas fixas', () => {
     const wrapper = mountSidebar()
+    expect(wrapper.find('[data-test="nav-projects"]').attributes('href')).toBe('/projects')
+    expect(wrapper.find('[data-test="nav-projects"]').element.closest('details')).toBeNull()
     expect(wrapper.find('[data-test="nav-dashboard"]').attributes('href')).toBe('/dashboard')
     expect(wrapper.find('[data-test="nav-inbox"]').attributes('href')).toBe('/inbox')
     expect(wrapper.find('[data-test="nav-conversations"]').attributes('href')).toBe('/sessions')
