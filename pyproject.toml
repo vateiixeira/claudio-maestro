@@ -22,6 +22,7 @@ dependencies = [
     "fastapi>=0.141",
     "uvicorn[standard]>=0.54",
     "claude-agent-sdk>=0.2.161",
+    "pyyaml>=6",
 ]
 
 [project.urls]

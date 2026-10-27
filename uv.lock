@@ -153,6 +153,7 @@ source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },
     { name = "fastapi" },
+    { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -167,6 +168,7 @@ dev = [
 requires-dist = [
     { name = "claude-agent-sdk", specifier = ">=0.2.161" },
     { name = "fastapi", specifier = ">=0.141" },
+    { name = "pyyaml", specifier = ">=6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54" },
 ]
 
