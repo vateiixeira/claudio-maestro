@@ -196,7 +196,7 @@ class SpecialistService:
         cached = set()
         for sid in self._sessions.active_ids():
             session = self._sessions.get(sid)
-            if session.record.specialist_id == specialist.id and session.client is not None:
+            if session.record.agent_id == specialist.id and session.client is not None:
                 extras = getattr(session, '_extras', None)
                 if extras:
                     cached.update(str(path) for path in extras.add_dirs)
@@ -231,7 +231,7 @@ class SpecialistService:
         positive = dict(known_closed)
         for sid in self._sessions.active_ids():
             session = self._sessions.get(sid)
-            if session.record.specialist_id == specialist_id and (
+            if session.record.agent_id == specialist_id and (
                 session.users or getattr(session, '_connecting', False) or session.state in TURN_OPEN_STATES or session.record.turn_open or session.subagents_running
             ):
                 raise WorkConflictError('O agente ainda tem um turno, envio ou subagente ativo.')
@@ -239,7 +239,7 @@ class SpecialistService:
             "SELECT 1 FROM specialist_runs WHERE specialist_id=? AND (outcome IN ('queued','starting','waiting') OR (outcome='failed' AND reason=?))",
             (specialist_id, UNCERTAIN_SEND),
         ).fetchone() or conn.execute(
-            'SELECT 1 FROM sessions WHERE specialist_id=? AND turn_open=1', (specialist_id,),
+            'SELECT 1 FROM sessions WHERE agent_id=? AND turn_open=1', (specialist_id,),
         ).fetchone() or conn.execute(
             "SELECT 1 FROM specialist_pr_comments WHERE specialist_id=? AND status IN ('queued','dispatching','uncertain')",
             (specialist_id,),
@@ -266,13 +266,13 @@ class SpecialistService:
         # already edited the registry. Do not infer idle from a missing client.
         for sid in self._sessions.active_ids():
             session = self._sessions.get(sid)
-            owner = session.record.specialist_id
+            owner = session.record.agent_id
             extras = getattr(session, '_extras', None)
             cached = {str(path) for path in extras.add_dirs} if extras else set()
             if owner is not None and (session.client is not None or session.record.turn_open or session.users):
                 if session.record.project_id == project_id or project.path in cached:
                     selected.add(owner)
-        rows = conn.execute("SELECT DISTINCT s.specialist_id FROM sessions s JOIN specialist_runs r ON r.session_id=s.session_id WHERE s.project_id=? AND s.specialist_id IS NOT NULL AND (r.outcome IN ('queued','starting','running','waiting') OR (r.outcome='failed' AND r.reason=?))", (project_id, UNCERTAIN_SEND))
+        rows = conn.execute("SELECT DISTINCT s.agent_id FROM sessions s JOIN specialist_runs r ON r.session_id=s.session_id WHERE s.project_id=? AND s.agent_id IS NOT NULL AND (r.outcome IN ('queued','starting','running','waiting') OR (r.outcome='failed' AND r.reason=?))", (project_id, UNCERTAIN_SEND))
         selected.update(row[0] for row in rows)
         return [owner for owner in store.list_specialists(conn) if owner.id in selected]
 
@@ -289,11 +289,11 @@ class SpecialistService:
     def session_setup(self, record: SessionRecord) -> SessionExtras | None:
         """What an agent's session adds to its client; None for an ordinary session.
         Errors here never quote the contents of `secrets.env`."""
-        if record.specialist_id is None:
+        if record.agent_id is None:
             return None
         main = self.is_main(record.session_id)
         with closing(db.connect(self._db_path)) as conn:
-            specialist = store.get_specialist(conn, record.specialist_id)
+            specialist = store.get_specialist(conn, record.agent_id)
             extra = self._extra_projects(conn, specialist)
         skill = parse_skill(self._files.read_skill(specialist.slug))
         prompt = build_append(
@@ -377,7 +377,7 @@ class SpecialistService:
                 record = self._sessions.find_record(session_id)
             except SessionNotFoundError:
                 return "ask"
-            specialist = self._specialist_by_id(record.specialist_id)
+            specialist = self._specialist_by_id(record.agent_id)
             if specialist is None:
                 return "ask"
             return await classify(
@@ -407,7 +407,7 @@ class SpecialistService:
         session when the agent can no longer be read."""
         try:
             record = self._sessions.find_record(session_id)
-            specialist = self._specialist_by_id(record.specialist_id)
+            specialist = self._specialist_by_id(record.agent_id)
         except Exception:
             logger.exception("Falha ao ler as ferramentas bloqueadas da sessão %s", session_id)
             return at_start
@@ -440,7 +440,7 @@ class SpecialistService:
             if not project.available:
                 raise ProjectUnavailableError(PROJECT_UNAVAILABLE)
             record = self._sessions.create_session(
-                project, specialist_id=specialist.id, model=specialist.model, effort=specialist.effort
+                project, agent_id=specialist.id, model=specialist.model, effort=specialist.effort
             )
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
                 store.set_main_session(conn, specialist.id, record.session_id)
@@ -470,9 +470,9 @@ class SpecialistService:
         go in a marked block before the message, and the returned `commit` marks them
         delivered (the session calls it once the message is recorded). Anywhere else the
         text is untouched and `commit` does nothing."""
-        if record.specialist_id is None or not self.is_main(record.session_id):
+        if record.agent_id is None or not self.is_main(record.session_id):
             return text, _noop
-        specialist_id = record.specialist_id
+        specialist_id = record.agent_id
         with closing(db.connect(self._db_path)) as conn:
             pending = store.pending_announcements(conn, specialist_id)
         if not pending:
@@ -526,7 +526,7 @@ class SpecialistService:
             store.get_specialist(conn, specialist_id)
             rows = conn.execute(
                 "SELECT session_id, title, finished, created_at, last_activity_at FROM sessions"
-                " WHERE specialist_id = ? ORDER BY last_activity_at DESC, session_id DESC LIMIT 100",
+                " WHERE agent_id = ? ORDER BY last_activity_at DESC, session_id DESC LIMIT 100",
                 (specialist_id,),
             ).fetchall()
         return [{**dict(row), "finished": bool(row["finished"])} for row in rows]
@@ -536,7 +536,7 @@ class SpecialistService:
             record = self._sessions.find_record(session_id)
         except SessionNotFoundError as error:
             raise store.SpecialistNotFoundError("Conversa não encontrada.") from error
-        if record.specialist_id != specialist_id:
+        if record.agent_id != specialist_id:
             raise store.SpecialistNotFoundError("Conversa não encontrada.")
         with closing(db.connect(self._db_path)) as conn:
             specialist = store.get_specialist(conn, specialist_id)
@@ -561,14 +561,14 @@ class SpecialistService:
             if session_id is None:
                 project = projects.get_project(conn, specialist.project_id)
                 record = self._sessions.create_session(
-                    project, specialist_id=specialist_id, model=specialist.model, effort=specialist.effort
+                    project, agent_id=specialist_id, model=specialist.model, effort=specialist.effort
                 )
             else:
                 try:
                     record = self._sessions.find_record(session_id)
                 except SessionNotFoundError as error:
                     raise store.SpecialistNotFoundError("Conversa não encontrada.") from error
-                if record.specialist_id != specialist_id:
+                if record.agent_id != specialist_id:
                     raise store.SpecialistNotFoundError("Conversa não encontrada.")
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             conn.execute("INSERT OR IGNORE INTO specialist_chats VALUES (?, ?)", (record.session_id, specialist_id))
@@ -582,7 +582,7 @@ class SpecialistService:
         from claudio_maestro.sessions import EmptyMessageError, validate_images
 
         record = self._sessions.find_record(session_id)
-        if record.specialist_id is None:
+        if record.agent_id is None:
             raise store.SpecialistNotFoundError("Esta conversa não pertence a um agente.")
         images = list(images or [])
         validate_images(images)
@@ -591,10 +591,10 @@ class SpecialistService:
         if len(text) > 100_000:
             raise EmptyMessageError("A mensagem pode ter até 100.000 caracteres.")
         with closing(db.connect(self._db_path)) as conn:
-            self.assert_legacy_admission(conn, store.get_specialist(conn, record.specialist_id), session_id=record.session_id)
-        await self.open_conversation(record.specialist_id, session_id=session_id)
+            self.assert_legacy_admission(conn, store.get_specialist(conn, record.agent_id), session_id=record.session_id)
+        await self.open_conversation(record.agent_id, session_id=session_id)
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
-            specialist = store.get_specialist(conn, record.specialist_id)
+            specialist = store.get_specialist(conn, record.agent_id)
             self.assert_legacy_admission(conn, specialist, session_id=record.session_id)
             if len(store.list_pending_runs(conn, specialist.id)) >= MAX_QUEUED_RUNS:
                 raise QueueFullError
@@ -809,11 +809,11 @@ class SpecialistService:
         try:
             if run.session_id is not None:
                 record = self._sessions.find_record(run.session_id)
-                if record.specialist_id != specialist.id:
+                if record.agent_id != specialist.id:
                     raise ProjectUnavailableError("Conversa não encontrada.")
             else:
                 record = self._sessions.create_session(
-                    project, specialist_id=specialist.id, model=specialist.model, effort=specialist.effort
+                    project, agent_id=specialist.id, model=specialist.model, effort=specialist.effort
                 )
         except (InvalidDecisionError, ProjectUnavailableError):
             self._fail_queued(run, specialist, PROJECT_UNAVAILABLE)
@@ -986,7 +986,7 @@ class SpecialistService:
     async def _send_comment_message(self, session_id: str, text: str) -> None:
         record = self._sessions.find_record(session_id)
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
-            specialist = store.get_specialist(conn, record.specialist_id)
+            specialist = store.get_specialist(conn, record.agent_id)
             self.assert_legacy_admission(conn, specialist, session_id=session_id)
         result = await self._sessions.send(session_id, text)
         if result.get("send_started") is False:
@@ -1047,7 +1047,7 @@ class SpecialistService:
             except SessionNotFoundError:
                 continue
             if (
-                session.record.specialist_id == specialist_id
+                session.record.agent_id == specialist_id
                 and session.state in TURN_OPEN_STATES
             ):
                 return True
@@ -1137,7 +1137,7 @@ class SpecialistService:
             return
         if closure.is_stale(record.last_activity_at):
             return
-        specialist = self._specialist_by_id(record.specialist_id)
+        specialist = self._specialist_by_id(record.agent_id)
         if specialist is None:
             return
         with closing(db.connect(self._db_path)) as conn:
@@ -1305,7 +1305,7 @@ class SpecialistService:
             record = self._sessions.find_record(session_id)
         except SessionNotFoundError:
             return None
-        return self._specialist_by_id(record.specialist_id)
+        return self._specialist_by_id(record.agent_id)
 
     def _specialist_by_id(self, specialist_id: int | None) -> store.Specialist | None:
         if specialist_id is None:

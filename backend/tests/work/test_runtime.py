@@ -61,7 +61,7 @@ async def world(tmp_path):
 async def test_coordinator_is_project_scoped_persistent_normal_session(world):
     first = world.service.coordinator(world.project.id)
     assert first.session_id == world.service.coordinator(world.project.id).session_id
-    assert first.specialist_id is None
+    assert first.agent_id is None
     other = make_project(world.db_path, world.path / 'home' / 'other')
     assert world.service.coordinator(other.id).session_id != first.session_id
     context = world.service.session_context(first)
@@ -79,7 +79,7 @@ async def test_delegation_is_durable_deduplicated_and_not_inline(world):
     await world.service.dispatch_once()
     attempt = world.attempts(a.id)[0]
     assert attempt.session_id != world.service.coordinator(world.project.id).session_id
-    assert world.manager.find_record(attempt.session_id).specialist_id is None
+    assert world.manager.find_record(attempt.session_id).agent_id is None
     assert 'Rastrear o código' in str(world.factory.clients[-1].sent)
     assert world.service.session_identity(attempt.session_id)['work_item_id'] == a.id
 

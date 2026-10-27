@@ -132,7 +132,7 @@ class WorkService(PresentationMixin, SourcesMixin, ReviewsMixin, DecisionsMixin,
         for owner in owners:
             if conn.execute("SELECT 1 FROM specialist_runs WHERE specialist_id = ? AND (outcome IN ('queued', 'starting', 'running', 'waiting') OR (outcome='failed' AND reason=?))", (owner, UNCERTAIN_SEND)).fetchone():
                 return True
-            if conn.execute("SELECT 1 FROM sessions WHERE specialist_id = ? AND turn_open = 1", (owner,)).fetchone():
+            if conn.execute("SELECT 1 FROM sessions WHERE agent_id = ? AND turn_open = 1", (owner,)).fetchone():
                 return True
             if conn.execute("SELECT 1 FROM specialist_pr_comments WHERE specialist_id = ? AND status IN ('queued', 'dispatching', 'uncertain')", (owner,)).fetchone():
                 return True
@@ -225,8 +225,8 @@ class WorkService(PresentationMixin, SourcesMixin, ReviewsMixin, DecisionsMixin,
     def assert_session_start(self, record: SessionRecord) -> None:
         """Admit a new process; attaching a held process uses context only."""
         with closing(db.connect(self.db_path)) as conn:
-            current = conn.execute('SELECT project_id, specialist_id FROM sessions WHERE session_id=?', (record.session_id,)).fetchone()
-            if current is None or current['project_id'] != record.project_id or current['specialist_id'] != record.specialist_id:
+            current = conn.execute('SELECT project_id, agent_id FROM sessions WHERE session_id=?', (record.session_id,)).fetchone()
+            if current is None or current['project_id'] != record.project_id or current['agent_id'] != record.agent_id:
                 raise store.WorkConflictError('A sessão foi removida ou seu vínculo de projeto mudou.')
             projects.get_project(conn, record.project_id)
             self.assert_project_admission(conn, record.project_id)
@@ -256,7 +256,7 @@ class WorkService(PresentationMixin, SourcesMixin, ReviewsMixin, DecisionsMixin,
 
         from .tools import build_server
 
-        if record.specialist_id is not None:
+        if record.agent_id is not None:
             return None
         identity = self.session_identity(record.session_id)
         if identity is None:

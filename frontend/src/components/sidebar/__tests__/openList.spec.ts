@@ -56,8 +56,8 @@ describe('abertas de um projeto fora dos agrupadores', () => {
   it('deixa de fora as sessões de agente, mas as faixas continuam com elas', () => {
     const all = [
       makeSession({ session_id: 'comum', project_id: 1 }),
-      makeSession({ session_id: 'agente', project_id: 1, specialist_id: 4 }),
-      makeSession({ session_id: 'agente-rev', project_id: 1, specialist_id: 4, mark: 'review' }),
+      makeSession({ session_id: 'agente', project_id: 1, agent_id: 4 }),
+      makeSession({ session_id: 'agente-rev', project_id: 1, agent_id: 4, mark: 'review' }),
     ]
     expect(ids(looseOpenSessions(all, 1, new Set()))).toEqual(['comum'])
     expect(ids(laneSessions(all, 'review'))).toEqual(['agente-rev'])

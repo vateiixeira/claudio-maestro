@@ -66,7 +66,7 @@ async def test_normal_context_preserves_project_configuration(world):
     assert options.add_dirs == [] and options.env == {}
     assert options.permission_mode == 'acceptEdits'
     assert options.allow_bypass is True  # Same as any normal session, not enabled by context.
-    assert session.record.specialist_id is None and session._extras is None
+    assert session.record.agent_id is None and session._extras is None
     assert [record.session_id for record in world.context_records] == [session.session_id]
 
 
@@ -118,7 +118,7 @@ async def test_context_does_not_change_legacy_specialist(world):
     with closing(db.connect(world.db_path)) as conn:
         specialist = store.create_specialist(conn, slug='legacy', name='Legado',
                                             project_id=world.project.id, now=1)
-    record = world.manager.create_session(world.project, specialist_id=specialist.id)
+    record = world.manager.create_session(world.project, agent_id=specialist.id)
     session = world.manager.get(record.session_id)
     await session.send('oi')
     await wait_until(lambda: bool(world.ends))

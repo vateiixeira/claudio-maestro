@@ -295,10 +295,10 @@ def create_app(
                                 return False
                         mode = app.state.work.project_mode(record.project_id)
                         return app.state.work.dispatch_enabled and mode['enabled'] and not mode['paused']
-                    if record.specialist_id is not None:
+                    if record.agent_id is not None:
                         if not app.state.settings.specialists_scheduler:
                             return False
-                        owner = store.get_specialist(conn, record.specialist_id)
+                        owner = store.get_specialist(conn, record.agent_id)
                         app.state.specialists.assert_legacy_admission(conn, owner, session_id=record.session_id)
                 except (work_store.WorkError, store.SpecialistError):
                     return False
@@ -308,9 +308,9 @@ def create_app(
             # No await between this final check and the client factory. Held
             # processes bypass this hook so recovery can inspect/close them.
             app.state.work.assert_session_start(record)
-            if record.specialist_id is not None:
+            if record.agent_id is not None:
                 with closing(db.connect(app.state.settings.db_path)) as conn:
-                    owner = store.get_specialist(conn, record.specialist_id)
+                    owner = store.get_specialist(conn, record.agent_id)
                     app.state.specialists.assert_legacy_admission(conn, owner, session_id=record.session_id)
 
         app.state.sessions = SessionManager(
@@ -368,11 +368,11 @@ def create_app(
                 return True
             if conn.execute("SELECT 1 FROM specialist_pr_comments c JOIN specialist_prs p ON p.url=c.pr_url JOIN sessions s ON s.session_id=p.session_id WHERE s.project_id=? AND c.status IN ('queued','dispatching','uncertain')", (project_id,)).fetchone():
                 return True
-            if conn.execute('SELECT 1 FROM sessions WHERE project_id=? AND specialist_id IS NOT NULL AND turn_open=1', (project_id,)).fetchone():
+            if conn.execute('SELECT 1 FROM sessions WHERE project_id=? AND agent_id IS NOT NULL AND turn_open=1', (project_id,)).fetchone():
                 return True
             for sid in app.state.sessions.active_ids():
                 session = app.state.sessions.get(sid)
-                if session.record.specialist_id is not None and session.record.project_id == project_id:
+                if session.record.agent_id is not None and session.record.project_id == project_id:
                     if session.users or getattr(session, '_connecting', False) or session.state in ('connecting', 'running', 'awaiting_decision') or session.subagents_running or session.record.turn_open:
                         return True
             owners = [specialist for specialist in store.list_specialists(conn)
@@ -382,7 +382,7 @@ def create_app(
                     return True
                 if conn.execute("SELECT 1 FROM specialist_pr_comments WHERE specialist_id=? AND status IN ('queued','dispatching','uncertain')", (specialist.id,)).fetchone():
                     return True
-                if conn.execute('SELECT 1 FROM sessions WHERE specialist_id=? AND turn_open=1', (specialist.id,)).fetchone():
+                if conn.execute('SELECT 1 FROM sessions WHERE agent_id=? AND turn_open=1', (specialist.id,)).fetchone():
                     return True
                 lock = app.state.specialists._queue_locks.get(specialist.id)
                 if (lock and lock.locked()) or app.state.specialists.is_busy(specialist.id):
@@ -453,7 +453,7 @@ def create_app(
                 record = app.state.sessions.find_record(session_id)
                 with closing(db.connect(app.state.settings.db_path)) as conn:
                     app.state.work.assert_project_admission(conn, record.project_id)
-                if record.specialist_id is not None:
+                if record.agent_id is not None:
                     await app.state.specialists.send_message(session_id, text)
                 elif app.state.work.session_identity(session_id) is not None:
                     await app.state.work.send_message(session_id, text)

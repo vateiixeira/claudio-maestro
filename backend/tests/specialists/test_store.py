@@ -24,11 +24,11 @@ def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
         yield c
 
 
-def add_session(conn, session_id: str, specialist_id: int | None = None) -> None:
+def add_session(conn, session_id: str, agent_id: int | None = None) -> None:
     conn.execute(
         "INSERT INTO sessions (session_id, project_id, cwd, title, created_at,"
-        " last_activity_at, specialist_id) VALUES (?, 1, '/tmp', 't', 0, 0, ?)",
-        (session_id, specialist_id),
+        " last_activity_at, agent_id) VALUES (?, 1, '/tmp', 't', 0, 0, ?)",
+        (session_id, agent_id),
     )
 
 
@@ -162,8 +162,8 @@ def test_delete_specialist_keeps_session_with_null_link(conn):
     created = make(conn)
     add_session(conn, "s1", created.id)
     store.delete_specialist(conn, created.id)
-    row = conn.execute("SELECT specialist_id FROM sessions WHERE session_id = 's1'").fetchone()
-    assert row is not None and row["specialist_id"] is None
+    row = conn.execute("SELECT agent_id FROM sessions WHERE session_id = 's1'").fetchone()
+    assert row is not None and row["agent_id"] is None
     with pytest.raises(store.SpecialistNotFoundError):
         store.delete_specialist(conn, created.id)
 

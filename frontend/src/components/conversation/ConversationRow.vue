@@ -101,7 +101,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
         class="min-w-0 truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
         :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal', session.digest_short && !compact ? 'max-w-[55%] shrink-0' : '']"
       >{{ session.title }}</RouterLink>
-      <AgentBadge v-if="session.specialist_id != null && !compact" :specialist-id="session.specialist_id" />
+      <AgentBadge v-if="session.agent_id != null && !compact" :specialist-id="session.agent_id" />
       <PlanBadge v-if="!compact" :session="session" />
       <GroupTag v-if="!compact" :group-id="session.group_id" />
       <LabelBadges :ids="session.label_ids" :compact="compact" />

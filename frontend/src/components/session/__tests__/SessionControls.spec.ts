@@ -605,7 +605,7 @@ describe('sessão de agente', () => {
 
   it('o seletor de modo fica desabilitado, com a explicação', async () => {
     setup()
-    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', specialist_id: 3 })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', agent_id: 3 })])
     const w = await mountControls()
     expect(button(w, 'Permissões').attributes('disabled')).toBeDefined()
     expect(button(w, 'Permissões').attributes('title')).toBe(EXPLANATION)
@@ -618,7 +618,7 @@ describe('sessão de agente', () => {
 
   it('numa sessão comum o seletor de modo continua ativo e sem a explicação', async () => {
     setup()
-    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', specialist_id: null })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', agent_id: null })])
     const w = await mountControls()
     expect(button(w, 'Permissões').attributes('disabled')).toBeUndefined()
     expect(button(w, 'Permissões').attributes('title')).toBeUndefined()

@@ -100,13 +100,13 @@ class PrBridge:
             raise WorkValidationError('Origem de PR inválida.')
         # Verify item/attempt/project/session independently of the callback DTO.
         with closing(db.connect(self.db_path)) as conn, db.transaction(conn):
-            row = conn.execute('SELECT a.work_item_id,a.session_id,i.project_id,s.specialist_id,s.project_id AS session_project_id '
+            row = conn.execute('SELECT a.work_item_id,a.session_id,i.project_id,s.agent_id,s.project_id AS session_project_id '
                 'FROM work_attempts a JOIN work_items i ON i.id=a.work_item_id '
                 'JOIN sessions s ON s.session_id=a.session_id WHERE a.id=?',
                 (origin.attempt_id,)).fetchone()
             if (not row or row['work_item_id'] != origin.work_item_id
                     or row['project_id'] != origin.project_id or row['session_id'] != session_id
-                    or row['specialist_id'] is not None
+                    or row['agent_id'] is not None
                     or row['session_project_id'] != origin.project_id):
                 raise WorkValidationError('A sessão não pertence à tarefa de origem.')
             previous = conn.execute('SELECT * FROM work_prs WHERE url=?', (url,)).fetchone()

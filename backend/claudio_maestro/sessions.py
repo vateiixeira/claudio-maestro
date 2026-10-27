@@ -417,9 +417,9 @@ class SessionRecord:
     remote_control_bridge: str | None = None
     # Version of the code that spawned the process (what its arguments contain).
     spawn_version: int = 0
-    # Agente (specialist) that started this session; None for a regular one or when the
+    # Agente that started this session; None for a regular one or when the
     # agent was removed.
-    specialist_id: int | None = None
+    agent_id: int | None = None
 
     @property
     def history_directory(self) -> str:
@@ -462,7 +462,7 @@ _COLUMNS = (
     + ", model, effort, permission_mode, finished_at, plan_path, plan_link, group_id"
     + ", history_dir, worktree_name, worktree_path, git_branch, turn_open"
     + ", mark, mark_note, mark_until, priority, detached_at"
-    + ", remote_control, remote_control_bridge, spawn_version, specialist_id"
+    + ", remote_control, remote_control_bridge, spawn_version, agent_id"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
@@ -992,7 +992,7 @@ class SessionExtras:
     deny_message: Callable[[str, dict[str, Any]], str] | None = None
 
 
-# Called by every new client of a session with a `specialist_id`; None: no extras.
+# Called by every new client of a session with a `agent_id`; None: no extras.
 SessionSetup = Callable[[SessionRecord], SessionExtras | None]
 
 
@@ -1743,7 +1743,7 @@ class ActiveSession:
     def _prepare(self, text: str) -> tuple[str, Callable[[], None]]:
         """The text to record and send, and what to call once its send is acknowledged. Whatever
         goes wrong here, the person's own message goes through as written."""
-        if self._prepare_message is None or self.record.specialist_id is None:
+        if self._prepare_message is None or self.record.agent_id is None:
             return text, _no_commit
         try:
             return self._prepare_message(self.record, text)
@@ -1987,8 +1987,8 @@ class ActiveSession:
             # A process started now has what Remote Control needs from this version on.
             self.save(spawn_version=SPAWN_VERSION)
         extras = None
-        specialist = self.record.specialist_id is not None
-        if self._session_setup is not None and specialist:
+        agent_session = self.record.agent_id is not None
+        if self._session_setup is not None and agent_session:
             try:
                 extras = self._session_setup(self.record)
             except Exception as error:
@@ -1999,7 +1999,7 @@ class ActiveSession:
                 raise AgentError(SPECIALIST_SETUP_FAILED_TEXT) from None
         self._extras = extras
         context = None
-        if self._context_setup is not None and not specialist:
+        if self._context_setup is not None and not agent_session:
             try:
                 context = self._context_setup(self.record)
             except Exception:
@@ -2016,8 +2016,8 @@ class ActiveSession:
                 effort=self.record.effort,
                 # A session of an agent never leaves the default mode, whatever the record
                 # says, and its process is not started able to switch to bypassPermissions.
-                permission_mode="default" if specialist else self.record.permission_mode,
-                allow_bypass=not specialist,
+                permission_mode="default" if agent_session else self.record.permission_mode,
+                allow_bypass=not agent_session,
                 entrypoint=SESSION_ENTRYPOINT,
                 # New processes go through the agentd only when the manager allows it;
                 # attaching always uses it (MAESTRO_AGENTD=0 still reattaches).
@@ -2826,7 +2826,7 @@ class ActiveSession:
             init.permission_mode
             and init.permission_mode != self.record.permission_mode
             and (
-                self.record.specialist_id is None
+                self.record.agent_id is None
                 or init.permission_mode in SPECIALIST_CLI_MODES
             )
         ):
@@ -2835,7 +2835,7 @@ class ActiveSession:
             self.save(**changes)
         if changes or emit:
             self._emit_options()
-        if self._on_init is not None and self.record.specialist_id is not None:
+        if self._on_init is not None and self.record.agent_id is not None:
             try:
                 self._on_init(self.session_id, list(init.mcp_servers))
             except Exception:
@@ -2855,7 +2855,7 @@ class ActiveSession:
         if (
             permission_mode is not None
             and permission_mode != "default"
-            and self.record.specialist_id is not None
+            and self.record.agent_id is not None
         ):
             raise InvalidDecisionError(SPECIALIST_MODE_TEXT)
         changes: dict[str, Any] = {}
@@ -3023,7 +3023,7 @@ class ActiveSession:
     def _note_pr_use(self, message: AssistantMessage) -> None:
         """Keep the Bash calls that run `gh pr create` until their result arrives."""
         if (
-            (self._on_pr_created is None or self.record.specialist_id is None)
+            (self._on_pr_created is None or self.record.agent_id is None)
             and self._on_session_pr_created is None
         ):
             return
@@ -3050,7 +3050,7 @@ class ActiveSession:
             found = PR_URL_RE.search(_tool_result_text(block.content))
             if found is None:
                 continue
-            if self._on_pr_created is not None and self.record.specialist_id is not None:
+            if self._on_pr_created is not None and self.record.agent_id is not None:
                 try:
                     self._on_pr_created(self.session_id, found.group(0))
                 except Exception:
@@ -3151,7 +3151,7 @@ class ActiveSession:
 
     def _report_turn_error(self, text: str) -> None:
         """Tell the agents feature that this agent's turn or session ended in error."""
-        if self._on_turn_error is not None and self.record.specialist_id is not None:
+        if self._on_turn_error is not None and self.record.agent_id is not None:
             try:
                 self._on_turn_error(self.session_id, text)
             except Exception:
@@ -3813,15 +3813,15 @@ class SessionManager:
         project: Project,
         group_id: int | None = None,
         *,
-        specialist_id: int | None = None,
+        agent_id: int | None = None,
         model: str | None = None,
         effort: str | None = None,
     ) -> SessionRecord:
-        """A new session. For an agent (`specialist_id`) it always starts in the default
+        """A new session. For an agent (`agent_id`) it always starts in the default
         permission mode, whatever the saved preference: its policy needs the CLI to ask."""
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             return self.create_session_in_transaction(conn, project, group_id,
-                specialist_id=specialist_id, model=model, effort=effort)
+                agent_id=agent_id, model=model, effort=effort)
 
     def create_session_in_transaction(
         self,
@@ -3829,11 +3829,11 @@ class SessionManager:
         project: Project,
         group_id: int | None = None,
         *,
-        specialist_id: int | None = None,
+        agent_id: int | None = None,
         model: str | None = None,
         effort: str | None = None,
     ) -> SessionRecord:
-        """A new session. For an agent (`specialist_id`) it always starts in the default
+        """A new session. For an agent (`agent_id`) it always starts in the default
         permission mode, whatever the saved preference: its policy needs the CLI to ask."""
         if not conn.in_transaction:
             raise RuntimeError('Criar sessão exige uma transação ativa.')
@@ -3858,18 +3858,18 @@ class SessionManager:
             effort=effort or default_effort,
             # Saved preference, then the user's CLI `defaultMode`, then None.
             permission_mode=(
-                "default" if specialist_id is not None
+                "default" if agent_id is not None
                 else mode or self._default_permission_mode()
             ),
             group_id=group_id,
-            specialist_id=specialist_id,
+            agent_id=agent_id,
         )
         # Same transaction: the group cannot vanish between the check and the insert.
         if group_id is not None:
             groups.get_group(conn, group_id)
         conn.execute(
             f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id,"
-            " specialist_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.session_id,
                 record.project_id,
@@ -3883,7 +3883,7 @@ class SessionManager:
                 record.effort,
                 record.permission_mode,
                 record.group_id,
-                record.specialist_id,
+                record.agent_id,
             ),
         )
         return record
@@ -4756,7 +4756,7 @@ class SessionManager:
         if (
             permission_mode is not None
             and permission_mode != "default"
-            and session.record.specialist_id is not None
+            and session.record.agent_id is not None
         ):
             raise InvalidDecisionError(SPECIALIST_MODE_TEXT)
         if (

@@ -48,7 +48,7 @@ class PresentationMixin:
             if attempt.state == 'waiting':
                 valid_identity = (session is not None and session.record.project_id == item.project_id
                                   and session.record.session_id == attempt.session_id
-                                  and session.record.specialist_id is None)
+                                  and session.record.agent_id is None)
                 closure = conn.execute("SELECT 1 FROM work_process_closures WHERE attempt_id=? AND status!='closed'", (attempt.id,)).fetchone()
                 pending = conn.execute("SELECT 1 FROM work_decision_requests WHERE attempt_id=? AND status IN ('pending','answered')", (attempt.id,)).fetchone()
                 eligible = (valid_identity and not self._open(attempt.session_id) and not session.pending_kind

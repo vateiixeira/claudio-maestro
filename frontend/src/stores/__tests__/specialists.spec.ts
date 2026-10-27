@@ -315,19 +315,19 @@ describe('specialists store: espera da conversa principal', () => {
     const store = useSpecialistsStore()
     const sessions = useSessionsStore()
     store.list = [makeSpecialist({ unseen: 0, main_session_id: 'main' })]
-    sessions.setForProject(1, [makeSession({ session_id: 'main', specialist_id: 1 })])
+    sessions.setForProject(1, [makeSession({ session_id: 'main', agent_id: 1 })])
     await nextTick()
     expect(fetch).not.toHaveBeenCalled()
 
     // pede ok: o backend passa a contar +1, sem publicar nada
     unseen = 1
-    sessions.setForProject(1, [makeSession({ session_id: 'main', specialist_id: 1, pending_kind: 'tool' })])
+    sessions.setForProject(1, [makeSession({ session_id: 'main', agent_id: 1, pending_kind: 'tool' })])
     await vi.waitFor(() => expect(store.byId(1)?.unseen).toBe(1))
     expect(fetch).toHaveBeenCalledTimes(1)
 
     // a espera termina: o contador cai
     unseen = 0
-    sessions.setForProject(1, [makeSession({ session_id: 'main', specialist_id: 1, pending_kind: null })])
+    sessions.setForProject(1, [makeSession({ session_id: 'main', agent_id: 1, pending_kind: null })])
     await vi.waitFor(() => expect(store.byId(1)?.unseen).toBe(0))
     expect(fetch).toHaveBeenCalledTimes(2)
   })
@@ -338,10 +338,10 @@ describe('specialists store: espera da conversa principal', () => {
     const store = useSpecialistsStore()
     const sessions = useSessionsStore()
     store.list = [makeSpecialist({ main_session_id: 'main' })]
-    sessions.setForProject(1, [makeSession({ session_id: 'run', specialist_id: 1, pending_kind: 'tool' })])
+    sessions.setForProject(1, [makeSession({ session_id: 'run', agent_id: 1, pending_kind: 'tool' })])
     await nextTick()
     expect(fetch).not.toHaveBeenCalled()
-    sessions.setForProject(1, [makeSession({ session_id: 'main', specialist_id: 1, state: 'awaiting_decision' })])
+    sessions.setForProject(1, [makeSession({ session_id: 'main', agent_id: 1, state: 'awaiting_decision' })])
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
   })
 })

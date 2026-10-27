@@ -64,7 +64,7 @@ const modeOptions: MenuOption[] = (Object.keys(MODE_LABELS) as PermissionMode[])
 // The session summary is refreshed by events; the snapshot only holds what it had at load.
 const sessionsStore = useSessionsStore()
 // An agent session stays in the default mode: the backend refuses every change (422).
-const isAgentSession = computed(() => sessionsStore.find(props.sessionId)?.specialist_id != null)
+const isAgentSession = computed(() => sessionsStore.find(props.sessionId)?.agent_id != null)
 const AGENT_MODE_HINT = 'Sessões de agente ficam no modo padrão; as ações para fora seguem a autonomia do agente.'
 const context = computed(() => {
   // The list can carry `null` (no connected client); the snapshot then holds the value from the history.

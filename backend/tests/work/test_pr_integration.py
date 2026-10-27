@@ -73,7 +73,7 @@ async def test_callback_registers_backend_workspace_and_private_target(world):
     document = world.service.files.read(pr['target_ref'])
     snapshot = world.service.files.read_snapshot(document['backend_target_refs']['capture_ref'])
     assert snapshot['targets'][0]['digest'] == 'backend-proof'
-    assert world.manager.find_record(author.session_id).specialist_id is None
+    assert world.manager.find_record(author.session_id).agent_id is None
 
 
 async def test_feedback_reserves_fresh_attempt_and_receipt_before_sdk(world):

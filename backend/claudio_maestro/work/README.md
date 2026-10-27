@@ -3,7 +3,7 @@
 `store.py` contém operações transacionais sobre uma conexão aberta por `db.connect`.
 Não inicia sessões, não envia mensagens e não define ferramentas permitidas. A sessão
 usada por uma tentativa precisa ser uma sessão normal do mesmo projeto, sem
-`specialist_id` legado. O chamador resolve o projeto/diretório pelas APIs existentes.
+`agent_id` legado. O chamador resolve o projeto/diretório pelas APIs existentes.
 
 ## Contrato para o runtime
 
@@ -53,7 +53,7 @@ própria numa segunda transação.
 ## Serviço de execução
 
 `WorkService(db_path, sessions=SessionManager(...), files=WorkFiles(...), publish=...)`
-usa sessões normais de projeto, sem `specialist_id` nem políticas de ferramentas
+usa sessões normais de projeto, sem `agent_id` nem políticas de ferramentas
 por papel. O `SessionManager` deve receber `context_setup=service.session_context`
 e os callbacks `on_session_result`, `on_session_turn_end` e `on_session_error`.
 O primeiro grava `{is_error, terminal_reason}` de cada `ResultMessage`; o segundo
@@ -75,7 +75,7 @@ não bastam para aceitar uma entrega após reinício.
   `result(attempt_id)` permitem consulta. Documento perdido retorna diagnóstico
   explícito; jamais é convertido em evidência de sucesso.
 - `session_identity(session_id)` e `session_catalog()` expõem papel, projeto,
-  tarefa e tentativa para o catálogo do frontend, sem atribuir `specialist_id`.
+  tarefa e tentativa para o catálogo do frontend, sem atribuir `agent_id`.
 - `reconcile()` aplica somente resultados com prova durável de fim e sem
   subagentes ativos; `recover()` é chamado depois de `reattach_all()`.
 - `send_message(session_id, text, images=None)` centraliza mensagens gerenciadas.

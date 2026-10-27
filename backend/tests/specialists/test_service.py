@@ -155,7 +155,7 @@ async def test_start_run_creates_linked_session_and_sends_run_text(world):
     assert run.scheduled_for == NOW - 30 and run.started_at == NOW
     assert run.session_id is not None
     session = world.manager.get(run.session_id)
-    assert session.record.specialist_id == specialist_id
+    assert session.record.agent_id == specialist_id
     assert session.record.project_id == world.project.id
     assert (session.record.model, session.record.effort) == ("haiku", "low")
     assert session.record.permission_mode == "default"
@@ -911,7 +911,7 @@ async def test_session_setup_env_has_secrets_and_prompt_has_no_secret_values(wor
             conn, specialist_id, now=1, extra_project_ids=[extra_id, 9999],
             outward_patterns=["terraform apply"], always_ask_patterns=["rm -rf"],
         )
-    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+    record = world.manager.create_session(world.project, agent_id=specialist_id)
 
     extras = world.service.session_setup(record)
 
@@ -940,7 +940,7 @@ async def test_session_setup_settings_deny_the_blocked_tools(world):
             conn, specialist_id, now=1,
             denied_tools=["mcp__kbgen-issues__editar_issue", "mcp__outro", "WebFetch"],
         )
-    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+    record = world.manager.create_session(world.project, agent_id=specialist_id)
 
     extras = world.service.session_setup(record)
 
@@ -959,7 +959,7 @@ async def test_session_setup_settings_deny_the_blocked_tools(world):
 
 async def test_setup_settings_have_deny_rules(world):
     specialist_id = world.add_specialist()
-    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+    record = world.manager.create_session(world.project, agent_id=specialist_id)
 
     extras = world.service.session_setup(record)
 
@@ -978,7 +978,7 @@ async def test_setup_settings_have_deny_rules(world):
 
 async def test_decider_denies_comments_before_allowing_the_maestro_server(world):
     specialist_id = world.add_specialist(autonomy="full")
-    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+    record = world.manager.create_session(world.project, agent_id=specialist_id)
     extras = world.service.session_setup(record)
     assert extras is not None
 
@@ -995,7 +995,7 @@ async def test_session_setup_skips_unavailable_extra_projects(world):
     shutil.rmtree(world.tmp_path / "home" / "antigo")
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
         store.update_specialist(conn, specialist_id, now=1, extra_project_ids=[gone_id])
-    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+    record = world.manager.create_session(world.project, agent_id=specialist_id)
 
     extras = world.service.session_setup(record)
 
@@ -1021,7 +1021,7 @@ async def test_session_setup_error_does_not_quote_secrets(world, tmp_path, caplo
     specialist_id = world.add_specialist()
     world.files.write_secrets("revisor", {"TOKEN": SECRET})
     (tmp_path / "agents" / "revisor" / "SKILL.md").write_text("sem cabeçalho", encoding="utf-8")
-    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+    record = world.manager.create_session(world.project, agent_id=specialist_id)
 
     with pytest.raises(Exception) as info:
         world.service.session_setup(record)
@@ -1034,7 +1034,7 @@ async def test_session_setup_error_does_not_quote_secrets(world, tmp_path, caplo
 
 def make_decide(world: World, **fields: Any):
     specialist_id = world.add_specialist(**fields)
-    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+    record = world.manager.create_session(world.project, agent_id=specialist_id)
     extras = world.service.session_setup(record)
     assert extras is not None
     return extras.decide, record
@@ -1098,7 +1098,7 @@ async def test_decide_sees_tools_blocked_after_the_session_started(world):
     assert await decide("WebFetch", {}) == "allow"
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
         store.update_specialist(
-            conn, record.specialist_id, now=2, denied_tools=["WebFetch"]
+            conn, record.agent_id, now=2, denied_tools=["WebFetch"]
         )
 
     assert await decide("WebFetch", {}) == "deny"
@@ -1107,7 +1107,7 @@ async def test_decide_sees_tools_blocked_after_the_session_started(world):
 async def test_decide_keeps_the_blocked_tools_of_the_start_if_the_agent_is_gone(world):
     decide, record = make_decide(world, autonomy="full", denied_tools=["WebFetch"])
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
-        conn.execute("DELETE FROM specialists WHERE id = ?", (record.specialist_id,))
+        conn.execute("DELETE FROM specialists WHERE id = ?", (record.agent_id,))
 
     assert await decide("WebFetch", {}) == "deny"
 
@@ -1175,7 +1175,7 @@ async def test_decide_reads_the_agent_configuration_at_each_call(world, monkeypa
 
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
         store.update_specialist(
-            conn, record.specialist_id, now=2, autonomy="ask",
+            conn, record.agent_id, now=2, autonomy="ask",
             always_ask_patterns=["terraform destroy"],
         )
 
@@ -1190,7 +1190,7 @@ async def test_decide_asks_when_the_agent_or_the_session_is_gone(world, monkeypa
     monkeypatch.setattr("claudio_maestro.specialists.service.read_git_context", on_feature)
     decide, record = make_decide(world, autonomy="full")
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
-        store.delete_specialist(conn, record.specialist_id)
+        store.delete_specialist(conn, record.agent_id)
     world.manager.refresh_records({record.session_id})
 
     assert await decide("Bash", {"command": "ls"}) == "ask"
@@ -1339,7 +1339,7 @@ async def test_ensure_main_creates_once(world):
     assert first == second
     assert world.specialist(specialist_id).main_session_id == first
     record = world.record(first)
-    assert (record.specialist_id, record.title) == (specialist_id, "Revisor · conversa")
+    assert (record.agent_id, record.title) == (specialist_id, "Revisor · conversa")
     assert (record.model, record.effort) == ("haiku", "low")
     assert world.service.is_main(first) is True
     assert world.runs(specialist_id) == []  # a conversation is not a run
@@ -1609,7 +1609,7 @@ async def test_announcement_text_is_cut_at_4000_characters(world):
 
 
 def comment_run(world: World, specialist_id: int, pr: str | None) -> store.Run:
-    record = world.manager.create_session(world.project, specialist_id=specialist_id)
+    record = world.manager.create_session(world.project, agent_id=specialist_id)
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
         if pr is not None:
             store.upsert_pr(

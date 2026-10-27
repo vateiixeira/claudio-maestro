@@ -39,7 +39,7 @@ async def test_manual_and_schedule_admission_check_all_projects(world, extra):
 
 async def test_message_is_refused_before_opening_or_queuing(world):
     agent = world.add_specialist()
-    record = world.manager.create_session(world.project, specialist_id=agent)
+    record = world.manager.create_session(world.project, agent_id=agent)
     enable_mode(world.db_path, world.project.id)
     with pytest.raises(LegacyWorkModeError):
         await world.service.send_message(record.session_id, "continuar")

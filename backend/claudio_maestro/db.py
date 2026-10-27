@@ -710,6 +710,9 @@ MIGRATIONS.append(CI_SCHEMA)
 
 MIGRATIONS.append(POOL_SCHEMA)
 
+# The owner of a session is an agent now, not only a legacy specialist.
+MIGRATIONS.append(["ALTER TABLE sessions RENAME COLUMN specialist_id TO agent_id"])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

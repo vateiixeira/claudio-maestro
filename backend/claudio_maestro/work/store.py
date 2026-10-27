@@ -107,8 +107,8 @@ def _project(conn: sqlite3.Connection, project_id: int) -> None:
 
 
 def _session(conn: sqlite3.Connection, project_id: int, session_id: str) -> None:
-    row = conn.execute('SELECT project_id, specialist_id FROM sessions WHERE session_id = ?', (session_id,)).fetchone()
-    if row is None or row['project_id'] != project_id or row['specialist_id'] is not None:
+    row = conn.execute('SELECT project_id, agent_id FROM sessions WHERE session_id = ?', (session_id,)).fetchone()
+    if row is None or row['project_id'] != project_id or row['agent_id'] is not None:
         raise WorkValidationError('A execução precisa de uma sessão normal deste projeto.')
 
 

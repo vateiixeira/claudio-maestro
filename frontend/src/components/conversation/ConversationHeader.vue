@@ -246,7 +246,7 @@ async function openProject() {
             @click="startRename"
           >{{ title }}</button>
         </h1>
-        <AgentBadge v-if="listed?.specialist_id != null" :specialist-id="listed.specialist_id" />
+        <AgentBadge v-if="listed?.agent_id != null" :specialist-id="listed.agent_id" />
         <LabelBadges :ids="listed?.label_ids" class="[&>[data-test=label-badge]]:min-w-0 [&>[data-test=label-badge]]:shrink" />
       </div>
       <button v-if="isCoordinator" type="button" data-test="mobile-header-actions" class="mobile-header-toggle work-button" :aria-expanded="mobileActionsOpen" :aria-controls="`header-actions-${id}`" @click="mobileActionsOpen = !mobileActionsOpen">Ações</button>

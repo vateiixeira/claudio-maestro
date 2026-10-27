@@ -330,7 +330,7 @@ def test_migration_creates_specialist_tables(tmp_path: Path):
         } <= table_names(conn)
         assert conn.execute("PRAGMA user_version").fetchone()[0] == len(db.MIGRATIONS)
         cols = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
-    assert "specialist_id" in cols and cols["specialist_id"]["dflt_value"] is None
+    assert "agent_id" in cols and cols["agent_id"]["dflt_value"] is None
 
 
 def test_specialists_migration_keeps_existing_sessions(tmp_path: Path):
@@ -361,7 +361,7 @@ def test_specialists_migration_keeps_existing_sessions(tmp_path: Path):
 
         assert conn.execute("PRAGMA user_version").fetchone()[0] == len(db.MIGRATIONS)
         row = conn.execute("SELECT * FROM sessions WHERE session_id = 'old'").fetchone()
-    assert row["title"] == "t" and row["specialist_id"] is None
+    assert row["title"] == "t" and row["agent_id"] is None
 
 
 def test_migration_keeps_runs_and_accepts_comment_trigger(tmp_path: Path):
@@ -462,3 +462,26 @@ def test_comment_dispatch_migration_preserves_queued_comments(tmp_path: Path):
         assert (row['body'], row['status']) == ('ajuste', 'dispatching')
         conn.execute("UPDATE specialist_pr_comments SET status = 'uncertain'")
         assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
+
+
+def test_migration_30_renames_specialist_id(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        before = 29
+        for statements in db.MIGRATIONS[:before]:
+            for statement in statements:
+                statement(conn) if callable(statement) else conn.execute(statement)
+        conn.execute(f"PRAGMA user_version = {before}")
+        conn.execute("INSERT INTO projects (id, name, path, color, position, created_at) VALUES (1, 'p', '/p', '#fff', 0, 0)")
+        conn.execute("INSERT INTO specialists (id, slug, name, project_id, created_at, updated_at) VALUES (7, 'rev', 'Rev', 1, 0, 0)")
+        conn.execute("INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at, specialist_id) VALUES ('s', 1, '/p', 't', 0, 0, 7)")
+        assert len(db.MIGRATIONS) >= 30
+
+        db.migrate(conn)
+
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
+        assert "agent_id" in columns and "specialist_id" not in columns
+        assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = 's'").fetchone()[0] == 7
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        # The foreign key to specialists survives the rename.
+        conn.execute("DELETE FROM specialists WHERE id = 7")
+        assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = 's'").fetchone()[0] is None

@@ -94,7 +94,7 @@ def add_specialist(env: Env) -> int:
 
 
 def specialist_session(env: Env, **kwargs: Any):
-    record = env.manager.create_session(env.project, specialist_id=add_specialist(env), **kwargs)
+    record = env.manager.create_session(env.project, agent_id=add_specialist(env), **kwargs)
     return env.manager.get(record.session_id)
 
 
@@ -124,7 +124,7 @@ async def test_session_setup_reaches_agent_options(make_env, env_cleanup):
     assert options.mcp_servers == {"maestro": setup.server}
     assert options.settings == SETTINGS
     assert [r.session_id for r in setup.records] == [session.session_id]
-    assert setup.records[0].specialist_id == session.record.specialist_id
+    assert setup.records[0].agent_id == session.record.agent_id
 
 
 def child():
@@ -308,15 +308,15 @@ async def test_create_session_for_specialist_forces_default_mode(make_env, env_c
     specialist_id = add_specialist(env)
 
     record = env.manager.create_session(
-        env.project, specialist_id=specialist_id, model="haiku", effort="high"
+        env.project, agent_id=specialist_id, model="haiku", effort="high"
     )
 
     assert record.permission_mode == "default"
     assert (record.model, record.effort) == ("haiku", "high")
-    assert record.specialist_id == specialist_id
+    assert record.agent_id == specialist_id
     with closing(db.connect(env.db_path)) as conn:
         row = conn.execute(
-            "SELECT specialist_id, permission_mode, model, effort FROM sessions"
+            "SELECT agent_id, permission_mode, model, effort FROM sessions"
             " WHERE session_id = ?", (record.session_id,),
         ).fetchone()
     assert tuple(row) == (specialist_id, "default", "haiku", "high")
@@ -330,7 +330,7 @@ async def test_create_session_for_specialist_keeps_preferences_without_overrides
     env_cleanup.append(env.manager)
     save_preferences(env, new_session_mode="bypassPermissions", new_session_model="opus")
 
-    record = env.manager.create_session(env.project, specialist_id=add_specialist(env))
+    record = env.manager.create_session(env.project, agent_id=add_specialist(env))
 
     assert record.permission_mode == "default"
     assert record.model == "opus"
@@ -345,7 +345,7 @@ async def test_create_session_without_specialist_keeps_the_preferred_mode(make_e
     record = env.manager.create_session(env.project)
 
     assert record.permission_mode == "bypassPermissions"
-    assert record.specialist_id is None
+    assert record.agent_id is None
 
 
 # Always the default permission mode -------------------------------------------
@@ -521,9 +521,9 @@ async def test_create_session_validates_model_and_effort(make_env, env_cleanup):
     specialist_id = add_specialist(env)
 
     with pytest.raises(InvalidDecisionError):
-        env.manager.create_session(env.project, specialist_id=specialist_id, model="ruim; rm -rf")
+        env.manager.create_session(env.project, agent_id=specialist_id, model="ruim; rm -rf")
     with pytest.raises(InvalidDecisionError):
-        env.manager.create_session(env.project, specialist_id=specialist_id, effort="enorme")
+        env.manager.create_session(env.project, agent_id=specialist_id, effort="enorme")
 
 
 # Policy timeout ---------------------------------------------------------------

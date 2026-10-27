@@ -46,11 +46,11 @@ describe('seção Agentes da barra lateral', () => {
   it('soma ao contador os pedidos de ok das sessões do agente, sem contar a principal duas vezes', async () => {
     useSpecialistsStore(pinia).list = [makeSpecialist({ id: 1, name: 'Triagem', unseen: 2, main_session_id: 'main' })]
     useSessionsStore(pinia).setForProject(1, [
-      makeSession({ session_id: 'main', specialist_id: 1, pending_kind: 'tool' }), // já entra no `unseen`
-      makeSession({ session_id: 'run1', specialist_id: 1, pending_kind: 'tool' }),
-      makeSession({ session_id: 'run2', specialist_id: 1, state: 'awaiting_decision' }),
-      makeSession({ session_id: 'run3', specialist_id: 1, pending_kind: 'plan', display_state: 'finished' }),
-      makeSession({ session_id: 'other', specialist_id: 2, pending_kind: 'tool' }),
+      makeSession({ session_id: 'main', agent_id: 1, pending_kind: 'tool' }), // já entra no `unseen`
+      makeSession({ session_id: 'run1', agent_id: 1, pending_kind: 'tool' }),
+      makeSession({ session_id: 'run2', agent_id: 1, state: 'awaiting_decision' }),
+      makeSession({ session_id: 'run3', agent_id: 1, pending_kind: 'plan', display_state: 'finished' }),
+      makeSession({ session_id: 'other', agent_id: 2, pending_kind: 'tool' }),
       makeSession({ session_id: 'plain', pending_kind: 'tool' }),
     ])
     const { wrapper } = await mountAgents()

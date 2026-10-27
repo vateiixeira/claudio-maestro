@@ -49,12 +49,14 @@ def test_consistent_temporary_backup_preserves_all_legacy_work_rows_and_private_
                 # Phase29 appends dispatch proof columns but preserves every old
                 # value; compare the old projection as well as all row counts.
                 columns = [r['name'] for r in conn.execute(f'PRAGMA table_info("{table}")')]
-                selected = ','.join(f'"{name}"' for name in columns)
+                # Phase30 renames sessions.specialist_id to agent_id.
+                renamed = {'specialist_id': 'agent_id'} if table == 'sessions' else {}
+                selected = ','.join(f'"{renamed.get(name, name)}"' for name in columns)
                 assert [tuple(r) for r in clone.execute(f'SELECT {selected} FROM "{table}"')] == rows
             assert clone.execute('PRAGMA foreign_key_check').fetchall() == []
             assert clone.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert clone.execute('SELECT global_limit FROM work_pool_config').fetchone()[0] == 1
             assert clone.execute('SELECT COUNT(*) FROM work_items').fetchone()[0] == 1
-            assert clone.execute('SELECT specialist_id FROM sessions WHERE session_id=?', ('legacy-session',)).fetchone()[0] == 1
+            assert clone.execute('SELECT agent_id FROM sessions WHERE session_id=?', ('legacy-session',)).fetchone()[0] == 1
             assert clone.execute('SELECT attempt_id FROM work_resource_claims').fetchone()[0] == 1
         assert db.schema_version(conn) == previous  # Original synthetic DB untouched.

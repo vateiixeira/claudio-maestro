@@ -141,7 +141,7 @@ async def delete_project(project_id: int, conn: DbDep, request: Request, fence_i
             affected = {owner.id for owner in request.app.state.specialists.owners_for_project(conn, project_id)}
             for sid in manager.active_ids():
                 session = manager.get(sid)
-                if session.record.specialist_id in affected and session.record.project_id != project_id and session.client is not None:
+                if session.record.agent_id in affected and session.record.project_id != project_id and session.client is not None:
                     await session.close()
             await manager.close_project(project_id)
             # Their groups die with the project: remember who sat in them from other projects.

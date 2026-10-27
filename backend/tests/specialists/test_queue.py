@@ -220,7 +220,7 @@ async def test_a_slow_start_does_not_block_other_agents_or_their_cancellations(w
     real_send = world.manager.send
 
     async def slow_send(session_id, text, *args, **kwargs):
-        if world.record(session_id).specialist_id == first:
+        if world.record(session_id).agent_id == first:
             reached.set()
             await release.wait()
         return await real_send(session_id, text, *args, **kwargs)
@@ -253,7 +253,7 @@ async def test_queue_worker_keeps_advancing_other_agents_during_a_slow_start(wor
     real_send = world.manager.send
 
     async def slow_send(session_id, text, *args, **kwargs):
-        if world.record(session_id).specialist_id == first:
+        if world.record(session_id).agent_id == first:
             reached.set()
             await release.wait()
         return await real_send(session_id, text, *args, **kwargs)

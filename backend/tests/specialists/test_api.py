@@ -800,7 +800,7 @@ def test_run_returns_202_and_creates_the_agents_session(api, factory, agent, eve
     assert run["session_id"]
 
     session = api.get(f"/api/sessions/{run['session_id']}").json()
-    assert session["specialist_id"] == agent["id"]
+    assert session["agent_id"] == agent["id"]
     assert session["title"].startswith("Revisor · ")
     assert factory.clients[-1].sent
     listed = api.get(f"/api/specialists/{agent['id']}/runs").json()
@@ -857,9 +857,9 @@ def test_delete_removes_row_and_folder_and_keeps_the_sessions_unlinked(api, agen
     assert api.get("/api/specialists").json() == []
     assert not (agents_dir(api) / "revisor").exists()
     session = api.get(f"/api/sessions/{sid}").json()
-    assert session["specialist_id"] is None
+    assert session["agent_id"] is None
     with conn_of(api) as conn:
-        assert conn.execute("SELECT specialist_id FROM sessions WHERE session_id = ?", (sid,)).fetchone()[0] is None
+        assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = ?", (sid,)).fetchone()[0] is None
         assert conn.execute("SELECT COUNT(*) FROM specialist_runs").fetchone()[0] == 0
     assert any(e["type"] == "specialist.changed" for e in events)
     assert api.delete(f"/api/specialists/{agent['id']}").status_code == 404
@@ -1056,10 +1056,10 @@ def test_reads_refuse_a_request_without_the_app_header(api, agent, path):
 # Wiring in the app ---------------------------------------------------------------------------------------------
 
 
-def test_sessions_carry_specialist_id_none_when_ordinary(api, project):
+def test_sessions_carry_agent_id_none_when_ordinary(api, project):
     session = api.post(f"/api/projects/{project['id']}/sessions").json()
-    assert session["specialist_id"] is None
-    assert api.get(f"/api/sessions/{session['session_id']}").json()["specialist_id"] is None
+    assert session["agent_id"] is None
+    assert api.get(f"/api/sessions/{session['session_id']}").json()["agent_id"] is None
 
 
 def test_finishing_the_session_concludes_the_run_and_the_digest_hook_still_runs(

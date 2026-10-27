@@ -151,7 +151,7 @@ class SessionOut(BaseModel):
     # Labels applied (ids of `GET /api/labels`), ordered by id.
     label_ids: list[int] = []
     # The agent (`GET /api/specialists`) that started the session; None for an ordinary one.
-    specialist_id: int | None = None
+    agent_id: int | None = None
 
 
 class MatchPartOut(BaseModel):
@@ -324,9 +324,9 @@ async def update_session(
         record = manager.find_record(session_id)
         with closing(db.connect(request.app.state.settings.db_path)) as conn:
             request.app.state.work.assert_project_admission(conn, record.project_id)
-            if record.specialist_id is not None and any(value is not None for value in (body.remote_control, body.model, body.effort, body.permission_mode)):
+            if record.agent_id is not None and any(value is not None for value in (body.remote_control, body.model, body.effort, body.permission_mode)):
                 from claudio_maestro.specialists import store as specialist_store
-                owner = specialist_store.get_specialist(conn, record.specialist_id)
+                owner = specialist_store.get_specialist(conn, record.agent_id)
                 request.app.state.specialists.assert_legacy_admission(conn, owner, session_id=session_id)
         if body.finished is True:
             request.app.state.work.assert_deletion_allowed(session_id=session_id)
@@ -425,7 +425,7 @@ async def send_message(session_id: str, body: MessageIn, manager: ManagerDep, re
     with closing(db.connect(request.app.state.settings.db_path)) as conn:
         request.app.state.work.assert_project_admission(conn, session.record.project_id)
     try:
-        if session.record.specialist_id is not None:
+        if session.record.agent_id is not None:
             from claudio_maestro.specialists.service import (
                 LegacyWorkModeError,
                 QueueFullError,

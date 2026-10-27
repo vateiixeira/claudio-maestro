@@ -122,7 +122,7 @@ export const formatCount = (n: number) => thousands.format(n)
 export function agentAttention(agent: Pick<Specialist, 'id' | 'unseen' | 'main_session_id'>, sessions: Session[]): number {
   const waiting = sessions.filter(
     (s) =>
-      s.specialist_id === agent.id &&
+      s.agent_id === agent.id &&
       s.session_id !== agent.main_session_id &&
       isActive(s) &&
       (Boolean(s.pending_kind) || s.state === 'awaiting_decision'),

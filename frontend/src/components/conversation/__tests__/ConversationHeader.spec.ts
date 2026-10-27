@@ -387,7 +387,7 @@ describe('terminal no cabeçalho', () => {
 
 describe('selo de agente no cabeçalho', () => {
   function mountAgentHeader(specialistId: number | null) {
-    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', specialist_id: specialistId })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', agent_id: specialistId })])
     return mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
   }
 
@@ -408,7 +408,7 @@ describe('selo de agente no cabeçalho', () => {
 describe('link para configurar o agente', () => {
   function mountMain(mainId: string | null) {
     useSpecialistsStore(pinia).list = [makeSpecialist({ id: 4, name: 'Triagem', main_session_id: mainId })]
-    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', specialist_id: 4 })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', agent_id: 4 })])
     return mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
   }
 

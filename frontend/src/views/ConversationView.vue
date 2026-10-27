@@ -38,7 +38,7 @@ const projects = useProjectsStore()
 const changesPanel = useChangesPanelStore()
 const terminal = useTerminalStore()
 
-const specialistId = computed(() => sessions.find(props.id)?.specialist_id)
+const specialistId = computed(() => sessions.find(props.id)?.agent_id)
 const title = computed(() => conversations.get(props.id)?.title ?? sessions.find(props.id)?.title ?? '')
 const project = computed(() => {
   const id = sessions.find(props.id)?.project_id ?? conversations.get(props.id)?.projectId

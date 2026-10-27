@@ -235,7 +235,7 @@ def _out(
 ) -> dict[str, Any]:
     runs = store.list_runs(conn, specialist.id, 1)
     open_sessions = conn.execute(
-        "SELECT COUNT(*) FROM sessions WHERE specialist_id = ? AND finished = 0", (specialist.id,)
+        "SELECT COUNT(*) FROM sessions WHERE agent_id = ? AND finished = 0", (specialist.id,)
     ).fetchone()[0]
     return {
         "id": specialist.id,
@@ -385,7 +385,7 @@ async def _close_routing_context(request: Request, conn, specialist_id: int, *, 
         try:
             for sid in request.app.state.sessions.active_ids():
                 session = request.app.state.sessions.get(sid)
-                if session.record.specialist_id == specialist_id and session.client is not None:
+                if session.record.agent_id == specialist_id and session.client is not None:
                     await session.close()
             yield known
         finally:
@@ -454,7 +454,7 @@ async def delete_specialist(specialist_id: int, request: Request, conn: DbDep) -
     session_ids = {
         row[0]
         for row in conn.execute(
-            "SELECT session_id FROM sessions WHERE specialist_id = ?", (specialist_id,)
+            "SELECT session_id FROM sessions WHERE agent_id = ?", (specialist_id,)
         )
     }
     try:

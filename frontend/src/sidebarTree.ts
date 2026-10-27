@@ -9,7 +9,7 @@ export interface ActiveGroup {
 }
 
 /** An agent's session (a run or its main conversation) is listed in the "Agentes" section, not under projects and groups. */
-const isOrdinary = (s: Session) => s.specialist_id == null
+const isOrdinary = (s: Session) => s.agent_id == null
 
 /** Groups of one project for the sidebar: only those with active sessions, listing only those sessions. A group with none is left out. */
 export function projectTree(groups: SessionGroup[], sessions: Session[]): ActiveGroup[] {

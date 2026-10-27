@@ -213,7 +213,7 @@ async def test_slow_scheduled_start_does_not_block_another_agents_due_slot(world
     real_send = world.manager.send
 
     async def slow_send(session_id, text, *args, **kwargs):
-        if world.manager.find_record(session_id).specialist_id == first:
+        if world.manager.find_record(session_id).agent_id == first:
             reached.set()
             await release.wait()
         return await real_send(session_id, text, *args, **kwargs)

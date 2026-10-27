@@ -430,16 +430,16 @@ describe('etiquetas na linha de conversa', () => {
 describe('selo de agente na linha', () => {
   it('sessão de agente mostra "Agente · nome"', () => {
     useSpecialistsStore(pinia).list = [makeSpecialist({ id: 4, name: 'Triagem' })]
-    const w = mountRow(makeSession({ specialist_id: 4 }))
+    const w = mountRow(makeSession({ agent_id: 4 }))
     expect(w.get('[data-test="row-title"]').get('[data-test="agent-badge"]').text()).toBe('Agente · Triagem')
   })
 
   it('agente que não está carregado mostra só "Agente"', () => {
-    expect(mountRow(makeSession({ specialist_id: 9 })).get('[data-test="agent-badge"]').text()).toBe('Agente')
+    expect(mountRow(makeSession({ agent_id: 9 })).get('[data-test="agent-badge"]').text()).toBe('Agente')
   })
 
   it('sessão comum não tem o selo', () => {
     expect(mountRow(makeSession()).find('[data-test="agent-badge"]').exists()).toBe(false)
-    expect(mountRow(makeSession({ specialist_id: null })).find('[data-test="agent-badge"]').exists()).toBe(false)
+    expect(mountRow(makeSession({ agent_id: null })).find('[data-test="agent-badge"]').exists()).toBe(false)
   })
 })

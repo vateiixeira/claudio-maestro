@@ -96,7 +96,7 @@ class World:
                 specialist_id = store.create_specialist(
                     conn, slug="revisor", name="Revisor", project_id=self.project.id, now=1
                 ).id
-        record = self.manager.create_session(self.project, specialist_id=specialist_id)
+        record = self.manager.create_session(self.project, agent_id=specialist_id)
         return self.manager.get(record.session_id)
 
 

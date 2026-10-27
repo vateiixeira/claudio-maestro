@@ -268,7 +268,7 @@ async def test_delivers_to_origin_session_and_reopens_finished(world):
 @pytest.mark.parametrize("deleted", [True, False])
 async def test_missing_session_goes_to_main(world, deleted):
     specialist_id = world.add_specialist()
-    origin = world.manager.create_session(world.project, specialist_id=specialist_id).session_id
+    origin = world.manager.create_session(world.project, agent_id=specialist_id).session_id
     register_pr(world, specialist_id, origin if deleted else None)
     if deleted:
         delete_session_row(world, origin)
@@ -379,7 +379,7 @@ async def test_a_failed_delivery_stays_queued_and_the_next_tick_retries(world, c
 async def test_a_failure_in_one_pr_does_not_stop_the_others(world):
     specialist_id, session_id = await agent_with_pr(world)
     other = "https://github.com/acme/app/pull/10"
-    other_session = world.manager.create_session(world.project, specialist_id=specialist_id)
+    other_session = world.manager.create_session(world.project, agent_id=specialist_id)
     register_pr(world, specialist_id, other_session.session_id, pr=other)
     queue(world, specialist_id, "issue:1", at=NOW)
     queue(world, specialist_id, "issue:2", at=NOW, pr=other)

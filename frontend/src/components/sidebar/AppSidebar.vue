@@ -87,7 +87,7 @@ function resetResize() {
 const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s) && !isDiscarded(s)
 const waitingCount = computed(() => manualSessions.value.filter(isWaitingOnYou).length)
 // The agents' sessions are listed (and counted) in the "Agentes" section, not under their project.
-const isOrdinary = (s: Session) => s.specialist_id == null && !work.catalog[s.session_id]
+const isOrdinary = (s: Session) => s.agent_id == null && !work.catalog[s.session_id]
 function waitingIn(projectId: number): number {
   return sessions.forProject(projectId).filter((s) => isOrdinary(s) && isWaitingOnYou(s)).length
 }

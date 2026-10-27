@@ -116,7 +116,7 @@ async def test_session_create_transaction_rollback_and_wrapper_defaults_match(wo
         transactional = world.manager.create_session_in_transaction(conn, world.project)
     normal = world.manager.create_session(world.project)
     assert transactional.session_id != normal.session_id
-    for field in ('cwd', 'model', 'effort', 'permission_mode', 'specialist_id', 'project_id'):
+    for field in ('cwd', 'model', 'effort', 'permission_mode', 'agent_id', 'project_id'):
         assert getattr(transactional, field) == getattr(normal, field)
     assert count(world) == before + 2
 

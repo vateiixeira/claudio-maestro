@@ -19,7 +19,7 @@ def world(tmp_path):
             conn.execute('INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)',
                          (project_id, f'p{project_id}', f'/p{project_id}', '#fff', project_id, 0))
         for sid, project, specialist in [('s1', 1, None), ('s2', 1, None), ('other', 2, None)]:
-            conn.execute('INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at, specialist_id) VALUES (?, ?, ?, ?, 0, 0, ?)',
+            conn.execute('INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at, agent_id) VALUES (?, ?, ?, ?, 0, 0, ?)',
                          (sid, project, f'/p{project}', 'session', specialist))
         yield conn, path
 
@@ -111,7 +111,7 @@ def test_claim_refuses_session_from_another_project(world, session_id):
 def test_claim_refuses_legacy_specialist_session(world):
     conn, _ = world
     conn.execute("INSERT INTO specialists (id, slug, name, project_id, created_at, updated_at) VALUES (1, 'old', 'Old', 1, 0, 0)")
-    conn.execute("UPDATE sessions SET specialist_id = 1 WHERE session_id = 's1'")
+    conn.execute("UPDATE sessions SET agent_id = 1 WHERE session_id = 's1'")
     item = create(conn, status='ready')
     with pytest.raises(store.WorkValidationError):
         store.claim_attempt(conn, item.id, expected_revision=item.revision, session_id='s1', now=11)

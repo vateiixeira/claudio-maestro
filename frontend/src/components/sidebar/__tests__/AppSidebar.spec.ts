@@ -778,8 +778,8 @@ describe('seção Agentes no topo', () => {
     useSpecialistsStore(pinia).list = [makeSpecialist({ id: 3, name: 'Triagem', main_session_id: 'main' })]
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 'a', project_id: 1, display_state: 'running' }),
-      makeSession({ session_id: 'main', project_id: 1, display_state: 'running', specialist_id: 3 }),
-      makeSession({ session_id: 'run', project_id: 1, display_state: 'waiting', specialist_id: 3, pending_kind: 'tool' }),
+      makeSession({ session_id: 'main', project_id: 1, display_state: 'running', agent_id: 3 }),
+      makeSession({ session_id: 'run', project_id: 1, display_state: 'waiting', agent_id: 3, pending_kind: 'tool' }),
     ])
     const w = mountSidebar()
     const titles = w.findAll('[data-test="section-title"]').map((t) => t.text())
@@ -793,7 +793,7 @@ describe('seção Agentes no topo', () => {
 
   it('as faixas Para revisar e Depois seguem com as sessões de agente marcadas', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
-    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'rev', specialist_id: 3, mark: 'review' })])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'rev', agent_id: 3, mark: 'review' })])
     expect(mountSidebar().findAll('[data-test="lane-review-row"]')).toHaveLength(1)
   })
 })
