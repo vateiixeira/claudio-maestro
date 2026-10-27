@@ -267,7 +267,10 @@ async def test_invalid_input_does_not_activate_project(world):
     assert not world.service.project_mode(world.project.id)['enabled']
 
 
-async def test_cto_active_does_not_block_worker_and_issue_contexts_are_distinct(world):
+async def test_cto_active_does_not_block_worker_and_issue_contexts_are_distinct(world, monkeypatch):
+    async def capture(project, workspace, **kwargs):
+        return {'complete': True, 'digest': 'stable', 'workspace': str(workspace)}
+    monkeypatch.setattr('claudio_maestro.work.targets.capture_target', capture)
     cto = world.service.coordinator(world.project.id)
     await world.manager.send(cto.session_id, 'Coordene as issues')
     assert world.manager.get(cto.session_id).state == 'running'
@@ -275,9 +278,16 @@ async def test_cto_active_does_not_block_worker_and_issue_contexts_are_distinct(
     second = await world.service.delegate(cto.session_id, title='Investigar #55', objective='Auditar chaves do cliente', source='kbgen', external_id='55')
     await world.service.dispatch_once()
     a = world.attempts(first.id)[0]
-    await world.service.conclude(a.session_id, result_kind='investigation', summary='Primeira analisada')
+    await world.service.conclude(a.session_id, result_kind='investigation', summary='Primeira analisada', evidence=['guard.py:1'])
     world.pause.release.set()
     await wait_until(lambda: world.manager.get(a.session_id).state == 'idle')
+    await world.service.reconcile()
+    reviewer = await world.service.dispatch_once()
+    assert reviewer.role == 'reviewer' and reviewer.work_item_id == first.id
+    assert not world.attempts(second.id)  # Same checkout stays reserved through review.
+    binding = world.service.reviews(first.id)['items'][0]
+    await wait_until(lambda: world.manager.get(reviewer.session_id).state == 'idle')
+    await world.service.submit_review(reviewer.session_id, binding_id=binding['id'], disposition='approve', summary='Conferido', evidence=['guard.py:1'])
     await world.service.reconcile()
     await world.service.dispatch_once()
     b = world.attempts(second.id)[0]
@@ -336,7 +346,8 @@ async def test_attempt_budget_blocks_only_its_item_and_publishes_reason(world):
     current = world.item(first.id)
     with closing(db.connect(world.db_path)) as conn:
         store.update_item(conn, first.id, expected_revision=current.revision, status='ready', now=101)
-    second = await world.delegate(external_id='next')
+    other = make_project(world.db_path, world.path / 'home' / 'other')
+    second = world.service.create_item(project_id=other.id, title='Outra issue', objective='Outro workspace')
     world.service.max_attempts = 1
     await world.service.dispatch_once()
     assert world.item(first.id).status == 'blocked'
@@ -384,7 +395,7 @@ async def test_missing_dossier_blocks_only_its_candidate(world):
     assert len(world.attempts(second.id)) == 1
 
 
-async def test_saved_quiescent_receipt_recovers_with_new_manager(world):
+async def test_saved_quiescent_receipt_without_process_close_is_uncertain_after_restart(world):
     item = await world.delegate()
     await world.service.dispatch_once()
     attempt = world.attempts(item.id)[0]
@@ -395,7 +406,7 @@ async def test_saved_quiescent_receipt_recovers_with_new_manager(world):
     manager = SessionManager(world.db_path, Recorder(), agent_factory=factory, history_exists=fake_history(factory))
     other = WorkService(world.db_path, sessions=manager, files=world.service.files, publish=Recorder())
     await other.recover()
-    assert world.attempt(attempt.id).state == 'succeeded'
+    assert world.attempt(attempt.id).state == 'uncertain'
     assert not factory.clients
     await other.shutdown()
     await manager.shutdown()
@@ -424,12 +435,13 @@ async def test_lost_result_is_explicit_failure_and_does_not_starve_other_project
 
 async def test_pause_between_snapshot_and_claim_prevents_dispatch(world, monkeypatch):
     item = await world.delegate()
-    original = world.manager.create_session
-    def create_then_pause(project, **kwargs):
-        record = original(project, **kwargs)
+    original = world.service._admit_new_attempt
+    def pause_then_admit(project, reserve):
+        # The reservation now creates metadata inside its own write transaction.
+        # Commit the competing pause after selection, before that transaction.
         world.service.pause_project(project.id)
-        return record
-    monkeypatch.setattr(world.manager, 'create_session', create_then_pause)
+        return original(project, reserve)
+    monkeypatch.setattr(world.service, '_admit_new_attempt', pause_then_admit)
     assert await world.service.dispatch_once() is None
     assert world.attempts(item.id) == []
     assert not world.factory.clients

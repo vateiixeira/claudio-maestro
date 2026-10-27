@@ -16,6 +16,7 @@ import { useProjectsStore } from '../stores/projects'
 import { useNewConversationStore } from '../stores/newConversation'
 import { isDiscarded } from '../conversation/marks'
 import { useSessionsStore } from '../stores/sessions'
+import { useWorkStore } from '../stores/work'
 import { readSplitPercent, writeSplitPercent } from '../projectSplitPref'
 import { useMediaQuery } from '../useMediaQuery'
 
@@ -24,6 +25,8 @@ const props = defineProps<{ id: number; session?: string }>()
 
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
+const work = useWorkStore()
+const manualSessions = computed(() => sessions.all.filter(session => !work.catalog[session.session_id]))
 const git = useGitStore()
 const repos = computed(() => git.reposFor(props.id))
 
@@ -57,13 +60,13 @@ function rowTarget(sessionId: string) {
 const project = computed(() => projects.byId(props.id))
 // The store keeps the order of the last listing, not of later `session.updated` events.
 const projectSessions = computed(() =>
-  [...sessions.forProject(props.id)].filter((s) => !isDiscarded(s)).sort(
+  [...sessions.forProject(props.id)].filter((s) => !isDiscarded(s) && !work.catalog[s.session_id]).sort(
     (a, b) => b.last_activity_at - a.last_activity_at || b.created_at - a.created_at,
   ),
 )
 
 const groups = useGroupsStore()
-const visibleGroupsHere = computed(() => groups.visibleIn(props.id, sessions.all))
+const visibleGroupsHere = computed(() => groups.visibleIn(props.id, manualSessions.value))
 const hasGroups = computed(() => visibleGroupsHere.value.length > 0)
 // A group this project does not show (not loaded, or removed) counts as none.
 const knownGroupIds = computed(() => new Set(visibleGroupsHere.value.map((g) => g.id)))

@@ -46,6 +46,15 @@ const BREAKDOWN = {
 }
 
 async function stageContext(page: Page, route?: { json: unknown }) {
+  let seenRequests = 0
+  // The snapshot's context below is staged. The real seen endpoint emits a
+  // session.updated with the server's null context, which would remove this
+  // staged indicator mid-interaction. Reading receipts are covered elsewhere.
+  await page.route(/\/api\/sessions\/[0-9a-f-]+\/seen$/, r => {
+    if (r.request().method() !== 'POST') return r.fallback()
+    seenRequests++
+    return r.fulfill({ json: {} })
+  })
   await page.route(/\/api\/sessions\/[0-9a-f-]+$/, async (r) => {
     if (r.request().method() !== 'GET') return r.fallback()
     const response = await r.fetch()
@@ -55,6 +64,7 @@ async function stageContext(page: Page, route?: { json: unknown }) {
   if (route) {
     await page.route(/\/api\/sessions\/[0-9a-f-]+\/context$/, (r) => r.fulfill({ json: route.json }))
   }
+  return () => seenRequests
 }
 
 async function openConversation(page: Page) {
@@ -81,7 +91,7 @@ test('numa sessão fechada o indicador abre o total e a frase de sem medição',
 })
 
 test('o detalhamento mostra cabeçalho, barra, espaço livre, deferred e as sublistas', async ({ page }) => {
-  await stageContext(page, { json: BREAKDOWN })
+  const seenRequests = await stageContext(page, { json: BREAKDOWN })
   await openConversation(page)
   await indicator(page).click()
 
@@ -122,6 +132,9 @@ test('o detalhamento mostra cabeçalho, barra, espaço livre, deferred e as subl
   await expect(notLoaded).not.toContainText('smart_search')
   await deferred.click()
   await expect(pop.getByTestId('ctx-details')).toHaveCount(0)
+  await expect.poll(seenRequests).toBeGreaterThan(0)
+  await expect(pop).toBeVisible()
+  await expect(pop.getByTestId('ctx-percent')).toHaveText('21% usado')
 })
 
 test('a seção Contexto do painel de detalhes mostra o mesmo detalhamento', async ({ page }) => {

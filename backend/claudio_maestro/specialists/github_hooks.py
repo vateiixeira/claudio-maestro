@@ -19,7 +19,7 @@ import time
 import weakref
 from collections.abc import Callable, Iterator
 from contextlib import closing
-from dataclasses import replace
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -93,6 +93,20 @@ def set_owner(conn: sqlite3.Connection, login: str) -> None:
 # Signature and payloads ---------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class IncomingComment:
+    """External data only: ownership is assigned by the server after parsing."""
+    comment_id: str
+    pr_url: str
+    author: str
+    body: str
+    path: str | None
+    line: int | None
+    html_url: str
+    created_at: int
+
+
+
 def verify_signature(secret: bytes, body: bytes, header: str | None) -> bool:
     """`header` is `sha256=<hex>` of the HMAC-SHA256 of `body` under `secret`."""
     if not header or not header.startswith(_SIGNATURE_PREFIX):
@@ -116,31 +130,27 @@ def _epoch(value: Any) -> int:
 def _build(
     comment_id: str, pr_url: Any, item: dict[str, Any], *, body: Any, created: Any,
     path: Any = None, line: Any = None,
-) -> PrComment | None:
+) -> IncomingComment | None:
     login = _dict(item.get("user")).get("login")
     if not isinstance(pr_url, str) or not pr_url or not isinstance(login, str) or not login:
         return None
     html_url = item.get("html_url")
-    return PrComment(
+    return IncomingComment(
         comment_id=comment_id,
         pr_url=store.normalize_pr_url(pr_url),
-        specialist_id=0,  # the receiver fills it in from `is_agent_pr`
         author=login,
         body=body if isinstance(body, str) else "",
         path=path if isinstance(path, str) and path else None,
         line=line if isinstance(line, int) and not isinstance(line, bool) else None,
         html_url=html_url if isinstance(html_url, str) else pr_url,
         created_at=_epoch(created),
-        received_at=0,  # the receiver fills it in
-        status="queued",
-        batch_at=None,
     )
 
 
-def parse_event(event: str, payload: dict[str, Any]) -> list[PrComment]:
+def parse_event(event: str, payload: dict[str, Any]) -> list[IncomingComment]:
     """The PR comments a delivery carries; empty for events and actions we do not use.
 
-    `specialist_id` and `received_at` are filled in by the receiver. The `comment_id`
+    Ownership and receipt time are filled in by the receiver. The `comment_id`
     formats (`issue:<id>`, `line:<id>`, `review:<id>`) are shared with the sweep that
     backs this webhook up, so both deduplicate against each other.
     """
@@ -199,6 +209,9 @@ def build_hooks_app(
     data_dir: Path,
     is_agent_pr: Callable[[str], int | None],
     on_queued: Callable[[], None],
+    is_work_pr: Callable[[str], bool] = lambda url: False,
+    queue_work_comment: Callable[[IncomingComment], bool] | None = None,
+    on_work_queued: Callable[[], None] = lambda: None,
 ) -> Starlette:
     """The webhook app: `POST /github` and nothing else.
 
@@ -206,25 +219,32 @@ def build_hooks_app(
     `on_queued()` runs (in the event loop) after a new comment entered the queue.
     """
 
-    def queue(comments: list[PrComment]) -> int:
+    def queue(comments: list[IncomingComment]) -> tuple[int, int]:
         """Store what comes from the owner on an agent's PR; how many are new."""
         with closing(db.connect(db_path)) as conn:
             owner = get_owner(conn)
             if not owner:
-                return 0
+                return 0, 0
             added = 0
+            work_added = 0
             for comment in comments:
                 if comment.author.casefold() != owner.casefold():
+                    continue
+                if is_work_pr(comment.pr_url):
+                    if queue_work_comment is None:
+                        raise RuntimeError("Fila de comentários de trabalho indisponível.")
+                    work_added += bool(queue_work_comment(comment))
                     continue
                 specialist_id = is_agent_pr(comment.pr_url)
                 if specialist_id is None:
                     continue
-                stored = replace(
-                    comment, specialist_id=specialist_id, received_at=int(time.time())
+                stored = PrComment(
+                    **asdict(comment), specialist_id=specialist_id, received_at=int(time.time()),
+                    status="queued", batch_at=None,
                 )
                 if store.insert_comment(conn, stored):
                     added += 1
-            return added
+            return added, work_added
 
     async def github(request: Request) -> Response:
         secret = read_secret(data_dir)
@@ -241,11 +261,14 @@ def build_hooks_app(
             return Response(status_code=400)
         event = request.headers.get("x-github-event", "")
         comments = parse_event(event, payload)
-        if comments and await asyncio.to_thread(queue, comments):
-            try:
-                on_queued()
-            except Exception:
-                logger.exception("Falha ao avisar que há comentários de PR na fila")
+        if comments:
+            added, work_added = await asyncio.to_thread(queue, comments)
+            for count, notify in ((added, on_queued), (work_added, on_work_queued)):
+                if count:
+                    try:
+                        notify()
+                    except Exception:
+                        logger.exception("Falha ao avisar que há comentários de PR na fila")
         return Response(status_code=202)
 
     return Starlette(routes=[Route("/github", github, methods=["POST"])])

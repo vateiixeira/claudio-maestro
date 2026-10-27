@@ -374,3 +374,15 @@ describe('tela do projeto', () => {
     expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/git/details'))).toBe(false)
   })
 })
+
+it.each([null, 1])('página do projeto mantém somente conversas manuais na lista, grupo %s', async (group_id) => {
+  const { useWorkStore } = await import('../../stores/work')
+  seed()
+  useGroupsStore(pinia).groups = [makeGroup()]
+  useWorkStore(pinia).catalog.worker = { work_role: 'investigator', project_id: 1, work_item_id: 1, work_attempt_id: 2 }
+  vi.stubGlobal('fetch', routeFetch({
+    'GET /api/projects/1/sessions': () => jsonResponse(['manual', 'worker'].map(session_id => makeSession({ session_id, title: session_id, group_id }))),
+  }))
+  const wrapper = await mountView()
+  expect(wrapper.findAll('[data-test="row-link"]').map(r => r.text())).toEqual(['manual'])
+})

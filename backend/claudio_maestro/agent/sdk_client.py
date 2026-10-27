@@ -284,12 +284,12 @@ class SdkAgentClient:
     def _login_failed(texts: list[str]) -> bool:
         return any(marker in text for text in texts for marker in LOGIN_MARKERS)
 
-    async def send(self, content: str | list[dict[str, Any]]) -> None:
+    async def send(self, content: str | list[dict[str, Any]], *, message_id: str | None = None) -> None:
         try:
-            if isinstance(content, str):
+            if isinstance(content, str) and message_id is None:
                 await self._client.query(content)
             else:
-                await self._client.query(_single_user_message(content))
+                await self._client.query(_single_user_message(content, message_id=message_id))
         except Exception as error:
             raise to_agent_error(error) from error
 
@@ -409,13 +409,14 @@ class SdkAgentClient:
 
 
 async def _single_user_message(
-    blocks: list[dict[str, Any]],
+    blocks: str | list[dict[str, Any]], *, message_id: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """One user message with content blocks, in the SDK streaming-input format."""
     yield {
         "type": "user",
         "message": {"role": "user", "content": blocks},
         "parent_tool_use_id": None,
+        **({"uuid": message_id} if message_id is not None else {}),
     }
 
 

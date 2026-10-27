@@ -530,3 +530,18 @@ describe('acessibilidade da conversa', () => {
     expect(w.find('[data-test="conversation-scroller"]').attributes('aria-live')).toBeUndefined()
   })
 })
+
+it('tentativa encerrada conserva pedidos nativos e encaminha a continuidade à tarefa', async () => {
+  const { useWorkStore } = await import('../../../stores/work')
+  const work = useWorkStore(pinia)
+  work.catalog.s1 = { work_role: 'investigator', project_id: 1, work_item_id: 9, work_attempt_id: 4 }
+  vi.stubGlobal('fetch', routeFetch({
+    'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ session_id: 's1' })),
+    'GET /api/work-items/9': () => jsonResponse({ item: { id: 9 }, dossier: {}, attempts: [{ id: 4, state: 'succeeded', ended_at: 2 }], events: [] }),
+    'GET /api/models': () => jsonResponse([]),
+  }))
+  const wrapper = await mountView()
+  expect(wrapper.find('[data-test="composer-text"]').exists()).toBe(false)
+  expect(wrapper.get('[data-test="managed-worker"]').text()).toContain('Execução encerrada')
+  expect(wrapper.get('[data-test="managed-worker"] a').attributes('href')).toBe('/tarefas/9')
+})

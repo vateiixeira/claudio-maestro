@@ -108,7 +108,7 @@ async function readDetail(response: Response): Promise<{ text: string | null; da
   }
 }
 
-async function request<T>(method: Method, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+export async function request<T>(method: Method, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   // Custom header required by the backend on every /api request (blocks cross-site reads).
   const headers: Record<string, string> = { 'X-Maestro': '1' }
   const init: RequestInit = { method, headers }

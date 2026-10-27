@@ -7,6 +7,7 @@ send_started=False is proven. Uncertain delivery has no automatic retry path.
 
 import json
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import uuid4
@@ -255,39 +256,67 @@ def list_attempts(conn: sqlite3.Connection, item_id: int) -> list[Attempt]:
 def claim_attempt(conn: sqlite3.Connection, item_id: int, *, expected_revision: int,
                   session_id: str, now: int, role: Role = 'implementer',
                   resources: list[str] | tuple[str, ...] = (),
-                  require_project_mode: bool = False) -> Attempt:
+                  require_project_mode: bool = False, transfer_from: int | None = None,
+                  on_claim: Callable[[sqlite3.Connection, Attempt], None] | None = None) -> Attempt:
     """Reserve issue + normal session + every resource atomically before any send."""
+    with transaction(conn):
+        return claim_attempt_in_transaction(conn, item_id, expected_revision=expected_revision,
+            session_id=session_id, now=now, role=role, resources=resources,
+            require_project_mode=require_project_mode, transfer_from=transfer_from,
+            on_claim=on_claim)
+
+
+def claim_attempt_in_transaction(conn: sqlite3.Connection, item_id: int, *, expected_revision: int,
+                  session_id: str, now: int, role: Role = 'implementer',
+                  resources: list[str] | tuple[str, ...] = (),
+                  require_project_mode: bool = False, transfer_from: int | None = None,
+                  on_claim: Callable[[sqlite3.Connection, Attempt], None] | None = None) -> Attempt:
+    """Reserve issue + normal session + every resource atomically before any send."""
+    if not conn.in_transaction:
+        raise RuntimeError('A reserva exige uma transação ativa.')
     _choice(role, ROLES, 'Papel')
     keys = sorted({_text(key, 'Recurso', 500) for key in resources})
     if len(keys) > 32:
         raise WorkValidationError('Recursos demais para uma execução.')
     try:
-        with transaction(conn):
-            item = get_item(conn, item_id)
-            if item.revision != expected_revision:
-                raise WorkConflictError('A tarefa mudou antes da reserva.')
-            if require_project_mode:
-                _admit_dispatch(conn, item.project_id)
-            if item.status != ('review' if role == 'reviewer' else 'ready'):
-                raise WorkConflictError('A tarefa não está pronta para esta tentativa.')
-            _session(conn, item.project_id, session_id)
-            # Context belongs to one attempt for its whole lifetime. Continuing
-            # that attempt resumes its session; a new attempt always starts fresh.
-            if conn.execute('SELECT 1 FROM work_attempts WHERE session_id = ?', (session_id,)).fetchone():
-                raise WorkValidationError('Uma tentativa nova precisa de uma sessão própria.')
-            if conn.execute("SELECT 1 FROM work_dependencies d JOIN work_items p ON p.id = d.depends_on_id WHERE d.work_item_id = ? AND p.status != 'done'", (item_id,)).fetchone():
-                raise WorkConflictError('A tarefa ainda tem dependências pendentes.')
-            if conn.execute('SELECT 1 FROM work_coordinators WHERE session_id = ?', (session_id,)).fetchone():
-                raise WorkValidationError('A sessão do CTO não pode executar a tentativa delegada.')
-            conn.execute('UPDATE work_items SET status = ?, phase = ?, revision = revision + 1, updated_at = ? WHERE id = ?',
-                         ('active', 'review' if role == 'reviewer' else ('investigation' if role == 'investigator' else 'implementation'), now, item_id))
-            item = get_item(conn, item_id)
-            cursor = conn.execute('INSERT INTO work_attempts (work_item_id, session_id, role, state, work_revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                                  (item_id, session_id, role, 'starting', item.revision, now, now))
-            attempt = get_attempt(conn, cursor.lastrowid)
-            conn.executemany('INSERT INTO work_resource_claims (resource, attempt_id, created_at) VALUES (?, ?, ?)', [(key, attempt.id, now) for key in keys])
-            _event(conn, item, 'attempt_claimed', now, attempt_id=attempt.id, actor=session_id, data={'role': role})
-            return attempt
+        item = get_item(conn, item_id)
+        if item.revision != expected_revision:
+            raise WorkConflictError('A tarefa mudou antes da reserva.')
+        if require_project_mode:
+            _admit_dispatch(conn, item.project_id)
+        if item.status != ('review' if role == 'reviewer' else 'ready'):
+            raise WorkConflictError('A tarefa não está pronta para esta tentativa.')
+        _session(conn, item.project_id, session_id)
+        # Context belongs to one attempt for its whole lifetime. Continuing
+        # that attempt resumes its session; a new attempt always starts fresh.
+        if conn.execute('SELECT 1 FROM work_attempts WHERE session_id = ?', (session_id,)).fetchone():
+            raise WorkValidationError('Uma tentativa nova precisa de uma sessão própria.')
+        if conn.execute("SELECT 1 FROM work_dependencies d JOIN work_items p ON p.id = d.depends_on_id WHERE d.work_item_id = ? AND p.status != 'done'", (item_id,)).fetchone():
+            raise WorkConflictError('A tarefa ainda tem dependências pendentes.')
+        if conn.execute('SELECT 1 FROM work_coordinators WHERE session_id = ?', (session_id,)).fetchone():
+            raise WorkValidationError('A sessão do CTO não pode executar a tentativa delegada.')
+        conn.execute('UPDATE work_items SET status = ?, phase = ?, revision = revision + 1, updated_at = ? WHERE id = ?',
+                     ('active', 'review' if role == 'reviewer' else ('investigation' if role == 'investigator' else 'implementation'), now, item_id))
+        item = get_item(conn, item_id)
+        cursor = conn.execute('INSERT INTO work_attempts (work_item_id, session_id, role, state, work_revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                              (item_id, session_id, role, 'starting', item.revision, now, now))
+        attempt = get_attempt(conn, cursor.lastrowid)
+        if transfer_from is not None:
+            previous = get_attempt(conn, transfer_from)
+            if previous.work_item_id != item_id or previous.state in ACTIVE_STATES:
+                raise WorkConflictError('A reserva anterior não pode ser transferida para esta tarefa.')
+            conn.execute('UPDATE work_resource_claims SET attempt_id=?, created_at=? WHERE attempt_id=?', (attempt.id, now, previous.id))
+            conn.execute('INSERT INTO work_attempt_workspaces SELECT ?,paths_ref FROM work_attempt_workspaces WHERE attempt_id=?', (attempt.id, previous.id))
+        for key in keys:
+            owner = conn.execute('SELECT attempt_id FROM work_resource_claims WHERE resource=?', (key,)).fetchone()
+            if owner and owner['attempt_id'] != attempt.id:
+                raise WorkConflictError('O workspace está reservado por outra tarefa.')
+            if not owner:
+                conn.execute('INSERT INTO work_resource_claims VALUES (?, ?, ?)', (key, attempt.id, now))
+        if on_claim is not None:
+            on_claim(conn, attempt)
+        _event(conn, item, 'attempt_claimed', now, attempt_id=attempt.id, actor=session_id, data={'role': role})
+        return attempt
     except sqlite3.IntegrityError as exc:
         raise WorkConflictError('A tarefa, sessão ou recurso já está reservado.') from exc
 
@@ -357,25 +386,34 @@ def record_result(conn: sqlite3.Connection, attempt_id: int, *, result_kind: Res
     turn/subagents remain before calling finish_attempt. A crash keeps both the
     result reference and every claim available for recovery.
     """
+    with transaction(conn):
+        return record_result_in_transaction(conn, attempt_id, result_kind=result_kind,
+                                            result_ref=result_ref, now=now)
+
+
+def record_result_in_transaction(conn: sqlite3.Connection, attempt_id: int, *,
+                                 result_kind: ResultKind, result_ref: str, now: int) -> Attempt:
+    """Compose a result, verdict and event in the caller's single transaction."""
+    if not conn.in_transaction:
+        raise WorkConflictError('O registro composto exige uma transação ativa.')
     _choice(result_kind, ('investigation', 'implementation', 'review', 'decision'), 'Tipo de entrega')
     result_ref = _result_ref(result_ref)
-    with transaction(conn):
-        attempt = get_attempt(conn, attempt_id)
-        if attempt.state not in ('dispatching', 'running', 'waiting'):
-            raise WorkConflictError('Esta tentativa não pode registrar uma entrega.')
-        if (attempt.result_kind, attempt.result_ref) == (result_kind, result_ref):
-            return attempt
-        conn.execute('UPDATE work_attempts SET result_kind = ?, result_ref = ?, updated_at = ? WHERE id = ?',
-                     (result_kind, result_ref, now, attempt_id))
-        _event(conn, get_item(conn, attempt.work_item_id), 'attempt_result_recorded', now,
-               attempt_id=attempt_id, actor=attempt.session_id or 'system',
-               data={'result_kind': result_kind, 'result_ref': result_ref})
-        return get_attempt(conn, attempt_id)
+    attempt = get_attempt(conn, attempt_id)
+    if attempt.state not in ('dispatching', 'running', 'waiting'):
+        raise WorkConflictError('Esta tentativa não pode registrar uma entrega.')
+    if (attempt.result_kind, attempt.result_ref) == (result_kind, result_ref):
+        return attempt
+    conn.execute('UPDATE work_attempts SET result_kind = ?, result_ref = ?, updated_at = ? WHERE id = ?',
+                 (result_kind, result_ref, now, attempt_id))
+    _event(conn, get_item(conn, attempt.work_item_id), 'attempt_result_recorded', now,
+           attempt_id=attempt_id, actor=attempt.session_id or 'system',
+           data={'result_kind': result_kind, 'result_ref': result_ref})
+    return get_attempt(conn, attempt_id)
 
 
 def finish_attempt(conn: sqlite3.Connection, attempt_id: int, *, outcome: str,
                    result_kind: ResultKind, result_ref: str | None, now: int,
-                   turn_ended: bool, reason: str | None = None) -> tuple[Attempt, bool]:
+                   turn_ended: bool, reason: str | None = None, keep_resources: bool = False) -> tuple[Attempt, bool]:
     """Record a result + event atomically. A stale result survives, but is not accepted.
 
     Caller proves turn end before releasing resources. Successful implementation
@@ -406,7 +444,8 @@ def finish_attempt(conn: sqlite3.Connection, attempt_id: int, *, outcome: str,
             target = 'ready' if item.status in ('active', 'waiting') else item.status
         conn.execute('UPDATE work_attempts SET state = ?, result_kind = ?, result_ref = ?, updated_at = ?, ended_at = ? WHERE id = ?',
                      (outcome, result_kind, result_ref, now, now, attempt_id))
-        conn.execute('DELETE FROM work_resource_claims WHERE attempt_id = ?', (attempt_id,))
+        if not keep_resources:
+            conn.execute('DELETE FROM work_resource_claims WHERE attempt_id = ?', (attempt_id,))
         conn.execute('UPDATE work_items SET status = ?, revision = revision + 1, updated_at = ? WHERE id = ?', (target, now, item.id))
         _event(conn, get_item(conn, item.id), 'attempt_finished', now, attempt_id=attempt_id,
                actor=attempt.session_id or 'system', data={'result_kind': result_kind, 'result_ref': result_ref, 'outcome': outcome, 'current_revision': current, **({'reason': reason} if reason else {})})
@@ -414,7 +453,8 @@ def finish_attempt(conn: sqlite3.Connection, attempt_id: int, *, outcome: str,
 
 
 def list_events(conn: sqlite3.Connection, item_id: int | None = None, *, after: int = 0,
-                pending_only: bool = False, limit: int = 100) -> list[Event]:
+                pending_only: bool = False, limit: int = 100, before: int | None = None,
+                latest: bool = False) -> list[Event]:
     if not 1 <= limit <= 200:
         raise WorkValidationError('Paginação inválida.')
     clauses, values = ['id > ?'], [after]
@@ -423,7 +463,15 @@ def list_events(conn: sqlite3.Connection, item_id: int | None = None, *, after: 
         values.append(item_id)
     if pending_only:
         clauses.append('delivered_at IS NULL')
-    rows = conn.execute('SELECT * FROM work_events WHERE ' + ' AND '.join(clauses) + ' ORDER BY id LIMIT ?', [*values, limit]).fetchall()
+    if before is not None:
+        if before <= 0:
+            raise WorkValidationError('Cursor de atividade inválido.')
+        clauses.append('id < ?')
+        values.append(before)
+    order = 'DESC' if latest else 'ASC'
+    rows = conn.execute('SELECT * FROM work_events WHERE ' + ' AND '.join(clauses) + f' ORDER BY id {order} LIMIT ?', [*values, limit]).fetchall()
+    if latest:
+        rows = list(reversed(rows))
     return [Event(**{**dict(row), 'data': json.loads(row['data'])}) for row in rows]
 
 
@@ -458,15 +506,22 @@ def coordinator_session(conn: sqlite3.Connection, project_id: int) -> str | None
 def bind_coordinator(conn: sqlite3.Connection, project_id: int, session_id: str, *, now: int) -> str:
     """First valid project coordinator wins; safe when two clients open it together."""
     with transaction(conn):
-        _project(conn, project_id)
-        _session(conn, project_id, session_id)
-        if conn.execute('SELECT 1 FROM work_attempts WHERE session_id = ?', (session_id,)).fetchone():
-            raise WorkValidationError('A sessão de execução não pode ser a conversa do CTO.')
-        existing = coordinator_session(conn, project_id)
-        if existing:
-            return existing
-        conn.execute('INSERT INTO work_coordinators VALUES (?, ?, ?)', (project_id, session_id, now))
-        return session_id
+        return bind_coordinator_in_transaction(conn, project_id, session_id, now=now)
+
+
+def bind_coordinator_in_transaction(conn: sqlite3.Connection, project_id: int, session_id: str, *, now: int) -> str:
+    """First valid project coordinator wins; safe when two clients open it together."""
+    if not conn.in_transaction:
+        raise RuntimeError('O vínculo exige uma transação ativa.')
+    _project(conn, project_id)
+    _session(conn, project_id, session_id)
+    if conn.execute('SELECT 1 FROM work_attempts WHERE session_id = ?', (session_id,)).fetchone():
+        raise WorkValidationError('A sessão de execução não pode ser a conversa do CTO.')
+    existing = coordinator_session(conn, project_id)
+    if existing:
+        return existing
+    conn.execute('INSERT INTO work_coordinators VALUES (?, ?, ?)', (project_id, session_id, now))
+    return session_id
 
 
 def begin_continuation(conn: sqlite3.Connection, attempt_id: int, *, now: int) -> Attempt:
@@ -502,15 +557,19 @@ def _admit_dispatch(conn: sqlite3.Connection, project_id: int, *, exclude_attemp
     mode = conn.execute('SELECT enabled, paused FROM work_project_modes WHERE project_id=?', (project_id,)).fetchone()
     if mode is None or not mode['enabled'] or mode['paused']:
         raise WorkConflictError('O projeto não está habilitado para novos envios.')
-    if conn.execute("SELECT 1 FROM work_attempts WHERE id != ? AND state IN ('starting','dispatching','running','uncertain')", (exclude_attempt,)).fetchone():
-        raise WorkConflictError('A capacidade de execução está ocupada.')
+    from . import pool
+    if exclude_attempt >= 0:
+        pool.acquire(conn, exclude_attempt, project_id)
+    else:
+        pool.assert_capacity(conn, project_id)
 
 
 def reset_signals(conn: sqlite3.Connection, attempt_id: int, *, now: int, proven_unsent: bool = False) -> None:
     """Caller owns the send reservation transaction; reset proof for this send."""
     if not conn.in_transaction:
         raise WorkValidationError('Os sinais precisam de uma transação ativa.')
-    conn.execute("INSERT INTO work_attempt_signals (attempt_id, proven_unsent, updated_at, started_at) VALUES (?, ?, ?, ?) ON CONFLICT(attempt_id) DO UPDATE SET result_seen=0,quiescent=0,error_seen=0,proven_unsent=excluded.proven_unsent,terminal_kind='unknown',limit_reached=0,started_at=excluded.started_at,updated_at=excluded.updated_at", (attempt_id, int(proven_unsent), now, now))
+    conn.execute('DELETE FROM work_process_closures WHERE attempt_id=?', (attempt_id,))
+    conn.execute("INSERT INTO work_attempt_signals (attempt_id, proven_unsent, updated_at, started_at) VALUES (?, ?, ?, ?) ON CONFLICT(attempt_id) DO UPDATE SET result_seen=0,quiescent=0,error_seen=0,proven_unsent=excluded.proven_unsent,dispatch_id=NULL,correlated_result=0,terminal_kind='unknown',limit_reached=0,started_at=excluded.started_at,updated_at=excluded.updated_at", (attempt_id, int(proven_unsent), now, now))
 
 
 def block_item(conn: sqlite3.Connection, item_id: int, *, expected_revision: int,

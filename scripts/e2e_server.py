@@ -176,7 +176,7 @@ def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, st
     env = {
         key: value
         for key, value in base.items()
-        if not key.startswith(("MAESTRO_", "CLAUDE", "GIT_CONFIG")) and key != "XDG_CONFIG_HOME"
+        if not key.startswith(("MAESTRO_", "CLAUDE", "GIT_CONFIG", "GH_", "GITHUB_")) and key != "XDG_CONFIG_HOME"
     }
     env.update(
         {
@@ -580,6 +580,12 @@ def seed(root: Path) -> None:
                 )
         seed_git(root, settings.home_dir, conn)
         _seed_specialists(settings, conn, now)
+        if os.environ.get("MAESTRO_E2E_CHAT") == "1":
+            # Dedicated to work-flow.e2e.ts. Existing Git/conversation scenarios
+            # keep their own repositories and all their original session counts.
+            work_dir = _new_repo(settings.home_dir / "projetos" / "trabalho-demo")
+            _commit(work_dir, "contrato.txt", "Registrar contrato de exemplo", "Contrato atual: preservar o comportamento.\n")
+            projects.create_project(conn, name="Trabalho Demo", path=str(work_dir), color="#3fb950", home=settings.home_dir)
 
 
 def refuse_agent(options: AgentOptions) -> AgentClient:
@@ -619,6 +625,11 @@ async def _refuse_usage() -> UsageReport:
     raise RuntimeError("O servidor de E2E não consulta o uso da assinatura.")
 
 
+async def refuse_gh(args: list[str]) -> tuple[int, str]:
+    """No GitHub executable, network, credentials or host config in this server."""
+    return 127, ""
+
+
 async def _no_git_fetch(repo: Path, **kwargs: object) -> bool:
     return False
 
@@ -650,25 +661,108 @@ def build_app(port: int) -> FastAPI:
     (inside the temporary root), their sessions go through `agent_factory` and their
     schedules read the usage through `fetch_usage`, so nothing of theirs reaches real data.
     """
-    from claudio_maestro.agent.fake import FakeAgentClient, text_turn
+    from claude_agent_sdk import TextBlock, ToolUseBlock, UserMessage
+
+    from claudio_maestro.agent.fake import (
+        FailStep,
+        FakeAgentClient,
+        init_message,
+        response_messages,
+        result_message,
+        text_turn,
+        tool_result_message,
+    )
     from claudio_maestro.app import create_app
     from claudio_maestro.commands import NO_HOOKS
+    from claudio_maestro.work.tools import build_tools
 
     clients: list[FakeAgentClient] = []
+
+    class WorkScenarioClient(FakeAgentClient):
+        """Deterministic agent, real WorkService/MCP handlers and normal SDK messages.
+
+        Only this throwaway server constructs it. No test-only endpoint or
+        dispatcher path is installed in the production application.
+        """
+
+        async def _run_steps(self, steps):
+            sid = self.options.session_id
+            host = app.state.work
+            identity = host.session_identity(sid)
+            if identity is None or Path(self.options.cwd).resolve() != (load_settings().home_dir / 'projetos' / 'trabalho-demo').resolve():
+                return await super()._run_steps(steps)
+            tools = {entry.name: entry for entry in build_tools(host, sid)}
+
+            async def call(name, args):
+                tool_id = str(uuid.uuid4())
+                await super(WorkScenarioClient, self)._run_steps(response_messages(sid, [
+                    ToolUseBlock(id=tool_id, name=f'mcp__maestro_work__{name}', input=args),
+                ], stop_reason='tool_use'))
+                result = await tools[name].handler(args)
+                await super(WorkScenarioClient, self)._run_steps([
+                    tool_result_message(tool_id, json.dumps(result, ensure_ascii=False), is_error=result.get('is_error', False)),
+                ])
+                if result.get('is_error'):
+                    raise AgentError(str(result))
+                return json.loads(result['content'][0]['text'])
+
+            async def say(text):
+                await super(WorkScenarioClient, self)._run_steps(response_messages(sid, [TextBlock(text=text)]))
+
+            try:
+                # FakeAgentClient.send prepends the host's exact UUID echo.
+                # Preserve that envelope before substituting the response body;
+                # never synthesize an acknowledgement from the session identity.
+                for step in steps:
+                    if not isinstance(step, UserMessage):
+                        break
+                    await super()._run_steps([step])
+                await super()._run_steps([init_message(sid)])
+                role = identity['work_role']
+                if role == 'coordinator':
+                    content = self.sent[-1]
+                    if isinstance(content, str) and content.startswith('E2E tarefa: '):
+                        title = content.removeprefix('E2E tarefa: ').strip()
+                        await call('delegate_work', {'title': title, 'objective': title, 'acceptance': 'Conferir contrato.txt, registrar decisão humana e validar por revisão independente.', 'role': 'investigator'})
+                        await say('Tarefa delegada a uma investigação própria. Acompanhe o trabalho abaixo.')
+                    else:
+                        await say('Atualização do trabalho recebida pelo CTO.')
+                elif role == 'reviewer':
+                    evidence = await call('get_review_evidence', {})
+                    assert evidence['target']['complete']
+                    assert (Path(self.options.cwd) / 'contrato.txt').read_text().startswith('Contrato atual:')
+                    await call('submit_review', {'binding_id': evidence['binding']['id'], 'disposition': 'approve', 'summary': 'Revisão independente: contrato e resposta humana conferidos.', 'evidence': ['contrato.txt:1, alvo completo capturado pelo backend e entrega do autor conferidos.']})
+                    await say('Revisão independente aprovada com evidências.')
+                else:
+                    decisions = host.decisions(item_id=identity['work_item_id'], pending_only=False)['items']
+                    answered = next((d for d in decisions if d['answer']), None)
+                    await call('declare_workspaces', {'workspaces': [str(self.options.cwd)]})
+                    if answered is None:
+                        await say('Investigação inicial do contrato: o comportamento atual foi localizado em contrato.txt.')
+                        await call('request_decision', {'question': 'Manter o contrato atual nesta investigação?', 'action': 'Preservar somente o comportamento de contrato.txt; sem publicação.', 'options': ['Manter contrato atual', 'Rever a proposta'], 'evidence': ['contrato.txt:1, comportamento atual do cenário descartável.']})
+                        await say('Investigação inicial registrada, aguardando a decisão humana.')
+                    else:
+                        assert answered['answer']['answer'] == 'Manter contrato atual'
+                        assert (Path(self.options.cwd) / 'contrato.txt').read_text().startswith('Contrato atual:')
+                        await call('conclude', {'result_kind': 'investigation', 'delivery_type': 'investigation_complete', 'summary': 'Contrato atual preservado, investigação concluída.', 'evidence': ['contrato.txt:1 e resposta humana vinculada à tentativa anterior.'], 'tests': [{'executed': False, 'status': 'not_run', 'command': 'Investigação sem alteração de código; nenhum teste executado.', 'output_ref': ''}], 'next_action': 'Conferir a revisão independente.'})
+                        await say('Contrato atual preservado, investigação concluída.')
+                await super()._run_steps([result_message(sid)])
+            except Exception as error:
+                await super()._run_steps([FailStep(f'Falha no cenário de trabalho E2E: {error}')])
 
     def chat_agent(options: AgentOptions) -> AgentClient:
         # Specialist chats and read-only command probes use the fake. Ordinary
         # conversations retain the refusal that the existing specs exercise.
         if not options.system_prompt_append and options.settings != NO_HOOKS:
             return refuse_agent(options)
-        client = FakeAgentClient(
+        client = WorkScenarioClient(
             options, script=lambda content: text_turn(options.session_id, f"Resposta de teste: {content}")
         )
         clients.append(client)
         return client
 
     chat_enabled = os.environ.get("MAESTRO_E2E_CHAT") == "1"
-    return create_app(
+    app = create_app(
         agent_factory=chat_agent if chat_enabled else refuse_agent,
         rename_session=(lambda *args: None) if chat_enabled else None,
         history_exists=(lambda sid, cwd: any(c.options.session_id == sid and c.sent for c in clients)) if chat_enabled else None,
@@ -682,11 +776,13 @@ def build_app(port: int) -> FastAPI:
         agentd=False,
         fetch_release=_no_release,
         git_fetch=_no_git_fetch,
+        gh_runner=refuse_gh,
         fetch_usage=_refuse_usage,
         restart=None,
         run_mode=RunMode("unknown"),
         claude_cli=inert_claude_resolver(),
     )
+    return app
 
 
 def stop_on_sigterm() -> None:

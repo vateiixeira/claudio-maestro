@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, test, openNavigationGroup } from './fixtures'
 
 const THEMES = [
   { id: 'maestro', label: 'Maestro', background: 'rgb(11, 11, 12)' },
@@ -22,6 +22,7 @@ for (const theme of THEMES) {
     else await expect(page.locator('html')).toHaveAttribute('data-theme', theme.id)
 
     // A navegação dentro do app mantém o tema.
+    await openNavigationGroup(page, 'Mais ferramentas')
     await page.getByRole('link', { name: 'Dashboard' }).click()
     await expect(page).toHaveURL(/\/dashboard/)
     await expect(page.locator('body')).toHaveCSS('background-color', theme.background)

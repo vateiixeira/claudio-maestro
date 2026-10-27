@@ -7,6 +7,7 @@ import { sessionsOf, sortGroups } from '../../groupList'
 import { useGroupsStore } from '../../stores/groups'
 import { isDiscarded } from '../../conversation/marks'
 import { useSessionsStore } from '../../stores/sessions'
+import { useWorkStore } from '../../stores/work'
 import IconPlus from '../icons/IconPlus.vue'
 
 // `rowTarget` and `activeId` let the project screen open rows beside it, as in its loose list.
@@ -20,8 +21,9 @@ const emit = defineEmits<{ error: [message: string] }>()
 
 const groups = useGroupsStore()
 const sessions = useSessionsStore()
+const work = useWorkStore()
 
-const allSessions = computed(() => sessions.all.filter((s) => !isDiscarded(s)))
+const allSessions = computed(() => sessions.all.filter((s) => !isDiscarded(s) && !work.catalog[s.session_id]))
 const ordered = computed(() => sortGroups(groups.visibleIn(props.projectId, allSessions.value), allSessions.value))
 
 const creating = ref(false)

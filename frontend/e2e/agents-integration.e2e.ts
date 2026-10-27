@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, test, openNavigationGroup } from './fixtures'
 
 test('barra lateral e página do agente abrem a mesma principal, com fila compartilhada', async ({ page, baseURL }) => {
   const headers = { 'X-Maestro': '1', Origin: baseURL! }
@@ -8,6 +8,7 @@ test('barra lateral e página do agente abrem a mesma principal, com fila compar
   const agent = await response.json()
   try {
     await page.goto(`/agentes/${agent.id}`)
+    await openNavigationGroup(page, 'Agentes e rotinas anteriores')
     await page.getByTestId('sidebar-agent-row').filter({ hasText: agent.name }).click()
     await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/)
     const mainUrl = page.url()
@@ -18,6 +19,7 @@ test('barra lateral e página do agente abrem a mesma principal, com fila compar
     await expect(page).toHaveURL(mainUrl)
     await page.goto(`/agentes/${agent.id}`)
     await page.getByTestId('queue-toggle').click()
+    await openNavigationGroup(page, 'Agentes e rotinas anteriores')
     await page.getByTestId('sidebar-agent-row').filter({ hasText: agent.name }).click()
     await page.getByPlaceholder('Mensagem (Ctrl+V cola imagens)').fill('Pedido na principal pela fila unificada')
     await page.getByTestId('send').click()
@@ -29,6 +31,7 @@ test('barra lateral e página do agente abrem a mesma principal, com fila compar
     await page.goto(`/agentes/${agent.id}`)
     await page.getByTestId('agent-chat-new').click()
     await expect(page).not.toHaveURL(mainUrl)
+    await openNavigationGroup(page, 'Agentes e rotinas anteriores')
     await page.getByTestId('sidebar-agent-row').filter({ hasText: agent.name }).click()
     await expect(page).toHaveURL(mainUrl)
   } finally {

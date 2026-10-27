@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, test, openNavigationGroup } from './fixtures'
 
 for (const width of [1440, 1024]) {
   test(`mantém a conversa principal e mostra cada execução dentro dela em ${width}px`, async ({ page, baseURL }) => {
@@ -25,6 +25,7 @@ for (const width of [1440, 1024]) {
       await expect(row.getByTestId('agent-execution-full')).toHaveAttribute('href', `/sessions/${run.session_id}`)
       await page.screenshot({ path: `/tmp/maestro-conversa-persistente-${width}.png`, fullPage: true })
       // O atalho é estável mesmo depois de nascer outra conversa para a rotina.
+      await openNavigationGroup(page, 'Agentes e rotinas anteriores')
       await page.getByTestId('sidebar-agent-row').filter({ hasText: `Persistente ${width}` }).click()
       await expect(page).toHaveURL(new RegExp(`/sessions/${main.session_id}$`))
       await page.reload()

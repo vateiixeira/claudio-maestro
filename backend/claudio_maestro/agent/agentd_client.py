@@ -69,6 +69,8 @@ class AgentdClient:
         self._write_lock = asyncio.Lock()
         self._procs: list[subprocess.Popen[bytes]] = []
         self.server_pid: int | None = None
+        self.instance_id: str | None = None
+        self._child_instances: dict[str, str | None] = {}
 
     @property
     def connected(self) -> bool:
@@ -126,6 +128,7 @@ class AgentdClient:
             await self._close_connection()
             return False
         self.server_pid = reply.get("pid")
+        self.instance_id = reply.get("instance_id") if isinstance(reply.get("instance_id"), str) else None
         return True
 
     async def _read_loop(self, reader: asyncio.StreamReader,
@@ -211,7 +214,20 @@ class AgentdClient:
         await self.ensure_running()
         reply = await self._call("spawn", session_id=session_id, cmd=spec.cmd, cwd=spec.cwd,
                                  env=spec.env)
-        return str(reply["id"])
+        child_id = str(reply["id"])
+        self._bind_child_instance(child_id, reply)
+        return child_id
+
+    def _bind_child_instance(self, child_id, reply):
+        nonce = reply.get('instance_id')
+        nonce = nonce if isinstance(nonce, str) and nonce else None
+        previous = self._child_instances.get(child_id)
+        if child_id in self._child_instances and nonce != previous:
+            raise AgentdUnavailable('A instância do agentd mudou durante a operação do processo.')
+        self._child_instances[child_id] = nonce
+
+    def child_instance(self, child_id):
+        return self._child_instances.get(child_id)
 
     async def write(self, child_id: str, data: str) -> None:
         await self._call("write", id=child_id, data=data)
@@ -220,7 +236,8 @@ class AgentdClient:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._subscriptions[child_id] = queue
         try:
-            await self._call("subscribe", id=child_id, **{"from": start})
+            reply = await self._call("subscribe", id=child_id, **{"from": start})
+            self._bind_child_instance(child_id, reply)
         except BaseException:
             if self._subscriptions.get(child_id) is queue:
                 del self._subscriptions[child_id]
@@ -237,20 +254,24 @@ class AgentdClient:
             await self._call("ack", id=child_id, pos=pos)
 
     async def pending(self, child_id: str) -> list[str]:
-        return list((await self._call("pending", id=child_id))["lines"])
+        reply = await self._call("pending", id=child_id)
+        self._bind_child_instance(child_id, reply)
+        return list(reply['lines'])
 
     async def list(self) -> list[AgentdChild]:
         await self.ensure_running()
         reply = await self._call("list")
         return [AgentdChild.from_reply(child) for child in reply["children"]]
 
-    async def live_children(self) -> "list[AgentdChild] | None":  # `list` is the method above
+    async def live_children(self, *, expected_instance_id: str | None = None) -> "list[AgentdChild] | None":  # `list` is the method above
         """Children of a running agentd; None when none runs (none is started) or it hangs."""
         try:
             async with asyncio.timeout(LIVE_CHILDREN_TIMEOUT):
                 await self.ensure_running(start=False)
                 reply = await self._call("list")
         except (AgentdUnavailable, TimeoutError):
+            return None
+        if expected_instance_id is not None and reply.get('instance_id') != expected_instance_id:
             return None
         return [AgentdChild.from_reply(child) for child in reply["children"]]
 
@@ -260,24 +281,37 @@ class AgentdClient:
             await self.ensure_running(start=False)
             await self._call("shutdown")
 
-    async def kill(self, child_id: str) -> None:
+    async def kill(self, child_id: str, *, expected_instance_id: str | None = None) -> None:
         """Ask the agentd to stop the child (it returns before the process is gone; see
         `wait_gone`). A lost connection is re-made first, but no agentd is started."""
         self._subscriptions.pop(child_id, None)
+        if expected_instance_id is not None:
+            await self.ensure_running(start=False)
+            if self.instance_id != expected_instance_id:
+                raise AgentdUnavailable('A instância original do processo não está acessível.')
+            reply = await self._call('kill', id=child_id)
+            if reply.get('instance_id') != expected_instance_id:
+                raise AgentdUnavailable('O encerramento não foi confirmado pela instância original.')
+            return
         with contextlib.suppress(AgentdUnavailable):
             await self.ensure_running(start=False)
             await self._call("kill", id=child_id)
 
-    async def wait_gone(self, child_id: str, timeout: float = GONE_WAIT) -> bool:
+    async def wait_gone(self, child_id: str, timeout: float = GONE_WAIT, *,
+                        require_confirmation: bool = False,
+                        expected_instance_id: str | None = None) -> bool:
         """Wait until the agentd no longer holds the child (its process has exited).
-        True also when the agentd cannot be asked: there is nothing left to wait for."""
+        Legacy callers accept an unreachable agentd. Process/resource handover
+        uses require_confirmation=True: a missing socket is not death proof."""
         deadline = asyncio.get_running_loop().time() + timeout
         while True:
             try:
                 await self.ensure_running(start=False)
                 reply = await self._call("list")
             except AgentdUnavailable:
-                return True
+                return not require_confirmation
+            if require_confirmation and (not expected_instance_id or reply.get('instance_id') != expected_instance_id):
+                return False
             if not any(child.get("id") == child_id for child in reply["children"]):
                 return True
             if asyncio.get_running_loop().time() >= deadline:

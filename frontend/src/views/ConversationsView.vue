@@ -13,6 +13,7 @@ import { useGroupsStore } from '../stores/groups'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
+import { useWorkStore } from '../stores/work'
 import IconPlus from '../components/icons/IconPlus.vue'
 
 const PAGE = 100
@@ -23,6 +24,8 @@ const MARK_OF: Partial<Record<StateFilter, string>> = { 'em-espera': 'on_hold', 
 const route = useRoute()
 const router = useRouter()
 const sessions = useSessionsStore()
+const work = useWorkStore()
+const manualSessions = computed(() => sessions.all.filter(session => !work.catalog[session.session_id]))
 const projects = useProjectsStore()
 const git = useGitStore()
 const groupStore = useGroupsStore()
@@ -47,7 +50,7 @@ function setQuery(key: string, value: string) {
 
 const projectGroups = computed(() => {
   if (!projectId.value) return []
-  return sortGroups(groupStore.visibleIn(Number(projectId.value), sessions.all), sessions.all)
+  return sortGroups(groupStore.visibleIn(Number(projectId.value), manualSessions.value), manualSessions.value)
 })
 // '' = all, 'sem' = loose ones, else a group shown in the chosen project (any other id counts as '').
 const groupFilter = computed(() => {
@@ -76,7 +79,7 @@ watch(() => route.query, () => { limit.value = PAGE })
 
 const filtered = computed(() => {
   const q = search.value.trim().toLocaleLowerCase('pt-BR')
-  return sessions.all.filter((s) => {
+  return manualSessions.value.filter((s) => {
     if (state.value !== 'descartadas' && isDiscarded(s)) return false
     if (state.value === 'ativas' && s.display_state === 'finished') return false
     if (state.value === 'finalizadas' && s.display_state !== 'finished') return false

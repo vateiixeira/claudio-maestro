@@ -6,7 +6,7 @@
 
 **Um só regendo todos os seus projetos.**
 
-O Cláudio Maestro é um app web local para acompanhar e conduzir várias sessões do Claude ao mesmo tempo, em projetos diferentes, numa tela só. Ele roda na sua máquina, abre no navegador e conversa com o Claude pelo [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) em Python.
+O Cláudio Maestro é um app web local para entregar objetivos ao CTO de cada projeto, acompanhar tarefas e conduzir várias sessões do Claude numa tela só. Ele roda na sua máquina, abre no navegador e conversa com o Claude pelo [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) em Python.
 
 Nasceu de dois incômodos: a extensão do VSCode é pesada e presa a um projeto por vez, e no terminal fica difícil ler diffs, saídas de comando e saber qual sessão está esperando por você.
 
@@ -18,6 +18,8 @@ Se você não lê português, o tradutor do navegador dá conta, e o próprio Cl
 
 ## O que ele faz
 
+- **Objetivos e tarefas.** Início reúne o que precisa de você e o trabalho em andamento; Tarefas mostra responsáveis, tentativas, evidências e próximos passos. O CTO mantém uma conversa por projeto.
+- **Revisão e decisões.** Entregas passam por uma revisão independente; perguntas humanas ficam ligadas à tarefa e à ação exatas. Uma investigação completa também pode ser uma entrega válida.
 - **Todos os projetos numa tela.** Menu lateral com cada projeto, suas branches e suas conversas.
 - **Busca no conteúdo.** A busca (Ctrl K) também procura no texto das conversas e abre na mensagem achada.
 - **Estado de relance.** Cada conversa está rodando, esperando você ou finalizada, com ícone próprio além da cor. O que pede a sua atenção aparece primeiro.
@@ -34,11 +36,28 @@ Se você não lê português, o tradutor do navegador dá conta, e o próprio Cl
 - **Agentes.** Rotinas com skill, memória e horários próprios, que rodam sozinhas e deixam avisos na Inbox. O merge sempre pede o seu ok (veja [Agentes](#agentes)).
 - **Temas.** Maestro (o padrão), Dracula e os filtros do Monokai, escolhidos em Preferências → Geral → Tema, com uma prévia de uma sessão aberta. Veja os [Créditos](#créditos).
 
-O que ele não é, de propósito: IDE, terminal embutido, editor de código ou árvore de arquivos.
+O que ele não é, de propósito: IDE, editor de código, terminal geral ou árvore de arquivos.
 
 <p align="center">
   <img src=".github/imagens/visao-geral.png" alt="Visão geral com os projetos e as conversas que esperam por você" width="900">
 </p>
+
+## Começar pelo trabalho
+
+1. Cadastre a pasta do projeto. Em **Início**, escolha esse projeto, descreva o objetivo e use **Entregar ao CTO**.
+2. A conversa do **CTO** concentra os objetivos e as decisões daquele projeto. Ao trocar de projeto, você abre a conversa correspondente; as tarefas mantêm o projeto em que começaram.
+3. Em **Tarefas**, filtre por projeto, fonte, estado ou responsável. Abra uma tarefa para conferir objetivo, atividade, tentativas, evidências, revisão e PRs. A conversa de cada tentativa fica a um clique, com seu próprio resultado.
+4. Responda aos pedidos em **Precisam de você**, no Início, ou na própria tarefa. A pergunta explica a ação em questão; mudar a entrada ou o código pode exigir uma nova resposta. Permissões e perguntas nativas do Claude levam à conversa em que precisam ser respondidas.
+
+No CTO, **Fontes** inicia uma coleta de Sentry ou KBGen usando os MCPs e a configuração normal do projeto. A coleta tem conversa própria: o CTO recebe metadados no backlog para priorizar, e cada trabalhador lê a issue completa da sua tarefa. Reavaliar a mesma issue conserva as tentativas e evidências anteriores.
+
+O CTO, os trabalhadores e os revisores usam as ferramentas e as permissões normais do projeto. Os papéis organizam o trabalho; as regras de autonomia dos [agentes anteriores](#agentes) continuam próprias daqueles agentes. Ativar a coordenação aguarda os trabalhos anteriores serem conciliados. Conversas manuais, agentes, horários, avisos e links antigos continuam disponíveis.
+
+Uma implementação precisa de evidências de execução e parecer independente; terminar um turno não conclui a tarefa. Para testes no GitHub Actions, a ferramenta de verificação do Maestro pode registrar a execução oficial para o mesmo commit, com o workspace limpo. O revisor confere se os testes ou jobs cobrem o objetivo. Outros comprovantes externos continuam visíveis com sua origem e eventuais limitações.
+
+Comentários seus em PRs vinculados a tarefas voltam à tarefa de origem em uma tentativa própria, conservando o histórico. Configure o login e a integração em **Agentes → Comentários do GitHub**. A tela da tarefa mostra o PR e o andamento dos comentários; eles aguardam as condições de execução e não concedem autorização para novas ações sensíveis.
+
+**Pausar trabalho** segura os próximos disparos. Se um envio ficar incerto, confira a tarefa e a conversa antes de repetir o pedido: o Maestro conserva o registro e não reenvia automaticamente. Desativar a coordenação ou remover um projeto exige conciliar trabalhos e comentários pendentes. Por padrão, o fluxo usa um trabalhador por vez; a configuração avançada permite até dois, mantendo exclusão de checkout e de recursos compartilhados.
 
 ## Requisitos
 
@@ -46,6 +65,7 @@ O que ele não é, de propósito: IDE, terminal embutido, editor de código ou �
 - [Python 3.13](https://www.python.org/) e [uv](https://docs.astral.sh/uv/)
 - [Node 22.12 ou mais novo](https://nodejs.org/) e [pnpm](https://pnpm.io/installation)
 - git
+- O `gh` autenticado é opcional para comentários de PR e verificação oficial de CI do GitHub Actions
 - Para o terminal da sessão, bash 4.4 ou mais novo, ou zsh. No macOS o bash da Apple é o 3.2, então o app usa o zsh (ou um bash mais novo do Homebrew, se houver)
 - No Linux, o `zenity` (opcional) abre o seletor de pastas nativo. Sem ele, o app usa o navegador de pastas próprio
 - [Claude Code](https://code.claude.com/docs) instalado e autenticado na máquina
@@ -165,6 +185,8 @@ O comando que abre arquivos no editor (padrão: `code`) fica nas Preferências d
 
 ## Agentes
 
+Esta seção descreve as rotinas anteriores, que continuam disponíveis em **Agentes** e em **Agentes e rotinas anteriores** na barra lateral. O fluxo de [CTO e tarefas](#começar-pelo-trabalho) mantém seus próprios vínculos de execução e usa as permissões normais do projeto.
+
 Um agente é uma rotina que você descreve uma vez e o Maestro roda por você, na hora ou nos horários marcados: triar issues, revisar PRs, conferir um deploy. Cadastre na página **Agentes**; cada um tem:
 
 - **Conversas.** Converse diretamente com o agente, retome um assunto ou comece outro contexto. Em Execuções, "Continuar" abre o resultado de uma rotina para perguntas e ajustes.
@@ -227,6 +249,7 @@ Não exponha o app na rede. Detalhes e como relatar uma falha em [SECURITY.md](S
 - Interface só em português.
 - Windows não testado.
 - Acesso só local, por uma pessoa.
+- A comprovação oficial de CI cobre GitHub.com Actions para um commit exato e limpo; outros provedores não recebem automaticamente esse selo. O parecer ainda precisa avaliar a cobertura dos testes.
 - O painel de git não roda hooks do repositório nem assina commits, e fica só para leitura em repositórios com Git LFS ou outro filtro. Rebase, stash e envio forçado ficam com o terminal.
 
 ## Contribuindo

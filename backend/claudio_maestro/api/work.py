@@ -101,6 +101,21 @@ async def create_work_item(body: WorkCreate, request: Request, conn: DbDep):
     return asdict(request.app.state.work.create_item(**body.model_dump()))
 
 
+def _activity_page(conn, item_id: int, *, before: int | None = None, limit: int = 50) -> dict:
+    items = [asdict(event) for event in store.list_events(conn, item_id, before=before, limit=limit, latest=True)]
+    cursor = items[0]['id'] if items else before
+    has_more = bool(items and conn.execute('SELECT 1 FROM work_events WHERE work_item_id=? AND id<? LIMIT 1', (item_id, cursor)).fetchone())
+    return {'items': items, 'before': cursor, 'has_more': has_more, 'limit': limit}
+
+
+@router.get('/work-items/{item_id}/events')
+async def work_item_events(item_id: int, conn: DbDep,
+    before: Annotated[int | None, Query(gt=0)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50):
+    store.get_item(conn, item_id)
+    return _activity_page(conn, item_id, before=before, limit=limit)
+
+
 @router.get('/work-items/{item_id}')
 async def get_work_item(item_id: int, request: Request, conn: DbDep):
     service = request.app.state.work
@@ -110,9 +125,13 @@ async def get_work_item(item_id: int, request: Request, conn: DbDep):
     except (OSError, ValueError, store.WorkError):
         dossier = {'unavailable': True, 'objective': '', 'acceptance': '', 'reason': 'O dossiê privado está indisponível.'}
     attempts = [{**asdict(a), 'result': service.result(a.id)} for a in store.list_attempts(conn, item_id)]
+    activity = _activity_page(conn, item_id)
     return {'item': asdict(item), 'dossier': dossier, 'attempts': attempts,
-            'events': [asdict(event) for event in store.list_events(conn, item_id, limit=200)],
-            'dependencies': store.dependencies(conn, item_id)}
+            'events': activity['items'], 'events_page': {key: value for key, value in activity.items() if key != 'items'},
+            'dependencies': store.dependencies(conn, item_id),
+            'reviews': service.reviews(item_id)['items'],
+            'pull_requests': request.app.state.work_prs.list_prs(item_id),
+            'decisions': service.decisions(item_id=item_id, pending_only=False)['items']}
 
 
 @router.patch('/work-items/{item_id}')
@@ -142,6 +161,8 @@ async def edit_work_item(item_id: int, body: WorkPatch, request: Request, conn: 
             expected_revision=body.expected_revision, now=int(time.time()),
             dossier_changed=dossier_change,
             **{field: getattr(body, field) for field in provided - {'objective', 'acceptance'}})
+        if body.status == 'cancelled':
+            service.release_cancelled_resources(conn, item_id)
         if ref:
             conn.execute('UPDATE work_specs SET dossier_ref = ? WHERE work_item_id = ?', (ref, item_id))
     service._changed(updated)
@@ -161,7 +182,22 @@ async def work_sessions(request: Request):
 
 @router.get('/work/runtime')
 async def work_runtime(request: Request):
-    return {'dispatcher_enabled': request.app.state.work.dispatch_enabled}
+    return {'dispatcher_enabled': request.app.state.work.dispatch_enabled, 'pool': request.app.state.work.pool_status()}
+
+
+class PoolPatch(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    expected_revision: int = Field(ge=1)
+    global_limit: int | None = Field(default=None, ge=1, le=2)
+    default_project_limit: int | None = Field(default=None, ge=1, le=2)
+    project_id: int | None = Field(default=None, gt=0)
+    project_limit: int | None = Field(default=None, ge=1, le=2)
+    resources: list[str] | None = Field(default=None, max_length=16)
+
+
+@router.patch('/work/pool')
+async def configure_work_pool(body: PoolPatch, request: Request):
+    return request.app.state.work.configure_pool(**body.model_dump())
 
 
 @router.post('/projects/{project_id}/cto')
@@ -223,3 +259,64 @@ async def get_collection(project_id: int, collection_id: str, request: Request, 
     if value['project_id'] != project_id:
         raise HTTPException(status_code=404, detail='Coleta não encontrada neste projeto.')
     return value
+
+
+class DecisionAnswer(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_revision: int = Field(gt=0)
+    receipt: str = Field(min_length=1, max_length=100)
+    answer: str = Field(min_length=1, max_length=4000)
+
+
+class FeedSeen(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    through: int = Field(ge=0)
+
+
+@router.get('/work/decisions')
+async def pending_decisions(request: Request, project_id: int | None = None, item_id: int | None = None, pending_only: bool = True):
+    return request.app.state.work.decisions(project_id=project_id, item_id=item_id, pending_only=pending_only)
+
+
+@router.post('/work/decisions/{decision_id}/answer', status_code=202)
+async def answer_decision(decision_id: int, body: DecisionAnswer, request: Request):
+    return await request.app.state.work.answer_decision(decision_id, **body.model_dump())
+
+
+@router.get('/work-items/{item_id}/reviews')
+async def item_reviews(item_id: int, request: Request):
+    return request.app.state.work.reviews(item_id)
+
+
+@router.get('/work/notifications')
+async def work_notifications(request: Request, project_id: int | None = None,
+    after: Annotated[int, Query(ge=0)] = 0, limit: Annotated[int, Query(ge=1, le=200)] = 100, latest: bool = False):
+    request.app.state.work.persist_notifications()
+    return request.app.state.work.notifications(project_id, after=after, limit=limit, latest=latest)
+
+
+@router.get('/projects/{project_id}/work-feed')
+async def project_feed(project_id: int, request: Request, conn: DbDep,
+    after: Annotated[int, Query(ge=0)] = 0, limit: Annotated[int, Query(ge=1, le=200)] = 100, latest: bool = False):
+    _project(conn, project_id)
+    request.app.state.work.persist_notifications()
+    return request.app.state.work.notifications(project_id, after=after, limit=limit, latest=latest)
+
+
+@router.post('/projects/{project_id}/work-feed/seen')
+async def see_project_feed(project_id: int, body: FeedSeen, request: Request, conn: DbDep):
+    _project(conn, project_id)
+    request.app.state.work.see_notifications(project_id, through=body.through)
+    return {'seen_through': body.through}
+
+
+@router.post('/projects/{project_id}/work-feed/retry-unsent', status_code=202)
+async def retry_feed(project_id: int, request: Request, conn: DbDep):
+    _project(conn, project_id)
+    request.app.state.work.retry_unsent_notifications(project_id)
+    return {'accepted': True}
+
+
+@router.post('/work-attempts/{attempt_id}/reconcile-close')
+async def reconcile_work_process_close(attempt_id: int, request: Request):
+    return await request.app.state.work.reconcile_process_close(attempt_id)

@@ -17,3 +17,10 @@ export const test = base.extend<{ consoleErrors: string[] }>({
 })
 
 export { expect }
+
+/** Navigate through the visible disclosure before using a secondary destination. */
+export async function openNavigationGroup(page: import('@playwright/test').Page, name: string) {
+  const summary = page.getByText(name, { exact: true })
+  await expect(summary).toBeVisible()
+  if (!await summary.evaluate(element => (element.parentElement as HTMLDetailsElement).open)) await summary.click()
+}

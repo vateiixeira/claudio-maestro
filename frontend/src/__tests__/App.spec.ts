@@ -206,3 +206,21 @@ describe('página de leitura', () => {
     expect(document.title).toBe('A · Cláudio Maestro')
   })
 })
+
+it('nas novas telas compactas o menu devolve o foco ao fechar com Escape', async () => {
+  const width = window.innerWidth
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ items: [], total: 0, limit: 30, offset: 0, dispatcher_enabled: false })))
+  const router = createAppRouter(createMemoryHistory()); await router.push('/tarefas')
+  const wrapper = mount(App, { global: { plugins: [pinia, router] }, attachTo: document.body })
+  await flushPromises()
+  const toggle = wrapper.get('[aria-label="Abrir navegação"]')
+  await toggle.trigger('click'); await flushPromises()
+  expect(wrapper.get('.agents-mobile-sidebar').attributes('role')).toBe('dialog')
+  expect(wrapper.get('main').attributes('inert')).toBeDefined()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  await flushPromises()
+  expect(wrapper.get('.agents-mobile-sidebar').classes()).not.toContain('is-open')
+  expect(document.activeElement).toBe(toggle.element)
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+})

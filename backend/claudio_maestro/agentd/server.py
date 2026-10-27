@@ -105,6 +105,7 @@ class Agentd:
     def __init__(self, data_dir: Path, *, idle_exit: float, orphan_timeout: float,
                  session_nice: int = 0) -> None:
         self.data_dir = data_dir
+        self.instance_id = uuid.uuid4().hex
         self.session_nice = session_nice
         self.idle_exit = idle_exit
         self.orphan_timeout = orphan_timeout
@@ -219,6 +220,8 @@ class Agentd:
                     reply = {"ok": False, "error": str(error)}
                     if not isinstance(request, dict):
                         request = {}
+                if reply.get("ok"):
+                    reply["instance_id"] = self.instance_id
                 reply["req"] = request.get("req")
                 client.send(reply)
                 # Backlog of a subscribe goes after its reply.
@@ -236,13 +239,13 @@ class Agentd:
         if op == "hello":
             if request.get("protocol") != PROTOCOL:
                 return {"ok": False, "error": "protocol"}
-            return {"ok": True, "protocol": PROTOCOL, "pid": os.getpid()}
+            return {"ok": True, "protocol": PROTOCOL, "pid": os.getpid(), "instance_id": self.instance_id}
         if op == "spawn":
             child = await self._spawn(request["session_id"], request["cmd"],
                                       request.get("cwd"), request.get("env") or {})
-            return {"ok": True, "id": child.id}
+            return {"ok": True, "id": child.id, "instance_id": self.instance_id}
         if op == "list":
-            return {"ok": True, "children": [c.info() for c in self.children.values()]}
+            return {"ok": True, "children": [c.info() for c in self.children.values()], "instance_id": self.instance_id}
         if op == "shutdown":
             self._stopping.set()
             return {"ok": True}
@@ -394,6 +397,8 @@ class Agentd:
             client.send({"ev": "exit", "id": child.id, "code": child.exit_code,
                          "stderr": list(child.stderr)})
         child.done.set()
+        if child.terminating:
+            self.children.pop(child.id, None)
 
     def _note_output(self, child: Child, text: str) -> None:
         message = _peek(text)
@@ -455,4 +460,7 @@ class Agentd:
                                        child.session_id, child.proc.pid)
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(child.done.wait(), DRAIN_GRACE * 3)
-        self.children.pop(child.id, None)
+        if child.proc.returncode is not None or child.exit_code is not None:
+            self.children.pop(child.id, None)
+        # A timeout (even after SIGKILL) is not exit proof. Keep the child
+        # visible to list/strict wait; _watch_exit removes it when exit arrives.

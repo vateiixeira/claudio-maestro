@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, test, openNavigationGroup } from './fixtures'
 
 // The sidebar "Agentes" section and the agent's main conversation. Each test makes its own agent
 // (and removes it afterwards), so the seeded "Triagem" and the other specs are left alone.
@@ -27,6 +27,7 @@ test('abre a conversa principal pela barra lateral, com o link de configuração
   const name = uniqueName('Revisor')
   const id = await createAgent(page, baseURL!, name)
   await page.goto('/inbox')
+  await openNavigationGroup(page, 'Agentes e rotinas anteriores')
   const section = page.getByTestId('sidebar-agents')
   await expect(section.getByRole('heading', { name: 'Agentes' })).toBeVisible()
   const row = section.getByTestId('sidebar-agent-row').filter({ hasText: name })
@@ -58,6 +59,7 @@ test('agente desligado aparece marcado como desligado na barra lateral', async (
   const name = uniqueName('Pausado')
   const id = await createAgent(page, baseURL!, name)
   await page.goto(`/agentes/${id}`)
+  await openNavigationGroup(page, 'Agentes e rotinas anteriores')
   const row = page.getByTestId('sidebar-agents').getByTestId('sidebar-agent-row').filter({ hasText: name })
   await expect(row).not.toContainText('desligado')
   await page.getByTestId('agent-enabled').click()

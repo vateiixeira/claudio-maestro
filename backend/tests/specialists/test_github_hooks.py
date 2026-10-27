@@ -485,3 +485,23 @@ async def test_stop_hooks_propagates_cancellation_of_its_caller():
         await caller
     await asyncio.sleep(0)
     assert stuck.cancelled()
+
+
+def test_work_pr_receives_neutral_comment_without_legacy_specialist(env):
+    received, wakes = [], []
+    env.client = TestClient(github_hooks.build_hooks_app(
+        db_path=env.db_path, data_dir=env.data_dir,
+        is_agent_pr=env.agent_prs.get, on_queued=env._queued,
+        is_work_pr=lambda url: url == PR_URL,
+        queue_work_comment=lambda comment: received.append(comment) or True,
+        on_work_queued=lambda: wakes.append(True)))
+    assert env.post('issue_comment', issue_comment(login='someone')).status_code == 202
+    assert received == []
+    assert env.post('issue_comment', issue_comment(), secret='bad').status_code == 401
+    assert received == []
+    assert env.post('issue_comment', issue_comment()).status_code == 202
+    assert len(received) == 1
+    assert not hasattr(received[0], 'specialist_id')
+    assert wakes == [True]
+    assert env.queue() == []
+    assert env.queued_calls == 0

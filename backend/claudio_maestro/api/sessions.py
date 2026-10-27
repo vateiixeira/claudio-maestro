@@ -211,6 +211,7 @@ class SeenManyIn(BaseModel):
 
 
 _STATUS = {
+    sessions.ProcessAdmissionDenied: status.HTTP_409_CONFLICT,
     sessions.SessionNotFoundError: status.HTTP_404_NOT_FOUND,
     sessions.ProjectUnavailableError: status.HTTP_409_CONFLICT,
     sessions.EmptyMessageError: status.HTTP_400_BAD_REQUEST,

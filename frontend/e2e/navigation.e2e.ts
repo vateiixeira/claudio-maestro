@@ -1,12 +1,13 @@
-import { expect, test } from './fixtures'
+import { expect, test, openNavigationGroup } from './fixtures'
 
-test('a raiz leva à Inbox e a navegação lateral abre cada tela', async ({ page }) => {
+test('a raiz leva ao Início e a navegação lateral abre cada tela', async ({ page }) => {
   await page.goto('/')
-  await expect(page).toHaveURL(/\/inbox$/)
-  await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
+  await expect(page).toHaveURL(/\/inicio$/)
+  await expect(page.getByRole('heading', { name: 'O que vamos resolver?', level: 1 })).toBeVisible()
 
   const nav = page.getByRole('navigation', { name: 'Navegação' })
 
+  await openNavigationGroup(page, 'Mais ferramentas')
   await nav.getByTestId('nav-dashboard').click()
   await expect(page).toHaveURL(/\/dashboard$/)
   await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible()

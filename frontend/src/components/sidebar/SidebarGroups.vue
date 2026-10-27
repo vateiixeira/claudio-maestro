@@ -11,6 +11,7 @@ import { projectTree } from '../../sidebarTree'
 import { sessionsOf } from '../../groupList'
 import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
+import { useWorkStore } from '../../stores/work'
 import { useSessionsStore } from '../../stores/sessions'
 import type { SessionGroup } from '../../types/api'
 import GroupRemoveConfirm from '../groups/GroupRemoveConfirm.vue'
@@ -21,15 +22,17 @@ import IconGroup from '../icons/IconGroup.vue'
 const props = defineProps<{ projectId: number }>()
 const groups = useGroupsStore()
 const sessions = useSessionsStore()
+const work = useWorkStore()
+const manualSessions = computed(() => sessions.all.filter(session => !work.catalog[session.session_id]))
 const route = useRoute()
 const now = useMinuteClock()
 
 const projects = useProjectsStore()
 
 // A group created in another project can hold conversations from several: the tree lists all of them.
-const tree = computed(() => projectTree(groups.visibleIn(props.projectId, sessions.all), sessions.all))
+const tree = computed(() => projectTree(groups.visibleIn(props.projectId, manualSessions.value), manualSessions.value))
 const projectName = (id: number) => projects.byId(id)?.name ?? ''
-const membersOf = (group: SessionGroup) => sessionsOf(group.id, sessions.all.filter((s) => !isDiscarded(s)))
+const membersOf = (group: SessionGroup) => sessionsOf(group.id, manualSessions.value.filter((s) => !isDiscarded(s)))
 
 const confirmingId = ref<number | null>(null)
 const removeError = ref<string | null>(null)

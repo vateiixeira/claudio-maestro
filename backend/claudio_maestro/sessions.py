@@ -281,6 +281,10 @@ class SessionError(Exception):
     """Base error. The message is shown to the user."""
 
 
+class ProcessAdmissionDenied(SessionError):
+    """A pre-factory control refusal; it is not a failed SDK turn."""
+
+
 class SessionNotFoundError(SessionError):
     pass
 
@@ -1044,6 +1048,9 @@ class ActiveSession:
         session_setup: SessionSetup | None = None,
         context_setup: ContextSetup | None = None,
         connection_admission: Callable[[SessionRecord], None] | None = None,
+        on_process_close: Callable[..., None] | None = None,
+        on_process_start: Callable[[str], None] | None = None,
+        on_session_turn_start: Callable[..., None] | None = None,
         remote_reconnect_allowed: Callable[[SessionRecord], bool] | None = None,
         on_session_turn_end: Callable[[str], None] | None = None,
         on_session_result: Callable[[str, dict[str, Any]], None] | None = None,
@@ -1070,6 +1077,9 @@ class ActiveSession:
         self._session_setup = session_setup
         self._context_setup = context_setup
         self._connection_admission = connection_admission
+        self._on_process_close = on_process_close
+        self._on_process_start = on_process_start
+        self._on_session_turn_start = on_session_turn_start
         self._remote_reconnect_allowed = remote_reconnect_allowed
         self._on_session_turn_end = on_session_turn_end
         self._on_session_result = on_session_result
@@ -1145,8 +1155,14 @@ class ActiveSession:
         self._followup_task: asyncio.Task[None] | None = None
         self.builder = ConversationBuilder()
         self.pending_turns = 0
+        self._dispatch_receipt: dict[str, Any] | None = None
+        self._opening_dispatch_id: str | None = None
         self.prompts: dict[str, PendingPrompt] = {}
         self.client: AgentClient | None = None
+        self.process_closed = False
+        self.process_close_failed = False
+        self._last_admission_error: ProcessAdmissionDenied | None = None
+        self._unclosed_clients: list[AgentClient] = []
         # Uuids of the main-chain messages the current client's stream delivered, and
         # when that client started (wall clock): what tells the app's own writes apart.
         self.own_uuids: set[str] = set()
@@ -1328,6 +1344,9 @@ class ActiveSession:
             self._exit_note = None  # a new turn: the old death is history
             if self.turn_started_at is None:
                 self.turn_started_at = int(self._wall_clock())
+                if self._on_session_turn_start:
+                    self._on_session_turn_start(self.session_id,
+                        self._dispatch_receipt['id'] if self._dispatch_receipt else None)
                 self._emit("turn.started", {"started_at": self.turn_started_at})
         else:
             self.turn_started_at = None
@@ -1631,13 +1650,17 @@ class ActiveSession:
 
     # Sending ---------------------------------------------------------------
 
-    async def send(self, text: str, images: list[dict[str, Any]] | None = None) -> bool:
+    async def send(self, text: str, images: list[dict[str, Any]] | None = None, *, dispatch_id: str | None = None) -> bool:
         # Preparing announcements and committing their receipt share the same lock:
         # concurrent messages cannot pick up the same pending announcements.
         async with self._message_lock:
-            return await self._send_message(text, images)
+            self._opening_dispatch_id = dispatch_id
+            try:
+                return await self._send_message(text, images, dispatch_id=dispatch_id)
+            finally:
+                self._opening_dispatch_id = None
 
-    async def _send_message(self, text: str, images: list[dict[str, Any]] | None = None) -> bool:
+    async def _send_message(self, text: str, images: list[dict[str, Any]] | None = None, *, dispatch_id: str | None = None) -> bool:
         """Record the message, connect if needed and send it.
 
         `images` are `{media_type, data}` in base64; they go as content blocks and
@@ -1677,6 +1700,11 @@ class ActiveSession:
                 return False
             client = self.client
             assert client is not None
+            if dispatch_id is not None:
+                self._dispatch_receipt = {'id': dispatch_id, 'client': client, 'generation': self._generation,
+                    'echo': False, 'ambiguous': bool(self.pending_turns or self._autonomous_turn or self.record.remote_control)}
+            elif self._dispatch_receipt is not None:
+                self._dispatch_receipt['ambiguous'] = True
             self.pending_turns += 1
             self._refresh_state()
             content: str | list[dict[str, Any]] = sent_text
@@ -1694,7 +1722,10 @@ class ActiveSession:
                     for image in images
                 ]
             try:
-                await client.send(content)
+                if dispatch_id is None:
+                    await client.send(content)
+                else:
+                    await client.send(content, message_id=dispatch_id)
                 try:
                     commit()
                 except Exception:
@@ -1763,6 +1794,7 @@ class ActiveSession:
             self.error = None
         self._refresh_state()
         client: AgentClient | None = None
+        self._last_admission_error = None
         try:
             missing = self._missing_folder_text()
             if missing is not None:
@@ -1782,6 +1814,16 @@ class ActiveSession:
                 await self._dispose(failed, None)
                 client = self._new_client(resume=True)
                 await client.connect()
+        except ProcessAdmissionDenied as error:
+            self._connecting = False
+            self._quiet_connect = False
+            self._last_admission_error = error
+            if not quiet:
+                self._emit_events(self.builder.add_notice('warning', str(error)))
+            if self.record.remote_control:
+                self._set_remote('failed', error=str(error))
+            self._refresh_state()
+            return False
         except asyncio.CancelledError:
             self._connecting = False
             self._quiet_connect = False
@@ -1925,12 +1967,19 @@ class ActiveSession:
         self._emit_options()
 
     def _new_client(self, resume: bool, attach: AttachInfo | None = None) -> AgentClient:
+        if attach is None and (self.process_close_failed or self._unclosed_clients):
+            raise ProcessAdmissionDenied('O processo anterior não tem encerramento confirmado. Concilie antes de iniciar outro.')
+        if attach is None and self._on_process_start is not None:
+            try:
+                self._on_process_start(self.session_id, self._opening_dispatch_id)
+            except Exception as error:
+                raise ProcessAdmissionDenied(str(error)) from None
         if attach is None and self._connection_admission is not None:
             try:
                 self._connection_admission(self.record)
             except Exception:
                 logger.exception("Admissão de nova conexão recusada: %s", self.session_id)
-                raise AgentError("Não foi possível iniciar a sessão neste contexto.") from None
+                raise ProcessAdmissionDenied("Não foi possível iniciar a sessão neste contexto.") from None
         model = self.record.model
         if attach is None and self.record.spawn_version != SPAWN_VERSION:
             # A process started now has what Remote Control needs from this version on.
@@ -1999,6 +2048,7 @@ class ActiveSession:
         """Adopt a connected client: a new stream, so new own uuids and start time
         (`since`, when the stream really began earlier than now)."""
         self.client = client
+        self.process_closed = False
         self._has_connected = True
         self.own_uuids = set()
         self.client_since = time.time() if since is None else since
@@ -2014,6 +2064,22 @@ class ActiveSession:
     async def _read(self, client: AgentClient) -> None:
         try:
             async for message in client.messages():
+                result_dispatch_id = None
+                receipt = self._dispatch_receipt
+                if receipt and isinstance(message, UserMessage) and message.parent_tool_use_id is None:
+                    if message.uuid == receipt['id']:
+                        receipt['echo'] = True
+                    elif (isinstance(message.content, str) or not message.content
+                          or any(not isinstance(block, ToolResultBlock) for block in message.content)):
+                        receipt['ambiguous'] = True
+                if isinstance(message, ResultMessage):
+                    self._dispatch_receipt = None  # The first result consumes this client generation's proof.
+                    if (receipt and receipt['echo'] and not receipt['ambiguous']
+                            and receipt['client'] is client and receipt['generation'] == self._generation
+                            and self.pending_turns == 1 and not self._autonomous_turn
+                            and not self.record.remote_control
+                            and (message.origin is None or message.origin.get('kind') == 'human')):
+                        result_dispatch_id = receipt['id']
                 if self._starts_turn(message):
                     # The turn the hold waited for (or another one) has begun.
                     self._release_subagent_hold(announce=False)
@@ -2113,6 +2179,7 @@ class ActiveSession:
                     self._notify_session_hook(self._on_session_result, {
                         "is_error": message.is_error,
                         "terminal_reason": message.terminal_reason,
+                        **({'dispatch_id': result_dispatch_id} if result_dispatch_id else {}),
                     })
                     self._notify_session_hook(self._on_session_turn_end)
                     # After every event of the turn: this only writes the database.
@@ -2528,6 +2595,8 @@ class ActiveSession:
                 if self._final or not self.record.remote_control:
                     return True
                 if self.client is None and not await self._connect(enable_remote=False):
+                    if self._last_admission_error is not None:
+                        raise self._last_admission_error
                     if self.record.remote_control and self.error is not None:
                         self._set_remote("failed", error=self.error)
                     return True
@@ -3060,6 +3129,7 @@ class ActiveSession:
         self._reader = None
         self.error = message
         self.pending_turns = 0
+        self._dispatch_receipt = None
         self._autonomous_turn = False
         self._clear_followup()
         self._release_subagent_hold(announce=False)
@@ -3124,6 +3194,7 @@ class ActiveSession:
         self.client_since = None
         self.foreign_candidates = set()
         self.pending_turns = 0
+        self._dispatch_receipt = None
         self._autonomous_turn = False
         self._clear_followup()
         self._release_subagent_hold(announce=False)
@@ -3283,9 +3354,36 @@ class ActiveSession:
 
     async def _close_quietly(self, client: AgentClient) -> None:
         try:
+            if self._on_process_close:
+                self._on_process_close(self.session_id, 'closing', client)
             await client.close()
-        except Exception:
+            if self._on_process_close:
+                self._on_process_close(self.session_id, 'closed', client)
+            self._unclosed_clients = [old for old in self._unclosed_clients if old is not client]
+            self.process_closed = not self._unclosed_clients
+            self.process_close_failed = bool(self._unclosed_clients)
+        except BaseException as error:
+            self.process_closed = False
+            self.process_close_failed = True
+            if not any(old is client for old in self._unclosed_clients):
+                self._unclosed_clients.append(client)
+            if self._on_process_close:
+                try:
+                    self._on_process_close(self.session_id, 'uncertain', client)
+                except Exception:
+                    logger.exception('Falha ao persistir o fechamento incerto da sessão %s', self.session_id)
+            if isinstance(error, asyncio.CancelledError):
+                raise
             logger.exception("Falha ao fechar o cliente da sessão %s", self.session_id)
+
+    async def retry_failed_process_closes(self) -> bool:
+        """Retry only exact client references retained after a failed close."""
+        await self._wait_disposal()
+        if self.client is not None or not self._unclosed_clients:
+            return False
+        for client in list(self._unclosed_clients):
+            await self._close_quietly(client)
+        return self.process_closed and not self.process_close_failed
 
     async def _wait_disposal(self) -> None:
         disposal = self._disposal
@@ -3495,6 +3593,9 @@ class SessionManager:
         self._session_setup = session_setup
         self._context_setup = context_setup
         self._connection_admission = connection_admission
+        self._on_process_close = None
+        self._on_process_start = None
+        self._on_session_turn_start = None
         self._remote_reconnect_allowed = remote_reconnect_allowed
         self._on_session_turn_end = on_session_turn_end
         self._on_session_result = on_session_result
@@ -3689,6 +3790,16 @@ class SessionManager:
                 logger.exception("Falha na atualização periódica dos modelos")
             await sleep(interval)
 
+    def set_work_lifecycle_observers(self, *, process_close, process_start, turn_start):
+        """Observe governed identities without changing normal project policy."""
+        self._on_process_close = process_close
+        self._on_process_start = process_start
+        self._on_session_turn_start = turn_start
+        for session in self._sessions.values():
+            session._on_process_close = process_close
+            session._on_process_start = process_start
+            session._on_session_turn_start = turn_start
+
     def create_session(
         self,
         project: Project,
@@ -3700,6 +3811,24 @@ class SessionManager:
     ) -> SessionRecord:
         """A new session. For an agent (`specialist_id`) it always starts in the default
         permission mode, whatever the saved preference: its policy needs the CLI to ask."""
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            return self.create_session_in_transaction(conn, project, group_id,
+                specialist_id=specialist_id, model=model, effort=effort)
+
+    def create_session_in_transaction(
+        self,
+        conn: sqlite3.Connection,
+        project: Project,
+        group_id: int | None = None,
+        *,
+        specialist_id: int | None = None,
+        model: str | None = None,
+        effort: str | None = None,
+    ) -> SessionRecord:
+        """A new session. For an agent (`specialist_id`) it always starts in the default
+        permission mode, whatever the saved preference: its policy needs the CLI to ask."""
+        if not conn.in_transaction:
+            raise RuntimeError('Criar sessão exige uma transação ativa.')
         if effort is not None and effort not in EFFORTS:
             raise InvalidDecisionError("Nível de raciocínio inválido.")
         if model is not None and not MODEL_PATTERN.match(model):
@@ -3707,49 +3836,48 @@ class SessionManager:
         if not project.available:
             raise ProjectUnavailableError("A pasta do projeto não está disponível.")
         now = _now()
-        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
-            default_model, default_effort, mode = new_session_defaults(conn)
-            record = SessionRecord(
-                session_id=str(uuid.uuid4()),
-                project_id=project.id,
-                cwd=project.path,
-                title=DEFAULT_TITLE,
-                created_at=now,
-                last_activity_at=now,
-                last_seen_at=now,
-                finished=False,
-                model=model or default_model,
-                effort=effort or default_effort,
-                # Saved preference, then the user's CLI `defaultMode`, then None.
-                permission_mode=(
-                    "default" if specialist_id is not None
-                    else mode or self._default_permission_mode()
-                ),
-                group_id=group_id,
-                specialist_id=specialist_id,
-            )
-            # Same transaction: the group cannot vanish between the check and the insert.
-            if group_id is not None:
-                groups.get_group(conn, group_id)
-            conn.execute(
-                f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id,"
-                " specialist_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    record.session_id,
-                    record.project_id,
-                    record.cwd,
-                    record.title,
-                    record.created_at,
-                    record.last_activity_at,
-                    record.last_seen_at,
-                    int(record.finished),
-                    record.model,
-                    record.effort,
-                    record.permission_mode,
-                    record.group_id,
-                    record.specialist_id,
-                ),
-            )
+        default_model, default_effort, mode = new_session_defaults(conn)
+        record = SessionRecord(
+            session_id=str(uuid.uuid4()),
+            project_id=project.id,
+            cwd=project.path,
+            title=DEFAULT_TITLE,
+            created_at=now,
+            last_activity_at=now,
+            last_seen_at=now,
+            finished=False,
+            model=model or default_model,
+            effort=effort or default_effort,
+            # Saved preference, then the user's CLI `defaultMode`, then None.
+            permission_mode=(
+                "default" if specialist_id is not None
+                else mode or self._default_permission_mode()
+            ),
+            group_id=group_id,
+            specialist_id=specialist_id,
+        )
+        # Same transaction: the group cannot vanish between the check and the insert.
+        if group_id is not None:
+            groups.get_group(conn, group_id)
+        conn.execute(
+            f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id,"
+            " specialist_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record.session_id,
+                record.project_id,
+                record.cwd,
+                record.title,
+                record.created_at,
+                record.last_activity_at,
+                record.last_seen_at,
+                int(record.finished),
+                record.model,
+                record.effort,
+                record.permission_mode,
+                record.group_id,
+                record.specialist_id,
+            ),
+        )
         return record
 
     @property
@@ -3803,6 +3931,9 @@ class SessionManager:
             session_setup=self._session_setup,
             context_setup=self._context_setup,
             connection_admission=self._connection_admission,
+            on_process_close=self._on_process_close,
+            on_process_start=self._on_process_start,
+            on_session_turn_start=self._on_session_turn_start,
             remote_reconnect_allowed=self._remote_reconnect_allowed,
             on_session_turn_end=self._on_session_turn_end,
             on_session_result=self._on_session_result,
@@ -3996,7 +4127,8 @@ class SessionManager:
                 self._kept_breakdowns.popitem(last=False)
 
     async def send(
-        self, session_id: str, text: str, images: list[dict[str, Any]] | None = None
+        self, session_id: str, text: str, images: list[dict[str, Any]] | None = None,
+        *, dispatch_id: str | None = None,
     ) -> dict[str, Any]:
         """Send a message. `external_activity` tells whether the resumed history was
         modified in the last minute by another process."""
@@ -4015,7 +4147,8 @@ class SessionManager:
                 await session.reload_if_modified()
                 await self.refresh_file_info(session)
                 external = session.external_activity
-            send_started = await session.send(text, images)
+            send_started = (await session.send(text, images, dispatch_id=dispatch_id)
+                            if dispatch_id is not None else await session.send(text, images))
             return {"state": session.state, "external_activity": external, "send_started": send_started}
         finally:
             session.users -= 1

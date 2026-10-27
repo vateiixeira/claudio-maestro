@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, test, openNavigationGroup } from './fixtures'
 
 // The texts below are the "Triagem" agent of scripts/e2e_server.py (TRIAGEM_*). Notices cannot be made
 // through the API, so the one test that reads them (and marks one as read) is the only one that touches them.
@@ -158,6 +158,7 @@ test('o aviso semeado aparece na Inbox com o nome do agente e some ao marcar com
   await expect(count).toHaveCount(0)
   await page.reload()
   await expect(page.getByTestId('agent-notices')).toHaveCount(0)
+  await openNavigationGroup(page, 'Mais ferramentas')
   await expect(page.getByTestId('nav-agents')).toBeVisible()
   await expect(page.getByTestId('agents-count')).toHaveCount(0)
 })

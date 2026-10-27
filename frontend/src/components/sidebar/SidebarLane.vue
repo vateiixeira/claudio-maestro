@@ -3,12 +3,15 @@ import { computed } from 'vue'
 import SidebarSessionRow from './SidebarSessionRow.vue'
 import { laneSessions } from './openList'
 import { isSectionCollapsed, isSectionOpened, setSectionCollapsed, setSectionOpened } from '../../sidebarCollapse'
+import { useWorkStore } from '../../stores/work'
 import { useSessionsStore } from '../../stores/sessions'
 import IconChevron from '../icons/IconChevron.vue'
 
 const props = withDefaults(defineProps<{ lane: 'review' | 'later'; title: string; startCollapsed?: boolean }>(), { startCollapsed: false })
 const sessions = useSessionsStore()
-const list = computed(() => laneSessions(sessions.all, props.lane))
+const work = useWorkStore()
+const manualSessions = computed(() => sessions.all.filter(session => !work.catalog[session.session_id]))
+const list = computed(() => laneSessions(manualSessions.value, props.lane))
 // "Depois" starts collapsed and remembers being opened; "Para revisar" starts open and remembers being collapsed.
 const collapsed = computed(() => (props.startCollapsed ? !isSectionOpened(props.lane) : isSectionCollapsed(props.lane)))
 function toggle() {

@@ -12,6 +12,7 @@ import { useModelsStore } from './models'
 import { useProjectsStore } from './projects'
 import { useSessionsStore } from './sessions'
 import { useSpecialistsStore } from './specialists'
+import { useWorkStore } from './work'
 import { useUpdatesStore } from './updates'
 import { useUsageStore } from './usage'
 
@@ -40,7 +41,7 @@ export async function loadEverything(): Promise<void> {
   const specialists = useSpecialistsStore()
   void specialists.load().catch(() => {})
   void specialists.loadNotices().catch(() => {})
-  await sessions.loadAll(projects.projects.map((p) => p.id))
+  await Promise.all([sessions.loadAll(projects.projects.map((p) => p.id)), useWorkStore().loadCatalog().catch(() => {})])
 }
 
 /**
@@ -49,7 +50,12 @@ export async function loadEverything(): Promise<void> {
  */
 export function bindRealtime(socket: EventSocket): () => void {
   const sessions = useSessionsStore()
+  const work = useWorkStore()
   const offs = [
+    socket.on('work.changed', event => { work.changed(event.data); void work.loadCatalog().catch(() => {}) }),
+    socket.on('work.mode', event => work.changed(event.data)),
+    socket.on('work.notification', event => work.changed(event.data)),
+    socket.on('work.decision', event => work.changed(event.data)),
     socket.on('session.state', (event) => sessions.applyEvent(event)),
     socket.on('session.title', (event) => sessions.applyEvent(event)),
     socket.on('session.updated', (event) => sessions.applyEvent(event)),
@@ -88,6 +94,8 @@ export function bindRealtime(socket: EventSocket): () => void {
     socket.on('specialist.run', (event) => useSpecialistsStore().applyRun(event.data)),
     socket.on('specialist.notice', (event) => useSpecialistsStore().applyNotice(event.data)),
     socket.onReconnect(() => {
+      work.changed()
+      void work.loadCatalog().catch(() => {})
       useDigestStore().invalidate()
       useClosureStore().invalidate()
       void useDigestStore().refreshStatus()

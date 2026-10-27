@@ -4,6 +4,10 @@ import {
   type RouteRecordRaw,
   type RouterHistory,
 } from 'vue-router'
+import StartView from '../views/StartView.vue'
+import TasksView from '../views/TasksView.vue'
+import TaskView from '../views/TaskView.vue'
+import CtoView from '../views/CtoView.vue'
 import AgentsView from '../views/AgentsView.vue'
 import ConversationView from '../views/ConversationView.vue'
 import ConversationsView from '../views/ConversationsView.vue'
@@ -16,7 +20,11 @@ import PreferencesView from '../views/PreferencesView.vue'
 import ProjectView from '../views/ProjectView.vue'
 
 export const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/inbox' },
+  { path: '/', redirect: '/inicio' },
+  { path: '/inicio', name: 'start', component: StartView },
+  { path: '/tarefas', name: 'tasks', component: TasksView },
+  { path: '/tarefas/:id(\\d+)', name: 'task', component: TaskView, props: true },
+  { path: '/cto', name: 'cto', component: CtoView },
   { path: '/inbox', name: 'inbox', component: InboxView },
   { path: '/dashboard', name: 'dashboard', component: DashboardView },
   { path: '/sessions', name: 'sessions', component: ConversationsView },

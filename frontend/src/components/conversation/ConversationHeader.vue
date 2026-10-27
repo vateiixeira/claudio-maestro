@@ -23,6 +23,7 @@ import { useConversationStore } from '../../stores/conversation'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
+import { useWorkStore } from '../../stores/work'
 import { useSessionsStore } from '../../stores/sessions'
 import { useSpecialistsStore } from '../../stores/specialists'
 import { useTerminalStore } from '../../stores/terminal'
@@ -34,6 +35,8 @@ import { worktreeLabel } from '../../worktree'
 const props = withDefaults(defineProps<{ id: string; detailsOpen?: boolean; showPath?: boolean }>(), { detailsOpen: false, showPath: true })
 
 const sessions = useSessionsStore()
+const work = useWorkStore()
+const managedWorker = computed(() => !!work.catalog[props.id] && work.catalog[props.id]?.work_role !== 'coordinator')
 const specialists = useSpecialistsStore()
 const conversations = useConversationStore()
 const projects = useProjectsStore()
@@ -217,7 +220,7 @@ async function openProject() {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
         </nav>
         <!-- Before the title (shrink-0, so it never pushes the title out). Disabled only when the conversation is loaded and empty; before it loads the backend answers. -->
-        <TitleSuggest v-if="!editing" :id="id" :disabled="!!conv && conv.items.length === 0" />
+        <TitleSuggest v-if="!editing && !managedWorker" :id="id" :disabled="!!conv && conv.items.length === 0" />
         <input
           v-if="editing"
           ref="input"
@@ -233,6 +236,7 @@ async function openProject() {
           <button
             type="button"
             data-test="conversation-title"
+            :disabled="managedWorker"
             title="Clique para renomear"
             class="block min-h-8 max-w-full truncate text-left decoration-fg-subtle underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-primary"
             @click="startRename"
@@ -243,16 +247,16 @@ async function openProject() {
       </div>
       <!-- Quebram linha numa coluna estreita: shrink-0 em fila única vazava e fazia a página rolar. -->
       <div data-test="header-actions" class="flex min-w-0 flex-wrap items-center justify-end gap-3">
-        <button v-if="markChip" ref="markChipButton" type="button" data-test="mark-chip" aria-haspopup="menu" :aria-expanded="!!markAt" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
+        <button v-if="markChip && !managedWorker" ref="markChipButton" type="button" data-test="mark-chip" aria-haspopup="menu" :aria-expanded="!!markAt" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
           <MarkIcon v-if="listed?.mark" :mark="listed.mark" />{{ markChip }}
         </button>
         <span v-if="listed?.priority" data-test="header-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" :size="13" /></span>
         <span v-if="copied" role="status" class="shrink-0 text-xs text-primary-soft">ID copiado</span>
         <RouterLink v-if="mainOf" :to="{ name: 'agents', params: { id: mainOf.id }, query: { aba: 'settings' } }" data-test="configure-agent" class="flex h-8 shrink-0 items-center rounded-md border border-line-strong px-3 text-sm font-medium text-fg no-underline hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">Configurar agente</RouterLink>
         <NextNeedsYou v-if="showPath" :current-id="id" />
-        <button v-if="listed" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
+        <button v-if="listed && !managedWorker" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
         <button
-          v-if="listed"
+          v-if="listed && !managedWorker"
           type="button"
           data-test="toggle-finished"
           class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
@@ -261,7 +265,7 @@ async function openProject() {
           @click="requestToggleFinished"
         >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
         <button
-          v-if="listed && !isDiscarded(listed)"
+          v-if="listed && !managedWorker && !isDiscarded(listed)"
           type="button"
           data-test="header-discard"
           class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
@@ -292,7 +296,7 @@ async function openProject() {
           </div>
         </div>
         <button
-          v-if="listed"
+          v-if="listed && !managedWorker"
           type="button"
           data-test="terminal-button"
           aria-label="Abrir o terminal"

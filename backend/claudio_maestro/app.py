@@ -59,6 +59,7 @@ from claudio_maestro.specialists.gh_comments import GhRunner
 from claudio_maestro.specialists.gh_comments import run_gh as default_run_gh
 from claudio_maestro.specialists.github_hooks import (
     build_hooks_app,
+    get_owner,
     serve_hooks,
     stop_hooks,
 )
@@ -74,7 +75,9 @@ from claudio_maestro.updates import FetchRelease, UpdateChecker, fetch_latest_re
 from claudio_maestro.usage import FetchUsage, UsageChecker
 from claudio_maestro.usage import fetch_usage as default_fetch_usage
 from claudio_maestro.work import store as work_store
+from claudio_maestro.work.ci import CiVerifier
 from claudio_maestro.work.files import WorkFiles
+from claudio_maestro.work.pr_integration import WorkPrIntegration
 from claudio_maestro.work.service import WorkService
 
 logger = logging.getLogger(__name__)
@@ -108,6 +111,9 @@ def start_hooks_listener(app: FastAPI, app_ports_in_use: tuple[int, ...]) -> "as
         data_dir=settings.data_dir,
         is_agent_pr=app.state.specialists.is_agent_pr,
         on_queued=app.state.comments.wake,
+        is_work_pr=app.state.work_prs.bridge.is_pr,
+        queue_work_comment=app.state.work_prs.bridge.queue_comment,
+        on_work_queued=app.state.work_prs.wake,
     )
     return serve_hooks(hooks_app, port)
 
@@ -281,6 +287,8 @@ def create_app(
                     app.state.work.assert_project_admission(conn, record.project_id)
                     identity = app.state.work.session_identity(record.session_id)
                     if identity is not None:
+                        if not app.state.work.can_remote_reconnect(record.session_id):
+                            return False
                         if identity['work_role'] != 'coordinator':
                             attempt = work_store.get_attempt(conn, identity['work_attempt_id'])
                             if attempt.state not in ('starting', 'dispatching', 'running', 'waiting'):
@@ -340,6 +348,7 @@ def create_app(
             prepare_message=lambda record, text: app.state.specialists.prepare_message(
                 record, text
             ),
+            on_session_pr_created=lambda sid, url: app.state.work_prs.on_pr_created(sid, url),
             on_pr_created=lambda session_id, url: app.state.specialists.on_pr_created(
                 session_id, url
             ),
@@ -397,6 +406,12 @@ def create_app(
             legacy_deletion_busy=legacy_deletion_busy,
         )
         app.state.work.dispatch_enabled = app.state.settings.work_dispatcher_enabled
+        app.state.work.ci_verifier = CiVerifier(app.state.work, run_gh=gh_runner or default_run_gh)
+        def work_comment_owner():
+            with closing(db.connect(app.state.settings.db_path)) as conn:
+                return get_owner(conn)
+        app.state.work_prs = WorkPrIntegration(app.state.work, owner=work_comment_owner,
+            run_gh=gh_runner or default_run_gh)
         app.state.scheduler = Scheduler(
             app.state.specialists,
             app.state.sessions,
@@ -513,6 +528,8 @@ def create_app(
             asyncio.create_task(app.state.digest.run()),
             asyncio.create_task(app.state.work.run()),
         ]
+        app.state.work_pr_task = asyncio.create_task(app.state.work_prs.run())
+        tasks.append(app.state.work_pr_task)
         app.state.scheduler_task = None
         app.state.comments_task = None
         app.state.comment_poll_task = None

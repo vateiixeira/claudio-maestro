@@ -6,9 +6,12 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
-- Fontes Sentry e KBGen: coleta delegada em conversa própria, metadados paginados no backlog e reavaliação da mesma issue após mudanças na fonte ou no código, preservando evidências anteriores.
-
-- Trabalho por projeto: conversa persistente do CTO, tarefas por issue e execuções com contexto separado. Resultados e retomadas preservam evidências, e envios incertos não são repetidos automaticamente.
+- Início, Tarefas e conversa persistente do CTO por projeto: objetivos, decisões prioritárias, filtros, tentativas com andamento ao vivo e resultados próprios, mantendo conversas e URLs anteriores.
+- Tarefas por issue com contextos separados, revisão independente, evidências de execução e decisões humanas ligadas à ação e à revisão exatas. Retomadas conservam o histórico; envios incertos não são repetidos automaticamente.
+- Fontes Sentry e KBGen: coleta delegada em conversa própria, metadados paginados no backlog e reavaliação após mudanças na fonte ou no código.
+- Feed durável do CTO e continuidade de comentários nos PRs das tarefas, com autoria e recibos preservados entre tentativas.
+- Verificação de execuções do GitHub Actions para o commit limpo da tentativa, com jobs e etapas conferidos pelo backend antes da revisão.
+- Limites persistidos de trabalhadores, com padrão de um, teto opt-in de dois e reservas separadas de checkout e recursos compartilhados.
 
 - Agentes: conversa principal permanente no topo da barra lateral, anúncios dos resultados na conversa e comentários seus nos PRs entregues à sessão que abriu o PR, por consulta periódica ou webhook assinado. Login e segredo configuráveis na página Agentes; os agentes respondem na conversa e não comentam no GitHub.
 
@@ -18,6 +21,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - Agentes: o campo "Ferramentas bloqueadas", na seção Autonomia, impede o agente de usar uma ferramenta em qualquer autonomia, pelo nome (`mcp__servidor__ferramenta`, `WebFetch`) ou pelo servidor MCP inteiro (`mcp__servidor`).
 
 ### Alterado
+
+- A navegação diária começa em Início, Tarefas e CTO. Conversas, projetos e agentes anteriores continuam acessíveis.
 
 - A conversa principal do agente agora mostra suas execuções no mesmo lugar: rodadas em andamento abertas com atualização ao vivo e histórico expansível, sem trocar o contexto das mensagens.
 

@@ -46,6 +46,7 @@ class AgentdTransport(Transport):
         self._attach_init = attach_init
         self._start = attach_from
         self._on_stderr = on_stderr
+        self.process_instance_id = getattr(agentd, 'instance_id', None)
         self.child_id: str | None = attach_id
         self._reattach = attach_id is not None
         self._local: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -80,6 +81,7 @@ class AgentdTransport(Transport):
                 raise
         except AgentdUnavailable as error:
             raise AgentdConnectError(f"agentd indisponível: {error}") from error
+        self.process_instance_id = self._agentd.child_instance(self.child_id)
         self._ready = True
 
     async def write(self, data: str) -> None:
@@ -189,5 +191,9 @@ class AgentdTransport(Transport):
         """Stop the process and return once it is gone: a new process for the same session
         must not start while this one still writes the transcript."""
         if self.child_id is not None:
-            await self._agentd.kill(self.child_id)
-            await self._agentd.wait_gone(self.child_id)
+            if not self.process_instance_id:
+                raise AgentdUnavailable('O agentd não informou a identidade da instância original; o encerramento permanece incerto.')
+            await self._agentd.kill(self.child_id, expected_instance_id=self.process_instance_id)
+            if not await self._agentd.wait_gone(self.child_id, require_confirmation=True,
+                                              expected_instance_id=self.process_instance_id):
+                raise AgentdUnavailable('Não foi possível comprovar o encerramento do processo da sessão.')

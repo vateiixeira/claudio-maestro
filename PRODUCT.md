@@ -6,13 +6,13 @@ product
 
 ## Users
 
-Um desenvolvedor por instalação, que usa o app o dia inteiro na própria máquina (Linux ou macOS), num monitor de mesa, geralmente com várias sessões do agente de código rodando ao mesmo tempo em projetos diferentes. Ele alterna entre acompanhar o que o agente está fazendo, ler respostas longas, conferir diffs e saídas de comando, e responder quando uma sessão espera por ele (permissão, pergunta, aprovação de plano).
+Um desenvolvedor por instalação, que usa o app o dia inteiro na própria máquina (Linux ou macOS), num monitor de mesa, geralmente com várias sessões do agente de código rodando ao mesmo tempo em projetos diferentes. Ele entrega objetivos ao CTO de cada projeto, acompanha tarefas e tentativas próprias de execução, confere as evidências e responde às decisões que destravam o trabalho. Conversas manuais, diffs e saídas de comando continuam disponíveis quando precisa entrar nos detalhes.
 
 ## Product Purpose
 
 App web local que substitui a extensão do VSCode e o CLI do Claude Code no uso diário. Controla sessões pelo Claude Agent SDK em Python e abre no navegador.
 
-Resolve dois problemas: a extensão do VSCode é pesada e ruim para trabalhar em vários projetos ao mesmo tempo, e o terminal dificulta ler diffs, saídas e estados. Sucesso é o usuário saber, de relance, qual sessão precisa dele, e conseguir ler e decidir sem esforço.
+Resolve dois problemas: a extensão do VSCode é pesada e ruim para trabalhar em vários projetos ao mesmo tempo, e o terminal dificulta ler diffs, saídas e estados. Sucesso é o usuário saber, de relance, qual tarefa precisa dele, quem está trabalhando e qual é o próximo passo. A conversa persistente do CTO concentra objetivos e decisões de um projeto. Cada tentativa mantém seu próprio andamento e resultado; encerrar um turno não conclui uma tarefa.
 
 ## Brand Personality
 
@@ -29,6 +29,7 @@ Leve, claro, calmo. Ferramenta que some na tarefa: neutra, com pouca cor e cada 
 
 ## Design Principles
 
+- **Tarefas antes de sessões.** Início reúne decisões, trabalho em andamento e entregas. Tarefas organiza o acompanhamento. CTO abre a conversa persistente do projeto explicitamente escolhido. Ferramentas e rotinas anteriores ficam em segundo plano, sem perder o histórico.
 - **Leitura antes de tudo.** Diffs, saídas, tabelas e respostas longas precisam ser fáceis de ler; o resto serve a isso.
 - **Cor é sinal.** Verde para ação principal, execução e sucesso; laranja para o que espera o usuário; azul para links e caminhos; vermelho para erro. Todo o resto é neutro. Exceção: as ações da conversa levam um tom discreto por tipo (comando, arquivo, subagente, raciocínio) só no ícone, no rótulo e num fundo de 9%. Esse tom nunca indica estado.
 - **Estado de relance.** Cada estado tem forma própria além da cor (círculo rodando, triângulo esperando, visto finalizada), e o que pede o usuário salta sem virar ruído.

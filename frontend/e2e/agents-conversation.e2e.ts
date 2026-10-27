@@ -1,7 +1,8 @@
-import { expect, test } from './fixtures'
+import { expect, test, openNavigationGroup } from './fixtures'
 
 test('a conversa principal mostra o anúncio pendente da execução', async ({ page }) => {
   await page.goto('/inbox')
+  await openNavigationGroup(page, 'Agentes e rotinas anteriores')
   await page.getByTestId('sidebar-agents').getByTestId('sidebar-agent-row').filter({ hasText: 'Triagem' }).click()
   await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/)
   await expect(page.getByRole('region', { name: 'Anúncios das execuções' })).toContainText('Triagem concluída: 3 itens novos.')

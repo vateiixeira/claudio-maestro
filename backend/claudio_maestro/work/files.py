@@ -24,9 +24,9 @@ class WorkFiles:
         os.fchmod(fd, 0o700)
         return fd
 
-    def write(self, value: dict) -> str:
+    def write(self, value: dict, *, max_bytes: int = MAX_BYTES) -> str:
         raw = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        if len(raw) > MAX_BYTES:
+        if len(raw) > max_bytes:
             raise WorkValidationError("O documento da tarefa passou do limite permitido.")
         name = f"{uuid4().hex}.json"
         temporary = f".{name}.pending"
@@ -50,7 +50,7 @@ class WorkFiles:
             os.close(folder)
         return name
 
-    def read(self, name: str) -> dict:
+    def read(self, name: str, *, max_bytes: int = MAX_BYTES) -> dict:
         if not isinstance(name, str) or _NAME.fullmatch(name) is None:
             raise WorkValidationError("Referência privada inválida.")
         folder = self._folder()
@@ -59,8 +59,8 @@ class WorkFiles:
             with os.fdopen(fd, "rb") as handle:
                 if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
                     raise WorkValidationError("O documento da tarefa não é um arquivo comum.")
-                raw = handle.read(MAX_BYTES + 1)
-            if len(raw) > MAX_BYTES:
+                raw = handle.read(max_bytes + 1)
+            if len(raw) > max_bytes:
                 raise WorkValidationError("O documento da tarefa passou do limite permitido.")
             value = json.loads(raw)
             if not isinstance(value, dict):
@@ -68,3 +68,10 @@ class WorkFiles:
             return value
         finally:
             os.close(folder)
+
+    def write_snapshot(self, value: dict) -> str:
+        """Separate bounded budget for up to four complete Git target captures."""
+        return self.write(value, max_bytes=64 * 1024 * 1024)
+
+    def read_snapshot(self, name: str) -> dict:
+        return self.read(name, max_bytes=64 * 1024 * 1024)

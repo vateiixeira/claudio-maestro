@@ -5,6 +5,10 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from claudio_maestro.work.ci_schema import CI_SCHEMA
+from claudio_maestro.work.pool import POOL_SCHEMA
+from claudio_maestro.work.pr_schema import PR_SCHEMA
+
 # Titles the app or the sync set by themselves (history.DEFAULT_APP_TITLE, history.UNTITLED).
 _AUTOMATIC_TITLES = ("Nova sessão", "Sessão sem título")
 _TITLE_MAX_LENGTH = 80
@@ -638,6 +642,73 @@ MIGRATIONS.append([
         PRIMARY KEY (work_item_id, revision)
     )""",
 ])
+
+# Phase 4: independent evidence, exact human decisions and durable CTO feed.
+MIGRATIONS.append([
+    """CREATE TABLE work_attempt_inputs (
+        attempt_id INTEGER PRIMARY KEY REFERENCES work_attempts(id) ON DELETE CASCADE,
+        dossier_ref TEXT NOT NULL,
+        source_revision TEXT
+    )""",
+    """CREATE TABLE work_attempt_workspaces (
+        attempt_id INTEGER PRIMARY KEY REFERENCES work_attempts(id) ON DELETE CASCADE,
+        paths_ref TEXT NOT NULL
+    )""",
+    """CREATE TABLE work_review_bindings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        author_attempt_id INTEGER NOT NULL UNIQUE REFERENCES work_attempts(id) ON DELETE CASCADE,
+        review_attempt_id INTEGER UNIQUE REFERENCES work_attempts(id) ON DELETE SET NULL,
+        input_revision INTEGER NOT NULL,
+        item_revision INTEGER NOT NULL,
+        dossier_ref TEXT NOT NULL,
+        target_ref TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('queued','reviewing','approved','returned','stale','blocked')),
+        disposition TEXT,
+        reason TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    )""",
+    """CREATE TABLE work_decision_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        attempt_id INTEGER NOT NULL REFERENCES work_attempts(id) ON DELETE CASCADE,
+        work_revision INTEGER NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        dossier_ref TEXT NOT NULL,
+        target_ref TEXT NOT NULL,
+        request_ref TEXT NOT NULL,
+        answer_ref TEXT,
+        receipt TEXT UNIQUE,
+        status TEXT NOT NULL CHECK(status IN ('pending','answered','resumed','expired')),
+        resume_attempt_id INTEGER REFERENCES work_attempts(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL,
+        answered_at INTEGER
+    )""",
+    "CREATE UNIQUE INDEX work_decision_pending ON work_decision_requests(attempt_id) WHERE status IN ('pending','answered')",
+    """CREATE TABLE work_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL UNIQUE REFERENCES work_events(id) ON DELETE CASCADE,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        coordinator_session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        attempt_id INTEGER REFERENCES work_attempts(id) ON DELETE SET NULL,
+        kind TEXT NOT NULL,
+        summary TEXT NOT NULL CHECK(length(summary)<=500),
+        dispatch_state TEXT NOT NULL CHECK(dispatch_state IN ('queued','dispatching','sent','uncertain','unsent')),
+        created_at INTEGER NOT NULL,
+        seen_at INTEGER,
+        model_received_at INTEGER
+    )""",
+    "CREATE INDEX work_notifications_queue ON work_notifications(coordinator_session_id,dispatch_state,id)",
+])
+
+MIGRATIONS.append(PR_SCHEMA)
+
+# Backend-issued evidence for read-only GitHub Actions verification.
+MIGRATIONS.append(CI_SCHEMA)
+
+MIGRATIONS.append(POOL_SCHEMA)
 
 SCHEMA_VERSION = len(MIGRATIONS)
 

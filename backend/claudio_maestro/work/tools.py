@@ -53,7 +53,12 @@ def build_tools(host, session_id: str):
         'type': 'object', 'properties': {
             'result_kind': {'type': 'string', 'enum': ['investigation', 'implementation', 'review']},
             'summary': {'type': 'string'}, 'evidence': {'type': 'array', 'items': {'type': 'string'}},
-            'tests': {'type': 'array', 'items': {'type': 'string'}},
+            'tests': {'type': 'array', 'maxItems': 12, 'items': {'oneOf': [
+                {'type': 'string'}, {'type': 'object', 'properties': {
+                    'tool_name': {'type': 'string', 'maxLength': 500}, 'check_type': {'type': 'string', 'enum': ['test', 'ci', 'check']},
+                    'executed': {'type': 'boolean'}, 'status': {'type': 'string', 'enum': ['passed', 'failed', 'not_run', 'unverified']},
+                    'command': {'type': 'string', 'maxLength': 500}, 'output_ref': {'type': 'string', 'maxLength': 500}},
+                    'required': ['executed', 'status', 'command', 'output_ref'], 'additionalProperties': False}]}},
             'next_action': {'type': 'string'}, 'blockers': {'type': 'string'},
             'delivery_type': {'type': 'string', 'enum': ['investigation_complete', 'implementation_complete', 'technical_followup', 'product_decision', 'policy_blocked']},
         }, 'required': ['result_kind', 'summary'], 'additionalProperties': False})
@@ -63,12 +68,12 @@ def build_tools(host, session_id: str):
         return _result({'recorded': True, 'finalization': 'after_turn_end'})
 
     @tool('request_decision', 'Registre a pergunta humana concreta e suas evidências. Não use para dúvidas que podem ser investigadas no código.', {
-        'type': 'object', 'properties': {'question': {'type': 'string'}, 'evidence': {'type': 'array', 'items': {'type': 'string'}}},
+        'type': 'object', 'properties': {'question': {'type': 'string'}, 'action': {'type': 'string', 'maxLength': 2000}, 'options': {'type': 'array', 'maxItems': 8, 'items': {'type': 'string'}}, 'evidence': {'type': 'array', 'items': {'type': 'string'}}},
         'required': ['question'], 'additionalProperties': False})
     @_safe
     async def request_decision(args):
-        await host.request_decision(session_id, **args)
-        return _result({'recorded': True, 'waiting_for': 'human_decision'})
+        value = await host.request_decision(session_id, **args)
+        return _result({'recorded': True, 'waiting_for': 'human_decision', 'decision': value})
 
     @tool('collect_source', 'Colete metadados numa sessão própria normal do projeto; o CTO recebe só referências compactas.', {
         'type': 'object', 'properties': {
@@ -135,7 +140,37 @@ def build_tools(host, session_id: str):
             attempt['result'] = host.result(attempt['id'])
         return _result(value)
 
-    return [delegate_work, get_work, conclude, request_decision, collect_source,
+    @tool('declare_workspaces', 'Declare todas as raízes Git desta issue. O backend comprova o vínculo com o projeto e mantém a reserva até a revisão.', {
+        'type': 'object', 'properties': {'workspaces': {'type': 'array', 'minItems': 1, 'maxItems': 4, 'items': {'type': 'string', 'maxLength': 1000}}},
+        'required': ['workspaces'], 'additionalProperties': False})
+    @_safe
+    async def declare_workspaces(args):
+        return _result(await host.declare_workspaces(session_id, **args))
+
+    @tool('verify_ci_run', 'Confira uma execução oficial do GitHub Actions para o commit limpo desta tentativa. Retorna recibo ci: para conclude; não inicia nem repete workflows.', {
+        'type': 'object', 'properties': {'run_url': {'type': 'string', 'maxLength': 500}},
+        'required': ['run_url'], 'additionalProperties': False})
+    @_safe
+    async def verify_ci_run(args):
+        return _result(await host.verify_ci_run(session_id, **args))
+
+    @tool('get_review_evidence', 'Leia o alvo completo, a entrega do autor e critérios de UMA revisão vinculada pelo backend.', {
+        'type': 'object', 'properties': {}, 'additionalProperties': False})
+    @_safe
+    async def get_review_evidence(args):
+        return _result(host.review_evidence(session_id))
+
+    @tool('submit_review', 'Registre parecer independente para o binding exato. O backend revalida alvo, entrada e evidências após o turno.', {
+        'type': 'object', 'properties': {
+            'question': {'type': 'string'}, 'action': {'type': 'string'}, 'options': {'type': 'array', 'items': {'type': 'string'}},
+            'binding_id': {'type': 'integer'}, 'disposition': {'type': 'string', 'enum': ['approve', 'return', 'technical_followup', 'ask_human']},
+            'summary': {'type': 'string', 'maxLength': 4000}, 'evidence': {'type': 'array', 'maxItems': 12, 'items': {'type': 'string', 'maxLength': 500}}},
+        'required': ['binding_id', 'disposition', 'summary'], 'additionalProperties': False})
+    @_safe
+    async def submit_review(args):
+        return _result(await host.submit_review(session_id, **args))
+
+    return [verify_ci_run, declare_workspaces, get_review_evidence, submit_review, delegate_work, get_work, conclude, request_decision, collect_source,
             publish_collection, start_work, reevaluate_work, get_work_evidence, get_source_metadata]
 
 

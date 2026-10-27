@@ -15,6 +15,7 @@ import { shouldOpenNewConversation } from './newConversationShortcut'
 import { nextNeedsYou } from './nextNeedsYou'
 import { shouldGoToNextNeedsYou } from './nextNeedsYouShortcut'
 import { useNewConversationStore } from './stores/newConversation'
+import { useWorkStore } from './stores/work'
 import { useUpdatesStore } from './stores/updates'
 
 const layout = useLayoutStore()
@@ -25,7 +26,7 @@ const route = useRoute()
 const router = useRouter()
 const compactViewport = ref(window.innerWidth < 1024)
 const agentsMenuOpen = ref(false)
-const agentsCompactNavigation = computed(() => route.name === 'agents' && compactViewport.value)
+const agentsCompactNavigation = computed(() => ['agents', 'start', 'tasks', 'task', 'cto'].includes(String(route.name)) && compactViewport.value)
 let agentsMenuTrigger: HTMLElement | null = null
 function closeAgentsMenu(restoreFocus = true) {
   agentsMenuOpen.value = false
@@ -58,6 +59,9 @@ const updates = useUpdatesStore()
 // The project in view: a project page, or the project of the open conversation.
 function currentProjectId(): number | null {
   if (route.name === 'project') return Number(route.params.id)
+  if (route.name === 'cto') return Number(route.query.projeto) || null
+  if (route.name === 'tasks' || route.name === 'start') return Number(route.query.project ?? route.query.projeto) || null
+  if (route.name === 'task') return useWorkStore().details[Number(route.params.id)]?.item.project_id ?? null
   if (route.name === 'session') return sessions.find(String(route.params.id))?.project_id ?? null
   return null
 }
@@ -71,6 +75,7 @@ function currentGroupId(): number | null | undefined {
 // The conversation in view, full screen or beside its project (`?sessao=`): the "next" one is never it.
 function currentSessionId(): string | null {
   if (route.name === 'session') return String(route.params.id)
+  if (route.name === 'cto') return useWorkStore().coordinators[Number(route.query.projeto)] ?? null
   if (route.name === 'project' && typeof route.query.sessao === 'string') return route.query.sessao
   return null
 }

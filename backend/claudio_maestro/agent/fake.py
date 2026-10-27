@@ -205,13 +205,17 @@ class FakeAgentClient:
         self.connected = True
         self._worker = asyncio.create_task(self._run_turns())
 
-    async def send(self, content: str | list[dict[str, Any]]) -> None:
+    async def send(self, content: str | list[dict[str, Any]], *, message_id: str | None = None) -> None:
         if not self.connected or self.closed:
             raise AgentError("O agente não está conectado.")
         if self.failed:
             raise AgentError(DEFAULT_FAILURE)
         self.sent.append(content)
-        await self._turns.put(list(self.script(content)))
+        steps = list(self.script(content))
+        if message_id is not None:
+            echo = UserMessage(content=content if isinstance(content, str) else [], uuid=message_id)
+            steps.insert(0, echo)
+        await self._turns.put(steps)
 
     def push(self, steps: Iterable[Step]) -> None:
         """A turn the CLI opens by itself (e.g. a background subagent finished):

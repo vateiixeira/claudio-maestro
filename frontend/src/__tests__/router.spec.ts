@@ -3,16 +3,16 @@ import { createMemoryHistory } from 'vue-router'
 import { createAppRouter } from '../router'
 
 describe('rotas', () => {
-  it('abre na Inbox', async () => {
+  it('abre no Início', async () => {
     const router = createAppRouter(createMemoryHistory())
     await router.push('/')
-    expect(router.currentRoute.value.fullPath).toBe('/inbox')
+    expect(router.currentRoute.value.fullPath).toBe('/inicio')
   })
 
-  it('caminho desconhecido vai para a Inbox', async () => {
+  it('caminho desconhecido vai para o Início', async () => {
     const router = createAppRouter(createMemoryHistory())
     await router.push('/nao-existe')
-    expect(router.currentRoute.value.fullPath).toBe('/inbox')
+    expect(router.currentRoute.value.fullPath).toBe('/inicio')
   })
 
   it('mantém as rotas de conversa, lista, dashboard e projeto', () => {

@@ -27,6 +27,7 @@ import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
+import { useWorkStore } from '../../stores/work'
 import { useSessionsStore } from '../../stores/sessions'
 import { useSpecialistsStore } from '../../stores/specialists'
 import { useUpdatesStore } from '../../stores/updates'
@@ -43,6 +44,8 @@ import IconSettings from '../icons/IconSettings.vue'
 
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
+const work = useWorkStore()
+const manualSessions = computed(() => sessions.all.filter(session => !work.catalog[session.session_id]))
 const specialists = useSpecialistsStore()
 const git = useGitStore()
 const groups = useGroupsStore()
@@ -82,9 +85,9 @@ function resetResize() {
 
 // Only the waits that need you count; an ordinary wait with nothing new is not a reason to look.
 const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s) && !isDiscarded(s)
-const waitingCount = computed(() => sessions.all.filter(isWaitingOnYou).length)
+const waitingCount = computed(() => manualSessions.value.filter(isWaitingOnYou).length)
 // The agents' sessions are listed (and counted) in the "Agentes" section, not under their project.
-const isOrdinary = (s: Session) => s.specialist_id == null
+const isOrdinary = (s: Session) => s.specialist_id == null && !work.catalog[s.session_id]
 function waitingIn(projectId: number): number {
   return sessions.forProject(projectId).filter((s) => isOrdinary(s) && isWaitingOnYou(s)).length
 }
@@ -94,13 +97,13 @@ function runningIn(projectId: number): boolean {
 // Groups under each project: those created in it and those holding one of its conversations.
 const groupsByProject = computed(() => {
   const map = new Map<number, SessionGroup[]>()
-  for (const p of projects.projects) map.set(p.id, groups.visibleIn(p.id, sessions.all))
+  for (const p of projects.projects) map.set(p.id, groups.visibleIn(p.id, manualSessions.value))
   return map
 })
 // The ones the sidebar actually lists: a group without an open conversation is hidden, so it does not count as a child.
 const listedGroupsByProject = computed(() => {
   const map = new Map<number, number>()
-  for (const [id, list] of groupsByProject.value) map.set(id, projectTree(list, sessions.all).length)
+  for (const [id, list] of groupsByProject.value) map.set(id, projectTree(list, manualSessions.value).length)
   return map
 })
 // Open conversations of each project outside its groups, the ones waiting for you first; grouped ones show under their group.
@@ -108,7 +111,7 @@ const listedGroupsByProject = computed(() => {
 const looseByProject = computed(() => {
   const map = new Map<number, Session[]>()
   for (const p of projects.projects) {
-    map.set(p.id, looseOpenSessions(sessions.all, p.id, new Set((groupsByProject.value.get(p.id) ?? []).map((g) => g.id))))
+    map.set(p.id, looseOpenSessions(manualSessions.value, p.id, new Set((groupsByProject.value.get(p.id) ?? []).map((g) => g.id))))
   }
   return map
 })
@@ -116,7 +119,7 @@ function hasChildren(projectId: number): boolean {
   return (listedGroupsByProject.value.get(projectId) ?? 0) > 0 || (looseByProject.value.get(projectId)?.length ?? 0) > 0
 }
 // "Em andamento": projects with an open conversation. "Outros projetos": the rest, kept in one folded line.
-const split = computed(() => splitProjects(projects.projects, sessions.all))
+const split = computed(() => splitProjects(projects.projects, manualSessions.value))
 // The project on screen stays visible even when it has no open conversation and the list is folded.
 const activeIsOther = computed(() => split.value.others.some((p) => p.id === activeProjectId.value))
 const othersOpen = computed(() => isSectionOpened('others') || activeIsOther.value)
@@ -135,6 +138,9 @@ function behindRepo(project: Project): GitRepo | undefined {
 // The project being looked at, directly or through one of its conversations.
 const activeProjectId = computed<number | null>(() => {
   if (route.name === 'project') return Number(route.params.id)
+  if (route.name === 'cto') return Number(route.query.projeto) || null
+  if (route.name === 'tasks') return Number(route.query.project) || null
+  if (route.name === 'task') return work.details[Number(route.params.id)]?.item.project_id ?? null
   if (route.name === 'session') return sessions.find(String(route.params.id))?.project_id ?? null
   return null
 })
@@ -169,7 +175,7 @@ const itemClass = sidebarItemClass
       @dblclick="resetResize"
       @keydown="onResizeKey"
     />
-    <RouterLink to="/inbox" class="flex min-h-11 items-center gap-2 px-4 pt-3 pb-1.5 text-fg no-underline">
+    <RouterLink to="/inicio" class="flex min-h-11 items-center gap-2 px-4 pt-3 pb-1.5 text-fg no-underline">
       <BrandMark />
       <span class="text-[0.9375rem] font-semibold tracking-tight">Cláudio Maestro</span>
     </RouterLink>
@@ -189,6 +195,10 @@ const itemClass = sidebarItemClass
     </div>
 
     <div class="flex flex-col gap-px px-2.5 pb-2">
+      <RouterLink to="/inicio" data-test="nav-start" :class="itemClass(route.name === 'start')" :aria-current="route.name === 'start' ? 'page' : undefined"><IconInbox /><span class="grow">Início</span></RouterLink>
+      <RouterLink to="/tarefas" data-test="nav-tasks" :class="itemClass(route.name === 'tasks' || route.name === 'task')" :aria-current="route.name === 'tasks' || route.name === 'task' ? 'page' : undefined"><IconDeliveries /><span class="grow">Tarefas</span></RouterLink>
+      <RouterLink :to="currentProjectId ? `/cto?projeto=${currentProjectId}` : '/cto'" data-test="nav-cto" :class="itemClass(route.name === 'cto')" :aria-current="route.name === 'cto' ? 'page' : undefined"><IconAgents /><span class="grow">CTO</span></RouterLink>
+      <details class="mt-2 text-fg-muted"><summary class="cursor-pointer px-2.5 py-2 text-xs text-fg-subtle">Mais ferramentas</summary>
       <RouterLink to="/inbox" data-test="nav-inbox" :class="itemClass(route.name === 'inbox')" :aria-current="route.name === 'inbox' ? 'page' : undefined">
         <IconInbox />
         <span class="grow">Inbox</span>
@@ -211,10 +221,11 @@ const itemClass = sidebarItemClass
           <span aria-hidden="true">{{ specialists.unreadCount }}</span><span class="sr-only">{{ specialists.unreadCount }} {{ specialists.unreadCount === 1 ? 'aviso não lido' : 'avisos não lidos' }}</span>
         </span>
       </RouterLink>
+      </details>
     </div>
 
     <div data-test="sidebar-sections" class="relative flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-2.5 pt-3.5 pb-2">
-      <SidebarAgents />
+      <details><summary class="cursor-pointer px-2.5 py-1 text-xs text-fg-subtle">Agentes e rotinas anteriores</summary><SidebarAgents /></details>
 
       <section aria-labelledby="sidebar-active-title" class="flex flex-col gap-px">
         <div class="flex h-[30px] items-center pr-1 pl-2.5">

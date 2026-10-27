@@ -786,3 +786,20 @@ describe('seção Agentes no topo', () => {
     expect(mountSidebar().findAll('[data-test="lane-review-row"]')).toHaveLength(1)
   })
 })
+
+it('tarefas e CTO são entradas principais e suas sessões não entram como conversas manuais', async () => {
+  const { useWorkStore } = await import('../../../stores/work')
+  useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+  useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'manual-one' }), makeSession({ session_id: 'cto-one' }), makeSession({ session_id: 'worker-one' })])
+  useWorkStore(pinia).catalog = {
+    'cto-one': { work_role: 'coordinator', project_id: 1, work_item_id: null, work_attempt_id: null },
+    'worker-one': { work_role: 'investigator', project_id: 1, work_item_id: 7, work_attempt_id: 9 },
+  }
+  const wrapper = mountSidebar()
+  expect(wrapper.get('[data-test="nav-start"]').attributes('href')).toBe('/inicio')
+  expect(wrapper.get('[data-test="nav-tasks"]').attributes('href')).toBe('/tarefas')
+  expect(wrapper.get('[data-test="nav-cto"]').attributes('href')).toBe('/cto')
+  expect(wrapper.find('[href="/sessions/manual-one"]').exists()).toBe(true)
+  expect(wrapper.find('[href="/sessions/cto-one"]').exists()).toBe(false)
+  expect(wrapper.find('[href="/sessions/worker-one"]').exists()).toBe(false)
+})

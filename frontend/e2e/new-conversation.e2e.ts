@@ -43,7 +43,13 @@ test('a conversa abre com a mensagem antes do primeiro envio responder e não du
       delivered = true
     })
 
+    // This measures opening/submitting after the shell is ready, not the cold
+    // start's unrelated Git scans competing for Chrome's six HTTP connections.
+    // The session/message endpoints below remain the real isolated backend.
+    await page.route(/\/api\/projects\/\d+\/git$/, route => route.fulfill({ json: { repos: [] } }))
     await page.goto('/inbox')
+    await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
+    await expect(page.getByText('Carregando…', { exact: true })).toHaveCount(0)
     await page.getByTestId('nav-new').click()
     const modal = page.getByTestId('new-conversation-modal')
     await modal.getByTestId('nc-project').selectOption(String(projectId))
@@ -71,7 +77,7 @@ test('a conversa abre com a mensagem antes do primeiro envio responder e não du
     // Mount another composer to catch a draft accidentally retained after the accepted request.
     const sessionUrl = page.url()
     await page.getByRole('link', { name: 'Cláudio Maestro', exact: true }).click()
-    await expect(page).toHaveURL(/\/inbox$/)
+    await expect(page).toHaveURL(/\/inicio$/)
     await page.goBack()
     await expect(page).toHaveURL(sessionUrl)
     await expect(composer).toHaveValue('')
@@ -118,7 +124,13 @@ test('uma falha tardia do primeiro envio preserva o próximo rascunho ao voltar 
       await route.fulfill({ status: 503, json: { detail: 'sem rede' } })
     })
 
+    // This measures opening/submitting after the shell is ready, not the cold
+    // start's unrelated Git scans competing for Chrome's six HTTP connections.
+    // The session/message endpoints below remain the real isolated backend.
+    await page.route(/\/api\/projects\/\d+\/git$/, route => route.fulfill({ json: { repos: [] } }))
     await page.goto('/inbox')
+    await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
+    await expect(page.getByText('Carregando…', { exact: true })).toHaveCount(0)
     await page.getByTestId('nav-new').click()
     const modal = page.getByTestId('new-conversation-modal')
     await modal.getByTestId('nc-project').selectOption(String(projectId))

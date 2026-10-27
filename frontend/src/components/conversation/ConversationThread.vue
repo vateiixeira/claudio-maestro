@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch } from 'vue'
 import { SESSION_ID_KEY, useChangesPanelStore } from '../../stores/changesPanel'
 import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
@@ -15,6 +16,9 @@ import TurnLiveLine from './TurnLiveLine.vue'
 import TurnTasks from './TurnTasks.vue'
 import UserMessage from './UserMessage.vue'
 import PendingAnnouncements from './PendingAnnouncements.vue'
+import CoordinatorWork from '../work/CoordinatorWork.vue'
+import { activeAttempt } from '../../types/work'
+import { useWorkStore } from '../../stores/work'
 import AgentExecutions from '../agents/AgentExecutions.vue'
 import { useSpecialistsStore } from '../../stores/specialists'
 import { findLastMessage, MESSAGE_FOCUS_KEY } from '../../conversation/find'
@@ -39,6 +43,12 @@ const changesPanel = useChangesPanelStore()
 const projects = useProjectsStore()
 const specialists = useSpecialistsStore()
 const mainAgent = computed(() => specialists.isMainSession(props.id))
+const work = useWorkStore()
+const identity = computed(() => work.catalog[props.id])
+const managedWorker = computed(() => !!identity.value && identity.value.work_role !== 'coordinator')
+const workAttempt = computed(() => identity.value?.work_item_id ? work.details[identity.value.work_item_id]?.attempts.find(attempt => attempt.id === identity.value?.work_attempt_id) : undefined)
+const workEnded = computed(() => !!workAttempt.value && !activeAttempt(workAttempt.value))
+watch(() => [identity.value?.work_item_id, work.changeVersion], () => { const item = identity.value?.work_item_id; if (item) void work.loadDetail(item).catch(() => {}) }, { immediate: true })
 const socket = useEventSocket()
 
 const loadError = ref<string | null>(null)
@@ -605,6 +615,7 @@ function resolvePrompt(promptId: string) {
             </div>
           </template>
           <PendingAnnouncements :session-id="id" />
+          <CoordinatorWork v-if="identity?.work_role === 'coordinator'" :key="identity.project_id" :project-id="identity.project_id" />
           <AgentExecutions v-if="mainAgent" :key="mainAgent.id" :agent-id="mainAgent.id" :main-session-id="id" @reveal="onReveal" />
           <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
             <QuestionCard
@@ -674,7 +685,8 @@ function resolvePrompt(promptId: string) {
           >A mensagem buscada não está no trecho carregado da conversa.</p>
           <p v-if="loadError" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg">{{ loadError }}</p>
           <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
-          <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
+          <p v-if="managedWorker" data-test="managed-worker" class="m-0 border border-line rounded-md bg-panel p-3 text-xs text-fg-muted">{{ workEnded ? 'Execução encerrada.' : 'Execução gerenciada pelo CTO.' }} Esta conversa registra uma tentativa da tarefa #{{ identity?.work_item_id }}. Acompanhe o resultado e peça a continuidade pela <RouterLink class="text-info-soft" :to="`/tarefas/${identity?.work_item_id}`">tarefa</RouterLink>. Os pedidos de permissão desta execução continuam disponíveis acima.</p>
+          <MessageComposer v-else ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
             <template #controls><SessionControls :session-id="conv.sessionId" /></template>
           </MessageComposer>
         </div>
