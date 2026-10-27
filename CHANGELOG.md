@@ -22,6 +22,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- O item CTO da barra lateral abre a lista das conversas do CTO em andamento, com estado e última atividade, para você escolher em qual entrar; os demais projetos aparecem abaixo.
 - A navegação diária começa em Início, Tarefas e CTO. Conversas, projetos e agentes anteriores continuam acessíveis.
 
 - A conversa principal do agente agora mostra suas execuções no mesmo lugar: rodadas em andamento abertas com atualização ao vivo e histórico expansível, sem trocar o contexto das mensagens.

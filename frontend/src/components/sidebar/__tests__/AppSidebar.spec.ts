@@ -570,6 +570,15 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     expect(w.get('[data-test="others-toggle"]').attributes('aria-expanded')).toBe('true')
   })
 
+  it('o link CTO aponta para a lista mesmo com um projeto na tela', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 3 })]
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/projects/3')
+    const w = mount(AppSidebar, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.get('[data-test="nav-cto"]').attributes('href')).toBe('/cto')
+  })
+
   it('o projeto com pasta indisponível em Outros projetos continua marcado', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'sumiu', available: false })]
     setSectionOpened('others', true)

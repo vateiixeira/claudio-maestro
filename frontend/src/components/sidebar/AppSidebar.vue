@@ -197,7 +197,7 @@ const itemClass = sidebarItemClass
     <div class="flex flex-col gap-px px-2.5 pb-2">
       <RouterLink to="/inicio" data-test="nav-start" :class="itemClass(route.name === 'start')" :aria-current="route.name === 'start' ? 'page' : undefined"><IconInbox /><span class="grow">Início</span></RouterLink>
       <RouterLink to="/tarefas" data-test="nav-tasks" :class="itemClass(route.name === 'tasks' || route.name === 'task')" :aria-current="route.name === 'tasks' || route.name === 'task' ? 'page' : undefined"><IconDeliveries /><span class="grow">Tarefas</span></RouterLink>
-      <RouterLink :to="currentProjectId ? `/cto?projeto=${currentProjectId}` : '/cto'" data-test="nav-cto" :class="itemClass(route.name === 'cto')" :aria-current="route.name === 'cto' ? 'page' : undefined"><IconAgents /><span class="grow">CTO</span></RouterLink>
+      <RouterLink to="/cto" data-test="nav-cto" :class="itemClass(route.name === 'cto')" :aria-current="route.name === 'cto' ? 'page' : undefined"><IconAgents /><span class="grow">CTO</span></RouterLink>
       <details class="mt-2 text-fg-muted"><summary class="cursor-pointer px-2.5 py-2 text-xs text-fg-subtle">Mais ferramentas</summary>
       <RouterLink to="/inbox" data-test="nav-inbox" :class="itemClass(route.name === 'inbox')" :aria-current="route.name === 'inbox' ? 'page' : undefined">
         <IconInbox />
