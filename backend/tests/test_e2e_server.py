@@ -723,3 +723,39 @@ def test_e2e_drops_github_credentials_and_never_selects_real_gh(tmp_path, monkey
     with TestClient(e2e.build_app(6620), base_url='http://127.0.0.1:6620') as client:
         assert client.app.state.work_prs._run_gh is e2e.refuse_gh
         assert client.portal.call(client.app.state.work_prs._run_gh, ['api', 'anything']) == (127, '')
+
+
+def test_collection_e2e_waits_for_guidance_then_releases_next_source(tmp_path, monkeypatch):
+    apply_env(monkeypatch, e2e.isolated_env({'MAESTRO_E2E_CHAT': '1'}, tmp_path, 6620))
+    e2e.seed(tmp_path)
+    attempts = forbid_claude(monkeypatch)
+    with TestClient(e2e.build_app(6620), base_url='http://127.0.0.1:6620',
+                    headers={'x-maestro': '1', 'origin': 'http://localhost:6620'}) as client:
+        project = next(p for p in client.get('/api/projects').json() if p['name'] == 'Coleta Demo')
+        assert Path(project['path']).is_relative_to(tmp_path)
+        assert not (Path(project['path']) / '.git').exists()
+        sid = client.post(f"/api/projects/{project['id']}/cto").json()['session_id']
+        assert client.post(f'/api/sessions/{sid}/messages', json={'text': 'E2E coleta: Investigar filtros disponíveis'}).status_code == 202
+
+        def until(get, predicate):
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                value = get()
+                if predicate(value):
+                    return value
+                time.sleep(.02)
+            pytest.fail(f'coleta fake não avançou: {value}')
+
+        overview = until(lambda: client.get(f"/api/projects/{project['id']}/work-overview").json(), lambda value: value['counts']['continuation'] == 1)
+        assert overview['counts']['queued'] == 1
+        target = next(item for item in overview['items'] if item['can_continue'])
+        queued = next(item for item in overview['items'] if item['kind'] == 'queued')
+        assert queued['queue_reason']['work_item_id'] == target['work_item_id']
+        detail = client.get(f"/api/work-items/{target['work_item_id']}").json()
+        assert detail['decisions'] == [] and detail['attempts'][0]['result_ref'] is None
+        response = client.post(f"/api/sessions/{target['session_id']}/messages", json={'text': 'Use o ambiente verificado e continue a coleta.'})
+        assert response.status_code == 202, response.text
+        collections = until(lambda: client.get(f"/api/projects/{project['id']}/collections").json()['items'], lambda values: len(values) == 2 and all(value['status'] == 'done' for value in values))
+        assert all(value['finalized'] for value in collections)
+        assert client.get(f"/api/work-items/{target['work_item_id']}").json()['attempts'][0]['id'] == target['attempt_id']
+        assert attempts == []

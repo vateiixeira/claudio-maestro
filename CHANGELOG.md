@@ -24,6 +24,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- O CTO mostra os próximos passos acima da conversa, separando decisões, permissões e execuções que precisam de orientação. Tentativas elegíveis têm campo próprio para continuar com uma mensagem humana, mantendo o rascunho quando o envio falha. Em celulares e telas baixas, os controles secundários ficam recolhíveis para preservar o espaço da conversa.
+- Tarefas ainda não iniciadas aparecem como “Na fila”, com a causa da espera quando comprovada. O CTO ocioso aparece disponível, sem sugerir uma resposta obrigatória.
+- Avisos registrados pelo Maestro aparecem como “Atualização automática”, recolhidos e com detalhes acessíveis, preservando as mensagens humanas e o histórico.
+
 - O item CTO da barra lateral abre a lista das conversas do CTO em andamento, com estado e última atividade, para você escolher em qual entrar; os demais projetos aparecem abaixo.
 - A navegação diária começa em Início, Tarefas e CTO. Conversas, projetos e agentes anteriores continuam acessíveis.
 

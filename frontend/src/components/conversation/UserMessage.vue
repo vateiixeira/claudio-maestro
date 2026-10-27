@@ -10,7 +10,7 @@ import TerminalRunBox from './TerminalRunBox.vue'
 import WorkHeader from './WorkHeader.vue'
 
 defineOptions({ inheritAttrs: false })
-const props = defineProps<{ item: UserItem }>()
+const props = defineProps<{ item: UserItem; automatic?: boolean }>()
 const content = computed(() => splitAnnouncements(props.item.text))
 const hasBubble = computed(() => content.value.rest || props.item.images?.length || props.item.terminal_snippets?.length)
 // Thumbnails exist only for images sent from this tab; the history keeps type and size.
@@ -39,10 +39,14 @@ function label(attachment: Attachment): string {
 </script>
 
 <template>
+  <details v-if="automatic" v-bind="$attrs" data-test="automatic-message" :data-item-id="item.id" tabindex="-1" class="automatic-message">
+    <summary>Atualização automática</summary>
+    <pre>{{ item.text }}</pre>
+  </details>
   <!-- Output of a command run in the terminal: like Claude's own actions, on the left and without the bubble. -->
   <TerminalRunBox
     v-bind="$attrs"
-    v-if="item.terminal_run"
+    v-else-if="item.terminal_run"
     :run="item.terminal_run"
     :data-item-id="item.id"
     :data-highlighted="highlighted ? 'true' : undefined"
@@ -105,3 +109,7 @@ function label(attachment: Attachment): string {
   </div>
   </template>
 </template>
+
+<style scoped>
+.automatic-message{min-width:0;color:var(--color-fg-subtle);font-size:0.75rem}.automatic-message summary{cursor:pointer;padding:6px 0}.automatic-message summary:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}.automatic-message pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;margin:8px 0;padding:12px;border:1px solid var(--color-line);border-radius:5px;background:var(--color-panel);font-size:0.6875rem;line-height:1.65}
+</style>

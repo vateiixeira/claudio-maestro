@@ -95,3 +95,16 @@ it('mostra anúncios separados do balão e não cria balão vazio', () => {
   const only = mount(UserMessage, { props: { item: item({ text: block }) }, global })
   expect(only.find('[data-test="user-message-card"]').exists()).toBe(false)
 })
+
+it('aviso com proveniência aparece recolhido, sem se passar por mensagem humana', () => {
+  const item = { type: 'user' as const, id: 'notification-uuid', text: '[Maestro] {"work_item_id":1}' }
+  const automatic = mount(UserMessage, { props: { item, automatic: true } })
+  expect(automatic.get('details').attributes('open')).toBeUndefined()
+  expect(automatic.get('summary').text()).toBe('Atualização automática')
+  expect(automatic.text()).not.toContain('Você:')
+  expect(automatic.get('pre').text()).toContain('work_item_id')
+  const human = mount(UserMessage, { props: { item } })
+  expect(human.find('details').exists()).toBe(false)
+  expect(human.get('[data-test="user-message"]').text()).toBe(item.text)
+  expect(human.text()).toContain('Você:')
+})

@@ -572,3 +572,16 @@ describe('painel Detalhes', () => {
     })
   })
 })
+
+it('propriedade Estado do CTO ocioso usa disponível e preserva pedidos nativos e execução', async () => {
+  const { useWorkStore } = await import('../../../stores/work')
+  useWorkStore(pinia).catalog.s1 = { work_role: 'coordinator', project_id: 1, work_item_id: null, work_attempt_id: null }
+  const wrapper = await mountPanel()
+  expect(wrapper.get('[data-test="prop-state"]').text()).toContain('CTO disponível')
+  useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', state: 'awaiting_decision', pending_kind: 'question', display_state: 'waiting' })])
+  await flushPromises()
+  expect(wrapper.get('[data-test="prop-state"]').text()).toContain('Fez uma pergunta')
+  useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', state: 'idle', display_state: 'running', subagents_running: true })])
+  await flushPromises()
+  expect(wrapper.get('[data-test="prop-state"]').text()).toContain('Em execução')
+})

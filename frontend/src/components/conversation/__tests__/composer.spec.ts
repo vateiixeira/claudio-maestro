@@ -188,3 +188,15 @@ describe('campo de mensagem', () => {
     })
   })
 })
+
+it('composer compacto do CTO mantém campo/envio e oferece controles por disclosure', async () => {
+  const wrapper = mount(MessageComposer, { props: { sessionId: 's1', state: 'idle', compactOnMobile: true }, slots: { controls: '<button>Modelo e permissões</button>' } })
+  const toggle = wrapper.get('[data-test="composer-options-toggle"]')
+  expect(toggle.attributes('aria-expanded')).toBe('false')
+  expect(wrapper.get('[data-test="composer-options"]').classes()).not.toContain('mobile-expanded')
+  expect(wrapper.find('textarea').exists()).toBe(true)
+  await toggle.trigger('click')
+  expect(toggle.attributes('aria-expanded')).toBe('true')
+  expect(wrapper.get('[data-test="composer-options"]').classes()).toContain('mobile-expanded')
+  expect(wrapper.get('[data-test="composer-options"]').text()).toContain('Modelo e permissões')
+})

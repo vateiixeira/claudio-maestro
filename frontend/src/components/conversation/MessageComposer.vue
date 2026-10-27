@@ -15,10 +15,11 @@ import MentionMirror from './MentionMirror.vue'
 import SuggestionMenu from './SuggestionMenu.vue'
 
 // `blockedReason`: why sending is not possible now (e.g. the project folder is gone).
-const props = defineProps<{ sessionId: string; state: SessionState; blockedReason?: string | null }>()
+const props = defineProps<{ sessionId: string; state: SessionState; blockedReason?: string | null; compactOnMobile?: boolean }>()
 // `sending`: the user just sent a message from here, so the conversation can follow it to the end.
 const emit = defineEmits<{ sending: [] }>()
 
+const mobileOptionsOpen = ref(false)
 const pendingDraft = takePendingDraft(props.sessionId)
 const text = ref(loadDraftText(props.sessionId))
 const sending = ref(false)
@@ -221,7 +222,7 @@ async function interrupt() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2.5" @dragover.prevent @drop="onDrop">
+  <div class="flex flex-col gap-2.5" :class="{ 'compact-mobile-composer': compactOnMobile }" @dragover.prevent @drop="onDrop">
     <p v-if="blockedReason" :id="`blocked-${sessionId}`" class="m-0 text-sm text-fg-muted">{{ blockedReason }}</p>
     <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <p v-else-if="dictation.error.value" role="alert" class="m-0 text-sm text-diff-del-fg">{{ dictation.error.value }}</p>
@@ -348,12 +349,24 @@ async function interrupt() {
         Enviar
       </button>
     </div>
-    <div class="flex flex-wrap items-center gap-2">
-      <slot name="controls" />
       <span v-if="dictation.recording.value" data-test="recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
         <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
       </span>
-      <span class="ml-auto font-mono text-xs text-fg-subtle">Enter envia · Ctrl+Enter quebra linha</span>
+    <button v-if="compactOnMobile" type="button" data-test="composer-options-toggle" class="composer-options-toggle" :aria-expanded="mobileOptionsOpen" :aria-controls="`composer-options-${sessionId}`" @click="mobileOptionsOpen = !mobileOptionsOpen">{{ mobileOptionsOpen ? 'Fechar opções da conversa' : 'Opções da conversa' }}</button>
+    <div :id="`composer-options-${sessionId}`" data-test="composer-options" class="composer-options flex flex-wrap items-center gap-2" :class="{ 'mobile-expanded': mobileOptionsOpen }">
+      <slot name="controls" />
+      <span class="composer-keyboard-hint ml-auto font-mono text-xs text-fg-subtle">Enter envia · Ctrl+Enter quebra linha</span>
     </div>
   </div>
 </template>
+
+<style scoped>
+.composer-options-toggle{display:none}
+@media(max-width:600px),(max-height:760px){
+.compact-mobile-composer .composer-options-toggle{display:block;align-self:flex-start;min-height:28px;padding:2px 0;border:0;background:transparent;color:var(--color-fg-muted);font:inherit;font-size:0.75rem;cursor:pointer}
+.compact-mobile-composer .composer-options-toggle:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
+.compact-mobile-composer .composer-options:not(.mobile-expanded){display:none}
+.compact-mobile-composer .composer-options.mobile-expanded{max-height:96px;overflow-y:auto}
+.compact-mobile-composer .composer-keyboard-hint{display:none}
+}
+</style>

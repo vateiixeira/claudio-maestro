@@ -55,3 +55,13 @@ export function deriveDisplay(
   const stays = finished || current === 'finished'
   return { display_state: stays ? 'finished' : 'waiting', awaiting_decision: false }
 }
+
+/** An idle coordinator can receive a new goal; unread output is not a request. */
+export function coordinatorAvailable(session: Session, hasPendingPrompt = false): boolean {
+  return ['idle', 'closed'].includes(session.state) && session.display_state !== 'running' && !session.subagents_running && !session.interrupted && !session.pending_kind && !hasPendingPrompt
+}
+export function coordinatorStateLabel(session: Session): string {
+  if (session.state === 'error') return 'Erro'
+  if (coordinatorAvailable(session)) return 'CTO disponível'
+  return displayStateLabel(session)
+}

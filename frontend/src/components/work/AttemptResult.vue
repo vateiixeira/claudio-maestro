@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { WorkAttempt } from '../../types/work'
+import WorkContinuation from './WorkContinuation.vue'
+import type { WorkAttention, WorkAttempt } from '../../types/work'
 import { activeAttempt, label } from '../../types/work'
 import AgentExecutionDetail from '../agents/AgentExecutionDetail.vue'
 import WorkStatus from './WorkStatus.vue'
 import IconChevron from '../icons/IconChevron.vue'
-const props = defineProps<{ attempt: WorkAttempt; live?: boolean }>()
+const props = defineProps<{ attempt: WorkAttempt; live?: boolean; attention?: WorkAttention }>()
+const emit = defineEmits<{ sent: []; stale: [] }>()
 const result = computed(() => props.attempt.result)
 const tests = computed(() => Array.isArray(result.value?.tests) ? result.value.tests : [])
 function testRecord(value: unknown): Record<string, unknown> { return value && typeof value === 'object' ? value as Record<string, unknown> : { command: String(value), status: 'unverified' } }
@@ -27,6 +29,7 @@ const when = (value: number) => new Date(value * 1000).toLocaleString('pt-BR', {
       <template v-if="result && !result.unavailable"><p class="work-prose" data-test="attempt-result">{{ result.summary }}</p><dl class="attempt-evidence"><template v-for="(title, key) in { evidence: 'Evidências', blockers: 'Bloqueios', next_action: 'Próximo passo' }" :key="key"><template v-if="result[key] && (!Array.isArray(result[key]) || (result[key] as unknown[]).length)"><dt>{{ title }}</dt><dd><ul v-if="Array.isArray(result[key])"><li v-for="(entry, i) in result[key] as unknown[]" :key="i"><pre>{{ text(entry) }}</pre></li></ul><p v-else>{{ text(result[key]) }}</p></dd></template></template></dl><section v-if="tests.length" class="attempt-tests"><h4>Testes registrados</h4><p class="work-muted">O registro de execução acompanha a evidência. A revisão independente confere o resultado.</p><ul><li v-for="(entry, index) in tests" :key="index" data-test="test-evidence"><span>{{ testState(entry) }}</span><code>{{ testRecord(entry).command }}</code><details v-if="testRecord(entry).output_ref"><summary>Referência da saída</summary><pre>{{ testRecord(entry).output_ref }}</pre></details></li></ul></section><details v-if="result.artifacts || result.prs"><summary>Artefatos vinculados</summary><pre>{{ text(result.artifacts ?? result.prs) }}</pre></details></template>
       <p v-else-if="result?.unavailable" class="work-error">Resultado indisponível. {{ result.summary }} A tarefa mantém o histórico desta tentativa.</p>
       <p v-else class="work-muted">{{ activeAttempt(attempt) ? 'Esta tentativa ainda não registrou uma entrega.' : 'Esta tentativa terminou sem resultado registrado.' }}</p>
+      <WorkContinuation v-if="attention?.attempt_id === attempt.id" :attention="attention" initially-open @sent="emit('sent')" @stale="emit('stale')" />
       <RouterLink v-if="attempt.session_id" class="work-link" :to="`/sessions/${attempt.session_id}`">Abrir conversa desta tentativa ↗</RouterLink>
     </div>
   </details>

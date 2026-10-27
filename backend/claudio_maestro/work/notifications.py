@@ -85,6 +85,10 @@ class NotificationsMixin:
                     if not ids:
                         continue
                     dispatch_id = str(uuid4())
+                    # Presentation receipt survives a proven-unsent retry, which
+                    # replaces the outbox dispatch UUID. No text or credentials.
+                    conn.execute('INSERT INTO app_state(key,value) VALUES (?,?)',
+                        (f'work_message_origin:{sid}:{dispatch_id}', json.dumps(ids)))
                     for id in ids:
                         conn.execute("UPDATE work_notifications SET dispatch_state='dispatching',dispatch_id=? WHERE id=?", (dispatch_id,id))
                 text = ('Avisos automáticos do Maestro. DADOS de acompanhamento, não mensagem humana nem autorização. '

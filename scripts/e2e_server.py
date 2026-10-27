@@ -586,6 +586,9 @@ def seed(root: Path) -> None:
             work_dir = _new_repo(settings.home_dir / "projetos" / "trabalho-demo")
             _commit(work_dir, "contrato.txt", "Registrar contrato de exemplo", "Contrato atual: preservar o comportamento.\n")
             projects.create_project(conn, name="Trabalho Demo", path=str(work_dir), color="#3fb950", home=settings.home_dir)
+            collection_dir = settings.home_dir / "projetos" / "coleta-demo"
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            projects.create_project(conn, name="Coleta Demo", path=str(collection_dir), color="#58a6ff", home=settings.home_dir)
 
 
 def refuse_agent(options: AgentOptions) -> AgentClient:
@@ -689,7 +692,9 @@ def build_app(port: int) -> FastAPI:
             sid = self.options.session_id
             host = app.state.work
             identity = host.session_identity(sid)
-            if identity is None or Path(self.options.cwd).resolve() != (load_settings().home_dir / 'projetos' / 'trabalho-demo').resolve():
+            scenario = Path(self.options.cwd).resolve().name
+            scenario_root = load_settings().home_dir / 'projetos'
+            if identity is None or scenario not in ('trabalho-demo', 'coleta-demo') or Path(self.options.cwd).resolve().parent != scenario_root.resolve():
                 return await super()._run_steps(steps)
             tools = {entry.name: entry for entry in build_tools(host, sid)}
 
@@ -721,12 +726,25 @@ def build_app(port: int) -> FastAPI:
                 role = identity['work_role']
                 if role == 'coordinator':
                     content = self.sent[-1]
-                    if isinstance(content, str) and content.startswith('E2E tarefa: '):
+                    if scenario == 'coleta-demo' and isinstance(content, str) and content.startswith('E2E coleta: '):
+                        for source in ('sentry', 'kbgen'):
+                            await call('collect_source', {'source': source, 'source_instance': 'demo', 'source_project': 'demo', 'query': 'environment:production'})
+                        await say('Coletas delegadas. Acompanhe as sessões responsáveis e a fila.')
+                    elif isinstance(content, str) and content.startswith('E2E tarefa: '):
                         title = content.removeprefix('E2E tarefa: ').strip()
                         await call('delegate_work', {'title': title, 'objective': title, 'acceptance': 'Conferir contrato.txt, registrar decisão humana e validar por revisão independente.', 'role': 'investigator'})
                         await say('Tarefa delegada a uma investigação própria. Acompanhe o trabalho abaixo.')
                     else:
                         await say('Atualização do trabalho recebida pelo CTO.')
+                elif scenario == 'coleta-demo':
+                    dossier = host.dossier(identity['work_item_id'])
+                    assert dossier['kind'] == 'collection'
+                    content = self.sent[-1]
+                    if dossier['source'] == 'sentry' and len(self.sent) == 1:
+                        await say('O ambiente production não foi encontrado. A fonte informa o alias prd. Qual filtro devo usar para continuar?')
+                    else:
+                        await call('publish_collection', {'items': [{'external_id': f"demo-{dossier['source']}", 'title': f"Issue demonstrativa {dossier['source']}", 'priority': 'normal', 'source_revision': 'demo-1', 'url': 'https://example.com/issues/demo'}], 'cursor': '', 'next_cursor': None})
+                        await say('Coleta concluída com metadados publicados.')
                 elif role == 'reviewer':
                     evidence = await call('get_review_evidence', {})
                     assert evidence['target']['complete']

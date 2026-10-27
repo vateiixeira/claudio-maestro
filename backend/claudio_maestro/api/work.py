@@ -127,6 +127,7 @@ async def get_work_item(item_id: int, request: Request, conn: DbDep):
     attempts = [{**asdict(a), 'result': service.result(a.id)} for a in store.list_attempts(conn, item_id)]
     activity = _activity_page(conn, item_id)
     return {'item': asdict(item), 'dossier': dossier, 'attempts': attempts,
+            'attention': service.item_attention(item_id),
             'events': activity['items'], 'events_page': {key: value for key, value in activity.items() if key != 'items'},
             'dependencies': store.dependencies(conn, item_id),
             'reviews': service.reviews(item_id)['items'],
@@ -320,3 +321,16 @@ async def retry_feed(project_id: int, request: Request, conn: DbDep):
 @router.post('/work-attempts/{attempt_id}/reconcile-close')
 async def reconcile_work_process_close(attempt_id: int, request: Request):
     return await request.app.state.work.reconcile_process_close(attempt_id)
+
+
+@router.get('/projects/{project_id}/work-overview')
+async def work_overview(project_id: int, request: Request, conn: DbDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50, offset: Annotated[int, Query(ge=0)] = 0):
+    _project(conn, project_id)
+    return request.app.state.work.work_overview(project_id, limit=limit, offset=offset)
+
+
+@router.get('/work/message-origins')
+async def work_message_origins(request: Request, session_id: Annotated[str, Query(min_length=1, max_length=100)],
+    message_ids: Annotated[list[str], Query(max_length=200)]):
+    return request.app.state.work.message_origins(session_id, message_ids)

@@ -27,7 +27,7 @@ import { useWorkStore } from '../../stores/work'
 import { useSessionsStore } from '../../stores/sessions'
 import { useSpecialistsStore } from '../../stores/specialists'
 import { useTerminalStore } from '../../stores/terminal'
-import { displayStateLabel } from '../../sessionState'
+import { coordinatorAvailable as isCoordinatorAvailable, displayStateLabel } from '../../sessionState'
 import { worktreeLabel } from '../../worktree'
 
 // `detailsOpen`: the Detalhes panel is showing project, group and branch, so the line below the strip stays out.
@@ -36,6 +36,8 @@ const props = withDefaults(defineProps<{ id: string; detailsOpen?: boolean; show
 
 const sessions = useSessionsStore()
 const work = useWorkStore()
+const mobileActionsOpen = ref(false)
+const isCoordinator = computed(() => work.catalog[props.id]?.work_role === 'coordinator')
 const managedWorker = computed(() => !!work.catalog[props.id] && work.catalog[props.id]?.work_role !== 'coordinator')
 const specialists = useSpecialistsStore()
 const conversations = useConversationStore()
@@ -57,12 +59,14 @@ const group = computed(() => (listed.value?.group_id != null ? groups.byId(liste
 const worktree = computed(() => (listed.value ? worktreeLabel(listed.value) : null))
 const repos = computed(() => (projectId.value != null ? git.reposFor(projectId.value) : []))
 watch(projectId, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
+const coordinatorAvailable = computed(() => work.catalog[props.id]?.work_role === 'coordinator' && !!listed.value && isCoordinatorAvailable(listed.value, !!conv.value?.prompts.length))
 // Announced politely when it changes, for people who cannot see the state icon.
 const stateLabel = computed(() => {
   if (!listed.value) return ''
   const state = listed.value.state
   if (state === 'error') return 'Erro'
   if (state === 'awaiting_decision') return 'Aguardando você'
+  if (coordinatorAvailable.value) return 'CTO disponível'
   return displayStateLabel(listed.value)
 })
 // Branch, worktree and group; the project joins them in the line below the strip when the breadcrumb does not show it.
@@ -203,10 +207,10 @@ async function openProject() {
 </script>
 
 <template>
-  <header class="flex w-full flex-col border-b border-line">
+  <header class="flex w-full flex-col border-b border-line" :class="{ 'coordinator-header': isCoordinator, 'mobile-expanded': mobileActionsOpen }">
     <span data-test="state-live" role="status" aria-live="polite" class="sr-only">{{ stateLabel }}</span>
     <div data-test="header-strip" class="flex min-h-14 flex-wrap items-center gap-3 px-4 py-2">
-      <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="!needsYou(listed)" />
+      <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="coordinatorAvailable || !needsYou(listed)" />
       <!-- O título e as ações passam para linhas próprias quando falta espaço. -->
       <div data-test="header-title" class="flex min-w-0 grow basis-64 items-center gap-3">
         <nav v-if="showPath" data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 shrink items-center gap-1 text-xs text-fg-muted max-sm:hidden">
@@ -245,8 +249,9 @@ async function openProject() {
         <AgentBadge v-if="listed?.specialist_id != null" :specialist-id="listed.specialist_id" />
         <LabelBadges :ids="listed?.label_ids" class="[&>[data-test=label-badge]]:min-w-0 [&>[data-test=label-badge]]:shrink" />
       </div>
+      <button v-if="isCoordinator" type="button" data-test="mobile-header-actions" class="mobile-header-toggle work-button" :aria-expanded="mobileActionsOpen" :aria-controls="`header-actions-${id}`" @click="mobileActionsOpen = !mobileActionsOpen">Ações</button>
       <!-- Quebram linha numa coluna estreita: shrink-0 em fila única vazava e fazia a página rolar. -->
-      <div data-test="header-actions" class="flex min-w-0 flex-wrap items-center justify-end gap-3">
+      <div :id="`header-actions-${id}`" data-test="header-actions" :class="{ 'mobile-expanded': mobileActionsOpen }" class="flex min-w-0 flex-wrap items-center justify-end gap-3">
         <button v-if="markChip && !managedWorker" ref="markChipButton" type="button" data-test="mark-chip" aria-haspopup="menu" :aria-expanded="!!markAt" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
           <MarkIcon v-if="listed?.mark" :mark="listed.mark" />{{ markChip }}
         </button>
@@ -355,3 +360,16 @@ async function openProject() {
     <MarkPopover v-if="markAt && listed" :session="listed" :x="markAt.x" :y="markAt.y" :ignore="[markButton, markChipButton]" @close="markAt = null" />
   </header>
 </template>
+
+<style scoped>
+.mobile-header-toggle{display:none}
+@media(max-width:600px),(max-height:760px){
+.coordinator-header [data-test=header-strip]{min-height:48px;gap:8px;flex-wrap:wrap;padding-top:6px;padding-bottom:6px}
+.coordinator-header [data-test=header-title]{flex-basis:0;gap:6px}
+.coordinator-header [data-test=conversation-title]{font-size:0.875rem}
+.coordinator-header .mobile-header-toggle{display:inline-flex;min-height:32px;padding:4px 9px;font-size:0.75rem}
+.coordinator-header [data-test=header-actions]:not(.mobile-expanded){display:none}
+.coordinator-header:not(.mobile-expanded) [data-test=header-meta]{display:none}
+.coordinator-header [data-test=header-actions].mobile-expanded{width:100%;gap:8px}
+}
+</style>

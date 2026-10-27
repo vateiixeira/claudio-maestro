@@ -428,3 +428,35 @@ describe('link para configurar o agente', () => {
     expect(wrapper.find('[data-test="configure-agent"]').exists()).toBe(false)
   })
 })
+
+it('CTO ocioso indica disponível, mas preserva pedido real de permissão', async () => {
+  const { useWorkStore } = await import('../../../stores/work')
+  useWorkStore(pinia).catalog.s1 = { work_role: 'coordinator', project_id: 1, work_item_id: null, work_attempt_id: null }
+  useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', state: 'idle', display_state: 'waiting', unread: true })])
+  const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+  expect(wrapper.get('[data-test="state-live"]').text()).toBe('CTO disponível')
+  useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', state: 'awaiting_decision', pending_kind: 'tool', display_state: 'waiting' })])
+  await flushPromises()
+  expect(wrapper.get('[data-test="state-live"]').text()).toBe('Aguardando você')
+})
+
+it('CTO com turno idle e execução de subagente continua em execução', async () => {
+  const { useWorkStore } = await import('../../../stores/work')
+  useWorkStore(pinia).catalog.s1 = { work_role: 'coordinator', project_id: 1, work_item_id: null, work_attempt_id: null }
+  useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', state: 'idle', display_state: 'running', subagents_running: true })])
+  const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+  expect(wrapper.get('[data-test="state-live"]').text()).toBe('Em execução')
+})
+
+it('CTO oferece ações recolhíveis no mobile sem remover os controles', async () => {
+  const { useWorkStore } = await import('../../../stores/work')
+  useWorkStore(pinia).catalog.s1 = { work_role: 'coordinator', project_id: 1, work_item_id: null, work_attempt_id: null }
+  const wrapper = mountHeader(null)
+  const toggle = wrapper.get('[data-test="mobile-header-actions"]')
+  expect(toggle.attributes('aria-expanded')).toBe('false')
+  expect(wrapper.get('[data-test="header-actions"]').classes()).not.toContain('mobile-expanded')
+  await toggle.trigger('click')
+  expect(toggle.attributes('aria-expanded')).toBe('true')
+  expect(wrapper.get('[data-test="header-actions"]').classes()).toContain('mobile-expanded')
+  expect(wrapper.find('[data-test="terminal-button"]').exists()).toBe(true)
+})

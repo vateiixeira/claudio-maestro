@@ -237,6 +237,7 @@ export interface PendingPermission {
 export type DisplayState = 'running' | 'waiting' | 'finished'
 
 export interface SendResult {
+  send_started?: boolean
   state: SessionState
   external_activity: boolean
   queued?: boolean

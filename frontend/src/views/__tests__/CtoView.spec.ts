@@ -22,6 +22,11 @@ it('trocar projeto abre o CTO correto e não troca o diretório de uma sessão v
   const router = createAppRouter(createMemoryHistory()); await router.push('/cto?projeto=1')
   const wrapper = mount(CtoView, { global: { plugins: [router], stubs: { ConversationView: { props: ['id'], template: '<div data-test="cto-conversation">{{ id }}</div>' } } } })
   await flushPromises(); expect(wrapper.get('[data-test="cto-conversation"]').text()).toBe('cto-one')
+  const projectOptions = wrapper.get('[data-test="cto-project-options-toggle"]')
+  expect(projectOptions.attributes('aria-expanded')).toBe('false')
+  await projectOptions.trigger('click')
+  expect(projectOptions.attributes('aria-expanded')).toBe('true')
+  expect(wrapper.get('[data-test="cto-project-options"]').classes()).toContain('mobile-expanded')
   await wrapper.get('select').setValue('2'); await flushPromises()
   expect(wrapper.get('[data-test="cto-conversation"]').text()).toBe('cto-two')
   expect(fetch.mock.calls.some(call => call[1]?.method === 'PATCH')).toBe(false)
@@ -40,11 +45,11 @@ it('resposta atrasada de pausa não altera o modo do projeto recém-aberto', asy
   const router = createAppRouter(createMemoryHistory()); await router.push('/cto?projeto=1')
   const wrapper = mount(CtoView, { global: { plugins: [router], stubs: { ConversationView: true } } })
   await flushPromises()
-  await wrapper.findAll('button').find(b => b.text() === 'Pausar trabalho')!.trigger('click')
+  await wrapper.findAll('button').find(b => b.text() === 'Pausar fila')!.trigger('click')
   await wrapper.get('select').setValue('2'); await flushPromises()
   pause(jsonResponse({ enabled: true, paused: true })); await flushPromises()
   expect(wrapper.text()).toContain('Coordenação ativa')
-  expect(wrapper.text()).not.toContain('Trabalhadores pausados')
+  expect(wrapper.text()).not.toContain('Fila pausada')
 })
 
 it('limpar projeto enquanto abre uma conversa pendente volta à escolha de projeto', async () => {
@@ -84,7 +89,7 @@ it('sem projeto, mostra as conversas abertas no topo por atividade, mesmo com um
   const open = wrapper.findAll('[data-test="cto-open"] [data-test="cto-item"]')
   expect(open.map(item => item.get('.cto-name').text())).toEqual(['beta', 'alfa'])
   expect(open[0]!.text()).toContain('Em execução'); expect(open[0]!.text()).toContain('há 5 min')
-  expect(open[1]!.text()).toContain('Sua vez'); expect(open[1]!.text()).toContain('há 2 h')
+  expect(open[1]!.text()).toContain('CTO disponível'); expect(open[1]!.text()).toContain('há 2 h')
   const others = wrapper.findAll('[data-test="cto-others"] [data-test="cto-item"]')
   expect(others.map(item => item.get('.cto-name').text())).toEqual(['gama', 'delta'])
   expect(fetch.mock.calls.some(call => call[1]?.method === 'POST')).toBe(false)
@@ -129,4 +134,18 @@ it('conversa aberta em projeto com pasta indisponível aparece desabilitada', as
   expect(open).toHaveLength(1)
   expect(open[0]!.attributes('disabled')).toBeDefined()
   expect(open[0]!.text()).toContain('Pasta indisponível')
+})
+
+it.each([
+  [{ state: 'idle', display_state: 'waiting', unread: true }, 'CTO disponível'],
+  [{ state: 'idle', display_state: 'running', subagents_running: true }, 'Em execução'],
+  [{ state: 'awaiting_decision', display_state: 'waiting', pending_kind: 'question' }, 'Aguardando você'],
+  [{ state: 'awaiting_decision', display_state: 'waiting', pending_kind: 'plan' }, 'Aguardando você'],
+] as const)('lista preserva estado factual do CTO %j', async (state, expected) => {
+  const { wrapper } = await mountList(() => {
+    useProjectsStore().projects = [makeProject({ id: 1 })]
+    useWorkStore().coordinators = { 1: 'c1' }
+    useSessionsStore().setForProject(1, [makeSession({ session_id: 'c1', project_id: 1, ...state })])
+  })
+  expect(wrapper.get('[data-test="cto-item"]').text()).toContain(expected)
 })

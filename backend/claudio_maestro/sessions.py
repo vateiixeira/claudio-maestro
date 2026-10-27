@@ -1678,7 +1678,7 @@ class ActiveSession:
         await self.ensure_history()
         # The user's message is recorded first so it is never lost.
         sent_text, commit = self._prepare(text)
-        self._emit_events(self.builder.add_user_message(sent_text, markers))
+        self._emit_events(self.builder.add_user_message(sent_text, markers, message_id=dispatch_id))
         self._touch()
         self._reopen_if_finished()
         self.emit_updated()

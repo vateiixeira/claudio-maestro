@@ -6,7 +6,7 @@ import { errorMessage } from '../api/http'
 import { useWorkStore } from '../stores/work'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
-import { displayStateLabel } from '../sessionState'
+import { coordinatorAvailable, coordinatorStateLabel } from '../sessionState'
 import { needsYou } from '../conversation/needsYou'
 import { formatActivity } from '../format'
 import DisplayStateIcon from '../components/DisplayStateIcon.vue'
@@ -18,7 +18,7 @@ import SourcesPanel from '../components/work/SourcesPanel.vue'
 const route = useRoute(), router = useRouter(), work = useWorkStore(), projects = useProjectsStore(), sessions = useSessionsStore()
 const navigation = inject(AGENTS_NAVIGATION_KEY, undefined)
 const projectId = computed(() => Number(route.query.projeto) || null)
-const sessionId = ref<string | null>(null), mode = ref<WorkMode | null>(null), error = ref(''), loading = ref(false), busy = ref(false), sourcesOpen = ref(false)
+const sessionId = ref<string | null>(null), mode = ref<WorkMode | null>(null), error = ref(''), loading = ref(false), busy = ref(false), sourcesOpen = ref(false), projectOptionsOpen = ref(false)
 let ticket = 0
 interface CtoEntry { project: Project, session: Session | undefined }
 // Projects whose CTO conversation exists and is not finished, most recent activity first; the rest are only places to start or reopen.
@@ -34,7 +34,7 @@ const listing = computed(() => {
 const openIds = computed(() => new Set(listing.value.open.map(entry => entry.project.id)))
 async function load() {
   const mine = ++ticket, id = projectId.value
-  sessionId.value = null; mode.value = null; error.value = ''; sourcesOpen.value = false; loading.value = false
+  sessionId.value = null; mode.value = null; error.value = ''; sourcesOpen.value = false; projectOptionsOpen.value = false; loading.value = false
   if (!id) return
   loading.value = true
   try { const [sid, projectMode] = await Promise.all([work.openCoordinator(id), work.mode(id)]); if (mine === ticket) { sessionId.value = sid; mode.value = projectMode } }
@@ -60,9 +60,9 @@ onBeforeUnmount(() => ticket++)
     <header class="cto-header">
       <button v-if="navigation?.enabled.value" class="work-menu" type="button" aria-label="Abrir navegação" :aria-expanded="navigation.open.value" @click="navigation.toggle($event.currentTarget as HTMLElement)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
       <h1>CTO</h1><label class="cto-project"><span class="sr-only">Projeto do CTO</span><select class="work-select" :value="projectId ?? ''" @change="choose(($event.target as HTMLSelectElement).value)"><option value="">Escolher projeto</option><option v-for="project in projects.projects" :key="project.id" :value="project.id" :disabled="!project.available">{{ project.name }}{{ openIds.has(project.id) ? ' · em andamento' : '' }}</option></select></label>
-      <template v-if="projectId"><RouterLink class="work-link cto-tasks" :to="`/tarefas?project=${projectId}`">Tarefas ↗</RouterLink><button class="work-button" type="button" :aria-expanded="sourcesOpen" @click="sourcesOpen = !sourcesOpen">Fontes</button></template>
+      <button v-if="projectId" type="button" data-test="cto-project-options-toggle" class="cto-project-options-toggle work-button" :aria-expanded="projectOptionsOpen" aria-controls="cto-project-options" @click="projectOptionsOpen = !projectOptionsOpen">Projeto</button><div v-if="projectId" id="cto-project-options" data-test="cto-project-options" class="cto-project-options" :class="{ 'mobile-expanded': projectOptionsOpen }"><RouterLink class="work-link cto-tasks" :to="`/tarefas?project=${projectId}`">Tarefas ↗</RouterLink><button class="work-button" type="button" :aria-expanded="sourcesOpen" @click="sourcesOpen = !sourcesOpen">Fontes</button></div>
     </header>
-    <div v-if="mode" class="cto-mode"><span class="work-muted">{{ mode.deleting ? 'Exclusão reservada. Novos trabalhos estão bloqueados.' : !mode.enabled ? 'Coordenação ainda não ativada' : mode.paused ? 'Trabalhadores pausados' : 'Coordenação ativa' }}</span><button v-if="mode.deleting && mode.fence_id" class="work-button" :disabled="busy" @click="setMode('cancel_delete')">Cancelar reserva de exclusão</button><button v-else class="work-button" :disabled="busy" @click="setMode(!mode.enabled ? 'enable' : mode.paused ? 'resume' : 'pause')">{{ !mode.enabled ? 'Ativar coordenação' : mode.paused ? 'Retomar trabalho' : 'Pausar trabalho' }}</button><button v-if="mode.enabled && !mode.deleting" class="work-button" :disabled="busy" @click="setMode('disable')">Desativar</button></div>
+    <div v-if="mode" class="cto-mode"><span class="work-muted">{{ mode.deleting ? 'Exclusão reservada. Novos trabalhos estão bloqueados.' : !mode.enabled ? 'Coordenação ainda não ativada' : mode.paused ? 'Fila pausada' : 'Coordenação ativa' }}</span><button v-if="mode.deleting && mode.fence_id" class="work-button" :disabled="busy" @click="setMode('cancel_delete')">Cancelar reserva de exclusão</button><button v-else class="work-button" :disabled="busy" @click="setMode(!mode.enabled ? 'enable' : mode.paused ? 'resume' : 'pause')">{{ !mode.enabled ? 'Ativar coordenação' : mode.paused ? 'Retomar fila' : 'Pausar fila' }}</button><button v-if="mode.enabled && !mode.deleting" class="work-button" :disabled="busy" @click="setMode('disable')">Desativar</button></div>
     <p v-if="work.dispatcherEnabled === false && projectId" class="cto-runtime work-muted">Despacho automático desligado nesta instalação. Os trabalhadores não serão iniciados.</p>
     <p v-if="error" class="cto-error work-error" role="alert">{{ error }} <button class="work-button" type="button" @click="load">Atualizar</button></p>
     <SourcesPanel v-if="sourcesOpen && projectId" :key="projectId" :project-id="projectId" />
@@ -76,7 +76,7 @@ onBeforeUnmount(() => ticket++)
             <span class="cto-name">{{ project.name }}</span>
             <span class="cto-meta work-muted">
               <template v-if="!project.available">Pasta indisponível</template>
-              <template v-else-if="session"><DisplayStateIcon :display="session.display_state" :size="11" :quiet="!needsYou(session)" /><span>{{ displayStateLabel(session) }}</span><span aria-hidden="true">·</span><span>{{ formatActivity(session.last_activity_at) }}</span></template>
+              <template v-else-if="session"><DisplayStateIcon :display="session.display_state" :size="11" :quiet="coordinatorAvailable(session) || !needsYou(session)" /><span>{{ coordinatorStateLabel(session) }}</span><span aria-hidden="true">·</span><span>{{ formatActivity(session.last_activity_at) }}</span></template>
               <template v-else>Abrir conversa →</template>
             </span>
           </button>
@@ -97,4 +97,8 @@ onBeforeUnmount(() => ticket++)
 <style scoped>
 .cto-workspace{display:flex;flex-direction:column;height:100%;min-width:0;background:var(--color-surface);container-type:inline-size}.cto-header{display:flex;align-items:center;gap:14px;min-height:65px;padding:12px 24px;border-bottom:1px solid var(--color-line);flex-shrink:0}.cto-header h1{font-size:1.0625rem;font-weight:500;margin:0}.cto-project{min-width:0;flex:1}.cto-project select{max-width:280px;width:100%;font-size:0.75rem}.cto-header a{font-size:0.75rem}.cto-mode{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:9px 24px;border-bottom:1px solid var(--color-line)}.cto-mode>span{margin-right:auto;font-size:0.6875rem}.cto-mode button{font-size:0.6875rem;min-height:28px;padding:4px 9px}.cto-runtime,.cto-error{margin:0;padding:10px 24px;border-bottom:1px solid var(--color-line);font-size:0.6875rem}.cto-loading{padding:24px}.cto-section+.cto-section{margin-top:28px}.cto-section h2{margin:0 0 6px;font-size:0.75rem;font-weight:500;color:var(--color-fg-muted)}.cto-project-list{max-width:700px}.cto-name{min-width:0;overflow-wrap:anywhere}.cto-meta{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;font-size:0.75rem}.cto-project-list button{display:flex;width:100%;justify-content:space-between;align-items:center;gap:12px;text-align:left;border:0;border-top:1px solid var(--color-line);padding:18px 3px;background:transparent;color:var(--color-fg);font-size:0.8125rem;cursor:pointer}.cto-project-list button:hover{background:var(--color-panel)}.cto-project-list button:disabled{opacity:.5;cursor:default}
 @container(max-width:460px){.cto-project-list button{flex-wrap:wrap;gap:4px 12px}.cto-header{gap:9px;padding:12px 14px;flex-wrap:wrap}.cto-header h1{font-size:0.9375rem}.cto-project{flex-basis:60%}.cto-header .cto-tasks{margin-left:4px}.cto-mode{padding:9px 14px}.cto-mode>span{width:100%}.cto-runtime,.cto-error{padding:9px 14px}}
+.cto-project-options{display:flex;align-items:center;gap:14px}.cto-project-options-toggle{display:none}
+@container(max-width:460px){
+.cto-header{min-height:56px;gap:6px;padding:8px 14px}.cto-project{flex-basis:0}.cto-header h1{flex-shrink:0}.cto-project-options-toggle{display:inline-flex;font-size:0.6875rem;min-height:32px;padding:4px 8px}.cto-project-options:not(.mobile-expanded){display:none}.cto-project-options.mobile-expanded{flex-basis:100%;justify-content:flex-end;gap:10px}.cto-mode{gap:6px;padding-top:6px;padding-bottom:6px}.cto-mode>span{width:auto;font-size:0.625rem}.cto-mode button{font-size:0.625rem;min-height:28px;padding:4px 7px}
+}
 </style>

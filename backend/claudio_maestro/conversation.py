@@ -274,10 +274,10 @@ class ConversationBuilder:
         return [asdict(item) for item in self.items]
 
     def add_user_message(
-        self, text: str, images: list[dict[str, Any]] | None = None
+        self, text: str, images: list[dict[str, Any]] | None = None, *, message_id: str | None = None
     ) -> list[Event]:
         """`images` are light markers ({type, media_type, size}), never the base64."""
-        item = _user_item(f"user-{uuid.uuid4().hex}", text, list(images or []))
+        item = _user_item(f"user-{message_id or uuid.uuid4().hex}", text, list(images or []))
         return [self._put(item)]
 
     def expect_local_echo(self, text: str) -> None:

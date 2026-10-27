@@ -17,6 +17,7 @@ import TurnTasks from './TurnTasks.vue'
 import UserMessage from './UserMessage.vue'
 import PendingAnnouncements from './PendingAnnouncements.vue'
 import CoordinatorWork from '../work/CoordinatorWork.vue'
+import CoordinatorAttention from '../work/CoordinatorAttention.vue'
 import { activeAttempt } from '../../types/work'
 import { useWorkStore } from '../../stores/work'
 import AgentExecutions from '../agents/AgentExecutions.vue'
@@ -33,6 +34,7 @@ import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
 import type { ToolItem } from '../../types/conversation'
+import { useMessageOrigins } from '../../conversation/messageOrigins'
 import { isBareShortcut } from '../../keyboardShortcutGuard'
 
 const props = withDefaults(defineProps<{ id: string; visible?: boolean; find?: string }>(), { visible: true })
@@ -55,6 +57,8 @@ const loadError = ref<string | null>(null)
 // Something arrived while the user was reading above: 'prompt' (needs them) outranks 'news'.
 const unseen = ref<'news' | 'prompt' | null>(null)
 const conv = computed(() => conversations.get(props.id))
+const origins = useMessageOrigins(computed(() => props.id), computed(() => conv.value?.items.filter(item => item.type === 'user').map(item => item.id) ?? []))
+watch(() => work.changeVersion, () => { void origins.refresh() })
 const project = computed(() => (conv.value?.projectId != null ? projects.byId(conv.value.projectId) : undefined))
 // The project's folder was deleted or moved: nothing that runs in it can work.
 const unavailableReason = computed(() =>
@@ -142,7 +146,7 @@ watch(
     offs = [
       socket.onSession(id, (event) => conversations.receive(event)),
       // Every opening, the first included: events between the snapshot and it were lost.
-      socket.onOpen(() => void reload()),
+      socket.onOpen(() => { void reload(); void origins.refresh() }),
     ]
     loadError.value = null
     unseen.value = null
@@ -428,7 +432,7 @@ watch(() => turns.value.length, async () => {
   await nextTick()
   updateCurrentTurn()
 })
-const currentTurnText = computed(() => turns.value[currentTurn.value]?.turn.user?.text || 'Início da sessão')
+const currentTurnText = computed(() => { const user = turns.value[currentTurn.value]?.turn.user; return user && origins.automatic.value.has(user.id) ? 'Atualização automática' : user?.text || 'Início da sessão' })
 function goToTurn(index: number) {
   const anchor = turnAnchors()[index]
   if (!anchor) return
@@ -500,6 +504,9 @@ function resolvePrompt(promptId: string) {
       <!-- Screen readers hear finished replies only, never each streamed character. -->
       <div data-test="conversation-live" aria-live="polite" class="sr-only">{{ announcement }}</div>
       <div class="relative flex min-h-0 grow flex-col">
+      <div v-if="identity?.work_role === 'coordinator'" class="coordinator-next-step mx-auto max-h-[40vh] w-full max-w-(--chat-width) shrink-0 overflow-y-auto px-4 pt-4" data-test="coordinator-next-step">
+        <CoordinatorAttention :key="identity.project_id" :project-id="identity.project_id" />
+      </div>
       <div ref="scroller" data-test="conversation-scroller" class="relative min-h-0 grow overflow-y-auto" @scroll="onScroll">
         <div
           v-if="turns.length >= 2"
@@ -553,7 +560,7 @@ function resolvePrompt(promptId: string) {
               :tabindex="index === 0 ? -1 : undefined"
               class="flex scroll-mt-11 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
             >
-              <UserMessage v-if="turn.user" :item="turn.user" :class="{ 'animate-enter': isLive(turn.user.id) }" />
+              <UserMessage v-if="turn.user" :item="turn.user" :automatic="origins.automatic.value.has(turn.user.id)" :class="{ 'animate-enter': isLive(turn.user.id) }" />
               <div v-if="turn.entries.length" class="relative flex flex-col gap-[18px]">
                 <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
                 <div v-for="entry in turn.entries" :key="entryKey(entry)" data-test="turn-entry" class="relative flex items-start gap-3" :class="{ 'animate-enter': isLive(entryKey(entry)) }">
@@ -685,8 +692,8 @@ function resolvePrompt(promptId: string) {
           >A mensagem buscada não está no trecho carregado da conversa.</p>
           <p v-if="loadError" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg">{{ loadError }}</p>
           <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
-          <p v-if="managedWorker" data-test="managed-worker" class="m-0 border border-line rounded-md bg-panel p-3 text-xs text-fg-muted">{{ workEnded ? 'Execução encerrada.' : 'Execução gerenciada pelo CTO.' }} Esta conversa registra uma tentativa da tarefa #{{ identity?.work_item_id }}. Acompanhe o resultado e peça a continuidade pela <RouterLink class="text-info-soft" :to="`/tarefas/${identity?.work_item_id}`">tarefa</RouterLink>. Os pedidos de permissão desta execução continuam disponíveis acima.</p>
-          <MessageComposer v-else ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
+          <p v-if="managedWorker" data-test="managed-worker" class="m-0 border border-line rounded-md bg-panel p-3 text-xs text-fg-muted">{{ workEnded ? 'Execução encerrada.' : 'Execução gerenciada pelo CTO.' }} Esta conversa registra uma tentativa da tarefa #{{ identity?.work_item_id }}. Acompanhe o resultado e os próximos passos na <RouterLink class="text-info-soft" :to="`/tarefas/${identity?.work_item_id}`">tarefa</RouterLink>. Os pedidos de permissão desta execução continuam disponíveis acima.</p>
+          <MessageComposer v-else ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :compact-on-mobile="identity?.work_role === 'coordinator'" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
             <template #controls><SessionControls :session-id="conv.sessionId" /></template>
           </MessageComposer>
         </div>
@@ -710,3 +717,7 @@ function resolvePrompt(promptId: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+@media(max-width:600px),(max-height:760px){.coordinator-next-step{max-height:160px;padding-top:8px}}
+</style>

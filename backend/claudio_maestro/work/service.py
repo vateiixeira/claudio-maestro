@@ -30,6 +30,7 @@ from . import pool, prompt, store
 from .decisions import DecisionsMixin
 from .files import WorkFiles
 from .notifications import NotificationsMixin
+from .presentation import PresentationMixin
 from .processes import ProcessCloseMixin
 from .reviews import ReviewsMixin
 from .sources import SourcesMixin
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 TURN_OPEN = ('connecting', 'running', 'awaiting_decision')
 
 
-class WorkService(SourcesMixin, ReviewsMixin, DecisionsMixin, NotificationsMixin, ProcessCloseMixin):
+class WorkService(PresentationMixin, SourcesMixin, ReviewsMixin, DecisionsMixin, NotificationsMixin, ProcessCloseMixin):
     def __init__(self, db_path: Path, *, sessions: SessionManager, files: WorkFiles,
                  publish: Callable[[dict], None], clock: Callable[[], float] = time.time,
                  legacy_busy: Callable[[sqlite3.Connection, int], bool] | None = None,
