@@ -19,7 +19,7 @@ import uuid
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Collection
 from contextlib import closing, suppress
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from types import EllipsisType
 from typing import Any, Literal, Protocol
@@ -162,7 +162,7 @@ PERMISSION_MODES: tuple[str, ...] = (
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._\[\]-]{1,100}$")
 # How long an agent's policy may take to decide a tool call before the user is asked.
 POLICY_TIMEOUT = 10.0
-SPECIALIST_SETUP_FAILED_TEXT = "Não foi possível preparar o agente desta sessão."
+AGENT_SETUP_FAILED_TEXT = "Não foi possível preparar a sessão do agente."
 SPECIALIST_MODE_TEXT = "Sessões de agente só rodam no modo padrão de permissões."
 # Modes the CLI may report for a session of an agent (it enters plan mode by itself).
 SPECIALIST_CLI_MODES = ("default", "plan")
@@ -976,20 +976,23 @@ class _CliTurn:
 
 @dataclass
 class SessionExtras:
-    """What a session of an agent adds to the options of its client: the agent's skill
+    """What a session of an agent adds to the options of its client: the agent's prompt
     (appended to the system prompt), extra folders, environment, in-process MCP servers,
-    the `--settings` JSON with the `ask` and `deny` rules, and `decide`, the agent's policy
-    that answers `allow` (no prompt), `ask` (a pending prompt in the Inbox) or `deny` (the
-    tool is refused, no prompt) per tool call. `deny_message` says why a refused call was
-    refused; without it, the tool is reported as blocked."""
+    the permission mode and the tools the definition blocks, and `decide`, the agent's
+    policy that answers `allow` (no prompt), `ask` (a pending prompt in the Inbox) or `deny`
+    (the tool is refused, no prompt) per tool call. `settings` (the `--settings` JSON with
+    `ask` and `deny` rules) is optional, and so is `deny_message`: without it, a refused
+    tool is reported as blocked."""
 
     system_prompt_append: str
     add_dirs: list[Path]
     env: dict[str, str]
     mcp_servers: dict[str, Any]
-    settings: str
     decide: Callable[[str, dict[str, Any]], Awaitable[Literal["allow", "ask", "deny"]]]
+    settings: str | None = None
     deny_message: Callable[[str, dict[str, Any]], str] | None = None
+    permission_mode: str = "default"
+    disallowed_tools: list[str] = field(default_factory=list)
 
 
 # Called by every new client of a session with a `agent_id`; None: no extras.
@@ -1996,7 +1999,7 @@ class ActiveSession:
                 logger.exception(
                     "Falha ao preparar a sessão de agente %s: %s", self.session_id, error
                 )
-                raise AgentError(SPECIALIST_SETUP_FAILED_TEXT) from None
+                raise AgentError(AGENT_SETUP_FAILED_TEXT) from None
         self._extras = extras
         context = None
         if self._context_setup is not None and not agent_session:
@@ -2014,10 +2017,19 @@ class ActiveSession:
                 can_use_tool=self._can_use_tool,
                 model=None if model == DEFAULT_MODEL_VALUE else model,
                 effort=self.record.effort,
-                # A session of an agent never leaves the default mode, whatever the record
-                # says, and its process is not started able to switch to bypassPermissions.
-                permission_mode="default" if agent_session else self.record.permission_mode,
-                allow_bypass=not agent_session,
+                # A session of an agent runs in the mode its definition says, whatever the
+                # record says (without extras, in the default mode). The process is able to
+                # switch to bypassPermissions only when the definition asked for that mode.
+                permission_mode=(
+                    (extras.permission_mode if extras is not None else "default")
+                    if agent_session
+                    else self.record.permission_mode
+                ),
+                allow_bypass=(
+                    extras.permission_mode == "bypassPermissions"
+                    if agent_session and extras is not None
+                    else not agent_session
+                ),
                 entrypoint=SESSION_ENTRYPOINT,
                 # New processes go through the agentd only when the manager allows it;
                 # attaching always uses it (MAESTRO_AGENTD=0 still reattaches).
@@ -2029,6 +2041,7 @@ class ActiveSession:
                     "env": extras.env,
                     "mcp_servers": extras.mcp_servers,
                     "settings": extras.settings,
+                    "disallowed_tools": list(extras.disallowed_tools),
                 }),
                 **({} if context is None else {
                     "system_prompt_append": context.system_prompt_append,
@@ -2828,6 +2841,8 @@ class ActiveSession:
             and (
                 self.record.agent_id is None
                 or init.permission_mode in SPECIALIST_CLI_MODES
+                # The mode the definition asked for (e.g. bypassPermissions).
+                or (self._extras is not None and init.permission_mode == self._extras.permission_mode)
             )
         ):
             changes["permission_mode"] = init.permission_mode

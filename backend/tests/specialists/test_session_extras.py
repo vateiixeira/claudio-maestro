@@ -397,13 +397,14 @@ async def test_update_still_changes_the_mode_of_an_ordinary_session(make_env, en
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("kind", ["fresh", "resume", "attach"])
-async def test_specialist_client_always_starts_in_default_mode_without_bypass(
+async def test_specialist_client_starts_in_the_extras_default_mode(
     make_env, env_cleanup, kind
 ):
     env = make_env(Setup())
     env_cleanup.append(env.manager)
     session = specialist_session(env)
-    # Whatever got into the record (an old row, a bug), the client never gets it.
+    # Whatever got into the record (an old row, a bug), the client takes the mode of the extras
+    # (the old service fills "default"); the process is not started able to bypass.
     session.save(permission_mode="bypassPermissions")
     attach = SimpleNamespace(agentd_id="c", from_pos=0, init_response=None)
 
@@ -471,7 +472,7 @@ async def test_init_still_sets_the_mode_of_an_ordinary_session(make_env, env_cle
 # Failures of the setup --------------------------------------------------------
 
 SECRET = "SEGREDO-DO-SECRETS-ENV"
-FIXED_TEXT = "Não foi possível preparar o agente desta sessão."
+FIXED_TEXT = "Não foi possível preparar a sessão do agente."
 
 
 @pytest.mark.anyio

@@ -327,6 +327,8 @@ class SpecialistService:
             ),
             decide=self._decider(record.session_id, list(specialist.denied_tools)),
             deny_message=self._deny_message(record.session_id, list(specialist.denied_tools)),
+            permission_mode="default",
+            disallowed_tools=list(specialist.denied_tools),
         )
 
     @staticmethod

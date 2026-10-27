@@ -951,6 +951,8 @@ async def test_session_setup_settings_deny_the_blocked_tools(world):
         "Bash(gh pr comment:*)", "Bash(gh pr review:*)", "Bash(gh issue comment:*)",
     ]
     assert "ask" in permissions
+    assert extras.permission_mode == "default"
+    assert extras.disallowed_tools == ["mcp__kbgen-issues__editar_issue", "mcp__outro", "WebFetch"]
     assert extras.deny_message is not None
     assert extras.deny_message("WebFetch", {}) == BLOCKED_TOOL_MESSAGE
     assert extras.deny_message("mcp__outro__qualquer", {}) == BLOCKED_TOOL_MESSAGE
