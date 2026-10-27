@@ -91,6 +91,8 @@ class AgentOptions:
     env: dict[str, str] = field(default_factory=dict)
     # MCP servers by name; the in-process ones (`create_sdk_mcp_server`) live in the backend.
     mcp_servers: dict[str, Any] | None = None
+    # Ferramentas que o CLI recusa, no formato de `permissions.deny`.
+    disallowed_tools: list[str] = field(default_factory=list)
 
 
 @runtime_checkable

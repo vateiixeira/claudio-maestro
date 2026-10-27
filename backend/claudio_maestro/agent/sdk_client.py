@@ -131,6 +131,8 @@ def build_sdk_options(
         kwargs["add_dirs"] = list(options.add_dirs)
     if options.mcp_servers:
         kwargs["mcp_servers"] = dict(options.mcp_servers)
+    if options.disallowed_tools:
+        kwargs["disallowed_tools"] = list(options.disallowed_tools)
     # The SDK applies `env` over the inherited environment and its own default.
     env = dict(options.env)
     if options.entrypoint is not None:

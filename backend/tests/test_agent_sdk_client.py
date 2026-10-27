@@ -218,6 +218,20 @@ def test_build_options_maps_specialist_fields(tmp_path):
     assert sdk.env == {"MAESTRO_X": "1", "CLAUDE_CODE_ENTRYPOINT": "claudio-maestro"}
 
 
+def test_build_options_passes_disallowed_tools(tmp_path):
+    sdk = build_sdk_options(make_options(
+        tmp_path, disallowed_tools=["WebFetch", "Bash(git push --force*)"],
+    ))
+
+    assert sdk.disallowed_tools == ["WebFetch", "Bash(git push --force*)"]
+
+
+def test_build_options_without_disallowed_tools_keeps_sdk_defaults(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path))
+
+    assert sdk.disallowed_tools == []
+
+
 def test_build_options_specialist_env_without_entrypoint(tmp_path):
     sdk = build_sdk_options(make_options(tmp_path, env={"MAESTRO_X": "1"}))
 
