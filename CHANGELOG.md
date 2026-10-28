@@ -7,52 +7,24 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 ### Adicionado
 
 - Tela Projetos no menu lateral, com todos os projetos cadastrados, caminhos das pastas e edição do nome no Maestro sem renomear a pasta.
-
-- Início, Tarefas e conversa persistente do CTO por projeto: objetivos, decisões prioritárias, filtros, tentativas com andamento ao vivo e resultados próprios, mantendo conversas e URLs anteriores.
-- Tarefas por issue com contextos separados, revisão independente, evidências de execução e decisões humanas ligadas à ação e à revisão exatas. Retomadas conservam o histórico; envios incertos não são repetidos automaticamente.
-- Fontes Sentry e KBGen: coleta delegada em conversa própria, metadados paginados no backlog e reavaliação após mudanças na fonte ou no código.
-- Feed durável do CTO e continuidade de comentários nos PRs das tarefas, com autoria e recibos preservados entre tentativas.
-- Verificação de execuções do GitHub Actions para o commit limpo da tentativa, com jobs e etapas conferidos pelo backend antes da revisão.
-- Limites persistidos de trabalhadores, com padrão de um, teto opt-in de dois e reservas separadas de checkout e recursos compartilhados.
-
-- Agentes: conversa principal permanente no topo da barra lateral, anúncios dos resultados na conversa e comentários seus nos PRs entregues à sessão que abriu o PR, por consulta periódica ou webhook assinado. Login e segredo configuráveis na página Agentes; os agentes respondem na conversa e não comentam no GitHub.
-
-- Agentes: conversa direta com contexto preservado, nova conversa e continuação dos resultados de rotinas. Mensagens e imagens seguem a fila persistente, com prévia e cancelamento no chat; a página separa Conversas, Execuções e Configuração.
-
-- Agentes: fila persistente por agente para pedidos manuais e horários, com pausa, retomada e cancelamento de pendências. Reiniciar preserva os pedidos; envios de resultado incerto pausam a fila e pedem revisão, sem reenviar automaticamente.
-- Agentes: o campo "Ferramentas bloqueadas", na seção Autonomia, impede o agente de usar uma ferramenta em qualquer autonomia, pelo nome (`mcp__servidor__ferramenta`, `WebFetch`) ou pelo servidor MCP inteiro (`mcp__servidor`).
+- **Organização de agentes.** A tela Agentes mostra, por projeto, a árvore de chefes e subordinados, com o estado de cada agente de relance. Cada agente é um `AGENT.md` que você edita no próprio app (um arquivo inválido mostra o erro na linha e mantém o que você digitou), com memória, registro, segredos, conversas e execuções à vista, e as ações de rodar agora, desligar, trocar o chefe, duplicar e apagar. As tarefas ficam num quadro, com responsável, revisor, comentários e decisões; um comentário acorda o outro lado, mas uma resposta a uma resposta não o acorda de volta, para chefe e subordinado não se acordarem em laço. Cada agente tem as suas rotinas, com horários, instrução e a opção de abrir uma tarefa a cada disparo, e cada disparo vira uma execução com o relato do que o agente fez. Os agentes trabalham com as ferramentas `maestro`: consultar e gravar o registro, avisar, listar, ler, criar, atualizar e comentar tarefas, decidir (perguntar a você), verificar o resultado de uma execução de CI do GitHub Actions e concluir. Um agente com `worktree: true` trabalha cada tarefa numa worktree própria, que o git do projeto ignora.
+- Início e Inbox sobre a organização: o Início mostra o que precisa de você, o que está em andamento e as tarefas concluídas recentes, e a Inbox reúne as decisões e os avisos dos agentes. A conversa de um agente mostra a tarefa e as execuções dele.
+- Comentários seus nos PRs voltam ao agente que abriu o PR, por consulta periódica ao GitHub ou por webhook assinado. O agente responde na conversa dele e não comenta no GitHub.
 
 ### Alterado
 
-- Organização: a tela Agentes mostra, por projeto, a árvore de chefes e subordinados, com os estados de relance e as abas Tarefas, Rotinas e Execuções. O Sentry e o KBGen migram automaticamente para agentes da organização.
-- Painel do agente: edite o `AGENT.md` no próprio app (um arquivo inválido mostra o erro na linha e mantém o que você digitou), veja memória, registro, segredos, conversas e execuções, e rode agora, desligue, troque o chefe, duplique ou apague o agente.
-- Tarefas coordenadas pelos agentes da organização: lista com filtros, tela da tarefa com responsável, revisor, comentários, decisões e execuções. O CTO e as tarefas abertas migram automaticamente. Um comentário acorda o outro lado, mas uma resposta a uma resposta não o acorda de volta, para chefe e responsável não se acordarem em laço; reabrir ou desbloquear uma tarefa acorda o responsável; acima do corte de uso da assinatura os despertares de tarefa esperam em vez de se perderem; e agentes com worktree por tarefa trabalham nela, que o git do projeto ignora.
-- Rotinas: horários, instrução e agente de cada rotina na aba Rotinas do projeto, com "Rodar agora" e a opção de abrir uma tarefa a cada disparo.
-- Início e Inbox sobre a organização: o Início mostra o que precisa de você, o que está em andamento e as tarefas concluídas recentes, e o objetivo vai para o CTO do projeto; a Inbox reúne as decisões e os avisos dos agentes. A conversa de um agente mostra a tarefa e as execuções dele.
+- Quem tinha agentes na 0.8.0: a página Agentes virou a organização. O `SKILL.md` de cada agente vira o corpo do `AGENT.md` e o `aprendizados.md` vira o `memoria.md`, na pasta `agents/<nome>/` da pasta de dados; as pastas antigas ficam em `specialists/<nome>.migrado`, sem apagar nada. Os horários viram uma rotina por agente. A migração é automática na primeira subida e deixa um relatório em `agents/migracao-<data>.md`.
+- O agente roda sem pedir ok para nada (`permissionMode: bypassPermissions`). A autonomia e a política de comandos da 0.8.0 saem; o que você quer proibir vai em `disallowedTools`, no `AGENT.md`, pelo nome da ferramenta (`mcp__servidor__ferramenta`, `WebFetch`) ou pelo servidor MCP inteiro (`mcp__servidor`).
 - A variável `MAESTRO_SPECIALISTS_SCHEDULER` passou a se chamar `MAESTRO_ROUTINES_SCHEDULER`; o nome antigo continua valendo por esta versão.
-- O CTO mostra os próximos passos acima da conversa, separando decisões, permissões e execuções que precisam de orientação. Tentativas elegíveis têm campo próprio para continuar com uma mensagem humana, mantendo o rascunho quando o envio falha. Em celulares e telas baixas, os controles secundários ficam recolhíveis para preservar o espaço da conversa.
-- Tarefas ainda não iniciadas aparecem como “Na fila”, com a causa da espera quando comprovada. O CTO ocioso aparece disponível, sem sugerir uma resposta obrigatória.
-- Avisos registrados pelo Maestro aparecem como “Atualização automática”, recolhidos e com detalhes acessíveis, preservando as mensagens humanas e o histórico.
-
-- O item CTO da barra lateral abre a lista das conversas do CTO em andamento, com estado e última atividade, para você escolher em qual entrar; os demais projetos aparecem abaixo.
-- A navegação diária começa em Início, Tarefas e CTO. Conversas, projetos e agentes anteriores continuam acessíveis.
-
-- A conversa principal do agente agora mostra suas execuções no mesmo lugar: rodadas em andamento abertas com atualização ao vivo e histórico expansível, sem trocar o contexto das mensagens.
-
-- Página do agente redesenhada: seletor compacto, conversa principal em destaque, busca de assuntos, fila separada do histórico e filtro de problemas. Configuração em quatro grupos com atalhos, rascunhos preservados entre abas e navegação adaptada a celulares.
 
 ### Removido
 
-- As telas Agentes (antiga), CTO e a política de comandos dos agentes. Elas dão lugar à organização, ao painel do agente e às tarefas.
+- A página Agentes antiga, a fila pausável por agente, a autonomia "pede ok para fora" e a política de comandos.
+- O merge e o push deixam de pedir ok por conta do app. Se precisar proibir algum, use `disallowedTools` no `AGENT.md`.
 
 ### Corrigido
 
 - Abrir uma sessão depois de um travamento não cria mais uma cópia dela na lateral. A cópia temporária usada para medir o contexto fica fora da lista e seus arquivos são apagados ao fim da medição.
-
-- A fila, a conversa principal e os comentários de PR agora coordenam os turnos do mesmo agente. Finalizar uma conversa ainda em execução não libera uma segunda tarefa, e falhas de conexão preservam o pedido para retomar a fila.
-
-- O cabeçalho da conversa acomoda o nome do agente e as ações em linhas separadas quando falta espaço, sem sobrepor os controles.
-
 - A barra de uso da assinatura não some mais depois de reiniciar o app (mostra a última leitura, com o aviso no tooltip) e espera antes de consultar de novo quando a Anthropic limita as consultas.
 
 ## [0.8.0] - 2026-10-23
