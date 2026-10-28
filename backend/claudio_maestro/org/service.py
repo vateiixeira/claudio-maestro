@@ -156,6 +156,15 @@ TASK_SOURCES = ("assignment", "comment", "decision")
 SERVED_SOURCES = ("manual", "message", "routine", "comment", "assignment", "decision")
 # Origins the usage cut never touches: the person asked for them.
 UNGATED_SOURCES = ("manual", "message")
+
+
+def _waits_over_the_cut(wakeup: store.Wakeup) -> bool:
+    """A wakeup the usage cut holds pending instead of dropping: the one of a task (the task
+    would stop for good) and the answer to a decision (the person's own word, which cannot be
+    given twice). The others (a routine, a comment, an `assignment` with no task) become a
+    `skipped` run."""
+    return wakeup.task_id is not None or wakeup.source == "decision"
+
 # Sources whose runs the closure verdict may close: every run that ends with the agent's own
 # word. A task run (any source, with a `task_id`) is left out: it only ends with its comment.
 CLOSABLE_SOURCES = ("routine", "manual", "comment")
@@ -1031,9 +1040,10 @@ class OrgService:
     def _apply_usage_gate(self, agent: Agent) -> bool:
         """While the subscription is over the cut, every wakeup that is not the person's
         (`manual`, `message`) becomes a `skipped` run and is dropped, whether or not the agent
-        is free to take it now. The wakeups of a task are not dropped: they stay pending (the
-        task would stop for good otherwise) and `_pick` passes over them. True while the cut
-        holds."""
+        is free to take it now. The wakeups of a task and the answers to a decision are not
+        dropped: they stay pending (the task would stop for good, and the answer would be lost,
+        since a decision takes no second answer) and `_pick` passes over them. True while the
+        cut holds."""
         try:
             reading = self.usage_gate()
         except Exception:
@@ -1047,7 +1057,7 @@ class OrgService:
             pending = store.pending_wakeups(conn, agent.id)
         skipped = False
         for wakeup in pending:
-            if wakeup.source in UNGATED_SOURCES or wakeup.task_id is not None:
+            if wakeup.source in UNGATED_SOURCES or _waits_over_the_cut(wakeup):
                 continue
             now = self._now()
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
@@ -1091,7 +1101,7 @@ class OrgService:
                 continue
             if not self.serve_automatic and wakeup.source not in UNGATED_SOURCES:
                 continue
-            if usage_held and wakeup.task_id is not None and wakeup.source not in UNGATED_SOURCES:
+            if usage_held and wakeup.source not in UNGATED_SOURCES and _waits_over_the_cut(wakeup):
                 continue  # waits for the usage to come down
             if wakeup.task_id is not None or wakeup.source == "assignment":
                 verdict = self._task_verdict(wakeup)

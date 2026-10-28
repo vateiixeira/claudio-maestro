@@ -609,6 +609,62 @@ async def test_usage_gate_lets_messages_through_and_skips_while_the_agent_is_bus
     pause.release.set()
 
 
+def answered_decision(world, agent: int):
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        decision = store.create_decision(
+            conn, project_id=world.project.id, task_id=None, agent_id=agent, run_id=None,
+            question="Publico a versão?", options=["sim", "não"], session_id=None, now=NOW,
+        )
+        return store.answer_decision(conn, decision.id, answer="sim", receipt="r-1", now=NOW)
+
+
+async def test_usage_gate_keeps_the_answer_to_a_decision_without_a_task_pending(world):
+    agent = world.add_agent()
+    decision = answered_decision(world, agent)
+    world.service.usage_gate = lambda: (93, "5 horas")
+
+    await world.service.wake(
+        agent, source="decision", payload={"decision_id": decision.id, "receipt": "r-1"}
+    )
+    await world.service.drain(agent)
+
+    # The answer is the person's: it waits for the usage to come down, it is not lost.
+    assert [r for r in world.runs(agent) if r.outcome == "skipped"] == []
+    assert [(w.source, w.task_id) for w in world.wakeups(agent)] == [("decision", None)]
+    assert [row["state"] for row in wakeup_rows(world, agent)] == ["pending"]
+    assert world.factory.clients == []
+
+    world.service.usage_gate = lambda: None  # the usage came down
+    await world.service.drain(agent)
+
+    assert world.wakeups(agent) == []
+    assert [row["state"] for row in wakeup_rows(world, agent)] == ["taken"]
+    main = world.agent(agent).main_session_id
+    assert main is not None
+    client = next(c for c in world.factory.clients if c.options.session_id == main)
+    assert "Resposta: sim" in client.sent[0] and "r-1" in client.sent[0]
+    assert world.runs(agent) == []
+
+
+async def test_usage_gate_pending_decision_does_not_hold_the_other_wakeups(world):
+    agent = world.add_agent()
+    routine = world.add_routine(agent)
+    decision = answered_decision(world, agent)
+    world.service.usage_gate = lambda: (93, "5 horas")
+
+    await world.service.wake(
+        agent, source="decision", payload={"decision_id": decision.id, "receipt": "r-1"}
+    )
+    await world.service.wake(agent, source="routine", routine_id=routine, scheduled_for=NOW)
+    await world.service.wake(agent, source="manual", text="Mesmo assim.")
+    await world.service.drain(agent)
+
+    runs = world.runs(agent)
+    assert [(r.source, r.outcome) for r in runs if r.outcome == "skipped"] == [("routine", "skipped")]
+    assert any(r.source == "manual" and r.outcome == "running" for r in runs)
+    assert [w.source for w in world.wakeups(agent)] == ["decision"]
+
+
 async def test_usage_gate_without_a_reading_changes_nothing(world):
     agent = world.add_agent()
     world.service.usage_gate = lambda: None
