@@ -13,8 +13,9 @@ import { useDigestStore } from '../digest'
 import { useClosureStore } from '../closure'
 import { useDeliveriesStore } from '../deliveries'
 import { useClaudeCliStore } from '../claudeCli'
-import { useSpecialistsStore } from '../specialists'
-import { jsonResponse, makeGroup, makeLabel, makeProject, makeSession, makeSpecialist, makeSpecialistNotice } from '../../test/factories'
+import { useOrgStore } from '../org'
+import { useTasksStore } from '../tasks'
+import { jsonResponse, makeAgent, makeDecision, makeGroup, makeLabel, makeNotice, makeProject, makeRun, makeSession, makeTask, makeTaskDetail } from '../../test/factories'
 
 class FakeSocket implements SocketLike {
   onopen: ((ev: unknown) => void) | null = null
@@ -271,32 +272,33 @@ describe('bindRealtime', () => {
     expect(useLabelsStore().byId(3)).toBeDefined()
   })
 
-  it('loadEverything também carrega os agentes e os avisos deles', async () => {
+  it('loadEverything também carrega os agentes, os avisos e as decisões pendentes', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url === '/api/projects') return jsonResponse([makeProject({ id: 1 })])
-      if (url === '/api/specialists') return jsonResponse([makeSpecialist({ id: 1, name: 'Triagem' })])
-      if (url === '/api/specialist-notices') return jsonResponse([makeSpecialistNotice({ id: 5 })])
+      if (url === '/api/agents') return jsonResponse([makeAgent({ id: 1, name: 'Triagem' })])
+      if (url === '/api/agent-notices') return jsonResponse([makeNotice({ id: 5 })])
       return jsonResponse([])
     })
     vi.stubGlobal('fetch', fetchMock)
     await loadEverything()
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledWith('/api/specialists', expect.anything())
-    expect(fetchMock).toHaveBeenCalledWith('/api/specialist-notices', expect.anything())
-    expect(useSpecialistsStore().byId(1)?.name).toBe('Triagem')
-    expect(useSpecialistsStore().unreadCount).toBe(1)
+    expect(fetchMock).toHaveBeenCalledWith('/api/agents', expect.anything())
+    expect(fetchMock).toHaveBeenCalledWith('/api/agent-notices', expect.anything())
+    expect(useOrgStore().byId(1)?.name).toBe('Triagem')
+    expect(useOrgStore().unreadCount).toBe(1)
+    expect(fetchMock).toHaveBeenCalledWith('/api/decisions?pending=true', expect.anything())
   })
 
   it('loadEverything segue quando a lista de agentes falha', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url === '/api/projects') return jsonResponse([makeProject({ id: 1 })])
-      if (url === '/api/specialists') return jsonResponse({ detail: 'x' }, 500)
-      if (url === '/api/specialist-notices') return jsonResponse([makeSpecialistNotice({ id: 5 })])
+      if (url === '/api/agents') return jsonResponse({ detail: 'x' }, 500)
+      if (url === '/api/agent-notices') return jsonResponse([makeNotice({ id: 5 })])
       return jsonResponse([])
     }))
     await expect(loadEverything()).resolves.toBeUndefined()
     await flushPromises()
-    expect(useSpecialistsStore().unreadCount).toBe(1)
+    expect(useOrgStore().unreadCount).toBe(1)
   })
 
   it('ao reconectar, relê agentes e avisos uma vez só', async () => {
@@ -315,8 +317,8 @@ describe('bindRealtime', () => {
     sockets[1]!.onopen?.({})
     await flushPromises()
     const count = (path: string) => fetchMock.mock.calls.filter(([u]) => u === path).length
-    expect(count('/api/specialists')).toBe(1)
-    expect(count('/api/specialist-notices')).toBe(1)
+    expect(count('/api/agents')).toBe(1)
+    expect(count('/api/agent-notices')).toBe(1)
   })
 
   const CLAUDE_STATE = {
@@ -375,5 +377,82 @@ describe('bindRealtime', () => {
     const models = [{ value: 'x', displayName: 'X', description: 'd', supportsEffort: false, supportedEffortLevels: [] }]
     sockets[0]!.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type: 'models.updated', data: { models } }) })
     expect(useModelsStore().models.map((m) => m.value)).toEqual(['x'])
+  })
+  it('leva os eventos da organização (agent.*, task, decision) às stores novas', async () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s } })
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/agents/1') return jsonResponse(makeAgent({ name: 'Do servidor', unseen: 4 }))
+      if (url === '/api/tasks/3') return jsonResponse(makeTaskDetail({ task: makeTask({ id: 3, revision: 7 }) }))
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    const send = (type: string, data: unknown) => sockets[0]!.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type, data }) })
+    const org = useOrgStore()
+    const tasks = useTasksStore()
+    org.agents = [makeAgent()]
+
+    send('agent.run', makeRun({ id: 4, outcome: 'waiting' }))
+    expect(org.byId(1)?.last_run?.outcome).toBe('waiting')
+    send('agent.notice', makeNotice({ id: 9 }))
+    expect(org.unreadCount).toBe(1)
+    send('agent.notice', { read_ids: [9] })
+    expect(org.unreadCount).toBe(0)
+    send('agent.changed', { id: 1 })
+    await vi.waitFor(() => expect(org.byId(1)?.name).toBe('Do servidor'))
+    org.agents = [makeAgent({ unseen: 0 })]
+    send('agent.announcement', { id: 1, agent_id: 1, run_id: 4, session_id: 's', text: 'ok', created_at: 1, delivered_at: null })
+    await vi.waitFor(() => expect(org.byId(1)?.unseen).toBe(4))
+    send('decision', makeDecision({ id: 6 }))
+    expect(org.decisionsPending.map((d) => d.id)).toEqual([6])
+
+    await tasks.detail(3)
+    const version = tasks.version
+    send('task', { id: 3, project_id: 1, status: 'done', revision: 7, change: 'status' })
+    expect(tasks.version).toBe(version + 1)
+    await vi.waitFor(() => expect(tasks.details[3]?.task.revision).toBe(7))
+    send('decision', makeDecision({ id: 6, task_id: 3, status: 'answered' }))
+    expect(org.decisionsPending).toEqual([])
+  })
+
+  it('os eventos work.* e specialist.* não têm mais ouvinte', () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s } })
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    const fetchMock = vi.mocked(fetch)
+    for (const type of ['work.changed', 'work.mode', 'work.notification', 'work.decision', 'specialist.changed', 'specialist.run']) {
+      sockets[0]!.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type, data: { id: 1 } }) })
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('ao reconectar, deixa as tarefas velhas e relê decisões pendentes', async () => {
+    const sockets: FakeSocket[] = []
+    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/projects') return jsonResponse([makeProject({ id: 1 })])
+      if (url === '/api/tasks?project_id=1') return jsonResponse([makeTask()])
+      if (url === '/api/decisions?pending=true') return jsonResponse([makeDecision({ id: 3 })])
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const tasks = useTasksStore()
+    await tasks.list({ project_id: 1 })
+    bindRealtime(socket)
+    socket.connect()
+    sockets[0]!.onopen?.({})
+    sockets[0]!.onclose?.({})
+    vi.advanceTimersByTime(10)
+    sockets[1]!.onopen?.({})
+    await flushPromises()
+    expect(useOrgStore().decisionsPending.map((d) => d.id)).toEqual([3])
+    await tasks.list({ project_id: 1 })
+    expect(fetchMock.mock.calls.filter(([u]) => u === '/api/tasks?project_id=1')).toHaveLength(2)
   })
 })

@@ -17,7 +17,7 @@ it('mostra anúncios pendentes só na principal e os atualiza por evento', async
   let announcements = [{ id: 1, text: 'Rotina concluída', created_at: 1761391800, session_id: 'run-1', run_id: 1, delivered_at: null }]
   vi.stubGlobal('fetch', routeFetch({
     'GET /api/specialists': () => jsonResponse([agent]),
-    'GET /api/specialists/1/announcements?pending=1': () => jsonResponse(announcements),
+    'GET /api/agents/1/announcements?pending=true': () => jsonResponse(announcements),
   }))
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/sessions/:id', name: 'session', component: { template: '<div />' } }] })
   await router.push('/sessions/main')

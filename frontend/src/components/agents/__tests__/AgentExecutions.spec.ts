@@ -22,7 +22,7 @@ async function setup(runs = [makeSpecialistRun({ id: 10, session_id: 'run-live',
   store.list = [makeSpecialist({ main_session_id: 'main' })]
   const fetch = routeFetch({
     'GET /api/specialists': () => jsonResponse(store.list),
-    'GET /api/specialists/1/announcements': () => jsonResponse([{ id: 1, run_id: 9, session_id: 'old', text: 'Confirmei a atualização pelo websocket.', created_at: 1, delivered_at: null }]),
+    'GET /api/agents/1/announcements': () => jsonResponse([{ id: 1, run_id: 9, session_id: 'old', text: 'Confirmei a atualização pelo websocket.', created_at: 1, delivered_at: null }]),
     'GET /api/specialists/1/runs?limit=50': () => jsonResponse(runs),
     'GET /api/sessions/run-live': () => jsonResponse(makeSnapshot({ session_id: 'run-live', state: 'running', seq: 1, items: [{ id: 'text', type: 'text', text: 'Investigando a issue 50', streaming: true, parent_tool_use_id: null }] })),
     'GET /api/sessions/old': () => jsonResponse(makeSnapshot({ session_id: 'old', state: 'idle', items: [{ id: 'conclusion', type: 'tool', tool_use_id: 'done', name: 'mcp__maestro__concluir', input: { resumo: 'Confirmei a atualização pelo websocket.' }, result: null, streaming: false, parent_tool_use_id: null }] })),
@@ -156,7 +156,7 @@ it('duas rodadas na mesma sessão mantêm seus resultados próprios pelo run_id'
   const { w, fetch } = await setup([
     makeSpecialistRun({ id: 10, session_id: 'same', outcome: 'concluded' }),
     makeSpecialistRun({ id: 9, session_id: 'same', outcome: 'concluded' }),
-  ], { 'GET /api/specialists/1/announcements': () => jsonResponse([
+  ], { 'GET /api/agents/1/announcements': () => jsonResponse([
     { id: 2, run_id: 10, session_id: 'same', text: 'Resultado da segunda rodada', created_at: 2, delivered_at: null },
     { id: 1, run_id: 9, session_id: 'same', text: 'Resultado da primeira rodada', created_at: 1, delivered_at: null },
   ]) })

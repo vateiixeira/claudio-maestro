@@ -8,7 +8,7 @@ import { useLabelsStore } from '../../stores/labels'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useSpecialistsStore } from '../../stores/specialists'
-import { jsonResponse, makeLabel, makeProject, makeSession, makeSpecialist, makeSpecialistNotice, routeFetch } from '../../test/factories'
+import { jsonResponse, makeLabel, makeProject, makeSession, makeSpecialistNotice, routeFetch } from '../../test/factories'
 
 vi.mock('../../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
 import { loadEverything } from '../../stores/realtime'
@@ -493,21 +493,6 @@ describe('etiquetas na Caixa de entrada', () => {
 })
 
 describe('Inbox: avisos dos agentes', () => {
-  it('mostra o nome do agente quando o store foi preenchido só pelo carregamento inicial', async () => {
-    const real = await vi.importActual<typeof import('../../stores/realtime')>('../../stores/realtime')
-    vi.stubGlobal('fetch', routeFetch({
-      'GET /api/projects': () => jsonResponse([makeProject({ id: 1, name: 'a' })]),
-      'GET /api/projects/1/sessions': () => jsonResponse([]),
-      'GET /api/projects/1/git': () => jsonResponse({ repos: [] }),
-      'GET /api/specialists': () => jsonResponse([makeSpecialist({ id: 7, name: 'Triagem' })]),
-      'GET /api/specialist-notices': () => jsonResponse([makeSpecialistNotice({ id: 1, specialist_id: 7 })]),
-    }))
-    await real.loadEverything().catch(() => {})
-    await flushPromises()
-    const { wrapper } = await mountInbox()
-    expect(wrapper.get('[data-test="agent-notice-name"]').text()).toBe('Triagem')
-  })
-
   it('a seção fica acima das abas e só aparece com avisos não lidos', async () => {
     const without = await mountInbox()
     expect(without.wrapper.find('[data-test="agent-notices"]').exists()).toBe(false)

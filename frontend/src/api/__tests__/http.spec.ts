@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as api from '../http'
 import { ApiError, closeTerminal, createProject, deleteProject, deleteSpecialistItem, listCommands, listDirs, listProjects, runInTerminal, searchFiles, suggestSessionTitles } from '../http'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -191,5 +192,106 @@ describe('registro dos agentes', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/specialists/3/items?key=a%2F..%2Fb', expect.objectContaining({ method: 'DELETE' }))
     await deleteSpecialistItem(3, 'SENTRY 1&x=2')
     expect(fetchMock).toHaveBeenLastCalledWith('/api/specialists/3/items?key=SENTRY%201%26x%3D2', expect.objectContaining({ method: 'DELETE' }))
+  })
+})
+
+describe('cliente da organização de agentes', () => {
+  // [call, método, url, corpo esperado (undefined = sem corpo)]
+  const cases: [string, () => Promise<unknown>, string, string, unknown][] = [
+    ['listAgents', () => api.listAgents(), 'GET', '/api/agents', undefined],
+    ['listAgents(projeto)', () => api.listAgents(3), 'GET', '/api/agents?project_id=3', undefined],
+    ['createAgent', () => api.createAgent({ name: 'Ana', slug: 'ana', project_id: 1, kind: 'cto' }), 'POST', '/api/agents', { name: 'Ana', slug: 'ana', project_id: 1, kind: 'cto' }],
+    ['getAgent', () => api.getAgent(4), 'GET', '/api/agents/4', undefined],
+    ['updateAgent', () => api.updateAgent(4, { reports_to: null, enabled: false }), 'PATCH', '/api/agents/4', { reports_to: null, enabled: false }],
+    ['deleteAgent', () => api.deleteAgent(4), 'DELETE', '/api/agents/4', undefined],
+    ['duplicateAgent', () => api.duplicateAgent(4, { project_id: 2, slug: 'copia' }), 'POST', '/api/agents/4/duplicate', { project_id: 2, slug: 'copia' }],
+    ['getAgentDefinition', () => api.getAgentDefinition(4), 'GET', '/api/agents/4/definition', undefined],
+    ['putAgentDefinition', () => api.putAgentDefinition(4, { text: 'x', hash: 'h' }), 'PUT', '/api/agents/4/definition', { text: 'x', hash: 'h' }],
+    ['getAgentMemory', () => api.getAgentMemory(4), 'GET', '/api/agents/4/memory', undefined],
+    ['putAgentMemory', () => api.putAgentMemory(4, 'lembrar'), 'PUT', '/api/agents/4/memory', { text: 'lembrar' }],
+    ['getAgentSecrets', () => api.getAgentSecrets(4), 'GET', '/api/agents/4/secrets', undefined],
+    ['putAgentSecrets', () => api.putAgentSecrets(4, { TOKEN: 'v', VELHO: null }), 'PUT', '/api/agents/4/secrets', { values: { TOKEN: 'v', VELHO: null } }],
+    ['listAgentRegistry', () => api.listAgentRegistry(4), 'GET', '/api/agents/4/registry', undefined],
+    ['deleteAgentRegistryItem', () => api.deleteAgentRegistryItem(4, 'a/../b c'), 'DELETE', '/api/agents/4/registry?key=a%2F..%2Fb%20c', undefined],
+    ['listAgentConversations', () => api.listAgentConversations(4), 'GET', '/api/agents/4/conversations', undefined],
+    ['openAgentConversation', () => api.openAgentConversation(4, { new: true }), 'POST', '/api/agents/4/conversations', { new: true }],
+    ['openAgentMain', () => api.openAgentMain(4), 'POST', '/api/agents/4/main', undefined],
+    ['listAgentMessages', () => api.listAgentMessages(4, 's 1'), 'GET', '/api/agents/4/messages?session_id=s%201', undefined],
+    ['listAnnouncements', () => api.listAnnouncements(4), 'GET', '/api/agents/4/announcements', undefined],
+    ['listAnnouncements(pendentes)', () => api.listAnnouncements(4, true), 'GET', '/api/agents/4/announcements?pending=true', undefined],
+    ['listAgentRuns', () => api.listAgentRuns(4, 20), 'GET', '/api/agents/4/runs?limit=20', undefined],
+    ['wakeAgent', () => api.wakeAgent(4, 'Só os de hoje.'), 'POST', '/api/agents/4/wake', { text: 'Só os de hoje.' }],
+    ['wakeAgent sem texto', () => api.wakeAgent(4), 'POST', '/api/agents/4/wake', {}],
+    ['listAgentWakeups', () => api.listAgentWakeups(4), 'GET', '/api/agents/4/wakeups', undefined],
+    ['cancelAgentWakeup', () => api.cancelAgentWakeup(4, 9), 'POST', '/api/agents/4/wakeups/9/cancel', {}],
+    ['cancelAgentRun', () => api.cancelAgentRun(4, 9), 'POST', '/api/agents/4/runs/9/cancel', {}],
+    ['listRoutines', () => api.listRoutines(), 'GET', '/api/routines', undefined],
+    ['listRoutines(projeto)', () => api.listRoutines(2), 'GET', '/api/routines?project_id=2', undefined],
+    ['createRoutine', () => api.createRoutine({ agent_id: 4, name: 'R', instruction: 'I' }), 'POST', '/api/routines', { agent_id: 4, name: 'R', instruction: 'I' }],
+    ['updateRoutine', () => api.updateRoutine(5, { enabled: false }), 'PATCH', '/api/routines/5', { enabled: false }],
+    ['deleteRoutine', () => api.deleteRoutine(5), 'DELETE', '/api/routines/5', undefined],
+    ['runRoutine', () => api.runRoutine(5), 'POST', '/api/routines/5/run', {}],
+    ['listAgentNotices', () => api.listAgentNotices(), 'GET', '/api/agent-notices', undefined],
+    ['listAgentNotices(não lidos)', () => api.listAgentNotices(true), 'GET', '/api/agent-notices?unread=true', undefined],
+    ['markAgentNoticesRead', () => api.markAgentNoticesRead([1, 2]), 'POST', '/api/agent-notices/read', { ids: [1, 2] }],
+    ['getGithubSettings', () => api.getGithubSettings(), 'GET', '/api/agents-github', undefined],
+    ['putGithubSettings', () => api.putGithubSettings({ login: 'vi' }), 'PUT', '/api/agents-github', { login: 'vi' }],
+    ['listTasks', () => api.listTasks({}), 'GET', '/api/tasks', undefined],
+    ['listTasks(filtro)', () => api.listTasks({ project_id: 1, status: ['todo', 'blocked'], assignee_agent_id: 4, limit: 10, offset: 20 }), 'GET', '/api/tasks?project_id=1&status=todo&status=blocked&assignee_agent_id=4&limit=10&offset=20', undefined],
+    ['createTask', () => api.createTask({ project_id: 1, title: 'T' }), 'POST', '/api/tasks', { project_id: 1, title: 'T' }],
+    ['getTask', () => api.getTask(7), 'GET', '/api/tasks/7', undefined],
+    ['updateTask', () => api.updateTask(7, { expected_revision: 2, status: 'done' }), 'PATCH', '/api/tasks/7', { expected_revision: 2, status: 'done' }],
+    ['commentTask', () => api.commentTask(7, 'ok'), 'POST', '/api/tasks/7/comments', { text: 'ok' }],
+    ['unblockTask', () => api.unblockTask(7, 3), 'POST', '/api/tasks/7/unblock', { expected_revision: 3 }],
+    ['listDecisions', () => api.listDecisions(), 'GET', '/api/decisions', undefined],
+    ['listDecisions(filtro)', () => api.listDecisions({ project_id: 1, pending: true }), 'GET', '/api/decisions?project_id=1&pending=true', undefined],
+    ['listDecisions(todas)', () => api.listDecisions({ pending: false }), 'GET', '/api/decisions?pending=false', undefined],
+    ['answerDecision', () => api.answerDecision(8, 'Sim'), 'POST', '/api/decisions/8/answer', { answer: 'Sim' }],
+  ]
+
+  it.each(cases)('%s monta a URL certa com X-Maestro', async (_name, call, method, url, body) => {
+    const fetchMock = vi.fn(async (_u: string, _init?: RequestInit) => new Response(method === 'DELETE' ? null : '{}', { status: method === 'DELETE' ? 204 : 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await call()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [calledUrl, init] = fetchMock.mock.calls[0]!
+    expect(calledUrl).toBe(url)
+    expect(init?.method).toBe(method)
+    expect(new Headers(init?.headers).get('X-Maestro')).toBe('1')
+    if (body === undefined) expect(init?.body).toBeUndefined()
+    else expect(JSON.parse(init?.body as string)).toEqual(body)
+  })
+
+  it('o 422 do AGENT.md traz o campo e a linha', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: 'O campo “model” está vazio.', field: 'model', line: 4 }, 422)))
+    const error = await api.putAgentDefinition(4, { text: 'x', hash: 'h' }).catch((e) => e)
+    expect(error).toBeInstanceOf(api.DefinitionInvalidError)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.message).toBe('O campo “model” está vazio.')
+    expect(error.field).toBe('model')
+    expect(error.line).toBe(4)
+  })
+
+  it('o 422 do AGENT.md sem linha (arquivo grande demais) vem com line nulo', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: 'O AGENT.md passa de 100 KB; reduza o texto.', field: null, line: null }, 422)))
+    const error = await api.putAgentDefinition(4, { text: 'x' }).catch((e) => e)
+    expect(error).toBeInstanceOf(api.DefinitionInvalidError)
+    expect(error.line).toBeNull()
+    expect(error.field).toBeNull()
+  })
+
+  it('o 409 de um hash velho continua um ApiError comum', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: 'O AGENT.md mudou desde que você o abriu. Recarregue para ver a versão atual.' }, 409)))
+    const error = await api.putAgentDefinition(4, { text: 'x', hash: 'velho' }).catch((e) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).not.toBeInstanceOf(api.DefinitionInvalidError)
+    expect(error.status).toBe(409)
+  })
+
+  it('um 422 de validação comum (lista) no AGENT.md não vira erro de definição', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: [{ loc: ['body', 'text'], msg: 'Field required' }] }, 422)))
+    const error = await api.putAgentDefinition(4, { text: 'x' }).catch((e) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).not.toBeInstanceOf(api.DefinitionInvalidError)
   })
 })

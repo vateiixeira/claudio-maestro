@@ -8,8 +8,8 @@ enableAutoUnmount(afterEach)
 afterEach(() => vi.unstubAllGlobals())
 async function setup(save = () => jsonResponse({ ...state, login: 'novo' })) {
   const fetch = routeFetch({
-    'GET /api/specialists/github': () => jsonResponse(state),
-    'PUT /api/specialists/github': save,
+    'GET /api/agents-github': () => jsonResponse(state),
+    'PUT /api/agents-github': save,
   })
   vi.stubGlobal('fetch', fetch)
   const wrapper = mount(AgentsGithub)

@@ -4,8 +4,6 @@ import { useSpecialistsStore } from '../specialists'
 import { useSessionsStore } from '../sessions'
 import { nextTick } from 'vue'
 import { jsonResponse, makeSession, makeSpecialist, makeSpecialistNotice, makeSpecialistRun, routeFetch } from '../../test/factories'
-import { EventSocket, type SocketLike } from '../../api/socket'
-import { bindRealtime } from '../realtime'
 
 beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => vi.unstubAllGlobals())
@@ -252,7 +250,7 @@ describe('specialists store', () => {
 
 describe('specialists store: conversa principal', () => {
   it('openMain cria a conversa, guarda o id e navega para ela', async () => {
-    const fetch = routeFetch({ 'POST /api/specialists/1/main': () => jsonResponse({ session_id: 'conv-1' }) })
+    const fetch = routeFetch({ 'POST /api/agents/1/main': () => jsonResponse({ session_id: 'conv-1' }) })
     vi.stubGlobal('fetch', fetch)
     const store = useSpecialistsStore()
     store.list = [makeSpecialist()]
@@ -263,7 +261,7 @@ describe('specialists store: conversa principal', () => {
   })
 
   it('openMain resolve de novo uma conversa apagada mesmo com id em cache', async () => {
-    const fetch = routeFetch({ 'POST /api/specialists/1/main': () => jsonResponse({ session_id: 'conv-2' }) })
+    const fetch = routeFetch({ 'POST /api/agents/1/main': () => jsonResponse({ session_id: 'conv-2' }) })
     vi.stubGlobal('fetch', fetch)
     const store = useSpecialistsStore()
     store.list = [makeSpecialist({ main_session_id: 'conv-1' })]
@@ -275,7 +273,7 @@ describe('specialists store: conversa principal', () => {
   })
 
   it('openMain deixa o erro subir e não navega', async () => {
-    vi.stubGlobal('fetch', routeFetch({ 'POST /api/specialists/1/main': () => jsonResponse({ detail: 'Sem pasta.' }, 409) }))
+    vi.stubGlobal('fetch', routeFetch({ 'POST /api/agents/1/main': () => jsonResponse({ detail: 'Sem pasta.' }, 409) }))
     const store = useSpecialistsStore()
     store.list = [makeSpecialist()]
     const router = { push: vi.fn(async () => undefined) }
@@ -349,10 +347,10 @@ describe('specialists store: espera da conversa principal', () => {
 describe('api de anúncios e do GitHub', () => {
   it('listAnnouncements, getGithubSettings e putGithubSettings usam as rotas do backend', async () => {
     const fetch = routeFetch({
-      'GET /api/specialists/1/announcements?pending=1': () => jsonResponse([{ id: 1, run_id: 2, session_id: 's', text: 'x', created_at: 1, delivered_at: null }]),
-      'GET /api/specialists/1/announcements': () => jsonResponse([]),
-      'GET /api/specialists/github': () => jsonResponse({ login: 'vi', secret_set: true, hooks_port: 6670, queued: 0 }),
-      'PUT /api/specialists/github': (init) => {
+      'GET /api/agents/1/announcements?pending=true': () => jsonResponse([{ id: 1, run_id: 2, session_id: 's', text: 'x', created_at: 1, delivered_at: null }]),
+      'GET /api/agents/1/announcements': () => jsonResponse([]),
+      'GET /api/agents-github': () => jsonResponse({ login: 'vi', secret_set: true, hooks_port: 6670, queued: 0 }),
+      'PUT /api/agents-github': (init) => {
         expect(JSON.parse(String(init?.body))).toEqual({ login: 'novo' })
         return jsonResponse({ login: 'novo', secret_set: true, hooks_port: 6670, queued: 0 })
       },
@@ -365,43 +363,6 @@ describe('api de anúncios e do GitHub', () => {
     expect((await api.putGithubSettings({ login: 'novo' })).login).toBe('novo')
   })
 })
-
-class FakeSocket implements SocketLike {
-  onopen: ((ev: never) => void) | null = null
-  onclose: ((ev: never) => void) | null = null
-  onerror: ((ev: never) => void) | null = null
-  onmessage: ((ev: { data: unknown }) => void) | null = null
-  close() {}
-}
-
-describe('specialists store: eventos do WebSocket', () => {
-  it('reage a specialist.changed, specialist.run e specialist.notice', async () => {
-    vi.stubGlobal('fetch', routeFetch({ 'GET /api/specialists': () => jsonResponse([makeSpecialist({ name: 'Do servidor' })]) }))
-    const fake = new FakeSocket()
-    const socket = new EventSocket({ url: 'ws://x', createSocket: () => fake })
-    const off = bindRealtime(socket)
-    socket.connect()
-    fake.onopen?.(undefined as never)
-    const store = useSpecialistsStore()
-    store.list = [makeSpecialist()]
-    const send = (type: string, data: unknown) => fake.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type, data }) })
-
-    send('specialist.run', makeSpecialistRun({ id: 4, outcome: 'waiting' }))
-    expect(store.byId(1)?.last_run?.outcome).toBe('waiting')
-    send('specialist.notice', makeSpecialistNotice({ id: 9 }))
-    expect(store.unreadCount).toBe(1)
-    send('specialist.notice', { read_ids: [9] })
-    expect(store.unreadCount).toBe(0)
-    send('specialist.changed', { id: 1 })
-    await vi.waitFor(() => expect(store.byId(1)?.name).toBe('Do servidor'))
-    store.list = [makeSpecialist({ unseen: 0 })]
-    send('specialist.announcement', { id: 1, specialist_id: 1, run_id: 4, session_id: 's', text: 'ok', created_at: 1, delivered_at: null })
-    await vi.waitFor(() => expect(store.byId(1)?.name).toBe('Do servidor'))
-    off()
-    socket.close()
-  })
-})
-
 
 it('preserva eventos recebidos durante a leitura inicial das execuções', async () => {
   let resolve!: (response: Response) => void

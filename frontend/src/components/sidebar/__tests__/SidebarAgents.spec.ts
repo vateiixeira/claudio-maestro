@@ -76,7 +76,7 @@ describe('seção Agentes da barra lateral', () => {
 
   it('click opens main conversation', async () => {
     useSpecialistsStore(pinia).list = [makeSpecialist({ id: 7, name: 'Triagem' })]
-    const fetch = routeFetch({ 'POST /api/specialists/7/main': () => jsonResponse({ session_id: 'conv-7' }) })
+    const fetch = routeFetch({ 'POST /api/agents/7/main': () => jsonResponse({ session_id: 'conv-7' }) })
     vi.stubGlobal('fetch', fetch)
     const { wrapper, router } = await mountAgents()
     await wrapper.get('[data-test="sidebar-agent-row"]').trigger('click')
@@ -88,7 +88,7 @@ describe('seção Agentes da barra lateral', () => {
 
   it('confere a conversa principal na API mesmo quando há id em cache', async () => {
     useSpecialistsStore(pinia).list = [makeSpecialist({ id: 7, name: 'Triagem', main_session_id: 'conv-7' })]
-    const fetch = routeFetch({ 'POST /api/specialists/7/main': () => jsonResponse({ session_id: 'conv-7' }) })
+    const fetch = routeFetch({ 'POST /api/agents/7/main': () => jsonResponse({ session_id: 'conv-7' }) })
     vi.stubGlobal('fetch', fetch)
     const { wrapper, router } = await mountAgents()
     await wrapper.get('[data-test="sidebar-agent-row"]').trigger('click')
@@ -112,7 +112,7 @@ describe('seção Agentes da barra lateral', () => {
     useSpecialistsStore(pinia).list = [makeSpecialist({ id: 7, name: 'Triagem' })]
     let calls = 0
     vi.stubGlobal('fetch', routeFetch({
-      'POST /api/specialists/7/main': () => (++calls === 1 ? jsonResponse({ detail: 'A pasta do projeto não está disponível.' }, 409) : jsonResponse({ session_id: 'conv-7' })),
+      'POST /api/agents/7/main': () => (++calls === 1 ? jsonResponse({ detail: 'A pasta do projeto não está disponível.' }, 409) : jsonResponse({ session_id: 'conv-7' })),
     }))
     const { wrapper, router } = await mountAgents()
     await wrapper.get('[data-test="sidebar-agent-row"]').trigger('click')

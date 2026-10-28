@@ -9,10 +9,10 @@ import { useGroupsStore } from './groups'
 import { useLabelsStore } from './labels'
 import { useLayoutStore } from './layout'
 import { useModelsStore } from './models'
+import { useOrgStore } from './org'
 import { useProjectsStore } from './projects'
 import { useSessionsStore } from './sessions'
-import { useSpecialistsStore } from './specialists'
-import { useWorkStore } from './work'
+import { useTasksStore } from './tasks'
 import { useUpdatesStore } from './updates'
 import { useUsageStore } from './usage'
 
@@ -36,12 +36,13 @@ export async function loadEverything(): Promise<void> {
   void useGroupsStore().load().catch(() => {})
   // A failure leaves the labels out of the badges until the next load.
   void useLabelsStore().load().catch(() => {})
-  // The agents (their names show on notices and session badges) and their notices are secondary:
-  // a failure keeps the last ones (the store keeps the error).
-  const specialists = useSpecialistsStore()
-  void specialists.load().catch(() => {})
-  void specialists.loadNotices().catch(() => {})
-  await Promise.all([sessions.loadAll(projects.projects.map((p) => p.id)), useWorkStore().loadCatalog().catch(() => {})])
+  // The agents (their names show on notices and session badges), their notices and the decisions waiting for you are
+  // secondary: a failure keeps the last ones (the store keeps the error).
+  const org = useOrgStore()
+  void org.load().catch(() => {})
+  void org.loadNotices().catch(() => {})
+  void org.loadDecisions().catch(() => {})
+  await sessions.loadAll(projects.projects.map((p) => p.id))
 }
 
 /**
@@ -50,12 +51,7 @@ export async function loadEverything(): Promise<void> {
  */
 export function bindRealtime(socket: EventSocket): () => void {
   const sessions = useSessionsStore()
-  const work = useWorkStore()
   const offs = [
-    socket.on('work.changed', event => { work.changed(event.data); void work.loadCatalog().catch(() => {}) }),
-    socket.on('work.mode', event => work.changed(event.data)),
-    socket.on('work.notification', event => work.changed(event.data)),
-    socket.on('work.decision', event => work.changed(event.data)),
     socket.on('session.state', (event) => sessions.applyEvent(event)),
     socket.on('session.title', (event) => sessions.applyEvent(event)),
     socket.on('session.updated', (event) => sessions.applyEvent(event)),
@@ -89,13 +85,20 @@ export function bindRealtime(socket: EventSocket): () => void {
     // A delivery record was created or changed (global event).
     socket.on('delivery.updated', (event) => useDeliveriesStore().applyEvent(event.data)),
     // Agents: something changed, a run started or ended, a notice came or was read (global events).
-    socket.on('specialist.changed', (event) => useSpecialistsStore().applyChanged(event.data)),
-    socket.on('specialist.announcement', (event) => useSpecialistsStore().applyAnnouncement(event.data)),
-    socket.on('specialist.run', (event) => useSpecialistsStore().applyRun(event.data)),
-    socket.on('specialist.notice', (event) => useSpecialistsStore().applyNotice(event.data)),
+    socket.on('agent.changed', (event) => useOrgStore().applyEvent('agent.changed', event.data)),
+    socket.on('agent.announcement', (event) => useOrgStore().applyEvent('agent.announcement', event.data)),
+    socket.on('agent.run', (event) => useOrgStore().applyEvent('agent.run', event.data)),
+    socket.on('agent.notice', (event) => useOrgStore().applyEvent('agent.notice', event.data)),
+    // Tasks and decisions (global events).
+    socket.on('task', (event) => useTasksStore().applyEvent(event.data)),
+    socket.on('decision', (event) => {
+      useOrgStore().applyEvent('decision', event.data)
+      useTasksStore().applyDecision(event.data)
+    }),
     socket.onReconnect(() => {
-      work.changed()
-      void work.loadCatalog().catch(() => {})
+      // Events sent while the socket was down are lost: the task lists are stale and the opened ones are reread.
+      useTasksStore().invalidateAll()
+      void useOrgStore().reloadOpen()
       useDigestStore().invalidate()
       useClosureStore().invalidate()
       void useDigestStore().refreshStatus()

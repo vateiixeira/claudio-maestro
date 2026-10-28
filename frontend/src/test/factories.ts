@@ -229,3 +229,135 @@ export function makeSpecialistNotice(overrides: Partial<import('../types/api').S
     ...overrides,
   }
 }
+
+export function makeRun(overrides: Partial<import('../types/org').Run> = {}): import('../types/org').Run {
+  return {
+    id: 1,
+    agent_id: 1,
+    session_id: 's1',
+    source: 'manual',
+    routine_id: null,
+    scheduled_for: null,
+    started_at: 1_790_000_000,
+    ended_at: null,
+    outcome: 'running',
+    reason: null,
+    task_id: null,
+    commented: false,
+    rewoken: false,
+    ...overrides,
+  }
+}
+
+export function makeAgent(overrides: Partial<import('../types/org').Agent> = {}): import('../types/org').Agent {
+  return {
+    id: 1,
+    slug: 'cto',
+    name: 'CTO',
+    description: 'Coordena o time',
+    project_id: 1,
+    reports_to: null,
+    enabled: true,
+    model: null,
+    effort: null,
+    definition_error: null,
+    busy: false,
+    main_session_id: null,
+    unseen: 0,
+    last_run: null,
+    ...overrides,
+  }
+}
+
+export function makeNotice(overrides: Partial<import('../types/org').Notice> = {}): import('../types/org').Notice {
+  return {
+    id: 1,
+    agent_id: 1,
+    run_id: 1,
+    kind: 'summary',
+    text: 'Tratei 2 erros.',
+    created_at: 1_790_000_000,
+    read_at: null,
+    ...overrides,
+  }
+}
+
+export function makeTask(overrides: Partial<import('../types/org').Task> = {}): import('../types/org').Task {
+  return {
+    id: 1,
+    project_id: 1,
+    parent_task_id: null,
+    title: 'Corrigir o carrinho',
+    description: '',
+    status: 'todo',
+    priority: 'normal',
+    assignee_agent_id: null,
+    reviewer_agent_id: null,
+    created_by_agent_id: null,
+    created_by: 'human',
+    routine_id: null,
+    revision: 1,
+    run_count: 0,
+    max_runs: 20,
+    worktree_path: null,
+    branch: null,
+    blocked_reason: null,
+    legacy: null,
+    created_at: 1_790_000_000,
+    updated_at: 1_790_000_000,
+    closed_at: null,
+    ...overrides,
+  }
+}
+
+export function makeComment(overrides: Partial<import('../types/org').Comment> = {}): import('../types/org').Comment {
+  return {
+    id: 1,
+    task_id: 1,
+    author_kind: 'human',
+    author_agent_id: null,
+    run_id: null,
+    text: 'Pode seguir.',
+    created_at: 1_790_000_000,
+    ...overrides,
+  }
+}
+
+export function makeRoutine(overrides: Partial<import('../types/org').Routine> = {}): import('../types/org').Routine {
+  return {
+    id: 1,
+    project_id: 1,
+    agent_id: 1,
+    name: 'Triagem da manhã',
+    instruction: 'Veja os erros novos.',
+    enabled: true,
+    create_task: false,
+    created_at: 1_790_000_000,
+    updated_at: 1_790_000_000,
+    schedules: [],
+    ...overrides,
+  }
+}
+
+export function makeDecision(overrides: Partial<import('../types/org').Decision> = {}): import('../types/org').Decision {
+  return {
+    id: 1,
+    project_id: 1,
+    task_id: null,
+    agent_id: 1,
+    run_id: null,
+    session_id: null,
+    question: 'Posso publicar?',
+    options: ['Sim', 'Não'],
+    answer: null,
+    receipt: null,
+    status: 'pending',
+    created_at: 1_790_000_000,
+    answered_at: null,
+    ...overrides,
+  }
+}
+
+export function makeTaskDetail(overrides: Partial<import('../types/org').TaskDetail> = {}): import('../types/org').TaskDetail {
+  return { task: makeTask(), comments: [], runs: [], decisions: [], prs: [], ci: [], ...overrides }
+}

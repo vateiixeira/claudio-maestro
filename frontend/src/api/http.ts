@@ -40,8 +40,6 @@ import type {
   SessionDigest,
   SessionGroup,
   SessionUpdate,
-  Announcement,
-  GithubSettings,
   Specialist,
   SpecialistCreate,
   SpecialistItem,
@@ -53,6 +51,30 @@ import type {
   UsageSnapshot,
 } from '../types/api'
 import type { PromptDecision, PromptExtra, SessionSnapshot } from '../types/conversation'
+import type {
+  Agent,
+  AgentCreate,
+  AgentDefinitionFile,
+  AgentUpdate,
+  Announcement,
+  Comment,
+  Conversation,
+  Decision,
+  GithubSettings,
+  Notice,
+  PendingMessage,
+  RegistryItem,
+  Routine,
+  RoutineCreate,
+  RoutineUpdate,
+  Run,
+  Task,
+  TaskCreate,
+  TaskDetail,
+  TaskFilter,
+  TaskUpdate,
+  Wakeup,
+} from '../types/org'
 
 /** HTTP error carrying the status and the backend `detail` (already in Portuguese). */
 export class ApiError extends Error {
@@ -60,13 +82,37 @@ export class ApiError extends Error {
   readonly detail: string | null
   /** The raw `detail` when the backend sent an object (for example `{code, message}`); null otherwise. */
   readonly data: Record<string, unknown> | null
+  /** The whole JSON body of the error (for example `{detail, field, line}`); null when there was none. */
+  readonly body: Record<string, unknown> | null
 
-  constructor(status: number, detail: string | null, fallback: string, data: Record<string, unknown> | null = null) {
+  constructor(
+    status: number,
+    detail: string | null,
+    fallback: string,
+    data: Record<string, unknown> | null = null,
+    body: Record<string, unknown> | null = null,
+  ) {
     super(detail ?? fallback)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
     this.data = data
+    this.body = body
+  }
+}
+
+/** The 422 of `PUT /api/agents/{id}/definition`: what is wrong with the AGENT.md, and where. */
+export class DefinitionInvalidError extends ApiError {
+  /** The frontmatter key at fault; null when the error is about the file as a whole. */
+  readonly field: string | null
+  /** 1-based line of the `AGENT.md` the error points to; null when there is none. */
+  readonly line: number | null
+
+  constructor(source: ApiError, field: string | null, line: number | null) {
+    super(source.status, source.detail, source.message, source.data, source.body)
+    this.name = 'DefinitionInvalidError'
+    this.field = field
+    this.line = line
   }
 }
 
@@ -97,14 +143,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-async function readDetail(response: Response): Promise<{ text: string | null; data: Record<string, unknown> | null }> {
+async function readDetail(
+  response: Response,
+): Promise<{ text: string | null; data: Record<string, unknown> | null; body: Record<string, unknown> | null }> {
   try {
-    const body = await response.text()
-    if (!body) return { text: null, data: null }
-    const detail = JSON.parse(body)?.detail
-    return { text: detailText(detail), data: isRecord(detail) ? detail : null }
+    const raw = await response.text()
+    if (!raw) return { text: null, data: null, body: null }
+    const parsed = JSON.parse(raw)
+    const detail = parsed?.detail
+    return { text: detailText(detail), data: isRecord(detail) ? detail : null, body: isRecord(parsed) ? parsed : null }
   } catch {
-    return { text: null, data: null }
+    return { text: null, data: null, body: null }
   }
 }
 
@@ -126,8 +175,8 @@ export async function request<T>(method: Method, url: string, body?: unknown, si
   }
 
   if (!response.ok) {
-    const { text, data } = await readDetail(response)
-    throw new ApiError(response.status, text, `O servidor respondeu com erro ${response.status}.`, data)
+    const { text, data, body: errorBody } = await readDetail(response)
+    throw new ApiError(response.status, text, `O servidor respondeu com erro ${response.status}.`, data, errorBody)
   }
   if (response.status === 204) return undefined as T
   const text = await response.text()
@@ -565,25 +614,6 @@ export function runSpecialist(id: number, text?: string): Promise<SpecialistRun>
   return request('POST', `/api/specialists/${id}/run`, text === undefined ? {} : { text })
 }
 
-/** The agent's main conversation, created on first use. */
-export function openAgentMain(id: number): Promise<{ session_id: string }> {
-  return request('POST', `/api/specialists/${id}/main`)
-}
-
-/** What the runs announced to the main conversation, newest first; `pending` keeps the ones it has not received. */
-export function listAnnouncements(id: number, pending = false): Promise<Announcement[]> {
-  return request('GET', pending ? `/api/specialists/${id}/announcements?pending=1` : `/api/specialists/${id}/announcements`)
-}
-
-export function getGithubSettings(): Promise<GithubSettings> {
-  return request('GET', '/api/specialists/github')
-}
-
-/** The secret is only written: the answer says whether one is set, never its value. */
-export function putGithubSettings(body: { login?: string; secret?: string }): Promise<GithubSettings> {
-  return request('PUT', '/api/specialists/github', body)
-}
-
 export function cancelSpecialistRun(id: number, runId: number): Promise<SpecialistRun> {
   return request('POST', `/api/specialists/${id}/runs/${runId}/cancel`, {})
 }
@@ -606,4 +636,209 @@ export function openSpecialistConversation(id: number, input: { session_id?: str
 
 export function listSpecialistMessages(id: number, sessionId: string): Promise<{ id: number; text: string }[]> {
   return request('GET', `/api/specialists/${id}/messages?session_id=${encodeURIComponent(sessionId)}`)
+}
+
+// Organization of agents
+
+function query(params: [string, string | number | boolean | undefined][]): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of params) if (value !== undefined) search.append(key, String(value))
+  const text = search.toString()
+  return text ? `?${text}` : ''
+}
+
+export function listAgents(projectId?: number): Promise<Agent[]> {
+  return request('GET', `/api/agents${query([['project_id', projectId]])}`)
+}
+
+export function createAgent(body: AgentCreate): Promise<Agent> {
+  return request('POST', '/api/agents', body)
+}
+
+export function getAgent(id: number): Promise<Agent> {
+  return request('GET', `/api/agents/${id}`)
+}
+
+export function updateAgent(id: number, body: AgentUpdate): Promise<Agent> {
+  return request('PATCH', `/api/agents/${id}`, body)
+}
+
+export function deleteAgent(id: number): Promise<void> {
+  return request('DELETE', `/api/agents/${id}`)
+}
+
+/** Another agent with the same AGENT.md and nothing else. */
+export function duplicateAgent(id: number, body: { project_id: number; slug: string }): Promise<Agent> {
+  return request('POST', `/api/agents/${id}/duplicate`, body)
+}
+
+export function getAgentDefinition(id: number): Promise<AgentDefinitionFile> {
+  return request('GET', `/api/agents/${id}/definition`)
+}
+
+/**
+ * Saves the AGENT.md. A file the backend refuses comes as `DefinitionInvalidError` (message, field and line); a
+ * `hash` that is no longer the one on disk is a 409 `ApiError`.
+ */
+export async function putAgentDefinition(id: number, body: { text: string; hash?: string | null }): Promise<AgentDefinitionFile> {
+  try {
+    return await request('PUT', `/api/agents/${id}/definition`, body)
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 422 && e.body && typeof e.body.detail === 'string' && 'line' in e.body) {
+      const { field, line } = e.body
+      throw new DefinitionInvalidError(e, typeof field === 'string' ? field : null, typeof line === 'number' ? line : null)
+    }
+    throw e
+  }
+}
+
+export function getAgentMemory(id: number): Promise<{ text: string }> {
+  return request('GET', `/api/agents/${id}/memory`)
+}
+
+export function putAgentMemory(id: number, text: string): Promise<{ text: string }> {
+  return request('PUT', `/api/agents/${id}/memory`, { text })
+}
+
+/** The names of the secrets; the backend never sends a value. */
+export function getAgentSecrets(id: number): Promise<{ names: string[] }> {
+  return request('GET', `/api/agents/${id}/secrets`)
+}
+
+/** `null` removes the secret. */
+export function putAgentSecrets(id: number, values: Record<string, string | null>): Promise<{ names: string[] }> {
+  return request('PUT', `/api/agents/${id}/secrets`, { values })
+}
+
+export function listAgentRegistry(id: number): Promise<RegistryItem[]> {
+  return request('GET', `/api/agents/${id}/registry`)
+}
+
+export function deleteAgentRegistryItem(id: number, key: string): Promise<void> {
+  // The key goes in the query string, whole: it can hold slashes and dots that a path would reinterpret.
+  return request('DELETE', `/api/agents/${id}/registry?key=${encodeURIComponent(key)}`)
+}
+
+export function listAgentConversations(id: number): Promise<Conversation[]> {
+  return request('GET', `/api/agents/${id}/conversations`)
+}
+
+export function openAgentConversation(id: number, input: { session_id?: string; new?: boolean } = {}): Promise<{ session_id: string }> {
+  return request('POST', `/api/agents/${id}/conversations`, input)
+}
+
+/** The agent's main conversation, created on first use. */
+export function openAgentMain(id: number): Promise<{ session_id: string }> {
+  return request('POST', `/api/agents/${id}/main`)
+}
+
+/** Messages queued for a conversation of the agent, waiting for a run to end. */
+export function listAgentMessages(id: number, sessionId: string): Promise<PendingMessage[]> {
+  return request('GET', `/api/agents/${id}/messages?session_id=${encodeURIComponent(sessionId)}`)
+}
+
+/** What the runs announced to the main conversation, newest first; `pending` keeps the ones it has not received. */
+export function listAnnouncements(id: number, pending = false): Promise<Announcement[]> {
+  return request('GET', `/api/agents/${id}/announcements${query([['pending', pending ? true : undefined]])}`)
+}
+
+export function listAgentRuns(id: number, limit = 50): Promise<Run[]> {
+  return request('GET', `/api/agents/${id}/runs?limit=${limit}`)
+}
+
+/** Queues a manual wakeup (202). A disabled agent answers 409. */
+export function wakeAgent(id: number, text?: string): Promise<Wakeup> {
+  return request('POST', `/api/agents/${id}/wake`, text === undefined ? {} : { text })
+}
+
+export function listAgentWakeups(id: number): Promise<Wakeup[]> {
+  return request('GET', `/api/agents/${id}/wakeups`)
+}
+
+export function cancelAgentWakeup(id: number, wakeupId: number): Promise<{ id: number; state: string }> {
+  return request('POST', `/api/agents/${id}/wakeups/${wakeupId}/cancel`, {})
+}
+
+export function cancelAgentRun(id: number, runId: number): Promise<Run> {
+  return request('POST', `/api/agents/${id}/runs/${runId}/cancel`, {})
+}
+
+export function listRoutines(projectId?: number): Promise<Routine[]> {
+  return request('GET', `/api/routines${query([['project_id', projectId]])}`)
+}
+
+export function createRoutine(body: RoutineCreate): Promise<Routine> {
+  return request('POST', '/api/routines', body)
+}
+
+export function updateRoutine(id: number, body: RoutineUpdate): Promise<Routine> {
+  return request('PATCH', `/api/routines/${id}`, body)
+}
+
+export function deleteRoutine(id: number): Promise<void> {
+  return request('DELETE', `/api/routines/${id}`)
+}
+
+/** "Run now": a wakeup with the instruction, or (a routine that creates tasks) the task it opened. */
+export function runRoutine(id: number): Promise<Wakeup | Task | Run> {
+  return request('POST', `/api/routines/${id}/run`, {})
+}
+
+export function listAgentNotices(unreadOnly = false): Promise<Notice[]> {
+  return request('GET', `/api/agent-notices${query([['unread', unreadOnly ? true : undefined]])}`)
+}
+
+export function markAgentNoticesRead(ids: number[]): Promise<{ updated: number }> {
+  return request('POST', '/api/agent-notices/read', { ids })
+}
+
+export function getGithubSettings(): Promise<GithubSettings> {
+  return request('GET', '/api/agents-github')
+}
+
+/** The secret is only written: the answer says whether one is set, never its value. */
+export function putGithubSettings(body: { login?: string; secret?: string }): Promise<GithubSettings> {
+  return request('PUT', '/api/agents-github', body)
+}
+
+export function listTasks(filter: TaskFilter = {}): Promise<Task[]> {
+  const statuses = filter.status === undefined ? [] : Array.isArray(filter.status) ? filter.status : [filter.status]
+  return request('GET', `/api/tasks${query([
+    ['project_id', filter.project_id],
+    ...statuses.map((status): [string, string] => ['status', status]),
+    ['assignee_agent_id', filter.assignee_agent_id],
+    ['limit', filter.limit],
+    ['offset', filter.offset],
+  ])}`)
+}
+
+export function createTask(body: TaskCreate): Promise<Task> {
+  return request('POST', '/api/tasks', body)
+}
+
+export function getTask(id: number): Promise<TaskDetail> {
+  return request('GET', `/api/tasks/${id}`)
+}
+
+/** A stale `expected_revision` is a 409. */
+export function updateTask(id: number, body: TaskUpdate): Promise<Task> {
+  return request('PATCH', `/api/tasks/${id}`, body)
+}
+
+export function commentTask(id: number, text: string): Promise<Comment> {
+  return request('POST', `/api/tasks/${id}/comments`, { text })
+}
+
+export function unblockTask(id: number, expectedRevision: number): Promise<Task> {
+  return request('POST', `/api/tasks/${id}/unblock`, { expected_revision: expectedRevision })
+}
+
+/** Pending ones by default (as the backend does); `pending: false` lists the answered and expired too. */
+export function listDecisions(filter: { project_id?: number; pending?: boolean } = {}): Promise<Decision[]> {
+  return request('GET', `/api/decisions${query([['project_id', filter.project_id], ['pending', filter.pending]])}`)
+}
+
+/** An answer to a decision already answered or expired is a 409. */
+export function answerDecision(id: number, answer: string): Promise<Decision> {
+  return request('POST', `/api/decisions/${id}/answer`, { answer })
 }
