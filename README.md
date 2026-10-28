@@ -44,6 +44,8 @@ O que ele não é, de propósito: IDE, editor de código, terminal geral ou árv
 
 ## Começar pelo trabalho
 
+As tarefas agora são coordenadas pelos agentes da organização do projeto, e o pacote de tarefas por issue (CTO, trabalhadores e revisores fixos) foi removido. O CTO e as tarefas abertas migram automaticamente para agentes e tarefas da organização. As telas e esta documentação são refeitas no fim da branch; até lá, os passos abaixo podem não corresponder ao app.
+
 1. Cadastre a pasta do projeto. Em **Início**, escolha esse projeto, descreva o objetivo e use **Entregar ao CTO**.
 2. A conversa do **CTO** concentra os objetivos e as decisões daquele projeto. Ao trocar de projeto, você abre a conversa correspondente; as tarefas mantêm o projeto em que começaram.
 3. Em **Tarefas**, filtre por projeto, fonte, estado ou responsável. Abra uma tarefa para conferir objetivo, atividade, tentativas, evidências, revisão e PRs. A conversa de cada tentativa fica a um clique, com seu próprio resultado.

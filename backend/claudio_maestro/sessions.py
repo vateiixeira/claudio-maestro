@@ -1025,19 +1025,6 @@ class SessionExtras:
 SessionSetup = Callable[[SessionRecord], SessionExtras | None]
 
 
-@dataclass
-class SessionContext:
-    """Work context for a normal project session, without a tool policy.
-
-    The SDK still loads the project's settings, MCPs, hooks and permission mode.
-    Only the work instructions and in-process orchestration server are added.
-    """
-
-    system_prompt_append: str
-    mcp_servers: dict[str, Any]
-
-
-ContextSetup = Callable[[SessionRecord], SessionContext | None]
 # What the manager asks of the agents feature before a message is recorded: the text that
 # really goes in (the main conversation of an agent gets its announcements in front), and
 # a `commit` to call once that text is recorded.
@@ -1077,17 +1064,7 @@ class ActiveSession:
         cli_running: Callable[[str], bool] | None = None,
         agentd_held: set[str] | None = None,
         session_setup: SessionSetup | None = None,
-        context_setup: ContextSetup | None = None,
-        connection_admission: Callable[[SessionRecord], None] | None = None,
-        on_process_close: Callable[..., None] | None = None,
-        on_process_start: Callable[[str], None] | None = None,
-        on_session_turn_start: Callable[..., None] | None = None,
         remote_reconnect_allowed: Callable[[SessionRecord], bool] | None = None,
-        on_session_turn_end: Callable[[str], None] | None = None,
-        on_session_result: Callable[[str, dict[str, Any]], None] | None = None,
-        on_session_error: Callable[[str, str], None] | None = None,
-        on_session_init: Callable[[str, list[dict[str, str]]], None] | None = None,
-        on_session_pr_created: Callable[[str, str], None] | None = None,
         on_turn_error: Callable[[str, str], None] | None = None,
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
         on_pr_created: Callable[[str, str], None] | None = None,
@@ -1106,17 +1083,7 @@ class ActiveSession:
         # Extras of the agent this session belongs to, rebuilt with every client (attached
         # ones too, since the MCP server lives in this process); None for ordinary sessions.
         self._session_setup = session_setup
-        self._context_setup = context_setup
-        self._connection_admission = connection_admission
-        self._on_process_close = on_process_close
-        self._on_process_start = on_process_start
-        self._on_session_turn_start = on_session_turn_start
         self._remote_reconnect_allowed = remote_reconnect_allowed
-        self._on_session_turn_end = on_session_turn_end
-        self._on_session_result = on_session_result
-        self._on_session_error = on_session_error
-        self._on_session_init = on_session_init
-        self._on_session_pr_created = on_session_pr_created
         self._extras: SessionExtras | None = None
         # The manager's signals for the automatic Remote Control reconnect: a terminal
         # `claude` is running in this conversation, and the sessions whose process the
@@ -1186,8 +1153,6 @@ class ActiveSession:
         self._followup_task: asyncio.Task[None] | None = None
         self.builder = ConversationBuilder()
         self.pending_turns = 0
-        self._dispatch_receipt: dict[str, Any] | None = None
-        self._opening_dispatch_id: str | None = None
         self.prompts: dict[str, PendingPrompt] = {}
         self.client: AgentClient | None = None
         self.process_closed = False
@@ -1380,9 +1345,6 @@ class ActiveSession:
             self._exit_note = None  # a new turn: the old death is history
             if self.turn_started_at is None:
                 self.turn_started_at = int(self._wall_clock())
-                if self._on_session_turn_start:
-                    self._on_session_turn_start(self.session_id,
-                        self._dispatch_receipt['id'] if self._dispatch_receipt else None)
                 self._emit("turn.started", {"started_at": self.turn_started_at})
         else:
             self.turn_started_at = None
@@ -1690,11 +1652,7 @@ class ActiveSession:
         # Preparing announcements and committing their receipt share the same lock:
         # concurrent messages cannot pick up the same pending announcements.
         async with self._message_lock:
-            self._opening_dispatch_id = dispatch_id
-            try:
-                return await self._send_message(text, images, dispatch_id=dispatch_id)
-            finally:
-                self._opening_dispatch_id = None
+            return await self._send_message(text, images, dispatch_id=dispatch_id)
 
     async def _send_message(self, text: str, images: list[dict[str, Any]] | None = None, *, dispatch_id: str | None = None) -> bool:
         """Record the message, connect if needed and send it.
@@ -1736,11 +1694,6 @@ class ActiveSession:
                 return False
             client = self.client
             assert client is not None
-            if dispatch_id is not None:
-                self._dispatch_receipt = {'id': dispatch_id, 'client': client, 'generation': self._generation,
-                    'echo': False, 'ambiguous': bool(self.pending_turns or self._autonomous_turn or self.record.remote_control)}
-            elif self._dispatch_receipt is not None:
-                self._dispatch_receipt['ambiguous'] = True
             self.pending_turns += 1
             self._refresh_state()
             content: str | list[dict[str, Any]] = sent_text
@@ -2005,17 +1958,6 @@ class ActiveSession:
     def _new_client(self, resume: bool, attach: AttachInfo | None = None) -> AgentClient:
         if attach is None and (self.process_close_failed or self._unclosed_clients):
             raise ProcessAdmissionDenied('O processo anterior não tem encerramento confirmado. Concilie antes de iniciar outro.')
-        if attach is None and self._on_process_start is not None:
-            try:
-                self._on_process_start(self.session_id, self._opening_dispatch_id)
-            except Exception as error:
-                raise ProcessAdmissionDenied(str(error)) from None
-        if attach is None and self._connection_admission is not None:
-            try:
-                self._connection_admission(self.record)
-            except Exception:
-                logger.exception("Admissão de nova conexão recusada: %s", self.session_id)
-                raise ProcessAdmissionDenied("Não foi possível iniciar a sessão neste contexto.") from None
         model = self.record.model
         if attach is None and self.record.spawn_version != SPAWN_VERSION:
             # A process started now has what Remote Control needs from this version on.
@@ -2032,14 +1974,6 @@ class ActiveSession:
                 )
                 raise AgentError(AGENT_SETUP_FAILED_TEXT) from None
         self._extras = extras
-        context = None
-        if self._context_setup is not None and not agent_session:
-            try:
-                context = self._context_setup(self.record)
-            except Exception:
-                # Provider errors can include private task material: screen gets a fixed text.
-                logger.exception("Falha ao preparar o contexto da sessão %s", self.session_id)
-                raise AgentError("Não foi possível preparar o contexto da sessão.") from None
         return self._agent_factory(
             AgentOptions(
                 cwd=Path(self.record.work_dir()),
@@ -2073,10 +2007,6 @@ class ActiveSession:
                     "mcp_servers": extras.mcp_servers,
                     "disallowed_tools": list(extras.disallowed_tools),
                 }),
-                **({} if context is None else {
-                    "system_prompt_append": context.system_prompt_append,
-                    "mcp_servers": context.mcp_servers,
-                }),
             )
         )
 
@@ -2109,22 +2039,6 @@ class ActiveSession:
     async def _read(self, client: AgentClient) -> None:
         try:
             async for message in client.messages():
-                result_dispatch_id = None
-                receipt = self._dispatch_receipt
-                if receipt and isinstance(message, UserMessage) and message.parent_tool_use_id is None:
-                    if message.uuid == receipt['id']:
-                        receipt['echo'] = True
-                    elif (isinstance(message.content, str) or not message.content
-                          or any(not isinstance(block, ToolResultBlock) for block in message.content)):
-                        receipt['ambiguous'] = True
-                if isinstance(message, ResultMessage):
-                    self._dispatch_receipt = None  # The first result consumes this client generation's proof.
-                    if (receipt and receipt['echo'] and not receipt['ambiguous']
-                            and receipt['client'] is client and receipt['generation'] == self._generation
-                            and self.pending_turns == 1 and not self._autonomous_turn
-                            and not self.record.remote_control
-                            and (message.origin is None or message.origin.get('kind') == 'human')):
-                        result_dispatch_id = receipt['id']
                 if self._starts_turn(message):
                     # The turn the hold waited for (or another one) has begun.
                     self._release_subagent_hold(announce=False)
@@ -2221,12 +2135,6 @@ class ActiveSession:
                 self._refresh_state()
                 self.sync_subagents()
                 if isinstance(message, ResultMessage):
-                    self._notify_session_hook(self._on_session_result, {
-                        "is_error": message.is_error,
-                        "terminal_reason": message.terminal_reason,
-                        **({'dispatch_id': result_dispatch_id} if result_dispatch_id else {}),
-                    })
-                    self._notify_session_hook(self._on_session_turn_end)
                     # After every event of the turn: this only writes the database.
                     await self._record_app_mtime()
         except asyncio.CancelledError:
@@ -2885,7 +2793,6 @@ class ActiveSession:
                 self._on_init(self.session_id, list(init.mcp_servers))
             except Exception:
                 logger.exception("Falha ao registrar os MCPs da sessão de agente %s", self.session_id)
-        self._notify_session_hook(self._on_session_init, list(init.mcp_servers))
 
     async def set_options(
         self,
@@ -3067,10 +2974,7 @@ class ActiveSession:
 
     def _note_pr_use(self, message: AssistantMessage) -> None:
         """Keep the Bash calls that run `gh pr create` until their result arrives."""
-        if (
-            (self._on_pr_created is None or self.record.agent_id is None)
-            and self._on_session_pr_created is None
-        ):
+        if self._on_pr_created is None or self.record.agent_id is None:
             return
         for block in message.content:
             if not isinstance(block, ToolUseBlock) or block.name != "Bash":
@@ -3100,7 +3004,6 @@ class ActiveSession:
                     self._on_pr_created(self.session_id, found.group(0))
                 except Exception:
                     logger.exception("Falha ao registrar o PR da sessão de agente %s", self.session_id)
-            self._notify_session_hook(self._on_session_pr_created, found.group(0))
 
     def _schedule_plan_refresh(self) -> None:
         if self._refresh_plan is None or not self.record.plan_path:
@@ -3176,7 +3079,6 @@ class ActiveSession:
         self._reader = None
         self.error = message
         self.pending_turns = 0
-        self._dispatch_receipt = None
         self._autonomous_turn = False
         self._clear_followup()
         self._release_subagent_hold(announce=False)
@@ -3201,15 +3103,6 @@ class ActiveSession:
                 self._on_turn_error(self.session_id, text)
             except Exception:
                 logger.exception("Falha ao registrar o erro da sessão de agente %s", self.session_id)
-        self._notify_session_hook(self._on_session_error, text)
-
-    def _notify_session_hook(self, callback: Callable[..., None] | None, *args: Any) -> None:
-        """Lifecycle observers cannot interrupt the session's reader or error handling."""
-        if callback is not None:
-            try:
-                callback(self.session_id, *args)
-            except Exception:
-                logger.exception("Falha ao registrar a atividade da sessão %s", self.session_id)
 
     async def close(self, *, final: bool = False, record_mtime: bool = True) -> None:
         """Close the client, if any. The session goes back to `closed`.
@@ -3241,7 +3134,6 @@ class ActiveSession:
         self.client_since = None
         self.foreign_candidates = set()
         self.pending_turns = 0
-        self._dispatch_receipt = None
         self._autonomous_turn = False
         self._clear_followup()
         self._release_subagent_hold(announce=False)
@@ -3401,11 +3293,7 @@ class ActiveSession:
 
     async def _close_quietly(self, client: AgentClient) -> None:
         try:
-            if self._on_process_close:
-                self._on_process_close(self.session_id, 'closing', client)
             await client.close()
-            if self._on_process_close:
-                self._on_process_close(self.session_id, 'closed', client)
             self._unclosed_clients = [old for old in self._unclosed_clients if old is not client]
             self.process_closed = not self._unclosed_clients
             self.process_close_failed = bool(self._unclosed_clients)
@@ -3414,11 +3302,6 @@ class ActiveSession:
             self.process_close_failed = True
             if not any(old is client for old in self._unclosed_clients):
                 self._unclosed_clients.append(client)
-            if self._on_process_close:
-                try:
-                    self._on_process_close(self.session_id, 'uncertain', client)
-                except Exception:
-                    logger.exception('Falha ao persistir o fechamento incerto da sessão %s', self.session_id)
             if isinstance(error, asyncio.CancelledError):
                 raise
             logger.exception("Falha ao fechar o cliente da sessão %s", self.session_id)
@@ -3620,14 +3503,7 @@ class SessionManager:
         cli_identity: Callable[[], dict[str, Any]] | None = None,
         text_index: TextSearch | None = None,
         session_setup: SessionSetup | None = None,
-        context_setup: ContextSetup | None = None,
-        connection_admission: Callable[[SessionRecord], None] | None = None,
         remote_reconnect_allowed: Callable[[SessionRecord], bool] | None = None,
-        on_session_turn_end: Callable[[str], None] | None = None,
-        on_session_result: Callable[[str, dict[str, Any]], None] | None = None,
-        on_session_error: Callable[[str, str], None] | None = None,
-        on_session_init: Callable[[str, list[dict[str, str]]], None] | None = None,
-        on_session_pr_created: Callable[[str, str], None] | None = None,
         on_turn_error: Callable[[str, str], None] | None = None,
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
         on_pr_created: Callable[[str, str], None] | None = None,
@@ -3641,17 +3517,7 @@ class SessionManager:
         self._throwaway_ids: OrderedDict[str, None] = OrderedDict()
         # Gives the sessions of an agent their skill, folders, MCP server and policy.
         self._session_setup = session_setup
-        self._context_setup = context_setup
-        self._connection_admission = connection_admission
-        self._on_process_close = None
-        self._on_process_start = None
-        self._on_session_turn_start = None
         self._remote_reconnect_allowed = remote_reconnect_allowed
-        self._on_session_turn_end = on_session_turn_end
-        self._on_session_result = on_session_result
-        self._on_session_error = on_session_error
-        self._on_session_init = on_session_init
-        self._on_session_pr_created = on_session_pr_created
         # Errors and inits of the sessions of an agent (see `ActiveSession`).
         self._on_turn_error = on_turn_error
         self._on_init = on_init
@@ -3840,16 +3706,6 @@ class SessionManager:
                 logger.exception("Falha na atualização periódica dos modelos")
             await sleep(interval)
 
-    def set_work_lifecycle_observers(self, *, process_close, process_start, turn_start):
-        """Observe governed identities without changing normal project policy."""
-        self._on_process_close = process_close
-        self._on_process_start = process_start
-        self._on_session_turn_start = turn_start
-        for session in self._sessions.values():
-            session._on_process_close = process_close
-            session._on_process_start = process_start
-            session._on_session_turn_start = turn_start
-
     def create_session(
         self,
         project: Project,
@@ -3991,17 +3847,7 @@ class SessionManager:
             cli_running=self._cli_running,
             agentd_held=self._agentd_held,
             session_setup=self._session_setup,
-            context_setup=self._context_setup,
-            connection_admission=self._connection_admission,
-            on_process_close=self._on_process_close,
-            on_process_start=self._on_process_start,
-            on_session_turn_start=self._on_session_turn_start,
             remote_reconnect_allowed=self._remote_reconnect_allowed,
-            on_session_turn_end=self._on_session_turn_end,
-            on_session_result=self._on_session_result,
-            on_session_error=self._on_session_error,
-            on_session_init=self._on_session_init,
-            on_session_pr_created=self._on_session_pr_created,
             on_turn_error=self._on_turn_error,
             on_init=self._on_init,
             on_pr_created=self._on_pr_created,

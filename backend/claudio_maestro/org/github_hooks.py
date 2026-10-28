@@ -209,9 +209,6 @@ def build_hooks_app(
     data_dir: Path,
     is_agent_pr: Callable[[str], int | None],
     on_queued: Callable[[], None],
-    is_work_pr: Callable[[str], bool] = lambda url: False,
-    queue_work_comment: Callable[[IncomingComment], bool] | None = None,
-    on_work_queued: Callable[[], None] = lambda: None,
 ) -> Starlette:
     """The webhook app: `POST /github` and nothing else.
 
@@ -219,21 +216,15 @@ def build_hooks_app(
     `on_queued()` runs (in the event loop) after a new comment entered the queue.
     """
 
-    def queue(comments: list[IncomingComment]) -> tuple[int, int]:
+    def queue(comments: list[IncomingComment]) -> int:
         """Store what comes from the owner on an agent's PR; how many are new."""
         with closing(db.connect(db_path)) as conn:
             owner = get_owner(conn)
             if not owner:
-                return 0, 0
+                return 0
             added = 0
-            work_added = 0
             for comment in comments:
                 if comment.author.casefold() != owner.casefold():
-                    continue
-                if is_work_pr(comment.pr_url):
-                    if queue_work_comment is None:
-                        raise RuntimeError("Fila de comentários de trabalho indisponível.")
-                    work_added += bool(queue_work_comment(comment))
                     continue
                 agent_id = is_agent_pr(comment.pr_url)
                 if agent_id is None:
@@ -244,7 +235,7 @@ def build_hooks_app(
                 )
                 if store.insert_comment(conn, stored):
                     added += 1
-            return added, work_added
+            return added
 
     async def github(request: Request) -> Response:
         secret = read_secret(data_dir)
@@ -262,13 +253,11 @@ def build_hooks_app(
         event = request.headers.get("x-github-event", "")
         comments = parse_event(event, payload)
         if comments:
-            added, work_added = await asyncio.to_thread(queue, comments)
-            for count, notify in ((added, on_queued), (work_added, on_work_queued)):
-                if count:
-                    try:
-                        notify()
-                    except Exception:
-                        logger.exception("Falha ao avisar que há comentários de PR na fila")
+            if await asyncio.to_thread(queue, comments):
+                try:
+                    on_queued()
+                except Exception:
+                    logger.exception("Falha ao avisar que há comentários de PR na fila")
         return Response(status_code=202)
 
     return Starlette(routes=[Route("/github", github, methods=["POST"])])

@@ -695,7 +695,7 @@ def test_migration_32_on_a_database_without_specialists(tmp_path: Path):
     with open_db(tmp_path / "t.db") as conn:
         db.migrate(conn)
         assert not set(SPECIALIST_TABLES) & table_names(conn)
-        assert db.SCHEMA_VERSION == 33
+        assert db.SCHEMA_VERSION == 34
 
 
 def test_migration_31_keeps_autoincrement_watermark(tmp_path: Path):
@@ -928,7 +928,7 @@ def test_migration_33_copies_work_items_into_tasks(tmp_path: Path):
 
         db.migrate(conn)
 
-        assert db.schema_version(conn) == 33
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         tasks = {row["id"]: row for row in conn.execute("SELECT * FROM tasks")}
         assert sorted(tasks) == [1, 2]
         assert (tasks[1]["status"], tasks[1]["priority"], tasks[1]["parent_task_id"]) == ("in_review", "high", None)
@@ -1045,3 +1045,109 @@ def test_migration_33_creates_the_new_tables_and_columns(tmp_path: Path):
             conn.execute("INSERT INTO task_comments (task_id, author_kind, text, created_at) VALUES (1, 'human', '', 0)")
         conn.execute("DELETE FROM projects WHERE id = 1")
         assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+
+
+def migrate_to(conn, version: int) -> None:
+    """`db.migrate` stopped at `version`, so the tables the later migrations drop still exist."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", db.MIGRATIONS[:version])
+        patch.setattr(db, "SCHEMA_VERSION", version)
+        db.migrate(conn)
+
+
+def _fill_work_tables(conn) -> None:
+    """A row in each `work_*` table of a version 33 database that `_build_v32_with_work` filled."""
+    execute = conn.execute
+    execute("INSERT INTO work_events (id, work_item_id, attempt_id, kind, actor, revision, data, created_at)"
+            " VALUES (1, 2, 12, 'k', 'a', 1, '{}', 100)")
+    execute("INSERT INTO work_notifications (event_id, project_id, coordinator_session_id, work_item_id,"
+            " attempt_id, kind, summary, dispatch_state, created_at)"
+            " VALUES (1, 1, 'coord', 2, 12, 'k', 's', 'queued', 100)")
+    execute("INSERT INTO work_dependencies (work_item_id, depends_on_id, created_at) VALUES (2, 1, 100)")
+    execute("INSERT INTO work_resource_claims (resource, attempt_id, created_at) VALUES ('r', 12, 100)")
+    execute("INSERT INTO work_collections (id, work_item_id, source, source_instance, source_project, created_at)"
+            " VALUES ('c1', 1, 's', 'i', 'p', 100)")
+    execute("INSERT INTO work_collection_pages VALUES ('c1', 'cur', 'dig', 'ref')")
+    execute("INSERT INTO work_collection_items VALUES ('c1', 2, NULL)")
+    execute("INSERT INTO work_collection_inputs VALUES ('c1', 2, 1)")
+    execute("INSERT INTO work_input_history VALUES (2, 1, 'd')")
+    execute("INSERT INTO work_attempt_inputs VALUES (12, 'd', NULL)")
+    execute("INSERT INTO work_attempt_workspaces VALUES (12, 'p')")
+    execute("INSERT INTO work_attempt_signals (attempt_id, updated_at) VALUES (12, 100)")
+    execute("INSERT INTO work_process_closures (attempt_id, status, updated_at) VALUES (12, 'closed', 100)")
+    execute("INSERT INTO work_capacity_suspensions VALUES (12, 'human_decision_quiescent', 100)")
+    execute("INSERT INTO work_review_bindings (work_item_id, author_attempt_id, input_revision, item_revision,"
+            " dossier_ref, target_ref, status, created_at, updated_at)"
+            " VALUES (2, 10, 1, 1, 'd', 't', 'queued', 100, 100)")
+    execute("INSERT INTO work_pr_batches VALUES ('b1', 'https://github.com/o/r/pull/9', 'delivered', 100, NULL)")
+    execute("INSERT INTO work_pr_comments VALUES ('https://github.com/o/r/pull/9', 'c1', 'u', 'ref', 100, 100,"
+            " 'queued', 'b1')")
+    execute("INSERT INTO work_pr_inbox VALUES ('b1', 2, 12, 'rcpt', 'd', 100)")
+    execute("INSERT INTO work_pr_registrations (session_id, url, attempt_id, state)"
+            " VALUES ('s-a1', 'https://github.com/o/r/pull/9', 10, 'pending')")
+    execute("INSERT INTO work_ci_receipts VALUES ('ev', 12, 's-a1', 1, 1, NULL, 'd', 't', 'dg', 'dg', 100)")
+    execute("INSERT INTO work_project_pool_limits VALUES (1, 2)")
+    execute("INSERT INTO work_project_resources VALUES (1, 'port')")
+    execute("INSERT INTO work_project_modes VALUES (1, 1, 0, 100)")
+    execute("INSERT INTO work_project_fences VALUES (1, 'f', 'r', 100)")
+
+
+def test_migration_34_drops_work_tables(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v32_with_work(conn)
+        migrate_to(conn, 33)
+        _fill_work_tables(conn)
+        legacy = [tuple(row) for row in conn.execute("SELECT * FROM org_legacy_work ORDER BY id")]
+        tasks = [tuple(row) for row in conn.execute("SELECT * FROM tasks ORDER BY id")]
+        work_tables = {name for name in table_names(conn) if name.startswith("work_")}
+        assert len(work_tables) == 31
+        for table in sorted(work_tables):  # every one holds rows, so the drop has data to cascade over
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] > 0, table
+        assert db.schema_version(conn) == 33
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        # The list the migration drops is the real one, not a guess.
+        assert set(db.LEGACY_WORK_TABLES) == work_tables
+
+        db.migrate(conn)
+
+        assert db.schema_version(conn) == 34 == db.SCHEMA_VERSION
+        assert not [name for name in table_names(conn) if name.startswith("work_")]
+        leftovers = [
+            tuple(row) for row in conn.execute(
+                "SELECT type, name FROM sqlite_master WHERE name LIKE 'work\\_%' ESCAPE '\\'"
+                " OR tbl_name LIKE 'work\\_%' ESCAPE '\\'"
+            )
+        ]
+        assert leftovers == []
+        assert conn.execute("SELECT COUNT(*) FROM sqlite_sequence WHERE name LIKE 'work\\_%' ESCAPE '\\'"
+                            ).fetchone()[0] == 0
+        # `migrate_work` runs after the migrations and reads this table: it must survive, intact.
+        assert "org_legacy_work" in table_names(conn)
+        assert [tuple(row) for row in conn.execute("SELECT * FROM org_legacy_work ORDER BY id")] == legacy
+        assert len(legacy) == 3
+        assert [tuple(row) for row in conn.execute("SELECT * FROM tasks ORDER BY id")] == tasks
+        assert conn.execute("SELECT COUNT(*) FROM task_comments").fetchone()[0] == 4
+        assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 4
+        assert conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 1
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_migration_34_can_run_twice(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v32_with_work(conn)
+        db.migrate(conn)
+        # A crash between the statements and the version stamp must not make a rerun fail.
+        with db.transaction(conn):
+            for statement in db.MIGRATIONS[33]:
+                statement(conn) if callable(statement) else conn.execute(statement)
+        assert not [name for name in table_names(conn) if name.startswith("work_")]
+        assert conn.execute("SELECT COUNT(*) FROM org_legacy_work").fetchone()[0] == 3
+
+
+def test_migration_34_on_a_new_database_ends_without_work_tables(tmp_path: Path):
+    with open_db(tmp_path / "t.db") as conn:
+        db.migrate(conn)
+        assert db.schema_version(conn) == 34
+        assert not [name for name in table_names(conn) if name.startswith("work_")]
+        assert "org_legacy_work" in table_names(conn)

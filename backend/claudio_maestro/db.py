@@ -5,10 +5,6 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from claudio_maestro.work.ci_schema import CI_SCHEMA
-from claudio_maestro.work.pool import POOL_SCHEMA
-from claudio_maestro.work.pr_schema import PR_SCHEMA
-
 # Titles the app or the sync set by themselves (history.DEFAULT_APP_TITLE, history.UNTITLED).
 _AUTOMATIC_TITLES = ("Nova sessão", "Sessão sem título")
 _TITLE_MAX_LENGTH = 80
@@ -92,6 +88,115 @@ def migrate_specialist_queue(conn: sqlite3.Connection) -> None:
             (sequence[0],),
         )
 
+
+# Statements of migrations 27 (PR), 28 (CI) and 29 (pool), copied from the `work` package that
+# migration 34 retired. A migration that was published never changes, so a new database still
+# climbs from version 0 through them; migration 34 drops what they create.
+_PR_SCHEMA = [
+    """CREATE TABLE work_prs (
+        url TEXT PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        origin_attempt_id INTEGER NOT NULL REFERENCES work_attempts(id),
+        last_attempt_id INTEGER NOT NULL REFERENCES work_attempts(id),
+        origin_session_id TEXT NOT NULL,
+        last_session_id TEXT NOT NULL,
+        workspace TEXT NOT NULL,
+        target_ref TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        polled_at INTEGER,
+        closed INTEGER NOT NULL DEFAULT 0 CHECK(closed IN (0,1)),
+        head_sha TEXT
+    )""",
+    """CREATE TABLE work_pr_batches (
+        id TEXT PRIMARY KEY,
+        pr_url TEXT NOT NULL REFERENCES work_prs(url) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK(status IN ('dispatching','delivered','uncertain','rejected')),
+        created_at INTEGER NOT NULL,
+        receipt TEXT
+    )""",
+    """CREATE TABLE work_pr_comments (
+        pr_url TEXT NOT NULL REFERENCES work_prs(url) ON DELETE CASCADE,
+        comment_id TEXT NOT NULL,
+        author TEXT NOT NULL,
+        body_ref TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        received_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('queued','dispatching','delivered','uncertain')),
+        batch_id TEXT REFERENCES work_pr_batches(id),
+        PRIMARY KEY(pr_url,comment_id)
+    )""",
+    """CREATE TABLE work_pr_registrations (
+        session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+        url TEXT NOT NULL,
+        attempt_id INTEGER NOT NULL REFERENCES work_attempts(id) ON DELETE CASCADE,
+        state TEXT NOT NULL CHECK(state IN ('pending','registered','blocked')),
+        workspace TEXT,
+        capture_ref TEXT,
+        reason TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY(session_id,url)
+    )""",
+    """CREATE TABLE work_pr_inbox (
+        batch_id TEXT PRIMARY KEY REFERENCES work_pr_batches(id) ON DELETE CASCADE,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        attempt_id INTEGER NOT NULL UNIQUE REFERENCES work_attempts(id),
+        receipt TEXT NOT NULL UNIQUE,
+        dossier_ref TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    )""",
+    'CREATE INDEX work_pr_comments_pending ON work_pr_comments(status,pr_url)',
+]
+
+_CI_SCHEMA = [
+    """CREATE TABLE work_ci_receipts (
+        evidence_ref TEXT PRIMARY KEY,
+        attempt_id INTEGER NOT NULL REFERENCES work_attempts(id) ON DELETE CASCADE,
+        session_id TEXT NOT NULL,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        work_revision INTEGER NOT NULL,
+        source_revision TEXT,
+        dossier_ref TEXT NOT NULL,
+        target_ref TEXT NOT NULL,
+        target_digest TEXT NOT NULL,
+        evidence_digest TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    )""",
+    'CREATE INDEX work_ci_receipts_attempt ON work_ci_receipts(attempt_id)',
+]
+
+_POOL_SCHEMA = [
+    """CREATE TABLE work_pool_config (
+        id INTEGER PRIMARY KEY CHECK(id=1),
+        global_limit INTEGER NOT NULL CHECK(global_limit BETWEEN 1 AND 2),
+        default_project_limit INTEGER NOT NULL CHECK(default_project_limit BETWEEN 1 AND 2),
+        revision INTEGER NOT NULL DEFAULT 1
+    )""",
+    'INSERT INTO work_pool_config VALUES (1,1,1,1)',
+    'ALTER TABLE work_attempt_signals ADD COLUMN dispatch_id TEXT',
+    'ALTER TABLE work_attempt_signals ADD COLUMN correlated_result INTEGER NOT NULL DEFAULT 0 CHECK(correlated_result IN (0,1))',
+    'ALTER TABLE work_notifications ADD COLUMN dispatch_id TEXT',
+    """CREATE TABLE work_project_pool_limits (
+        project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        worker_limit INTEGER NOT NULL CHECK(worker_limit BETWEEN 1 AND 2)
+    )""",
+    """CREATE TABLE work_project_resources (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        resource TEXT NOT NULL CHECK(length(resource)<=180),
+        PRIMARY KEY(project_id,resource)
+    )""",
+    """CREATE TABLE work_process_closures (
+        attempt_id INTEGER PRIMARY KEY REFERENCES work_attempts(id) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK(status IN ('closing','closed','uncertain')),
+        updated_at INTEGER NOT NULL,
+        agentd_child_id TEXT,
+        agentd_instance_id TEXT
+    )""",
+    """CREATE TABLE work_capacity_suspensions (
+        attempt_id INTEGER PRIMARY KEY REFERENCES work_attempts(id) ON DELETE CASCADE,
+        reason TEXT NOT NULL CHECK(reason='human_decision_quiescent'),
+        suspended_at INTEGER NOT NULL
+    )""",
+]
 
 # Each migration is a list of SQL statements or functions of the connection.
 # Migration N (1-based) brings the schema to `user_version = N`. Never edit a
@@ -703,12 +808,12 @@ MIGRATIONS.append([
     "CREATE INDEX work_notifications_queue ON work_notifications(coordinator_session_id,dispatch_state,id)",
 ])
 
-MIGRATIONS.append(PR_SCHEMA)
+MIGRATIONS.append(_PR_SCHEMA)
 
 # Backend-issued evidence for read-only GitHub Actions verification.
-MIGRATIONS.append(CI_SCHEMA)
+MIGRATIONS.append(_CI_SCHEMA)
 
-MIGRATIONS.append(POOL_SCHEMA)
+MIGRATIONS.append(_POOL_SCHEMA)
 
 # The owner of a session is an agent now, not only a legacy specialist.
 MIGRATIONS.append(["ALTER TABLE sessions RENAME COLUMN specialist_id TO agent_id"])
@@ -1256,6 +1361,47 @@ MIGRATIONS.append([
     FROM work_prs ORDER BY created_at, url
     """,
 ])
+
+# The work items became tasks (migration 33) and the service that used the `work_*` tables is
+# gone: drop them. Children first (an attempt points at its item, a notification at an event and
+# an attempt, ...), so the implicit DELETE that SQLite runs before dropping a parent has nothing
+# left to cascade into. `IF EXISTS` makes the step safe to rerun. Their indexes go with them.
+# `org_legacy_work` stays: `migrate_work` runs after the migrations, in the same start, and reads
+# it; it empties the table by itself.
+LEGACY_WORK_TABLES = (
+    "work_notifications",
+    "work_events",
+    "work_pr_comments",
+    "work_pr_inbox",
+    "work_pr_batches",
+    "work_prs",
+    "work_review_bindings",
+    "work_decision_requests",
+    "work_ci_receipts",
+    "work_attempt_inputs",
+    "work_attempt_signals",
+    "work_attempt_workspaces",
+    "work_capacity_suspensions",
+    "work_process_closures",
+    "work_pr_registrations",
+    "work_resource_claims",
+    "work_collection_inputs",
+    "work_collection_items",
+    "work_collection_pages",
+    "work_collections",
+    "work_dependencies",
+    "work_input_history",
+    "work_specs",
+    "work_attempts",
+    "work_items",
+    "work_coordinators",
+    "work_pool_config",
+    "work_project_fences",
+    "work_project_modes",
+    "work_project_pool_limits",
+    "work_project_resources",
+)
+MIGRATIONS.append([f"DROP TABLE IF EXISTS {table}" for table in LEGACY_WORK_TABLES])
 
 SCHEMA_VERSION = len(MIGRATIONS)
 

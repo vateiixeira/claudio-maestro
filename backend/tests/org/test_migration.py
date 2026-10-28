@@ -468,8 +468,9 @@ FORBIDDEN_IN_INHERITED = (
 
 
 def drop_work_tables(conn: sqlite3.Connection) -> None:
-    """What migration 34 does on the real start: the `work_*` tables are gone before the file
-    step runs, so `migrate_work` may only use `org_legacy_work`, `tasks` and the disk."""
+    """Migration 34 already drops the `work_*` tables on the real start, before the file step
+    runs, so `migrate_work` may only use `org_legacy_work`, `tasks` and the disk. This makes sure
+    no test database keeps one (a table left by a partial migration would hide a dependency)."""
     conn.execute("PRAGMA foreign_keys = OFF")
     names = [
         r[0] for r in conn.execute(

@@ -25,6 +25,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 ### Alterado
 
 - Agentes refeitos como organização por projeto; o Sentry e o KBGen migram automaticamente.
+- Tarefas passam a ser coordenadas pelos agentes da organização; o CTO e as tarefas abertas migram automaticamente.
 - A variável `MAESTRO_SPECIALISTS_SCHEDULER` passou a se chamar `MAESTRO_ROUTINES_SCHEDULER`; o nome antigo continua valendo por esta versão.
 - O CTO mostra os próximos passos acima da conversa, separando decisões, permissões e execuções que precisam de orientação. Tentativas elegíveis têm campo próprio para continuar com uma mensagem humana, mantendo o rascunho quando o envio falha. Em celulares e telas baixas, os controles secundários ficam recolhíveis para preservar o espaço da conversa.
 - Tarefas ainda não iniciadas aparecem como “Na fila”, com a causa da espera quando comprovada. O CTO ocioso aparece disponível, sem sugerir uma resposta obrigatória.
