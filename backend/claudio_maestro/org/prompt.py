@@ -205,6 +205,12 @@ _TASK_HEADLINES = {
     "sem_relato": (
         "A execução anterior terminou sem comentário; comente o que fez"
     ),
+    # Why the board woke an agent that is not simply the assignee of a new task.
+    "review": "Você é o revisor da tarefa",
+    "changes": "O revisor pediu mudanças na tarefa",
+    "unblocked": "A pessoa desbloqueou a tarefa",
+    "closed": "A tarefa que você criou foi fechada",
+    "blocked": "A tarefa que você criou foi bloqueada",
 }
 _TASK_CLOSING = "Ao terminar, atualize o status com `tarefa_atualizar` e deixe um comentário."
 
@@ -241,13 +247,20 @@ def task_wake_text(
         lines += ["", "Comentários novos:"]
         lines += [f"- {author}: {text.strip()}" for author, text in brief.comments]
     if source == "decision" and decision is not None:
-        question, answer, receipt = decision
-        lines += [
-            "",
-            "Decisão:",
-            f"Pergunta: {question}",
-            f"Resposta: {answer}",
-            f"Recibo: {receipt} (recibo: use-o no comentário que fecha a questão)",
-        ]
+        lines += ["", *_decision_lines(*decision)]
     lines += ["", _TASK_CLOSING]
     return "\n".join(lines)
+
+
+def _decision_lines(question: str, answer: str, receipt: str) -> list[str]:
+    return [
+        "Decisão:",
+        f"Pergunta: {question}",
+        f"Resposta: {answer}",
+        f"Recibo: {receipt} (recibo: use-o no comentário que fecha a questão)",
+    ]
+
+
+def decision_message_text(question: str, answer: str, receipt: str) -> str:
+    """A decision answered outside any task: it reaches the session that asked as a message."""
+    return "\n".join(["A pessoa respondeu sua pergunta.", "", *_decision_lines(question, answer, receipt)])

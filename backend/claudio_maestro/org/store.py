@@ -7,7 +7,7 @@ precisam ser atômicas (`db.transaction`).
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final, Literal
 
 Source = Literal["routine", "message", "assignment", "comment", "decision", "manual"]
@@ -204,6 +204,7 @@ class Pr:
     created_at: int
     polled_at: int | None
     closed: bool
+    task_id: int | None = None  # the task whose session opened it
 
 
 @dataclass(frozen=True)
@@ -637,6 +638,25 @@ def _wakeup(row: sqlite3.Row) -> Wakeup:
     return Wakeup(**fields)
 
 
+def find_task_wakeup(
+    conn: sqlite3.Connection, agent_id: int, task_id: int, source: Source, reason: str | None
+) -> Wakeup | None:
+    """The pending wakeup of the agent for this task with the same origin and `reason` (the one
+    a new wakeup of the same kind groups with), or None. A `decision` never groups."""
+    if source == "decision":
+        return None
+    rows = conn.execute(
+        f"SELECT {_WAKEUP_COLUMNS} FROM wakeups"
+        " WHERE agent_id = ? AND task_id = ? AND source = ? AND state = 'pending' ORDER BY id",
+        (agent_id, task_id, source),
+    ).fetchall()
+    for row in rows:
+        wakeup = _wakeup(row)
+        if (wakeup.payload or {}).get("reason") == reason:
+            return wakeup
+    return None
+
+
 def enqueue_wakeup(
     conn: sqlite3.Connection,
     *,
@@ -647,9 +667,12 @@ def enqueue_wakeup(
     task_id: int | None = None,
     now: int,
 ) -> Wakeup:
-    """Queue a wakeup. Only routine wakeups group: when the agent already has a pending one
-    from the same `routine_id`, that one is returned and nothing is inserted. Every other origin
-    queues one wakeup per event. The caller's transaction makes check and insert atomic."""
+    """Queue a wakeup. Two kinds group: a routine wakeup, with a pending one of the same
+    `routine_id`, and a task wakeup, with a pending one of the same agent, task, origin and
+    `payload["reason"]` (never a `decision`); the pending one is returned and nothing is
+    inserted (for a task wakeup the smaller `since_comment_id` stays, so the agent sees every
+    comment either one would have shown). Every other origin queues one wakeup per event. The
+    caller's transaction makes check and insert atomic."""
     if source == "routine":
         existing = conn.execute(
             f"SELECT {_WAKEUP_COLUMNS} FROM wakeups"
@@ -659,6 +682,12 @@ def enqueue_wakeup(
         ).fetchone()
         if existing is not None:
             return _wakeup(existing)
+    if task_id is not None:
+        grouped = find_task_wakeup(
+            conn, agent_id, task_id, source, (payload or {}).get("reason")
+        )
+        if grouped is not None:
+            return _merge_task_wakeup(conn, grouped, payload or {})
     encoded = json.dumps(payload, ensure_ascii=False) if payload is not None else None
     if encoded is not None and len(encoded) > WAKEUP_PAYLOAD_MAX:
         raise OrgError(f"O texto do despertar passa de {WAKEUP_PAYLOAD_MAX} caracteres.")
@@ -671,6 +700,24 @@ def enqueue_wakeup(
         f"SELECT {_WAKEUP_COLUMNS} FROM wakeups WHERE id = ?", (cursor.lastrowid,)
     ).fetchone()
     return _wakeup(row)
+
+
+def _merge_task_wakeup(
+    conn: sqlite3.Connection, existing: Wakeup, incoming: dict[str, Any]
+) -> Wakeup:
+    """Keep the smaller comment cursor of the two grouped task wakeups."""
+    payload = dict(existing.payload or {})
+    wanted = min(
+        int(payload.get("since_comment_id") or 0), int(incoming.get("since_comment_id") or 0)
+    )
+    if payload.get("since_comment_id") == wanted:
+        return existing
+    payload["since_comment_id"] = wanted
+    conn.execute(
+        "UPDATE wakeups SET payload = ? WHERE id = ?",
+        (json.dumps(payload, ensure_ascii=False), existing.id),
+    )
+    return replace(existing, payload=payload)
 
 
 def next_wakeup(conn: sqlite3.Connection, agent_id: int) -> Wakeup | None:
@@ -1015,7 +1062,7 @@ def list_announcements(
 
 # Pull requests and their comments -------------------------------------------------
 
-_PR_COLUMNS = "url, agent_id, session_id, created_at, polled_at, closed"
+_PR_COLUMNS = "url, agent_id, session_id, created_at, polled_at, closed, task_id"
 _COMMENT_COLUMNS = (
     "comment_id, pr_url, agent_id, author, body, path, line, html_url, created_at,"
     " received_at, status, batch_at"
@@ -1041,15 +1088,18 @@ def upsert_pr(
     agent_id: int,
     session_id: str | None,
     created_at: int,
+    task_id: int | None = None,
 ) -> None:
-    """Register a PR under its normalized URL. A known session is never overwritten by a
-    missing one."""
+    """Register a PR under its normalized URL. A known session or task is never overwritten by
+    a missing one."""
     url = normalize_pr_url(url)
     conn.execute(
-        "INSERT INTO agent_prs (url, agent_id, session_id, created_at) VALUES (?, ?, ?, ?)"
+        "INSERT INTO agent_prs (url, agent_id, session_id, created_at, task_id)"
+        " VALUES (?, ?, ?, ?, ?)"
         " ON CONFLICT (url) DO UPDATE SET"
-        " session_id = COALESCE(excluded.session_id, agent_prs.session_id)",
-        (url, agent_id, session_id, created_at),
+        " session_id = COALESCE(excluded.session_id, agent_prs.session_id),"
+        " task_id = COALESCE(excluded.task_id, agent_prs.task_id)",
+        (url, agent_id, session_id, created_at, task_id),
     )
 
 
@@ -1548,6 +1598,24 @@ def clear_task_session(conn: sqlite3.Connection, agent_id: int, task_id: int) ->
     conn.execute(
         "DELETE FROM task_sessions WHERE agent_id = ? AND task_id = ?", (agent_id, task_id)
     )
+
+
+def task_of_session(conn: sqlite3.Connection, session_id: str) -> int | None:
+    """The task a session is the conversation of (None for any other session)."""
+    row = conn.execute(
+        "SELECT task_id FROM task_sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    return row["task_id"] if row else None
+
+
+def purge_dead_task_sessions(conn: sqlite3.Connection) -> int:
+    """Forget the (agent, task) pairs whose session no longer exists (the foreign key already
+    left `session_id` empty); the next wakeup of the task opens a new session."""
+    cursor = conn.execute(
+        "DELETE FROM task_sessions WHERE session_id IS NULL"
+        " OR session_id NOT IN (SELECT session_id FROM sessions)"
+    )
+    return cursor.rowcount
 
 
 # Decisions (questions an agent puts to the human) --------------------------------

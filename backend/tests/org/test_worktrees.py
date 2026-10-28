@@ -355,3 +355,18 @@ async def test_remove_never_uses_rmtree(project: Path, monkeypatch):
 
     assert await remove_task_worktree(project, path, branch) == (True, "")
     assert not path.exists()
+
+
+@pytest.mark.anyio
+async def test_remove_waits_for_the_lock_of_the_task_worktree(project: Path):
+    import asyncio
+
+    path, branch = await ensure_task_worktree(project, 3, "Ajustar login")
+    key = str(worktrees._expected_path(project, path.name))
+    lock = worktrees._locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        removal = asyncio.ensure_future(remove_task_worktree(project, path, branch))
+        await asyncio.sleep(0.2)
+        assert not removal.done() and path.is_dir()  # an `ensure` in flight would be waited for
+    assert await removal == (True, "")
+    assert not path.exists()

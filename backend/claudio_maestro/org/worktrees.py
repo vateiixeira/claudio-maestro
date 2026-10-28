@@ -117,6 +117,12 @@ async def _remove(repo: Path, path: Path, branch: str) -> tuple[bool, str]:
         raise WorktreeError(
             f"A pasta {path} não está em {repo / WORKTREES_DIR} e não será removida."
         )
+    # The same lock `ensure_task_worktree` takes: a removal never runs in the middle of a creation.
+    async with _locks.setdefault(str(_expected_path(repo, path.name)), asyncio.Lock()):
+        return await _remove_locked(repo, path, branch)
+
+
+async def _remove_locked(repo: Path, path: Path, branch: str) -> tuple[bool, str]:
     if not os.path.lexists(path):
         return True, ""
     found = await gitinfo.project_worktree(path, [repo])

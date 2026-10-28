@@ -379,16 +379,20 @@ async def test_turning_the_agent_back_on_resumes_the_queue_by_itself(world):
     await wait_until(lambda: world.factory.clients and world.sent() == ["Quando voltar."])
 
 
-async def test_task_origins_are_queued_but_not_served_in_this_marco(world):
+async def test_task_origins_without_a_task_are_dropped_or_refused(world):
     agent = world.add_agent()
 
+    # An `assignment` needs a task; with none it has nothing to start, so it is dropped.
     await world.service.wake(agent, source="assignment", text="Tarefa 1")
-    await world.service.wake(agent, source="decision", text="Decisão")
+    # A `decision` that does not say which decision it answers cannot be queued.
+    with pytest.raises(store.OrgError):
+        await world.service.wake(agent, source="decision", text="Decisão")
     await world.service.drain(agent)
     await asyncio.sleep(0.05)
 
     assert world.runs(agent) == [] and world.factory.clients == []
-    assert [w.source for w in world.wakeups(agent)] == ["decision", "assignment"]
+    assert world.wakeups(agent) == []
+    assert [row["state"] for row in wakeup_rows(world, agent)] == ["dropped"]
 
 
 async def test_a_wakeup_from_an_unknown_origin_is_refused(world):

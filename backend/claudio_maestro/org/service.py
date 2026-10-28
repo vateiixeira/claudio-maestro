@@ -14,25 +14,38 @@ once, and `_claim_run` checks "no active run" and writes the run and the taken w
 `BEGIN IMMEDIATE` transaction, which is what holds across two services over the same database.
 A run ends by `concluir`, by the closure verdict, by an error, by the time cap, or by the person.
 
+Part C: the runs of a task. A wakeup that carries a `task_id` (`assignment`, `comment`, `decision`)
+becomes a run on the session of its (agent, task) pair, opened in the project folder or, when the
+`AGENT.md` asks for it, in a worktree of the task. Its text is made when it is served, from the
+task as it is then. The run is claimed, counted against the cap of runs of the task and refused
+while another run holds the task (or, without a worktree, the project folder), all in the single
+transaction of the claim. It ends when its turn ends (`_watch_task_turn`, not `concluir` nor the
+closure verdict) and owes the task a comment: without one it wakes the agent once more and then
+leaves an `app` comment itself. A task closed while its run goes on keeps its worktree until the
+run ends.
+
 Secrets only travel in the `env` of the session: never in an exception, a log or a prompt.
 """
 
 import asyncio
 import fnmatch
+import json
 import logging
+import os
 import re
 import sqlite3
 import time
 from collections.abc import Callable
 from contextlib import closing
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from claudio_maestro import db, projects
+from claudio_maestro import db, gitinfo, projects
+from claudio_maestro.conversation import TextItem
 from claudio_maestro.digest.closure_store import Closure
-from claudio_maestro.org import store
+from claudio_maestro.org import store, worktrees
 from claudio_maestro.org.definition import DEFAULT_MAX_RUN_MINUTES
 from claudio_maestro.org.files import (
     MEMORY_FILE,
@@ -40,13 +53,20 @@ from claudio_maestro.org.files import (
     WAKE_TEXT_MAX_CHARS,
     AgentFiles,
 )
-from claudio_maestro.org.prompt import OrgContext, build_append, wake_text
+from claudio_maestro.org.prompt import (
+    OrgContext,
+    build_append,
+    decision_message_text,
+    task_wake_text,
+    wake_text,
+)
 from claudio_maestro.org.store import Agent, normalize_pr_url
 from claudio_maestro.org.tools import SERVER_NAME, TOOL_PREFIX, build_server
 from claudio_maestro.security import PathNotAllowedError, resolve_within
 from claudio_maestro.sessions import (
     ActiveSession,
     EmptyMessageError,
+    InvalidDecisionError,
     ProjectUnavailableError,
     SessionExtras,
     SessionManager,
@@ -54,6 +74,9 @@ from claudio_maestro.sessions import (
     SessionRecord,
     validate_images,
 )
+
+if TYPE_CHECKING:
+    from claudio_maestro.org.tasks import TaskService
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +113,20 @@ TIMED_OUT_ALERT = "{name}: tempo máximo da execução ({minutes} min) esgotado.
 REASON_MAX_CHARS = 500
 ANNOUNCEMENT_MAX_CHARS = 4000
 MAX_QUEUED_WAKEUPS = 50
+TASK_RUN_LOST = "O Maestro foi reiniciado e a sessão da execução não voltou."
+TASKS_OFF = "As tarefas não estão ligadas a este Maestro: o despertar foi descartado."
+WORKTREE_UNPROVEN = (
+    "A worktree da tarefa não passou na verificação do Maestro (ponteiros .git e "
+    "`git worktree list`); a sessão não foi aberta."
+)
+WORKTREE_FAILED = "Não foi possível preparar a worktree da tarefa."
+TASK_TEXT_LOST = "Não foi possível montar o texto da execução: a tarefa ou a decisão sumiu."
+NO_REPORT_REWOKEN = "Execução sem relato; o agente foi acordado para comentar."
+NO_REPORT_LAST_TEXT = "Execução sem relato. Último texto do agente:\n{text}"
+NO_REPORT_NO_TEXT = "Execução sem relato, e a sessão não tem texto do agente para mostrar."
+NO_REPORT_TWICE = "A execução terminou sem relato duas vezes."
+LAST_TEXT_MAX_CHARS = 2000
+REMOVAL_PREFIX = "org_worktree_removal:"
 
 # Outcomes of a run in flight: the ones that hold the agent.
 OPEN_OUTCOMES = store.ACTIVE_OUTCOMES
@@ -102,13 +139,15 @@ PROBLEM_OUTCOMES = ("failed", "skipped")
 # States of a session with a turn in progress (a pending permission or question is part
 # of the turn).
 TURN_OPEN_STATES = ("connecting", "running", "awaiting_decision")
-# The origins this marco serves. `assignment` and `decision` belong to the task queue that comes
-# later: such a wakeup stays pending and nothing is started for it.
-SERVED_SOURCES = ("manual", "message", "routine", "comment")
+# The origins whose wakeup may carry a task (and make a run on it).
+TASK_SOURCES = ("assignment", "comment", "decision")
+# The origins this service serves. A `decision` without a task is a message to the session that
+# asked; an `assignment` without a task cannot be served and is dropped.
+SERVED_SOURCES = ("manual", "message", "routine", "comment", "assignment", "decision")
 # Origins the usage cut never touches: the person asked for them.
 UNGATED_SOURCES = ("manual", "message")
 # Sources whose runs the closure verdict may close: every run that ends with the agent's own
-# word. A task run (`assignment`, later) is left out: it only ends with its comment.
+# word. A task run (any source, with a `task_id`) is left out: it only ends with its comment.
 CLOSABLE_SOURCES = ("routine", "manual", "comment")
 # Outcomes that tell the main conversation how a run went (once per run), and how each
 # one reads in the announcement.
@@ -132,6 +171,14 @@ COMMENT_ASK_ORIGIN = (
     "Resolva o que foi pedido. Não comente no GitHub; ao terminar, chame concluir com o resumo."
 )
 COMMENT_ASK_MAIN = "Resolva o que foi pedido e responda aqui."
+# The same batch for the session of a task: its report is a comment on the task, not `concluir`.
+COMMENT_ASK_TASK = (
+    "Resolva o que foi pedido. Não comente no GitHub; ao terminar, comente o resultado na "
+    "tarefa com `tarefa_comentar` e atualize o status com `tarefa_atualizar`."
+)
+# The `blocked_reason` the cap of runs writes: how a block by the cap is told from a block by
+# an agent or by the person.
+CAP_BLOCK_PREFIX = "Atingiu o teto de "
 
 Publish = Callable[[str, dict[str, Any]], None]
 UsageGate = Callable[[], tuple[int, str] | None]
@@ -249,6 +296,18 @@ class _Refused(Exception):
     """Rolls back the claim of a run: the agent is held, or the wakeup was already served."""
 
 
+@dataclass
+class _TaskClaim:
+    """How the claim of a task wakeup ended: `run` (a run was born), `refused` (it waits),
+    `dropped` (the task no longer wants it) or `capped` (the cap of runs blocked the task)."""
+
+    kind: Literal["run", "refused", "dropped", "capped"]
+    run: store.Run | None = None
+    task: store.Task | None = None
+    notice: store.Notice | None = None
+    worktree: bool = False
+
+
 class OrgService:
     def __init__(
         self,
@@ -259,6 +318,7 @@ class OrgService:
         publish: Publish,
         clock: Callable[[], float] = time.time,
         poll: float = POLL_SECONDS,
+        tasks: "TaskService | None" = None,
     ) -> None:
         self._db_path = db_path
         self._sessions = sessions
@@ -288,8 +348,15 @@ class OrgService:
         # session id -> text of the last "needs you" alert, so the same check does not warn
         # twice. Memory only: after a restart the same alert may come once more.
         self._last_alert: dict[str, str] = {}
-        # Ids of closed tasks whose worktree is to be removed once their run ends.
+        # The board the runs of a task read (`brief`); the app sets it after both exist.
+        self.tasks = tasks
+        # Ids of closed tasks whose worktree is to be removed once their run ends, and the ones
+        # being removed right now.
         self._worktrees_to_remove: set[int] = set()
+        self._removing: set[int] = set()
+        self._removal_tasks: set[asyncio.Task[None]] = set()
+        # run id -> the watcher that ends a task run when its turn ends.
+        self._turn_watchers: dict[int, asyncio.Task[None]] = {}
 
     # Session setup ------------------------------------------------------------------
 
@@ -452,11 +519,15 @@ class OrgService:
         return session_id if record.agent_id == agent_id else None
 
     def is_conversation(self, session_id: str) -> bool:
-        """The main conversation, or a chat opened with `open_conversation`."""
+        """The main conversation, a chat opened with `open_conversation`, or the session of an
+        (agent, task) pair: none of them is finished by `concluir`."""
         if self.is_main(session_id):
             return True
         with closing(db.connect(self._db_path)) as conn:
-            return store.get_chat(conn, session_id) is not None
+            return (
+                store.get_chat(conn, session_id) is not None
+                or store.task_of_session(conn, session_id) is not None
+            )
 
     def conversations(self, agent_id: int) -> list[dict[str, Any]]:
         with closing(db.connect(self._db_path)) as conn:
@@ -568,12 +639,25 @@ class OrgService:
         agent = self._agent_of(session_id)
         if agent is None:
             return
+        url = normalize_pr_url(url)
+        commented: int | None = None
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            # The session of a task belongs to that task alone: its PR is the task's PR.
+            task_id = store.task_of_session(conn, session_id)
+            known = store.get_pr(conn, url)
             store.upsert_pr(
-                conn, url=normalize_pr_url(url), agent_id=agent.id,
-                session_id=session_id, created_at=self._now(),
+                conn, url=url, agent_id=agent.id, session_id=session_id,
+                created_at=self._now(), task_id=task_id,
             )
+            if task_id is not None and (known is None or known.task_id != task_id):
+                store.add_comment(
+                    conn, task_id=task_id, author_kind="app", author_agent_id=None, run_id=None,
+                    text=f"PR aberto: {url}", now=self._now(),
+                )
+                commented = task_id
         self._changed(agent.id)
+        if commented is not None:
+            self._task_changed(commented, "comment")
 
     def is_agent_pr(self, url: str) -> int | None:
         """The agent a PR belongs to: one that opened it, or that has it as the link of an
@@ -622,10 +706,11 @@ class OrgService:
 
 
     def schedule_worktree_removal(self, task: store.Task) -> None:
-        """Note that the task closed and its worktree is to be removed. Only the registration
-        for now: the removal itself, after the run of the task ends, comes with the worktree
-        step of the run."""
+        """The task closed: its worktree is to be removed, as soon as no run of the task is
+        going (a run that is going keeps working in it). The request survives a restart."""
         self._worktrees_to_remove.add(task.id)
+        self._mark_removal(task.id)
+        self._maybe_remove_worktree(task.id)
 
     # Wakeups: the queue ---------------------------------------------------------------
 
@@ -639,10 +724,20 @@ class OrgService:
         routine_id: int | None = None,
         scheduled_for: int | None = None,
         payload: dict[str, Any] | None = None,
+        task_id: int | None = None,
     ) -> store.Wakeup:
         """Queue a wakeup of the agent and start draining in the background; returns the
         queued wakeup (a routine wakeup groups with a pending one of the same routine, and the
         earlier one is returned).
+
+        With `task_id` (origins `assignment`, `comment` and `decision`) it is a wakeup of that
+        task, which must be of the agent's project. It carries no text: the text is made when it
+        is served, from the task then. Its `payload` is `{"task_id", "since_comment_id",
+        "reason"}` (the cursor defaults to 0 and the reason to the origin), plus `decision_id`
+        and `receipt` for a `decision`. One of the same agent, task, origin and reason groups
+        with a pending one (never a `decision`). A `decision` without a task is a message to
+        the session that asked (`payload["session_id"]`, when it still exists and is the
+        agent's) or, failing that, to the main conversation; its text is the decision's.
 
         The text of the request goes to a private file of the agent (`wake-<id>.txt`), written
         in the same transaction as the row: a request that cannot be saved leaves nothing
@@ -659,16 +754,36 @@ class OrgService:
             raise store.OrgError("Origem de despertar inválida.")
         images = list(images or [])
         validate_images(images)
+        if task_id is not None:
+            if source not in TASK_SOURCES:
+                raise store.OrgError("Só atribuição, comentário e decisão levam uma tarefa.")
+            if (text or "").strip() or images:
+                raise store.OrgError(
+                    "Um despertar de tarefa não leva texto: ele é montado quando o agente acorda."
+                )
         with closing(db.connect(self._db_path)) as conn:
             agent = store.get_agent(conn, agent_id)
             routine = store.get_routine(conn, routine_id) if routine_id is not None else None
+            task = store.get_task(conn, task_id) if task_id is not None else None
         if routine is not None and routine.agent_id != agent_id:
             raise store.NotFoundError("Rotina não encontrada.")
+        if task is not None and task.project_id != agent.project_id:
+            raise store.OrgError("A tarefa é de outro projeto.")
         wake_payload = dict(payload or {})
         if scheduled_for is not None:
             wake_payload["scheduled_for"] = int(scheduled_for)
+        if task is not None:
+            wake_payload["task_id"] = task.id
+            wake_payload["since_comment_id"] = int(wake_payload.get("since_comment_id") or 0)
+            wake_payload.setdefault("reason", source)
         limit: int | None = WAKE_TEXT_MAX_CHARS
-        if source == "message":
+        body: str | None
+        if task is not None:
+            body = None  # made when it is served
+        elif source == "decision":
+            body = self._decision_message(agent_id, wake_payload)
+            limit = None
+        elif source == "message":
             target = wake_payload.get("session_id")
             if target is not None:
                 self._check_conversation(agent_id, target)
@@ -692,16 +807,22 @@ class OrgService:
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
                 pending = store.pending_wakeups(conn, agent_id)
                 known = {w.id for w in pending}
-                grouped = source == "routine" and any(
-                    w.source == "routine" and w.routine_id == routine_id for w in pending
+                grouped = (
+                    source == "routine"
+                    and any(w.source == "routine" and w.routine_id == routine_id for w in pending)
+                ) or (
+                    task is not None
+                    and store.find_task_wakeup(
+                        conn, agent_id, task.id, source, wake_payload["reason"]
+                    ) is not None
                 )
                 if not grouped and len(pending) >= MAX_QUEUED_WAKEUPS:
                     raise QueueFullError()
                 wakeup = store.enqueue_wakeup(
                     conn, agent_id=agent_id, source=source, payload=wake_payload or None,
-                    routine_id=routine_id, now=self._now(),
+                    routine_id=routine_id, task_id=task_id, now=self._now(),
                 )
-                if wakeup.id not in known:
+                if wakeup.id not in known and body is not None:
                     self._files.write_wake_text(agent.slug, wakeup.id, body, images, max_chars=limit)
         except ValueError as error:
             raise store.OrgError(str(error)) from error
@@ -712,6 +833,24 @@ class OrgService:
         if not agent.enabled and source in UNGATED_SOURCES:
             raise AgentDisabledError(wakeup)
         return wakeup
+
+    def _decision_message(self, agent_id: int, payload: dict[str, Any]) -> str:
+        """The text of the answer to a decision that has no task. A `session_id` that is gone, or
+        not the agent's, is dropped from the payload: the answer then goes to the main
+        conversation."""
+        decision_id = payload.get("decision_id")
+        if not isinstance(decision_id, int):
+            raise store.OrgError("Falta a decisão no despertar.")
+        with closing(db.connect(self._db_path)) as conn:
+            decision = store.get_decision(conn, decision_id)
+        if decision.agent_id != agent_id:
+            raise store.NotFoundError("Decisão não encontrada.")
+        if decision.answer is None:
+            raise store.OrgError("A decisão ainda não foi respondida.")
+        session_id = payload.get("session_id")
+        if session_id is not None and self.comment_session(agent_id, session_id) is None:
+            payload.pop("session_id")
+        return decision_message_text(decision.question, decision.answer, decision.receipt or "-")
 
     def _check_conversation(self, agent_id: int, session_id: str) -> None:
         """The session must exist and belong to the agent."""
@@ -833,11 +972,26 @@ class OrgService:
         wakeup = self._pick(agent)
         if wakeup is None:
             return False
+        if wakeup.task_id is not None:
+            return await self._serve_task_run(agent, wakeup)
+        if wakeup.source == "decision":
+            return await self._serve_decision_message(agent, wakeup)
         if wakeup.source == "message":
             return await self._serve_message(agent, wakeup)
         if wakeup.source == "comment":
             return await self._serve_comment(agent, wakeup)
         return await self._serve_run(agent, wakeup)
+
+    async def _serve_decision_message(self, agent: Agent, wakeup: store.Wakeup) -> bool:
+        """The answer to a decision that has no task: a message to the session that asked, or to
+        the main conversation when that session is gone (or is not the agent's)."""
+        session_id = self.comment_session(agent.id, (wakeup.payload or {}).get("session_id"))
+        try:
+            target = session_id or await self.ensure_main(agent.id)
+        except (store.NotFoundError, ProjectUnavailableError) as error:
+            self._drop_message(agent, wakeup, f"Resposta de decisão não entregue: {error}")
+            return True
+        return await self._serve_message(agent, wakeup, target=target)
 
     def _apply_usage_gate(self, agent: Agent) -> None:
         """While the subscription is over the cut, every wakeup that is not the person's
@@ -872,6 +1026,7 @@ class OrgService:
                     conn, agent_id=agent.id, source=wakeup.source, started_at=now, ended_at=now,
                     outcome="skipped", reason=reason, routine_id=wakeup.routine_id,
                     scheduled_for=(wakeup.payload or {}).get("scheduled_for"),
+                    task_id=wakeup.task_id,
                 )
             self._files.delete_wake_text(agent.slug, wakeup.id)
             self._publish_run(run)
@@ -882,9 +1037,12 @@ class OrgService:
     def _pick(self, agent: Agent) -> store.Wakeup | None:
         """The first pending wakeup, by priority and age, that may start now.
 
-        A run (`manual`, `routine`, `comment`) needs the agent free: no active run and no open
-        turn on any session of it. A message only waits for an active run, except when it is
-        for that run's own session (the answer a waiting run needs)."""
+        A run (`manual`, `routine`, `comment`, and every wakeup of a task) needs the agent free:
+        no active run and no open turn on any session of it. A message (and the answer to a
+        decision that has no task) only waits for an active run, except when it is for that
+        run's own session (the answer a waiting run needs). A wakeup of a task that no longer
+        wants it is dropped here; one whose task is held by another agent's run is skipped, and
+        stays pending."""
         with closing(db.connect(self._db_path)) as conn:
             pending = store.pending_wakeups(conn, agent.id)
             active = store.active_run(conn, agent.id)
@@ -893,11 +1051,22 @@ class OrgService:
         for wakeup in pending:
             if wakeup.source not in SERVED_SOURCES:
                 continue
-            if wakeup.source == "message":
+            if wakeup.task_id is not None or wakeup.source == "assignment":
+                verdict = self._task_verdict(wakeup)
+                if verdict == "drop":
+                    self._drop_task_wakeup(agent, wakeup)
+                    continue
+                if verdict == "wait":
+                    continue
+            elif wakeup.source in ("message", "decision"):
                 target = (wakeup.payload or {}).get("session_id") or main
                 if active is None or (target is not None and active.session_id == target):
                     return wakeup
                 continue
+            elif wakeup.source == "comment":
+                pr_task = self._pr_comment_task(agent, wakeup)
+                if pr_task is not None and self._pr_comment_verdict(pr_task, agent) == "wait":
+                    continue
             if active is not None and not self._answers_waiting_run(active, wakeup):
                 continue
             if turn_open is None:
@@ -905,6 +1074,37 @@ class OrgService:
             if not turn_open:
                 return wakeup
         return None
+
+    @staticmethod
+    def _task_unwanted(task: store.Task, wakeup: store.Wakeup) -> bool:
+        """The task no longer wants this wakeup: it is closed (but for the wakeup that tells its
+        creator that it closed) or blocked by the cap of runs, told by the reason the cap writes
+        (`unblock` starts the count again; a task blocked by an agent or by the person is still
+        woken, whatever its count)."""
+        reason = (wakeup.payload or {}).get("reason")
+        if task.status in store.TASK_CLOSED_STATUSES:
+            return reason != "closed"
+        return task.status == "blocked" and (task.blocked_reason or "").startswith(CAP_BLOCK_PREFIX)
+
+    def _task_verdict(self, wakeup: store.Wakeup) -> Literal["run", "wait", "drop"]:
+        if wakeup.task_id is None:
+            return "drop"  # an `assignment` with no task cannot be served
+        with closing(db.connect(self._db_path)) as conn:
+            try:
+                task = store.get_task(conn, wakeup.task_id)
+            except store.TaskNotFoundError:
+                return "drop"
+            holder = store.active_run_for_task(conn, task.id)
+        if self._task_unwanted(task, wakeup):
+            return "drop"
+        if holder is not None and holder.agent_id != wakeup.agent_id:
+            return "wait"  # one run per task, whoever the agent is
+        return "run"
+
+    def _drop_task_wakeup(self, agent: Agent, wakeup: store.Wakeup) -> None:
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.drop_wakeup(conn, wakeup.id, self._now())
+        self._changed(agent.id)
 
     @staticmethod
     def _answers_waiting_run(active: store.Run, wakeup: store.Wakeup) -> bool:
@@ -968,10 +1168,22 @@ class OrgService:
         resumed by the send. When that session is gone, is not the agent's, or is the main
         conversation, they go to the main conversation instead, which has no run (the agent
         answers there; nothing would ever conclude a run on it). When the run that opened the
-        PR is still waiting for the person, the comments are the message that answers it."""
+        PR is still waiting for the person, the comments are the message that answers it. A PR
+        opened in the session of a task is served as a run of that task instead."""
         session_id = self.comment_session(agent.id, (wakeup.payload or {}).get("session_id"))
-        if session_id is None or self.is_main(session_id):
+        if session_id is not None and self.is_main(session_id):
             return await self._serve_comment_to_main(agent, wakeup, session_id)
+        task_id = self._pr_comment_task(agent, wakeup)
+        if task_id is not None:
+            # A PR of a task: a run of the task, never a bare run on its session (that one would
+            # hold the task or its folder without the task knowing). A closed task gets no run.
+            with closing(db.connect(self._db_path)) as conn:
+                task = store.get_task(conn, task_id)
+            if task.status in store.TASK_CLOSED_STATUSES:
+                return await self._serve_comment_to_main(agent, wakeup, None)
+            return await self._serve_pr_comment_on_task(agent, wakeup, task_id)
+        if session_id is None:
+            return await self._serve_comment_to_main(agent, wakeup, None)
         with closing(db.connect(self._db_path)) as conn:
             active = store.active_run(conn, agent.id)
         if active is not None and active.session_id == session_id:
@@ -1068,6 +1280,615 @@ class OrgService:
             run, agent, wakeup, record.session_id, text, images
         )
 
+    # Runs of a task -----------------------------------------------------------------------
+
+    def _wants_worktree(self, agent: Agent) -> bool:
+        try:
+            return self._files.read_definition(agent.slug).worktree
+        except Exception:
+            logger.warning("Não foi possível ler o AGENT.md do agente %s", agent.slug)
+            return False  # the setup of the session shows the fixed error when it is opened
+
+    def _claim_task_run(
+        self,
+        agent: Agent,
+        wakeup: store.Wakeup,
+        *,
+        task_id: int,
+        worktree_agent: bool,
+        pr_comment: bool = False,
+    ) -> _TaskClaim:
+        """The one place a run of a task is born. In a single `BEGIN IMMEDIATE` transaction:
+        the agent has no active run, the task still wants the wakeup, no run holds the task and
+        (without a worktree) no run of another task holds the project folder; then the count of
+        runs of the task goes up, and above the cap the task is blocked and the wakeup dropped;
+        otherwise the run is written as `starting` and the wakeup taken by it. A claim that does
+        not start a run leaves the count as it was.
+
+        `pr_comment` is the owner's comments on a PR of the task, served as a run of the task
+        (their wakeup has no `task_id`): such a wakeup is never dropped (it holds what the person
+        wrote), it waits instead when the task does not want it or hits the cap."""
+        now = self._now()
+        with closing(db.connect(self._db_path)) as conn:
+            try:
+                with db.transaction(conn):
+                    if store.active_run(conn, agent.id) is not None:
+                        raise _Refused
+                    try:
+                        task = store.get_task(conn, task_id)
+                    except store.TaskNotFoundError:
+                        task = None
+                    if task is None or self._task_unwanted(task, wakeup):
+                        if pr_comment or not store.drop_wakeup(conn, wakeup.id, now):
+                            raise _Refused
+                        return _TaskClaim("dropped", task=task)
+                    if store.active_run_for_task(conn, task.id) is not None:
+                        raise _Refused
+                    # A closed task gets no worktree: the run only reads what happened.
+                    uses_worktree = worktree_agent and task.status not in store.TASK_CLOSED_STATUSES
+                    if not uses_worktree and self._folder_taken(conn, task):
+                        raise _Refused
+                    count = store.bump_run_count(conn, task.id, now)
+                    if count > task.max_runs:
+                        return self._cap_reached(
+                            conn, agent, wakeup, task, now, drop=not pr_comment
+                        )
+                    run = store.insert_run(
+                        conn, agent_id=agent.id, source=wakeup.source, started_at=now,
+                        outcome="starting", task_id=task.id,
+                    )
+                    if not store.take_wakeup(conn, wakeup.id, run.id, now):
+                        raise _Refused
+                    return _TaskClaim(
+                        "run", run=run, task=store.get_task(conn, task.id),
+                        worktree=uses_worktree,
+                    )
+            except _Refused:
+                return _TaskClaim("refused")
+
+    @staticmethod
+    def _folder_taken(conn: sqlite3.Connection, task: store.Task) -> bool:
+        """A run of another task of the project works in the project folder, so a run that also
+        needs it must wait. Judged by where the run really works: the `cwd` of its session (a
+        task that has a worktree can still be worked on in the folder: a closed task read by its
+        creator, a task handed to an agent without a worktree). A run that has no session yet is
+        taken to hold the folder: it will not for long."""
+        row = conn.execute("SELECT path FROM projects WHERE id = ?", (task.project_id,)).fetchone()
+        if row is None:
+            return False
+        folders = {row["path"], os.path.realpath(row["path"])}
+        marks = ", ".join("?" for _ in OPEN_OUTCOMES)
+        places = ", ".join("?" for _ in folders)
+        found = conn.execute(
+            "SELECT 1 FROM runs r JOIN tasks t ON t.id = r.task_id"
+            " LEFT JOIN sessions s ON s.session_id = r.session_id"
+            f" WHERE r.outcome IN ({marks}) AND r.task_id != ? AND t.project_id = ?"
+            f" AND (s.session_id IS NULL OR s.cwd IN ({places})) LIMIT 1",
+            (*OPEN_OUTCOMES, task.id, task.project_id, *folders),
+        ).fetchone()
+        return found is not None
+
+    def _cap_reached(
+        self,
+        conn: sqlite3.Connection,
+        agent: Agent,
+        wakeup: store.Wakeup,
+        task: store.Task,
+        now: int,
+        *,
+        drop: bool = True,
+    ) -> _TaskClaim:
+        """The wakeup would be run number `max_runs + 1`: block the task, drop the wakeup (unless
+        it must be kept) and warn. Nobody is woken by the task until the person unblocks it."""
+        reason = f"{CAP_BLOCK_PREFIX}{task.max_runs} execuções."
+        blocked = store.update_task(
+            conn, task.id, expected_revision=task.revision, now=now, status="blocked",
+            blocked_reason=reason,
+        )
+        store.add_comment(
+            conn, task_id=task.id, author_kind="app", author_agent_id=None, run_id=None,
+            text=f"Status: {task.status} → blocked, pelo Maestro. {reason}", now=now,
+        )
+        if drop:
+            store.drop_wakeup(conn, wakeup.id, now)
+        notice = store.add_notice(
+            conn, agent_id=agent.id, run_id=None, kind="alert", now=now,
+            text=(
+                f"{agent.name}: a tarefa #{task.id} “{_cut(task.title, 80)}” atingiu o teto de "
+                f"{task.max_runs} execuções e foi bloqueada."
+            ),
+        )
+        return _TaskClaim("capped", task=blocked, notice=notice)
+
+    async def _serve_task_run(self, agent: Agent, wakeup: store.Wakeup) -> bool:
+        """Claim the wakeup of a task, open (or take up) the session of the agent for that task
+        and send it the task as it is now. Every way it can go wrong ends the run `failed`, with
+        an `app` comment on the task, instead of raising."""
+        assert wakeup.task_id is not None
+        if self.tasks is None:
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                store.drop_wakeup(conn, wakeup.id, self._now())
+            self._add_notice(agent.id, None, "alert", TASKS_OFF)
+            return True
+        claim = self._claim_task_run(
+            agent, wakeup, task_id=wakeup.task_id, worktree_agent=self._wants_worktree(agent)
+        )
+        if not self._after_task_claim(agent, claim):
+            return claim.kind != "refused"
+        return await self._start_task_run(
+            agent, wakeup, claim, lambda: (self._task_text(wakeup, wakeup.task_id or 0), []),
+            TASK_TEXT_LOST,
+        )
+
+    def _after_task_claim(self, agent: Agent, claim: _TaskClaim) -> bool:
+        """Tell the screens what the claim did; True when a run was born."""
+        if claim.kind == "refused":
+            return False
+        if claim.task is not None and claim.kind != "run":
+            self._task_changed(claim.task.id, "updated" if claim.kind == "capped" else "comment")
+        if claim.notice is not None:
+            self._publish("agent.notice", asdict(claim.notice))
+        if claim.kind != "run":
+            self._changed(agent.id)
+            return False
+        return True
+
+    def _pr_comment_task(self, agent: Agent, wakeup: store.Wakeup) -> int | None:
+        """The task a PR comment wakeup belongs to: the one whose session is the session of the
+        wakeup, else the one the PR was linked to when it was opened. None for any other PR."""
+        payload = wakeup.payload or {}
+        session_id = self.comment_session(agent.id, payload.get("session_id"))
+        with closing(db.connect(self._db_path)) as conn:
+            task_id = store.task_of_session(conn, session_id) if session_id else None
+            if task_id is None and payload.get("pr_url"):
+                pr = store.get_pr(conn, str(payload["pr_url"]))
+                if pr is not None and pr.agent_id == agent.id:
+                    task_id = pr.task_id
+        return task_id
+
+    def _pr_comment_verdict(self, task_id: int, agent: Agent) -> Literal["run", "wait"]:
+        """Whether the owner's comments on the PR of a task may be served now. A closed task gets
+        no run: its comments go to the main conversation ("run" here means "serve"). One blocked
+        by the cap waits for the person to unblock it, and so does one held by another agent."""
+        with closing(db.connect(self._db_path)) as conn:
+            try:
+                task = store.get_task(conn, task_id)
+            except store.TaskNotFoundError:
+                return "run"
+            holder = store.active_run_for_task(conn, task_id)
+        if task.status in store.TASK_CLOSED_STATUSES:
+            return "run"
+        if task.status == "blocked" and (task.blocked_reason or "").startswith(CAP_BLOCK_PREFIX):
+            return "wait"
+        if holder is not None and holder.agent_id != agent.id:
+            return "wait"
+        return "run"
+
+    async def _serve_pr_comment_on_task(
+        self, agent: Agent, wakeup: store.Wakeup, task_id: int
+    ) -> bool:
+        """The owner's comments on a PR opened in the session of a task: served as a run of that
+        task, like any other wakeup of it (one run per task and per folder, the cap of runs, the
+        mandatory comment). They go to the session of the (agent, task) pair, which is taken up
+        again when it still is the one for the folder the task works in, or replaced by a new
+        one (a worktree that was removed is made again; nothing resumes in a folder that is
+        gone). The last line of the batch asks for a comment on the task, not for `concluir`."""
+        claim = self._claim_task_run(
+            agent, wakeup, task_id=task_id, worktree_agent=self._wants_worktree(agent),
+            pr_comment=True,
+        )
+        if not self._after_task_claim(agent, claim):
+            return False  # held, cap reached or not wanted: the comments wait, none is lost
+        quiet = self._comments_down(wakeup)
+
+        def make_text() -> tuple[str, list[dict[str, Any]]]:
+            text, images = self._files.read_wake_text(agent.slug, wakeup.id)
+            return text.replace(COMMENT_ASK_ORIGIN, COMMENT_ASK_TASK), images
+
+        return await self._start_task_run(
+            agent, wakeup, claim, make_text, WAKE_TEXT_LOST, quiet=quiet
+        )
+
+    async def _start_task_run(
+        self,
+        agent: Agent,
+        wakeup: store.Wakeup,
+        claim: _TaskClaim,
+        make_text: Callable[[], tuple[str, list[dict[str, Any]]]],
+        lost: str,
+        *,
+        quiet: bool = False,
+    ) -> bool:
+        """What follows the claim of a task run: the folder (a proven worktree when the agent
+        works in one), the session, and the send. `quiet` is a repeat of a comment send that
+        keeps failing: nothing is published for it until it works."""
+        run, task = claim.run, claim.task
+        assert run is not None and task is not None
+        if quiet:
+            self._quiet_runs.add(run.id)
+        else:
+            self._publish_run(run)
+        try:
+            self._task_changed(task.id, "run")
+            return await self._open_and_send(agent, wakeup, run, task, claim.worktree, make_text, lost)
+        finally:
+            self._quiet_runs.discard(run.id)
+
+    async def _open_and_send(
+        self,
+        agent: Agent,
+        wakeup: store.Wakeup,
+        run: store.Run,
+        task: store.Task,
+        worktree: bool,
+        make_text: Callable[[], tuple[str, list[dict[str, Any]]]],
+        lost: str,
+    ) -> bool:
+        with closing(db.connect(self._db_path)) as conn:
+            try:
+                project = projects.get_project(conn, agent.project_id)
+            except projects.ProjectNotFoundError:
+                project = None
+        if project is None or not project.available:
+            self._fail_run(run, agent, PROJECT_MISSING if project is None else PROJECT_UNAVAILABLE)
+            return True
+        cwd = project.path
+        if worktree:
+            found = await self._prepare_worktree(run, agent, project, task)
+            if found is None:
+                return True
+            cwd = found
+        name, model, effort = self._session_defaults(agent)
+        try:
+            record, created = self._open_task_session(agent, project, task, cwd, model, effort)
+        except ProjectUnavailableError:
+            self._fail_run(run, agent, PROJECT_UNAVAILABLE)
+            return True
+        except InvalidDecisionError as error:
+            self._fail_run(run, agent, str(error))
+            return True
+        except Exception:
+            logger.exception("Falha ao criar a sessão do agente %s", agent.slug)
+            self._fail_run(run, agent, SESSION_NOT_CREATED)
+            return True
+        if not self._attach_session(run.id, record.session_id):
+            return True  # cancelled while the session was being made: nothing is sent
+        if created:
+            try:
+                await self._sessions.update(
+                    record.session_id, title=f"{name} · #{task.id} {task.title}"[:80]
+                )
+            except Exception:
+                logger.exception("Falha ao dar título à sessão do agente %s", agent.slug)
+        try:
+            text, images = make_text()
+        except (store.NotFoundError, ValueError, OSError):
+            self._fail_run(run, agent, lost)
+            return True
+        return await self._deliver_run_text(run, agent, wakeup, record.session_id, text, images)
+
+    async def _prepare_worktree(
+        self, run: store.Run, agent: Agent, project: projects.Project, task: store.Task
+    ) -> str | None:
+        """The folder the session opens in, for an agent that works in a worktree: the worktree
+        of the task, created if needed and proven before it can be a `cwd` (the pointers of the
+        session only check `.git` both ways; this also asks `git worktree list`). None when the
+        run was failed instead."""
+        root = Path(project.path)
+        try:
+            path, branch = await worktrees.ensure_task_worktree(root, task.id, task.title)
+        except worktrees.WorktreeError as error:
+            self._fail_run(run, agent, str(error))
+            return None
+        except Exception:
+            logger.exception("Falha ao criar a worktree da tarefa %s", task.id)
+            self._fail_run(run, agent, WORKTREE_FAILED)
+            return None
+        proven = await gitinfo.project_worktree(path, [root])
+        if proven is None:
+            self._fail_run(run, agent, WORKTREE_UNPROVEN)
+            return None
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            current = store.get_task(conn, task.id)
+            if (current.worktree_path, current.branch) != (str(proven.path), branch):
+                store.update_task(
+                    conn, task.id, expected_revision=current.revision, now=self._now(),
+                    worktree_path=str(proven.path), branch=branch,
+                )
+        return str(proven.path)
+
+    def _open_task_session(
+        self,
+        agent: Agent,
+        project: projects.Project,
+        task: store.Task,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+    ) -> tuple[SessionRecord, bool]:
+        """The session of the (agent, task) pair, and whether it was just made. The saved one is
+        taken up again (a send resumes it) while it exists, is the agent's and was opened in
+        `cwd`; otherwise (gone, or the folder changed) a new one takes its place."""
+        with closing(db.connect(self._db_path)) as conn:
+            saved = store.get_task_session(conn, agent.id, task.id)
+        if saved is not None and saved.session_id is not None:
+            try:
+                record = self._sessions.find_record(saved.session_id)
+            except SessionNotFoundError:
+                record = None
+            if (
+                record is not None
+                and record.agent_id == agent.id
+                and os.path.realpath(record.cwd) == os.path.realpath(cwd)
+            ):
+                return record, False
+        record = self._sessions.create_session(
+            project, agent_id=agent.id, model=model, effort=effort, cwd=cwd
+        )
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.set_task_session(
+                conn, agent.id, task.id, session_id=record.session_id, cwd=record.cwd,
+                now=self._now(),
+            )
+        return record, True
+
+    def _task_text(self, wakeup: store.Wakeup, task_id: int) -> str:
+        """The prompt of a task wakeup, from the task as it is when the wakeup is served."""
+        assert self.tasks is not None
+        payload = wakeup.payload or {}
+        brief = self.tasks.brief(task_id, since_comment_id=int(payload.get("since_comment_id") or 0))
+        decision: tuple[str, str, str] | None = None
+        if wakeup.source == "decision" and isinstance(payload.get("decision_id"), int):
+            with closing(db.connect(self._db_path)) as conn:
+                found = store.get_decision(conn, payload["decision_id"])
+            if found.answer is not None:
+                decision = (found.question, found.answer, found.receipt or "-")
+        return task_wake_text(
+            source=wakeup.source, brief=brief, reason=payload.get("reason"), decision=decision
+        )
+
+    def _task_changed(self, task_id: int, change: str) -> None:
+        """Tell the screens the task changed (a run, a comment). Never raises."""
+        try:
+            with closing(db.connect(self._db_path)) as conn:
+                task = store.get_task(conn, task_id)
+        except store.NotFoundError:
+            return
+        self._publish(
+            "task",
+            {
+                "id": task.id, "project_id": task.project_id, "status": task.status,
+                "revision": task.revision, "change": change,
+            },
+        )
+
+    def _app_comment(self, task_id: int, text: str) -> None:
+        """A comment of the app on the task (never counts as the run's report)."""
+        try:
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                store.add_comment(
+                    conn, task_id=task_id, author_kind="app", author_agent_id=None, run_id=None,
+                    text=text[: store.COMMENT_MAX], now=self._now(),
+                )
+        except store.NotFoundError:
+            return
+        self._task_changed(task_id, "comment")
+
+    # The end of a task run ------------------------------------------------------------------
+
+    def _arm_turn_watch(self, run_id: int) -> None:
+        """Watch the turn of a running task run: it ends when the turn does."""
+        if self._stopping:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = self._turn_watchers.get(run_id)
+        if task is not None and not task.done():
+            return
+        task = loop.create_task(self._watch_task_turn(run_id))
+        self._turn_watchers[run_id] = task
+        task.add_done_callback(
+            lambda done, key=run_id: self._turn_watchers.pop(key, None)
+            if self._turn_watchers.get(key) is done
+            else None
+        )
+
+    async def _watch_task_turn(self, run_id: int) -> None:
+        """Wait until the session of the run has no turn open (no turn running, no permission
+        or question waiting; a session that is closed or gone has none) and end the run. A run
+        that someone else ended meanwhile (the person, the time cap, a turn error) is left alone.
+        After a restart of the backend `recover` starts it again."""
+        try:
+            while not self._stopping:
+                with closing(db.connect(self._db_path)) as conn:
+                    run = store.get_run(conn, run_id)
+                if run.outcome != "running" or run.session_id is None:
+                    return
+                try:
+                    session = self._sessions.get(run.session_id)
+                except SessionNotFoundError:
+                    break
+                if session.state not in TURN_OPEN_STATES:
+                    break
+                await asyncio.sleep(self._poll)
+            else:
+                return
+            await self._end_task_run(run_id)
+        except asyncio.CancelledError:
+            raise
+        except store.NotFoundError:
+            return
+        except Exception:
+            logger.exception("Falha ao encerrar a execução de tarefa %s", run_id)
+
+    async def _end_task_run(self, run_id: int) -> None:
+        """The turn of a task run ended: the run is `concluded` (its comment on the task is the
+        report, so nothing is announced), and one that left no comment is handled."""
+        run = self._set_run_state(
+            run_id, "concluded", None, only_from=("running",), announce=False
+        )
+        if run is not None and not run.commented:
+            await self._without_report(run)
+
+    async def _without_report(self, run: store.Run) -> None:
+        """A task run ended without commenting. The first time, the agent is woken once more
+        (reason `sem_relato`); the run that was itself that second try, or one already woken,
+        gets an `app` comment with the last words of the agent and an alert, and nothing else
+        is done. A task that closed meanwhile is left alone: nobody would be woken for it."""
+        assert run.task_id is not None
+        with closing(db.connect(self._db_path)) as conn:
+            task = store.get_task(conn, run.task_id)
+            row = conn.execute(
+                "SELECT payload FROM wakeups WHERE run_id = ?", (run.id,)
+            ).fetchone()
+            asked = any(
+                decision.run_id == run.id
+                for decision in store.list_decisions(conn, task_id=task.id, pending_only=False)
+            )
+        if task.status in store.TASK_CLOSED_STATUSES or asked:
+            return  # a question put to the person is the report of the run
+        woken_by_it = row is not None and (
+            json.loads(row["payload"] or "null") or {}
+        ).get("reason") == "sem_relato"
+        if not run.rewoken and not woken_by_it:
+            with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+                store.mark_run_rewoken(conn, run.id)
+                store.add_comment(
+                    conn, task_id=task.id, author_kind="app", author_agent_id=None, run_id=None,
+                    text=NO_REPORT_REWOKEN, now=self._now(),
+                )
+                cursor = store.last_comment_id(conn, task.id)
+            self._task_changed(task.id, "comment")
+            try:
+                await self.wake(
+                    run.agent_id, source="comment", task_id=task.id,
+                    payload={"task_id": task.id, "since_comment_id": cursor, "reason": "sem_relato"},
+                )
+            except Exception as error:
+                logger.warning("Não foi possível reacordar o agente %s: %s", run.agent_id, error)
+                self._app_comment(task.id, f"Não foi possível acordar o agente: {error}")
+            return
+        last = await self._last_assistant_text(run.session_id)
+        self._app_comment(
+            task.id,
+            NO_REPORT_LAST_TEXT.format(text=last) if last else NO_REPORT_NO_TEXT,
+        )
+        self._add_notice(run.agent_id, run.id, "alert", NO_REPORT_TWICE)
+
+    async def _last_assistant_text(self, session_id: str | None) -> str | None:
+        """The last thing the agent said in the session (at most 2.000 characters), read from the
+        conversation the session already keeps: no model is called for it."""
+        if session_id is None:
+            return None
+        try:
+            session = self._sessions.get(session_id)
+            await session.ensure_history()
+        except SessionNotFoundError:
+            return None
+        except Exception:
+            logger.exception("Falha ao ler a conversa da sessão %s", session_id)
+            return None
+        for item in reversed(session.builder.items):
+            if isinstance(item, TextItem) and item.parent_tool_use_id is None and item.text.strip():
+                return item.text.strip()[:LAST_TEXT_MAX_CHARS]
+        return None
+
+    # The worktree of a closed task -----------------------------------------------------------
+
+    def _mark_removal(self, task_id: int) -> None:
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            conn.execute(
+                "INSERT OR REPLACE INTO app_state (key, value) VALUES (?, '1')",
+                (f"{REMOVAL_PREFIX}{task_id}",),
+            )
+
+    def _clear_removal(self, task_id: int) -> None:
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            conn.execute("DELETE FROM app_state WHERE key = ?", (f"{REMOVAL_PREFIX}{task_id}",))
+
+    def _maybe_remove_worktree(self, task_id: int) -> None:
+        """Start removing the worktree of a closed task, unless a run of the task is going (its
+        end comes back here) or a removal is already on its way."""
+        if task_id not in self._worktrees_to_remove or task_id in self._removing or self._stopping:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        with closing(db.connect(self._db_path)) as conn:
+            if store.active_run_for_task(conn, task_id) is not None:
+                return
+        self._removing.add(task_id)
+        task = loop.create_task(self._remove_worktree(task_id))
+        self._removal_tasks.add(task)
+        task.add_done_callback(self._removal_tasks.discard)
+
+    async def _remove_worktree(self, task_id: int) -> None:
+        """Remove the worktree of a closed task. The mark that survives a restart goes away only
+        when the removal ended (done, refused or failed): one cut by the shutdown is asked for
+        again by `recover`."""
+        settled = False
+        try:
+            await self._remove_closed_worktree(task_id)
+            settled = True
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Falha ao remover a worktree da tarefa %s", task_id)
+            self._app_comment(task_id, "Worktree mantida: erro inesperado (veja o log do Maestro).")
+            settled = True
+        finally:
+            self._removing.discard(task_id)
+            if settled:
+                self._worktrees_to_remove.discard(task_id)
+                self._clear_removal(task_id)
+
+    async def _remove_closed_worktree(self, task_id: int) -> None:
+        with closing(db.connect(self._db_path)) as conn:
+            try:
+                task = store.get_task(conn, task_id)
+            except store.NotFoundError:
+                return
+            try:
+                project = projects.get_project(conn, task.project_id)
+            except projects.ProjectNotFoundError:
+                return
+        if task.status not in store.TASK_CLOSED_STATUSES or not task.worktree_path:
+            return  # reopened meanwhile, or nothing to remove
+        if not task.branch:
+            removed, note = False, "a tarefa não guardou o nome da branch."
+        else:
+            removed, note = await worktrees.remove_task_worktree(
+                Path(project.path), Path(task.worktree_path), task.branch
+            )
+        if not removed:
+            self._app_comment(task_id, f"Worktree mantida: {note}")
+            self._notice_for_task(task, f"Tarefa #{task.id}: worktree mantida. {note}")
+            return
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            current = store.get_task(conn, task_id)
+            if current.worktree_path == task.worktree_path:
+                store.update_task(
+                    conn, task_id, expected_revision=current.revision, now=self._now(),
+                    worktree_path=None,
+                )
+        self._app_comment(task_id, f"Worktree removida. {note}".strip())
+        if note:
+            self._notice_for_task(task, f"Tarefa #{task.id}: {note}")
+
+    def _notice_for_task(self, task: store.Task, text: str) -> None:
+        """A `notice` for whoever owns the task (its assignee, else its creator); none for a task
+        nobody owns (the `app` comment on it is there)."""
+        agent_id = task.assignee_agent_id or task.created_by_agent_id
+        if agent_id is None:
+            return
+        try:
+            self._add_notice(agent_id, None, "notice", text)
+        except Exception:
+            logger.exception("Falha ao avisar sobre a worktree da tarefa %s", task.id)
+
     async def _deliver_run_text(
         self,
         run: store.Run,
@@ -1108,6 +1929,8 @@ class OrgService:
         self._files.delete_wake_text(agent.slug, wakeup.id)
         if self._set_run_state(run.id, "running", None, only_from=("starting",)) is not None:
             self._arm_watch(run.id)
+            if run.task_id is not None:
+                self._arm_turn_watch(run.id)
         else:
             # Cancelled (or failed by the time cap) while the text was on its way: the send
             # went through and a turn is running that nobody wants. Stop it.
@@ -1163,6 +1986,13 @@ class OrgService:
         self._stop_watch(run.id)
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             store.discard_run(conn, run.id)
+            if run.task_id is not None:
+                # The try never happened: it does not count against the cap of runs of the task
+                # (a connection that stays down is tried again every minute).
+                conn.execute(
+                    "UPDATE tasks SET run_count = MAX(run_count - 1, 0) WHERE id = ?",
+                    (run.task_id,),
+                )
         self._changed(agent.id)
         self.kick(agent.id)
 
@@ -1226,8 +2056,9 @@ class OrgService:
         # A message has no run for `recover` to settle: once taken, its file goes whatever
         # happens next (sent, failed, or cancelled in the middle of the send).
         try:
-            # The comments for a run that waits are no chat: the session stays the run's.
-            if wakeup.source != "comment" or self.is_main(target):
+            # The comments for a run that waits, and the answer to a decision, are no chat: the
+            # session stays what it was.
+            if wakeup.source not in ("comment", "decision") or self.is_main(target):
                 try:
                     await self.open_conversation(agent.id, session_id=target)
                 except Exception:
@@ -1483,6 +2314,8 @@ class OrgService:
         with closing(db.connect(self._db_path)) as conn:
             run = store.run_for_session(conn, session_id)
         self._add_notice(agent.id, run.id if run else None, "summary", summary)
+        if run is not None and run.task_id is not None:
+            return  # a task run ends with its turn (`_watch_task_turn`), and its comment is the report
         self._set_outcome(
             session_id, "concluded", None, only_from=RECOVERABLE_OUTCOMES, announce=summary
         )
@@ -1519,7 +2352,7 @@ class OrgService:
             return
         with closing(db.connect(self._db_path)) as conn:
             run = store.run_for_session(conn, closure.session_id)
-        if run is None or run.source not in CLOSABLE_SOURCES:
+        if run is None or run.task_id is not None or run.source not in CLOSABLE_SOURCES:
             return
         if run.outcome in FINISHING_OUTCOMES:
             await self._finish_if_pending(closure.session_id, record)
@@ -1584,6 +2417,7 @@ class OrgService:
                 "SELECT r.id, r.session_id FROM runs r JOIN sessions s"
                 " ON s.session_id = r.session_id"
                 " WHERE r.outcome IN ('running', 'failed') AND s.turn_open = 1 AND s.finished = 0"
+                " AND r.task_id IS NULL"  # a task run is settled below, by its own rule
             ).fetchall()
             pending = self._pending_finishes(conn)
         for row in candidates:
@@ -1614,6 +2448,7 @@ class OrgService:
                 self._clear_pending(session_id)
                 continue
             self._finish_later(session_id)
+        self._recover_tasks()
         with closing(db.connect(self._db_path)) as conn:
             in_flight = [
                 row[0]
@@ -1622,6 +2457,36 @@ class OrgService:
         for run_id in in_flight:
             self._arm_watch(run_id)
         self.kick()
+
+    def _recover_tasks(self) -> None:
+        """What a restart leaves of the tasks: a task run still `running` whose session did not
+        come back is `failed` (its turn is lost), one whose session did is watched again until
+        its turn ends; the (agent, task) pairs of deleted sessions are forgotten; and the
+        removals of worktrees that were waiting are asked for again."""
+        with closing(db.connect(self._db_path)) as conn:
+            running = conn.execute(
+                "SELECT id, session_id FROM runs WHERE outcome = 'running' AND task_id IS NOT NULL"
+            ).fetchall()
+        for row in running:
+            if self._alive(row["session_id"]):
+                self._arm_turn_watch(row["id"])
+            else:
+                self._set_run_state(row["id"], "failed", TASK_RUN_LOST, only_from=("running",))
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.purge_dead_task_sessions(conn)
+            marks = [
+                row[0] for row in conn.execute(
+                    "SELECT key FROM app_state WHERE substr(key, 1, ?) = ?",
+                    (len(REMOVAL_PREFIX), REMOVAL_PREFIX),
+                )
+            ]
+        for key in marks:
+            try:
+                self._worktrees_to_remove.add(int(key[len(REMOVAL_PREFIX):]))
+            except ValueError:
+                continue
+        for task_id in list(self._worktrees_to_remove):
+            self._maybe_remove_worktree(task_id)
 
     def _alive(self, session_id: str | None) -> bool:
         """The session has a client again (re-attached by the agentd) and is idle or in a turn."""
@@ -1651,6 +2516,8 @@ class OrgService:
             if self._alive(run.session_id):
                 self._set_run_state(run_id, "running", None, only_from=("starting",))
                 self._forget_wake_text(run_id)
+                if run.task_id is not None:
+                    self._arm_turn_watch(run_id)
             elif run.session_id is None:
                 self._fail_run(run, agent, NOT_STARTED)
             else:
@@ -1733,12 +2600,28 @@ class OrgService:
                 if announce is False or (outcome == "failed" and run_id in self._quiet_runs)
                 else self._announce(conn, run, reason if announce is None else announce)
             )
+            # A task run that did not end on its own leaves its mark where the task is read.
+            ended_badly = run.task_id is not None and outcome in ("failed", "cancelled")
+            if ended_badly:
+                store.add_comment(
+                    conn, task_id=run.task_id, author_kind="app", author_agent_id=None,
+                    run_id=None, now=self._now(),
+                    text=(
+                        f"Execução falhou: {reason}" if outcome == "failed" and reason
+                        else "Execução falhou." if outcome == "failed"
+                        else "Execução cancelada pela pessoa."
+                    )[: store.COMMENT_MAX],
+                )
         if not (outcome == "failed" and run_id in self._quiet_runs):
             self._publish_run(run)
         self._publish_announcement(announcement)
+        if ended_badly and run.task_id is not None:
+            self._task_changed(run.task_id, "comment")
         if final:
             self._stop_watch(run.id)
             self.kick(run.agent_id)
+            if run.task_id is not None:
+                self._maybe_remove_worktree(run.task_id)
         elif reopened:
             # Back from a final outcome (a failed run that is waiting for the person again):
             # it holds the agent once more, so it gets a time cap again, from now.
@@ -1763,6 +2646,8 @@ class OrgService:
         pending, and leaves it alone once delivered. None when nothing changed."""
         if run.outcome not in ANNOUNCED_OUTCOMES:
             return None
+        if run.task_id is not None and run.outcome != "failed":
+            return None  # the comment on the task is the report of a task run
         body = _announcement_text(text or "", ANNOUNCEMENT_MAX_CHARS)
         full = f"{self._run_label(conn, run)} {ANNOUNCED_OUTCOMES[run.outcome]}: {body}"
         existing = store.announcement_for_run(conn, run.id)
@@ -1777,6 +2662,8 @@ class OrgService:
 
     @staticmethod
     def _run_label(conn: sqlite3.Connection, run: store.Run) -> str:
+        if run.task_id is not None:
+            return f"Tarefa #{run.task_id}"
         if run.source == "comment":
             row = (
                 conn.execute(
@@ -1953,6 +2840,8 @@ class OrgService:
             *self._drains.values(),
             *self._watchers.values(),
             *self._finish_tasks,
+            *self._turn_watchers.values(),
+            *self._removal_tasks,
             *([self._poller] if self._poller is not None else []),
         ]
         for task in tasks:
