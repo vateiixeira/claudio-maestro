@@ -288,6 +288,8 @@ class OrgService:
         # session id -> text of the last "needs you" alert, so the same check does not warn
         # twice. Memory only: after a restart the same alert may come once more.
         self._last_alert: dict[str, str] = {}
+        # Ids of closed tasks whose worktree is to be removed once their run ends.
+        self._worktrees_to_remove: set[int] = set()
 
     # Session setup ------------------------------------------------------------------
 
@@ -618,6 +620,12 @@ class OrgService:
                 conn, agent_id, key=key, status=status, link=link, note=note, now=self._now()
             )
 
+
+    def schedule_worktree_removal(self, task: store.Task) -> None:
+        """Note that the task closed and its worktree is to be removed. Only the registration
+        for now: the removal itself, after the run of the task ends, comes with the worktree
+        step of the run."""
+        self._worktrees_to_remove.add(task.id)
 
     # Wakeups: the queue ---------------------------------------------------------------
 

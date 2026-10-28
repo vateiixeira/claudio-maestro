@@ -1538,3 +1538,18 @@ async def test_the_scheduler_fires_a_routine_with_the_longest_instruction(world)
     [run] = world.runs(agent)
     assert run.source == "routine" and run.outcome != "failed"
     assert run.scheduled_for == int(datetime(2026, 10, 26, 9, 0).timestamp())
+
+
+# Worktrees of closed tasks (registration only; the removal itself is T5) ---------------------
+
+
+def test_schedule_worktree_removal_registers_the_task(tmp_path):
+    world = World(tmp_path)
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        task = store.create_task(conn, project_id=world.project.id, title="t", now=NOW)
+    assert world.service._worktrees_to_remove == set()
+
+    world.service.schedule_worktree_removal(task)
+    world.service.schedule_worktree_removal(task)  # twice is the same as once
+
+    assert world.service._worktrees_to_remove == {task.id}

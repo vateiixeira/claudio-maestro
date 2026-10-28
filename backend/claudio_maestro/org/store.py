@@ -1415,6 +1415,23 @@ def active_run_for_task(conn: sqlite3.Connection, task_id: int) -> Run | None:
     return _run(row) if row else None
 
 
+def list_task_runs(conn: sqlite3.Connection, task_id: int) -> list[Run]:
+    """Every run of the task, oldest first."""
+    rows = conn.execute(
+        f"SELECT {_RUN_COLUMNS} FROM runs WHERE task_id = ? ORDER BY id", (task_id,)
+    ).fetchall()
+    return [_run(row) for row in rows]
+
+
+def list_task_prs(conn: sqlite3.Connection, task_id: int) -> list[Pr]:
+    """The agent PRs linked to the task (`agent_prs.task_id`), oldest first."""
+    rows = conn.execute(
+        f"SELECT {_PR_COLUMNS} FROM agent_prs WHERE task_id = ? ORDER BY created_at, url",
+        (task_id,),
+    ).fetchall()
+    return [_pr(row) for row in rows]
+
+
 def mark_run_commented(conn: sqlite3.Connection, run_id: int) -> None:
     conn.execute("UPDATE runs SET commented = 1 WHERE id = ?", (run_id,))
 

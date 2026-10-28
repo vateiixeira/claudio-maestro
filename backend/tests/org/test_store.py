@@ -830,6 +830,34 @@ def test_active_run_for_task(conn):
     assert store.active_run_for_task(conn, task.id) == older
 
 
+def test_list_task_runs_and_prs(conn):
+    agent = make(conn)
+    task = store.create_task(conn, project_id=1, title="t", now=100)
+    other = store.create_task(conn, project_id=1, title="o", now=100)
+    first = store.insert_run(
+        conn, agent_id=agent.id, source="assignment", started_at=1, outcome="concluded",
+        task_id=task.id,
+    )
+    store.insert_run(
+        conn, agent_id=agent.id, source="assignment", started_at=2, outcome="running",
+        task_id=other.id,
+    )
+    second = store.insert_run(
+        conn, agent_id=agent.id, source="comment", started_at=3, outcome="running",
+        task_id=task.id,
+    )
+    for url, task_id in (("https://github.com/o/r/pull/1", task.id),
+                         ("https://github.com/o/r/pull/2", other.id)):
+        store.upsert_pr(conn, url=url, agent_id=agent.id, session_id=None, created_at=5)
+        conn.execute("UPDATE agent_prs SET task_id = ? WHERE url = ?", (task_id, url))
+
+    assert [run.id for run in store.list_task_runs(conn, task.id)] == [first.id, second.id]
+    assert [pr.url for pr in store.list_task_prs(conn, task.id)] == [
+        "https://github.com/o/r/pull/1"
+    ]
+    assert store.list_task_runs(conn, 999) == [] and store.list_task_prs(conn, 999) == []
+
+
 def test_bump_run_count(conn):
     task = make_task(conn)
     assert store.bump_run_count(conn, task.id, now=110) == 1
