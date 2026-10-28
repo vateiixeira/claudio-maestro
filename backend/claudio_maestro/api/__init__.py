@@ -17,6 +17,7 @@ from claudio_maestro.api import (
     health,
     labels,
     markdown,
+    org,
     plans,
     projects,
     sessions,
@@ -41,6 +42,7 @@ router.include_router(deliveries.router)
 router.include_router(groups.router)
 router.include_router(labels.router)
 router.include_router(specialists.router)
+router.include_router(org.router)
 router.include_router(activity.router)
 router.include_router(app_state.router)
 router.include_router(git.router)

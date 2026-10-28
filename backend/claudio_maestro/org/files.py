@@ -45,6 +45,13 @@ WAKE_PAYLOAD_MAX_BYTES = 45 * 1024 * 1024
 # Memory and secrets are edited by hand or by the agent: reads are bounded, not trusted.
 _READ_MAX_BYTES = 1024 * 1024
 
+# The preview of a wake request reads a prefix: 4 KB first, then 8x more up to 600 KB (100.000
+# characters, each at worst a 6-byte escape).
+_WAKE_PREFIX = '{"text": '
+_WAKE_PREVIEW_CHARS = 500
+_WAKE_PREVIEW_FIRST_READ = 4096
+_WAKE_PREVIEW_MAX_READ = 600_020
+
 SLUG_MAX_LENGTH = 40
 SLUG_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 SECRET_NAME_PATTERN = re.compile(r"[A-Z_][A-Z0-9_]*")
@@ -335,6 +342,36 @@ class AgentFiles:
         ):
             raise ValueError("Pedido de despertar inválido.")
         return value["text"], value["images"]
+
+    def wake_preview(self, slug: str, wakeup_id: int) -> str:
+        """The start of the text of a wake request (at most 500 characters, then "…"),
+        without reading the images. The file is `{"text": "...", "images": [...]}`, text first:
+        only a prefix is read, in growing steps, until the first string is complete."""
+        _check_slug(slug)
+        name = _wake_name(wakeup_id)
+        with self._open_folder(slug) as folder_fd:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder_fd)
+            with os.fdopen(fd, "rb") as handle:
+                if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                    raise ValueError(f"{name} precisa ser um arquivo comum.")
+                size = _WAKE_PREVIEW_FIRST_READ
+                while True:
+                    handle.seek(0)
+                    raw = handle.read(size)
+                    # A cut in the middle of a character is no error: the tail is dropped.
+                    prefix = raw.decode("utf-8", "ignore")
+                    try:
+                        if not prefix.startswith(_WAKE_PREFIX):
+                            raise ValueError("Pedido de despertar inválido.")
+                        text, _ = json.JSONDecoder().raw_decode(prefix, len(_WAKE_PREFIX))
+                        break
+                    except json.JSONDecodeError as exc:
+                        if len(raw) < size or size >= _WAKE_PREVIEW_MAX_READ:
+                            raise ValueError("Pedido de despertar inválido.") from exc
+                        size = min(size * 8, _WAKE_PREVIEW_MAX_READ)
+        if not isinstance(text, str):
+            raise ValueError("Pedido de despertar inválido.")
+        return text[:_WAKE_PREVIEW_CHARS] + ("…" if len(text) > _WAKE_PREVIEW_CHARS else "")
 
     def delete_wake_text(self, slug: str, wakeup_id: int) -> None:
         _check_slug(slug)

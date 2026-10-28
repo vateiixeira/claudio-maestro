@@ -473,3 +473,47 @@ def test_slug_must_be_a_string(files: AgentFiles) -> None:
     for slug in (None, 1, b"cto"):
         with pytest.raises(ValueError):
             files.folder(slug)  # type: ignore[arg-type]
+
+
+def test_wake_preview_reads_only_the_start_of_the_text(files: AgentFiles) -> None:
+    files.create("cto", CTO)
+    files.write_wake_text("cto", 1, "Mensagem curta 🎬\ncom linha", [{"media_type": "image/png", "data": "x" * 1000}])
+    assert files.wake_preview("cto", 1) == "Mensagem curta 🎬\ncom linha"
+    files.write_wake_text("cto", 2, "", [{"media_type": "image/png", "data": "x"}])
+    assert files.wake_preview("cto", 2) == ""
+    files.write_wake_text("cto", 3, "é" * 500)
+    assert files.wake_preview("cto", 3) == "é" * 500
+    files.write_wake_text("cto", 4, "a" * 501)
+    assert files.wake_preview("cto", 4) == "a" * 500 + "…"
+
+
+def test_wake_preview_of_a_long_message_with_escapes(files: AgentFiles) -> None:
+    files.create("cto", CTO)
+    # 90.000 characters, every second one needing an escape: far past the first chunk read.
+    text = '"\n' * 30_000
+    files.write_wake_text("cto", 1, text, [{"media_type": "image/png", "data": "x" * 100_000}], max_chars=None)
+    assert files.wake_preview("cto", 1) == text[:500] + "…"
+
+
+def test_wake_preview_refuses_bad_files_and_ids(files: AgentFiles) -> None:
+    files.create("cto", CTO)
+    folder = files.root / "cto"
+    with pytest.raises(FileNotFoundError):
+        files.wake_preview("cto", 9)
+    (folder / "wake-5.txt").write_text("não é json")
+    with pytest.raises(ValueError):
+        files.wake_preview("cto", 5)
+    (folder / "wake-6.txt").write_text('{"text": 5, "images": []}')
+    with pytest.raises(ValueError):
+        files.wake_preview("cto", 6)
+    (folder / "wake-7.txt").symlink_to(folder / "AGENT.md")
+    with pytest.raises(OSError):
+        files.wake_preview("cto", 7)
+    (folder / "wake-8.txt").mkdir()
+    with pytest.raises((OSError, ValueError)):
+        files.wake_preview("cto", 8)
+    for bad in (0, -1, True):
+        with pytest.raises(ValueError):
+            files.wake_preview("cto", bad)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        files.wake_preview("../x", 1)
