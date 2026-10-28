@@ -89,8 +89,8 @@ Testes manuais contra o SDK real consomem a assinatura ou os créditos de quem r
 
 Os revisores não alteram o repositório: não têm `Edit`, e o `Write` fica para reproduções no scratchpad. O `reviewer` roda em Sonnet; quando a tarefa toca uma área crítica, chame-o com `model: "opus"`. Áreas críticas:
 
-- `security.py` (Host, Origin, validação de caminhos) e todo código que recebe caminhos ou chama `resolve_within`/`is_within` (hoje `fs.py`, `filesearch.py`, `history.py`, `projects.py`, `api/fs.py`, `api/git.py`, `api/gitops.py`, `api/plans.py`, `api/editor.py` e `api/specialists.py`).
+- `security.py` (Host, Origin, validação de caminhos) e todo código que recebe caminhos ou chama `resolve_within`/`is_within` (hoje `fs.py`, `filesearch.py`, `history.py`, `projects.py`, `api/fs.py`, `api/git.py`, `api/gitops.py`, `api/plans.py`, `api/editor.py`, `api/org.py`, `org/worktrees.py` e `org/files.py`).
 - Todo código que inicia processos: `gitinfo.py` (o `run_git`), `gitops.py`, `gitfetch.py`, `worktree.py`, `picker.py`, `claudecli.py`, `api/claude_cli.py`, `api/editor.py`, `terminal.py`, `termmarks.py`, `api/terminal.py`, `cli.py`, `scripts/e2e_server.py` (garante que o E2E não toque nos dados reais), `agent/` e `agentd/` (inclusive o socket e o ciclo de vida das sessões).
-- `specialists/` (o pacote todo): guarda os segredos dos agentes (`secrets.env`, 600), decide quais comandos uma sessão de agente roda sem pedir ok (`policy.py`) e controla o ciclo de vida dessas sessões (montagem, disparo agendado, fechamento).
+- `org/` (o pacote todo): guarda os segredos dos agentes em `agents/<slug>/secrets.env` (600), cria worktrees por tarefa dentro do projeto, controla a fila de despertar e o ciclo de vida das execuções, e migra os dados antigos.
 - `usage.py` e qualquer código que leia credenciais do CLI.
 - Migrações em `db.py` e tudo que escreve em `~/.claude/projects`.

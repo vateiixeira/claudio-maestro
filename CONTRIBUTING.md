@@ -45,7 +45,7 @@ Abra `http://127.0.0.1:6648/inicio`. O servidor monta seus próprios dados tempo
 
 Se uma reprodução exigir cópia consistente do SQLite, copie também os documentos privados referenciados e use uma pasta de dados própria. Mantenha `MAESTRO_ROUTINES_SCHEDULER=0` e `MAESTRO_REMOTE_RECONNECT=0`; uma nova porta, sozinha, não isola os dados. Para histórico isolado, use também um `CLAUDE_CONFIG_DIR` descartável. Não envie mensagens nem ative manualmente Remote Control de sessões reais na cópia: esses controles continuam explícitos e podem iniciar processos. Não encerre o agentd da instalação em uso.
 
-As tabelas de tarefas, revisões, decisões, feed, PRs e recibos de CI são aditivas. Não converter sessões antigas pelo título nem simular downgrade destrutivo. A exclusão exige conciliar execução e envio incerto; remover uma linha do banco não é procedimento de recuperação.
+O cenário do E2E vem de `scripts/e2e_server.py::_seed_agents`: no projeto "Loja Demo", os agentes `maestro` (no topo), `triagem` e `revisor` (subordinados dele), com tarefas em vários estados, uma decisão pendente e uma rotina que abre tarefas. Para a organização, nada precisa de uma cópia do banco real; se uma reprodução exigir uma, ligue `MAESTRO_ROUTINES_SCHEDULER=0`, `MAESTRO_REMOTE_RECONNECT=0` e `MAESTRO_AGENTD=0` e desligue o agente de resumos na cópia (`UPDATE app_state SET value = json_set(value, '$.enabled', json('false')) WHERE key = 'digest_agent'`), senão a cópia acorda agentes e conversas em dobro. Não use a cópia para simular um downgrade nem para apagar linhas: excluir um agente passa pela API, que a recusa enquanto ele trabalha; remover uma linha do banco não é procedimento de recuperação.
 
 ## Testes e verificações
 
@@ -78,8 +78,6 @@ O receptor opcional de comentários do GitHub usa `MAESTRO_HOOKS_PORT`, em uma p
 O agentd é o processo auxiliar que mantém os processos do agente vivos quando o backend reinicia. O código fica em `backend/claudio_maestro/agentd/`, só usa a biblioteca padrão do Python, e o protocolo tem versão (`PROTOCOL`).
 
 - Um agentd já em execução continua com o código antigo. Quem muda o agentd precisa encerrá-lo para testar (`kill $(cat <data_dir>/agentd-v1.lock)`) ou subir o `PROTOCOL`.
-- As provas de fechamento das tarefas usam o nonce da instância do agentd, além da identidade persistida do processo. Um daemon substituto, socket ausente ou registro antigo sem nonce não comprovam a morte do processo original. Uma futura adoção com daemon antigo pode exigir reinício coordenado; não encerre o daemon em uso para simular essa prova.
-- Envios têm UUID persistido, eco no mesmo cliente/geração e Result correlacionado. Nos testes de crash/fechamento, preserve `closing`/incerteza até uma confirmação válida. Não adicionar nem usar uma ação de apagar o estado à força.
 - Neste trabalho, o protocolo e a recuperação foram exercitados só com clientes falsos e sockets/processos temporários. Nenhum agentd ou serviço real foi alterado ou testado; a compatibilidade na instalação em uso não foi ensaiada.
 - O log fica em `<data_dir>/agentd.log`.
 - O teste de contrato `backend/tests/test_agent_spawn.py` quebra quando o SDK muda a montagem do comando que inicia o agente.
