@@ -18,6 +18,7 @@ from claude_agent_sdk import (
     PermissionUpdate,
     TextBlock,
 )
+from git_helpers import git, make_repo
 
 from claudio_maestro import db
 from claudio_maestro.agent.base import AgentError
@@ -39,6 +40,7 @@ from claudio_maestro.sessions import (
     DEFAULT_TITLE,
     AlwaysNotAvailableError,
     EmptyMessageError,
+    InvalidDecisionError,
     PromptNotFoundError,
     SessionClosedError,
     SessionManager,
@@ -178,6 +180,72 @@ async def test_create_session_does_not_start_client(make_env, env_cleanup):
     session = env.manager.get(record.session_id)
     assert session.state == "closed"
     assert session.snapshot()["items"] == []
+
+
+@pytest.mark.anyio
+async def test_create_session_with_worktree_cwd(make_env, env_cleanup, tmp_path):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    root = make_repo(Path(env.project.path))
+    folder = root / ".claude" / "worktrees" / "tarefa-1"
+    git(root, "worktree", "add", "-q", "-b", "tarefa/1-x", str(folder))
+    folder = folder.resolve()
+
+    record = env.manager.create_session(env.project, cwd=str(folder))
+
+    assert (record.cwd, record.worktree_path, record.worktree_name) == (
+        str(folder), str(folder), "tarefa-1"
+    )
+    assert record.history_dir is None  # the transcript lives where `cwd` says
+    assert record.history_directory == str(folder) and record.work_dir() == str(folder)
+    row = session_row(env.db_path, record.session_id)
+    assert (row["cwd"], row["worktree_path"], row["worktree_name"]) == (
+        str(folder), str(folder), "tarefa-1"
+    )
+    assert row["project_id"] == env.project.id
+    # Without `cwd` (or with the project folder itself) nothing changes.
+    plain = env.manager.create_session(env.project, cwd=env.project.path)
+    assert (plain.cwd, plain.worktree_path, plain.worktree_name) == (env.project.path, None, None)
+
+
+@pytest.mark.anyio
+async def test_create_session_refuses_cwd_outside_project(make_env, env_cleanup, tmp_path):
+    env = make_env()
+    env_cleanup.append(env.manager)
+    root = make_repo(Path(env.project.path))
+    (root / "sub").mkdir()
+    other = make_repo(tmp_path / "other")
+    git(other, "worktree", "add", "-q", "-b", "tarefa/2-x", str(tmp_path / "other-wt"))
+    git(root, "worktree", "add", "-q", "-b", "tarefa/3-x", str(root / ".claude" / "worktrees" / "tarefa-3"))
+    forged = tmp_path / "forged"
+    forged.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(root / ".claude" / "worktrees" / "tarefa-3")
+    plain_dir = tmp_path / "plain"
+    plain_dir.mkdir()
+
+    for cwd in (
+        tmp_path / "other-wt",           # worktree of a repository outside the project
+        other,                           # a repository outside the project
+        plain_dir,                       # any folder
+        root / "sub",                    # inside the project, but not its root
+        root / ".claude" / "worktrees" / "tarefa-3" / "..",  # `..` back to a folder that is not it
+        forged,                          # no pointers at all
+        tmp_path / "missing",
+    ):
+        with pytest.raises(InvalidDecisionError, match="A pasta da sessão precisa ser o projeto"):
+            env.manager.create_session(env.project, cwd=str(cwd))
+    # A folder inside a worktree is not the worktree.
+    (root / ".claude" / "worktrees" / "tarefa-3" / "pkg").mkdir()
+    with pytest.raises(InvalidDecisionError):
+        env.manager.create_session(
+            env.project, cwd=str(root / ".claude" / "worktrees" / "tarefa-3" / "pkg")
+        )
+    with closing(db.connect(env.db_path)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+    # A link to a real worktree of the project is recorded as the resolved folder, never as the link.
+    record = env.manager.create_session(env.project, cwd=str(link))
+    assert record.cwd == str((root / ".claude" / "worktrees" / "tarefa-3").resolve())
 
 
 @pytest.mark.anyio

@@ -11,6 +11,7 @@ import base64
 import binascii
 import json
 import logging
+import os
 import re
 import sqlite3
 import time
@@ -77,6 +78,7 @@ from claudio_maestro.projects import Project
 from claudio_maestro.projects import project_roots as registered_project_roots
 from claudio_maestro.termformat import terminal_title_text
 from claudio_maestro.textindex import Match
+from claudio_maestro.worktree import linked_worktree
 
 logger = logging.getLogger(__name__)
 
@@ -832,6 +834,34 @@ def normalize_models(info: dict[str, Any] | None) -> list[dict[str, Any]] | None
         if isinstance(model, dict) and isinstance(model.get("value"), str)
     ]
     return result or None
+
+
+def _session_folder(project: Project, cwd: str | None) -> tuple[str, str | None, str | None]:
+    """(cwd, worktree name, worktree path) for a new session of `project`.
+
+    `cwd` is None or the project folder itself: the session opens in the project. Otherwise it
+    must be the root of a linked worktree whose pointers agree in both directions (no git
+    process: `linked_worktree`) and whose main repository is inside the project. The session
+    then records that worktree the way `history` records one it finds in a transcript: the
+    resolved folder as `cwd` and as `worktree_path`, with no `history_dir` (the CLI keeps the
+    transcript where `cwd` says). This is the cheap half of `gitinfo.project_worktree`; callers
+    that create the worktree (`org.worktrees.ensure_task_worktree`) have already proven it with
+    `git worktree list` too.
+    """
+    if cwd is None or os.path.realpath(cwd) == os.path.realpath(project.path):
+        return project.path, None, None
+    error = InvalidDecisionError("A pasta da sessão precisa ser o projeto ou uma worktree dele.")
+    if not os.path.isabs(cwd) or "\x00" in cwd:
+        raise error
+    found = linked_worktree(cwd)
+    root = Path(os.path.realpath(project.path))
+    if (
+        found is None
+        or str(found.path) != os.path.realpath(cwd)
+        or not found.main_repo.is_relative_to(root)
+    ):
+        raise error
+    return str(found.path), found.name, str(found.path)
 
 
 def new_session_defaults(conn: sqlite3.Connection) -> tuple[str | None, str | None, str | None]:
@@ -3828,12 +3858,15 @@ class SessionManager:
         agent_id: int | None = None,
         model: str | None = None,
         effort: str | None = None,
+        cwd: str | None = None,
     ) -> SessionRecord:
         """A new session. For an agent (`agent_id`) it always starts in the default
-        permission mode, whatever the saved preference: its policy needs the CLI to ask."""
+        permission mode, whatever the saved preference: its policy needs the CLI to ask.
+        `cwd` is the folder it works in: the project folder (default) or a linked worktree of
+        the project (see `_session_folder`)."""
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             return self.create_session_in_transaction(conn, project, group_id,
-                agent_id=agent_id, model=model, effort=effort)
+                agent_id=agent_id, model=model, effort=effort, cwd=cwd)
 
     def create_session_in_transaction(
         self,
@@ -3844,9 +3877,12 @@ class SessionManager:
         agent_id: int | None = None,
         model: str | None = None,
         effort: str | None = None,
+        cwd: str | None = None,
     ) -> SessionRecord:
         """A new session. For an agent (`agent_id`) it always starts in the default
-        permission mode, whatever the saved preference: its policy needs the CLI to ask."""
+        permission mode, whatever the saved preference: its policy needs the CLI to ask.
+        `cwd` is the folder it works in: the project folder (default) or a linked worktree of
+        the project (see `_session_folder`)."""
         if not conn.in_transaction:
             raise RuntimeError('Criar sessão exige uma transação ativa.')
         if effort is not None and effort not in EFFORTS:
@@ -3855,12 +3891,15 @@ class SessionManager:
             raise InvalidDecisionError("Modelo inválido.")
         if not project.available:
             raise ProjectUnavailableError("A pasta do projeto não está disponível.")
+        folder, worktree_name, worktree_path = _session_folder(project, cwd)
         now = _now()
         default_model, default_effort, mode = new_session_defaults(conn)
         record = SessionRecord(
             session_id=str(uuid.uuid4()),
             project_id=project.id,
-            cwd=project.path,
+            cwd=folder,
+            worktree_name=worktree_name,
+            worktree_path=worktree_path,
             title=DEFAULT_TITLE,
             created_at=now,
             last_activity_at=now,
@@ -3881,7 +3920,8 @@ class SessionManager:
             groups.get_group(conn, group_id)
         conn.execute(
             f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id,"
-            " agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " agent_id, worktree_name, worktree_path)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.session_id,
                 record.project_id,
@@ -3896,6 +3936,8 @@ class SessionManager:
                 record.permission_mode,
                 record.group_id,
                 record.agent_id,
+                record.worktree_name,
+                record.worktree_path,
             ),
         )
         return record
