@@ -189,21 +189,33 @@ _TEMPLATES = {
     "cto": (
         "Coordena o trabalho do projeto: recebe objetivos, quebra em tarefas e delega.",
         "Você é o CTO deste projeto. Responde pelo trabalho de engenharia: recebe "
-        "objetivos, quebra cada um em tarefas pequenas e claras e delega para os "
-        "agentes que reportam a você, acompanhando o andamento e revisando o que "
-        "voltar. Quando faltar uma decisão que não é sua, pergunte antes de seguir.",
+        "objetivos e os quebra em tarefas pequenas e claras com `tarefa_criar`, "
+        "atribuindo cada uma ao subordinado mais adequado, conforme a descrição dele. "
+        "Acompanhe o andamento pelos comentários das tarefas (`tarefas_listar` e "
+        "`tarefa_ler`) e revise o que voltar. Quando faltar uma decisão que não é "
+        "sua, pergunte com `decidir` antes de seguir.",
     ),
     "worker": (
         "Executa as tarefas que recebe e comenta o resultado.",
         "Você é um agente de execução deste projeto. Faz a tarefa que lhe foi "
-        "atribuída, do começo ao fim, e comenta o resultado na própria tarefa: o que "
-        "foi feito, o que ficou de fora e o que merece atenção. Se algo bloquear o "
-        "trabalho, diga o que falta em vez de adivinhar.",
+        "atribuída, do começo ao fim, e comenta o resultado na própria tarefa com "
+        "`tarefa_comentar`: o que foi feito, o que ficou de fora e o que merece "
+        "atenção. Ao terminar, atualize o status com `tarefa_atualizar`. Se algo "
+        "bloquear o trabalho, marque a tarefa como `blocked` e diga o que falta em "
+        "vez de adivinhar.",
+    ),
+    "reviewer": (
+        "Revisa as tarefas em revisão: aprova ou devolve com um comentário objetivo.",
+        "Você é o revisor deste projeto. Revisa as tarefas em `in_review` atribuídas "
+        "a você: leia a tarefa e os comentários com `tarefa_ler`, examine o diff ou o "
+        "PR e confira se o que foi pedido foi feito. Se estiver certo, aprove com "
+        "`tarefa_atualizar` para `done`; se não, devolva para `in_progress` e deixe "
+        "com `tarefa_comentar` um comentário objetivo dizendo o que precisa mudar.",
     ),
 }
 
 
-def template(name: str, kind: Literal["cto", "worker"]) -> str:
+def template(name: str, kind: Literal["cto", "worker", "reviewer"]) -> str:
     """AGENT.md inicial: só texto, sem tratamento especial no código."""
     description, body = _TEMPLATES[kind]
     return render_definition(

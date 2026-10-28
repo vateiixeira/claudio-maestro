@@ -4,7 +4,9 @@ from claudio_maestro.org.definition import AgentDefinition
 from claudio_maestro.org.prompt import (
     OPERATING_SKILL,
     OrgContext,
+    TaskBrief,
     build_append,
+    task_wake_text,
     wake_text,
 )
 
@@ -132,12 +134,31 @@ def test_append_never_mentions_git_push_rules():
         assert not re.search(r"\bgh\b", text)
 
 
-def test_operating_skill_is_short_and_has_no_task_tools():
+def test_operating_skill_is_short_and_lists_base_tools():
     assert len(OPERATING_SKILL.splitlines()) <= 60
     for tool in ("registro_consultar", "registro_gravar", "avisar", "organizacao"):
         assert tool in OPERATING_SKILL
-    for tool in ("tarefa_criar", "tarefas_listar", "tarefa_comentar", "decidir"):
-        assert tool not in OPERATING_SKILL
+
+
+def test_operating_skill_has_tasks_section():
+    assert "### Tarefas" in OPERATING_SKILL
+    section = OPERATING_SKILL.split("### Tarefas", 1)[1].split("\n### ", 1)[0]
+    for tool in (
+        "tarefas_listar",
+        "tarefa_ler",
+        "tarefa_criar",
+        "tarefa_atualizar",
+        "tarefa_comentar",
+        "decidir",
+    ):
+        assert f"`{tool}`" in section
+    for status in ("in_progress", "blocked", "done"):
+        assert f"`{status}`" in section
+    assert "subordinados" in section
+    assert "de outro" in section  # nunca fechar tarefa de outro
+    # The section is also in the prompt of every kind of session.
+    for text in (_append(), _append(main=True), _append(conversation=True)):
+        assert "### Tarefas" in text
 
 
 def test_append_never_mentions_claude_code_brand():
@@ -163,3 +184,112 @@ def test_wake_text_without_instruction():
     text = wake_text(source="routine", instruction=None, routine_name="Manhã")
     assert "Manhã" in text
     assert "None" not in text
+
+
+def _brief(**overrides) -> TaskBrief:
+    base = dict(
+        id=42,
+        title="Corrigir o login",
+        description="O login falha com e-mail em maiúsculas.\n\nReproduzir no staging.",
+        status="in_progress",
+        priority="high",
+        assignee="Dev",
+        reviewer="Revisor",
+        creator="CTO",
+        parent=None,
+        children=[],
+        comments=[],
+        worktree=None,
+    )
+    base.update(overrides)
+    return TaskBrief(**base)
+
+
+def test_task_wake_text_assignment_lists_task_and_children():
+    text = task_wake_text(
+        source="assignment",
+        brief=_brief(
+            parent=(7, "Autenticação"),
+            children=[(43, "Testar", "todo"), (44, "Documentar", "done")],
+            worktree="/srv/ecommerce/.claude/worktrees/tarefa-42",
+        ),
+        reason=None,
+    )
+    assert "Você recebeu a tarefa" in text
+    assert "#42" in text and "Corrigir o login" in text
+    assert "O login falha com e-mail em maiúsculas." in text
+    assert "Reproduzir no staging." in text
+    assert "in_progress" in text and "high" in text
+    assert "Dev" in text and "Revisor" in text and "CTO" in text
+    assert "#7" in text and "Autenticação" in text
+    assert "#43" in text and "Testar" in text and "todo" in text
+    assert "#44" in text and "Documentar" in text and "done" in text
+    assert "/srv/ecommerce/.claude/worktrees/tarefa-42" in text
+    assert "None" not in text
+    assert "Ao terminar, atualize o status com `tarefa_atualizar` e deixe um comentário." in text
+
+
+def test_task_wake_text_without_optional_parts_has_no_none():
+    text = task_wake_text(
+        source="assignment",
+        brief=_brief(assignee=None, reviewer=None, creator=None),
+        reason=None,
+    )
+    assert "None" not in text
+    assert "Subtarefas" not in text
+    assert "Comentários novos" not in text
+
+
+def test_task_wake_text_comment_only_new_comments():
+    text = task_wake_text(
+        source="comment",
+        brief=_brief(comments=[("CTO", "Use o helper novo."), ("pessoa", "Pode seguir.")]),
+        reason=None,
+    )
+    assert "Há comentários novos na tarefa" in text
+    assert "Você recebeu a tarefa" not in text
+    assert "CTO: Use o helper novo." in text
+    assert "pessoa: Pode seguir." in text
+    assert text.index("Corrigir o login") < text.index("Use o helper novo.")
+
+
+def test_task_wake_text_sem_relato_asks_for_comment():
+    text = task_wake_text(source="sem_relato", brief=_brief(), reason=None)
+    assert "A execução anterior terminou sem comentário; comente o que fez" in text
+    assert "Corrigir o login" in text
+
+
+def test_task_wake_text_decision_shows_question_answer_and_receipt():
+    text = task_wake_text(
+        source="decision",
+        brief=_brief(),
+        reason=None,
+        decision=("Apago a tabela antiga?", "Sim, apague.", "rec-abc123"),
+    )
+    assert "A pessoa respondeu sua pergunta" in text
+    assert "Apago a tabela antiga?" in text
+    assert "Sim, apague." in text
+    assert "rec-abc123" in text
+    assert "recibo: use-o no comentário que fecha a questão" in text
+
+
+def test_task_wake_text_decision_without_decision_data_is_safe():
+    text = task_wake_text(source="decision", brief=_brief(), reason=None)
+    assert "A pessoa respondeu sua pergunta" in text
+    assert "recibo" not in text
+
+
+def test_task_wake_text_reason_overrides_source_headline():
+    text = task_wake_text(source="assignment", brief=_brief(), reason="sem_relato")
+    assert "A execução anterior terminou sem comentário" in text
+    assert "Você recebeu a tarefa" not in text
+
+
+def test_task_wake_text_unknown_source_falls_back_to_generic_headline():
+    text = task_wake_text(source="manual", brief=_brief(), reason=None)
+    assert "Execução na tarefa" in text
+    assert "None" not in text
+
+
+def test_task_wake_text_never_mentions_claude_code_brand():
+    assert "Claude Code" not in task_wake_text(source="assignment", brief=_brief(), reason=None)

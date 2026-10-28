@@ -41,6 +41,21 @@ caracteres). Não use para relato de rotina.
 """
     + _CONCLUDE_LINE
     + """
+### Tarefas
+- `tarefas_listar` e `tarefa_ler`: veja o que está com você e leia a tarefa inteira, com os \
+comentários, antes de agir.
+- Ao pegar uma tarefa, ponha-a em `in_progress` com `tarefa_atualizar`, trabalhe e comente o \
+resultado com `tarefa_comentar`. Quando terminar, marque `done`; se houver revisor, ela vai \
+para `in_review` sozinha.
+- `tarefa_criar`: para delegar, crie subtarefas e atribua só a você mesmo ou a seus \
+subordinados.
+- `decidir`: se faltar uma decisão da pessoa, pergunte e aguarde a resposta.
+- Precisa de alguém acima de você? Comente na tarefa; não mude a de quem não é seu \
+subordinado.
+- Sem como avançar, marque `blocked` e escreva o motivo no comentário.
+- Nunca feche, cancele nem reatribua tarefa de outro agente.
+- `verificar_ci`: se a tarefa tem PR, confira o resultado do CI antes de marcar `done`.
+
 ### Memória
 - Sua memória é o arquivo `memoria.md` da sua pasta, que já está acessível. Você mesmo a edita.
 - Ela vale para as próximas execuções e entra neste prompt na seção "Memória". Anote só o que \
@@ -75,6 +90,25 @@ def _operating_skill(*, main: bool, conversation: bool) -> str:
     if conversation:
         return OPERATING_SKILL.replace(_CONCLUDE_LINE, _CONCLUDE_CONVERSATION_LINE)
     return OPERATING_SKILL
+
+
+@dataclass(frozen=True)
+class TaskBrief:
+    """A tarefa como o despertar a mostra. Já vem resolvida pelo serviço, inclusive os
+    comentários, que são só os novos desde o cursor do despertar."""
+
+    id: int
+    title: str
+    description: str
+    status: str
+    priority: str
+    assignee: str | None
+    reviewer: str | None
+    creator: str | None
+    parent: tuple[int, str] | None
+    children: list[tuple[int, str, str]]  # (id, title, status)
+    comments: list[tuple[str, str]]  # (author, text)
+    worktree: str | None
 
 
 @dataclass(frozen=True)
@@ -162,3 +196,58 @@ def wake_text(*, source: str, instruction: str | None, routine_name: str | None)
         f"{head}\n\n{body}\n\n"
         "Quando terminar, chame `concluir` com um resumo do que foi feito."
     )
+
+
+_TASK_HEADLINES = {
+    "assignment": "Você recebeu a tarefa",
+    "comment": "Há comentários novos na tarefa",
+    "decision": "A pessoa respondeu sua pergunta",
+    "sem_relato": (
+        "A execução anterior terminou sem comentário; comente o que fez"
+    ),
+}
+_TASK_CLOSING = "Ao terminar, atualize o status com `tarefa_atualizar` e deixe um comentário."
+
+
+def task_wake_text(
+    *,
+    source: str,
+    brief: TaskBrief,
+    reason: str | None,
+    decision: tuple[str, str, str] | None = None,
+) -> str:
+    """Prompt do despertar de uma tarefa. O `reason` (quando há) tem precedência sobre a
+    origem para escolher a frase de abertura; `decision` é (pergunta, resposta, recibo)."""
+    kind = reason if reason in _TASK_HEADLINES else source
+    headline = _TASK_HEADLINES.get(kind, "Execução na tarefa")
+    lines = [f"{headline} #{brief.id}: {brief.title}.", ""]
+    lines.append(f"Situação: `{brief.status}`. Prioridade: {brief.priority}.")
+    for label, value in (
+        ("Responsável", brief.assignee),
+        ("Revisor", brief.reviewer),
+        ("Criada por", brief.creator),
+    ):
+        if value:
+            lines.append(f"{label}: {value}.")
+    if brief.worktree:
+        lines.append(f"Pasta de trabalho desta tarefa: {brief.worktree}")
+    if brief.parent:
+        lines.append(f"Tarefa-mãe: #{brief.parent[0]} {brief.parent[1]}.")
+    lines += ["", "Descrição:", brief.description.strip() or "(sem descrição)"]
+    if brief.children:
+        lines += ["", "Subtarefas:"]
+        lines += [f"- #{cid} {title} ({status})" for cid, title, status in brief.children]
+    if brief.comments:
+        lines += ["", "Comentários novos:"]
+        lines += [f"- {author}: {text.strip()}" for author, text in brief.comments]
+    if source == "decision" and decision is not None:
+        question, answer, receipt = decision
+        lines += [
+            "",
+            "Decisão:",
+            f"Pergunta: {question}",
+            f"Resposta: {answer}",
+            f"Recibo: {receipt} (recibo: use-o no comentário que fecha a questão)",
+        ]
+    lines += ["", _TASK_CLOSING]
+    return "\n".join(lines)

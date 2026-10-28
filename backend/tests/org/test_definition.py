@@ -209,12 +209,30 @@ def test_template_cto_parses():
     d = parse_definition(template("CTO", "cto"))
     assert d.name == "CTO"
     assert "tarefas" in d.body
+    assert "`tarefa_criar`" in d.body
 
 
 def test_template_worker_parses():
     d = parse_definition(template("Dev Backend", "worker"))
     assert d.name == "Dev Backend"
     assert "comenta" in d.body
+    assert "`tarefa_comentar`" in d.body
+    assert "`tarefa_atualizar`" in d.body
+
+
+def test_template_reviewer_parses():
+    d = parse_definition(template("Revisor", "reviewer"))
+    assert d.name == "Revisor"
+    assert d.description
+    assert "in_review" in d.body
+    assert "done" in d.body and "in_progress" in d.body
+    assert "`tarefa_atualizar`" in d.body
+    assert "\n\n" not in d.body  # um parágrafo
+
+
+def test_template_rejects_unknown_kind():
+    with pytest.raises(KeyError):
+        template("X", "chefe")  # type: ignore[arg-type]
 
 
 def test_template_name_with_yaml_specials_roundtrips():
