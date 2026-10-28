@@ -65,6 +65,8 @@ def add_specialist(
     effort: str | None = "high",
     denied: list[str] | None = None,
     extra: list[int] | None = None,
+    ask: list | None = None,
+    outward: list | None = None,
     project_id: int = 1,
     name: str = "Sentry",
 ) -> int:
@@ -72,6 +74,7 @@ def add_specialist(
     legacy = {
         "model": model, "effort": effort, "denied_tools": denied or [],
         "extra_project_ids": extra or [],
+        "always_ask_patterns": ask or [], "outward_patterns": outward or [],
     }
     cursor = conn.execute(
         "INSERT INTO agents (slug, name, project_id, enabled, legacy_json, created_at, updated_at)"
@@ -176,6 +179,158 @@ def test_file_migration_maps_extra_projects_to_add_dirs(conn, data_dir, clock):
     assert any("99" in line for line in report.text.splitlines())
 
 
+KBGEM_ASK = [
+    "npm run release-patch", "npm run publish-lib", "npm publish",
+    "node scripts/release-patch.js", "node scripts/publish.js", "yarn release-patch",
+    "yarn publish-lib",
+]
+KBGEM_DENIED = [f"mcp__kbgen-issues__tool{n}" for n in range(9)]
+ASK_SENTENCE = "o que pedia o seu ok agora é negado; edite o `AGENT.md` se quiser liberar"
+
+
+def test_ask_patterns_become_bash_denials_after_the_denied_tools(conn, data_dir, clock):
+    agent_id = add_specialist(
+        conn, data_dir, "kbgem-issues", denied=KBGEM_DENIED, ask=KBGEM_ASK,
+        secrets={"TOKEN": SECRET_VALUE},
+    )
+
+    report = migration.migrate_files(data_dir, conn, clock=clock)
+
+    definition = files_of(data_dir).read_definition("kbgem-issues")
+    assert definition.disallowed_tools == KBGEM_DENIED + [f"Bash({p}:*)" for p in KBGEM_ASK]
+    assert definition.permission_mode == "bypassPermissions"
+    text = report.text
+    assert ASK_SENTENCE in text
+    for pattern in KBGEM_ASK:
+        assert f"`{pattern}`" in text
+    assert SECRET_VALUE not in text
+    assert (data_dir / "agents" / "migracao-2026-10-28.md").read_text(encoding="utf-8") == text
+    assert [m.ask_patterns for m in report.migrated] == [KBGEM_ASK]
+    assert store.get_agent(conn, agent_id).legacy is None
+
+
+def test_ask_patterns_are_deduplicated_and_junk_is_ignored(conn, data_dir, clock):
+    add_specialist(
+        conn, data_dir, denied=["Bash(npm publish:*)", "WebFetch"],
+        ask=["npm publish", " npm publish ", "", "   ", 7, None, ["x"], "git push"],
+        outward=["git push", "gh pr merge"],
+    )
+
+    report = migration.migrate_files(data_dir, conn, clock=clock)
+
+    definition = files_of(data_dir).read_definition("sentry")
+    assert definition.disallowed_tools == [
+        "Bash(npm publish:*)", "WebFetch", "Bash(git push:*)", "Bash(gh pr merge:*)",
+    ]
+    assert report.migrated[0].ask_patterns == ["npm publish", "git push", "gh pr merge"]
+
+
+def test_ask_patterns_with_quotes_and_line_breaks_survive_the_round_trip(conn, data_dir, clock):
+    add_specialist(conn, data_dir, ask=['echo "a: b"\nrm -rf /', "it's #1"])
+
+    report = migration.migrate_files(data_dir, conn, clock=clock)
+
+    assert report.warnings == []
+    definition = files_of(data_dir).read_definition("sentry")
+    assert definition.disallowed_tools == ['Bash(echo "a: b"\nrm -rf /:*)', "Bash(it's #1:*)"]
+    assert "`echo \"a: b\" rm -rf /`" in report.text  # one line in the report
+
+
+def test_agent_without_ask_patterns_gets_no_ask_line_and_no_notice(conn, data_dir, clock):
+    add_specialist(conn, data_dir, denied=["WebFetch"])
+
+    report = migration.migrate_files(data_dir, conn, clock=clock)
+
+    assert files_of(data_dir).read_definition("sentry").disallowed_tools == ["WebFetch"]
+    assert ASK_SENTENCE not in report.text
+    assert report.migrated[0].ask_patterns == []
+    assert store.list_notices(conn) == []
+
+
+def test_ask_line_is_only_on_the_agent_that_had_patterns(conn, data_dir, clock):
+    add_specialist(conn, data_dir, "sentry")
+    add_specialist(
+        conn, data_dir, "kbgem", name="KBGem", ask=["npm publish"],
+        skill=SKILL.replace("name: Sentry", "name: KBGem"),
+    )
+
+    report = migration.migrate_files(data_dir, conn, clock=clock)
+
+    assert report.text.count(ASK_SENTENCE) == 1
+    section = report.text.split("## kbgem")[1]
+    assert ASK_SENTENCE in section
+    assert ASK_SENTENCE not in report.text.split("## kbgem")[0]
+
+
+def test_ask_patterns_leave_one_unread_alert_in_the_inbox(conn, data_dir, clock):
+    agent_id = add_specialist(conn, data_dir, "kbgem", name="KBGem", ask=KBGEM_ASK)
+
+    migration.migrate_files(data_dir, conn, clock=clock)
+
+    notices = store.list_notices(conn, unread_only=True)
+    assert len(notices) == 1
+    assert (notices[0].agent_id, notices[0].kind, notices[0].run_id) == (agent_id, "alert", None)
+    assert "npm publish" in notices[0].text and "negado" in notices[0].text
+    assert "AGENT.md" in notices[0].text
+
+
+def test_ask_patterns_are_idempotent_on_a_second_start(conn, data_dir, clock):
+    add_specialist(conn, data_dir, "kbgem", name="KBGem", ask=KBGEM_ASK)
+    migration.migrate_files(data_dir, conn, clock=clock)
+    path = data_dir / "agents" / "migracao-2026-10-28.md"
+    before = path.read_text(encoding="utf-8")
+    definition_before = files_of(data_dir).read_definition_text("kbgem")
+    notices_before = store.list_notices(conn)
+
+    second = migration.migrate_files(data_dir, conn, clock=clock)
+
+    assert second.migrated == [] and second.report_path is None
+    assert path.read_text(encoding="utf-8") == before
+    assert before.count(ASK_SENTENCE) == 1
+    assert files_of(data_dir).read_definition_text("kbgem") == definition_before
+    assert store.list_notices(conn) == notices_before
+
+
+def test_resumed_migration_still_reports_the_ask_patterns_once(conn, data_dir, clock):
+    agent_id = add_specialist(conn, data_dir, "kbgem", name="KBGem", ask=KBGEM_ASK)
+    original = store.clear_legacy
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("crash")
+
+    store.clear_legacy = boom
+    try:
+        with pytest.raises(RuntimeError):
+            migration.migrate_files(data_dir, conn, clock=clock)
+    finally:
+        store.clear_legacy = original
+    assert store.get_agent(conn, agent_id).legacy is not None
+    assert store.list_notices(conn) == []  # the notice is part of the same transaction
+
+    report = migration.migrate_files(data_dir, conn, clock=clock)
+
+    assert report.migrated[0].resumed
+    assert report.migrated[0].ask_patterns == KBGEM_ASK
+    assert ASK_SENTENCE in report.text
+    assert len(store.list_notices(conn)) == 1
+    definition = files_of(data_dir).read_definition("kbgem")
+    assert definition.disallowed_tools == [f"Bash({p}:*)" for p in KBGEM_ASK]
+
+
+def test_legacy_without_pattern_keys_still_migrates(conn, data_dir, clock):
+    """A `legacy_json` written before the patterns were carried over has no such keys."""
+    add_specialist(conn, data_dir, "sentry")
+    conn.execute(
+        "UPDATE agents SET legacy_json = ?",
+        (json.dumps({"model": None, "effort": None, "denied_tools": [], "extra_project_ids": []}),),
+    )
+
+    report = migration.migrate_files(data_dir, conn, clock=clock)
+
+    assert report.migrated[0].ask_patterns == []
+    assert files_of(data_dir).read_definition("sentry").disallowed_tools == []
+
+
 def test_file_migration_is_idempotent(conn, data_dir, clock):
     add_specialist(conn, data_dir, secrets={"TOKEN": SECRET_VALUE})
     migration.migrate_files(data_dir, conn, clock=clock)
@@ -241,8 +396,13 @@ def test_database_at_version_29_goes_through_30_31_32_and_the_files_still_migrat
         old.execute(
             "INSERT INTO specialists (id, slug, name, project_id, extra_project_ids, model, effort,"
             " run_text, denied_tools, enabled, created_at, updated_at)"
-            " VALUES (3, 'sentry', 'Sentry', 1, '[]', 'sonnet', 'high', 'Veja os erros.', '[]',"
-            " 1, 5, 6)"
+            " VALUES (3, 'sentry', 'Sentry', 1, '[]', 'sonnet', 'high', 'Veja os erros.',"
+            " '[\"WebFetch\"]', 1, 5, 6)"
+        )
+        old.execute(
+            "UPDATE specialists SET autonomy = 'ask', outward_patterns = '[]',"
+            " always_ask_patterns = ? WHERE id = 3",
+            (json.dumps(KBGEM_ASK),),
         )
         old.execute(
             "INSERT INTO specialist_schedules (specialist_id, days, time) VALUES (3, '12345', '09:00')"
@@ -271,12 +431,15 @@ def test_database_at_version_29_goes_through_30_31_32_and_the_files_still_migrat
         files = files_of(data_dir)
         definition = files.read_definition("sentry")
         assert (definition.name, definition.model, definition.effort) == ("Sentry", "sonnet", "high")
+        assert definition.disallowed_tools == ["WebFetch"] + [f"Bash({p}:*)" for p in KBGEM_ASK]
         assert files.read_secrets("sentry") == {"TOKEN": SECRET_VALUE}
         assert "ruído" in files.read_memory("sentry")
         path = data_dir / "agents" / "migracao-2026-10-28.md"
         assert report.report_path == path
         text = path.read_text(encoding="utf-8")
         assert "sentry" in text and "TOKEN" in text and SECRET_VALUE not in text
+        assert ASK_SENTENCE in text and "`npm publish`" in text
+        assert [n.kind for n in store.list_notices(migrated)] == ["alert"]
         assert (data_dir / "specialists" / "sentry.migrado" / "SKILL.md").is_file()
         assert migrated.execute("SELECT agent_id FROM sessions WHERE session_id = 's'").fetchone()[0] == 3
         assert migrated.execute("SELECT legacy_json FROM agents WHERE id = 3").fetchone()[0] is None

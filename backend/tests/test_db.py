@@ -552,6 +552,41 @@ def _build_v30_with_specialist(conn) -> None:
     )
 
 
+def test_migration_31_carries_the_ask_patterns_into_legacy_json(tmp_path: Path):
+    """`always_ask_patterns` and `outward_patterns` asked for the owner's ok; the file step turns
+    them into `Bash(...)` denials, so they must reach `legacy_json`."""
+    import json
+
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v30_with_specialist(conn)
+        conn.execute(
+            "UPDATE specialists SET always_ask_patterns = ?, outward_patterns = ? WHERE id = 7",
+            (json.dumps(["npm publish", "yarn publish-lib"]), json.dumps(["git push"])),
+        )
+
+        migrate_before_drop(conn)
+
+        legacy = json.loads(conn.execute("SELECT legacy_json FROM agents WHERE id = 7").fetchone()[0])
+        assert legacy["always_ask_patterns"] == ["npm publish", "yarn publish-lib"]
+        assert legacy["outward_patterns"] == ["git push"]
+        assert legacy["denied_tools"] == ["WebFetch"]
+
+
+def test_migration_31_survives_malformed_pattern_columns(tmp_path: Path):
+    import json
+
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v30_with_specialist(conn)
+        conn.execute(
+            "UPDATE specialists SET always_ask_patterns = 'not json', outward_patterns = '' WHERE id = 7"
+        )
+
+        migrate_before_drop(conn)
+
+        legacy = json.loads(conn.execute("SELECT legacy_json FROM agents WHERE id = 7").fetchone()[0])
+        assert legacy["always_ask_patterns"] == [] and legacy["outward_patterns"] == []
+
+
 def test_migration_31_copies_specialists_into_agents(tmp_path: Path):
     with open_db(tmp_path / "old.db") as conn:
         _build_v30_with_specialist(conn)
@@ -568,7 +603,7 @@ def test_migration_31_copies_specialists_into_agents(tmp_path: Path):
         import json
         assert json.loads(agent["legacy_json"]) == {
             "model": "opus", "effort": "high", "denied_tools": ["WebFetch"],
-            "extra_project_ids": [2],
+            "extra_project_ids": [2], "always_ask_patterns": [], "outward_patterns": [],
         }
 
         routine = conn.execute("SELECT * FROM routines").fetchone()

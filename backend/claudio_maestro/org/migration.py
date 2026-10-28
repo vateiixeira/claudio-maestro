@@ -2,7 +2,8 @@
 
 A migração 31 de `db.py` já copiou as linhas de `specialists` para `agents` (ids preservados) e
 guardou em `agents.legacy_json` o que o `AGENT.md` ainda vai absorver (`model`, `effort`,
-`denied_tools`, `extra_project_ids`). Aqui, para cada agente com `legacy_json`:
+`denied_tools`, `extra_project_ids`, `always_ask_patterns`, `outward_patterns`). Aqui, para cada
+agente com `legacy_json`:
 
     <data_dir>/specialists/<slug>/   SKILL.md, aprendizados.md, secrets.env
         -> <data_dir>/agents/<slug>/ AGENT.md, memoria.md, secrets.env
@@ -20,6 +21,12 @@ segunda chamada não encontra nada a fazer.
 
 O relatório (`agents/migracao-<data>.md`) só é gravado quando algo foi migrado ou há algum
 aviso; numa instalação nova (sem pasta antiga nem agente antigo) nenhum arquivo é criado.
+
+Os padrões que pediam o ok do dono (`always_ask_patterns`, `outward_patterns`) não têm
+equivalente no modelo novo, que não pergunta nada em `bypassPermissions`. Para não trocar uma
+confirmação por uma execução sem ok, cada padrão vira `Bash(<padrão>:*)` no `disallowedTools`
+(depois das ferramentas negadas), o relatório os lista e a Inbox recebe um alerta. O alerta é
+gravado na mesma transação do passo 3, então uma retomada não o duplica.
 
 Segredos: os valores só passam por `AgentFiles` (modo 600) e nunca entram em avisos, no
 relatório nem em mensagens de erro; o relatório lista só os nomes.
@@ -91,6 +98,7 @@ class AgentMigration:
     routines: list[tuple[str, int]]  # (nome da rotina, quantidade de horários)
     old_folder: str | None  # nome da pasta antiga depois de renomeada
     resumed: bool = False
+    ask_patterns: list[str] = field(default_factory=list)  # viraram `Bash(<padrão>:*)` negados
 
 
 @dataclass
@@ -208,6 +216,50 @@ def _legacy_list(value: object) -> list:
     return value if isinstance(value, list) else []
 
 
+def _ask_patterns(legacy: dict) -> list[str]:
+    """Padrões que pediam o ok do dono: `always_ask_patterns` e depois `outward_patterns`.
+    Só textos não vazios, sem espaços nas pontas e sem repetição."""
+    patterns: list[str] = []
+    for key in ("always_ask_patterns", "outward_patterns"):
+        for item in _legacy_list(legacy.get(key)):
+            if isinstance(item, str) and (pattern := item.strip()) and pattern not in patterns:
+                patterns.append(pattern)
+    return patterns
+
+
+def _with_ask_rules(denied: list[str], patterns: list[str]) -> list[str]:
+    """`denied` seguido de `Bash(<padrão>:*)` para cada padrão, sem repetir regra."""
+    rules = list(denied)
+    for pattern in patterns:
+        rule = f"Bash({pattern}:*)"
+        if rule not in rules:
+            rules.append(rule)
+    return rules
+
+
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+_NOTICE_PATTERNS_MAX_CHARS = 600
+
+
+def _ask_notice(name: str, patterns: list[str]) -> str | None:
+    """Alerta da Inbox para um agente que tinha padrões de ok; `None` se não tinha."""
+    if not patterns:
+        return None
+    listed = ", ".join(_one_line(p) for p in patterns)
+    if len(listed) > _NOTICE_PATTERNS_MAX_CHARS:
+        listed = listed[:_NOTICE_PATTERNS_MAX_CHARS].rstrip() + "…"
+    count = len(patterns)
+    return (
+        f"Migração de «{name}»: {count} {'comando' if count == 1 else 'comandos'} que "
+        f"{'pedia' if count == 1 else 'pediam'} o seu ok agora "
+        f"{'é negado' if count == 1 else 'são negados'} ({listed}). "
+        "Edite o AGENT.md do agente se quiser liberar."
+    )
+
+
 def _extra_dirs(conn: sqlite3.Connection, slug: str, legacy: dict, warnings: list[str]) -> list[str]:
     dirs: list[str] = []
     for project_id in _legacy_list(legacy.get("extra_project_ids")):
@@ -284,6 +336,8 @@ def _build_staging(
         )
         effort = None
     denied = [t for t in _legacy_list(legacy.get("denied_tools")) if isinstance(t, str)]
+    ask_patterns = _ask_patterns(legacy)
+    denied = _with_ask_rules(denied, ask_patterns)
     add_dirs = _extra_dirs(conn, slug, legacy, warnings)
 
     definition = AgentDefinition(
@@ -352,16 +406,23 @@ def _build_staging(
         memory_truncated=truncated,
         routines=_routines_of(conn, agent.id),
         old_folder=None,
+        ask_patterns=ask_patterns,
     )
 
 
 def _finalize(
-    conn: sqlite3.Connection, files: AgentFiles, agent: store.Agent, old: Path | None, now: int
+    conn: sqlite3.Connection, files: AgentFiles, agent: store.Agent, old: Path | None, now: int,
+    notice: str | None = None,
 ) -> str | None:
-    """Passos 3 e 4: hash + `legacy_json` nulo numa transação, depois a pasta antiga."""
+    """Passos 3 e 4: hash, `legacy_json` nulo e o alerta da Inbox numa transação, depois a
+    pasta antiga."""
     text = files.read_definition_text(agent.slug)
     with db.transaction(conn):
         store.update_agent(conn, agent.id, now=now, definition_hash=definition_hash(text))
+        if notice is not None:
+            store.add_notice(
+                conn, agent_id=agent.id, run_id=None, kind="alert", text=notice, now=now
+            )
         store.clear_legacy(conn, agent.id)
     if old is None:
         return None
@@ -391,7 +452,11 @@ def _migrate_one(
             definition = files.read_definition(slug)
         except (OSError, DefinitionError) as exc:
             raise _SkipAgent("a pasta nova já existe, mas o AGENT.md dela não pôde ser lido") from exc
-        old_name = _finalize(conn, files, agent, old if old_present else None, now)
+        ask_patterns = _ask_patterns(agent.legacy or {})
+        old_name = _finalize(
+            conn, files, agent, old if old_present else None, now,
+            _ask_notice(definition.name, ask_patterns),
+        )
         return AgentMigration(
             slug=slug,
             name=definition.name,
@@ -405,6 +470,7 @@ def _migrate_one(
             routines=_routines_of(conn, agent.id),
             old_folder=old_name,
             resumed=True,
+            ask_patterns=ask_patterns,
         )
 
     if not old_present:
@@ -426,7 +492,9 @@ def _migrate_one(
     finally:
         if not moved and os.path.lexists(stale):
             _remove_tree(stale)
-    old_name = _finalize(conn, files, agent, old, now)
+    old_name = _finalize(
+        conn, files, agent, old, now, _ask_notice(migration.name, migration.ask_patterns)
+    )
     return replace(migration, old_folder=old_name)
 
 
@@ -462,6 +530,13 @@ def _render_report(
         lines.append("- Modo de permissão: bypassPermissions.")
         if item.disallowed_tools:
             lines.append(f"- Ferramentas negadas: {', '.join(item.disallowed_tools)}.")
+        if item.ask_patterns:
+            listed = ", ".join(f"`{_one_line(p)}`" for p in item.ask_patterns)
+            lines.append(
+                f"- Comandos que pediam o seu ok ({listed}): viraram regras `Bash(...)` em "
+                "`disallowedTools`; o que pedia o seu ok agora é negado; edite o `AGENT.md` se "
+                "quiser liberar."
+            )
         if item.add_dirs:
             lines.append(f"- Pastas extras (addDirs): {', '.join(item.add_dirs)}.")
         if item.memory_chars or item.memory_truncated:

@@ -1043,13 +1043,22 @@ MIGRATIONS.append([
     "CREATE INDEX agent_pr_comments_status_pr ON agent_pr_comments(status, pr_url)",
     # --- Cópia dos dados das `specialist_*` ---
     # `legacy_json` leva o que o `AGENT.md` vai absorver depois (model, effort, denied_tools,
-    # extra_project_ids); `migrate_files` o apaga.
+    # extra_project_ids e os padrões que pediam o ok do dono, `always_ask_patterns` e
+    # `outward_patterns`, que o `migrate_files` converte em regras `Bash(...)` negadas);
+    # `migrate_files` o apaga. Os dois padrões passam por `json_valid` para que um texto
+    # malformado vire `[]` em vez de derrubar a migração.
     """
     INSERT INTO agents (id, slug, name, project_id, enabled, main_session_id, legacy_json,
                         created_at, updated_at)
     SELECT id, slug, name, project_id, enabled, main_session_id,
            json_object('model', model, 'effort', effort, 'denied_tools', json(denied_tools),
-                       'extra_project_ids', json(extra_project_ids)),
+                       'extra_project_ids', json(extra_project_ids),
+                       'always_ask_patterns',
+                       CASE WHEN json_valid(always_ask_patterns) THEN json(always_ask_patterns)
+                            ELSE json('[]') END,
+                       'outward_patterns',
+                       CASE WHEN json_valid(outward_patterns) THEN json(outward_patterns)
+                            ELSE json('[]') END),
            created_at, updated_at
     FROM specialists
     """,
