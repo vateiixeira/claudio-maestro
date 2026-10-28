@@ -298,8 +298,9 @@ def build_tools(
 
     @tool(
         "organizacao",
-        "Lista os agentes do projeto: nome, descrição, chefe, se é você e se está ligado. "
-        "Use para saber a quem pedir ou encaminhar algo.",
+        "Lista os agentes do projeto: nome, identificador, descrição, chefe, se é você e se está "
+        "ligado. Use para saber a quem pedir ou encaminhar algo; se dois agentes têm o mesmo "
+        "nome, cite o identificador.",
         {"type": "object", "properties": {}},
     )
     @_safe
@@ -309,6 +310,7 @@ def build_tools(
             "agentes": [
                 {
                     "nome": agent["name"],
+                    "identificador": agent["slug"],
                     "descricao": agent["description"],
                     "chefe": agent["reports_to"],
                     "sou_eu": agent["is_me"],

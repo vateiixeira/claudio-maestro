@@ -370,3 +370,81 @@ async def test_remove_waits_for_the_lock_of_the_task_worktree(project: Path):
         assert not removal.done() and path.is_dir()  # an `ensure` in flight would be waited for
     assert await removal == (True, "")
     assert not path.exists()
+
+
+# The worktrees folder is ignored by the project (`.git/info/exclude`) ---------------------
+
+
+def exclude_file(repo: Path) -> Path:
+    return repo / ".git" / "info" / "exclude"
+
+
+def status(repo: Path) -> str:
+    return git(repo, "status", "--porcelain=v2", "--untracked-files=all")
+
+
+@pytest.mark.anyio
+async def test_ensure_makes_the_project_ignore_its_worktrees(project: Path):
+    assert status(project) == ""
+    await ensure_task_worktree(project, 1, "Um")
+    await ensure_task_worktree(project, 2, "Dois")
+
+    assert status(project) == ""  # no `? .claude/worktrees/tarefa-1/`
+    lines = exclude_file(project).read_text().splitlines()
+    assert lines.count("/.claude/worktrees/") == 1
+    # `git add -A` of the project folder does not embed the worktrees.
+    git(project, "add", "-A")
+    assert "tarefa-1" not in git(project, "ls-files", "--stage")
+
+
+@pytest.mark.anyio
+async def test_ensure_keeps_what_the_exclude_file_already_says(project: Path):
+    exclude_file(project).parent.mkdir(exist_ok=True)
+    exclude_file(project).write_text("*.secret")  # without a final newline
+
+    await ensure_task_worktree(project, 1, "Um")
+
+    assert exclude_file(project).read_text() == "*.secret\n/.claude/worktrees/\n"
+
+
+@pytest.mark.anyio
+async def test_ensure_leaves_an_exclude_file_that_already_has_the_line(project: Path):
+    exclude_file(project).parent.mkdir(exist_ok=True)
+    original = "# meu\n/.claude/worktrees/\n"
+    exclude_file(project).write_text(original)
+
+    await ensure_task_worktree(project, 1, "Um")
+
+    assert exclude_file(project).read_text() == original
+
+
+@pytest.mark.anyio
+async def test_ensure_does_not_follow_a_linked_exclude_file(project: Path, tmp_path: Path):
+    target = tmp_path / "elsewhere.txt"
+    target.write_text("fora\n")
+    exclude_file(project).parent.mkdir(exist_ok=True)
+    exclude_file(project).unlink(missing_ok=True)
+    exclude_file(project).symlink_to(target)
+
+    path, _ = await ensure_task_worktree(project, 1, "Um")  # still creates the worktree
+
+    assert path.is_dir()
+    assert target.read_text() == "fora\n"  # nothing was written through the link
+    assert exclude_file(project).is_symlink()
+
+
+@pytest.mark.anyio
+async def test_ensure_does_not_write_through_a_linked_info_folder(project: Path, tmp_path: Path):
+    elsewhere = tmp_path / "info-elsewhere"
+    elsewhere.mkdir()
+    info = project / ".git" / "info"
+    if info.exists():
+        for child in info.iterdir():
+            child.unlink()
+        info.rmdir()
+    info.symlink_to(elsewhere)
+
+    path, _ = await ensure_task_worktree(project, 1, "Um")
+
+    assert path.is_dir()
+    assert list(elsewhere.iterdir()) == []

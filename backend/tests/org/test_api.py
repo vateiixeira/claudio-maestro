@@ -973,11 +973,15 @@ def test_wake_of_a_disabled_agent_is_409_and_stays_pending(api, agent):
     assert pending["text"] == "Quando ligar"
 
 
-def test_wake_queue_is_bounded(api, agent):
-    for _ in range(50):
-        assert api.post(f"/api/agents/{agent['id']}/wake").status_code == 202
-    response = api.post(f"/api/agents/{agent['id']}/wake")
-    assert response.status_code == 409 and "50" in response.json()["detail"]
+def test_the_person_s_wake_requests_are_not_refused_by_a_full_queue(api, agent):
+    # 50 pending wakeups of the automatic origins fill the queue...
+    with closing(db.connect(api.app.state.settings.db_path)) as conn, db.transaction(conn):
+        for _ in range(50):
+            store.enqueue_wakeup(
+                conn, agent_id=agent["id"], source="comment", payload=None, now=1
+            )
+    # ...and what the person asks for still goes in (the 409 is for the automatic ones).
+    assert api.post(f"/api/agents/{agent['id']}/wake").status_code == 202
 
 
 def test_wake_storage_failure_returns_a_sentence_without_the_exception(api, agent, monkeypatch):

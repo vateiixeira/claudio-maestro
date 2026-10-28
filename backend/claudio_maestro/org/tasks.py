@@ -75,6 +75,10 @@ class _Wake:
     source: str
     reason: str
     since_comment_id: int
+    # Only for `comment` wakeups (see `_echo`): how many hops of answers led here, and the
+    # agents whose comments caused it.
+    echo_hop: int | None = None
+    echo_from: tuple[int, ...] = ()
 
 
 def _add_wake(wakes: list[_Wake], wake: _Wake) -> None:
@@ -312,13 +316,20 @@ class TaskService:
                     )
                 elif task.status == "blocked":
                     fields["blocked_reason"] = None
+                    if actor is None:
+                        # The person lifting a block by status is the same as `unblock`: the
+                        # count of runs starts again (a block by the cap would come back).
+                        fields["run_count"] = 0
 
             if not fields:
                 if not text:
                     return task
                 # Nothing to change but the comment: it is a comment.
                 comment_row = self._comment_in(conn, task, text, actor, run_id)
-                wakes = self._comment_wakes(conn, task, actor, comment_row.id - 1)
+                skip, hop = self._echo(conn, task.id, comment_row)
+                wakes = self._comment_wakes(
+                    conn, task, actor, comment_row.id - 1, skip=skip, hop=hop
+                )
                 change = "comment"
                 updated = task
             else:
@@ -343,17 +354,20 @@ class TaskService:
                         f"Revisor: {self._name(conn, task.reviewer_agent_id, names) or 'ninguém'}"
                         f" → {self._name(conn, reviewer, names) or 'ninguém'}, {who}",
                     )
+                comment_row = None
                 if text:
-                    self._comment_in(conn, updated, text, actor, run_id)
+                    comment_row = self._comment_in(conn, updated, text, actor, run_id)
                 is_closing = (
                     new_status in store.TASK_CLOSED_STATUSES
                     and task.status not in store.TASK_CLOSED_STATUSES
                 )
-                close = is_closing and bool(updated.worktree_path)
+                # Always: the worktree may be in the middle of its creation (it is recorded on
+                # the task only once proven), and the removal does nothing without one.
+                close = is_closing
                 wakes = self._update_wakes(
                     conn, task, updated, actor=actor, cursor=cursor,
                     assignee_changed=assignee_changed, reviewer_changed=reviewer_changed,
-                    status_changed=status_changed, text=text,
+                    status_changed=status_changed, comment_row=comment_row,
                 )
         if close:
             self._org.schedule_worktree_removal(updated)
@@ -370,7 +384,10 @@ class TaskService:
             if author_agent_id is not None and not self._authority(conn, author_agent_id, task):
                 raise TaskAuthorityError()
             row = self._comment_in(conn, task, text, author_agent_id, run_id)
-            wakes = self._comment_wakes(conn, task, author_agent_id, row.id - 1)
+            skip, hop = self._echo(conn, task_id, row)
+            wakes = self._comment_wakes(
+                conn, task, author_agent_id, row.id - 1, skip=skip, hop=hop
+            )
         self._changed(task, "comment")
         await self._wake_all(task_id, wakes)
         return row
@@ -504,12 +521,19 @@ class TaskService:
         assignee_changed: bool,
         reviewer_changed: bool,
         status_changed: bool,
-        text: str,
+        comment_row: store.Comment | None,
     ) -> list[_Wake]:
         wakes: list[_Wake] = []
         closed = after.status in store.TASK_CLOSED_STATUSES
         if assignee_changed and after.assignee_agent_id is not None and not closed:
             _add_wake(wakes, _Wake(after.assignee_agent_id, "assignment", "assignment", 0))
+        assignee = after.assignee_agent_id
+        if assignee is not None and assignee != actor and not closed and status_changed:
+            if before.status in store.TASK_CLOSED_STATUSES:
+                # Reopened: the assignee must know, with or without a comment.
+                _add_wake(wakes, _Wake(assignee, "assignment", "reopened", cursor))
+            elif before.status == "blocked" and actor is None and after.status == "in_progress":
+                _add_wake(wakes, _Wake(assignee, "assignment", "unblocked", cursor))
         if (
             after.status == "in_review"
             and after.reviewer_agent_id is not None
@@ -532,18 +556,61 @@ class TaskService:
             creator = after.created_by_agent_id
             if creator is not None and creator != actor:
                 _add_wake(wakes, _Wake(creator, "comment", "blocked", cursor))
-        if text and not status_changed:
-            for wake in self._comment_wakes(conn, after, actor, cursor):
+        own_move = actor is not None and actor in (before.assignee_agent_id, before.reviewer_agent_id)
+        if comment_row is not None and not (status_changed and own_move):
+            # A comment that comes with a change wakes who a plain comment would, so that the
+            # person (or the boss) who reopens or unblocks with a comment is heard. The
+            # assignee and the reviewer moving the task already wake who must know (above), so
+            # their comment does not wake the creator once more. Only a plain comment is an
+            # answer that may be cut (see `_echo`).
+            skip, hop = self._echo(conn, after.id, comment_row)
+            if status_changed:
+                skip = set()
+            for wake in self._comment_wakes(conn, after, actor, cursor, skip=skip, hop=hop):
                 _add_wake(wakes, wake)
         return wakes
 
     @staticmethod
+    def _echo(
+        conn: sqlite3.Connection, task_id: int, comment: store.Comment
+    ) -> tuple[set[int], int]:
+        """What a comment of a run wakes, as far as echoes go: `(agents to skip, hop)`.
+
+        A comment is answered by a comment that is answered by a comment... until the cap of
+        runs, if each one wakes the one before. The cut comes at the second hop: a comment of a
+        run woken by something else (or not by a run) wakes normally, at hop 0; a comment of a
+        run woken by a comment at hop 0 wakes the authors that woke it, at hop 1 (the answer to
+        a question must reach whoever asked); a comment of a run woken at hop 1 does not wake
+        those authors back. A run woken again for lack of a report (`sem_relato`) carries the
+        hop and the authors of the run it wakes again. Only the agents that caused the wakeup
+        are skipped, not whoever else commented meanwhile."""
+        if comment.author_agent_id is None or comment.run_id is None:
+            return set(), 0
+        wakeup = store.wakeup_of_run(conn, comment.run_id)
+        if wakeup is None or wakeup.task_id != task_id:
+            return set(), 0
+        payload = wakeup.payload or {}
+        if payload.get("reason") not in ("comment", "sem_relato") or "echo_hop" not in payload:
+            return set(), 0
+        hop = int(payload.get("echo_hop") or 0)
+        if hop == 0:
+            return set(), 1
+        authors = {int(a) for a in payload.get("echo_from") or []}
+        authors.discard(comment.author_agent_id)
+        return authors, hop + 1
+
+    @staticmethod
     def _comment_wakes(
-        conn: sqlite3.Connection, task: store.Task, author: int | None, cursor: int
+        conn: sqlite3.Connection,
+        task: store.Task,
+        author: int | None,
+        cursor: int,
+        skip: set[int] | frozenset[int] = frozenset(),
+        hop: int = 0,
     ) -> list[_Wake]:
         """Who a comment wakes: the assignee of what a person writes (and the reviewer while
         the task is in review); the creator and the assignee of what an agent writes. Never the
-        author, and nobody on a closed task."""
+        author or the agents in `skip`, and nobody on a closed task."""
         if task.status in store.TASK_CLOSED_STATUSES:
             return []
         wakes: list[_Wake] = []
@@ -554,8 +621,14 @@ class TaskService:
         else:
             targets = [task.created_by_agent_id, task.assignee_agent_id]
         for agent_id in targets:
-            if agent_id is not None and agent_id != author:
-                _add_wake(wakes, _Wake(agent_id, "comment", "comment", cursor))
+            if agent_id is not None and agent_id != author and agent_id not in skip:
+                _add_wake(
+                    wakes,
+                    _Wake(
+                        agent_id, "comment", "comment", cursor, echo_hop=hop,
+                        echo_from=() if author is None else (author,),
+                    ),
+                )
         return wakes
 
     # Comments ---------------------------------------------------------------------------
@@ -649,10 +722,13 @@ class TaskService:
 
     async def _wake_all(self, task_id: int, wakes: list[_Wake]) -> None:
         for wake in wakes:
-            payload = {
+            payload: dict[str, Any] = {
                 "task_id": task_id, "since_comment_id": wake.since_comment_id,
                 "reason": wake.reason,
             }
+            if wake.echo_hop is not None:
+                payload["echo_hop"] = wake.echo_hop
+                payload["echo_from"] = list(wake.echo_from)
             try:
                 await self._org.wake(
                     wake.agent_id, source=wake.source,  # type: ignore[arg-type]

@@ -9,6 +9,8 @@ Creating and removing worktrees runs git, so this module is deliberately narrow:
 - A folder is only treated as the task's worktree after `gitinfo.project_worktree` proves it:
   pointers that agree in both directions, the main repository inside the project, and the folder
   listed by `git worktree list`. A folder that is not proven is never touched.
+- The first creation adds `/.claude/worktrees/` to `.git/info/exclude` of the project (never
+  `.gitignore`), so the worktrees do not show up as untracked files of the project.
 - Nothing is deleted by this code: removal is `git worktree remove` (which itself refuses a
   worktree with uncommitted changes, so no `--force`) and `git branch -d`/`-D`. There is no
   `shutil.rmtree`.
@@ -22,15 +24,21 @@ That reads the remote-tracking ref as the last fetch or push left it; it never t
 """
 
 import asyncio
+import logging
 import os
 import re
+import stat
+import tempfile
 import unicodedata
 from pathlib import Path
 
 from claudio_maestro import gitinfo
 from claudio_maestro.gitinfo import STATUS_SUBMODULES, GitError, run_git
 
+logger = logging.getLogger(__name__)
+
 WORKTREES_DIR = ".claude/worktrees"
+EXCLUDE_LINE = "/.claude/worktrees/"
 BRANCH_PREFIX = "tarefa/"
 FOLDER_PREFIX = "tarefa-"
 MAX_BRANCH_LENGTH = 60
@@ -75,6 +83,7 @@ async def ensure_task_worktree(project_path: Path, task_id: int, title: str) -> 
         )
     lock = _locks.setdefault(str(expected), asyncio.Lock())
     async with lock:
+        _ignore_worktrees(repo)
         if os.path.lexists(path):
             return path, await _existing_branch(repo, path, expected)
         branch = task_branch(task_id, title)
@@ -195,6 +204,52 @@ def _require_repo_root(repo: Path) -> None:
     marker = repo / ".git"
     if not repo.is_dir() or marker.is_symlink() or not marker.is_dir():
         raise WorktreeError(NOT_A_REPO)
+
+
+def _ignore_worktrees(repo: Path) -> None:
+    """Put `/.claude/worktrees/` in `.git/info/exclude` of the project, so that the worktrees
+    inside it do not show up as untracked (the git card, `verificar_ci` and a `git add -A` of
+    the project folder would otherwise see them, and the latter would embed them as repositories).
+    It does not touch `.gitignore` or the history. Only when `.git` is a real folder (checked by
+    the caller); `info` and `exclude` must be a real folder and a plain file, or absent. The
+    write is atomic (a temporary file replaces `exclude`). Any failure is logged and the worktree
+    is created all the same."""
+    git_dir = repo / ".git"
+    info = git_dir / "info"
+    exclude = info / "exclude"
+    try:
+        if info.is_symlink() or (info.exists() and not info.is_dir()):
+            raise OSError(f"{info} não é uma pasta comum")
+        old = b""
+        if os.path.lexists(exclude):
+            mode = os.lstat(exclude).st_mode
+            if not stat.S_ISREG(mode):
+                raise OSError(f"{exclude} não é um arquivo comum")
+            fd = os.open(exclude, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, "rb") as handle:
+                old = handle.read()
+            if any(line.strip() == EXCLUDE_LINE.encode() for line in old.splitlines()):
+                return
+        info.mkdir(exist_ok=True)
+        text = old if not old or old.endswith(b"\n") else old + b"\n"
+        text += EXCLUDE_LINE.encode() + b"\n"
+        handle_fd, temp = tempfile.mkstemp(dir=info, prefix="exclude.")
+        try:
+            with os.fdopen(handle_fd, "wb") as handle:
+                handle.write(text)
+            if os.path.lexists(exclude):
+                os.chmod(temp, stat.S_IMODE(os.lstat(exclude).st_mode))
+            else:
+                os.chmod(temp, 0o644)
+            os.replace(temp, exclude)
+        except BaseException:
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+            raise
+    except OSError as error:
+        logger.warning("Não foi possível ignorar %s no git do projeto: %s", WORKTREES_DIR, error)
 
 
 def _short(text: str) -> str:

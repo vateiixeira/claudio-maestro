@@ -705,14 +705,28 @@ def enqueue_wakeup(
 def _merge_task_wakeup(
     conn: sqlite3.Connection, existing: Wakeup, incoming: dict[str, Any]
 ) -> Wakeup:
-    """Keep the smaller comment cursor of the two grouped task wakeups."""
+    """Merge a task wakeup into the pending one it groups with: the smaller comment cursor stays
+    (so the agent sees every comment either one would have shown); of two echo hops the smaller
+    stays (an answer that is not cut is better than a task left stopped), and the authors of
+    both are kept."""
     payload = dict(existing.payload or {})
     wanted = min(
         int(payload.get("since_comment_id") or 0), int(incoming.get("since_comment_id") or 0)
     )
-    if payload.get("since_comment_id") == wanted:
-        return existing
+    changed = payload.get("since_comment_id") != wanted
     payload["since_comment_id"] = wanted
+    if "echo_hop" in incoming or "echo_hop" in payload:
+        hop = min(int(payload.get("echo_hop", 0)), int(incoming.get("echo_hop", 0)))
+        authors = sorted(
+            {int(a) for a in payload.get("echo_from") or []}
+            | {int(a) for a in incoming.get("echo_from") or []}
+        )
+        if payload.get("echo_hop") != hop or payload.get("echo_from") != authors:
+            changed = True
+        payload["echo_hop"] = hop
+        payload["echo_from"] = authors
+    if not changed:
+        return existing
     conn.execute(
         "UPDATE wakeups SET payload = ? WHERE id = ?",
         (json.dumps(payload, ensure_ascii=False), existing.id),
@@ -738,6 +752,14 @@ def take_wakeup(conn: sqlite3.Connection, wakeup_id: int, run_id: int | None, no
         (run_id, now, wakeup_id),
     )
     return cursor.rowcount == 1
+
+
+def wakeup_of_run(conn: sqlite3.Connection, run_id: int) -> Wakeup | None:
+    """The wakeup that started the run, if any."""
+    row = conn.execute(
+        f"SELECT {_WAKEUP_COLUMNS} FROM wakeups WHERE run_id = ? ORDER BY id LIMIT 1", (run_id,)
+    ).fetchone()
+    return _wakeup(row) if row else None
 
 
 def drop_wakeup(conn: sqlite3.Connection, wakeup_id: int, now: int) -> bool:

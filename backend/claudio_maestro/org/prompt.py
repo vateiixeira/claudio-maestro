@@ -52,6 +52,10 @@ subordinados.
 - `decidir`: se faltar uma decisão da pessoa, pergunte e aguarde a resposta.
 - Precisa de alguém acima de você? Comente na tarefa; não mude a de quem não é seu \
 subordinado.
+- Perguntar ao chefe por comentário funciona: a resposta dele acorda você. Mas a troca tem \
+um limite: um comentário que responde a uma resposta não acorda de volta quem a escreveu. \
+Para o outro lado agir de novo, mude o status da tarefa com comentário (`tarefa_atualizar`): \
+por exemplo `blocked` ou `done`, ou `in_progress` ao devolver um trabalho.
 - Sem como avançar, marque `blocked` e escreva o motivo no comentário.
 - Nunca feche, cancele nem reatribua tarefa de outro agente.
 - `verificar_ci`: se a tarefa tem PR, confira o resultado do CI antes de marcar `done`.
@@ -65,7 +69,9 @@ histórico.
 
 ### Boas práticas
 - Mantenha cada resposta curta e objetiva: a pessoa lê o resultado, não o caminho até ele.
-- Se faltar uma decisão que só ela pode tomar, pergunte (AskUserQuestion) em vez de supor.
+- Se faltar uma decisão que só ela pode tomar, pergunte em vez de supor. Numa tarefa, \
+pergunte com `decidir`; o AskUserQuestion é só para a conversa, porque numa tarefa ele \
+prende a execução até o tempo acabar.
 - Use as skills e as ferramentas do projeto como numa sessão normal.
 - Nunca escreva segredos (senhas, tokens, chaves) em respostas, avisos, registros ou na memória.
 """
@@ -122,6 +128,10 @@ class OrgContext:
     add_dirs: list[tuple[str, str]]  # (label, path)
     # Arquivo `memoria.md` do agente (dentro da pasta dele, que está em `add_dirs`).
     memory_path: str = ""
+    # Pasta e branch da worktree da tarefa, quando a sessão abre numa (em vez de na pasta do
+    # projeto).
+    workdir: str | None = None
+    branch: str | None = None
 
 
 def _person(name: str, description: str) -> str:
@@ -129,10 +139,21 @@ def _person(name: str, description: str) -> str:
 
 
 def _organization(context: OrgContext) -> str:
+    if context.workdir:
+        branch = f" (branch `{context.branch}`)" if context.branch else ""
+        where = (
+            f"Projeto: {context.project_name} ({context.project_path}). "
+            f"Você trabalha na worktree `{context.workdir}`{branch}, uma cópia isolada do "
+            "projeto só para esta tarefa. Não edite a pasta principal do projeto."
+        )
+    else:
+        where = (
+            f"Projeto: {context.project_name} ({context.project_path}). "
+            "Você trabalha nessa pasta."
+        )
     lines = [
         "## Organização",
-        f"Projeto: {context.project_name} ({context.project_path}). "
-        "Você trabalha nessa pasta.",
+        where,
         "",
         "Chefe:",
         _person(*context.boss) if context.boss else NO_BOSS,
@@ -208,10 +229,16 @@ _TASK_HEADLINES = {
     # Why the board woke an agent that is not simply the assignee of a new task.
     "review": "Você é o revisor da tarefa",
     "changes": "O revisor pediu mudanças na tarefa",
+    "reopened": "A tarefa foi reaberta",
     "unblocked": "A pessoa desbloqueou a tarefa",
     "closed": "A tarefa que você criou foi fechada",
     "blocked": "A tarefa que você criou foi bloqueada",
 }
+_COMMENT_REPLY_HINT = "Um comentário seu acorda quem escreveu os comentários acima."
+_COMMENT_REPLY_HINT_LAST = (
+    "Este despertar já é a resposta a uma resposta: um comentário seu não acorda de volta quem "
+    "escreveu os comentários acima. Para o outro lado agir, mude o status com `tarefa_atualizar`."
+)
 _TASK_CLOSING = "Ao terminar, atualize o status com `tarefa_atualizar` e deixe um comentário."
 
 
@@ -221,6 +248,7 @@ def task_wake_text(
     brief: TaskBrief,
     reason: str | None,
     decision: tuple[str, str, str] | None = None,
+    echo_hop: int = 0,
 ) -> str:
     """Prompt do despertar de uma tarefa. O `reason` (quando há) tem precedência sobre a
     origem para escolher a frase de abertura; `decision` é (pergunta, resposta, recibo)."""
@@ -248,6 +276,8 @@ def task_wake_text(
         lines += [f"- {author}: {text.strip()}" for author, text in brief.comments]
     if source == "decision" and decision is not None:
         lines += ["", *_decision_lines(*decision)]
+    if kind == "comment" and brief.comments:
+        lines += ["", _COMMENT_REPLY_HINT_LAST if echo_hop >= 1 else _COMMENT_REPLY_HINT]
     lines += ["", _TASK_CLOSING]
     return "\n".join(lines)
 

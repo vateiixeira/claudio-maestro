@@ -190,17 +190,23 @@ async def test_a_failed_text_write_rolls_the_wakeup_back(world, monkeypatch):
     assert wakeup_rows(world, agent) == []
 
 
-async def test_the_queue_has_a_limit(world):
+async def test_the_queue_has_a_limit_that_the_person_s_requests_do_not_count_in(world):
     agent = world.add_agent()
     world.set_enabled(agent, False)
     for _ in range(MAX_QUEUED_WAKEUPS):
-        with pytest.raises(AgentDisabledError):
-            await world.service.wake(agent, source="manual")
+        await world.service.wake(agent, source="comment", text="c")
 
     with pytest.raises(QueueFullError):
-        await world.service.wake(agent, source="manual")
-
+        await world.service.wake(agent, source="comment", text="c")
     assert len(wakeup_rows(world, agent)) == MAX_QUEUED_WAKEUPS
+
+    # What the person asks for is never refused for a full queue (nor counted in it).
+    for source in ("manual", "message"):
+        with pytest.raises(AgentDisabledError):
+            await world.service.wake(agent, source=source, text="Oi")
+    assert len(wakeup_rows(world, agent)) == MAX_QUEUED_WAKEUPS + 2
+    with pytest.raises(QueueFullError):
+        await world.service.wake(agent, source="comment", text="c")
 
 
 # One active run per agent ----------------------------------------------------------------
@@ -968,3 +974,51 @@ async def test_shutdown_stops_the_workers_and_new_wakeups_wait(world):
 
     assert world.runs(other) == [] and len(world.wakeups(other)) == 1
     pause.release.set()
+
+
+# The queue of an instance that must not act by itself (`MAESTRO_ROUTINES_SCHEDULER=0`) -------
+
+
+async def test_without_automatic_serving_only_the_person_s_requests_run(world):
+    agent = world.add_agent()
+    routine = world.add_routine(agent)
+    world.service.serve_automatic = False
+    await world.service.wake(agent, source="routine", routine_id=routine, scheduled_for=NOW)
+    await world.service.wake(agent, source="comment", text="c")
+
+    await world.service.drain(agent)
+
+    assert world.runs(agent) == []
+    assert sorted(w.source for w in world.wakeups(agent)) == ["comment", "routine"]
+    assert world.service._agents_with_work() == []  # nothing to look at every few moments
+
+    await world.service.wake(agent, source="manual", text="Rode agora.")
+    await world.service.drain(agent)
+
+    assert [r.source for r in world.runs(agent)] == ["manual"]
+    assert sorted(w.source for w in world.wakeups(agent)) == ["comment", "routine"]
+
+
+async def test_without_automatic_serving_a_message_is_still_delivered(world):
+    agent = world.add_agent()
+    world.service.serve_automatic = False
+    await world.service.wake(agent, source="message", text="Oi")
+    await world.service.drain(agent)
+
+    assert world.wakeups(agent) == []
+
+
+async def test_recover_does_not_take_up_the_queue_without_automatic_serving(world):
+    agent = world.add_agent()
+    routine = world.add_routine(agent)
+    world.service.serve_automatic = False
+    await world.service.wake(agent, source="routine", routine_id=routine, scheduled_for=NOW)
+    kicks: list[Any] = []
+    world.service.kick = lambda *a, **k: kicks.append(a)  # type: ignore[method-assign]
+
+    await world.service.recover()
+
+    assert kicks == []
+    await asyncio.sleep(0.1)
+    assert world.runs(agent) == []
+    assert [w.source for w in world.wakeups(agent)] == ["routine"]

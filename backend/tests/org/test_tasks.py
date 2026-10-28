@@ -545,7 +545,7 @@ async def test_closing_does_not_wake_the_closing_creator(board):
     assert board.org.wakes == []
 
 
-async def test_closing_with_worktree_schedules_its_removal(board):
+async def test_closing_always_schedules_the_removal_of_the_worktree(board):
     task = await board.new(assignee_agent_id=board.worker)
     with closing(db.connect(board.db_path)) as conn, db.transaction(conn):
         task = store.update_task(
@@ -556,12 +556,13 @@ async def test_closing_with_worktree_schedules_its_removal(board):
         task.id, expected_revision=task.revision, actor_agent_id=None, status="done"
     )
     assert board.org.removals == [task.id]
-    # Without a worktree there is nothing to remove.
+    # It is asked for even without a worktree recorded: one may be in the middle of its
+    # creation, and the removal does nothing when there is none.
     plain = await board.new(assignee_agent_id=board.worker)
     await board.tasks.update_task(
         plain.id, expected_revision=plain.revision, actor_agent_id=None, status="cancelled"
     )
-    assert board.org.removals == [task.id]
+    assert board.org.removals == [task.id, plain.id]
 
 
 async def test_agent_cannot_clear_the_reviewer_to_skip_the_review(board):
@@ -972,3 +973,168 @@ async def test_every_change_publishes_a_task_event(board):
     assert types == ["task", "task", "task"]
     assert all(data["id"] == task.id for _, data in board.events)
     assert board.events[-1][1]["revision"] == task.revision + 1
+
+
+# A change with a comment wakes who the comment alone would ----------------------------------
+
+
+def woken(board) -> list[tuple[int, str, str]]:
+    return [
+        (w["agent_id"], w["source"], w["payload"]["reason"]) for w in board.org.wakes
+    ]
+
+
+async def test_person_reopening_a_closed_task_wakes_the_assignee(board):
+    task = await started(board)
+    done = await board.tasks.update_task(
+        task.id, expected_revision=task.revision, actor_agent_id=None, status="done"
+    )
+    board.org.wakes.clear()
+    await board.tasks.update_task(
+        task.id, expected_revision=done.revision, actor_agent_id=None, status="in_progress",
+        comment="Faltou o teste; refaça.",
+    )
+    assert woken(board) == [(board.worker, "assignment", "reopened")]
+
+
+async def test_person_reopening_without_a_comment_wakes_the_assignee_too(board):
+    task = await started(board)
+    done = await board.tasks.update_task(
+        task.id, expected_revision=task.revision, actor_agent_id=None, status="cancelled"
+    )
+    board.org.wakes.clear()
+    await board.tasks.update_task(
+        task.id, expected_revision=done.revision, actor_agent_id=None, status="todo"
+    )
+    assert woken(board) == [(board.worker, "assignment", "reopened")]
+
+
+async def test_person_lifting_a_block_by_status_is_the_same_as_unblock(board):
+    task = await blocked_task(board, assignee=board.worker)
+    board.org.wakes.clear()
+    result = await board.tasks.update_task(
+        task.id, expected_revision=task.revision, actor_agent_id=None, status="in_progress",
+        comment="Pode seguir.",
+    )
+    assert (result.status, result.run_count, result.blocked_reason) == ("in_progress", 0, None)
+    assert woken(board) == [(board.worker, "assignment", "unblocked")]
+
+
+async def test_boss_lifting_a_block_with_a_comment_wakes_the_assignee(board):
+    task = await started(board)
+    blocked = await board.tasks.update_task(
+        task.id, expected_revision=task.revision, actor_agent_id=board.worker, status="blocked",
+        comment="Sem acesso.",
+    )
+    board.org.wakes.clear()
+    await board.tasks.update_task(
+        task.id, expected_revision=blocked.revision, actor_agent_id=board.cto,
+        status="in_progress", comment="Acesso liberado.",
+    )
+    assert woken(board) == [(board.worker, "comment", "comment")]
+
+
+async def test_assignee_moving_the_task_does_not_wake_the_creator_by_comment(board):
+    task = await board.new(assignee_agent_id=board.worker, actor_agent_id=board.cto)
+    await board.tasks.update_task(
+        task.id, expected_revision=task.revision, actor_agent_id=board.worker,
+        status="in_progress", comment="vou",
+    )
+    assert woken(board) == []
+
+
+def echo_run(
+    board, task_id: int, agent_id: int, since: int, reason: str = "comment", *,
+    hop: int | None = None, authors: tuple[int, ...] = (),
+) -> int:
+    """A run of `agent_id` on the task, started by a wakeup of that reason and cursor. A
+    `comment` wakeup carries the hop and the authors of the comments that caused it."""
+    run_id = board.run(agent_id, task_id)
+    payload: dict[str, Any] = {"task_id": task_id, "since_comment_id": since, "reason": reason}
+    if hop is not None:
+        payload["echo_hop"] = hop
+        payload["echo_from"] = list(authors)
+    with closing(db.connect(board.db_path)) as conn, db.transaction(conn):
+        wakeup = store.enqueue_wakeup(
+            conn, agent_id=agent_id, source="comment", task_id=task_id, now=1, payload=payload,
+        )
+        assert store.take_wakeup(conn, wakeup.id, run_id, 1)
+    return run_id
+
+
+def echo_of(board, agent_id: int) -> tuple[Any, Any]:
+    """`(echo_hop, echo_from)` of the wake the board sent to the agent."""
+    [wake] = [w for w in board.org.wakes if w["agent_id"] == agent_id]
+    return wake["payload"].get("echo_hop"), wake["payload"].get("echo_from")
+
+
+async def test_comment_of_a_run_woken_by_another_reason_wakes_at_hop_zero(board):
+    task = await board.new(assignee_agent_id=board.worker, actor_agent_id=board.cto)
+    run_id = echo_run(board, task.id, board.worker, 0, reason="assignment")
+    board.org.wakes.clear()
+    await board.tasks.comment(task.id, "Uso A ou B?", author_agent_id=board.worker, run_id=run_id)
+    assert woken(board) == [(board.cto, "comment", "comment")]
+    assert echo_of(board, board.cto) == (0, [board.worker])
+
+
+async def test_comment_of_a_run_woken_by_a_hop_zero_comment_wakes_at_hop_one(board):
+    task = await board.new(assignee_agent_id=board.worker, actor_agent_id=board.cto)
+    await board.tasks.comment(task.id, "Uso A ou B?", author_agent_id=board.worker)
+    since = board.comments(task.id)[0].id - 1
+    run_id = echo_run(board, task.id, board.cto, since, hop=0, authors=(board.worker,))
+    board.org.wakes.clear()
+    await board.tasks.comment(task.id, "Use A.", author_agent_id=board.cto, run_id=run_id)
+    # The answer is not lost: the one who asked is woken, one hop further.
+    assert woken(board) == [(board.worker, "comment", "comment")]
+    assert echo_of(board, board.worker) == (1, [board.cto])
+
+
+async def test_comment_of_a_run_woken_at_hop_one_does_not_wake_back_its_authors(board):
+    task = await board.new(assignee_agent_id=board.worker, actor_agent_id=board.cto)
+    await board.tasks.comment(task.id, "Use A.", author_agent_id=board.cto)
+    since = board.comments(task.id)[0].id - 1
+    run_id = echo_run(board, task.id, board.worker, since, hop=1, authors=(board.cto,))
+    board.org.wakes.clear()
+    await board.tasks.comment(task.id, "Ok.", author_agent_id=board.worker, run_id=run_id)
+    assert woken(board) == []
+    # Nor through `update_task` with nothing but the comment.
+    await board.tasks.update_task(
+        task.id, expected_revision=board.task(task.id).revision, actor_agent_id=board.worker,
+        comment="Ok de novo.", run_id=run_id,
+    )
+    assert woken(board) == []
+
+
+async def test_only_the_authors_that_woke_the_run_are_skipped(board):
+    task = await board.new(assignee_agent_id=board.worker, actor_agent_id=board.cto)
+    # The CTO wrote a comment that did not wake this run: it is not one of its authors.
+    await board.tasks.comment(task.id, "Pensei melhor.", author_agent_id=board.cto)
+    since = board.comments(task.id)[0].id - 1
+    run_id = echo_run(board, task.id, board.worker, since, hop=1, authors=())
+    board.org.wakes.clear()
+    await board.tasks.comment(task.id, "Ok.", author_agent_id=board.worker, run_id=run_id)
+    assert woken(board) == [(board.cto, "comment", "comment")]
+
+
+async def test_a_sem_relato_run_keeps_the_echo_of_the_run_it_wakes_again(board):
+    task = await board.new(assignee_agent_id=board.worker, actor_agent_id=board.cto)
+    await board.tasks.comment(task.id, "Use A.", author_agent_id=board.cto)
+    since = board.comments(task.id)[0].id - 1
+    run_id = echo_run(
+        board, task.id, board.worker, since, reason="sem_relato", hop=1, authors=(board.cto,)
+    )
+    board.org.wakes.clear()
+    await board.tasks.comment(task.id, "Ok.", author_agent_id=board.worker, run_id=run_id)
+    assert woken(board) == []
+
+
+async def test_comment_outside_the_run_task_does_not_count_as_an_answer(board):
+    task = await board.new(assignee_agent_id=board.worker, actor_agent_id=board.cto)
+    other = await board.new(assignee_agent_id=board.worker, actor_agent_id=board.cto)
+    await board.tasks.comment(task.id, "Andamento.", author_agent_id=board.worker)
+    since = board.comments(task.id)[0].id - 1
+    run_id = echo_run(board, task.id, board.cto, since)
+    board.org.wakes.clear()
+    # A comment of that run, but on another task: nothing is echoed there.
+    await board.tasks.comment(other.id, "Outra.", author_agent_id=board.cto, run_id=run_id)
+    assert woken(board) == [(board.worker, "comment", "comment")]

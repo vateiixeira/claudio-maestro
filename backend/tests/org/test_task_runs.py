@@ -245,6 +245,11 @@ async def test_worktree_true_opens_session_in_task_worktree(board, git_home):  #
     assert board.factory.clients[0].options.cwd == expected
     assert task_session(board, agent, task.id).cwd == str(expected)
     assert f"Pasta de trabalho desta tarefa: {expected}" in board.sent(0)[0]
+    # The prompt of the session agrees: it works in the worktree, never in the project folder.
+    prompt = board.factory.clients[0].options.system_prompt_append
+    assert f"Você trabalha na worktree `{expected}`" in prompt
+    assert "tarefa/1-ajustar-login" in prompt
+    assert "Você trabalha nessa pasta." not in prompt
     await agent_comments(board, task.id, agent, run, "Feito.")
     pauses[0].release.set()
     await wait_until(lambda: outcome_of(board, run.id) == "concluded")
@@ -960,6 +965,35 @@ async def test_recover_asks_again_for_a_removal_that_was_waiting(board, git_home
         await recovered.shutdown()
 
 
+async def test_recover_keeps_the_removal_waiting_without_automatic_serving(board, git_home):  # noqa: F811
+    root = make_project_repo(board)
+    agent = board.add_agent(worktree=True)
+    pauses = scripted_pauses(board, 0)
+    task = await new_task(board, agent)
+    run = await first_run(board, agent, pauses[0], task.id)
+    await agent_comments(board, task.id, agent, run, "Feito.")
+    pauses[0].release.set()
+    await wait_until(lambda: outcome_of(board, run.id) == "concluded")
+    path = root.resolve() / ".claude" / "worktrees" / "tarefa-1"
+    set_task_fields(board, task.id, status="done")
+    board.service._mark_removal(task.id)
+    await board.service.shutdown()
+    recovered = board.new_service()
+    recovered.tasks = board.tasks
+    recovered.serve_automatic = False  # an isolated copy of the database: it must not act
+    try:
+        await recovered.recover()
+        await asyncio.sleep(0.5)
+        assert path.is_dir()  # nothing was removed in the real repository
+        with closing(db.connect(board.db_path)) as conn:
+            marks = conn.execute(
+                "SELECT key FROM app_state WHERE key LIKE 'org_worktree_removal:%'"
+            ).fetchall()
+        assert [row[0] for row in marks] == [f"org_worktree_removal:{task.id}"]  # still marked
+    finally:
+        await recovered.shutdown()
+
+
 # Round 1: PR comments on a task session, the folder, and the small fixes -------------------
 
 PR_URL = "https://github.com/o/r/pull/9"
@@ -1262,3 +1296,282 @@ async def test_task_blocked_by_an_agent_at_the_run_count_is_not_a_cap_block(boar
     await agent_comments(board, task.id, agent, run, "Feito.")
     pauses[0].release.set()
     await wait_until(lambda: outcome_of(board, run.id) == "concluded")
+
+
+# The chain CTO -> worker -> reviewer must end -----------------------------------------------
+
+
+async def drive_chain(
+    board, task_id: int, who: dict[str, int], max_runs: int = 12, act: Any = None
+) -> list[str]:
+    """Play the agents of a task the way the operating skill asks: each run leaves its comment
+    and does its part (by default the worker finishes, the reviewer approves, the CTO just
+    comments; `act(name, run)` replaces that). Returns who ran, in order."""
+    pauses: list[PauseStep] = []
+
+    def turns(session_id: str) -> list:
+        pause = PauseStep()
+        pauses.append(pause)
+        return [init_message(session_id), pause, *text_turn(session_id, "ok")[1:]]
+
+    board.turns = turns
+    names = {agent: name for name, agent in who.items()}
+    ran: list[str] = []
+    for index in range(max_runs):
+        await board.service.drain()
+        for _ in range(60):
+            if len(pauses) > index:
+                break
+            await asyncio.sleep(0.05)
+        if len(pauses) <= index:
+            break
+        await reached(pauses[index])
+        with closing(db.connect(board.db_path)) as conn:
+            run = store.active_run_for_task(conn, task_id)
+        name = names[run.agent_id]
+        ran.append(name)
+        await (act or chain_act)(board, task_id, name, run)
+        pauses[index].release.set()
+        await wait_until(lambda run=run: outcome_of(board, run.id) == "concluded")
+    await asyncio.sleep(0.2)
+    return ran
+
+
+async def chain_act(board, task_id: int, name: str, run: store.Run) -> None:
+    status = get_task(board, task_id).status
+    if name == "worker" and status in ("todo", "in_progress"):
+        await board.tasks.update_task(
+            task_id, expected_revision=get_task(board, task_id).revision,
+            actor_agent_id=run.agent_id, status="in_progress", comment="Comecei.",
+            run_id=run.id,
+        )
+        await agent_comments(board, task_id, run.agent_id, run, "Andamento: quase pronto.")
+        await board.tasks.update_task(
+            task_id, expected_revision=get_task(board, task_id).revision,
+            actor_agent_id=run.agent_id, status="done", comment="Terminei.", run_id=run.id,
+        )
+    elif name == "reviewer":
+        await board.tasks.update_task(
+            task_id, expected_revision=get_task(board, task_id).revision,
+            actor_agent_id=run.agent_id, status="done", comment="Aprovado.", run_id=run.id,
+        )
+    else:
+        await agent_comments(board, task_id, run.agent_id, run, "Visto.")
+
+
+async def test_cto_worker_reviewer_chain_ends_in_done_with_few_runs(board):
+    cto = board.add_agent("cto")
+    worker = board.add_agent("worker", reports_to=cto)
+    reviewer = board.add_agent("reviewer", reports_to=cto)
+    task = await board.tasks.create_task(
+        project_id=board.project.id, title="Ajustar login", description="Corrigir.",
+        assignee_agent_id=worker, reviewer_agent_id=reviewer, actor_agent_id=cto,
+    )
+
+    ran = await drive_chain(board, task.id, {"cto": cto, "worker": worker, "reviewer": reviewer})
+
+    assert get_task(board, task.id).status == "done"
+    # worker; the CTO reading its progress comment; the worker, woken by the CTO's answer (one
+    # more hop: it only comments and nobody is woken back); the reviewer; the CTO, told that
+    # the task closed. Five runs, and the task ends.
+    assert ran == ["worker", "cto", "worker", "reviewer", "cto"]
+    assert get_task(board, task.id).run_count == 5
+    with closing(db.connect(board.db_path)) as conn:
+        pending = [w for agent in (cto, worker, reviewer) for w in store.pending_wakeups(conn, agent)]
+    assert pending == []
+
+
+async def test_chain_of_a_migrated_task_created_by_the_cto_ends_too(board):
+    cto = board.add_agent("cto")
+    worker = board.add_agent("worker", reports_to=cto)
+    reviewer = board.add_agent("reviewer", reports_to=cto)
+    with closing(db.connect(board.db_path)) as conn, db.transaction(conn):
+        task = store.create_task(
+            conn, project_id=board.project.id, title="Migrada", description="d",
+            assignee_agent_id=worker, reviewer_agent_id=reviewer, parent_task_id=None,
+            priority="normal", created_by="agent", created_by_agent_id=cto, routine_id=None,
+            now=1,
+        )
+    await board.service.wake(
+        worker, source="assignment", task_id=task.id,
+        payload={"task_id": task.id, "since_comment_id": 0, "reason": "assignment"},
+    )
+
+    ran = await drive_chain(board, task.id, {"cto": cto, "worker": worker, "reviewer": reviewer})
+
+    assert get_task(board, task.id).status == "done"
+    assert ran == ["worker", "cto", "worker", "reviewer", "cto"]
+    with closing(db.connect(board.db_path)) as conn:
+        pending = [w for agent in (cto, worker, reviewer) for w in store.pending_wakeups(conn, agent)]
+    assert pending == []
+
+
+async def test_a_comment_outside_a_comment_run_still_wakes_the_other_side(board):
+    cto = board.add_agent("cto")
+    worker = board.add_agent("worker", reports_to=cto)
+    task = await board.tasks.create_task(
+        project_id=board.project.id, title="T", description="d",
+        assignee_agent_id=worker, actor_agent_id=cto,
+    )
+    pauses = scripted_pauses(board, 0)
+    run = await first_run(board, worker, pauses[0], task.id)
+    await agent_comments(board, task.id, worker, run, "Andamento.")
+    rows = wakeup_rows(board, cto)
+    assert [(r["source"], r["state"]) for r in rows] == [("comment", "pending")]
+    pauses[0].release.set()
+    await wait_until(lambda: outcome_of(board, run.id) == "concluded")
+
+
+# The usage cut holds the wakeups of a task --------------------------------------------------
+
+
+async def test_task_wakeup_over_the_usage_cut_waits_and_runs_when_the_usage_comes_down(board):
+    worker = board.add_agent("worker")
+    board.service.usage_gate = lambda: (95, "5 h")
+    task = await new_task(board, worker)
+
+    await board.service.drain(worker)
+    await asyncio.sleep(0.1)
+    # Held, not lost: still pending, and no run (not even a `skipped` one).
+    assert [row["state"] for row in wakeup_rows(board, worker)] == ["pending"]
+    assert task_runs(board, task.id) == []
+
+    board.service.usage_gate = lambda: None
+    await board.service.drain(worker)
+    await wait_until(lambda: len(task_runs(board, task.id)) >= 1)
+    assert task_runs(board, task.id)[0].source == "assignment"
+    assert wakeup_rows(board, worker)[0]["state"] == "taken"
+
+
+async def test_usage_cut_holds_a_task_wakeup_without_blocking_the_person_s_message(board):
+    worker = board.add_agent("worker")
+    board.service.usage_gate = lambda: (95, "5 h")
+    task = await new_task(board, worker)
+    await board.service.wake(worker, source="manual", text="Olá")
+
+    await board.service.drain(worker)
+    await wait_until(
+        lambda: any(r["source"] == "manual" and r["state"] == "taken" for r in wakeup_rows(board, worker))
+    )
+
+    by_source = {r["source"]: r["state"] for r in wakeup_rows(board, worker)}
+    assert by_source["assignment"] == "pending"
+    assert task_runs(board, task.id) == []
+
+
+async def test_closing_the_task_while_its_worktree_is_being_made_still_removes_it(
+    board, git_home, monkeypatch  # noqa: F811
+):
+    root = make_project_repo(board)
+    agent = board.add_agent(worktree=True)
+    pauses = scripted_pauses(board, 0)
+    creating = asyncio.Event()
+    go = asyncio.Event()
+    real = service_module.worktrees.ensure_task_worktree
+
+    async def slow(*args: Any, **kwargs: Any):
+        creating.set()
+        await go.wait()
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(service_module.worktrees, "ensure_task_worktree", slow)
+    task = await new_task(board, agent)
+    draining = asyncio.create_task(board.service.drain(agent))  # held in `starting`
+    await asyncio.wait_for(creating.wait(), 2)
+    assert get_task(board, task.id).worktree_path is None  # nothing recorded yet
+
+    current = get_task(board, task.id)
+    await board.tasks.update_task(
+        task.id, expected_revision=current.revision, actor_agent_id=None, status="cancelled"
+    )
+    go.set()
+    await draining
+    await reached(pauses[0])
+    path = root.resolve() / ".claude" / "worktrees" / "tarefa-1"
+    assert path.is_dir()
+    [run] = task_runs(board, task.id)
+    await agent_comments(board, task.id, agent, run, "Feito.")
+    pauses[0].release.set()
+
+    await wait_until(lambda: not path.exists())
+
+
+async def test_discarding_an_attempt_asks_again_for_the_pending_worktree_removal(board, monkeypatch):
+    agent = board.add_agent()
+    task = await new_task(board, agent)
+    board.service.usage_gate = lambda: (99, "x")  # nothing runs by itself here
+    with closing(db.connect(board.db_path)) as conn, db.transaction(conn):
+        run = store.insert_run(
+            conn, agent_id=agent, session_id=None, source="comment", routine_id=None,
+            scheduled_for=None, started_at=1, task_id=task.id, outcome="starting",
+        )
+    asked: list[int] = []
+    monkeypatch.setattr(board.service, "_maybe_remove_worktree", asked.append)
+
+    board.service._discard_attempt(run, board.agent(agent))
+
+    assert asked == [task.id]
+
+
+async def test_a_question_to_the_boss_is_answered_and_the_exchange_ends_in_three_runs(board):
+    cto = board.add_agent("cto")
+    worker = board.add_agent("worker", reports_to=cto)
+    task = await board.tasks.create_task(
+        project_id=board.project.id, title="T", description="d",
+        assignee_agent_id=worker, actor_agent_id=cto,
+    )
+    words = {"worker": ["Uso A ou B?", "Ok, sigo com A."], "cto": ["Use A."]}
+
+    async def act(board, task_id, name, run):
+        await agent_comments(board, task_id, run.agent_id, run, words[name].pop(0))
+
+    ran = await drive_chain(board, task.id, {"cto": cto, "worker": worker}, act=act)
+
+    # The question, the answer (it wakes the worker: nothing is left stopped) and the "ok".
+    assert ran == ["worker", "cto", "worker"]
+    with closing(db.connect(board.db_path)) as conn:
+        pending = [w for agent in (cto, worker) for w in store.pending_wakeups(conn, agent)]
+    assert pending == []
+    assert get_task(board, task.id).run_count == 3
+
+
+async def test_the_second_try_after_a_missing_report_keeps_the_echo_of_the_first(board):
+    cto = board.add_agent("cto")
+    worker = board.add_agent("worker", reports_to=cto)
+    task = await board.tasks.create_task(
+        project_id=board.project.id, title="T", description="d",
+        assignee_agent_id=worker, actor_agent_id=cto,
+    )
+    board.set_enabled(worker, False)  # only the CTO runs here
+    await board.tasks.comment(task.id, "Uso A ou B?", author_agent_id=worker)
+
+    await wait_until(lambda: len(wakeup_rows(board, cto)) == 2)  # the run ended without a report
+    await asyncio.sleep(0.1)
+
+    first, second = wakeup_rows(board, cto)[:2]
+    assert first["payload"]["reason"] == "comment"
+    assert second["payload"]["reason"] == "sem_relato"
+    for row in (first, second):
+        assert (row["payload"]["echo_hop"], row["payload"]["echo_from"]) == (0, [worker])
+
+
+async def test_grouped_comment_wakeups_keep_the_smaller_hop_and_all_the_authors(board):
+    cto = board.add_agent("cto")
+    worker = board.add_agent("worker", reports_to=cto)
+    task = await board.tasks.create_task(
+        project_id=board.project.id, title="T", description="d",
+        assignee_agent_id=worker, actor_agent_id=cto,
+    )
+    board.set_enabled(cto, False)  # stays pending
+    for since, hop, authors in ((5, 1, [worker]), (3, 0, [cto])):
+        await board.service.wake(
+            cto, source="comment", task_id=task.id,
+            payload={
+                "task_id": task.id, "since_comment_id": since, "reason": "comment",
+                "echo_hop": hop, "echo_from": authors,
+            },
+        )
+
+    [row] = [r for r in wakeup_rows(board, cto) if r["state"] == "pending"]
+    assert row["payload"]["since_comment_id"] == 3
+    assert (row["payload"]["echo_hop"], row["payload"]["echo_from"]) == (0, sorted([worker, cto]))

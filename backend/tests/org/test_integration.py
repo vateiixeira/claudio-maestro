@@ -179,6 +179,14 @@ def test_the_routine_tasks_follow_the_scheduler_setting(home: Path, data_dir: Pa
         assert app.state.scheduler.enabled is on
 
 
+@pytest.mark.parametrize("on", [True, False])
+def test_the_queue_of_the_agents_follows_the_scheduler_setting(home: Path, data_dir: Path, on: bool):
+    settings = Settings(home_dir=home, data_dir=data_dir, routines_scheduler=on)
+    app = create_app(settings=settings, agent_factory=Factory())
+    with TestClient(app, base_url=BACKEND_URL, headers={"x-maestro": "1"}):
+        assert app.state.org.serve_automatic is on
+
+
 def test_shutdown_stops_the_organization(home: Path, data_dir: Path):
     app = create_app(
         settings=Settings(home_dir=home, data_dir=data_dir), agent_factory=Factory()

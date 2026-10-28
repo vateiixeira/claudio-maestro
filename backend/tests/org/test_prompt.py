@@ -293,3 +293,47 @@ def test_task_wake_text_unknown_source_falls_back_to_generic_headline():
 
 def test_task_wake_text_never_mentions_claude_code_brand():
     assert "Claude Code" not in task_wake_text(source="assignment", brief=_brief(), reason=None)
+
+
+def test_organization_of_a_task_in_a_worktree_names_the_worktree_and_not_the_project_folder():
+    text = _append(
+        context=_context(
+            workdir="/srv/ecommerce/.claude/worktrees/tarefa-7", branch="tarefa/7-login"
+        )
+    )
+    assert "/srv/ecommerce/.claude/worktrees/tarefa-7" in text
+    assert "tarefa/7-login" in text
+    assert "Não edite a pasta principal do projeto" in text
+    assert "Você trabalha nessa pasta." not in text
+
+
+def test_organization_without_a_worktree_keeps_the_project_folder_as_the_workplace():
+    text = _append()
+    assert "Projeto: Ecommerce (/srv/ecommerce). Você trabalha nessa pasta." in text
+    assert "Não edite a pasta principal" not in text
+
+
+def test_operating_skill_says_asking_the_boss_works_and_how_to_make_the_other_side_act():
+    section = OPERATING_SKILL.split("### Tarefas", 1)[1].split("\n### ", 1)[0]
+    flat = " ".join(section.split())
+    assert "a resposta dele acorda você" in flat
+    assert "não acorda de volta" in flat
+    assert "mude o status" in flat and "`tarefa_atualizar`" in flat
+
+
+def test_operating_skill_asks_the_person_with_decidir_inside_a_task():
+    practices = OPERATING_SKILL.split("### Boas práticas", 1)[1]
+    flat = " ".join(practices.split())
+    assert "Numa tarefa, pergunte com `decidir`" in flat
+    assert "AskUserQuestion" in flat  # still named, to say where it is meant for
+
+
+def test_comment_wakeup_says_who_a_reply_wakes_and_when_it_does_not():
+    brief = _brief(comments=[("Trabalhador", "Uso A ou B?")])
+    first = task_wake_text(source="comment", reason="comment", brief=brief)
+    assert "acorda quem escreveu os comentários acima" in first
+    assert "não acorda de volta" not in first
+    last = task_wake_text(source="comment", reason="comment", brief=brief, echo_hop=1)
+    assert "não acorda de volta" in last and "`tarefa_atualizar`" in last
+    other = task_wake_text(source="assignment", reason="assignment", brief=_brief())
+    assert "acorda quem escreveu" not in other and "não acorda de volta" not in other

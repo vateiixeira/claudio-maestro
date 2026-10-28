@@ -653,9 +653,12 @@ async def test_organization_lists_the_project_agents_with_the_boss_name(world):
     listed = world.service.organization(me)
 
     assert listed == [
-        {"name": "CTO", "description": "Coordena.", "reports_to": None, "is_me": False, "enabled": True},
-        {"name": "Dev", "description": "Escreve.", "reports_to": "CTO", "is_me": True, "enabled": True},
-        {"name": "QA", "description": "", "reports_to": "CTO", "is_me": False, "enabled": False},
+        {"name": "CTO", "slug": "cto", "description": "Coordena.", "reports_to": None,
+         "is_me": False, "enabled": True},
+        {"name": "Dev", "slug": "dev", "description": "Escreve.", "reports_to": "CTO",
+         "is_me": True, "enabled": True},
+        {"name": "QA", "slug": "qa", "description": "", "reports_to": "CTO", "is_me": False,
+         "enabled": False},
     ]
 
 

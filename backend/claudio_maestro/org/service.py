@@ -343,6 +343,10 @@ class OrgService:
         # The scheduler supplies this: (percent, label) of the fullest subscription limit over
         # the cut, or None. A wakeup that is not from the person is skipped while it answers.
         self.usage_gate: UsageGate = lambda: None
+        # False in an instance that must not act by itself (`MAESTRO_ROUTINES_SCHEDULER=0`,
+        # for example a copy of the database): only what the person asks for (`manual`,
+        # `message`) is served, and `recover` does not take up the queue. The rest stays pending.
+        self.serve_automatic = True
         self._stopping = False
         # Runs of a repeated try of comments whose connection stays down: their failure is not
         # announced, published or counted (the first one of the sequence already was).
@@ -374,6 +378,17 @@ class OrgService:
 
     # Session setup ------------------------------------------------------------------
 
+    @staticmethod
+    def _worktree_branch(conn: sqlite3.Connection, cwd: str, project_path: str) -> str | None:
+        """When the session opens in a folder other than the project's, the branch of the task
+        worktree that folder is (empty when no task records it); None for the project folder."""
+        if os.path.realpath(cwd) == os.path.realpath(project_path):
+            return None
+        row = conn.execute(
+            "SELECT branch FROM tasks WHERE worktree_path = ? LIMIT 1", (cwd,)
+        ).fetchone()
+        return (row["branch"] or "") if row else ""
+
     def session_setup(self, record: SessionRecord) -> SessionExtras | None:
         """What an agent's session adds to its client; None for an ordinary session.
 
@@ -393,6 +408,7 @@ class OrgService:
                 if other.reports_to == agent.id
             ]
             roots = projects.project_roots(conn)
+            worktree_branch = self._worktree_branch(conn, record.cwd, project.path)
         definition = self._files.read_definition(agent.slug)
         folder = self._files.folder(agent.slug)
         valid = resolve_add_dirs(definition.add_dirs, roots, Path(project.path))
@@ -405,6 +421,8 @@ class OrgService:
             add_dirs=[("sua pasta (memória e skills)", str(folder))]
             + [(path.name or str(path), str(path)) for path in add_dirs[1:]],
             memory_path=str(folder / MEMORY_FILE),
+            workdir=record.cwd if worktree_branch is not None else None,
+            branch=worktree_branch or None,
         )
         prompt = build_append(
             definition=definition,
@@ -697,6 +715,7 @@ class OrgService:
         return [
             {
                 "name": described[other.id][0],
+                "slug": other.slug,
                 "description": described[other.id][1],
                 "reports_to": described[other.reports_to][0] if other.reports_to in described else None,
                 "is_me": other.id == agent_id,
@@ -830,7 +849,8 @@ class OrgService:
                         conn, agent_id, task.id, source, wake_payload["reason"]
                     ) is not None
                 )
-                if not grouped and len(pending) >= MAX_QUEUED_WAKEUPS:
+                queued = sum(1 for w in pending if w.source not in UNGATED_SOURCES)
+                if not grouped and source not in UNGATED_SOURCES and queued >= MAX_QUEUED_WAKEUPS:
                     raise QueueFullError()
                 wakeup = store.enqueue_wakeup(
                     conn, agent_id=agent_id, source=source, payload=wake_payload or None,
@@ -935,12 +955,13 @@ class OrgService:
         """Agents with a pending wakeup this service serves. A disabled agent is included on
         purpose: its drain does nothing, but the look at the queue keeps going, so turning the
         agent back on is enough for the queue to drain again."""
-        marks = ", ".join("?" for _ in SERVED_SOURCES)
+        served = SERVED_SOURCES if self.serve_automatic else UNGATED_SOURCES
+        marks = ", ".join("?" for _ in served)
         with closing(db.connect(self._db_path)) as conn:
             rows = conn.execute(
                 "SELECT DISTINCT agent_id FROM wakeups"
                 f" WHERE state = 'pending' AND source IN ({marks}) ORDER BY agent_id",
-                SERVED_SOURCES,
+                served,
             ).fetchall()
         return [row[0] for row in rows]
 
@@ -982,8 +1003,8 @@ class OrgService:
                 return False
         if not agent.enabled:
             return False  # a disabled agent wakes by no origin; what is pending waits
-        self._apply_usage_gate(agent)
-        wakeup = self._pick(agent)
+        held = self._apply_usage_gate(agent)
+        wakeup = self._pick(agent, usage_held=held)
         if wakeup is None:
             return False
         if wakeup.task_id is not None:
@@ -1007,24 +1028,26 @@ class OrgService:
             return True
         return await self._serve_message(agent, wakeup, target=target)
 
-    def _apply_usage_gate(self, agent: Agent) -> None:
+    def _apply_usage_gate(self, agent: Agent) -> bool:
         """While the subscription is over the cut, every wakeup that is not the person's
         (`manual`, `message`) becomes a `skipped` run and is dropped, whether or not the agent
-        is free to take it now."""
+        is free to take it now. The wakeups of a task are not dropped: they stay pending (the
+        task would stop for good otherwise) and `_pick` passes over them. True while the cut
+        holds."""
         try:
             reading = self.usage_gate()
         except Exception:
             logger.exception("Falha ao consultar o uso da assinatura")
-            return
+            return False
         if reading is None:
-            return
+            return False
         percent, label = reading
         reason = f"Uso da assinatura em {percent}% ({label})."
         with closing(db.connect(self._db_path)) as conn:
             pending = store.pending_wakeups(conn, agent.id)
         skipped = False
         for wakeup in pending:
-            if wakeup.source in UNGATED_SOURCES:
+            if wakeup.source in UNGATED_SOURCES or wakeup.task_id is not None:
                 continue
             now = self._now()
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
@@ -1047,8 +1070,9 @@ class OrgService:
             skipped = True
         if skipped:
             self._check_streak(agent)
+        return True
 
-    def _pick(self, agent: Agent) -> store.Wakeup | None:
+    def _pick(self, agent: Agent, *, usage_held: bool = False) -> store.Wakeup | None:
         """The first pending wakeup, by priority and age, that may start now.
 
         A run (`manual`, `routine`, `comment`, and every wakeup of a task) needs the agent free:
@@ -1065,6 +1089,10 @@ class OrgService:
         for wakeup in pending:
             if wakeup.source not in SERVED_SOURCES:
                 continue
+            if not self.serve_automatic and wakeup.source not in UNGATED_SOURCES:
+                continue
+            if usage_held and wakeup.task_id is not None and wakeup.source not in UNGATED_SOURCES:
+                continue  # waits for the usage to come down
             if wakeup.task_id is not None or wakeup.source == "assignment":
                 verdict = self._task_verdict(wakeup)
                 if verdict == "drop":
@@ -1658,7 +1686,8 @@ class OrgService:
             if found.answer is not None:
                 decision = (found.question, found.answer, found.receipt or "-")
         return task_wake_text(
-            source=wakeup.source, brief=brief, reason=payload.get("reason"), decision=decision
+            source=wakeup.source, brief=brief, reason=payload.get("reason"), decision=decision,
+            echo_hop=int(payload.get("echo_hop") or 0),
         )
 
     def _task_changed(self, task_id: int, change: str) -> None:
@@ -1763,9 +1792,8 @@ class OrgService:
             )
         if task.status in store.TASK_CLOSED_STATUSES or asked:
             return  # a question put to the person is the report of the run
-        woken_by_it = row is not None and (
-            json.loads(row["payload"] or "null") or {}
-        ).get("reason") == "sem_relato"
+        woken_with = (json.loads(row["payload"] or "null") or {}) if row is not None else {}
+        woken_by_it = woken_with.get("reason") == "sem_relato"
         if not run.rewoken and not woken_by_it:
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
                 store.mark_run_rewoken(conn, run.id)
@@ -1775,10 +1803,16 @@ class OrgService:
                 )
                 cursor = store.last_comment_id(conn, task.id)
             self._task_changed(task.id, "comment")
+            wake_payload: dict[str, Any] = {
+                "task_id": task.id, "since_comment_id": cursor, "reason": "sem_relato"
+            }
+            if woken_with.get("reason") == "comment" and "echo_hop" in woken_with:
+                # The second try keeps the echo of the run it wakes again (see `TaskService._echo`).
+                wake_payload["echo_hop"] = woken_with["echo_hop"]
+                wake_payload["echo_from"] = woken_with.get("echo_from") or []
             try:
                 await self.wake(
-                    run.agent_id, source="comment", task_id=task.id,
-                    payload={"task_id": task.id, "since_comment_id": cursor, "reason": "sem_relato"},
+                    run.agent_id, source="comment", task_id=task.id, payload=wake_payload,
                 )
             except Exception as error:
                 logger.warning("Não foi possível reacordar o agente %s: %s", run.agent_id, error)
@@ -2008,6 +2042,8 @@ class OrgService:
                     (run.task_id,),
                 )
         self._changed(agent.id)
+        if run.task_id is not None:
+            self._maybe_remove_worktree(run.task_id)  # the run was holding a removal back
         self.kick(agent.id)
 
     def _attach_session(self, run_id: int, session_id: str) -> bool:
@@ -2677,7 +2713,8 @@ class OrgService:
             ]
         for run_id in in_flight:
             self._arm_watch(run_id)
-        self.kick()
+        if self.serve_automatic:
+            self.kick()
 
     def _recover_tasks(self) -> None:
         """What a restart leaves of the tasks: a task run still `running` whose session did not
@@ -2701,6 +2738,8 @@ class OrgService:
                     (len(REMOVAL_PREFIX), REMOVAL_PREFIX),
                 )
             ]
+        if not self.serve_automatic:
+            return  # an instance that must not act by itself keeps the marks and removes nothing
         for key in marks:
             try:
                 self._worktrees_to_remove.add(int(key[len(REMOVAL_PREFIX):]))

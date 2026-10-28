@@ -301,8 +301,10 @@ def test_isolated_tools_keep_concluir():
 def test_organizacao_lists_agents_marking_me():
     host = FakeHost()
     host.agents = [
-        {"name": "cto", "description": "Lidera", "reports_to": None, "is_me": False, "enabled": True},
-        {"name": "dev", "description": "Implementa", "reports_to": "cto", "is_me": True, "enabled": False},
+        {"name": "Cto", "slug": "cto", "description": "Lidera", "reports_to": None, "is_me": False,
+         "enabled": True},
+        {"name": "Dev", "slug": "dev-2", "description": "Implementa", "reports_to": "Cto",
+         "is_me": True, "enabled": False},
     ]
 
     result = _call(host, "organizacao", {})
@@ -310,8 +312,10 @@ def test_organizacao_lists_agents_marking_me():
     assert not result.get("is_error")
     assert json.loads(_text(result)) == {
         "agentes": [
-            {"nome": "cto", "descricao": "Lidera", "chefe": None, "sou_eu": False, "ligado": True},
-            {"nome": "dev", "descricao": "Implementa", "chefe": "cto", "sou_eu": True, "ligado": False},
+            {"nome": "Cto", "identificador": "cto", "descricao": "Lidera", "chefe": None,
+             "sou_eu": False, "ligado": True},
+            {"nome": "Dev", "identificador": "dev-2", "descricao": "Implementa", "chefe": "Cto",
+             "sou_eu": True, "ligado": False},
         ]
     }
     assert host.calls == [("organization", 7)]

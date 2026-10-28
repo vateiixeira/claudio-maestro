@@ -358,6 +358,8 @@ def create_app(
             files=app.state.agent_files,
             publish=publish_org,
         )
+        # An instance that must not act by itself serves only what the person asks for.
+        app.state.org.serve_automatic = app.state.settings.routines_scheduler
         # The board, the decisions and the CI receipts the agents' tools reach; the service
         # and the board need each other, so the service gets them after they exist.
         app.state.tasks = TaskService(
