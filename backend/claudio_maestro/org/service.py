@@ -107,8 +107,9 @@ TURN_OPEN_STATES = ("connecting", "running", "awaiting_decision")
 SERVED_SOURCES = ("manual", "message", "routine", "comment")
 # Origins the usage cut never touches: the person asked for them.
 UNGATED_SOURCES = ("manual", "message")
-# Sources whose runs the closure verdict may close (a task run only ends with its comment).
-CLOSABLE_SOURCES = ("routine", "manual")
+# Sources whose runs the closure verdict may close: every run that ends with the agent's own
+# word. A task run (`assignment`, later) is left out: it only ends with its comment.
+CLOSABLE_SOURCES = ("routine", "manual", "comment")
 # Outcomes that tell the main conversation how a run went (once per run), and how each
 # one reads in the announcement.
 ANNOUNCED_OUTCOMES = {
@@ -273,6 +274,9 @@ class OrgService:
         # the cut, or None. A wakeup that is not from the person is skipped while it answers.
         self.usage_gate: UsageGate = lambda: None
         self._stopping = False
+        # Runs of a repeated try of comments whose connection stays down: their failure is not
+        # announced, published or counted (the first one of the sequence already was).
+        self._quiet_runs: set[int] = set()
         # agent id -> lock of the drainer: one serves the queue of an agent at a time.
         self._drain_locks: dict[int, asyncio.Lock] = {}
         self._drains: dict[int, asyncio.Task[None]] = {}
@@ -994,14 +998,22 @@ class OrgService:
             return await self._serve_comment_to_main(agent, wakeup, None)
         if run is None:
             return False
-        self._publish_run(run)
+        if self._comments_down(wakeup):
+            # Another try of a connection that stays down shows nothing until it works.
+            self._quiet_runs.add(run.id)
+        else:
+            self._publish_run(run)
         try:
-            text, images = self._files.read_wake_text(agent.slug, wakeup.id)
-        except (OSError, ValueError):
-            self._fail_run(run, agent, WAKE_TEXT_LOST)
-            return True
-        self._clear_pending(session_id)  # the PR came back to life: it is not to be finished
-        return await self._deliver_run_text(run, agent, wakeup, session_id, text, images)
+            try:
+                text, images = self._files.read_wake_text(agent.slug, wakeup.id)
+            except (OSError, ValueError):
+                self._quiet_runs.discard(run.id)
+                self._fail_run(run, agent, WAKE_TEXT_LOST)
+                return True
+            self._clear_pending(session_id)  # the PR came back to life: it is not to be finished
+            return await self._deliver_run_text(run, agent, wakeup, session_id, text, images)
+        finally:
+            self._quiet_runs.discard(run.id)
 
     async def _serve_run(self, agent: Agent, wakeup: store.Wakeup) -> bool:
         """Claim the wakeup, open a session of its own and send the text. Every way it can go
@@ -1067,15 +1079,24 @@ class OrgService:
             raise
         except Exception:
             logger.exception("Falha ao enviar o texto da execução do agente %s", agent.slug)
+            self._comments_back(wakeup)  # no longer a proven "did not leave"
+            self._quiet_runs.discard(run.id)
             self._fail_run(run, agent, UNCERTAIN_SEND, alert=True)
             return True
         if isinstance(result, dict) and result.get("send_started") is False:
-            self._fail_run(run, agent, NOT_CONNECTED, alert=True)
-            self._requeue_comments(wakeup)  # it provably did not leave: they may go again
+            # It provably did not leave: the comments may go again. Only the first failure of a
+            # sequence leaves a failed run, an announcement and an alert.
+            if self._requeue_comments(wakeup):
+                self._discard_attempt(run, agent)
+            else:
+                self._fail_run(run, agent, NOT_CONNECTED, alert=True)
             return True
         if isinstance(result, dict) and result.get("state") == "error":
+            self._comments_back(wakeup)  # it left: the connection works
+            self._quiet_runs.discard(run.id)
             self._fail_run(run, agent, UNCERTAIN_SEND, alert=True)
             return True
+        self._comments_back(wakeup)
         self._files.delete_wake_text(agent.slug, wakeup.id)
         if self._set_run_state(run.id, "running", None, only_from=("starting",)) is not None:
             self._arm_watch(run.id)
@@ -1085,15 +1106,21 @@ class OrgService:
             await self._interrupt(session_id)
         return True
 
-    def _requeue_comments(self, wakeup: store.Wakeup) -> None:
+    def _requeue_comments(self, wakeup: store.Wakeup) -> bool:
         """A comment send that provably did not start: the batch goes back to the queue of the
         PR comments (and its quiet window starts again, so a connection that stays down is
-        tried once a minute, not at every tick). Sends without confirmation never come here."""
+        tried once a minute, not at every tick). The try counts in the turns of the day of the
+        PR, so it stops at the cap. Sends without confirmation never come here.
+
+        Returns True when this failure repeats one of a sequence already reported (the
+        connection has been down since an earlier try), so the caller stays quiet."""
         if wakeup.source != "comment":
-            return
-        ids = list((wakeup.payload or {}).get("comment_ids") or [])
+            return False
+        payload = wakeup.payload or {}
+        ids = list(payload.get("comment_ids") or [])
         if not ids:
-            return
+            return False
+        url = str(payload.get("pr_url") or "")
         marks = ", ".join("?" for _ in ids)
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             store.mark_comments(conn, ids, "queued", None)
@@ -1101,6 +1128,35 @@ class OrgService:
                 f"UPDATE agent_pr_comments SET received_at = ? WHERE comment_id IN ({marks})",
                 (self._now(), *ids),
             )
+            if not url:
+                return False
+            return store.note_comment_send_failed(conn, url, wakeup.id, self._now())
+
+    def _comments_down(self, wakeup: store.Wakeup) -> bool:
+        """The comments of this wakeup's PR are in a sequence of sends that did not leave."""
+        url = (wakeup.payload or {}).get("pr_url")
+        if wakeup.source != "comment" or not url:
+            return False
+        with closing(db.connect(self._db_path)) as conn:
+            return store.comments_down(conn, str(url), int(self._now()))
+
+    def _comments_back(self, wakeup: store.Wakeup) -> None:
+        """A comment send went through: the sequence of failures (if any) is over."""
+        url = (wakeup.payload or {}).get("pr_url")
+        if wakeup.source != "comment" or not url:
+            return
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.set_comments_down(conn, str(url), False, int(self._now()))
+
+    def _discard_attempt(self, run: store.Run, agent: Agent) -> None:
+        """Forget a run (and its wakeup) that never got going, for a try that repeats a
+        failure already reported: the comments are back in their queue and keep their turn."""
+        self._forget_wake_text(run.id)
+        self._stop_watch(run.id)
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.discard_run(conn, run.id)
+        self._changed(agent.id)
+        self.kick(agent.id)
 
     def _attach_session(self, run_id: int, session_id: str) -> bool:
         """Point the run at its session, if it is still `starting` (it may have been cancelled
@@ -1180,11 +1236,13 @@ class OrgService:
         finally:
             self._files.delete_wake_text(agent.slug, wakeup.id)
         if isinstance(result, dict) and result.get("send_started") is False:
-            self._add_notice(agent.id, None, "alert", MESSAGE_NOT_DELIVERED)
-            self._requeue_comments(wakeup)  # it provably did not leave: they may go again
+            # It provably did not leave: the comments may go again (and warn once per sequence).
+            if not self._requeue_comments(wakeup):
+                self._add_notice(agent.id, None, "alert", MESSAGE_NOT_DELIVERED)
         elif isinstance(result, dict) and result.get("state") == "error":
             self._add_notice(agent.id, None, "alert", MESSAGE_NOT_DELIVERED)
         else:
+            self._comments_back(wakeup)
             self._resume_waiting(target)
         return True
 
@@ -1434,7 +1492,7 @@ class OrgService:
     # Hooks of the sessions and of the closure check -----------------------------------
 
     async def on_closure(self, closure: Closure) -> None:
-        """What the closure check found in the session of a routine or manual run. A verdict
+        """What the closure check found in the session of a routine, manual or comment run. A verdict
         older than the session's last activity is ignored, like the screen does. Once the run
         ended, the only thing left is a finish still pending (lost in a restart of the
         backend). Runs of a task are not touched: they end with their comment."""
@@ -1497,7 +1555,7 @@ class OrgService:
         run = self._set_outcome(
             session_id, "failed", _cut(error), only_from=("starting", "running")
         )
-        if run is not None:
+        if run is not None and run.id not in self._quiet_runs:
             agent = self._agent_of(session_id)
             if agent is not None:
                 self._check_streak(agent)
@@ -1664,10 +1722,11 @@ class OrgService:
             run = store.get_run(conn, run_id)
             announcement = (
                 None
-                if announce is False
+                if announce is False or (outcome == "failed" and run_id in self._quiet_runs)
                 else self._announce(conn, run, reason if announce is None else announce)
             )
-        self._publish_run(run)
+        if not (outcome == "failed" and run_id in self._quiet_runs):
+            self._publish_run(run)
         self._publish_announcement(announcement)
         if final:
             self._stop_watch(run.id)

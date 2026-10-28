@@ -970,14 +970,76 @@ def mark_comments(
     )
 
 
+# Marks in `app_state` about the sends of a PR's comments that provably did not leave (the
+# connection was down). They need no table of their own: each one is a short-lived fact.
+COMMENT_TRY_PREFIX: Final = "comment-try:"
+COMMENT_DOWN_PREFIX: Final = "comment-down:"
+COMMENT_TRY_KEEP_SECONDS: Final = 3 * 86400
+# A sequence of failed sends is forgotten after this long without a change, so a mark left
+# behind (PR closed, agent deleted) never hides a failure of another day.
+COMMENT_DOWN_SECONDS: Final = 86400
+
+
 def turns_today(conn: sqlite3.Connection, pr_url: str, day_start: int) -> int:
-    """Turns spent on this PR since `day_start`: distinct batches of its comments."""
+    """Turns spent on this PR since `day_start`: distinct batches of its comments, plus the
+    sends that provably did not leave (their batch goes back to the queue, so the batch mark
+    alone would not remember them)."""
     row = conn.execute(
         "SELECT COUNT(DISTINCT batch_at) FROM agent_pr_comments"
         " WHERE pr_url = ? AND batch_at >= ?",
         (pr_url, day_start),
     ).fetchone()
-    return row[0]
+    prefix = f"{COMMENT_TRY_PREFIX}{pr_url}|"
+    tries = conn.execute(
+        "SELECT COUNT(*) FROM app_state WHERE substr(key, 1, ?) = ? AND CAST(value AS INTEGER) >= ?",
+        (len(prefix), prefix, day_start),
+    ).fetchone()
+    return row[0] + tries[0]
+
+
+def note_comment_send_failed(
+    conn: sqlite3.Connection, pr_url: str, wakeup_id: int, now: int
+) -> bool:
+    """A comment send that did not leave: it counts as a turn of the day, and the PR is marked
+    as having a connection that is down. True when it already was (a repeat in the sequence,
+    which must not warn again)."""
+    conn.execute(
+        "DELETE FROM app_state WHERE substr(key, 1, ?) = ? AND CAST(value AS INTEGER) < ?",
+        (len(COMMENT_TRY_PREFIX), COMMENT_TRY_PREFIX, now - COMMENT_TRY_KEEP_SECONDS),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)",
+        (f"{COMMENT_TRY_PREFIX}{pr_url}|{wakeup_id}", str(now)),
+    )
+    return set_comments_down(conn, pr_url, True, now)
+
+
+def comments_down(conn: sqlite3.Connection, pr_url: str, now: int) -> bool:
+    """A sequence of failed sends of this PR is in course (marked less than a day ago)."""
+    row = conn.execute(
+        "SELECT value FROM app_state WHERE key = ?", (COMMENT_DOWN_PREFIX + pr_url,)
+    ).fetchone()
+    return row is not None and int(row[0]) > now - COMMENT_DOWN_SECONDS
+
+
+def set_comments_down(conn: sqlite3.Connection, pr_url: str, down: bool, now: int) -> bool:
+    """Mark or clear the sequence of failed sends of a PR; returns whether it was marked."""
+    was = comments_down(conn, pr_url, now)
+    if down:
+        conn.execute(
+            "INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)",
+            (COMMENT_DOWN_PREFIX + pr_url, str(now)),
+        )
+    else:
+        conn.execute("DELETE FROM app_state WHERE key = ?", (COMMENT_DOWN_PREFIX + pr_url,))
+    return was
+
+
+def discard_run(conn: sqlite3.Connection, run_id: int) -> None:
+    """Forget a run that never got going and left no trace worth keeping, with the wakeup that
+    claimed it."""
+    conn.execute("DELETE FROM wakeups WHERE run_id = ?", (run_id,))
+    conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
 
 
 # Conversations the agent started -------------------------------------------------

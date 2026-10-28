@@ -507,6 +507,19 @@ def test_prs_and_comments(conn):
     assert [c.comment_id for c in store.queued_comments(conn)] == ["issue:2"]
     assert store.turns_today(conn, pr.url, 50) == 1
     assert store.turns_today(conn, pr.url, 150) == 0
+    # Sends that did not leave count as turns too; only the first of a sequence is "new".
+    assert store.comments_down(conn, pr.url, 120) is False
+    assert store.note_comment_send_failed(conn, pr.url, 7, 120) is False
+    assert store.note_comment_send_failed(conn, pr.url, 8, 130) is True
+    assert store.turns_today(conn, pr.url, 50) == 3
+    assert store.turns_today(conn, pr.url, 125) == 1
+    assert store.turns_today(conn, pr.url + "/other", 50) == 0
+    assert store.comments_down(conn, pr.url, 130 + store.COMMENT_DOWN_SECONDS - 1) is True
+    # A mark left behind does not hide a failure of another day.
+    assert store.comments_down(conn, pr.url, 130 + store.COMMENT_DOWN_SECONDS) is False
+    assert store.note_comment_send_failed(conn, pr.url, 9, 130 + store.COMMENT_DOWN_SECONDS) is False
+    assert store.set_comments_down(conn, pr.url, False, 140) is True
+    assert store.comments_down(conn, pr.url, 140) is False
     store.close_pr(conn, pr.url)
     assert store.open_prs(conn) == []
 

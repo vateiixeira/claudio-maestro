@@ -14,7 +14,6 @@ from test_sessions import Recorder, make_project
 
 from claudio_maestro import db
 from claudio_maestro.org import store
-from claudio_maestro.org.prompt import wake_text
 from claudio_maestro.org.scheduler import (
     GRACE_SECONDS,
     TICK_SECONDS,
@@ -270,11 +269,10 @@ async def test_tick_wakes_the_routine_agent_with_instruction(world):
     assert call == {
         "agent_id": agent,
         "source": "routine",
-        "text": wake_text(source="routine", instruction="Veja o Sentry.", routine_name="Ronda"),
         "routine_id": routine,
         "scheduled_for": ts(at(MONDAY, 9)),
     }
-    assert 'rotina "Ronda"' in call["text"] and "Veja o Sentry." in call["text"]
+    # No free text: the service builds the prompt of the routine from the routine itself.
     assert world.schedules(routine)[0].last_fired_at == int(world.now)
     assert world.service.missed == []
 
@@ -527,3 +525,21 @@ async def test_a_missed_slot_over_the_limit_is_only_missed(world):
 
     assert len(world.service.missed) == 1 and world.service.wakes == []
     assert world.usage_alerts() == []
+
+
+async def test_a_wake_that_fails_warns_the_owner_of_the_agent(world):
+    broken = world.add_agent("quebrado")
+    healthy = world.add_agent("saudavel")
+    world.add_routine(broken, name="Quebrada")
+    world.add_routine(healthy, name="Boa")
+    world.service.fail_for = {broken}
+    world.move_to(at(MONDAY, 9, 0, 5))
+
+    await world.scheduler.tick()
+
+    [(agent_id, text)] = [a for a in world.service.alerts if a[0] == broken]
+    assert 'rotina "Quebrada"' in text and "falhou" in text
+    assert [a for a in world.service.alerts if a[0] == healthy] == []
+    # The slot was consumed: the next tick does not warn again.
+    await world.scheduler.tick()
+    assert len([a for a in world.service.alerts if a[0] == broken]) == 1

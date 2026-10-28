@@ -18,7 +18,6 @@ from typing import Any
 
 from claudio_maestro import db
 from claudio_maestro.org import store
-from claudio_maestro.org.prompt import wake_text
 from claudio_maestro.org.service import OrgService
 from claudio_maestro.usage import UsageChecker
 
@@ -131,13 +130,14 @@ class Scheduler:
                 await self._handle(schedule, routine, agent.enabled, local, now)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as error:
                 logger.exception(
                     "Falha ao disparar o agendamento %s da rotina %s (agente %s)",
                     schedule.id,
                     routine.name,
                     routine.agent_id,
                 )
+                self._warn_failed(routine, error)
 
     async def _handle(
         self,
@@ -165,12 +165,22 @@ class Scheduler:
         await self._service.wake(
             routine.agent_id,
             source="routine",
-            text=wake_text(
-                source="routine", instruction=routine.instruction, routine_name=routine.name
-            ),
             routine_id=routine.id,
             scheduled_for=scheduled_for,
         )
+
+    def _warn_failed(self, routine: store.Routine, error: Exception) -> None:
+        """The slot is already consumed, so a wakeup that could not be queued would otherwise
+        vanish into the log: tell the owner of the routine."""
+        reason = (
+            " ".join(str(error).split())[:200] if isinstance(error, store.OrgError) else ""
+        ) or "erro inesperado (veja o registro do app)"
+        try:
+            self._service.add_alert(
+                routine.agent_id, f'A rotina "{routine.name}" não disparou: {reason}'
+            )
+        except Exception:
+            logger.exception("Falha ao avisar que a rotina %s não disparou", routine.name)
 
     def _mark_fired(self, schedule: store.Schedule, now: float) -> None:
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):

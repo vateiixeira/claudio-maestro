@@ -747,6 +747,150 @@ async def test_a_send_that_did_not_start_returns_the_batch_to_the_queue(world, p
     assert "ajuste isso" in sent(world, target)[-1]
 
 
+def count_sends(world: World, result: dict[str, Any]) -> list[int]:
+    """Every send answers `result` (nothing leaves); the list counts them."""
+    calls: list[int] = []
+
+    async def send(*args, **kwargs):
+        calls.append(1)
+        return result
+
+    world.manager.send = send
+    return calls
+
+
+@pytest.mark.parametrize("path", ["pr-session", "main"])
+async def test_a_connection_that_stays_down_stops_at_the_cap_and_warns_once(world, path):
+    if path == "main":
+        agent = world.add_agent()
+        register_pr(world, agent, None)
+    else:
+        agent, _ = await agent_with_pr(world)
+    queue(world, agent, "issue:1", at=NOW, body="ajuste isso")
+    sends = count_sends(world, {"state": "idle", "send_started": False})
+    dispatch = dispatcher(world)
+
+    world.now = NOW + 100
+    for _ in range(25):  # 25 minutes, one try a minute
+        await deliver(world, dispatch, agent)
+        world.now += QUIET_SECONDS + 1
+
+    # The failed tries count in the cap of the day, and the comment is not lost.
+    assert len(sends) == MAX_TURNS_PER_DAY
+    assert statuses(world)["issue:1"] == ("queued", None)
+    # One failed run, one announcement and one alert for the whole sequence (the other alert
+    # is the one of the cap).
+    assert len([r for r in comment_runs(world, agent) if r.outcome == "failed"]) == (
+        1 if path == "pr-session" else 0
+    )
+    assert len(world.announcements(agent)) == (1 if path == "pr-session" else 0)
+    assert len([t for t in alerts(world) if "limite" not in t]) == 1
+    assert len([t for t in alerts(world) if "limite" in t]) == 1
+
+
+async def test_a_sequence_of_failures_ends_when_the_connection_is_back(world):
+    agent, _ = await agent_with_pr(world)
+    queue(world, agent, "issue:1", at=NOW, body="primeiro")
+    real_send = not_started(world, {"state": "idle", "send_started": False})
+    dispatch = dispatcher(world)
+    world.now = NOW + 100
+    for _ in range(3):
+        await deliver(world, dispatch, agent)
+        world.now += QUIET_SECONDS + 1
+    world.manager.send = real_send
+    await deliver(world, dispatch, agent)
+    assert statuses(world)["issue:1"][0] == "delivered"
+    [run] = [r for r in comment_runs(world, agent) if r.outcome != "failed"]
+    await world.idle(run.session_id)
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.update_run(conn, run.id, outcome="concluded", ended_at=int(world.now))
+    world.now += 1
+
+    # Down again: this is a new sequence and it warns again.
+    queue(world, agent, "issue:2", at=int(world.now), body="segundo")
+    not_started(world, {"state": "idle", "send_started": False})
+    world.now += QUIET_SECONDS + 1
+    await deliver(world, dispatch, agent)
+
+    assert len([r for r in comment_runs(world, agent) if r.outcome == "failed"]) == 2
+
+
+async def test_a_send_that_left_with_an_error_ends_the_sequence_of_failures(world):
+    agent, _ = await agent_with_pr(world)
+    queue(world, agent, "issue:1", at=NOW)
+    real_send = not_started(world, {"state": "idle", "send_started": False})
+    dispatch = dispatcher(world)
+    world.now = NOW + 100
+    await deliver(world, dispatch, agent)  # the first failure of the sequence
+    world.now += QUIET_SECONDS + 1
+    not_started(world, {"state": "error", "send_started": True})  # it left, then failed
+    await deliver(world, dispatch, agent)
+    assert statuses(world)["issue:1"][0] == "delivered"
+    assert len(world.announcements(agent)) == 2  # the uncertain send is not a quiet repeat
+
+    queue(world, agent, "issue:2", at=int(world.now))
+    not_started(world, {"state": "idle", "send_started": False})
+    world.now += QUIET_SECONDS + 1
+    await deliver(world, dispatch, agent)
+
+    # A new sequence: it speaks again.
+    assert len(world.announcements(agent)) == 3
+    assert len([r for r in comment_runs(world, agent) if r.outcome == "failed"]) == 3
+    world.manager.send = real_send
+
+
+async def test_a_sequence_of_failures_is_forgotten_after_a_day(world):
+    agent, _ = await agent_with_pr(world)
+    queue(world, agent, "issue:1", at=NOW)
+    not_started(world, {"state": "idle", "send_started": False})
+    dispatch = dispatcher(world)
+    world.now = NOW + 100
+    await deliver(world, dispatch, agent)
+    world.now += QUIET_SECONDS + 1
+    await deliver(world, dispatch, agent)  # a repeat: quiet
+    assert len(world.announcements(agent)) == 1
+
+    world.now += 2 * 86400  # the mark is old: it must not hide a failure of another day
+    await deliver(world, dispatch, agent)
+
+    assert len(world.announcements(agent)) == 2
+    assert len([r for r in comment_runs(world, agent) if r.outcome == "failed"]) == 2
+
+
+async def test_a_real_setup_failure_repeated_every_minute_stays_quiet(world):
+    """The path the sessions really take: the session of the PR is closed and its AGENT.md is
+    invalid, so `session_setup` fails inside the real manager (the turn error hook fires before
+    the send answers). Nothing here replaces `send`."""
+    agent, session_id = await agent_with_pr(world)
+    await world.manager.get(session_id).close()
+    (world.files.folder("revisor") / "AGENT.md").write_text("sem frontmatter", encoding="utf-8")
+    queue(world, agent, "issue:1", at=NOW, body="ajuste isso")
+    dispatch = dispatcher(world)
+    before = len(world.events)
+
+    world.now = NOW + 100
+    for _ in range(25):  # 25 minutes, one try a minute
+        await deliver(world, dispatch, agent)
+        world.now += QUIET_SECONDS + 1
+
+    with closing(db.connect(world.db_path)) as conn:
+        tries = conn.execute(
+            "SELECT COUNT(*) FROM app_state WHERE key LIKE 'comment-try:%'"
+        ).fetchone()[0]
+    failed_events = [
+        data for type_, data in world.events[before:]
+        if type_ == "agent.run" and data["outcome"] == "failed"
+    ]
+    assert tries == MAX_TURNS_PER_DAY
+    assert statuses(world)["issue:1"] == ("queued", None)
+    assert len(world.announcements(agent)) == 1
+    assert len(failed_events) == 1
+    assert len([r for r in comment_runs(world, agent) if r.outcome == "failed"]) == 1
+    assert [t for t in alerts(world) if "seguidas" in t] == []
+    assert len([t for t in alerts(world) if "limite" not in t]) <= 1
+    assert len([t for t in alerts(world) if "limite" in t]) == 1
+
+
 @pytest.mark.parametrize("path", ["pr-session", "main"])
 @pytest.mark.parametrize("how", ["state-error", "exception"])
 async def test_a_send_without_confirmation_is_never_replayed(world, path, how):

@@ -242,3 +242,19 @@ async def test_setup_failure_on_reattach_fails_the_session_with_the_fixed_text(
 
     assert session.error == AGENT_SETUP_FAILED_TEXT
     assert session.client is None
+
+
+async def test_the_mode_of_an_agent_session_cannot_change_and_the_refusal_says_why(
+    make_env, env_cleanup
+):
+    from claudio_maestro.sessions import AGENT_MODE_TEXT, InvalidDecisionError
+
+    env, session = await connected(make_env, env_cleanup, Setup(permission_mode="bypassPermissions"))
+
+    with pytest.raises(InvalidDecisionError) as refused:
+        await env.manager.update(session.session_id, permission_mode="acceptEdits")
+
+    text = str(refused.value)
+    assert text == AGENT_MODE_TEXT
+    # The mode of an agent comes from its AGENT.md; "only the default mode" was wrong.
+    assert "AGENT.md" in text and "padrão" not in text

@@ -954,6 +954,44 @@ async def test_closure_closes_a_manual_run_too(world):
     assert world.run_of(run.session_id).outcome == "closed"
 
 
+def comment_run(world: World, agent: int) -> store.Run:
+    """A `comment` run on a session of its own, still running."""
+    record = world.manager.create_session(world.project, agent_id=agent)
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        return store.insert_run(
+            conn, agent_id=agent, source="comment", started_at=NOW, outcome="running",
+            session_id=record.session_id,
+        )
+
+
+async def test_closure_closes_a_comment_run_and_frees_the_agent(world):
+    agent = world.add_agent()
+    run = comment_run(world, agent)
+    assert world.service.is_busy(agent) is True
+
+    await world.service.on_closure(fresh(run.session_id, verdict="can_close", evidence="ok"))
+
+    assert world.run_of(run.session_id).outcome == "closed"
+    assert world.service.is_busy(agent) is False  # the next wakeup of the agent can start
+
+    await world.service.wake(agent, source="manual")
+    await world.service.drain(agent)
+    assert [r.source for r in world.runs(agent)].count("manual") == 1
+
+
+async def test_closure_user_action_marks_a_comment_run_waiting(world):
+    agent = world.add_agent()
+    run = comment_run(world, agent)
+
+    await world.service.on_closure(
+        fresh(run.session_id, verdict="user_action", user_actions=["Reiniciar o serviço"])
+    )
+
+    assert world.run_of(run.session_id).outcome == "waiting"
+    [alert] = world.notices()
+    assert alert.kind == "alert" and "Reiniciar o serviço" in alert.text
+
+
 async def test_closure_ignores_task_runs(world):
     agent = world.add_agent()
     record = world.manager.create_session(world.project, agent_id=agent)
@@ -1469,3 +1507,34 @@ async def test_is_busy_includes_the_main_conversation_with_a_pending_prompt(worl
     await wait_until(lambda: world.manager.get(main).state == "awaiting_decision")
 
     assert world.service.is_busy(agent) is True
+
+
+async def test_the_scheduler_fires_a_routine_with_the_longest_instruction(world):
+    """The prompt of the routine adds a head and a tail to an instruction that may already
+    have 5.000 characters: the text must not meet the limit of the free-text wakeup."""
+    from claudio_maestro.org.scheduler import Scheduler
+    from claudio_maestro.usage import UsageChecker
+
+    agent = world.add_agent()
+    instruction = "x" * store.ROUTINE_INSTRUCTION_MAX
+    routine = world.add_routine(agent, instruction=instruction)
+    morning = datetime(2026, 10, 26, 9, 0, 5)
+    world.now = float(int(morning.timestamp()))
+    with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
+        store.replace_schedules(conn, routine, [("1234567", "09:00")], now=int(world.now) - 86400)
+    scheduler = Scheduler(
+        world.service, UsageChecker(world.recorder, enabled=False), world.db_path,
+        clock=lambda: world.now,
+    )
+
+    await scheduler.tick()
+    await world.service.drain(agent)
+
+    with closing(db.connect(world.db_path)) as conn:
+        [wakeup] = conn.execute(
+            "SELECT source, routine_id, state FROM wakeups WHERE agent_id = ?", (agent,)
+        ).fetchall()
+    assert (wakeup["source"], wakeup["routine_id"], wakeup["state"]) == ("routine", routine, "taken")
+    [run] = world.runs(agent)
+    assert run.source == "routine" and run.outcome != "failed"
+    assert run.scheduled_for == int(datetime(2026, 10, 26, 9, 0).timestamp())

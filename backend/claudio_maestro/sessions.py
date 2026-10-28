@@ -163,7 +163,7 @@ MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._\[\]-]{1,100}$")
 # How long an agent's policy may take to decide a tool call before the user is asked.
 POLICY_TIMEOUT = 10.0
 AGENT_SETUP_FAILED_TEXT = "Não foi possível preparar a sessão do agente."
-AGENT_MODE_TEXT = "Sessões de agente só rodam no modo padrão de permissões."
+AGENT_MODE_TEXT = "O modo de permissões de uma sessão de agente vem do AGENT.md do agente e não muda na conversa."
 # Modes the CLI may report for a session of an agent (it enters plan mode by itself).
 AGENT_CLI_MODES = ("default", "plan")
 DEFAULT_MODEL_VALUE = "default"
