@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from claudio_maestro import db, groups, projects
 from claudio_maestro.api.deps import DbDep, SettingsDep
-from claudio_maestro.api.org import BUSY_TEXT
+from claudio_maestro.api.org import PROJECT_BUSY_TEXT
 from claudio_maestro.org import store as org_store
 from claudio_maestro.security import is_within
 
@@ -144,7 +144,7 @@ async def delete_project(project_id: int, conn: DbDep, request: Request, fence_i
         org = request.app.state.org
         if any(org.is_busy(agent.id) for agent in org_store.list_agents(conn, project_id)):
             # Deleting would cut a run in the middle and leave a notice of an erased agent.
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BUSY_TEXT)
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PROJECT_BUSY_TEXT)
         work = request.app.state.work
         receipt = work.reserve_project_deletion(project_id, fence_id=fence_id)
         try:
@@ -173,7 +173,7 @@ async def delete_project(project_id: int, conn: DbDep, request: Request, fence_i
                     raise WorkConflictError('O recibo da exclusão mudou.')
                 if any(org.is_busy(agent.id) for agent in orphans):
                     # A run started while the sessions were being closed.
-                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BUSY_TEXT)
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PROJECT_BUSY_TEXT)
                 projects.delete_project(conn, project_id)
         finally:
             work.release_deletion_owner(project_id)

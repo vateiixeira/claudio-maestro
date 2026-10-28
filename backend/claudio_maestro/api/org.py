@@ -10,7 +10,9 @@ from the request by hand (a validation error of the framework echoes the input) 
 response or event ever carries a value.
 
 The service and the files come from `app.state.org` (`OrgService`) and `app.state.agent_files`
-(`AgentFiles`).
+(`AgentFiles`). The tasks and the decisions come from `app.state.tasks` (`TaskService`) and
+`app.state.decisions` (`DecisionService`); while the app has not wired them their routes answer
+503. A person is the actor of every task route (`actor_agent_id=None`).
 """
 
 import asyncio
@@ -30,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from claudio_maestro import db, projects
 from claudio_maestro.api.deps import DbDep
 from claudio_maestro.org import github_hooks, store
+from claudio_maestro.org.decisions import DecisionService
 from claudio_maestro.org.definition import (
     AgentDefinition,
     DefinitionError,
@@ -57,6 +60,7 @@ from claudio_maestro.org.service import (
     WakeupNotPendingError,
     resolve_add_dirs,
 )
+from claudio_maestro.org.tasks import TaskAuthorityError, TaskService, TaskStateError
 from claudio_maestro.sessions import ProjectUnavailableError, SessionNotFoundError
 
 router = APIRouter(prefix="/api")
@@ -82,6 +86,8 @@ BUSY_TEXT = (
     "O agente está executando ou tem uma conversa com turno em andamento ou esperando você. "
     "Finalize-a antes de excluir o agente."
 )
+PROJECT_BUSY_TEXT = "Há agentes deste projeto executando; aguarde ou cancele."
+TASKS_UNAVAILABLE = "As tarefas ainda não estão disponíveis."
 NAME_FROM_FILE = "O nome do agente vem do AGENT.md; altere o campo name: na definição."
 AGENT_DISABLED = "O agente está desligado."
 HASH_MISMATCH = (
@@ -189,6 +195,54 @@ class RoutinePatch(BaseModel):
     enabled: bool | None = None
     create_task: bool | None = None
     schedules: Annotated[list[ScheduleIn], Field(max_length=MAX_SCHEDULES)] | None = None
+
+
+class TaskCreate(BaseModel):
+    # The lengths and the values are checked by the store, which answers in Portuguese.
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int
+    title: Annotated[str, StringConstraints(strip_whitespace=True)]
+    description: str = ""
+    assignee_agent_id: int | None = None
+    reviewer_agent_id: int | None = None
+    parent_task_id: int | None = None
+    priority: str = "normal"
+
+
+class TaskPatch(BaseModel):
+    """What was sent is in `model_fields_set`: `assignee_agent_id: null` clears the assignee,
+    leaving the key out keeps it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int
+    status: str | None = None
+    assignee_agent_id: int | None = None
+    reviewer_agent_id: int | None = None
+    priority: str | None = None
+    title: Annotated[str, StringConstraints(strip_whitespace=True)] | None = None
+    description: str | None = None
+    max_runs: int | None = None
+    comment: str | None = None
+
+
+class CommentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: Annotated[str, StringConstraints(strip_whitespace=True)]
+
+
+class UnblockIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int
+
+
+class AnswerIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answer: Annotated[str, StringConstraints(strip_whitespace=True)]
 
 
 class NoticesRead(BaseModel):
@@ -1035,3 +1089,164 @@ async def put_github(request: Request, conn: DbDep) -> dict[str, Any]:
         with db.transaction(conn):
             github_hooks.set_owner(conn, login)
     return _github_state(request, conn)
+
+
+# Tasks and decisions ------------------------------------------------------------------------
+
+
+def _tasks(request: Request) -> TaskService:
+    service = getattr(request.app.state, "tasks", None)
+    if service is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=TASKS_UNAVAILABLE)
+    return service
+
+
+def _decisions(request: Request) -> DecisionService:
+    service = getattr(request.app.state, "decisions", None)
+    if service is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=TASKS_UNAVAILABLE)
+    return service
+
+
+def _task_http_error(exc: store.OrgError) -> HTTPException:
+    """What the board refuses, as a status and one sentence: unknown id 404, a stale revision
+    or a change the board does not allow 409, anything out of range 422."""
+    if isinstance(exc, store.NotFoundError):
+        return _not_found(str(exc))
+    if isinstance(exc, store.TaskRevisionError | TaskStateError):
+        return _conflict(str(exc))
+    if isinstance(exc, TaskAuthorityError):
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    return _unprocessable(str(exc))
+
+
+def _statuses(values: list[str] | None) -> list[str] | None:
+    """`?status=todo&status=blocked` or `?status=todo,blocked`."""
+    if not values:
+        return None
+    statuses = [part.strip() for value in values for part in value.split(",") if part.strip()]
+    if any(item not in store.TASK_STATUSES for item in statuses):
+        raise _unprocessable("Estado da tarefa inválido.")
+    return statuses
+
+
+Limit = Annotated[int, Query(ge=1, le=500)]
+Offset = Annotated[int, Query(ge=0)]
+
+
+@router.get("/tasks")
+async def list_tasks(
+    request: Request,
+    project_id: int | None = None,
+    assignee_agent_id: int | None = None,
+    statuses: Annotated[list[str] | None, Query(alias="status")] = None,
+    limit: Limit = 100,
+    offset: Offset = 0,
+) -> list[dict[str, Any]]:
+    tasks = _tasks(request).list(
+        project_id=project_id, assignee_agent_id=assignee_agent_id,
+        statuses=_statuses(statuses), limit=limit, offset=offset,
+    )
+    return [asdict(task) for task in tasks]
+
+
+@router.get("/agents/{agent_id}/tasks")
+async def list_agent_tasks(
+    agent_id: int,
+    request: Request,
+    conn: DbDep,
+    statuses: Annotated[list[str] | None, Query(alias="status")] = None,
+    limit: Limit = 100,
+    offset: Offset = 0,
+) -> list[dict[str, Any]]:
+    service = _tasks(request)
+    _get(conn, agent_id)
+    tasks = service.list(
+        assignee_agent_id=agent_id, statuses=_statuses(statuses), limit=limit, offset=offset
+    )
+    return [asdict(task) for task in tasks]
+
+
+@router.post("/tasks", status_code=201)
+async def create_task(body: TaskCreate, request: Request, conn: DbDep) -> dict[str, Any]:
+    service = _tasks(request)
+    _require_project(conn, body.project_id)
+    try:
+        task = await service.create_task(
+            project_id=body.project_id, title=body.title, description=body.description,
+            assignee_agent_id=body.assignee_agent_id, reviewer_agent_id=body.reviewer_agent_id,
+            parent_task_id=body.parent_task_id, priority=body.priority,  # type: ignore[arg-type]
+            actor_agent_id=None,
+        )
+    except store.OrgError as exc:
+        raise _task_http_error(exc) from exc
+    return asdict(task)
+
+
+@router.get("/tasks/{task_id}")
+async def get_task(task_id: int, request: Request) -> dict[str, Any]:
+    try:
+        return _tasks(request).get(task_id)
+    except store.OrgError as exc:
+        raise _task_http_error(exc) from exc
+
+
+@router.patch("/tasks/{task_id}")
+async def update_task(task_id: int, body: TaskPatch, request: Request) -> dict[str, Any]:
+    service = _tasks(request)
+    sent = body.model_fields_set
+    try:
+        task = await service.update_task(
+            task_id, expected_revision=body.expected_revision, actor_agent_id=None,
+            status=body.status,
+            assignee_agent_id=body.assignee_agent_id if "assignee_agent_id" in sent else store.UNSET,
+            reviewer_agent_id=body.reviewer_agent_id if "reviewer_agent_id" in sent else store.UNSET,
+            priority=body.priority, title=body.title, description=body.description,
+            max_runs=body.max_runs, comment=body.comment,
+        )
+    except store.OrgError as exc:
+        raise _task_http_error(exc) from exc
+    return asdict(task)
+
+
+@router.post("/tasks/{task_id}/comments", status_code=201)
+async def comment_task(task_id: int, body: CommentIn, request: Request) -> dict[str, Any]:
+    try:
+        comment = await _tasks(request).comment(task_id, body.text, author_agent_id=None)
+    except store.OrgError as exc:
+        raise _task_http_error(exc) from exc
+    return asdict(comment)
+
+
+@router.post("/tasks/{task_id}/unblock")
+async def unblock_task(task_id: int, body: UnblockIn, request: Request) -> dict[str, Any]:
+    try:
+        task = await _tasks(request).unblock(task_id, expected_revision=body.expected_revision)
+    except store.OrgError as exc:
+        raise _task_http_error(exc) from exc
+    return asdict(task)
+
+
+@router.get("/decisions")
+async def list_decisions(
+    request: Request, project_id: int | None = None, pending: bool = True
+) -> list[dict[str, Any]]:
+    """The decisions waiting for the person; `pending=0` lists the answered and expired ones
+    too."""
+    return _decisions(request).list(project_id=project_id, pending_only=pending)
+
+
+@router.post("/decisions/{decision_id}/answer")
+async def answer_decision(decision_id: int, body: AnswerIn, request: Request) -> dict[str, Any]:
+    service = _decisions(request)
+    try:
+        decision = await service.answer(decision_id, answer=body.answer)
+    except store.NotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+    except store.OrgError as exc:
+        # Out of range (the text) or no longer pending (answered or expired).
+        text = str(exc)
+        if text.startswith("A resposta precisa"):
+            raise _unprocessable(text) from exc
+        raise _conflict(text) from exc
+    return asdict(decision)

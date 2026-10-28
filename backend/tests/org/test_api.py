@@ -19,8 +19,10 @@ from test_sessions_api import make_project
 
 from claudio_maestro import db
 from claudio_maestro.agent.fake import FakeAgentFactory, text_turn
+from claudio_maestro.api.org import PROJECT_BUSY_TEXT
 from claudio_maestro.app import create_app
 from claudio_maestro.org import store
+from claudio_maestro.org.decisions import DecisionService
 from claudio_maestro.org.definition import definition_hash
 from claudio_maestro.org.files import AgentFiles
 from claudio_maestro.org.scheduler import Scheduler
@@ -1228,6 +1230,284 @@ def test_routine_run_now_with_create_task_over_the_cut_still_creates_the_task(ap
     with conn_of(api) as conn:
         [task] = store.list_tasks(conn)
         assert task.id == response.json()["id"]
+
+
+# Tasks and decisions ------------------------------------------------------------------
+
+
+@pytest.fixture
+def board(api: TestClient) -> TestClient:
+    """Wires the task and decision services (the app wires them later), publishing on the hub."""
+    state = api.app.state
+
+    def publish(kind: str, data: dict[str, Any]) -> None:
+        state.hub.publish({"session_id": None, "seq": 0, "type": kind, "data": data})
+
+    state.tasks = TaskService(state.settings.db_path, org=state.org, publish=publish)
+    state.decisions = DecisionService(
+        state.settings.db_path, org=state.org, tasks=state.tasks, publish=publish
+    )
+    return api
+
+
+def new_task(api: TestClient, project_id: int, title: str = "Corrigir o login", **extra: Any):
+    return api.post("/api/tasks", json={"project_id": project_id, "title": title, **extra})
+
+
+def pending_sources(api: TestClient, agent_id: int) -> list[str]:
+    with conn_of(api) as conn:
+        return [w.source for w in store.pending_wakeups(conn, agent_id)]
+
+
+def test_task_crud_via_api(board, project, agent, events):
+    created = new_task(
+        board, project["id"], "  Corrigir o login ", description="Falha com senha longa.",
+        assignee_agent_id=agent["id"], priority="high",
+    )
+
+    assert created.status_code == 201, created.text
+    task = created.json()
+    assert task["title"] == "Corrigir o login" and task["description"] == "Falha com senha longa."
+    assert task["status"] == "todo" and task["priority"] == "high" and task["revision"] == 1
+    assert task["created_by"] == "human" and task["created_by_agent_id"] is None
+    assert task["assignee_agent_id"] == agent["id"]
+    assert pending_sources(board, agent["id"]) == ["assignment"]
+    other = new_task(board, project["id"], "Outra").json()
+
+    assert [t["id"] for t in board.get("/api/tasks").json()] == [task["id"], other["id"]]
+    assert [t["id"] for t in board.get("/api/tasks", params={"project_id": project["id"]}).json()] == [
+        task["id"], other["id"],
+    ]
+    mine = board.get("/api/tasks", params={"assignee_agent_id": agent["id"]}).json()
+    assert [t["id"] for t in mine] == [task["id"]]
+    assert [t["id"] for t in board.get(f"/api/agents/{agent['id']}/tasks").json()] == [task["id"]]
+    assert board.get("/api/tasks", params={"status": "done"}).json() == []
+    assert len(board.get("/api/tasks", params={"limit": 1}).json()) == 1
+    assert [t["id"] for t in board.get("/api/tasks", params={"limit": 1, "offset": 1}).json()] == [
+        other["id"]
+    ]
+
+    patched = board.patch(
+        f"/api/tasks/{task['id']}",
+        json={"expected_revision": 1, "status": "in_progress", "title": "Login", "comment": "Vou ver."},
+    )
+    assert patched.status_code == 200, patched.text
+    body = patched.json()
+    assert body["status"] == "in_progress" and body["title"] == "Login" and body["revision"] == 2
+    assert [t["id"] for t in board.get("/api/tasks", params={"status": "in_progress"}).json()] == [
+        task["id"]
+    ]
+    changes = [
+        e["data"]["change"] for e in events if e["type"] == "task" and e["data"]["id"] == task["id"]
+    ]
+    assert changes[0] == "created" and "updated" in changes
+
+
+def test_create_task_validates_the_input(board, project, agent, home):
+    outro = make_project(board, home, "outro")
+    foreign = create_agent(board, outro["id"], "de-fora", "De fora")
+    base = {"project_id": project["id"], "title": "Tarefa"}
+
+    def post(**extra):
+        return board.post("/api/tasks", json={**base, **extra})
+
+    for bad in ({"title": ""}, {"title": "  "}, {"title": "x" * 161}, {"description": "x" * 20001}):
+        response = post(**bad)
+        assert response.status_code == 422, bad
+        assert isinstance(response.json()["detail"], str)
+    assert post(priority="enorme").status_code == 422
+    assert post(parent_task_id=999).status_code == 422
+    # An assignee or a reviewer of another project (or unknown) is a 422 with a sentence.
+    response = post(assignee_agent_id=foreign["id"])
+    assert response.status_code == 422 and "mesmo projeto" in response.json()["detail"]
+    assert post(reviewer_agent_id=foreign["id"]).status_code == 422
+    assert post(assignee_agent_id=9999).status_code == 422
+    assert board.post("/api/tasks", json={**base, "project_id": 9999}).status_code == 404
+    assert board.post("/api/tasks", json={**base, "extra": 1}).status_code == 422
+    assert post(title="x" * 160).status_code == 201
+    with conn_of(board) as conn:
+        assert [t.title for t in store.list_tasks(conn)] == ["x" * 160]
+
+
+def test_patch_task_stale_revision_409(board, project):
+    task = new_task(board, project["id"]).json()
+    ok = board.patch(f"/api/tasks/{task['id']}", json={"expected_revision": 1, "title": "Novo"})
+    assert ok.status_code == 200
+
+    stale = board.patch(f"/api/tasks/{task['id']}", json={"expected_revision": 1, "title": "Velho"})
+
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == "A tarefa mudou; recarregue e tente de novo."
+    assert board.get(f"/api/tasks/{task['id']}").json()["task"]["title"] == "Novo"
+    assert board.patch("/api/tasks/9999", json={"expected_revision": 1, "title": "x"}).status_code == 404
+    assert board.patch(f"/api/tasks/{task['id']}", json={"title": "sem revisão"}).status_code == 422
+
+
+def test_patch_task_distinguishes_null_from_absent(board, project, agent):
+    task = new_task(board, project["id"], assignee_agent_id=agent["id"]).json()
+
+    kept = board.patch(f"/api/tasks/{task['id']}", json={"expected_revision": 1, "priority": "low"})
+    assert kept.json()["assignee_agent_id"] == agent["id"]
+
+    cleared = board.patch(
+        f"/api/tasks/{task['id']}", json={"expected_revision": 2, "assignee_agent_id": None}
+    )
+    assert cleared.status_code == 200 and cleared.json()["assignee_agent_id"] is None
+
+    other = board.patch(f"/api/tasks/{task['id']}", json={"expected_revision": 3, "max_runs": 0})
+    assert other.status_code == 422 and isinstance(other.json()["detail"], str)
+    assert board.patch(
+        f"/api/tasks/{task['id']}", json={"expected_revision": 3, "status": "voando"}
+    ).status_code == 422
+    # A review needs a reviewer: a state error, not a crash.
+    in_review = board.patch(
+        f"/api/tasks/{task['id']}", json={"expected_revision": 3, "status": "in_review"}
+    )
+    assert in_review.status_code == 409 and "revisor" in in_review.json()["detail"]
+    assert board.patch(
+        f"/api/tasks/{task['id']}", json={"expected_revision": 3, "max_runs": 5}
+    ).json()["max_runs"] == 5
+
+
+def test_human_comment_wakes_assignee(board, project, agent, events):
+    task = new_task(board, project["id"], assignee_agent_id=agent["id"]).json()
+    with conn_of(board) as conn, db.transaction(conn):
+        for wakeup in store.pending_wakeups(conn, agent["id"]):
+            store.drop_wakeup(conn, wakeup.id, 5)
+
+    response = board.post(f"/api/tasks/{task['id']}/comments", json={"text": "  Olhe o log.  "})
+
+    assert response.status_code == 201, response.text
+    comment = response.json()
+    assert comment["author_kind"] == "human" and comment["author_agent_id"] is None
+    assert comment["text"] == "Olhe o log." and comment["task_id"] == task["id"]
+    assert pending_sources(board, agent["id"]) == ["comment"]
+    assert any(e["type"] == "task" and e["data"]["change"] == "comment" for e in events)
+    for bad in ("", "   ", "x" * 20001):
+        refused = board.post(f"/api/tasks/{task['id']}/comments", json={"text": bad})
+        assert refused.status_code == 422 and isinstance(refused.json()["detail"], str), bad
+    assert board.post("/api/tasks/9999/comments", json={"text": "oi"}).status_code == 404
+
+
+def test_unblock_task(board, project, agent):
+    task = new_task(board, project["id"], assignee_agent_id=agent["id"]).json()
+    not_blocked = board.post(f"/api/tasks/{task['id']}/unblock", json={"expected_revision": 1})
+    assert not_blocked.status_code == 409 and "bloqueada" in not_blocked.json()["detail"]
+    with conn_of(board) as conn, db.transaction(conn):
+        store.update_task(conn, task["id"], expected_revision=1, now=5, status="blocked")
+
+    assert board.post(
+        f"/api/tasks/{task['id']}/unblock", json={"expected_revision": 1}
+    ).status_code == 409
+    response = board.post(f"/api/tasks/{task['id']}/unblock", json={"expected_revision": 2})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "in_progress" and response.json()["run_count"] == 0
+    assert board.post("/api/tasks/9999/unblock", json={"expected_revision": 1}).status_code == 404
+
+
+def test_get_task_includes_comments_runs_decisions(board, project, agent):
+    task = new_task(board, project["id"], assignee_agent_id=agent["id"]).json()
+    board.post(f"/api/tasks/{task['id']}/comments", json={"text": "Primeiro."})
+    with conn_of(board) as conn, db.transaction(conn):
+        run = store.insert_run(
+            conn, agent_id=agent["id"], source="assignment", started_at=10, outcome="concluded",
+            session_id=None, task_id=task["id"], ended_at=20,
+        )
+        decision = store.create_decision(
+            conn, project_id=project["id"], task_id=task["id"], agent_id=agent["id"],
+            run_id=run.id, question="Qual banco?", options=["A", "B"], now=11,
+        )
+
+    response = board.get(f"/api/tasks/{task['id']}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"task", "comments", "runs", "decisions", "prs", "ci"}
+    assert body["task"]["id"] == task["id"]
+    assert [c["text"] for c in body["comments"]][-1] == "Primeiro."
+    assert [r["id"] for r in body["runs"]] == [run.id] and "session_id" in body["runs"][0]
+    assert [d["id"] for d in body["decisions"]] == [decision.id]
+    assert body["prs"] == [] and body["ci"] == []
+    assert board.get("/api/tasks/9999").status_code == 404
+
+
+def test_answer_decision_wakes_agent(board, project, agent, events):
+    task = new_task(board, project["id"], assignee_agent_id=agent["id"]).json()
+    with conn_of(board) as conn, db.transaction(conn):
+        for wakeup in store.pending_wakeups(conn, agent["id"]):
+            store.drop_wakeup(conn, wakeup.id, 5)
+        decision = store.create_decision(
+            conn, project_id=project["id"], task_id=task["id"], agent_id=agent["id"],
+            run_id=None, question="Qual banco?", options=["A", "B"], now=11,
+        )
+    listed = board.get("/api/decisions", params={"project_id": project["id"], "pending": 1}).json()
+    assert [d["id"] for d in listed] == [decision.id]
+
+    response = board.post(f"/api/decisions/{decision.id}/answer", json={"answer": "Use o A."})
+
+    assert response.status_code == 200, response.text
+    answered = response.json()
+    assert answered["status"] == "answered" and answered["answer"] == "Use o A."
+    assert answered["receipt"]
+    assert pending_sources(board, agent["id"]) == ["decision"]
+    assert board.get("/api/decisions", params={"pending": 1}).json() == []
+    assert [d["id"] for d in board.get("/api/decisions", params={"pending": 0}).json()] == [
+        decision.id
+    ]
+    assert any(e["type"] == "decision" and e["data"]["status"] == "answered" for e in events)
+    comments = board.get(f"/api/tasks/{task['id']}").json()["comments"]
+    assert comments[-1]["text"] == "Decisão: Use o A." and comments[-1]["author_kind"] == "human"
+    again = board.post(f"/api/decisions/{decision.id}/answer", json={"answer": "Outra."})
+    assert again.status_code == 409 and isinstance(again.json()["detail"], str)
+    assert board.post("/api/decisions/9999/answer", json={"answer": "x"}).status_code == 404
+    for bad in ("", "  ", "x" * 20001):
+        assert board.post(
+            f"/api/decisions/{decision.id}/answer", json={"answer": bad}
+        ).status_code == 422, bad
+
+
+def test_task_routes_without_the_services_are_503(api, project, agent):
+    for method, url, body in (
+        ("get", "/api/tasks", None),
+        ("post", "/api/tasks", {"project_id": project["id"], "title": "x"}),
+        ("get", "/api/tasks/1", None),
+        ("get", "/api/decisions", None),
+        ("post", "/api/decisions/1/answer", {"answer": "x"}),
+        ("get", f"/api/agents/{agent['id']}/tasks", None),
+    ):
+        response = getattr(api, method)(url, **({"json": body} if body else {}))
+        assert response.status_code == 503, url
+        assert response.json()["detail"] == "As tarefas ainda não estão disponíveis."
+
+
+def test_task_routes_need_the_maestro_header_and_origin(board, project):
+    task = new_task(board, project["id"]).json()
+    with without_header(board, "x-maestro"):
+        assert board.get("/api/tasks").status_code == 403
+        assert board.get(f"/api/tasks/{task['id']}").status_code == 403
+        assert board.get("/api/decisions").status_code == 403
+    response = board.post(
+        "/api/tasks", json={"project_id": project["id"], "title": "x"},
+        headers={"origin": "http://evil.example"},
+    )
+    assert response.status_code == 403
+
+
+def test_delete_project_refused_while_agent_busy(api, project, agent):
+    with conn_of(api) as conn, db.transaction(conn):
+        store.insert_run(
+            conn, agent_id=agent["id"], source="manual", started_at=1, outcome="running"
+        )
+
+    response = api.delete(f"/api/projects/{project['id']}")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == PROJECT_BUSY_TEXT == (
+        "Há agentes deste projeto executando; aguarde ou cancele."
+    )
+    assert [p["id"] for p in api.get("/api/projects").json()] == [project["id"]]
+    assert api.get(f"/api/agents/{agent['id']}").status_code == 200
 
 
 # Notices -----------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from test_sessions_api import make_project
 from claudio_maestro import db
 from claudio_maestro.agent.base import AgentOptions
 from claudio_maestro.agent.fake import FakeAgentClient, text_turn
-from claudio_maestro.api.org import BUSY_TEXT
+from claudio_maestro.api.org import PROJECT_BUSY_TEXT
 from claudio_maestro.app import create_app
 from claudio_maestro.config import Settings
 from claudio_maestro.org import store
@@ -459,7 +459,7 @@ def test_deleting_a_project_is_refused_while_one_of_its_agents_is_busy(
     response = api.delete(f"/api/projects/{other['id']}")
 
     assert response.status_code == 409
-    assert response.json()["detail"] == BUSY_TEXT
+    assert response.json()["detail"] == PROJECT_BUSY_TEXT
     assert [p["id"] for p in api.get("/api/projects").json()].count(other["id"]) == 1
     assert (api.app.state.agent_files.root / "ocupado").is_dir()
     assert [r["outcome"] for r in runs_of(api, agent["id"])] == ["running"]
