@@ -61,6 +61,7 @@ from claudio_maestro.org.prompt import (
     wake_text,
 )
 from claudio_maestro.org.store import Agent, normalize_pr_url
+from claudio_maestro.org.tasks import APP_NAME, HUMAN_NAME, REMOVED_AGENT
 from claudio_maestro.org.tools import SERVER_NAME, TOOL_PREFIX, build_server
 from claudio_maestro.security import PathNotAllowedError, resolve_within
 from claudio_maestro.sessions import (
@@ -76,6 +77,8 @@ from claudio_maestro.sessions import (
 )
 
 if TYPE_CHECKING:
+    from claudio_maestro.org.ci import CiService
+    from claudio_maestro.org.decisions import DecisionService
     from claudio_maestro.org.tasks import TaskService
 
 logger = logging.getLogger(__name__)
@@ -98,6 +101,13 @@ CANCELLED_BY_USER = "Cancelada por você."
 UNCERTAIN_SEND = (
     "O envio foi interrompido. Confira a conversa antes de rodar de novo."
 )
+UNAVAILABLE_TOOL = "Esta ferramenta não está disponível agora."
+STALE_TASK = (
+    "A tarefa mudou enquanto você a alterava. Leia-a de novo com `tarefa_ler` e tente outra vez."
+)
+TOOL_LIST_LIMIT = 100  # tasks `tarefas_listar` returns at most (the newest)
+TOOL_COMMENTS = 50  # comments `tarefa_ler` returns at most (the newest)
+OPEN_TASK_STATUSES = ("todo", "in_progress", "in_review", "blocked")
 NOT_CONNECTED = "Não foi possível conectar ao agente. Rode de novo para tentar outra vez."
 NOT_STARTED = (
     "O Maestro foi reiniciado antes de a execução começar. Rode de novo se ainda for preciso."
@@ -350,6 +360,10 @@ class OrgService:
         self._last_alert: dict[str, str] = {}
         # The board the runs of a task read (`brief`); the app sets it after both exist.
         self.tasks = tasks
+        # The decisions and the CI receipts the `decidir` and `verificar_ci` tools reach; the app
+        # sets them too.
+        self.decisions: "DecisionService | None" = None
+        self.ci: "CiService | None" = None
         # Ids of closed tasks whose worktree is to be removed once their run ends, and the ones
         # being removed right now.
         self._worktrees_to_remove: set[int] = set()
@@ -2329,6 +2343,213 @@ class OrgService:
         with closing(db.connect(self._db_path)) as conn:
             run = store.run_for_session(conn, session_id)
         self._add_notice(agent.id, run.id if run else None, "notice", text)
+
+    # Tools of the agent: tasks, decisions and CI ---------------------------------------
+
+    def tasks_list(
+        self, agent_id: int, *, mine: bool, statuses: list[str] | None
+    ) -> list[dict[str, Any]]:
+        """The tasks of the agent's project as `tarefas_listar` shows them: by default the open
+        ones, and with `mine` only those the agent carries out or reviews. The newest
+        `TOOL_LIST_LIMIT`, oldest first."""
+        tasks = self._tool_tasks()
+        wanted = list(statuses) if statuses else list(OPEN_TASK_STATUSES)
+        invalid = [status for status in wanted if status not in store.TASK_STATUSES]
+        if invalid:
+            raise store.TaskValidationError(
+                f"Status inválido: {invalid[0]}. Use: {', '.join(store.TASK_STATUSES)}."
+            )
+        with closing(db.connect(self._db_path)) as conn:
+            agent = store.get_agent(conn, agent_id)
+        found = tasks.list(project_id=agent.project_id, statuses=wanted, limit=-1)
+        if mine:
+            found = [
+                task for task in found if agent_id in (task.assignee_agent_id, task.reviewer_agent_id)
+            ]
+        found = found[-TOOL_LIST_LIMIT:]
+        with closing(db.connect(self._db_path)) as conn:
+            names = self._agent_names(conn, agent.project_id)
+            return [self._task_view(conn, task, names) for task in found]
+
+    def task_read(self, agent_id: int, task_id: int) -> dict[str, Any]:
+        """A task of the agent's project with its newest comments. A task of another project
+        is "not found"."""
+        tasks = self._tool_tasks()
+        with closing(db.connect(self._db_path)) as conn:
+            agent = store.get_agent(conn, agent_id)
+            task = store.get_task(conn, task_id)
+            if task.project_id != agent.project_id:
+                raise store.TaskNotFoundError()
+            comments = store.list_comments(conn, task_id, limit=TOOL_COMMENTS, latest=True)
+            names = self._agent_names(conn, agent.project_id)
+            view = self._task_view(conn, task, names)
+        view["can_change"] = tasks.authority(agent_id, task)
+        view["comments"] = [
+            {
+                "id": comment.id,
+                "author": self._comment_author(comment, names),
+                "text": comment.text,
+                "created_at": comment.created_at,
+            }
+            for comment in comments
+        ]
+        return view
+
+    async def task_create(self, agent_id: int, session_id: str, **fields: Any) -> dict[str, Any]:
+        tasks = self._tool_tasks()
+        with closing(db.connect(self._db_path)) as conn:
+            agent = store.get_agent(conn, agent_id)
+            assignee = self._resolve_agent(conn, agent.project_id, fields.get("assignee"))
+            reviewer = self._resolve_agent(conn, agent.project_id, fields.get("reviewer"))
+        task = await tasks.create_task(
+            project_id=agent.project_id,
+            title=fields["title"],
+            description=fields.get("description") or "",
+            assignee_agent_id=assignee,
+            reviewer_agent_id=reviewer,
+            parent_task_id=fields.get("parent_id"),
+            priority=fields.get("priority") or "normal",
+            actor_agent_id=agent_id,
+        )
+        return self._view_of(task.id)
+
+    async def task_update(
+        self, agent_id: int, session_id: str, task_id: int, **fields: Any
+    ) -> dict[str, Any]:
+        """The agent changes a task. It does not know the revision, so the current one is used;
+        if the task changes in between, the read and the update are tried once more."""
+        tasks = self._tool_tasks()
+        with closing(db.connect(self._db_path)) as conn:
+            agent = store.get_agent(conn, agent_id)
+            assignee = self._resolve_agent(conn, agent.project_id, fields.get("assignee"))
+            run_id = self._active_run_id(conn, session_id, agent_id)
+        for attempt in (1, 2):
+            with closing(db.connect(self._db_path)) as conn:
+                revision = store.get_task(conn, task_id).revision
+            try:
+                await tasks.update_task(
+                    task_id,
+                    expected_revision=revision,
+                    actor_agent_id=agent_id,
+                    status=fields.get("status"),
+                    assignee_agent_id=assignee if assignee is not None else store.UNSET,
+                    priority=fields.get("priority"),
+                    comment=fields.get("comment"),
+                    run_id=run_id,
+                )
+                break
+            except store.TaskRevisionError:
+                if attempt == 2:
+                    raise store.OrgError(STALE_TASK) from None
+        return self._view_of(task_id)
+
+    async def task_comment(
+        self, agent_id: int, session_id: str, task_id: int, text: str
+    ) -> dict[str, Any]:
+        tasks = self._tool_tasks()
+        with closing(db.connect(self._db_path)) as conn:
+            store.get_agent(conn, agent_id)
+            run_id = self._active_run_id(conn, session_id, agent_id)
+        comment = await tasks.comment(task_id, text, author_agent_id=agent_id, run_id=run_id)
+        return {"id": comment.id, "task_id": task_id}
+
+    def decide(self, session_id: str, question: str, options: list[str]) -> dict[str, Any]:
+        if self.decisions is None:
+            raise store.OrgError(UNAVAILABLE_TOOL)
+        decision = self.decisions.request(session_id, question=question, options=options)
+        return {"id": decision.id, "task_id": decision.task_id}
+
+    async def verify_ci(self, session_id: str, run_url: str) -> dict[str, Any]:
+        if self.ci is None:
+            raise store.OrgError(UNAVAILABLE_TOOL)
+        try:
+            return await self.ci.verify(session_id, run_url=run_url)
+        except projects.ProjectNotFoundError as error:
+            # Not an `OrgError`, but its message is for the agent too.
+            raise store.OrgError(str(error)) from error
+
+    def _tool_tasks(self) -> "TaskService":
+        if self.tasks is None:
+            raise store.OrgError(UNAVAILABLE_TOOL)
+        return self.tasks
+
+    def _view_of(self, task_id: int) -> dict[str, Any]:
+        with closing(db.connect(self._db_path)) as conn:
+            task = store.get_task(conn, task_id)
+            return self._task_view(conn, task, self._agent_names(conn, task.project_id))
+
+    def _agent_names(self, conn: sqlite3.Connection, project_id: int) -> dict[int, str]:
+        return {a.id: self._describe(a)[0] for a in store.list_agents(conn, project_id)}
+
+    def _task_view(
+        self, conn: sqlite3.Connection, task: store.Task, names: dict[int, str]
+    ) -> dict[str, Any]:
+        def name(agent_id: int | None) -> str | None:
+            return None if agent_id is None else names.get(agent_id, REMOVED_AGENT)
+
+        if task.created_by_agent_id is not None:
+            creator: str | None = name(task.created_by_agent_id)
+        elif task.created_by == "human":
+            creator = HUMAN_NAME
+        else:
+            creator = "Rotina"
+        return {
+            "id": task.id,
+            "title": task.title,
+            "description": task.description,
+            "status": task.status,
+            "priority": task.priority,
+            "assignee": name(task.assignee_agent_id),
+            "reviewer": name(task.reviewer_agent_id),
+            "creator": creator,
+            "parent_id": task.parent_task_id,
+            "blocked_reason": task.blocked_reason,
+            "worktree": task.worktree_path,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+        }
+
+    @staticmethod
+    def _comment_author(comment: store.Comment, names: dict[int, str]) -> str:
+        if comment.author_kind == "human":
+            return HUMAN_NAME
+        if comment.author_kind == "app":
+            return APP_NAME
+        if comment.author_agent_id is None:
+            return REMOVED_AGENT
+        return names.get(comment.author_agent_id, REMOVED_AGENT)
+
+    def _resolve_agent(
+        self, conn: sqlite3.Connection, project_id: int, ref: str | None
+    ) -> int | None:
+        """The agent of the project that `ref` names: its `name` (of the `AGENT.md`) or its
+        `slug`, ignoring case. A name that fits several agents asks for the slug."""
+        wanted = (ref or "").strip().casefold()
+        if not wanted:
+            return None
+        matches = [
+            agent
+            for agent in store.list_agents(conn, project_id)
+            if agent.slug.casefold() == wanted or self._describe(agent)[0].casefold() == wanted
+        ]
+        if not matches:
+            raise store.TaskValidationError(
+                f"Não há agente “{ref}” neste projeto. Veja os nomes com `organizacao`."
+            )
+        if len(matches) > 1:
+            slugs = ", ".join(agent.slug for agent in matches)
+            raise store.TaskValidationError(
+                f"O nome “{ref}” serve a mais de um agente. Use o identificador: {slugs}."
+            )
+        return matches[0].id
+
+    @staticmethod
+    def _active_run_id(conn: sqlite3.Connection, session_id: str, agent_id: int) -> int | None:
+        """The run the session is serving, only while it is active and of this agent."""
+        run = store.run_for_session(conn, session_id)
+        if run is None or run.agent_id != agent_id or run.outcome not in store.ACTIVE_OUTCOMES:
+            return None
+        return run.id
 
     # Hooks of the sessions and of the closure check -----------------------------------
 
