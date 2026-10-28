@@ -82,7 +82,7 @@ class AgentOptions:
     # False: the process is not started with the switch that lets the mode become
     # bypassPermissions later (sessions of an agent never leave the default mode).
     allow_bypass: bool = True
-    # Sessions of an agent (specialist). Text appended to the Claude Code system prompt
+    # Sessions of an agent. Text appended to the Claude Code system prompt
     # (None: the SDK default prompt, untouched).
     system_prompt_append: str | None = None
     # Extra folders the agent may read and write (the `--add-dir`s).

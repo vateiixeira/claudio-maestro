@@ -38,9 +38,9 @@ from claudio_maestro.config import (
     validate_port,
 )
 from claudio_maestro.digest.model import DigestModelError, DigestRequest
+from claudio_maestro.org import store as org_store
+from claudio_maestro.org.files import AgentFiles
 from claudio_maestro.runmode import RunMode
-from claudio_maestro.specialists import store as specialist_store
-from claudio_maestro.specialists.files import SpecialistFiles
 from claudio_maestro.updates import ReleaseInfo
 from claudio_maestro.usage import UsageReport
 
@@ -121,7 +121,7 @@ GIT_SCENARIO = [
 ]
 
 
-# The agent the "Agentes" and Inbox specs expect (seeded by `_seed_specialists`).
+# The agent the "Agentes" and Inbox specs expect (seeded by `_seed_agents`).
 TRIAGEM_PROJECT = "Loja Demo"
 TRIAGEM_FAILURE_REASON = "O token do repositório expirou."
 TRIAGEM_ALERT_TEXT = "A Triagem falhou nas últimas execuções."
@@ -510,36 +510,39 @@ def seed_git(root: Path, home: Path, conn) -> None:
         )
 
 
-def _seed_specialists(settings, conn, now: datetime) -> None:
-    """Seed the "Triagem" agent (with a skill, a schedule, two runs and two notices), so the
-    Agentes page and the Inbox have something to show. Everything goes under the temporary
-    data folder: no route creates notices, only the service during a run."""
+def _seed_agents(settings, conn, now: datetime) -> None:
+    """Seed the "Triagem" agent (with an `AGENT.md`, a routine with a schedule, two runs and two
+    notices), so the Agentes page and the Inbox have something to show. Everything goes under
+    the temporary data folder: no route creates notices, only the service during a run."""
     stamp = int(now.timestamp())
     project = next(p for p in projects.list_projects(conn) if p.name == TRIAGEM_PROJECT)
-    files = SpecialistFiles(settings.data_dir / "specialists")
-    files.create("triagem", "Triagem")
-    files.write_skill("triagem", TRIAGEM_SKILL)
-    agent = specialist_store.create_specialist(
-        conn, slug="triagem", name="Triagem", project_id=project.id, now=stamp
+    AgentFiles(settings.data_dir / "agents").create("triagem", TRIAGEM_SKILL)
+    agent = org_store.create_agent(
+        conn, slug="triagem", name="Triagem", project_id=project.id, reports_to=None, now=stamp
     )
-    specialist_store.replace_schedules(conn, agent.id, [("12345", "03:00")], stamp)
+    routine = org_store.create_routine(
+        conn, project_id=project.id, agent_id=agent.id, name="Triagem",
+        instruction="Faça a triagem dos chamados novos.", now=stamp,
+    )
+    org_store.replace_schedules(conn, routine.id, [("12345", "03:00")], stamp)
     for hours_ago, outcome, reason in ((26, "concluded", None), (2, "failed", TRIAGEM_FAILURE_REASON)):
         started = stamp - hours_ago * 3600
-        specialist_store.insert_run(
-            conn, specialist_id=agent.id, trigger="schedule", started_at=started,
-            scheduled_for=started, outcome=outcome, reason=reason, ended_at=started + 120,
+        org_store.insert_run(
+            conn, agent_id=agent.id, source="routine", routine_id=routine.id,
+            started_at=started, scheduled_for=started, outcome=outcome, reason=reason,
+            ended_at=started + 120,
         )
-    specialist_store.add_notice(
-        conn, specialist_id=agent.id, session_id=None, kind="alert",
-        text=TRIAGEM_ALERT_TEXT, now=stamp - 3600,
+    org_store.add_notice(
+        conn, agent_id=agent.id, run_id=None, kind="alert", text=TRIAGEM_ALERT_TEXT,
+        now=stamp - 3600,
     )
-    summary = specialist_store.add_notice(
-        conn, specialist_id=agent.id, session_id=None, kind="summary",
-        text=TRIAGEM_SUMMARY_TEXT, now=stamp - 25 * 3600,
+    summary = org_store.add_notice(
+        conn, agent_id=agent.id, run_id=None, kind="summary", text=TRIAGEM_SUMMARY_TEXT,
+        now=stamp - 25 * 3600,
     )
-    specialist_store.mark_notices_read(conn, [summary.id], stamp - 24 * 3600)
-    specialist_store.add_announcement(
-        conn, specialist_id=agent.id, run_id=None, session_id=None,
+    org_store.mark_notices_read(conn, [summary.id], stamp - 24 * 3600)
+    org_store.add_announcement(
+        conn, agent_id=agent.id, run_id=None, session_id=None,
         text=TRIAGEM_SUMMARY_TEXT, created_at=stamp - 25 * 3600,
     )
 
@@ -581,7 +584,7 @@ def seed(root: Path) -> None:
                     started, conversation.get("subagents"), conversation.get("filler_turns", 0),
                 )
         seed_git(root, settings.home_dir, conn)
-        _seed_specialists(settings, conn, now)
+        _seed_agents(settings, conn, now)
         if os.environ.get("MAESTRO_E2E_CHAT") == "1":
             # Dedicated to work-flow.e2e.ts. Existing Git/conversation scenarios
             # keep their own repositories and all their original session counts.
@@ -662,7 +665,7 @@ def build_app(port: int) -> FastAPI:
     button), `run_mode` (fixed, reads nothing from the system) and `self_updater` (None: the
     real one, which with `restart=None` refuses before running anything).
 
-    The agents (specialists) need no parameter: their folders live under `MAESTRO_DATA_DIR`
+    The agents need no parameter: their folders live under `MAESTRO_DATA_DIR`
     (inside the temporary root), their sessions go through `agent_factory` and their
     schedules read the usage through `fetch_usage`, so nothing of theirs reaches real data.
     """
@@ -771,7 +774,7 @@ def build_app(port: int) -> FastAPI:
                 await super()._run_steps([FailStep(f'Falha no cenário de trabalho E2E: {error}')])
 
     def chat_agent(options: AgentOptions) -> AgentClient:
-        # Specialist chats and read-only command probes use the fake. Ordinary
+        # Agent chats and read-only command probes use the fake. Ordinary
         # conversations retain the refusal that the existing specs exercise.
         if not options.system_prompt_append and options.settings != NO_HOOKS:
             return refuse_agent(options)

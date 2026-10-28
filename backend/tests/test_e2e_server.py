@@ -150,9 +150,9 @@ def test_seed_registers_the_scenario_projects(tmp_path, monkeypatch):
     assert all(Path(p.path).is_relative_to(tmp_path) for p in registered)
 
 
-def test_seed_creates_the_triagem_agent_with_schedule_runs_and_notices(tmp_path, monkeypatch):
-    from claudio_maestro.specialists import store
-    from claudio_maestro.specialists.files import SpecialistFiles, parse_skill
+def test_seed_creates_the_triagem_agent_with_routine_runs_and_notices(tmp_path, monkeypatch):
+    from claudio_maestro.org import store
+    from claudio_maestro.org.files import AgentFiles
 
     apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
 
@@ -161,34 +161,38 @@ def test_seed_creates_the_triagem_agent_with_schedule_runs_and_notices(tmp_path,
     settings = load_settings()
     with closing(db.connect(settings.db_path)) as conn:
         project = next(p for p in projects.list_projects(conn) if p.name == "Loja Demo")
-        agents = store.list_specialists(conn)
+        agents = store.list_agents(conn)
         assert [(a.slug, a.name, a.project_id) for a in agents] == [
             ("triagem", "Triagem", project.id)
         ]
-        schedules = store.list_schedules(conn, agents[0].id)
+        assert agents[0].legacy is None
+        routines = store.list_routines(conn, agent_id=agents[0].id)
+        schedules = store.list_schedules(conn, routines[0].id)
         runs = store.list_runs(conn, agents[0].id)
         notices = store.list_notices(conn)
         announcements = store.pending_announcements(conn, agents[0].id)
     assert len(announcements) == 1
     assert announcements[0].text == e2e.TRIAGEM_SUMMARY_TEXT
+    assert [r.name for r in routines] == ["Triagem"]
     assert [(s.days, s.time) for s in schedules] == [("12345", "03:00")]
     assert sorted(r.outcome for r in runs) == ["concluded", "failed"]
+    assert {r.source for r in runs} == {"routine"}
     failed = next(r for r in runs if r.outcome == "failed")
     assert failed.reason == e2e.TRIAGEM_FAILURE_REASON
     assert all(r.ended_at is not None for r in runs)
     by_kind = {n.kind: n for n in notices}
     assert set(by_kind) == {"alert", "summary"}
     assert by_kind["alert"].text == e2e.TRIAGEM_ALERT_TEXT
-    assert by_kind["alert"].session_id is None
     assert by_kind["alert"].read_at is None
     assert by_kind["summary"].text == e2e.TRIAGEM_SUMMARY_TEXT
     assert by_kind["summary"].read_at is not None
-    files = SpecialistFiles(settings.data_dir / "specialists")
-    skill = parse_skill(files.read_skill("triagem"))
-    assert skill.name and skill.description and skill.body.strip()
-    assert (settings.data_dir / "specialists" / "triagem" / "SKILL.md").resolve().is_relative_to(
+    files = AgentFiles(settings.data_dir / "agents")
+    definition = files.read_definition("triagem")
+    assert definition.name and definition.description and definition.body.strip()
+    assert (settings.data_dir / "agents" / "triagem" / "AGENT.md").resolve().is_relative_to(
         tmp_path.resolve()
     )
+    assert not (settings.data_dir / "specialists").exists()
 
 
 def _seeded(tmp_path, monkeypatch) -> Path:

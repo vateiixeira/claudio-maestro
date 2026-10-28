@@ -185,6 +185,8 @@ O comando que abre arquivos no editor (padrão: `code`) fica nas Preferências d
 
 ## Agentes
 
+Os agentes estão sendo refeitos como uma organização por projeto: cada agente passa a ser um arquivo `AGENT.md` com rotinas, chefe e subordinados. A migração dos agentes existentes, como o Sentry e o KBGen, é automática. As telas e esta documentação são refeitas no fim da branch; até lá, o que está descrito abaixo pode não corresponder ao app.
+
 Esta seção descreve as rotinas anteriores, que continuam disponíveis em **Agentes** e em **Agentes e rotinas anteriores** na barra lateral. O fluxo de [CTO e tarefas](#começar-pelo-trabalho) mantém seus próprios vínculos de execução e usa as permissões normais do projeto.
 
 Um agente é uma rotina que você descreve uma vez e o Maestro roda por você, na hora ou nos horários marcados: triar issues, revisar PRs, conferir um deploy. Cadastre na página **Agentes**; cada um tem:

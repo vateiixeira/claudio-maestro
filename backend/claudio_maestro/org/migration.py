@@ -18,6 +18,9 @@ Se a execução cair entre 2 e 4, a próxima vê `legacy_json` ainda preenchido 
 pronta: só termina os passos 3 e 4. Depois da migração `legacy_json` fica nulo, então uma
 segunda chamada não encontra nada a fazer.
 
+O relatório (`agents/migracao-<data>.md`) só é gravado quando algo foi migrado ou há algum
+aviso; numa instalação nova (sem pasta antiga nem agente antigo) nenhum arquivo é criado.
+
 Segredos: os valores só passam por `AgentFiles` (modo 600) e nunca entram em avisos, no
 relatório nem em mensagens de erro; o relatório lista só os nomes.
 """
@@ -496,11 +499,16 @@ def _write_text(path: Path, text: str) -> None:
         raise
 
 
-def _write_report(agents_root: Path, text: str, migrated: bool, when: datetime) -> Path | None:
+def _write_report(
+    agents_root: Path, text: str, migrated: bool, has_warnings: bool, when: datetime
+) -> Path | None:
+    if not migrated and not has_warnings:
+        # Instalação nova, ou todos os agentes já migrados: nada a dizer, nenhum arquivo.
+        return None
     agents_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = agents_root / f"{REPORT_PREFIX}{when:%Y-%m-%d}.md"
     if not migrated:
-        # Uma execução sem trabalho nunca apaga o relatório de uma execução que fez.
+        # Só avisos: uma execução sem trabalho nunca apaga nem duplica o relatório de outra.
         if any(agents_root.glob(f"{REPORT_PREFIX}*.md")):
             return None
         _write_text(path, text)
@@ -544,5 +552,7 @@ def migrate_files(
     with contextlib.suppress(OSError):
         (agents_root / STAGING_DIR).rmdir()
     report.text = _render_report(report.migrated, report.warnings, when)
-    report.report_path = _write_report(agents_root, report.text, bool(report.migrated), when)
+    report.report_path = _write_report(
+        agents_root, report.text, bool(report.migrated), bool(report.warnings), when
+    )
     return report

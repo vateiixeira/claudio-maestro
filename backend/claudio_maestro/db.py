@@ -1047,6 +1047,30 @@ MIGRATIONS.append([
     """,
 ])
 
+# The old agents (`specialists`) were copied into `agents` and friends by migration 31, and the
+# service that used them is gone: drop the old tables. Children first, so the implicit DELETE
+# that SQLite runs before dropping a parent has nothing left to cascade into. `IF EXISTS` makes
+# the step safe to rerun. Dropping `specialists` also drops its mirror triggers; `sessions`
+# already points at `agents` (migration 31), so it is untouched.
+MIGRATIONS.append([
+    f"DROP TABLE IF EXISTS {table}"
+    for table in (
+        "specialist_pr_comments",
+        "specialist_prs",
+        "specialist_chats",
+        "specialist_announcements",
+        "specialist_notices",
+        "specialist_items",
+        "specialist_runs",
+        "specialist_schedules",
+        "specialists",
+    )
+] + [
+    # The index of `sessions.agent_id` kept the name it had when the column was `specialist_id`.
+    "DROP INDEX IF EXISTS sessions_specialist",
+    "CREATE INDEX IF NOT EXISTS sessions_agent ON sessions(agent_id)",
+])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

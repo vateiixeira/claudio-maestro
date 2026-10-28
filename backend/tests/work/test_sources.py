@@ -40,7 +40,6 @@ async def test_collection_is_separate_and_25_backlog_items_do_not_consume_execut
     assert len(records['items']) == 25
     assert all(world.item(row['work_item_id']).status == 'backlog' for row in records['items'])
     assert 'description' not in str(world.service.list_work(world.service.coordinator(world.project.id).session_id))
-    assert world.factory.clients[-1].options.specialist_id is None if hasattr(world.factory.clients[-1].options, 'specialist_id') else True
     world.pause.release.set()
     await wait_until(lambda: world.manager.get(attempt.session_id).state == 'idle')
     await world.service.reconcile()

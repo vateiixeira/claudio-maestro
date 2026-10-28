@@ -15,8 +15,8 @@ from claudio_maestro.agent.fake import (
     text_turn,
     tool_turn,
 )
+from claudio_maestro.org import store
 from claudio_maestro.sessions import SessionContext, SessionManager
-from claudio_maestro.specialists import store
 
 pytestmark = pytest.mark.anyio
 
@@ -114,11 +114,11 @@ async def test_unmanaged_normal_session_can_have_no_extra_context(world):
     assert options.system_prompt_append is None and options.mcp_servers is None
 
 
-async def test_context_does_not_change_legacy_specialist(world):
+async def test_context_does_not_change_an_agent_session(world):
     with closing(db.connect(world.db_path)) as conn:
-        specialist = store.create_specialist(conn, slug='legacy', name='Legado',
-                                            project_id=world.project.id, now=1)
-    record = world.manager.create_session(world.project, agent_id=specialist.id)
+        agent = store.create_agent(conn, slug='legacy', name='Legado',
+                                   project_id=world.project.id, reports_to=None, now=1)
+    record = world.manager.create_session(world.project, agent_id=agent.id)
     session = world.manager.get(record.session_id)
     await session.send('oi')
     await wait_until(lambda: bool(world.ends))

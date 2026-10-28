@@ -1,8 +1,8 @@
 """Organização de agentes em SQLite: agentes, rotinas, fila de despertar, execuções,
 registro, avisos, anúncios, PRs e conversas.
 
-Funções simples sobre uma conexão, no estilo de `specialists/store.py`. Quem chama é dono da
-transação quando várias escritas precisam ser atômicas (`db.transaction`).
+Funções simples sobre uma conexão. Quem chama é dono da transação quando várias escritas
+precisam ser atômicas (`db.transaction`).
 """
 
 import json
@@ -76,7 +76,7 @@ class Agent:
     enabled: bool
     main_session_id: str | None
     definition_hash: str | None
-    # {model, effort, denied_tools, extra_project_ids} of the specialist this agent came from;
+    # {model, effort, denied_tools, extra_project_ids} of the old agent this one came from;
     # `None` on new agents and once the migration of the files absorbed it into `AGENT.md`.
     legacy: dict[str, Any] | None
     created_at: int
@@ -328,7 +328,7 @@ def set_main_session(conn: sqlite3.Connection, agent_id: int, session_id: str | 
 
 
 def clear_legacy(conn: sqlite3.Connection, agent_id: int) -> None:
-    """Drop what the migration kept from the old specialist, once `AGENT.md` has it."""
+    """Drop what the migration kept from the old agent, once `AGENT.md` has it."""
     conn.execute("UPDATE agents SET legacy_json = NULL WHERE id = ?", (agent_id,))
 
 

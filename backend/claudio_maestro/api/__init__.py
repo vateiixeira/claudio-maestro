@@ -21,7 +21,6 @@ from claudio_maestro.api import (
     plans,
     projects,
     sessions,
-    specialists,
     suggestions,
     terminal,
     updates,
@@ -41,7 +40,6 @@ router.include_router(digest.router)
 router.include_router(deliveries.router)
 router.include_router(groups.router)
 router.include_router(labels.router)
-router.include_router(specialists.router)
 router.include_router(org.router)
 router.include_router(activity.router)
 router.include_router(app_state.router)

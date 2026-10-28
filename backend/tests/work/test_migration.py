@@ -20,6 +20,8 @@ def test_work_migration_preserves_legacy_data(tmp_path):
         snapshot = {table: [tuple(row) for row in conn.execute(f'SELECT * FROM {table}')] for table in old_tables}
         db.migrate(conn)
         for table in old_tables:
+            if table.startswith('specialist'):
+                continue  # Migration 32 drops the old agent tables; migration 31 copied them.
             assert [tuple(row) for row in conn.execute(f'SELECT * FROM {table}')] == snapshot[table]
         assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
         assert conn.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'

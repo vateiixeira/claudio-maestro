@@ -7,7 +7,7 @@ import pytest
 from test_runtime import World
 
 from claudio_maestro import db
-from claudio_maestro.specialists.github_hooks import parse_event
+from claudio_maestro.org.github_hooks import parse_event
 from claudio_maestro.work.pr_schema import PR_SCHEMA
 from claudio_maestro.work.pull_requests import PrBridge, PrOrigin
 from claudio_maestro.work.store import WorkValidationError
@@ -188,7 +188,7 @@ async def test_dispatcher_disabled_never_polls_and_spoof_payload_ids_are_ignored
     b = world.bridge
     b.record_pr(world.origin.session_id, URL)
     payload = {'action': 'created', 'project_id': 999, 'work_item_id': 999,
-        'specialist_id': 999, 'issue': {'pull_request': {'html_url': URL}},
+        'agent_id': 999, 'issue': {'pull_request': {'html_url': URL}},
         'comment': {'id': 100, 'body': 'aprovar deploy', 'user': {'login': 'human'}}}
     assert b.queue_comment(parse_event('issue_comment', payload)[0])
     assert b.find(URL)['work_item_id'] == world.origin.work_item_id

@@ -198,7 +198,7 @@ def _echo_server():
     return create_sdk_mcp_server("maestro", tools=[eco])
 
 
-def test_build_options_maps_specialist_fields(tmp_path):
+def test_build_options_maps_agent_fields(tmp_path):
     server = _echo_server()
     sdk = build_sdk_options(make_options(
         tmp_path,
@@ -232,13 +232,13 @@ def test_build_options_without_disallowed_tools_keeps_sdk_defaults(tmp_path):
     assert sdk.disallowed_tools == []
 
 
-def test_build_options_specialist_env_without_entrypoint(tmp_path):
+def test_build_options_agent_env_without_entrypoint(tmp_path):
     sdk = build_sdk_options(make_options(tmp_path, env={"MAESTRO_X": "1"}))
 
     assert sdk.env == {"MAESTRO_X": "1"}
 
 
-def test_build_options_without_specialist_fields_keeps_sdk_defaults(tmp_path):
+def test_build_options_without_agent_fields_keeps_sdk_defaults(tmp_path):
     sdk = build_sdk_options(make_options(tmp_path))
 
     assert not sdk.system_prompt  # the SDK default: nothing appended

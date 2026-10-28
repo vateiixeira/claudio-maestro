@@ -1,4 +1,4 @@
-"""Org store: agents, routines, wakeup queue, runs and the tables copied from specialists."""
+"""Org store: agents, routines, wakeup queue, runs and the tables copied from the old agents."""
 
 import sqlite3
 from collections.abc import Iterator

@@ -20,6 +20,17 @@ def open_db(path: Path) -> Iterator[sqlite3.Connection]:
         yield conn
 
 
+def migrate_before_drop(conn) -> None:
+    """`db.migrate` stopped at version 31: the old `specialist_*` tables still exist.
+
+    Tests of what migrations 1 to 31 did to those tables use this; migration 32 drops them.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", db.MIGRATIONS[:31])
+        patch.setattr(db, "SCHEMA_VERSION", 31)
+        db.migrate(conn)
+
+
 def test_migrate_creates_tables(tmp_path: Path):
     with open_db(tmp_path / "test.db") as conn:
         db.migrate(conn)
@@ -47,7 +58,7 @@ def test_queue_migration_preserves_runs_foreign_keys_and_deleted_id_sequence(tmp
         if not keep_run:
             conn.execute("DELETE FROM specialist_runs WHERE id = 7")
 
-        db.migrate(conn)
+        migrate_before_drop(conn)
 
         if keep_run:
             assert dict(conn.execute("SELECT * FROM specialist_runs WHERE id = 7").fetchone()) == {
@@ -142,7 +153,7 @@ def test_specialist_migration_adds_empty_denied_tools(tmp_path: Path):
             row["name"] for row in conn.execute("PRAGMA table_info(specialists)")
         }
 
-        db.migrate(conn)
+        migrate_before_drop(conn)
 
         row = conn.execute("SELECT denied_tools FROM specialists WHERE slug = 'rev'").fetchone()
     assert row["denied_tools"] == "[]"
@@ -323,12 +334,12 @@ def test_remote_control_migration_keeps_existing_sessions_off(tmp_path: Path):
 
 def test_migration_creates_specialist_tables(tmp_path: Path):
     with open_db(tmp_path / "test.db") as conn:
-        db.migrate(conn)
+        migrate_before_drop(conn)
         assert {
             "specialists", "specialist_schedules", "specialist_runs",
             "specialist_items", "specialist_notices",
         } <= table_names(conn)
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == len(db.MIGRATIONS)
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 31
         cols = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
     assert "agent_id" in cols and cols["agent_id"]["dflt_value"] is None
 
@@ -365,8 +376,6 @@ def test_specialists_migration_keeps_existing_sessions(tmp_path: Path):
 
 
 def test_migration_keeps_runs_and_accepts_comment_trigger(tmp_path: Path):
-    from claudio_maestro.specialists import store
-
     with open_db(tmp_path / "old.db") as conn:
         before = next(
             index for index, statements in enumerate(db.MIGRATIONS)
@@ -404,7 +413,7 @@ def test_migration_keeps_runs_and_accepts_comment_trigger(tmp_path: Path):
             (agent_id,),
         )
 
-        db.migrate(conn)
+        migrate_before_drop(conn)
 
         runs = conn.execute("SELECT * FROM specialist_runs ORDER BY id").fetchall()
         assert [(r["trigger"], r["session_id"], r["started_at"]) for r in runs] == [
@@ -416,23 +425,27 @@ def test_migration_keeps_runs_and_accepts_comment_trigger(tmp_path: Path):
         }
         assert {"specialist_runs_specialist_started", "specialist_runs_session"} <= indexes
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-        comment = store.insert_run(
-            conn, specialist_id=agent_id, trigger="comment", started_at=40, outcome="running",
-        )
-        assert store.get_run(conn, comment.id).trigger == "comment"
+        comment_id = conn.execute(
+            "INSERT INTO specialist_runs (specialist_id, trigger, started_at, outcome)"
+            " VALUES (?, 'comment', 40, 'running')",
+            (agent_id,),
+        ).lastrowid
+        assert conn.execute(
+            "SELECT trigger FROM specialist_runs WHERE id = ?", (comment_id,)
+        ).fetchone()[0] == "comment"
         # The foreign keys survived the rebuild: deleting the session unlinks the run.
         conn.execute("DELETE FROM sessions WHERE session_id = 's1'")
         assert conn.execute(
             "SELECT session_id FROM specialist_runs WHERE id = ?", (runs[0]["id"],)
         ).fetchone()[0] is None
         # And so do the cascades: deleting the agent removes its runs.
-        store.delete_specialist(conn, agent_id)
+        conn.execute("DELETE FROM specialists WHERE id = ?", (agent_id,))
         assert conn.execute("SELECT COUNT(*) FROM specialist_runs").fetchone()[0] == 0
 
 
 def test_migration_creates_conversation_tables(tmp_path: Path):
     with open_db(tmp_path / "test.db") as conn:
-        db.migrate(conn)
+        migrate_before_drop(conn)
         assert {
             "specialist_announcements", "specialist_prs", "specialist_pr_comments",
         } <= table_names(conn)
@@ -456,7 +469,7 @@ def test_comment_dispatch_migration_preserves_queued_comments(tmp_path: Path):
         conn.execute("INSERT INTO projects (name, path, color, position, created_at) VALUES ('p','/p','x',0,0)")
         conn.execute("INSERT INTO specialists (slug, name, project_id, created_at, updated_at) VALUES ('a','A',1,0,0)")
         conn.execute("INSERT INTO specialist_pr_comments (comment_id, pr_url, specialist_id, author, body, html_url, created_at, received_at) VALUES ('issue:1','https://github.com/o/r/pull/1',1,'vini','ajuste','url',1,2)")
-        db.migrate(conn)
+        migrate_before_drop(conn)
         conn.execute("UPDATE specialist_pr_comments SET status = 'dispatching' WHERE comment_id = 'issue:1'")
         row = conn.execute("SELECT body, status FROM specialist_pr_comments").fetchone()
         assert (row['body'], row['status']) == ('ajuste', 'dispatching')
@@ -543,9 +556,9 @@ def test_migration_31_copies_specialists_into_agents(tmp_path: Path):
     with open_db(tmp_path / "old.db") as conn:
         _build_v30_with_specialist(conn)
 
-        db.migrate(conn)
+        migrate_before_drop(conn)
 
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 31
         agents = conn.execute("SELECT * FROM agents").fetchall()
         assert len(agents) == 1
         agent = agents[0]
@@ -604,6 +617,79 @@ def test_migration_31_copies_specialists_into_agents(tmp_path: Path):
             "INSERT INTO runs (agent_id, source, started_at, outcome) VALUES (7, 'manual', 1, 'skipped')"
         )
         assert new.lastrowid > 5
+
+
+SPECIALIST_TABLES = (
+    "specialists", "specialist_schedules", "specialist_runs", "specialist_items",
+    "specialist_notices", "specialist_announcements", "specialist_prs",
+    "specialist_pr_comments", "specialist_chats",
+)
+
+
+def test_migration_32_drops_specialist_tables(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v30_with_specialist(conn)
+        with db.transaction(conn):  # migration 31 only; the drop (32) stays pending
+            for statement in db.MIGRATIONS[30]:
+                statement(conn) if callable(statement) else conn.execute(statement)
+            conn.execute("PRAGMA user_version = 31")
+        assert set(SPECIALIST_TABLES) <= table_names(conn)
+        before = {
+            table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY 1, 2")]
+            for table in ("agents", "routines", "routine_schedules", "runs", "registry", "notices",
+                          "announcements", "agent_chats", "agent_prs", "agent_pr_comments")
+        }
+        sessions_before = [
+            tuple(row) for row in conn.execute("SELECT session_id, agent_id FROM sessions ORDER BY 1")
+        ]
+        assert len(db.MIGRATIONS) >= 32
+
+        db.migrate(conn)
+
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
+        assert not set(SPECIALIST_TABLES) & table_names(conn)
+        leftovers = [
+            row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE name LIKE 'specialist%' OR sql LIKE '%specialist%'"
+            )
+        ]
+        assert leftovers == []
+        assert conn.execute(
+            "SELECT COUNT(*) FROM sqlite_sequence WHERE name LIKE 'specialist%'"
+        ).fetchone()[0] == 0
+        # What was copied stays exactly as it was.
+        for table, rows in before.items():
+            now = [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY 1, 2")]
+            assert now == rows, table
+        assert [
+            tuple(row) for row in conn.execute("SELECT session_id, agent_id FROM sessions ORDER BY 1")
+        ] == sessions_before
+        sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'sessions'").fetchone()[0]
+        assert "agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL" in sql
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        # The foreign key still works after the old parent table is gone.
+        conn.execute("DELETE FROM agents WHERE id = 7")
+        assert conn.execute("SELECT agent_id FROM sessions WHERE session_id = 'main'").fetchone()[0] is None
+
+
+def test_migration_32_can_run_twice(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v30_with_specialist(conn)
+        db.migrate(conn)
+        # A crash between the statements and the version stamp must not make a rerun fail.
+        with db.transaction(conn):
+            for statement in db.MIGRATIONS[31]:
+                statement(conn) if callable(statement) else conn.execute(statement)
+        assert not set(SPECIALIST_TABLES) & table_names(conn)
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_migration_32_on_a_database_without_specialists(tmp_path: Path):
+    with open_db(tmp_path / "t.db") as conn:
+        db.migrate(conn)
+        assert not set(SPECIALIST_TABLES) & table_names(conn)
+        assert db.SCHEMA_VERSION == 32
 
 
 def test_migration_31_keeps_autoincrement_watermark(tmp_path: Path):
@@ -678,7 +764,7 @@ def test_agent_tables_cascade_from_project(tmp_path: Path):
 
 def _agent_sessions_db(conn) -> None:
     _build_v30_with_specialist(conn)
-    db.migrate(conn)
+    migrate_before_drop(conn)
 
 
 def test_sessions_agent_fk_points_at_agents_after_migration_31(tmp_path: Path):

@@ -18,9 +18,9 @@ def world(tmp_path):
         for project_id in (1, 2):
             conn.execute('INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)',
                          (project_id, f'p{project_id}', f'/p{project_id}', '#fff', project_id, 0))
-        for sid, project, specialist in [('s1', 1, None), ('s2', 1, None), ('other', 2, None)]:
+        for sid, project, owner in [('s1', 1, None), ('s2', 1, None), ('other', 2, None)]:
             conn.execute('INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at, agent_id) VALUES (?, ?, ?, ?, 0, 0, ?)',
-                         (sid, project, f'/p{project}', 'session', specialist))
+                         (sid, project, f'/p{project}', 'session', owner))
         yield conn, path
 
 
@@ -108,9 +108,9 @@ def test_claim_refuses_session_from_another_project(world, session_id):
     assert store.get_item(conn, item.id) == item
 
 
-def test_claim_refuses_legacy_specialist_session(world):
+def test_claim_refuses_an_agent_session(world):
     conn, _ = world
-    conn.execute("INSERT INTO specialists (id, slug, name, project_id, created_at, updated_at) VALUES (1, 'old', 'Old', 1, 0, 0)")
+    conn.execute("INSERT INTO agents (id, slug, name, project_id, created_at, updated_at) VALUES (1, 'old', 'Old', 1, 0, 0)")
     conn.execute("UPDATE sessions SET agent_id = 1 WHERE session_id = 's1'")
     item = create(conn, status='ready')
     with pytest.raises(store.WorkValidationError):
@@ -201,12 +201,12 @@ def test_audit_event_failure_rolls_back_the_whole_transition(world):
     assert store.get_item(conn, item.id) == item
 
 
-def test_filtering_and_metadata_have_no_implicit_specialist_policy(world):
+def test_filtering_and_metadata_have_no_implicit_agent_policy(world):
     conn, _ = world
     first = create(conn)
     create(conn, status='ready')
     assert [x.id for x in store.list_items(conn, project_id=1, status='backlog')] == [first.id]
-    assert 'specialist_id' not in asdict(first)
+    assert 'agent_id' not in asdict(first)
     assert 'denied_tools' not in asdict(first)
 
 

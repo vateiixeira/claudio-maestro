@@ -32,7 +32,7 @@ class WorkFiles:
         temporary = f".{name}.pending"
         folder = self._folder()
         try:
-            # Same atomic private-file pattern as SpecialistFiles._write_pending.
+            # Same atomic private-file pattern as the agents' private files (`org/files.py`).
             fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
                          0o600, dir_fd=folder)
             try:

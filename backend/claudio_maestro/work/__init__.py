@@ -1,1 +1,1 @@
-"""Persistent project work, independent from legacy specialist tool policies."""
+"""Persistent project work, independent from the tool policies of the agents."""

@@ -6,7 +6,7 @@ from test_runtime import World
 from test_sessions import wait_until
 
 from claudio_maestro import db
-from claudio_maestro.specialists.github_hooks import parse_event
+from claudio_maestro.org.github_hooks import parse_event
 from claudio_maestro.work import store
 from claudio_maestro.work.pr_integration import WorkPrIntegration
 

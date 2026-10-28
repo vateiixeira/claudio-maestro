@@ -199,13 +199,92 @@ def test_file_migration_is_idempotent(conn, data_dir, clock):
     assert report_path.read_text(encoding="utf-8") == report_before
 
 
-def test_file_migration_no_op_writes_report_when_none_exists(conn, data_dir, clock):
+def test_fresh_install_writes_no_report(conn, data_dir, clock):
+    """No `specialists/` folder and no old agent: there is nothing to say, so no file either."""
     report = migration.migrate_files(data_dir, conn, clock=clock)
 
-    assert report.migrated == []
+    assert report.migrated == [] and report.warnings == []
+    assert report.report_path is None
+    assert not list((data_dir / "agents").glob("migracao-*.md"))
+    assert not (data_dir / "specialists").exists()
+    # And again on the next start.
+    assert migration.migrate_files(data_dir, conn, clock=clock).report_path is None
+    assert not list((data_dir / "agents").glob("migracao-*.md"))
+
+
+def test_report_is_written_when_there_is_only_a_warning(conn, data_dir, clock):
+    add_specialist(conn, data_dir, skill=None)  # SKILL.md missing: a warning, nothing migrated
+
+    report = migration.migrate_files(data_dir, conn, clock=clock)
+
     path = data_dir / "agents" / "migracao-2026-10-28.md"
+    assert report.migrated == [] and report.warnings
     assert report.report_path == path
-    assert "nada a migrar" in path.read_text(encoding="utf-8").lower()
+    assert "## Avisos" in path.read_text(encoding="utf-8")
+
+
+def test_database_at_version_29_goes_through_30_31_32_and_the_files_still_migrate(
+    tmp_path, data_dir, clock
+):
+    """The old tables are dropped by migration 32; the file step must not need them."""
+    db_path = tmp_path / "old.db"
+    with closing(db.connect(db_path)) as old:
+        for statements in db.MIGRATIONS[:29]:
+            for statement in statements:
+                old.execute(statement) if isinstance(statement, str) else statement(old)
+        old.execute("PRAGMA user_version = 29")
+        old.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/work/app', '#fff', 0, 0)"
+        )
+        old.execute(
+            "INSERT INTO specialists (id, slug, name, project_id, extra_project_ids, model, effort,"
+            " run_text, denied_tools, enabled, created_at, updated_at)"
+            " VALUES (3, 'sentry', 'Sentry', 1, '[]', 'sonnet', 'high', 'Veja os erros.', '[]',"
+            " 1, 5, 6)"
+        )
+        old.execute(
+            "INSERT INTO specialist_schedules (specialist_id, days, time) VALUES (3, '12345', '09:00')"
+        )
+        old.execute(
+            "INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at,"
+            " specialist_id) VALUES ('s', 1, '/work/app', 't', 0, 0, 3)"
+        )
+    folder = data_dir / "specialists" / "sentry"
+    folder.mkdir(parents=True, mode=0o700)
+    (folder / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    (folder / "aprendizados.md").write_text("- O alerta X é ruído.\n", encoding="utf-8")
+    (folder / "secrets.env").write_text(f"TOKEN={json.dumps(SECRET_VALUE)}\n", encoding="utf-8")
+    os.chmod(folder / "secrets.env", 0o600)
+
+    with closing(db.connect(db_path)) as migrated:
+        db.migrate(migrated)
+        assert db.schema_version(migrated) == db.SCHEMA_VERSION >= 32
+        names = {r[0] for r in migrated.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        assert not {n for n in names if n.startswith("specialist")}
+
+        report = migration.migrate_files(data_dir, migrated, clock=clock)
+
+        assert [m.slug for m in report.migrated] == ["sentry"] and report.warnings == []
+        assert [(r, c) for m in report.migrated for r, c in m.routines] == [("Sentry", 1)]
+        files = files_of(data_dir)
+        definition = files.read_definition("sentry")
+        assert (definition.name, definition.model, definition.effort) == ("Sentry", "sonnet", "high")
+        assert files.read_secrets("sentry") == {"TOKEN": SECRET_VALUE}
+        assert "ruído" in files.read_memory("sentry")
+        path = data_dir / "agents" / "migracao-2026-10-28.md"
+        assert report.report_path == path
+        text = path.read_text(encoding="utf-8")
+        assert "sentry" in text and "TOKEN" in text and SECRET_VALUE not in text
+        assert (data_dir / "specialists" / "sentry.migrado" / "SKILL.md").is_file()
+        assert migrated.execute("SELECT agent_id FROM sessions WHERE session_id = 's'").fetchone()[0] == 3
+        assert migrated.execute("SELECT legacy_json FROM agents WHERE id = 3").fetchone()[0] is None
+        assert migrated.execute("PRAGMA foreign_key_check").fetchall() == []
+
+        # A second start repeats nothing and keeps the report.
+        again = migration.migrate_files(data_dir, migrated, clock=clock)
+        assert again.migrated == [] and again.report_path is None
+        assert path.read_text(encoding="utf-8") == text
 
 
 def test_file_migration_report_lists_each_agent(conn, data_dir, clock):

@@ -330,13 +330,14 @@ async def test_session_setup_is_none_for_an_ordinary_session(world):
     assert world.service.session_setup(world.record(world.source)) is None
 
 
-async def test_extras_wire_the_maestro_server_without_settings(world):
+async def test_extras_wire_the_maestro_server_and_nothing_of_the_old_policy(world):
     session = world.session_of(world.add_agent())
 
     extras = world.service.session_setup(session.record)
 
     assert set(extras.mcp_servers) == {"maestro"}
-    assert extras.settings is None and extras.deny_message is None
+    # The old service's `--settings` rules and refusal text are gone with it.
+    assert not hasattr(extras, "settings") and not hasattr(extras, "deny_message")
 
 
 async def test_agent_that_no_longer_exists_fails_with_the_fixed_text(world, caplog):

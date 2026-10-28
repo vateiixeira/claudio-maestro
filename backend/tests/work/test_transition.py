@@ -46,6 +46,8 @@ def test_consistent_temporary_backup_preserves_all_legacy_work_rows_and_private_
         db.init_db(target)
         with closing(db.connect(target)) as clone:
             for table, rows in before.items():
+                if table.startswith('specialist'):
+                    continue  # Migration 32 drops them; migration 31 copied them into agents.
                 # Phase29 appends dispatch proof columns but preserves every old
                 # value; compare the old projection as well as all row counts.
                 columns = [r['name'] for r in conn.execute(f'PRAGMA table_info("{table}")')]

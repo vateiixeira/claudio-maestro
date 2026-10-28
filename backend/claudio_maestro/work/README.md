@@ -161,7 +161,7 @@ principais/adicionais; conversas manuais respeitam sua cerca.
 para conversas manuais e completa a receita segura para cópias. O padrão continua
 ligado; mensagens e ativações manuais seguem explícitas e operacionais.
 
-Mudanças de projeto/adicionais de especialistas mantêm o lock do proprietário
+Mudanças de projeto/adicionais de agentes mantêm o lock do proprietário
 e o escopo antigo até todos os clientes comprovadamente ociosos serem fechados.
 A transação revalida a ausência de nova fila antes de alterar o cadastro. Exclusão
 de projeto adicional verifica também seus proprietários e fecha os contextos
@@ -184,7 +184,7 @@ antigo entre o fechamento do SDK e a alteração dos projetos adicionais.
 cria uma geração efêmera de coleta e uma tarefa técnica na mesma transação que o
 modo, o evento e o dossiê privado. `source` aceita `sentry` ou `kbgen`. O dispatcher
 usa uma sessão normal do projeto, com responsabilidade `investigator` e dossiê
-`kind=collection`; não cadastra um especialista nem altera ferramentas, MCPs,
+`kind=collection`; não cadastra um agente nem altera ferramentas, MCPs,
 credenciais ou permissões. O prompt desta sessão pede somente descoberta e não
 alteração de código. Não há um novo sandbox de comandos por papel.
 
@@ -346,7 +346,7 @@ APIs para a interface (mesmas proteções Host/Origin/X-Maestro do app):
 - `POST /api/projects/{id}/work-feed/retry-unsent`: retomada explícita somente de
   envios comprovadamente não iniciados; incerteza exige conciliação.
 
-O retorno de PR usa o adaptador separado; esses vínculos não criam especialistas
+O retorno de PR usa o adaptador separado; esses vínculos não criam agentes
 fictícios. As permissões nativas do SDK continuam no fluxo normal existente.
 
 
@@ -455,7 +455,7 @@ ou reserva. Diminuir limites conserva processos e ocupação existentes.
 
 A migração aditiva começa com os dois limites em 1 e conserva sessões, agentes,
 conversas e recibos anteriores. O ensaio de transição é feito em banco temporário,
-sem downgrade destrutivo nem migração automática do histórico de especialistas.
+sem downgrade destrutivo nem migração automática do histórico dos agentes antigos.
 O check integral da entrega DEV está concluído, conforme o plano local. Nenhuma
 passagem de tempo libera claims ou transforma envio incerto em trabalho pronto.
 

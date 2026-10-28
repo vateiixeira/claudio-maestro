@@ -163,9 +163,9 @@ MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._\[\]-]{1,100}$")
 # How long an agent's policy may take to decide a tool call before the user is asked.
 POLICY_TIMEOUT = 10.0
 AGENT_SETUP_FAILED_TEXT = "Não foi possível preparar a sessão do agente."
-SPECIALIST_MODE_TEXT = "Sessões de agente só rodam no modo padrão de permissões."
+AGENT_MODE_TEXT = "Sessões de agente só rodam no modo padrão de permissões."
 # Modes the CLI may report for a session of an agent (it enters plan mode by itself).
-SPECIALIST_CLI_MODES = ("default", "plan")
+AGENT_CLI_MODES = ("default", "plan")
 DEFAULT_MODEL_VALUE = "default"
 # Entrypoint written to the transcripts of the app's sessions. The editor extension
 # hides `sdk-cli`, `sdk-ts` and `sdk-py`, and the CLI turns `cli` into `sdk-cli`
@@ -971,7 +971,7 @@ class _CliTurn:
     announced: bool
 
 
-# What the agents feature (specialists) adds to a session --------------------
+# What the agents feature adds to a session --------------------
 
 
 @dataclass
@@ -980,17 +980,13 @@ class SessionExtras:
     (appended to the system prompt), extra folders, environment, in-process MCP servers,
     the permission mode and the tools the definition blocks, and `decide`, the agent's
     policy that answers `allow` (no prompt), `ask` (a pending prompt in the Inbox) or `deny`
-    (the tool is refused, no prompt) per tool call. `settings` (the `--settings` JSON with
-    `ask` and `deny` rules) is optional, and so is `deny_message`: without it, a refused
-    tool is reported as blocked."""
+    (the tool is refused, no prompt, reported as blocked) per tool call."""
 
     system_prompt_append: str
     add_dirs: list[Path]
     env: dict[str, str]
     mcp_servers: dict[str, Any]
     decide: Callable[[str, dict[str, Any]], Awaitable[Literal["allow", "ask", "deny"]]]
-    settings: str | None = None
-    deny_message: Callable[[str, dict[str, Any]], str] | None = None
     permission_mode: str = "default"
     disallowed_tools: list[str] = field(default_factory=list)
 
@@ -2045,7 +2041,6 @@ class ActiveSession:
                     "add_dirs": extras.add_dirs,
                     "env": extras.env,
                     "mcp_servers": extras.mcp_servers,
-                    "settings": extras.settings,
                     "disallowed_tools": list(extras.disallowed_tools),
                 }),
                 **({} if context is None else {
@@ -2845,7 +2840,7 @@ class ActiveSession:
             and init.permission_mode != self.record.permission_mode
             and (
                 self.record.agent_id is None
-                or init.permission_mode in SPECIALIST_CLI_MODES
+                or init.permission_mode in AGENT_CLI_MODES
                 # The mode the definition asked for (e.g. bypassPermissions).
                 or (self._extras is not None and init.permission_mode == self._extras.permission_mode)
             )
@@ -2877,7 +2872,7 @@ class ActiveSession:
             and permission_mode != "default"
             and self.record.agent_id is not None
         ):
-            raise InvalidDecisionError(SPECIALIST_MODE_TEXT)
+            raise InvalidDecisionError(AGENT_MODE_TEXT)
         changes: dict[str, Any] = {}
         if model is not None and model != self.record.model:
             changes["model"] = model
@@ -3447,10 +3442,7 @@ class ActiveSession:
             if decision == "allow":
                 return PermissionResultAllow()
             if decision == "deny":
-                message = (
-                    extras.deny_message(tool_name, tool_input) if extras.deny_message else ""
-                )
-                return PermissionResultDeny(message=message or BLOCKED_TOOL_MESSAGE)
+                return PermissionResultDeny(message=BLOCKED_TOOL_MESSAGE)
         prompt = PendingPrompt(
             prompt_id=uuid.uuid4().hex,
             future=asyncio.get_running_loop().create_future(),
@@ -4778,7 +4770,7 @@ class SessionManager:
             and permission_mode != "default"
             and session.record.agent_id is not None
         ):
-            raise InvalidDecisionError(SPECIALIST_MODE_TEXT)
+            raise InvalidDecisionError(AGENT_MODE_TEXT)
         if (
             permission_mode == "bypassPermissions"
             and not confirm_bypass
