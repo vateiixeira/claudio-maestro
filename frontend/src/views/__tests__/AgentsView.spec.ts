@@ -64,7 +64,9 @@ describe('Agentes', () => {
     expect(wrapper.text()).toContain('Nenhum agente ainda')
   })
 
-  it('permite escolher um agente no seletor e na visão geral', async () => {
+  // T7: tela antiga sem rota (a organização ocupa /agentes); o arquivo e este teste saem na limpeza.
+
+  it.skip('permite escolher um agente no seletor e na visão geral', async () => {
     const { wrapper } = await mountAt('/agentes', { 'GET /api/specialists': () => jsonResponse([makeSpecialist()]) })
     expect(wrapper.get('[data-test="agent-picker-toggle"]').text()).toContain('Escolher agente')
     expect(wrapper.get('[data-test="agent-overview-item"]').attributes('href')).toBe('/agentes/1')
@@ -98,7 +100,8 @@ describe('Agentes', () => {
   })
 
   describe('novo agente', () => {
-    it('sugere o identificador do nome, cria e abre o agente', async () => {
+    // T7: tela antiga sem rota (a organização ocupa /agentes); o arquivo e este teste saem na limpeza.
+    it.skip('sugere o identificador do nome, cria e abre o agente', async () => {
       const created = makeSpecialist({ id: 5, slug: 'revisor-de-prs', name: 'Revisor de PRs' })
       const { wrapper, fetch, router } = await mountAt('/agentes', {
         'GET /api/specialists': () => jsonResponse([]),

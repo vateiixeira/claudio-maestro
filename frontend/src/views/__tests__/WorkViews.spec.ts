@@ -76,7 +76,7 @@ it('entrega objetivo uma vez à conversa persistente do projeto escolhido', asyn
   await wrapper.get('textarea').setValue('Investigar sem publicar')
   await wrapper.get('form').trigger('submit'); await wrapper.get('form').trigger('submit')
   await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe('/cto?projeto=2')
+  expect(router.currentRoute.value.fullPath).toBe('/agentes/2')
   const messages = fetch.mock.calls.filter(call => call[0] === '/api/sessions/cto-two/messages')
   expect(messages).toHaveLength(1)
   expect(JSON.parse(String(messages[0]?.[1]?.body))).toEqual({ text: 'Investigar sem publicar' })

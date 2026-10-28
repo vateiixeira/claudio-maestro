@@ -11,6 +11,28 @@ export const MEMORY_MAX = 4000
 /** `DEFINITION_MAX_BYTES` of `org/definition.py`. */
 export const DEFINITION_MAX_BYTES = 100_000
 
+/** A folder name for an agent from its name: lowercase letters, digits and single hyphens, up to `SLUG_MAX_LENGTH`. */
+export function slugify(name: string): string {
+  const slug = name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, SLUG_MAX_LENGTH)
+  return slug.replace(/-+$/g, '')
+}
+
+const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+const two = (n: number) => String(n).padStart(2, '0')
+
+/** "28 out 14:05"; the year only when it is not the current one. */
+export function formatRunDate(seconds: number, now: Date = new Date()): string {
+  const d = new Date(seconds * 1000)
+  const year = d.getFullYear() === now.getFullYear() ? '' : ` ${d.getFullYear()}`
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${year} ${two(d.getHours())}:${two(d.getMinutes())}`
+}
+
 /** ISO weekdays 1 (Monday) to 7 (Sunday): the button letter and the short name. */
 export const DAYS = [
   { digit: '1', letter: 'S', short: 'seg', name: 'segunda' },

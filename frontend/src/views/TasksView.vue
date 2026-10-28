@@ -28,7 +28,7 @@ onBeforeUnmount(() => ticket++)
 </script>
 <template>
   <WorkPage title="Tarefas" eyebrow="Do objetivo à entrega">
-    <template #actions><RouterLink class="work-button" :to="{ name: 'cto', query: projectId ? { projeto: projectId } : {} }">Conversar com CTO ↗</RouterLink></template>
+    <template #actions><RouterLink class="work-button" :to="{ name: 'agents', params: projectId ? { projectId } : {} }">Conversar com CTO ↗</RouterLink></template>
     <div class="work-filters">
       <label class="work-filter">Projeto<select class="work-select" :value="projectId ?? ''" @change="filter('project', ($event.target as HTMLSelectElement).value)"><option value="">Todos os projetos</option><option v-for="project in projects.projects" :key="project.id" :value="project.id">{{ project.name }}</option></select></label>
       <label class="work-filter">Estado<select class="work-select" :value="status" @change="filter('status', ($event.target as HTMLSelectElement).value)"><option value="">Todos os estados</option><option v-for="s in ['backlog','ready','active','waiting','blocked','review','done','cancelled']" :key="s" :value="s">{{ workStatus[s] }}</option></select></label>

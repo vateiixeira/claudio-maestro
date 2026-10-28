@@ -17,13 +17,13 @@ import { useGroupsStore } from '../../../stores/groups'
 import { useNewConversationStore } from '../../../stores/newConversation'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
-import { useSpecialistsStore } from '../../../stores/specialists'
+import { useOrgStore } from '../../../stores/org'
 import { useClaudeCliStore } from '../../../stores/claudeCli'
 import { useUpdatesStore } from '../../../stores/updates'
 import { useUsageStore } from '../../../stores/usage'
 import { setCollapsed, setSectionCollapsed, setSectionOpened } from '../../../sidebarCollapse'
 import { sidebarWidth } from '../../../sidebarWidthPref'
-import { makeGitRepo, makeGroup, makeProject, makeSession, makeSpecialist, makeSpecialistNotice } from '../../../test/factories'
+import { makeGitRepo, makeAgent, makeGroup, makeNotice, makeProject, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -70,9 +70,17 @@ describe('menu lateral', () => {
     expect(wrapper.find('[data-test="new-project"]').attributes('href')).toBe('/projects/new')
   })
 
-  it('"Agentes" vem logo depois de "Entregas"', () => {
-    const links = mountSidebar().findAll('[data-test^="nav-"]').map((l) => l.attributes('data-test'))
-    expect(links.indexOf('nav-agents')).toBe(links.indexOf('nav-deliveries') + 1)
+  it('nav tem Agentes e não tem CTO', () => {
+    const wrapper = mountSidebar()
+    const links = wrapper.findAll('[data-test^="nav-"]').map((l) => l.attributes('data-test'))
+    expect(links.slice(links.indexOf('nav-start'), links.indexOf('nav-start') + 4)).toEqual(['nav-start', 'nav-tasks', 'nav-agents', 'nav-projects'])
+    expect(wrapper.find('[data-test="nav-cto"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Agentes e rotinas anteriores')
+    // Agentes fica na lista principal, fora de "Mais ferramentas".
+    expect(wrapper.get('[data-test="nav-agents"]').element.closest('details')).toBeNull()
+    for (const id of ['nav-inbox', 'nav-dashboard', 'nav-conversations', 'nav-deliveries']) {
+      expect(wrapper.get(`[data-test="${id}"]`).element.closest('details'), id).not.toBeNull()
+    }
   })
 
   it('conta na Inbox as conversas que aguardam você', () => {
@@ -572,13 +580,17 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     expect(w.get('[data-test="others-toggle"]').attributes('aria-expanded')).toBe('true')
   })
 
-  it('o link CTO aponta para a lista mesmo com um projeto na tela', async () => {
+  it('o link Agentes aponta para a lista mesmo com um projeto na tela e marca a organização', async () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 3 })]
     const router = createAppRouter(createMemoryHistory())
     await router.push('/projects/3')
     const w = mount(AppSidebar, { global: { plugins: [pinia, router] } })
     await flushPromises()
-    expect(w.get('[data-test="nav-cto"]').attributes('href')).toBe('/cto')
+    expect(w.get('[data-test="nav-agents"]').attributes('href')).toBe('/agentes')
+    expect(w.get('[data-test="nav-agents"]').attributes('aria-current')).toBeUndefined()
+    await router.push('/agentes/3')
+    await flushPromises()
+    expect(w.get('[data-test="nav-agents"]').attributes('aria-current')).toBe('page')
   })
 
   it('o projeto com pasta indisponível em Outros projetos continua marcado', () => {
@@ -755,10 +767,10 @@ describe('aviso de versão nova do Claude no rodapé', () => {
 
 describe('contador de avisos no item Agentes', () => {
   it('mostra quantos avisos não lidos há', () => {
-    useSpecialistsStore(pinia).notices = [
-      makeSpecialistNotice({ id: 1 }),
-      makeSpecialistNotice({ id: 2 }),
-      makeSpecialistNotice({ id: 3, read_at: 9 }),
+    useOrgStore(pinia).notices = [
+      makeNotice({ id: 1 }),
+      makeNotice({ id: 2 }),
+      makeNotice({ id: 3, read_at: 9 }),
     ]
     const count = mountSidebar().get('[data-test="agents-count"]')
     expect(count.text()).toContain('2')
@@ -766,7 +778,7 @@ describe('contador de avisos no item Agentes', () => {
   })
 
   it('não aparece sem avisos não lidos', () => {
-    useSpecialistsStore(pinia).notices = [makeSpecialistNotice({ id: 1, read_at: 9 })]
+    useOrgStore(pinia).notices = [makeNotice({ id: 1, read_at: 9 })]
     expect(mountSidebar().find('[data-test="agents-count"]').exists()).toBe(false)
   })
 })
@@ -775,7 +787,7 @@ describe('seção Agentes no topo', () => {
   it('fica acima de "Em andamento" e tira as sessões de agente das listas por projeto', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'Loja' })]
     useProjectsStore(pinia).loaded = true
-    useSpecialistsStore(pinia).list = [makeSpecialist({ id: 3, name: 'Triagem', main_session_id: 'main' })]
+    useOrgStore(pinia).agents = [makeAgent({ id: 3, name: 'Triagem', project_id: 1, main_session_id: 'main', unseen: 1 })]
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 'a', project_id: 1, display_state: 'running' }),
       makeSession({ session_id: 'main', project_id: 1, display_state: 'running', agent_id: 3 }),
@@ -798,7 +810,7 @@ describe('seção Agentes no topo', () => {
   })
 })
 
-it('tarefas e CTO são entradas principais e suas sessões não entram como conversas manuais', async () => {
+it('tarefas e agentes são entradas principais e as sessões de trabalho não entram como conversas manuais', async () => {
   const { useWorkStore } = await import('../../../stores/work')
   useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
   useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'manual-one' }), makeSession({ session_id: 'cto-one' }), makeSession({ session_id: 'worker-one' })])
@@ -809,7 +821,7 @@ it('tarefas e CTO são entradas principais e suas sessões não entram como conv
   const wrapper = mountSidebar()
   expect(wrapper.get('[data-test="nav-start"]').attributes('href')).toBe('/inicio')
   expect(wrapper.get('[data-test="nav-tasks"]').attributes('href')).toBe('/tarefas')
-  expect(wrapper.get('[data-test="nav-cto"]').attributes('href')).toBe('/cto')
+  expect(wrapper.get('[data-test="nav-agents"]').attributes('href')).toBe('/agentes')
   expect(wrapper.find('[href="/sessions/manual-one"]').exists()).toBe(true)
   expect(wrapper.find('[href="/sessions/cto-one"]').exists()).toBe(false)
   expect(wrapper.find('[href="/sessions/worker-one"]').exists()).toBe(false)

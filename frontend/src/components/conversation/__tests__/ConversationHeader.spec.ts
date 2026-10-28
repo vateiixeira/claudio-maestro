@@ -415,7 +415,7 @@ describe('link para configurar o agente', () => {
   it('header shows configure link only on main session', () => {
     const link = mountMain('s1').get('[data-test="configure-agent"]')
     expect(link.text()).toBe('Configurar agente')
-    expect(link.attributes('href')).toBe('/agentes/4?aba=settings')
+    expect(link.attributes('href')).toBe('/agentes/1?agente=4&aba=definicao')
   })
 
   it('uma execução do agente não tem o link', () => {

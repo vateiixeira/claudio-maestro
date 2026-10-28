@@ -29,7 +29,7 @@ import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useWorkStore } from '../../stores/work'
 import { useSessionsStore } from '../../stores/sessions'
-import { useSpecialistsStore } from '../../stores/specialists'
+import { useOrgStore } from '../../stores/org'
 import { useUpdatesStore } from '../../stores/updates'
 import type { GitRepo, Project, Session, SessionGroup } from '../../types/api'
 import IconAgents from '../icons/IconAgents.vue'
@@ -46,7 +46,7 @@ const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const work = useWorkStore()
 const manualSessions = computed(() => sessions.all.filter(session => !work.catalog[session.session_id]))
-const specialists = useSpecialistsStore()
+const org = useOrgStore()
 const git = useGitStore()
 const groups = useGroupsStore()
 const newConversation = useNewConversationStore()
@@ -138,7 +138,7 @@ function behindRepo(project: Project): GitRepo | undefined {
 // The project being looked at, directly or through one of its conversations.
 const activeProjectId = computed<number | null>(() => {
   if (route.name === 'project') return Number(route.params.id)
-  if (route.name === 'cto') return Number(route.query.projeto) || null
+  if (route.name === 'agents') return Number(route.params.projectId) || null
   if (route.name === 'tasks') return Number(route.query.project) || null
   if (route.name === 'task') return work.details[Number(route.params.id)]?.item.project_id ?? null
   if (route.name === 'session') return sessions.find(String(route.params.id))?.project_id ?? null
@@ -197,7 +197,12 @@ const itemClass = sidebarItemClass
     <div class="flex flex-col gap-px px-2.5 pb-2">
       <RouterLink to="/inicio" data-test="nav-start" :class="itemClass(route.name === 'start')" :aria-current="route.name === 'start' ? 'page' : undefined"><IconInbox /><span class="grow">Início</span></RouterLink>
       <RouterLink to="/tarefas" data-test="nav-tasks" :class="itemClass(route.name === 'tasks' || route.name === 'task')" :aria-current="route.name === 'tasks' || route.name === 'task' ? 'page' : undefined"><IconDeliveries /><span class="grow">Tarefas</span></RouterLink>
-      <RouterLink to="/cto" data-test="nav-cto" :class="itemClass(route.name === 'cto')" :aria-current="route.name === 'cto' ? 'page' : undefined"><IconAgents /><span class="grow">CTO</span></RouterLink>
+      <RouterLink to="/agentes" data-test="nav-agents" :class="itemClass(route.name === 'agents')" :aria-current="route.name === 'agents' ? 'page' : undefined">
+        <IconAgents /><span class="grow">Agentes</span>
+        <span v-if="org.unreadCount" data-test="agents-count" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-secondary">
+          <span aria-hidden="true">{{ org.unreadCount }}</span><span class="sr-only">{{ org.unreadCount }} {{ org.unreadCount === 1 ? 'aviso não lido' : 'avisos não lidos' }}</span>
+        </span>
+      </RouterLink>
       <RouterLink to="/projects" data-test="nav-projects" :class="itemClass(route.name === 'projects' || route.name === 'project-new')" :aria-current="route.name === 'projects' ? 'page' : undefined"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg><span class="grow">Projetos</span></RouterLink>
       <details class="mt-2 text-fg-muted"><summary class="cursor-pointer px-2.5 py-2 text-xs text-fg-subtle">Mais ferramentas</summary>
       <RouterLink to="/inbox" data-test="nav-inbox" :class="itemClass(route.name === 'inbox')" :aria-current="route.name === 'inbox' ? 'page' : undefined">
@@ -216,17 +221,11 @@ const itemClass = sidebarItemClass
       <RouterLink to="/entregas" data-test="nav-deliveries" :class="itemClass(route.name === 'deliveries')" :aria-current="route.name === 'deliveries' ? 'page' : undefined">
         <IconDeliveries /><span class="grow">Entregas</span>
       </RouterLink>
-      <RouterLink to="/agentes" data-test="nav-agents" :class="itemClass(route.name === 'agents')" :aria-current="route.name === 'agents' ? 'page' : undefined">
-        <IconAgents /><span class="grow">Agentes</span>
-        <span v-if="specialists.unreadCount" data-test="agents-count" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-secondary">
-          <span aria-hidden="true">{{ specialists.unreadCount }}</span><span class="sr-only">{{ specialists.unreadCount }} {{ specialists.unreadCount === 1 ? 'aviso não lido' : 'avisos não lidos' }}</span>
-        </span>
-      </RouterLink>
       </details>
     </div>
 
     <div data-test="sidebar-sections" class="relative flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-2.5 pt-3.5 pb-2">
-      <details><summary class="cursor-pointer px-2.5 py-1 text-xs text-fg-subtle">Agentes e rotinas anteriores</summary><SidebarAgents /></details>
+      <SidebarAgents />
 
       <section aria-labelledby="sidebar-active-title" class="flex flex-col gap-px">
         <div class="flex h-[30px] items-center pr-1 pl-2.5">

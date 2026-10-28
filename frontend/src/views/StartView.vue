@@ -36,7 +36,7 @@ async function submit() {
   const projectKey = selected.value, projectId = Number(projectKey), text = goal.value.trim()
   if (!projectId || !text || busy.value) return
   busy.value = true; error.value = ''
-  try { const sid = await work.openCoordinator(projectId); await sendMessage(sid, text); goalDrafts[projectKey] = ''; if (alive) await router.push({ name: 'cto', query: { projeto: projectId } }) }
+  try { const sid = await work.openCoordinator(projectId); await sendMessage(sid, text); goalDrafts[projectKey] = ''; if (alive) await router.push({ name: 'agents', params: { projectId } }) }
   catch (e) { error.value = errorMessage(e) + ' O objetivo foi preservado. Confira a conversa antes de repetir o envio.' }
   finally { busy.value = false }
 }

@@ -39,9 +39,9 @@ watch(() => pending.value.map((run) => run.id).join(','), () => { void loadPrevi
 <template>
   <aside aria-label="Fila da conversa" data-test="agent-chat-queue" class="shrink-0 border-b border-line px-4 py-2 text-xs">
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <RouterLink :to="{ name: 'agents', params: { id: agentId } }" class="text-info-soft hover:text-fg">{{ agent?.name ?? 'Agente' }}</RouterLink>
+      <RouterLink :to="{ name: 'agents', params: agent ? { projectId: agent.project_id } : {}, query: { agente: String(agentId) } }" class="text-info-soft hover:text-fg">{{ agent?.name ?? 'Agente' }}</RouterLink>
       <span class="text-fg-muted">{{ agent?.queue_paused ? 'Fila pausada' : pending.length ? 'Mensagem na fila' : 'Conversa com o agente' }}</span>
-      <RouterLink :to="{ name: 'agents', params: { id: agentId }, query: { aba: 'runs' } }" class="text-fg-muted hover:text-fg">Ver fila e execuções</RouterLink>
+      <RouterLink :to="{ name: 'agents', params: agent ? { projectId: agent.project_id } : {}, query: { agente: String(agentId), aba: 'execucoes' } }" class="text-fg-muted hover:text-fg">Ver fila e execuções</RouterLink>
     </div>
     <ul v-if="pending.length" class="m-0 mt-2 flex max-h-32 list-none flex-col gap-1 overflow-y-auto p-0">
       <li v-for="(run, index) in pending" :key="run.id" data-test="chat-queued-message" class="flex items-center gap-3">

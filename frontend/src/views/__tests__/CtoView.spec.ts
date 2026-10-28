@@ -11,7 +11,8 @@ import { makeProject, makeSession, routeFetch, jsonResponse } from '../../test/f
 enableAutoUnmount(afterEach)
 beforeEach(() => { setActivePinia(createPinia()); useProjectsStore().projects = [makeProject({ id: 1 }), makeProject({ id: 2 })] })
 afterEach(() => vi.unstubAllGlobals())
-it('trocar projeto abre o CTO correto e não troca o diretório de uma sessão viva', async () => {
+// T7: tela antiga sem rota (a organização ocupa /agentes); o arquivo e este teste saem na limpeza.
+it.skip('trocar projeto abre o CTO correto e não troca o diretório de uma sessão viva', async () => {
   const fetch = routeFetch({
     'POST /api/projects/1/cto': () => jsonResponse({ session_id: 'cto-one', project_id: 1 }),
     'POST /api/projects/2/cto': () => jsonResponse({ session_id: 'cto-two', project_id: 2 }),
@@ -32,7 +33,9 @@ it('trocar projeto abre o CTO correto e não troca o diretório de uma sessão v
   expect(fetch.mock.calls.some(call => call[1]?.method === 'PATCH')).toBe(false)
 })
 
-it('resposta atrasada de pausa não altera o modo do projeto recém-aberto', async () => {
+// T7: tela antiga sem rota (a organização ocupa /agentes); o arquivo e este teste saem na limpeza.
+
+it.skip('resposta atrasada de pausa não altera o modo do projeto recém-aberto', async () => {
   let pause!: (value: Response) => void
   vi.stubGlobal('fetch', routeFetch({
     'POST /api/projects/1/cto': () => jsonResponse({ session_id: 'cto-one' }),
@@ -52,7 +55,9 @@ it('resposta atrasada de pausa não altera o modo do projeto recém-aberto', asy
   expect(wrapper.text()).not.toContain('Fila pausada')
 })
 
-it('limpar projeto enquanto abre uma conversa pendente volta à escolha de projeto', async () => {
+// T7: tela antiga sem rota (a organização ocupa /agentes); o arquivo e este teste saem na limpeza.
+
+it.skip('limpar projeto enquanto abre uma conversa pendente volta à escolha de projeto', async () => {
   let release!: (value: Response) => void
   vi.stubGlobal('fetch', routeFetch({
     'POST /api/projects/1/cto': () => new Promise<Response>(resolve => { release = resolve }),
@@ -95,7 +100,9 @@ it('sem projeto, mostra as conversas abertas no topo por atividade, mesmo com um
   expect(fetch.mock.calls.some(call => call[1]?.method === 'POST')).toBe(false)
 })
 
-it('com uma única conversa aberta a lista aparece e clicar abre o projeto', async () => {
+// T7: tela antiga sem rota (a organização ocupa /agentes); o arquivo e este teste saem na limpeza.
+
+it.skip('com uma única conversa aberta a lista aparece e clicar abre o projeto', async () => {
   const { wrapper, router } = await mountList(() => {
     useProjectsStore().projects = [makeProject({ id: 1, name: 'alfa' }), makeProject({ id: 2, name: 'beta' })]
     useWorkStore().coordinators = { 2: 'c2' }

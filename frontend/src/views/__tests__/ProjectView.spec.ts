@@ -57,6 +57,15 @@ describe('tela do projeto', () => {
     expect(rows[0]!.find('[data-test="row-link"]').attributes('href')).toBe('/sessions/a')
   })
 
+  it('liga ao quadro da organização do projeto', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
+    const wrapper = await mountView()
+    const link = wrapper.get('[data-test="open-organization"]')
+    expect(link.attributes('href')).toBe('/agentes/1')
+    expect(link.text()).toBe('Organização')
+  })
+
   it('não lista as conversas descartadas', async () => {
     seed()
     vi.stubGlobal(

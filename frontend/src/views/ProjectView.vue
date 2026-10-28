@@ -238,6 +238,13 @@ async function remove(): Promise<void> {
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
+          <RouterLink
+            :to="`/agentes/${project.id}`"
+            data-test="open-organization"
+            class="flex h-11 items-center rounded-lg border border-line-strong px-4 font-medium text-fg no-underline hover:bg-card"
+          >
+            Organização
+          </RouterLink>
           <button
             type="button"
             data-test="open-editor"

@@ -48,7 +48,9 @@ describe('AgentList', () => {
     expect(second!.text()).toBe('sem horário')
   })
 
-  it('cada agente leva a /agentes/:id e o aberto fica marcado', async () => {
+  // T7: tela antiga sem rota (a organização ocupa /agentes); o arquivo e este teste saem na limpeza.
+
+  it.skip('cada agente leva a /agentes/:id e o aberto fica marcado', async () => {
     const w = await mountList([makeSpecialist({ id: 1 }), makeSpecialist({ id: 2, name: 'Filmes' })], 2)
     const items = w.findAll('[data-test="agent-item"]')
     expect(items.map((i) => i.attributes('href'))).toEqual(['/agentes/1', '/agentes/2'])
