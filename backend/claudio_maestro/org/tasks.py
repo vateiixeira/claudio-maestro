@@ -130,11 +130,12 @@ class TaskService:
         statuses: list[str] | tuple[str, ...] | None = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "id",
     ) -> list[store.Task]:
         with closing(db.connect(self._db_path)) as conn:
             return store.list_tasks(
                 conn, project_id=project_id, assignee_agent_id=assignee_agent_id,
-                statuses=statuses, limit=limit, offset=offset,
+                statuses=statuses, limit=limit, offset=offset, order=order,
             )
 
     def brief(self, task_id: int, *, since_comment_id: int = 0) -> TaskBrief:

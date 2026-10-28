@@ -245,6 +245,8 @@ export interface TaskFilter {
   assignee_agent_id?: number
   limit?: number
   offset?: number
+  /** `id` (default): oldest first. `recent`: the latest change first. */
+  order?: 'id' | 'recent'
 }
 
 export interface Comment {

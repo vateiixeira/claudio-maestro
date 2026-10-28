@@ -1142,10 +1142,14 @@ async def list_tasks(
     statuses: Annotated[list[str] | None, Query(alias="status")] = None,
     limit: Limit = 100,
     offset: Offset = 0,
+    order: str = "id",
 ) -> list[dict[str, Any]]:
+    """`order=id` (the default) lists the oldest first; `order=recent` the latest change first."""
+    if order not in store.TASK_ORDERS:
+        raise _unprocessable("Ordem inválida.")
     tasks = _tasks(request).list(
         project_id=project_id, assignee_agent_id=assignee_agent_id,
-        statuses=_statuses(statuses), limit=limit, offset=offset,
+        statuses=_statuses(statuses), limit=limit, offset=offset, order=order,
     )
     return [asdict(task) for task in tasks]
 

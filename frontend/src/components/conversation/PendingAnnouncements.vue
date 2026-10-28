@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { errorMessage, listAnnouncements } from '../../api/http'
-import { useSpecialistsStore } from '../../stores/specialists'
-import type { Announcement } from '../../types/api'
+import { useOrgStore } from '../../stores/org'
+import type { Announcement } from '../../types/org'
 import AnnouncementCard from './AnnouncementCard.vue'
 
 const props = defineProps<{ sessionId: string }>()
-const specialists = useSpecialistsStore()
-const agent = computed(() => specialists.isMainSession(props.sessionId))
+const org = useOrgStore()
+const agent = computed(() => org.isMainSession(props.sessionId))
 const pending = ref<Announcement[]>([])
 const error = ref<string | null>(null)
 let ticket = 0
@@ -22,7 +22,7 @@ async function load() {
   } catch (e) { if (mine === ticket) error.value = errorMessage(e) }
 }
 watch(() => [props.sessionId, agent.value?.id], () => { pending.value = []; void load() }, { immediate: true })
-watch(() => agent.value && specialists.changes[agent.value.id], () => { void load() })
+watch(() => agent.value && org.changes[agent.value.id], () => { void load() })
 const when = (at: number) => new Date(at * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 </script>
 

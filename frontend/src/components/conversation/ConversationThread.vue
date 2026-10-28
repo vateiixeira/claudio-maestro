@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, toRef, watch } from 'vue'
 import { SESSION_ID_KEY, useChangesPanelStore } from '../../stores/changesPanel'
 import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
 import { useEventSocket } from '../../api/socket'
@@ -16,12 +16,9 @@ import TurnLiveLine from './TurnLiveLine.vue'
 import TurnTasks from './TurnTasks.vue'
 import UserMessage from './UserMessage.vue'
 import PendingAnnouncements from './PendingAnnouncements.vue'
-import CoordinatorWork from '../work/CoordinatorWork.vue'
-import CoordinatorAttention from '../work/CoordinatorAttention.vue'
-import { activeAttempt } from '../../types/work'
-import { useWorkStore } from '../../stores/work'
-import AgentExecutions from '../agents/AgentExecutions.vue'
-import { useSpecialistsStore } from '../../stores/specialists'
+import MainRuns from './MainRuns.vue'
+import { useOrgStore } from '../../stores/org'
+import { useRunTask } from './useRunTask'
 import { findLastMessage, MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { buildItemTree, deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
 import { buildTurns, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
@@ -43,14 +40,10 @@ const emit = defineEmits<{ missing: []; 'find-done': [] }>()
 const conversations = useConversationStore()
 const changesPanel = useChangesPanelStore()
 const projects = useProjectsStore()
-const specialists = useSpecialistsStore()
-const mainAgent = computed(() => specialists.isMainSession(props.id))
-const work = useWorkStore()
-const identity = computed(() => work.catalog[props.id])
-const managedWorker = computed(() => !!identity.value && identity.value.work_role !== 'coordinator')
-const workAttempt = computed(() => identity.value?.work_item_id ? work.details[identity.value.work_item_id]?.attempts.find(attempt => attempt.id === identity.value?.work_attempt_id) : undefined)
-const workEnded = computed(() => !!workAttempt.value && !activeAttempt(workAttempt.value))
-watch(() => [identity.value?.work_item_id, work.changeVersion], () => { const item = identity.value?.work_item_id; if (item) void work.loadDetail(item).catch(() => {}) }, { immediate: true })
+const org = useOrgStore()
+const mainAgent = computed(() => org.isMainSession(props.id))
+// A run of an agent (not its main conversation): the agent and the task it works on.
+const { agent: runAgent, taskId: runTaskId, agentId: runAgentId } = useRunTask(toRef(props, 'id'))
 const socket = useEventSocket()
 
 const loadError = ref<string | null>(null)
@@ -58,7 +51,7 @@ const loadError = ref<string | null>(null)
 const unseen = ref<'news' | 'prompt' | null>(null)
 const conv = computed(() => conversations.get(props.id))
 const origins = useMessageOrigins(computed(() => props.id), computed(() => conv.value?.items.filter(item => item.type === 'user').map(item => item.id) ?? []))
-watch(() => work.changeVersion, () => { void origins.refresh() })
+watch(() => (runAgentId.value != null ? org.changes[runAgentId.value] : mainAgent.value ? org.changes[mainAgent.value.id] : undefined), () => { void origins.refresh() })
 const project = computed(() => (conv.value?.projectId != null ? projects.byId(conv.value.projectId) : undefined))
 // The project's folder was deleted or moved: nothing that runs in it can work.
 const unavailableReason = computed(() =>
@@ -504,9 +497,6 @@ function resolvePrompt(promptId: string) {
       <!-- Screen readers hear finished replies only, never each streamed character. -->
       <div data-test="conversation-live" aria-live="polite" class="sr-only">{{ announcement }}</div>
       <div class="relative flex min-h-0 grow flex-col">
-      <div v-if="identity?.work_role === 'coordinator'" class="coordinator-next-step mx-auto max-h-[40vh] w-full max-w-(--chat-width) shrink-0 overflow-y-auto px-4 pt-4" data-test="coordinator-next-step">
-        <CoordinatorAttention :key="identity.project_id" :project-id="identity.project_id" />
-      </div>
       <div ref="scroller" data-test="conversation-scroller" class="relative min-h-0 grow overflow-y-auto" @scroll="onScroll">
         <div
           v-if="turns.length >= 2"
@@ -622,8 +612,7 @@ function resolvePrompt(promptId: string) {
             </div>
           </template>
           <PendingAnnouncements :session-id="id" />
-          <CoordinatorWork v-if="identity?.work_role === 'coordinator'" :key="identity.project_id" :project-id="identity.project_id" />
-          <AgentExecutions v-if="mainAgent" :key="mainAgent.id" :agent-id="mainAgent.id" :main-session-id="id" @reveal="onReveal" />
+          <MainRuns v-if="mainAgent" :key="mainAgent.id" :agent-id="mainAgent.id" :main-session-id="id" />
           <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
             <QuestionCard
               data-prompt-card
@@ -692,8 +681,8 @@ function resolvePrompt(promptId: string) {
           >A mensagem buscada não está no trecho carregado da conversa.</p>
           <p v-if="loadError" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg">{{ loadError }}</p>
           <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
-          <p v-if="managedWorker" data-test="managed-worker" class="m-0 border border-line rounded-md bg-panel p-3 text-xs text-fg-muted">{{ workEnded ? 'Execução encerrada.' : 'Execução gerenciada pelo CTO.' }} Esta conversa registra uma tentativa da tarefa #{{ identity?.work_item_id }}. Acompanhe o resultado e os próximos passos na <RouterLink class="text-info-soft" :to="`/tarefas/${identity?.work_item_id}`">tarefa</RouterLink>. Os pedidos de permissão desta execução continuam disponíveis acima.</p>
-          <MessageComposer v-else ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :compact-on-mobile="identity?.work_role === 'coordinator'" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
+          <p v-if="runTaskId != null" data-test="task-run-note" class="m-0 text-xs text-fg-muted">Execução de {{ runAgent?.name ?? 'um agente' }} na <RouterLink class="text-info-soft hover:underline focus-visible:outline-2 focus-visible:outline-primary" :to="`/tarefas/${runTaskId}`">tarefa #{{ runTaskId }}</RouterLink>. O resultado e os próximos passos ficam na tarefa.</p>
+          <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
             <template #controls><SessionControls :session-id="conv.sessionId" /></template>
           </MessageComposer>
         </div>
@@ -717,7 +706,3 @@ function resolvePrompt(promptId: string) {
     </div>
   </div>
 </template>
-
-<style scoped>
-@media(max-width:600px),(max-height:760px){.coordinator-next-step{max-height:160px;padding-top:8px}}
-</style>

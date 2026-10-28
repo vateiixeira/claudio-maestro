@@ -29,6 +29,8 @@ ACTIVE_OUTCOMES: Final = ("starting", "running", "waiting")
 COUNTED_OUTCOMES: Final = ("failed", "skipped", "concluded", "closed", "waiting")
 
 TASK_STATUSES: Final = ("todo", "in_progress", "in_review", "blocked", "done", "cancelled")
+# The orders of `list_tasks`: the SQL is fixed text, never built from the caller's string.
+TASK_ORDERS: Final = {"id": "id", "recent": "updated_at DESC, id DESC"}
 TASK_PRIORITIES: Final = ("urgent", "high", "normal", "low")
 TASK_CLOSED_STATUSES: Final = ("done", "cancelled")
 COMMENT_AUTHORS: Final = ("human", "agent", "app")
@@ -1402,8 +1404,12 @@ def list_tasks(
     statuses: list[str] | tuple[str, ...] | None = None,
     limit: int = 100,
     offset: int = 0,
+    order: str = "id",
 ) -> list[Task]:
-    """Oldest id first. `statuses=None` means any; an empty list matches nothing."""
+    """Oldest id first (`order="id"`) or the latest change first (`order="recent"`: `updated_at`,
+    then id, both descending). `statuses=None` means any; an empty list matches nothing."""
+    if order not in TASK_ORDERS:
+        raise ValueError(f"Unknown task order: {order!r}")
     conditions: list[str] = []
     values: list[Any] = []
     if project_id is not None:
@@ -1417,7 +1423,7 @@ def list_tasks(
         values.extend(statuses)
     where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = conn.execute(
-        f"SELECT {_TASK_COLUMNS} FROM tasks{where} ORDER BY id LIMIT ? OFFSET ?",
+        f"SELECT {_TASK_COLUMNS} FROM tasks{where} ORDER BY {TASK_ORDERS[order]} LIMIT ? OFFSET ?",
         (*values, limit, offset),
     ).fetchall()
     return [_task(row) for row in rows]

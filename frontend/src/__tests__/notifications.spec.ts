@@ -2,14 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { FakeAudioContext, FakeNotification, installFakeNotification } from '../test/fakeNotification'
-import { makeSession, makeSpecialist, makeSpecialistNotice } from '../test/factories'
+import { makeAgent, makeDecision, makeNotice, makeSession } from '../test/factories'
 import { useSessionsStore } from '../stores/sessions'
-import { useSpecialistsStore } from '../stores/specialists'
+import { useOrgStore } from '../stores/org'
 import { notificationPrefs, setNotificationPref, DEFAULT_NOTIFICATION_PREFS } from '../notificationPrefs'
 import {
   bindNotifications,
-  bindSpecialistNotifications,
-  notifySpecialistNotice,
+  bindOrgNotifications,
+  notifyDecision,
+  notifyOrgNotice,
   notificationPermission,
   notifySession,
   playAlertSound,
@@ -373,94 +374,165 @@ describe('sessão descartada não avisa', () => {
 describe('avisos dos agentes', () => {
   const open = vi.fn()
   beforeEach(() => open.mockReset())
+  const alert = (extra = {}) => makeNotice({ kind: 'alert', ...extra })
 
-  it('mostra o nome do agente e o texto do aviso', () => {
+  it('um alerta mostra o nome do agente e o texto', () => {
     const fake = installFakeNotification('granted')
-    const notice = makeSpecialistNotice({ id: 4, text: 'Tratei 2 erros.' })
-    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(true)
+    expect(notifyOrgNotice(alert({ id: 4, text: 'Tratei 2 erros.' }), 'Sentry', open)).toBe(true)
     expect(fake.instances[0]!.title).toBe('Sentry')
     expect(fake.instances[0]!.options.body).toBe('Tratei 2 erros.')
-    expect(fake.instances[0]!.options.tag).toBe('specialist-notice-4')
+    expect(fake.instances[0]!.options.tag).toBe('agent-notice-4')
+  })
+
+  it('resumo e aviso comum não notificam: só o alerta', () => {
+    const fake = installFakeNotification('granted')
+    expect(notifyOrgNotice(makeNotice({ kind: 'summary' }), 'Sentry', open)).toBe(false)
+    expect(notifyOrgNotice(makeNotice({ kind: 'notice' }), 'Sentry', open)).toBe(false)
+    expect(fake.instances).toHaveLength(0)
   })
 
   it('sem o agente carregado o título é "Agente", e o texto é cortado como nas outras', () => {
     const fake = installFakeNotification('granted')
-    notifySpecialistNotice(makeSpecialistNotice({ text: 'x'.repeat(300) }), null, open)
+    notifyOrgNotice(alert({ text: 'x'.repeat(300) }), null, open)
     expect(fake.instances[0]!.title).toBe('Agente')
     expect(fake.instances[0]!.options.body).toBe(`${'x'.repeat(99)}…`)
   })
 
-  it('clicar abre a conversa, ou a Inbox quando o aviso não tem sessão', () => {
+  it('clicar abre a Inbox', () => {
     const fake = installFakeNotification('granted')
     const focus = vi.spyOn(window, 'focus').mockImplementation(() => {})
-    notifySpecialistNotice(makeSpecialistNotice({ session_id: 'abc' }), 'Sentry', open)
-    notifySpecialistNotice(makeSpecialistNotice({ id: 2, session_id: null }), 'Sentry', open)
+    notifyOrgNotice(alert(), 'Sentry', open)
     fake.instances[0]!.click()
-    fake.instances[1]!.click()
-    expect(focus).toHaveBeenCalledTimes(2)
-    expect(open).toHaveBeenNthCalledWith(1, 'abc')
-    expect(open).toHaveBeenNthCalledWith(2, null)
+    expect(focus).toHaveBeenCalledOnce()
+    expect(open).toHaveBeenCalledWith('/inbox')
   })
 
   it('respeita a permissão, a preferência e o "só fora de foco", sem tocar som', () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     setNotificationPref('sound', true)
-    const notice = makeSpecialistNotice()
+    const notice = alert()
     installFakeNotification('default')
-    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(false)
+    expect(notifyOrgNotice(notice, 'Sentry', open)).toBe(false)
     const fake = installFakeNotification('granted')
     setNotificationPref('specialistNotice', false)
-    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(false)
+    expect(notifyOrgNotice(notice, 'Sentry', open)).toBe(false)
     setNotificationPref('specialistNotice', true)
     setHidden(false)
-    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(false)
+    expect(notifyOrgNotice(notice, 'Sentry', open)).toBe(false)
     setHidden(true)
-    expect(notifySpecialistNotice(notice, 'Sentry', open)).toBe(true)
+    expect(notifyOrgNotice(notice, 'Sentry', open)).toBe(true)
     expect(fake.instances).toHaveLength(1)
     expect(FakeAudioContext.created).toHaveLength(0)
   })
 
   it('não notifica um aviso já lido', () => {
     const fake = installFakeNotification('granted')
-    expect(notifySpecialistNotice(makeSpecialistNotice({ read_at: 1_790_000_100 }), 'Sentry', open)).toBe(false)
+    expect(notifyOrgNotice(alert({ read_at: 1_790_000_100 }), 'Sentry', open)).toBe(false)
     expect(fake.instances).toHaveLength(0)
   })
+})
 
-  describe('bindSpecialistNotifications', () => {
-    let stop: () => void
-    let store: ReturnType<typeof useSpecialistsStore>
-    beforeEach(() => {
-      setActivePinia(createPinia())
-      store = useSpecialistsStore()
-      store.list = [makeSpecialist({ id: 7, name: 'Filmes' })]
-    })
-    afterEach(() => stop?.())
+describe('decisões', () => {
+  const open = vi.fn()
+  beforeEach(() => open.mockReset())
 
-    it('um aviso novo notifica com o nome do agente; read_ids não', () => {
-      const fake = installFakeNotification('granted')
-      stop = bindSpecialistNotifications(store, open)
-      store.applyNotice({ read_ids: [1] })
-      expect(fake.instances).toHaveLength(0)
-      store.applyNotice(makeSpecialistNotice({ id: 5, specialist_id: 7, text: 'Achei um filme.' }))
-      expect(fake.instances).toHaveLength(1)
-      expect(fake.instances[0]!.title).toBe('Filmes')
-      expect(fake.instances[0]!.options.body).toBe('Achei um filme.')
-    })
+  it('mostra "Decisão pendente: <pergunta>" com o nome do agente', () => {
+    const fake = installFakeNotification('granted')
+    expect(notifyDecision(makeDecision({ id: 3, question: 'Posso publicar?' }), 'CTO', open)).toBe(true)
+    expect(fake.instances[0]!.title).toBe('CTO')
+    expect(fake.instances[0]!.options.body).toBe('Decisão pendente: Posso publicar?')
+    expect(fake.instances[0]!.options.tag).toBe('decision-3')
+  })
 
-    it('com a preferência desligada não notifica', () => {
-      const fake = installFakeNotification('granted')
-      setNotificationPref('specialistNotice', false)
-      stop = bindSpecialistNotifications(store, open)
-      store.applyNotice(makeSpecialistNotice({ id: 5, specialist_id: 7 }))
-      expect(fake.instances).toHaveLength(0)
-    })
+  it('o clique abre a tarefa da decisão, ou a Inbox quando não há tarefa', () => {
+    const fake = installFakeNotification('granted')
+    vi.spyOn(window, 'focus').mockImplementation(() => {})
+    notifyDecision(makeDecision({ id: 1, task_id: 12 }), 'CTO', open)
+    notifyDecision(makeDecision({ id: 2, task_id: null }), 'CTO', open)
+    fake.instances[0]!.click()
+    fake.instances[1]!.click()
+    expect(open).toHaveBeenNthCalledWith(1, '/tarefas/12')
+    expect(open).toHaveBeenNthCalledWith(2, '/inbox')
+  })
 
-    it('depois de parar, não notifica mais', () => {
-      const fake = installFakeNotification('granted')
-      stop = bindSpecialistNotifications(store, open)
-      stop()
-      store.applyNotice(makeSpecialistNotice({ id: 5, specialist_id: 7 }))
-      expect(fake.instances).toHaveLength(0)
-    })
+  it('respeita a permissão e a preferência de perguntas, e só notifica as pendentes', () => {
+    installFakeNotification('default')
+    expect(notifyDecision(makeDecision(), 'CTO', open)).toBe(false)
+    const fake = installFakeNotification('granted')
+    setNotificationPref('question', false)
+    expect(notifyDecision(makeDecision(), 'CTO', open)).toBe(false)
+    setNotificationPref('question', true)
+    expect(notifyDecision(makeDecision({ status: 'answered' }), 'CTO', open)).toBe(false)
+    expect(fake.instances).toHaveLength(0)
+  })
+})
+
+describe('bindOrgNotifications', () => {
+  const open = vi.fn()
+  let stop: () => void
+  let store: ReturnType<typeof useOrgStore>
+  const nowSeconds = () => Math.floor(Date.now() / 1000)
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    open.mockReset()
+    store = useOrgStore()
+    store.agents = [makeAgent({ id: 7, name: 'Filmes' })]
+  })
+  afterEach(() => stop?.())
+
+  it('um alerta novo notifica com o nome do agente; read_ids e resumo não', () => {
+    const fake = installFakeNotification('granted')
+    stop = bindOrgNotifications(store, open)
+    store.applyEvent('agent.notice', { read_ids: [1] })
+    store.applyEvent('agent.notice', makeNotice({ id: 4, agent_id: 7, kind: 'summary' }))
+    expect(fake.instances).toHaveLength(0)
+    store.applyEvent('agent.notice', makeNotice({ id: 5, agent_id: 7, kind: 'alert', text: 'Achei um filme.' }))
+    expect(fake.instances).toHaveLength(1)
+    expect(fake.instances[0]!.title).toBe('Filmes')
+    expect(fake.instances[0]!.options.body).toBe('Achei um filme.')
+  })
+
+  it('decisão nova notifica e abre a tarefa', async () => {
+    const fake = installFakeNotification('granted')
+    vi.spyOn(window, 'focus').mockImplementation(() => {})
+    stop = bindOrgNotifications(store, open)
+    store.applyEvent('decision', makeDecision({ id: 9, agent_id: 7, task_id: 12, question: 'Publico a v2?', created_at: nowSeconds() }))
+    await nextTick()
+    expect(fake.instances).toHaveLength(1)
+    expect(fake.instances[0]!.title).toBe('Filmes')
+    expect(fake.instances[0]!.options.body).toBe('Decisão pendente: Publico a v2?')
+    fake.instances[0]!.click()
+    expect(open).toHaveBeenCalledWith('/tarefas/12')
+  })
+
+  it('não repete a mesma decisão, nem avisa as respondidas ou as antigas da carga inicial', async () => {
+    const fake = installFakeNotification('granted')
+    store.decisionsPending = [makeDecision({ id: 1, created_at: nowSeconds() })]
+    stop = bindOrgNotifications(store, open)
+    await nextTick()
+    expect(fake.instances).toHaveLength(0) // já estava lá
+    // A carga que chega depois traz decisões criadas antes do app abrir.
+    store.decisionsPending = [makeDecision({ id: 1, created_at: nowSeconds() }), makeDecision({ id: 2, created_at: nowSeconds() - 3600 })]
+    await nextTick()
+    expect(fake.instances).toHaveLength(0)
+    const fresh = makeDecision({ id: 3, created_at: nowSeconds() })
+    store.applyEvent('decision', fresh)
+    await nextTick()
+    store.applyEvent('decision', { ...fresh, question: 'Mudou o texto' })
+    await nextTick()
+    expect(fake.instances).toHaveLength(1)
+    store.applyEvent('decision', { ...fresh, status: 'answered' })
+    await nextTick()
+    expect(fake.instances).toHaveLength(1)
+  })
+
+  it('depois de parar, não notifica mais', async () => {
+    const fake = installFakeNotification('granted')
+    stop = bindOrgNotifications(store, open)
+    stop()
+    store.applyEvent('agent.notice', makeNotice({ id: 5, agent_id: 7, kind: 'alert' }))
+    store.applyEvent('decision', makeDecision({ id: 9, created_at: nowSeconds() }))
+    await nextTick()
+    expect(fake.instances).toHaveLength(0)
   })
 })

@@ -531,17 +531,55 @@ describe('acessibilidade da conversa', () => {
   })
 })
 
-it('tentativa encerrada conserva pedidos nativos e encaminha a continuidade à tarefa', async () => {
-  const { useWorkStore } = await import('../../../stores/work')
-  const work = useWorkStore(pinia)
-  work.catalog.s1 = { work_role: 'investigator', project_id: 1, work_item_id: 9, work_attempt_id: 4 }
-  vi.stubGlobal('fetch', routeFetch({
+describe('conversa de agente da organização', () => {
+  async function orgSetup() {
+    const [{ useOrgStore }, { useSessionsStore }, { makeAgent, makeRun, makeSession }] = await Promise.all([
+      import('../../../stores/org'),
+      import('../../../stores/sessions'),
+      import('../../../test/factories'),
+    ])
+    return { org: useOrgStore(pinia), sessions: useSessionsStore(pinia), makeAgent, makeRun, makeSession }
+  }
+  const routes = () => ({
     'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ session_id: 's1' })),
-    'GET /api/work-items/9': () => jsonResponse({ item: { id: 9 }, dossier: {}, attempts: [{ id: 4, state: 'succeeded', ended_at: 2 }], events: [] }),
+    'GET /api/agents/4/announcements?pending=true': () => jsonResponse([]),
+    'GET /api/agents/4/runs?limit=50': () => jsonResponse([]),
     'GET /api/models': () => jsonResponse([]),
-  }))
-  const wrapper = await mountView()
-  expect(wrapper.find('[data-test="composer-text"]').exists()).toBe(false)
-  expect(wrapper.get('[data-test="managed-worker"]').text()).toContain('Execução encerrada')
-  expect(wrapper.get('[data-test="managed-worker"] a').attributes('href')).toBe('/tarefas/9')
+  })
+
+  it('execução de tarefa mostra a nota com o link da tarefa e mantém o compositor', async () => {
+    const { org, sessions, makeAgent, makeRun, makeSession } = await orgSetup()
+    org.agents = [makeAgent({ id: 4, name: 'Triagem', main_session_id: 'main' })]
+    org.runs = { 4: [makeRun({ id: 7, agent_id: 4, session_id: 's1', task_id: 9, outcome: 'concluded' })] }
+    sessions.setForProject(1, [makeSession({ session_id: 's1', agent_id: 4 })])
+    vi.stubGlobal('fetch', routeFetch(routes()))
+    const wrapper = await mountView()
+    const note = wrapper.get('[data-test="task-run-note"]')
+    expect(note.text()).toContain('Triagem')
+    expect(note.text()).toContain('#9')
+    expect(note.get('a').attributes('href')).toBe('/tarefas/9')
+    expect(wrapper.find('textarea').exists()).toBe(true)
+  })
+
+  it('conversa comum não tem a nota de tarefa', async () => {
+    vi.stubGlobal('fetch', routeFetch(routes()))
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="task-run-note"]').exists()).toBe(false)
+  })
+
+  it('a conversa principal lista as execuções do agente, sem a própria conversa', async () => {
+    const { org, makeAgent, makeRun } = await orgSetup()
+    org.agents = [makeAgent({ id: 4, name: 'Triagem', main_session_id: 's1' })]
+    vi.stubGlobal('fetch', routeFetch({
+      ...routes(),
+      'GET /api/agents/4/runs?limit=50': () => jsonResponse([
+        makeRun({ id: 8, agent_id: 4, session_id: 'run-8', outcome: 'running', started_at: 20 }),
+        makeRun({ id: 7, agent_id: 4, session_id: 's1', outcome: 'concluded', started_at: 10 }),
+      ]),
+    }))
+    const wrapper = await mountView()
+    const rows = wrapper.get('[data-test="main-runs"]').findAll('[data-test="run-row"]')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.attributes('data-run-id')).toBe('8')
+  })
 })

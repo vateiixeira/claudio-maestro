@@ -3,26 +3,26 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { errorMessage } from '../../api/http'
 import { formatActivity } from '../../format'
-import { useSpecialistsStore } from '../../stores/specialists'
-import type { SpecialistNoticeKind } from '../../types/api'
-import { BTN_SMALL } from '../agents/styles'
+import { useOrgStore } from '../../stores/org'
+import type { NoticeKind } from '../../types/org'
+import { BTN_SMALL } from '../org/styles'
 
 // The notices the agents left for you: shown above the Inbox tabs while there is any unread. Each one can be
 // marked as read, or all at once; the text is cut at three lines and opens on click.
-const specialists = useSpecialistsStore()
-const unread = computed(() => specialists.notices.filter((n) => n.read_at === null))
+const org = useOrgStore()
+const unread = computed(() => org.notices.filter((n) => n.read_at === null))
 const expanded = ref<Set<number>>(new Set())
 const error = ref<string | null>(null)
 const busy = ref(false)
 
-const SHAPES: Record<SpecialistNoticeKind, { shape: 'check' | 'triangle' | 'dot'; label: string }> = {
+const SHAPES: Record<NoticeKind, { shape: 'check' | 'triangle' | 'dot'; label: string }> = {
   summary: { shape: 'check', label: 'Resumo' },
   alert: { shape: 'triangle', label: 'Alerta' },
   notice: { shape: 'dot', label: 'Aviso' },
 }
 
 function agentName(id: number): string {
-  return specialists.byId(id)?.name ?? 'Agente'
+  return org.byId(id)?.name ?? 'Agente'
 }
 function toggle(id: number) {
   const next = new Set(expanded.value)
@@ -34,7 +34,7 @@ async function mark(ids: number[]) {
   busy.value = true
   error.value = null
   try {
-    await specialists.markRead(ids)
+    await org.markRead(ids)
   } catch (e) {
     error.value = errorMessage(e)
   } finally {
@@ -69,7 +69,7 @@ async function mark(ids: number[]) {
         </span>
         <div class="flex min-w-0 grow flex-col gap-0.5">
           <div class="flex items-baseline gap-2 text-xs text-fg-muted">
-            <span data-test="agent-notice-name" class="font-medium text-fg">{{ agentName(n.specialist_id) }}</span>
+            <span data-test="agent-notice-name" class="font-medium text-fg">{{ agentName(n.agent_id) }}</span>
             <span>{{ formatActivity(n.created_at) }}</span>
           </div>
           <button
@@ -83,7 +83,7 @@ async function mark(ids: number[]) {
           >{{ n.text }}</button>
         </div>
         <div class="flex shrink-0 items-center gap-2">
-          <RouterLink v-if="n.session_id" data-test="agent-notice-open" :to="`/sessions/${n.session_id}`" class="text-xs text-primary-soft">Abrir conversa</RouterLink>
+          <RouterLink v-if="org.byId(n.agent_id)" data-test="agent-notice-open" :to="{ name: 'agents', params: { projectId: org.byId(n.agent_id)!.project_id }, query: { agente: String(n.agent_id) } }" class="text-xs text-info-soft hover:underline focus-visible:outline-2 focus-visible:outline-primary">Abrir agente</RouterLink>
           <button type="button" data-test="agent-notice-read" :class="BTN_SMALL" :disabled="busy" @click="mark([n.id])">Marcar como lido</button>
         </div>
       </li>

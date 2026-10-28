@@ -7,8 +7,8 @@ import { createAppRouter } from '../../router'
 import { useLabelsStore } from '../../stores/labels'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import { useSpecialistsStore } from '../../stores/specialists'
-import { jsonResponse, makeLabel, makeProject, makeSession, makeSpecialistNotice, routeFetch } from '../../test/factories'
+import { useOrgStore } from '../../stores/org'
+import { jsonResponse, makeLabel, makeDecision, makeNotice, makeProject, makeSession, routeFetch } from '../../test/factories'
 
 vi.mock('../../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
 import { loadEverything } from '../../stores/realtime'
@@ -497,7 +497,7 @@ describe('Inbox: avisos dos agentes', () => {
     const without = await mountInbox()
     expect(without.wrapper.find('[data-test="agent-notices"]').exists()).toBe(false)
 
-    useSpecialistsStore(pinia).notices = [makeSpecialistNotice({ id: 1, text: 'Tratei 2 erros.' })]
+    useOrgStore(pinia).notices = [makeNotice({ id: 1, text: 'Tratei 2 erros.' })]
     const { wrapper } = await mountInbox()
     const section = wrapper.get('[data-test="agent-notices"]')
     expect(section.text()).toContain('Tratei 2 erros.')
@@ -506,3 +506,46 @@ describe('Inbox: avisos dos agentes', () => {
   })
 })
 
+
+describe('Inbox: decisões', () => {
+  const decisions = () => [
+    makeDecision({ id: 1, project_id: 1, question: 'Posso publicar?' }),
+    makeDecision({ id: 2, project_id: 2, question: 'Apago a branch?' }),
+  ]
+
+  it('decisões aparecem em Pede você, acima das conversas', async () => {
+    useOrgStore(pinia).decisionsPending = decisions()
+    const { wrapper } = await mountInbox()
+    const cards = wrapper.findAll('[data-test="decision-card"]')
+    expect(cards.map((c) => c.text())).toEqual([expect.stringContaining('Posso publicar?'), expect.stringContaining('Apago a branch?')])
+    const section = wrapper.get('[data-test="inbox-decisions"]')
+    const list = wrapper.get('[role="listbox"]')
+    expect(section.element.compareDocumentPosition(list.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('só aparecem na aba Pede você', async () => {
+    useOrgStore(pinia).decisionsPending = decisions()
+    const { wrapper } = await mountInbox('/inbox?aba=pode-fechar')
+    expect(wrapper.find('[data-test="inbox-decisions"]').exists()).toBe(false)
+  })
+
+  it('o filtro de projeto e a busca valem para as decisões', async () => {
+    useOrgStore(pinia).decisionsPending = decisions()
+    const { wrapper } = await mountInbox()
+    await wrapper.get('[data-test="inbox-project"]').setValue('2')
+    expect(wrapper.findAll('[data-test="decision-card"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="decision-card"]').text()).toContain('Apago a branch?')
+    await wrapper.get('[data-test="inbox-project"]').setValue('')
+    await wrapper.get('[data-test="inbox-search"]').setValue('publicar')
+    expect(wrapper.findAll('[data-test="decision-card"]')).toHaveLength(1)
+  })
+
+  it('com decisões e sem conversas esperando, não diz que não há nada', async () => {
+    useSessionsStore(pinia).setForProject(1, [])
+    useSessionsStore(pinia).setForProject(2, [])
+    useOrgStore(pinia).decisionsPending = decisions()
+    const { wrapper } = await mountInbox()
+    expect(wrapper.find('[data-test="empty"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="decision-card"]')).toHaveLength(2)
+  })
+})

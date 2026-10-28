@@ -10,7 +10,9 @@ import { errorMessage, markSessionsSeen } from '../api/http'
 import { isBareShortcut } from '../keyboardShortcutGuard'
 import { useLoadState } from '../loadState'
 import { INBOX_TABS, groupByDate, inInbox, isInboxTab, type InboxTab } from '../conversationList'
+import DecisionCard from '../components/org/tasks/DecisionCard.vue'
 import { useGitStore } from '../stores/git'
+import { useOrgStore } from '../stores/org'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 
@@ -19,6 +21,7 @@ const router = useRouter()
 const sessions = useSessionsStore()
 const projects = useProjectsStore()
 const git = useGitStore()
+const org = useOrgStore()
 const loadState = useLoadState()
 
 const tab = computed<InboxTab>(() => (isInboxTab(route.query.aba) ? route.query.aba : 'pede-voce'))
@@ -37,6 +40,15 @@ const visible = computed(() => {
     inInbox(s, tab.value)
     && (!projectFilter.value || s.project_id === Number(projectFilter.value))
     && (!q || s.title.toLocaleLowerCase('pt-BR').includes(q)),
+  )
+})
+// The decisions agents wait on show at the top of "Aguardando você", under the same project filter and search.
+const decisions = computed(() => {
+  if (tab.value !== 'pede-voce') return []
+  const q = search.value.trim().toLocaleLowerCase('pt-BR')
+  return org.decisionsPending.filter((d) =>
+    (!projectFilter.value || d.project_id === Number(projectFilter.value))
+    && (!q || d.question.toLocaleLowerCase('pt-BR').includes(q)),
   )
 })
 const groups = computed(() => groupByDate(visible.value, new Date(), false))
@@ -185,8 +197,14 @@ async function markAll() {
         <button type="button" data-test="mark-all-read" class="h-9 rounded-md border border-line-strong px-3 text-sm text-fg hover:bg-card disabled:opacity-40" :disabled="marking" @click="markAll">Marcar todas como lidas</button>
       </div>
       <p v-if="error" data-test="inbox-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
+      <section v-if="decisions.length" data-test="inbox-decisions" aria-labelledby="inbox-decisions-title" class="flex flex-col gap-2">
+        <h2 id="inbox-decisions-title" class="m-0 font-mono text-[0.6875rem] font-normal tracking-[0.08em] text-fg-subtle uppercase">Decisões pendentes <span class="text-fg-muted">{{ decisions.length }}</span></h2>
+        <DecisionCard v-for="decision in decisions" :key="decision.id" :decision="decision" />
+      </section>
       <LoadStatus v-if="loadState !== 'ready'" :state="loadState" />
-      <p v-else-if="groups.length === 0" data-test="empty" class="m-0 py-10 text-center text-fg-muted">{{ tab === 'pede-voce' ? 'Nada aguardando você agora.' : 'Nenhuma conversa aqui.' }}</p>
+      <template v-else-if="groups.length === 0">
+        <p v-if="!decisions.length" data-test="empty" class="m-0 py-10 text-center text-fg-muted">{{ tab === 'pede-voce' ? 'Nada aguardando você agora.' : 'Nenhuma conversa aqui.' }}</p>
+      </template>
       <template v-else>
         <div
           ref="listEl"

@@ -238,6 +238,7 @@ describe('cliente da organização de agentes', () => {
     ['putGithubSettings', () => api.putGithubSettings({ login: 'vi' }), 'PUT', '/api/agents-github', { login: 'vi' }],
     ['listTasks', () => api.listTasks({}), 'GET', '/api/tasks', undefined],
     ['listTasks(filtro)', () => api.listTasks({ project_id: 1, status: ['todo', 'blocked'], assignee_agent_id: 4, limit: 10, offset: 20 }), 'GET', '/api/tasks?project_id=1&status=todo&status=blocked&assignee_agent_id=4&limit=10&offset=20', undefined],
+    ['listTasks(ordem)', () => api.listTasks({ status: 'done', limit: 5, order: 'recent' }), 'GET', '/api/tasks?status=done&limit=5&order=recent', undefined],
     ['createTask', () => api.createTask({ project_id: 1, title: 'T' }), 'POST', '/api/tasks', { project_id: 1, title: 'T' }],
     ['getTask', () => api.getTask(7), 'GET', '/api/tasks/7', undefined],
     ['updateTask', () => api.updateTask(7, { expected_revision: 2, status: 'done' }), 'PATCH', '/api/tasks/7', { expected_revision: 2, status: 'done' }],

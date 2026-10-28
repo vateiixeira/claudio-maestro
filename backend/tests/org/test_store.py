@@ -677,6 +677,22 @@ def test_list_tasks_filters_by_assignee_and_status(conn):
     assert ids(limit=2, offset=2) == [t3.id, t4.id]
 
 
+def test_list_tasks_order_recent_puts_the_newest_change_first(conn):
+    t1, t2, t3, t4 = (make_task(conn, name) for name in ("t1", "t2", "t3", "t4"))
+    store.update_task(conn, t2.id, expected_revision=1, now=110, status="in_progress")
+    store.update_task(conn, t3.id, expected_revision=1, now=110, status="in_progress")
+
+    def ids(**kw):
+        return [task.id for task in store.list_tasks(conn, **kw)]
+
+    assert ids() == [t1.id, t2.id, t3.id, t4.id]
+    assert ids(order="id") == [t1.id, t2.id, t3.id, t4.id]
+    # Same `updated_at`: the higher id first.
+    assert ids(order="recent") == [t3.id, t2.id, t4.id, t1.id]
+    assert ids(order="recent", limit=2) == [t3.id, t2.id]
+    assert ids(order="recent", statuses=["in_progress"], limit=1) == [t3.id]
+
+
 def test_count_open_children(conn):
     parent = make_task(conn, "Mãe")
     c1 = make_task(conn, "c1", parent_task_id=parent.id)

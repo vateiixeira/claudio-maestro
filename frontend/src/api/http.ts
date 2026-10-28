@@ -809,6 +809,7 @@ export function listTasks(filter: TaskFilter = {}): Promise<Task[]> {
     ['assignee_agent_id', filter.assignee_agent_id],
     ['limit', filter.limit],
     ['offset', filter.offset],
+    ['order', filter.order],
   ])}`)
 }
 

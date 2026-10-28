@@ -1307,6 +1307,25 @@ def test_task_crud_via_api(board, project, agent, events):
     assert changes[0] == "created" and "updated" in changes
 
 
+def test_list_tasks_order_param(board, project):
+    first = new_task(board, project["id"], "Primeira").json()
+    second = new_task(board, project["id"], "Segunda").json()
+    with conn_of(board) as conn:  # the clock has a one second grain: set the change by hand
+        conn.execute("UPDATE tasks SET updated_at = updated_at + 100 WHERE id = ?", (second["id"],))
+        conn.commit()
+
+    def ids(**params):
+        return [t["id"] for t in board.get("/api/tasks", params=params).json()]
+
+    assert ids() == [first["id"], second["id"]]
+    assert ids(order="id") == [first["id"], second["id"]]
+    assert ids(order="recent") == [second["id"], first["id"]]
+    assert ids(order="recent", limit=1) == [second["id"]]
+    bad = board.get("/api/tasks", params={"order": "nome"})
+    assert bad.status_code == 422
+    assert bad.json()["detail"] == "Ordem inválida."
+
+
 def test_create_task_validates_the_input(board, project, agent, home):
     outro = make_project(board, home, "outro")
     foreign = create_agent(board, outro["id"], "de-fora", "De fora")

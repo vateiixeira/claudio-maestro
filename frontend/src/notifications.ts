@@ -2,8 +2,9 @@ import { ref, watch } from 'vue'
 import { hasRequest, isDiscarded } from './conversation/marks'
 import { needsYou } from './conversation/needsYou'
 import { notificationPrefs, type NotificationPrefs } from './notificationPrefs'
-import type { useSpecialistsStore } from './stores/specialists'
-import type { Session, SpecialistNotice } from './types/api'
+import type { useOrgStore } from './stores/org'
+import type { Session } from './types/api'
+import type { Decision, Notice } from './types/org'
 
 /** Why the user is told: a request from Claude (permission, question, plan), the end of a turn, or a failed subagent. */
 export type NotifyKind = 'permission' | 'question' | 'plan' | 'finished' | 'subagent'
@@ -159,36 +160,72 @@ export function notifySession(kind: NotifyKind, session: Session, open: (session
 }
 
 /**
- * Shows the notification of a notice an agent left, under the same options as the sessions' (permission granted,
- * "Avisos dos agentes" on, "só fora de foco"), without the beep. Clicking it calls `open` with the session of the
- * notice, or `null` when it has none (the Inbox).
+ * Shows the notification of an alert an agent left, under the same options as the sessions' (permission granted,
+ * "Avisos dos agentes" on, "só fora de foco"), without the beep. Summaries and plain notices stay in the Inbox.
+ * Clicking it calls `open` with the Inbox path: a notice has no conversation of its own.
  */
-export function notifySpecialistNotice(
-  notice: SpecialistNotice,
-  agentName: string | null,
-  open: (sessionId: string | null) => void,
-): boolean {
+export function notifyOrgNotice(notice: Notice, agentName: string | null, open: (path: string) => void): boolean {
   const prefs = notificationPrefs.value
-  if (!prefs.specialistNotice || notice.read_at !== null) return false
+  if (notice.kind !== 'alert' || notice.read_at !== null || !prefs.specialistNotice) return false
   if (prefs.onlyWhenHidden && !document.hidden) return false
-  const shown = show(agentName || 'Agente', clip(notice.text), `specialist-notice-${notice.id}`)
+  const shown = show(agentName || 'Agente', clip(notice.text), `agent-notice-${notice.id}`)
   if (!shown) return false
   shown.onclick = () => {
     window.focus()
     shown.close()
-    open(notice.session_id)
+    open('/inbox')
   }
   return true
 }
 
-/** Notifies each notice that arrives by event. Returns the function that stops it. */
-export function bindSpecialistNotifications(
-  store: ReturnType<typeof useSpecialistsStore>,
-  open: (sessionId: string | null) => void,
+/**
+ * Shows the notification of a decision waiting for the person ("Decisão pendente: <question>"). It is a question an
+ * agent asked, so it follows the "Perguntas" option and its beep. Clicking it calls `open` with the path of the
+ * decision's task, or the Inbox when it has none.
+ */
+export function notifyDecision(decision: Decision, agentName: string | null, open: (path: string) => void): boolean {
+  const prefs = notificationPrefs.value
+  if (decision.status !== 'pending' || !prefs.question) return false
+  if (prefs.onlyWhenHidden && !document.hidden) return false
+  const shown = show(agentName || 'Agente', clip(`Decisão pendente: ${decision.question}`), `decision-${decision.id}`)
+  if (!shown) return false
+  shown.onclick = () => {
+    window.focus()
+    shown.close()
+    open(decision.task_id !== null ? `/tarefas/${decision.task_id}` : '/inbox')
+  }
+  if (prefs.sound) playAlertSound()
+  return true
+}
+
+/**
+ * Notifies each alert that arrives by event and each decision that becomes pending. A decision counts as new only
+ * when it was not in the list before and was created after this call: what the first load brings (decisions from
+ * before the app opened) is only remembered. Returns the function that stops it.
+ */
+export function bindOrgNotifications(
+  store: ReturnType<typeof useOrgStore>,
+  open: (path: string) => void,
 ): () => void {
-  return store.onNewNotice((notice) => {
-    notifySpecialistNotice(notice, store.byId(notice.specialist_id)?.name ?? null, open)
+  const startedAt = Date.now() / 1000
+  const known = new Set(store.decisionsPending.map((d) => d.id))
+  const stopNotices = store.onNewNotice((notice) => {
+    notifyOrgNotice(notice, store.byId(notice.agent_id)?.name ?? null, open)
   })
+  const stopDecisions = watch(
+    () => store.decisionsPending,
+    (list) => {
+      for (const decision of list) {
+        if (known.has(decision.id)) continue
+        known.add(decision.id)
+        if (decision.created_at >= Math.floor(startedAt)) notifyDecision(decision, store.byId(decision.agent_id)?.name ?? null, open)
+      }
+    },
+  )
+  return () => {
+    stopNotices()
+    stopDecisions()
+  }
 }
 
 /** The "Testar" button: shows right away, whatever the options. */

@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import AgentBadge from '../agents/AgentBadge.vue'
 import BranchLabel from '../git/BranchLabel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
@@ -14,6 +13,7 @@ import ConfirmDialog from '../ConfirmDialog.vue'
 import LabelBadges from '../labels/LabelBadges.vue'
 import NextNeedsYou from './NextNeedsYou.vue'
 import TitleSuggest from './TitleSuggest.vue'
+import { useRunTask } from './useRunTask'
 import { errorMessage, openInEditor } from '../../api/http'
 import { behindCount, behindTitle } from '../../gitSync'
 import { isDiscarded, markChipText } from '../../conversation/marks'
@@ -23,11 +23,10 @@ import { useConversationStore } from '../../stores/conversation'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
-import { useWorkStore } from '../../stores/work'
+import { useOrgStore } from '../../stores/org'
 import { useSessionsStore } from '../../stores/sessions'
-import { useSpecialistsStore } from '../../stores/specialists'
 import { useTerminalStore } from '../../stores/terminal'
-import { coordinatorAvailable as isCoordinatorAvailable, displayStateLabel } from '../../sessionState'
+import { displayStateLabel } from '../../sessionState'
 import { worktreeLabel } from '../../worktree'
 
 // `detailsOpen`: the Detalhes panel is showing project, group and branch, so the line below the strip stays out.
@@ -35,11 +34,8 @@ import { worktreeLabel } from '../../worktree'
 const props = withDefaults(defineProps<{ id: string; detailsOpen?: boolean; showPath?: boolean }>(), { detailsOpen: false, showPath: true })
 
 const sessions = useSessionsStore()
-const work = useWorkStore()
-const mobileActionsOpen = ref(false)
-const isCoordinator = computed(() => work.catalog[props.id]?.work_role === 'coordinator')
-const managedWorker = computed(() => !!work.catalog[props.id] && work.catalog[props.id]?.work_role !== 'coordinator')
-const specialists = useSpecialistsStore()
+const org = useOrgStore()
+const BADGE = 'max-w-56 shrink-0 truncate rounded-full border border-line-strong px-1.5 font-mono text-[0.6875rem] text-fg-muted'
 const conversations = useConversationStore()
 const projects = useProjectsStore()
 const git = useGitStore()
@@ -49,7 +45,10 @@ const now = useMinuteClock()
 
 const listed = computed(() => sessions.find(props.id))
 // The agent whose main conversation this is: the header links to its settings.
-const mainOf = computed(() => specialists.isMainSession(props.id))
+const mainOf = computed(() => org.isMainSession(props.id))
+// A run of an agent (not its main conversation): the agent and, when the run belongs to a task, the task.
+const { agentId, agent, taskId } = useRunTask(toRef(props, 'id'))
+const agentName = computed(() => agent.value?.name)
 const conv = computed(() => conversations.get(props.id))
 const title = computed(() => conv.value?.title ?? listed.value?.title ?? '')
 const projectId = computed(() => listed.value?.project_id ?? conv.value?.projectId ?? null)
@@ -59,14 +58,12 @@ const group = computed(() => (listed.value?.group_id != null ? groups.byId(liste
 const worktree = computed(() => (listed.value ? worktreeLabel(listed.value) : null))
 const repos = computed(() => (projectId.value != null ? git.reposFor(projectId.value) : []))
 watch(projectId, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
-const coordinatorAvailable = computed(() => work.catalog[props.id]?.work_role === 'coordinator' && !!listed.value && isCoordinatorAvailable(listed.value, !!conv.value?.prompts.length))
 // Announced politely when it changes, for people who cannot see the state icon.
 const stateLabel = computed(() => {
   if (!listed.value) return ''
   const state = listed.value.state
   if (state === 'error') return 'Erro'
   if (state === 'awaiting_decision') return 'Aguardando você'
-  if (coordinatorAvailable.value) return 'CTO disponível'
   return displayStateLabel(listed.value)
 })
 // Branch, worktree and group; the project joins them in the line below the strip when the breadcrumb does not show it.
@@ -207,10 +204,10 @@ async function openProject() {
 </script>
 
 <template>
-  <header class="flex w-full flex-col border-b border-line" :class="{ 'coordinator-header': isCoordinator, 'mobile-expanded': mobileActionsOpen }">
+  <header class="flex w-full flex-col border-b border-line">
     <span data-test="state-live" role="status" aria-live="polite" class="sr-only">{{ stateLabel }}</span>
     <div data-test="header-strip" class="flex min-h-14 flex-wrap items-center gap-3 px-4 py-2">
-      <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="coordinatorAvailable || !needsYou(listed)" />
+      <DisplayStateIcon v-if="listed" :display="listed.display_state" :size="16" :quiet="!needsYou(listed)" />
       <!-- O título e as ações passam para linhas próprias quando falta espaço. -->
       <div data-test="header-title" class="flex min-w-0 grow basis-64 items-center gap-3">
         <nav v-if="showPath" data-test="breadcrumb" aria-label="Trilha" class="flex min-w-0 shrink items-center gap-1 text-xs text-fg-muted max-sm:hidden">
@@ -224,7 +221,7 @@ async function openProject() {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
         </nav>
         <!-- Before the title (shrink-0, so it never pushes the title out). Disabled only when the conversation is loaded and empty; before it loads the backend answers. -->
-        <TitleSuggest v-if="!editing && !managedWorker" :id="id" :disabled="!!conv && conv.items.length === 0" />
+        <TitleSuggest v-if="!editing" :id="id" :disabled="!!conv && conv.items.length === 0" />
         <input
           v-if="editing"
           ref="input"
@@ -240,28 +237,28 @@ async function openProject() {
           <button
             type="button"
             data-test="conversation-title"
-            :disabled="managedWorker"
             title="Clique para renomear"
             class="block min-h-8 max-w-full truncate text-left decoration-fg-subtle underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-primary"
             @click="startRename"
           >{{ title }}</button>
         </h1>
-        <AgentBadge v-if="listed?.agent_id != null" :specialist-id="listed.agent_id" />
+        <span v-if="mainOf" data-test="main-badge" :title="`Conversa principal de ${mainOf.name}`" :class="BADGE">Conversa principal de {{ mainOf.name }}</span>
+        <span v-else-if="agentId != null" data-test="agent-badge" :title="agentName ? `Agente · ${agentName}` : 'Agente'" :class="BADGE">{{ agentName ? `Agente · ${agentName}` : 'Agente' }}</span>
+        <RouterLink v-if="taskId != null" :to="`/tarefas/${taskId}`" data-test="task-badge" :class="[BADGE, 'text-info-soft no-underline hover:bg-card focus-visible:outline-2 focus-visible:outline-primary']">Tarefa #{{ taskId }}</RouterLink>
         <LabelBadges :ids="listed?.label_ids" class="[&>[data-test=label-badge]]:min-w-0 [&>[data-test=label-badge]]:shrink" />
       </div>
-      <button v-if="isCoordinator" type="button" data-test="mobile-header-actions" class="mobile-header-toggle work-button" :aria-expanded="mobileActionsOpen" :aria-controls="`header-actions-${id}`" @click="mobileActionsOpen = !mobileActionsOpen">Ações</button>
       <!-- Quebram linha numa coluna estreita: shrink-0 em fila única vazava e fazia a página rolar. -->
-      <div :id="`header-actions-${id}`" data-test="header-actions" :class="{ 'mobile-expanded': mobileActionsOpen }" class="flex min-w-0 flex-wrap items-center justify-end gap-3">
-        <button v-if="markChip && !managedWorker" ref="markChipButton" type="button" data-test="mark-chip" aria-haspopup="menu" :aria-expanded="!!markAt" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
+      <div data-test="header-actions" class="flex min-w-0 flex-wrap items-center justify-end gap-3">
+        <button v-if="markChip" ref="markChipButton" type="button" data-test="mark-chip" aria-haspopup="menu" :aria-expanded="!!markAt" class="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-fg-muted hover:bg-card" @click="toggleMark">
           <MarkIcon v-if="listed?.mark" :mark="listed.mark" />{{ markChip }}
         </button>
         <span v-if="listed?.priority" data-test="header-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" :size="13" /></span>
         <span v-if="copied" role="status" class="shrink-0 text-xs text-primary-soft">ID copiado</span>
         <RouterLink v-if="mainOf" :to="{ name: 'agents', params: { projectId: mainOf.project_id }, query: { agente: String(mainOf.id), aba: 'definicao' } }" data-test="configure-agent" class="flex h-8 shrink-0 items-center rounded-md border border-line-strong px-3 text-sm font-medium text-fg no-underline hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">Configurar agente</RouterLink>
         <NextNeedsYou v-if="showPath" :current-id="id" />
-        <button v-if="listed && !managedWorker" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
+        <button v-if="listed" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
         <button
-          v-if="listed && !managedWorker"
+          v-if="listed"
           type="button"
           data-test="toggle-finished"
           class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
@@ -270,7 +267,7 @@ async function openProject() {
           @click="requestToggleFinished"
         >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
         <button
-          v-if="listed && !managedWorker && !isDiscarded(listed)"
+          v-if="listed && !isDiscarded(listed)"
           type="button"
           data-test="header-discard"
           class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
@@ -301,7 +298,7 @@ async function openProject() {
           </div>
         </div>
         <button
-          v-if="listed && !managedWorker"
+          v-if="listed"
           type="button"
           data-test="terminal-button"
           aria-label="Abrir o terminal"
@@ -360,16 +357,3 @@ async function openProject() {
     <MarkPopover v-if="markAt && listed" :session="listed" :x="markAt.x" :y="markAt.y" :ignore="[markButton, markChipButton]" @close="markAt = null" />
   </header>
 </template>
-
-<style scoped>
-.mobile-header-toggle{display:none}
-@media(max-width:600px),(max-height:760px){
-.coordinator-header [data-test=header-strip]{min-height:48px;gap:8px;flex-wrap:wrap;padding-top:6px;padding-bottom:6px}
-.coordinator-header [data-test=header-title]{flex-basis:0;gap:6px}
-.coordinator-header [data-test=conversation-title]{font-size:0.875rem}
-.coordinator-header .mobile-header-toggle{display:inline-flex;min-height:32px;padding:4px 9px;font-size:0.75rem}
-.coordinator-header [data-test=header-actions]:not(.mobile-expanded){display:none}
-.coordinator-header:not(.mobile-expanded) [data-test=header-meta]{display:none}
-.coordinator-header [data-test=header-actions].mobile-expanded{width:100%;gap:8px}
-}
-</style>
