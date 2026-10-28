@@ -915,8 +915,8 @@ def _build_v32_with_work(conn) -> None:
     )
     conn.execute(
         "INSERT INTO work_prs (url, project_id, work_item_id, origin_attempt_id, last_attempt_id, origin_session_id,"
-        " last_session_id, workspace, target_ref, created_at, closed)"
-        " VALUES ('https://github.com/o/r/pull/9', 1, 2, 10, 12, 's-a1', 's-a2', '/p1', 't', 170, 1)"
+        " last_session_id, workspace, target_ref, created_at, polled_at, closed)"
+        " VALUES ('https://github.com/o/r/pull/9', 1, 2, 10, 12, 's-a1', 's-a2', '/p1', 't', 170, 180, 1)"
     )
 
 
@@ -1014,7 +1014,7 @@ def test_migration_33_keeps_legacy_work_for_the_file_migration(tmp_path: Path):
             ("decision", 1, 2, {"request_ref": "request-1.json", "created_at": 150}),
             ("pr", 1, 2, {
                 "url": "https://github.com/o/r/pull/9", "last_session_id": "s-a2",
-                "created_at": 170, "closed": 1,
+                "created_at": 170, "polled_at": 180, "closed": 1,
             }),
         ]
         # Only pending decisions are carried; the answered one is history.

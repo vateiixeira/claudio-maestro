@@ -1252,7 +1252,7 @@ MIGRATIONS.append([
     INSERT INTO org_legacy_work (kind, project_id, task_id, data)
     SELECT 'pr', project_id, work_item_id,
            json_object('url', url, 'last_session_id', last_session_id, 'created_at', created_at,
-                       'closed', closed)
+                       'polled_at', polled_at, 'closed', closed)
     FROM work_prs ORDER BY created_at, url
     """,
 ])

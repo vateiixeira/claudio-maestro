@@ -4,9 +4,10 @@ import json
 import os
 import sqlite3
 import stat
+import uuid
 from collections.abc import Iterator
 from contextlib import closing
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -455,3 +456,614 @@ def test_file_migration_skips_invalid_slug(conn, data_dir, clock):
     assert report.migrated == []
     assert any("../evil" in warning for warning in report.warnings)
     assert not (data_dir / "evil").exists()
+
+
+# --- migrate_work: the CTO, the tasks, the decisions and the PRs of the old `work/` ------------
+
+FORBIDDEN_IN_INHERITED = (
+    "#50", "#55", "#135", "delegate_work", "collect_source", "start_work", "reevaluate_work",
+    "get_work", "conclude", "declare_workspaces", "verify_ci_run", "request_decision",
+    "get_review_evidence", "submit_review",
+)
+
+
+def drop_work_tables(conn: sqlite3.Connection) -> None:
+    """What migration 34 does on the real start: the `work_*` tables are gone before the file
+    step runs, so `migrate_work` may only use `org_legacy_work`, `tasks` and the disk."""
+    conn.execute("PRAGMA foreign_keys = OFF")
+    names = [
+        r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'work\\_%' ESCAPE '\\'"
+        )
+    ]
+    for name in names:
+        conn.execute(f"DROP TABLE IF EXISTS {name}")
+    conn.execute("PRAGMA foreign_keys = ON")
+    assert not [n for n in names if not n.startswith("work_")]
+
+
+@pytest.fixture
+def org_conn(conn: sqlite3.Connection) -> sqlite3.Connection:
+    drop_work_tables(conn)
+    return conn
+
+
+def add_session(conn, session_id: str, project_id: int = 1, agent_id: int | None = None) -> None:
+    conn.execute(
+        "INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at,"
+        " agent_id) VALUES (?, ?, '/work/app', 't', 0, 0, ?)",
+        (session_id, project_id, agent_id),
+    )
+
+
+def add_task(conn, task_id: int, *, project_id: int = 1, title: str = "Corrigir login",
+             status: str = "todo", legacy: dict | None = None) -> None:
+    conn.execute(
+        "INSERT INTO tasks (id, project_id, title, status, created_by, legacy_json, created_at,"
+        " updated_at) VALUES (?, ?, ?, ?, 'human', ?, 10, 20)",
+        (task_id, project_id, title, status, json.dumps(legacy) if legacy is not None else None),
+    )
+
+
+def add_legacy(conn, kind: str, project_id: int | None, task_id: int | None, data: dict) -> None:
+    conn.execute(
+        "INSERT INTO org_legacy_work (kind, project_id, task_id, data) VALUES (?, ?, ?, ?)",
+        (kind, project_id, task_id, json.dumps(data)),
+    )
+
+
+def write_work_file(data_dir: Path, value: dict | bytes, name: str | None = None) -> str:
+    folder = data_dir / "work"
+    folder.mkdir(mode=0o700, exist_ok=True)
+    name = name or f"{uuid.uuid4().hex}.json"
+    raw = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False).encode()
+    (folder / name).write_bytes(raw)
+    os.chmod(folder / name, 0o600)
+    return name
+
+
+def dossier_legacy(ref: str | None, **extra) -> dict:
+    return {"dossier_ref": ref, "source": None, "external_id": None,
+            "coordinator_session_id": None, **extra}
+
+
+def run_work(data_dir, conn, clock):
+    return migration.migrate_work(data_dir, conn, files=files_of(data_dir), clock=clock)
+
+
+def task_row(conn, task_id: int) -> sqlite3.Row:
+    return conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+
+
+def slug_id(conn, slug: str) -> int:
+    return store.get_agent_by_slug(conn, slug).id
+
+
+def test_migrate_work_creates_three_agents_per_coordinator(org_conn, data_dir, clock):
+    add_session(org_conn, "coord-1", 1)
+    add_session(org_conn, "coord-2", 2)
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "coord-1", "created_at": 11})
+    add_legacy(org_conn, "coordinator", 2, None, {"session_id": "coord-2", "created_at": 12})
+
+    report = run_work(data_dir, org_conn, clock)
+
+    assert report.warnings == []
+    assert sorted(report.work.agents_created) == sorted(
+        f"{kind}-{pid}" for kind in ("cto", "trabalhador", "revisor") for pid in (1, 2)
+    )
+    files = files_of(data_dir)
+    for pid in (1, 2):
+        cto = store.get_agent_by_slug(org_conn, f"cto-{pid}")
+        worker = store.get_agent_by_slug(org_conn, f"trabalhador-{pid}")
+        reviewer = store.get_agent_by_slug(org_conn, f"revisor-{pid}")
+        assert (cto.project_id, cto.reports_to) == (pid, None)
+        assert (worker.reports_to, reviewer.reports_to) == (cto.id, cto.id)
+        for agent in (cto, worker, reviewer):
+            text = files.read_definition_text(agent.slug)
+            assert agent.definition_hash == definition_hash(text)
+            assert "Contexto herdado" in text
+            assert not [word for word in FORBIDDEN_IN_INHERITED if word in text]
+            assert mode(files.folder(agent.slug)) == 0o700
+        assert "tarefa_criar" in files.read_definition_text(f"cto-{pid}")  # the template text
+    assert store.list_legacy_work(org_conn, "coordinator") == []
+    path = data_dir / "agents" / "migracao-2026-10-28.md"
+    assert report.report_path == path and "cto-1" in path.read_text(encoding="utf-8")
+
+
+def test_migrate_work_rebinds_coordinator_session_to_cto(org_conn, data_dir, clock):
+    add_session(org_conn, "coord-1", 1)
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "coord-1", "created_at": 11})
+
+    run_work(data_dir, org_conn, clock)
+
+    cto = store.get_agent_by_slug(org_conn, "cto-1")
+    assert cto.main_session_id == "coord-1"
+    assert org_conn.execute(
+        "SELECT agent_id FROM sessions WHERE session_id = 'coord-1'"
+    ).fetchone()[0] == cto.id
+    assert org_conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_migrate_work_does_not_steal_a_session_that_belongs_to_someone_else(
+    org_conn, data_dir, clock
+):
+    other = org_conn.execute(
+        "INSERT INTO agents (slug, name, project_id, created_at, updated_at)"
+        " VALUES ('outro', 'Outro', 1, 0, 0)"
+    ).lastrowid
+    add_session(org_conn, "coord-1", 1, agent_id=other)
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "coord-1", "created_at": 11})
+    add_legacy(org_conn, "coordinator", 2, None, {"session_id": "gone", "created_at": 11})
+
+    report = run_work(data_dir, org_conn, clock)
+
+    assert store.get_agent_by_slug(org_conn, "cto-1").main_session_id is None
+    assert org_conn.execute(
+        "SELECT agent_id FROM sessions WHERE session_id = 'coord-1'"
+    ).fetchone()[0] == other
+    assert store.get_agent_by_slug(org_conn, "cto-2").main_session_id is None
+    assert len([w for w in report.warnings if "sessão" in w]) == 2
+    assert store.list_legacy_work(org_conn, "coordinator") == []
+
+
+def test_migrate_work_fills_description_from_dossier(org_conn, data_dir, clock):
+    ref = write_work_file(
+        data_dir, {"kind": "source_issue", "objective": "Investigar o erro 500.",
+                   "acceptance": "Causa raiz explicada.", "url": "https://x.test/issues/7"},
+    )
+    add_task(org_conn, 7, title="Erro 500", status="done",
+             legacy=dossier_legacy(ref, source="github", external_id="#7"))
+
+    report = run_work(data_dir, org_conn, clock)
+
+    task = task_row(org_conn, 7)
+    assert task["description"].startswith(
+        "Investigar o erro 500.\n\n## Critérios de aceite\nCausa raiz explicada."
+    )
+    assert "github" in task["description"] and "https://x.test/issues/7" in task["description"]
+    assert task["legacy_json"] is None
+    assert report.work.tasks_completed == [7]
+    assert report.warnings == []
+
+
+def test_migrate_work_description_is_cut_at_the_limit(org_conn, data_dir, clock):
+    ref = write_work_file(data_dir, {"objective": "o" * 30_000, "acceptance": "a"})
+    add_task(org_conn, 7, status="done", legacy=dossier_legacy(ref))
+
+    report = run_work(data_dir, org_conn, clock)
+
+    description = task_row(org_conn, 7)["description"]
+    assert len(description) <= 20_000 and description.startswith("ooo")
+    assert any("7" in w and "cortada" in w for w in report.warnings)
+
+
+def test_migrate_work_without_dossier_falls_back_to_title(org_conn, data_dir, clock):
+    missing = f"{uuid.uuid4().hex}.json"
+    oversize = write_work_file(data_dir, b'{"objective": "' + b"x" * 70_000 + b'"}')
+    garbage = write_work_file(data_dir, b"not json")
+    not_dict = write_work_file(data_dir, b"[1, 2]")
+    outside = data_dir / "outside.json"
+    outside.write_text('{"objective": "segredo"}', encoding="utf-8")
+    link = f"{uuid.uuid4().hex}.json"
+    (data_dir / "work" / link).symlink_to(outside)
+    cases = {1: missing, 2: oversize, 3: garbage, 4: not_dict, 5: link, 6: "../outside.json",
+             7: None}
+    for task_id, ref in cases.items():
+        add_task(org_conn, task_id, title=f"Titulo {task_id}", status="done",
+                 legacy=dossier_legacy(ref))
+
+    report = run_work(data_dir, org_conn, clock)  # no exception for any of them
+
+    for task_id in cases:
+        row = task_row(org_conn, task_id)
+        assert row["description"] == f"Titulo {task_id}"
+        assert row["legacy_json"] is None
+    assert "segredo" not in "".join(r["description"] for r in org_conn.execute("SELECT * FROM tasks"))
+    assert len(report.warnings) == len(cases)
+    assert all("dossiê" in w for w in report.warnings)
+
+
+def test_migrate_work_without_work_folder_falls_back_too(org_conn, data_dir, clock):
+    add_task(org_conn, 1, title="Sem pasta", status="done",
+             legacy=dossier_legacy(f"{uuid.uuid4().hex}.json"))
+
+    run_work(data_dir, org_conn, clock)
+
+    assert task_row(org_conn, 1)["description"] == "Sem pasta"
+    assert not (data_dir / "work").exists()  # reading never creates the folder
+
+
+def test_migrate_work_assigns_open_tasks_to_worker(org_conn, data_dir, clock):
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "gone", "created_at": 11})
+    for task_id, status in enumerate(
+        ("todo", "in_progress", "in_review", "blocked", "done", "cancelled"), start=1
+    ):
+        add_task(org_conn, task_id, status=status, legacy=dossier_legacy(None))
+    add_task(org_conn, 20, project_id=2, status="todo", legacy=dossier_legacy(None))
+    add_task(org_conn, 30, status="todo")  # a task created in the new system: untouched
+
+    report = run_work(data_dir, org_conn, clock)
+
+    cto, worker, reviewer = (slug_id(org_conn, f"{k}-1") for k in ("cto", "trabalhador", "revisor"))
+    for task_id in (1, 2, 3, 4):
+        row = task_row(org_conn, task_id)
+        assert (row["assignee_agent_id"], row["created_by_agent_id"], row["created_by"]) == (
+            worker, cto, "agent",
+        )
+        assert row["reviewer_agent_id"] == (reviewer if task_id == 3 else None)
+        assert row["legacy_json"] is None
+    for task_id in (5, 6):  # closed ones keep no owner
+        row = task_row(org_conn, task_id)
+        assert (row["assignee_agent_id"], row["created_by"]) == (None, "human")
+        assert row["status"] == ("done" if task_id == 5 else "cancelled")
+    assert (task_row(org_conn, 4)["status"], task_row(org_conn, 2)["status"]) == (
+        "blocked", "in_progress"
+    )
+    # Project 2 has no coordinator: the task has no owner, and the report says so.
+    lonely = task_row(org_conn, 20)
+    assert (lonely["assignee_agent_id"], lonely["legacy_json"]) == (None, None)
+    assert any("20" in w and "sem responsável" in w for w in report.warnings)
+    assert task_row(org_conn, 30)["created_by"] == "human"
+    # Nothing is woken by the migration.
+    assert org_conn.execute("SELECT COUNT(*) FROM wakeups").fetchone()[0] == 0
+    assert org_conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+
+
+def pending_request(data_dir: Path, **fields) -> str:
+    return write_work_file(
+        data_dir, {"question": "Posso apagar a tabela?", "action": "DROP TABLE x",
+                   "options": ["sim", "não"], "evidence": [], "scope": {"work_item_id": 1},
+                   **fields},
+    )
+
+
+def test_migrate_work_copies_pending_decisions_and_prs(org_conn, data_dir, clock):
+    add_session(org_conn, "worker-sess", 1)
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "gone", "created_at": 11})
+    add_task(org_conn, 1, status="blocked", legacy=dossier_legacy(None))
+    add_task(org_conn, 2, status="in_review", legacy=dossier_legacy(None))
+    ref = pending_request(data_dir)
+    add_legacy(org_conn, "decision", 1, 1, {"request_ref": ref, "created_at": 123})
+    add_legacy(org_conn, "pr", 1, 1, {"url": "https://github.com/o/r/pull/9/?x=1",
+                                      "last_session_id": "worker-sess", "created_at": 50,
+                                      "closed": 0})
+    add_legacy(org_conn, "pr", 1, 2, {"url": "https://github.com/o/r/pull/10",
+                                      "last_session_id": "never-existed", "created_at": 60,
+                                      "closed": 1})
+
+    report = run_work(data_dir, org_conn, clock)
+
+    worker = slug_id(org_conn, "trabalhador-1")
+    decisions = store.list_decisions(org_conn)
+    assert len(decisions) == 1
+    decision = decisions[0]
+    assert (decision.project_id, decision.task_id, decision.agent_id, decision.status) == (
+        1, 1, worker, "pending",
+    )
+    assert decision.question == "Posso apagar a tabela?\n\nAção proposta: DROP TABLE x"
+    assert decision.options == ["sim", "não"] and decision.created_at == 123
+    assert decision.run_id is None and decision.session_id is None
+    first = store.get_pr(org_conn, "https://github.com/o/r/pull/9")
+    second = store.get_pr(org_conn, "https://github.com/o/r/pull/10")
+    assert (first.agent_id, first.session_id, first.closed, first.created_at) == (
+        worker, "worker-sess", False, 50,
+    )
+    assert (second.agent_id, second.session_id, second.closed) == (worker, None, True)
+    tasks = dict(org_conn.execute("SELECT url, task_id FROM agent_prs").fetchall())
+    assert tasks == {"https://github.com/o/r/pull/9": 1, "https://github.com/o/r/pull/10": 2}
+    assert (report.work.decisions, report.work.prs) == (1, 2)
+    assert store.list_legacy_work(org_conn) == []
+    assert org_conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_migrate_work_decision_limits_and_fallbacks(org_conn, data_dir, clock):
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "gone", "created_at": 11})
+    add_task(org_conn, 1, title="Tarefa A", status="blocked", legacy=dossier_legacy(None))
+    long_question = "q" * 1990
+    big = pending_request(
+        data_dir, question=long_question, action="a" * 100,
+        options=[f"opt{i}" + "o" * 300 for i in range(12)] + ["", 5],
+    )
+    add_legacy(org_conn, "decision", 1, 1, {"request_ref": big, "created_at": 1})
+    add_legacy(org_conn, "decision", 1, 1,
+               {"request_ref": f"{uuid.uuid4().hex}.json", "created_at": 2})
+
+    report = run_work(data_dir, org_conn, clock)
+
+    big_decision, lost = store.list_decisions(org_conn)
+    assert big_decision.question == long_question  # the action did not fit in 2.000
+    assert len(big_decision.options) == 8
+    assert all(len(option) == 200 and option.startswith("opt") for option in big_decision.options)
+    assert "Tarefa A" in lost.question and lost.options == []
+    assert any("pedido" in w for w in report.warnings)
+
+
+def test_migrate_work_discards_what_has_no_agent_and_says_so(org_conn, data_dir, clock):
+    add_task(org_conn, 1, title="Sem dono", status="blocked", legacy=dossier_legacy(None))
+    ref = pending_request(data_dir)
+    add_legacy(org_conn, "decision", 2, 1, {"request_ref": ref, "created_at": 1})
+    add_legacy(org_conn, "pr", 2, 1, {"url": "https://github.com/o/r/pull/3",
+                                      "last_session_id": None, "created_at": 1, "closed": 0})
+    add_legacy(org_conn, "coordinator", 99, None, {"session_id": "x", "created_at": 1})
+
+    report = run_work(data_dir, org_conn, clock)
+
+    assert store.list_legacy_work(org_conn) == []
+    assert store.list_decisions(org_conn) == []
+    assert org_conn.execute("SELECT COUNT(*) FROM agent_prs").fetchone()[0] == 0
+    joined = "\n".join(report.warnings)
+    assert "Posso apagar a tabela?" in joined  # the question is kept in the report
+    assert "https://github.com/o/r/pull/3" in joined
+    assert "projeto 99" in joined
+    assert store.list_agents(org_conn) == []
+
+
+def test_migrate_work_is_idempotent(org_conn, data_dir, clock):
+    add_session(org_conn, "coord-1", 1)
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "coord-1", "created_at": 11})
+    ref = write_work_file(data_dir, {"objective": "Fazer X", "acceptance": "Y"})
+    add_task(org_conn, 1, status="blocked", legacy=dossier_legacy(ref))
+    add_legacy(org_conn, "decision", 1, 1, {"request_ref": pending_request(data_dir),
+                                            "created_at": 5})
+    add_legacy(org_conn, "pr", 1, 1, {"url": "https://github.com/o/r/pull/1",
+                                      "last_session_id": None, "created_at": 1, "closed": 0})
+    first = run_work(data_dir, org_conn, clock)
+    path = first.report_path
+    assert path is not None
+    snapshot = {
+        "agents": store.list_agents(org_conn),
+        "task": tuple(task_row(org_conn, 1)),
+        "decisions": store.list_decisions(org_conn),
+        "prs": tuple(map(tuple, org_conn.execute("SELECT * FROM agent_prs"))),
+        "files": {
+            slug: files_of(data_dir).read_definition_text(slug)
+            for slug in ("cto-1", "trabalhador-1", "revisor-1")
+        },
+        "report": path.read_text(encoding="utf-8"),
+    }
+
+    again = run_work(data_dir, org_conn, clock)
+
+    assert again.report_path is None and again.warnings == []
+    assert (again.work.agents_created, again.work.tasks_completed, again.work.decisions,
+            again.work.prs) == ([], [], 0, 0)
+    assert store.list_agents(org_conn) == snapshot["agents"]
+    assert tuple(task_row(org_conn, 1)) == snapshot["task"]
+    assert store.list_decisions(org_conn) == snapshot["decisions"]
+    assert tuple(map(tuple, org_conn.execute("SELECT * FROM agent_prs"))) == snapshot["prs"]
+    assert {
+        slug: files_of(data_dir).read_definition_text(slug) for slug in snapshot["files"]
+    } == snapshot["files"]
+    assert path.read_text(encoding="utf-8") == snapshot["report"]
+    assert store.list_legacy_work(org_conn) == []
+
+
+def test_migrate_work_reuses_existing_agents_without_overwriting_agent_md(
+    org_conn, data_dir, clock
+):
+    now = 5
+    cto = store.create_agent(org_conn, slug="cto-1", name="Meu CTO", project_id=1,
+                             reports_to=None, now=now)
+    files = files_of(data_dir)
+    custom = template_text("Meu CTO", "cto").replace("CTO deste projeto", "CHEFE ÚNICO")
+    files.create("cto-1", custom)
+    # A folder left by an earlier run that died before the commit: no row, same protection.
+    files.create("revisor-1", template_text("Revisor", "reviewer").replace("Revisor", "Meu revisor"))
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "gone", "created_at": 11})
+
+    report = run_work(data_dir, org_conn, clock)
+
+    assert sorted(report.work.agents_created) == ["revisor-1", "trabalhador-1"]
+    assert report.work.agents_reused == ["cto-1"]
+    assert files.read_definition_text("cto-1") == custom
+    assert "Contexto herdado" not in files.read_definition_text("revisor-1")
+    assert "Meu revisor" in files.read_definition_text("revisor-1")
+    reviewer = store.get_agent_by_slug(org_conn, "revisor-1")
+    assert reviewer.reports_to == cto.id
+    assert reviewer.definition_hash == definition_hash(files.read_definition_text("revisor-1"))
+    assert "Contexto herdado" in files.read_definition_text("trabalhador-1")
+    assert len([a for a in store.list_agents(org_conn) if a.slug == "cto-1"]) == 1
+
+
+def template_text(name: str, kind: str) -> str:
+    from claudio_maestro.org.definition import template
+
+    return template(name, kind)
+
+
+def test_migrate_work_leaves_a_project_alone_when_its_agents_cannot_be_made(
+    org_conn, data_dir, clock
+):
+    # The slug is taken by an agent of another project: the unit rolls back, nothing is lost.
+    store.create_agent(org_conn, slug="cto-1", name="Intruso", project_id=2, reports_to=None, now=1)
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "gone", "created_at": 11})
+    add_task(org_conn, 1, status="todo", legacy=dossier_legacy(None))
+    add_legacy(org_conn, "decision", 1, 1, {"request_ref": pending_request(data_dir),
+                                            "created_at": 5})
+
+    report = run_work(data_dir, org_conn, clock)
+
+    assert any("cto-1" in w for w in report.warnings)
+    assert store.get_agent_by_slug(org_conn, "trabalhador-1") is None
+    assert not files_of(data_dir).folder("trabalhador-1").exists()
+    assert len(store.list_legacy_work(org_conn)) == 2  # coordinator and decision wait
+    assert task_row(org_conn, 1)["legacy_json"] is not None  # and so does the task
+
+
+def test_migrate_work_does_not_import_the_old_work_package():
+    import ast
+
+    tree = ast.parse(Path(migration.__file__).read_text(encoding="utf-8"))
+    imported = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            imported.append((node.module or "") + " " + " ".join(a.name for a in node.names))
+        elif isinstance(node, ast.Import):
+            imported.extend(a.name for a in node.names)
+    assert not [name for name in imported if "claudio_maestro.work" in name or " work" in f" {name}"]
+
+
+def test_migrate_work_from_a_version_32_database_with_real_work_tables(
+    tmp_path, data_dir, clock
+):
+    """Migration 33 hands the coordinators, decisions and PRs over; the work tables can be
+    dropped right after (what migration 34 does) and the file step still finishes."""
+    db_path = tmp_path / "old.db"
+    with closing(db.connect(db_path)) as old:
+        for statements in db.MIGRATIONS[:32]:
+            for statement in statements:
+                old.execute(statement) if isinstance(statement, str) else statement(old)
+        old.execute("PRAGMA user_version = 32")
+        old.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/work/app', '#fff', 0, 0)"
+        )
+        for sid in ("coord", "worker"):
+            old.execute(
+                "INSERT INTO sessions (session_id, project_id, cwd, title, created_at,"
+                " last_activity_at) VALUES (?, 1, '/work/app', 't', 0, 0)",
+                (sid,),
+            )
+        old.execute("INSERT INTO work_coordinators (project_id, session_id, created_at)"
+                    " VALUES (1, 'coord', 30)")
+        for item_id, status, title in ((1, "active", "Ativa"), (2, "waiting", "Esperando"),
+                                       (3, "done", "Pronta")):
+            old.execute(
+                "INSERT INTO work_items (id, project_id, source, source_instance, source_project,"
+                " external_id, title, priority, status, phase, created_at, updated_at)"
+                " VALUES (?, 1, 'github', 'i', 'p', ?, ?, 'normal', ?, 'investigation', 1, 2)",
+                (item_id, f"#{item_id}", title, status),
+            )
+        dossier = write_work_file(data_dir, {"objective": "Investigar", "acceptance": "Relatório"})
+        old.execute("INSERT INTO work_specs (work_item_id, dossier_ref, role)"
+                    " VALUES (2, ?, 'investigator')", (dossier,))
+        old.execute(
+            "INSERT INTO work_attempts (id, work_item_id, session_id, role, state, work_revision,"
+            " created_at, updated_at) VALUES (1, 2, 'worker', 'investigator', 'waiting', 1, 3, 3)"
+        )
+        request = pending_request(data_dir, question="Pode migrar?", action="Rodar a migração")
+        old.execute(
+            "INSERT INTO work_decision_requests (work_item_id, attempt_id, work_revision,"
+            " dossier_ref, target_ref, request_ref, status, created_at)"
+            " VALUES (2, 1, 1, ?, 'x', ?, 'pending', 99)", (dossier, request),
+        )
+        old.execute(
+            "INSERT INTO work_decision_requests (work_item_id, attempt_id, work_revision,"
+            " dossier_ref, target_ref, request_ref, status, created_at)"
+            " VALUES (2, 1, 1, ?, 'x', ?, 'expired', 98)", (dossier, request),
+        )
+        old.execute(
+            "INSERT INTO work_prs (url, project_id, work_item_id, origin_attempt_id,"
+            " last_attempt_id, origin_session_id, last_session_id, workspace, target_ref,"
+            " created_at, closed) VALUES ('https://github.com/o/r/pull/5', 1, 2, 1, 1, 'worker',"
+            " 'worker', '/work/app', 'x', 77, 0)"
+        )
+
+    with closing(db.connect(db_path)) as migrated:
+        db.migrate(migrated)
+        drop_work_tables(migrated)
+
+        report = run_work(data_dir, migrated, clock)
+
+        assert report.warnings == [] or all("dossiê" in w for w in report.warnings)
+        cto = store.get_agent_by_slug(migrated, "cto-1")
+        worker = store.get_agent_by_slug(migrated, "trabalhador-1")
+        assert cto.main_session_id == "coord"
+        assert [task_row(migrated, i)["assignee_agent_id"] for i in (1, 2, 3)] == [
+            worker.id, worker.id, None,
+        ]
+        assert task_row(migrated, 2)["description"].startswith(
+            "Investigar\n\n## Critérios de aceite\nRelatório"
+        )
+        assert task_row(migrated, 1)["description"] == "Ativa"  # no dossier: title
+        decision, = store.list_decisions(migrated)
+        assert (decision.task_id, decision.agent_id, decision.created_at) == (2, worker.id, 99)
+        assert "Pode migrar?" in decision.question
+        pr = store.get_pr(migrated, "https://github.com/o/r/pull/5")
+        assert (pr.agent_id, pr.session_id, pr.created_at) == (worker.id, "worker", 77)
+        assert store.list_legacy_work(migrated) == []
+        assert migrated.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+# --- Round 1 of the review ---------------------------------------------------------------------
+
+
+def test_migrate_work_prs_are_marked_as_polled_so_old_comments_stay_quiet(
+    org_conn, data_dir, clock
+):
+    """Without `polled_at` the sweep reads everything since the PR was created and would wake
+    the worker for comments the old system already delivered."""
+    import asyncio
+
+    from claudio_maestro.org import gh_comments
+
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "gone", "created_at": 11})
+    add_task(org_conn, 1, status="in_progress", legacy=dossier_legacy(None))
+    base = int(datetime(2026, 10, 28, 9, 30).timestamp())
+    url_old, url_new, url_key = (f"https://github.com/acme/app/pull/{n}" for n in (7, 8, 9))
+    add_legacy(org_conn, "pr", 1, 1, {"url": url_old, "last_session_id": None, "created_at": 50,
+                                      "polled_at": 4_000, "closed": 0})
+    add_legacy(org_conn, "pr", 1, 1, {"url": url_new, "last_session_id": None, "created_at": 50,
+                                      "polled_at": None, "closed": 0})
+    add_legacy(org_conn, "pr", 1, 1, {"url": url_key, "last_session_id": None, "created_at": 50,
+                                      "closed": 0})  # row from before the key existed
+
+    run_work(data_dir, org_conn, clock)
+
+    assert store.get_pr(org_conn, url_old).polled_at == 4_000
+    assert store.get_pr(org_conn, url_new).polled_at == base
+    assert store.get_pr(org_conn, url_key).polled_at == base
+
+    # A sweep that finds an old comment of the owner queues nothing and wakes nobody.
+    def iso(epoch: int) -> str:
+        return datetime.fromtimestamp(epoch, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    old_comment = {"id": 1, "user": {"login": "vini"}, "body": "antigo", "created_at": iso(base - 5_000),
+                   "html_url": f"{url_new}#issuecomment-1"}
+
+    async def gh(args):
+        if args[:2] == ["pr", "view"]:
+            return 0, json.dumps({"state": "OPEN"})
+        return 0, json.dumps([[old_comment] if args[1].endswith("/issues/8/comments") else []])
+
+    org_conn.close()  # `poll_comments` opens its own connections
+    db_file = data_dir.parent / "t.db"
+    with closing(db.connect(db_file)) as again:
+        assert store.queued_comments(again) == []
+        queued = asyncio.run(
+            gh_comments.poll_comments(db_file, owner="vini", run_gh=gh, now=float(base + 60))
+        )
+        assert queued == 0 and store.queued_comments(again) == []
+        assert again.execute("SELECT COUNT(*) FROM wakeups").fetchone()[0] == 0
+
+
+def test_migrate_work_deeply_nested_dossier_falls_back_to_title(org_conn, data_dir, clock):
+    deep = write_work_file(data_dir, b'{"objective": ' + b"[" * 30_000 + b"]" * 30_000 + b"}")
+    add_task(org_conn, 1, title="Aninhado", status="done", legacy=dossier_legacy(deep))
+    add_task(org_conn, 2, title="Outro", status="done",
+             legacy=dossier_legacy(write_work_file(data_dir, {"objective": "ok"})))
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "gone", "created_at": 11})
+    add_legacy(org_conn, "decision", 1, 1, {"request_ref": deep, "created_at": 1})
+
+    report = run_work(data_dir, org_conn, clock)  # no RecursionError
+
+    assert task_row(org_conn, 1)["description"] == "Aninhado"
+    assert task_row(org_conn, 2)["description"] == "ok"
+    assert any("tarefa 1" in w and "dossiê" in w for w in report.warnings)
+    assert len(store.list_decisions(org_conn)) == 1
+
+
+def test_migrate_work_blocked_project_warning_names_the_folder_to_check(
+    org_conn, data_dir, clock
+):
+    folder = files_of(data_dir).folder("trabalhador-1")
+    folder.mkdir(parents=True, mode=0o700)  # half-made folder: no AGENT.md inside
+    add_legacy(org_conn, "coordinator", 1, None, {"session_id": "gone", "created_at": 11})
+
+    report = run_work(data_dir, org_conn, clock)
+
+    warning = next(w for w in report.warnings if "projeto 1" in w)
+    assert str(folder) in warning and "apague" in warning
+    assert store.get_agent_by_slug(org_conn, "trabalhador-1") is None
+    assert not files_of(data_dir).folder("cto-1").exists()  # the others were rolled back
+    assert len(store.list_legacy_work(org_conn)) == 1
