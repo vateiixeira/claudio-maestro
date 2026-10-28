@@ -9,8 +9,7 @@ from contextlib import asynccontextmanager, closing, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 
 from claudio_maestro import db, gitinfo, history, runmode, selfupdate
 from claudio_maestro.activity import ActivityReader, SessionFile
@@ -38,19 +37,21 @@ from claudio_maestro.filesearch import FileIndex
 from claudio_maestro.frontend_static import mount_frontend
 from claudio_maestro.gitmonitor import GitMonitor
 from claudio_maestro.org import store as org_store
+from claudio_maestro.org.ci import CiService
 from claudio_maestro.org.comments import CommentDispatcher, run_poll
+from claudio_maestro.org.decisions import DecisionService
 from claudio_maestro.org.files import AgentFiles
 from claudio_maestro.org.gh_comments import GhRunner
 from claudio_maestro.org.gh_comments import run_gh as default_run_gh
 from claudio_maestro.org.github_hooks import (
     build_hooks_app,
-    get_owner,
     serve_hooks,
     stop_hooks,
 )
-from claudio_maestro.org.migration import migrate_files
+from claudio_maestro.org.migration import migrate_files, migrate_work
 from claudio_maestro.org.scheduler import Scheduler
 from claudio_maestro.org.service import OrgService
+from claudio_maestro.org.tasks import TaskService
 from claudio_maestro.picker import PickFolder
 from claudio_maestro.picker import pick_folder as system_pick_folder
 from claudio_maestro.runmode import RunMode
@@ -71,11 +72,6 @@ from claudio_maestro.textindex import INDEX_FILENAME, TextIndex
 from claudio_maestro.updates import FetchRelease, UpdateChecker, fetch_latest_release
 from claudio_maestro.usage import FetchUsage, UsageChecker
 from claudio_maestro.usage import fetch_usage as default_fetch_usage
-from claudio_maestro.work import store as work_store
-from claudio_maestro.work.ci import CiVerifier
-from claudio_maestro.work.files import WorkFiles
-from claudio_maestro.work.pr_integration import WorkPrIntegration
-from claudio_maestro.work.service import WorkService
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +105,26 @@ def migrate_agent_files(settings: Settings) -> None:
         logger.warning("Migração dos agentes: %s", warning)
 
 
+def migrate_old_work(settings: Settings) -> None:
+    """Turn what the old project work system left (coordinators, tasks, pending decisions, PRs)
+    into agents and tasks of the organization. It runs at every start, after the folders
+    moved, and does nothing once everything moved. A failure is logged and the app starts all
+    the same: what did not move waits for the next start."""
+    try:
+        with closing(db.connect(settings.db_path)) as conn:
+            report = migrate_work(
+                settings.data_dir, conn, files=AgentFiles(settings.data_dir / "agents")
+            )
+    except Exception:
+        logger.exception("Falha ao migrar o trabalho dos projetos")
+        return
+    if report.work is not None and report.work.acted:
+        logger.info("Trabalho dos projetos migrado para a organização. Relatório em %s.",
+                    report.report_path)
+    for warning in report.warnings:
+        logger.warning("Migração do trabalho dos projetos: %s", warning)
+
+
 def start_hooks_listener(app: FastAPI, app_ports_in_use: tuple[int, ...]) -> "asyncio.Task[None] | None":
     """Start the GitHub webhook listener when `MAESTRO_HOOKS_PORT` is set.
 
@@ -128,9 +144,6 @@ def start_hooks_listener(app: FastAPI, app_ports_in_use: tuple[int, ...]) -> "as
         data_dir=settings.data_dir,
         is_agent_pr=app.state.org.is_agent_pr,
         on_queued=app.state.comments.wake,
-        is_work_pr=app.state.work_prs.bridge.is_pr,
-        queue_work_comment=app.state.work_prs.bridge.queue_comment,
-        on_work_queued=app.state.work_prs.wake,
     )
     return serve_hooks(hooks_app, port)
 
@@ -195,6 +208,8 @@ def create_app(
         app.state.restart = restart
         db.init_db(app.state.settings.db_path)
         await asyncio.to_thread(migrate_agent_files, app.state.settings)
+        # Before the sessions are loaded: it rebinds the old coordinators' sessions to the CTO.
+        await asyncio.to_thread(migrate_old_work, app.state.settings)
         app.state.hub = EventHub()
         app.state.spawn_editor = spawn_editor or spawn_detached
         app.state.pick_folder = pick_folder or system_pick_folder
@@ -300,31 +315,9 @@ def create_app(
             # This gates automatic starts only, not project tools or manual sends.
             if not app.state.settings.remote_reconnect:
                 return False
-            with closing(db.connect(app.state.settings.db_path)) as conn:
-                try:
-                    app.state.work.assert_project_admission(conn, record.project_id)
-                    identity = app.state.work.session_identity(record.session_id)
-                    if identity is not None:
-                        if not app.state.work.can_remote_reconnect(record.session_id):
-                            return False
-                        if identity['work_role'] != 'coordinator':
-                            attempt = work_store.get_attempt(conn, identity['work_attempt_id'])
-                            if attempt.state not in ('starting', 'dispatching', 'running', 'waiting'):
-                                return False
-                        mode = app.state.work.project_mode(record.project_id)
-                        return app.state.work.dispatch_enabled and mode['enabled'] and not mode['paused']
-                    if record.agent_id is not None and not app.state.settings.routines_scheduler:
-                        # An isolated instance (copy of the database) must not reopen the
-                        # processes of agents by itself.
-                        return False
-                except work_store.WorkError:
-                    return False
-            return True
-
-        def connection_admission(record):
-            # No await between this final check and the client factory. Held
-            # processes bypass this hook so recovery can inspect/close them.
-            app.state.work.assert_session_start(record)
+            # An isolated instance (copy of the database) must not reopen the processes of
+            # agents by itself.
+            return record.agent_id is None or app.state.settings.routines_scheduler
 
         app.state.sessions = SessionManager(
             app.state.settings.db_path,
@@ -344,19 +337,13 @@ def create_app(
             cli_identity=cli_identity,
             text_index=app.state.textindex,
             claude_projects=app.state.settings.claude_projects_dir,
+            remote_reconnect_allowed=remote_reconnect_allowed,
             # The agents service is built right after the manager (it needs it); the
             # hooks look it up when called.
-            connection_admission=connection_admission,
-            context_setup=lambda record: app.state.work.session_context(record),
-            remote_reconnect_allowed=remote_reconnect_allowed,
-            on_session_result=lambda sid, result: app.state.work.on_session_result(sid, result),
-            on_session_turn_end=lambda sid: app.state.work.on_session_turn_end(sid),
-            on_session_error=lambda sid, error: app.state.work.on_session_error(sid, error),
             session_setup=lambda record: app.state.org.session_setup(record),
             on_turn_error=lambda session_id, error: app.state.org.on_turn_error(session_id, error),
             on_init=lambda session_id, servers: app.state.org.on_init(session_id, servers),
             prepare_message=lambda record, text: app.state.org.prepare_message(record, text),
-            on_session_pr_created=lambda sid, url: app.state.work_prs.on_pr_created(sid, url),
             on_pr_created=lambda session_id, url: app.state.org.on_pr_created(session_id, url),
         )
         app.state.agent_files = AgentFiles(app.state.settings.data_dir / "agents")
@@ -371,20 +358,25 @@ def create_app(
             files=app.state.agent_files,
             publish=publish_org,
         )
-        app.state.work = WorkService(
-            app.state.settings.db_path, sessions=app.state.sessions,
-            files=WorkFiles(app.state.settings.data_dir / 'work'),
-            publish=app.state.hub.publish,
+        # The board, the decisions and the CI receipts the agents' tools reach; the service
+        # and the board need each other, so the service gets them after they exist.
+        app.state.tasks = TaskService(
+            app.state.settings.db_path, org=app.state.org, publish=publish_org
         )
-        app.state.work.dispatch_enabled = app.state.settings.work_dispatcher_enabled
-        app.state.work.ci_verifier = CiVerifier(app.state.work, run_gh=gh_runner or default_run_gh)
-        def work_comment_owner():
-            with closing(db.connect(app.state.settings.db_path)) as conn:
-                return get_owner(conn)
-        app.state.work_prs = WorkPrIntegration(app.state.work, owner=work_comment_owner,
-            run_gh=gh_runner or default_run_gh)
+        app.state.org.tasks = app.state.tasks
+        app.state.decisions = DecisionService(
+            app.state.settings.db_path, org=app.state.org, tasks=app.state.tasks,
+            publish=publish_org,
+        )
+        app.state.org.decisions = app.state.decisions
+        app.state.ci = CiService(
+            app.state.settings.db_path, run_gh=gh_runner or default_run_gh,
+            sessions=app.state.sessions,
+        )
+        app.state.org.ci = app.state.ci
         app.state.scheduler = Scheduler(
-            app.state.org, app.state.usage, app.state.settings.db_path, time.time
+            app.state.org, app.state.usage, app.state.settings.db_path, time.time,
+            tasks=app.state.tasks, decisions=app.state.decisions,
         )
         app.state.comments = CommentDispatcher(
             app.state.org, app.state.settings.db_path, time.time
@@ -404,18 +396,12 @@ def create_app(
             await app.state.org.recover()
         except Exception:
             logger.exception("Falha ao retomar as execuções e a fila dos agentes")
-        try:
-            await app.state.work.recover()
-        except Exception:
-            logger.exception("Falha ao recuperar as tarefas do projeto")
         app.state.commands = CommandCatalog(app.state.sessions.agent_factory)
 
         async def send_terminal_message(session_id: str, text: str) -> bool:
             """The output of a play button run goes to the session as a user message."""
             try:
                 record = app.state.sessions.find_record(session_id)
-                with closing(db.connect(app.state.settings.db_path)) as conn:
-                    app.state.work.assert_project_admission(conn, record.project_id)
                 if record.agent_id is not None:
                     with closing(db.connect(app.state.settings.db_path)) as conn:
                         if not org_store.get_agent(conn, record.agent_id).enabled:
@@ -425,11 +411,9 @@ def create_app(
                         record.agent_id, source="message", text=text,
                         payload={"session_id": session_id},
                     )
-                elif app.state.work.session_identity(session_id) is not None:
-                    await app.state.work.send_message(session_id, text)
                 else:
                     await app.state.sessions.send(session_id, text)
-            except (SessionError, org_store.OrgError, work_store.WorkError):
+            except (SessionError, org_store.OrgError):
                 return False
             return True
 
@@ -498,10 +482,7 @@ def create_app(
                 )
             ),
             asyncio.create_task(app.state.digest.run()),
-            asyncio.create_task(app.state.work.run()),
         ]
-        app.state.work_pr_task = asyncio.create_task(app.state.work_prs.run())
-        tasks.append(app.state.work_pr_task)
         app.state.scheduler_task = None
         app.state.comments_task = None
         app.state.comment_poll_task = None
@@ -588,7 +569,6 @@ def create_app(
                     await task
             if app.state.hooks_task is not None:
                 await stop_hooks(app.state.hooks_task)
-            await app.state.work.shutdown()
             await app.state.org.shutdown()
             await app.state.commands.aclose()
             await app.state.terminals.aclose()
@@ -605,11 +585,6 @@ def create_app(
         allowed_hosts=allowed_hosts(ports),
         allowed_origins=allowed_origins(ports),
     )
-    @app.exception_handler(work_store.WorkError)
-    async def work_error(request: Request, error: work_store.WorkError):
-        code = 404 if isinstance(error, work_store.WorkNotFoundError) else (409 if isinstance(error, work_store.WorkConflictError) else 422)
-        return JSONResponse(status_code=code, content={"detail": str(error)})
-
     app.include_router(router)
     if frontend_dir is not None:
         # Registered after the API so its routes win.

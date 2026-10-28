@@ -175,11 +175,8 @@ def test_new_scheduler_variable_wins_over_the_old_one(
     assert load_settings().routines_scheduler is expected
 
 
-def test_work_dispatcher_follows_the_routines_scheduler_unless_overridden(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.delenv("MAESTRO_WORK_DISPATCHER", raising=False)
-    monkeypatch.setenv("MAESTRO_ROUTINES_SCHEDULER", "0")
-    assert load_settings().work_dispatcher_enabled is False
+def test_the_old_work_dispatcher_setting_is_gone(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("MAESTRO_WORK_DISPATCHER", "1")
-    assert load_settings().work_dispatcher_enabled is True
+    settings = load_settings()
+    assert not hasattr(settings, "work_dispatcher")
+    assert not hasattr(settings, "work_dispatcher_enabled")

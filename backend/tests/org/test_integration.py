@@ -22,10 +22,13 @@ from claudio_maestro.api.org import PROJECT_BUSY_TEXT
 from claudio_maestro.app import create_app
 from claudio_maestro.config import Settings
 from claudio_maestro.org import store
+from claudio_maestro.org.ci import CiService
 from claudio_maestro.org.comments import CommentDispatcher
+from claudio_maestro.org.decisions import DecisionService
 from claudio_maestro.org.files import AgentFiles
 from claudio_maestro.org.scheduler import Scheduler
 from claudio_maestro.org.service import OrgService
+from claudio_maestro.org.tasks import TaskService
 from claudio_maestro.org.tools import build_tools
 
 APP_ORIGIN = "http://localhost:6600"
@@ -48,6 +51,9 @@ class Factory:
         self.clients: list[FakeAgentClient] = []
         self.app: Any = None
         self.summary: str | None = SUMMARY
+        # What an agent does in the run of a task: `(agent_id, task_id, tools)`; when set, a
+        # task run calls it instead of `concluir`.
+        self.on_task_run: Callable[..., Any] | None = None
 
     def __call__(self, options: AgentOptions) -> FakeAgentClient:
         factory = self
@@ -56,7 +62,19 @@ class Factory:
             async def _run_steps(self, steps):
                 sid = self.options.session_id
                 record = factory.app.state.sessions.find_record(sid)
-                if factory.summary and record.agent_id is not None and not factory.app.state.org.is_main(sid):
+                task_id = None
+                if factory.on_task_run is not None and record.agent_id is not None:
+                    with closing(db.connect(factory.app.state.settings.db_path)) as conn:
+                        run = store.run_for_session(conn, sid)
+                    task_id = run.task_id if run is not None else None
+                if task_id is not None:
+                    tools = build_tools(
+                        factory.app.state.org, agent_id=record.agent_id, session_id=sid
+                    )
+                    await factory.on_task_run(
+                        record.agent_id, task_id, {t.name: t.handler for t in tools}
+                    )
+                elif factory.summary and record.agent_id is not None and not factory.app.state.org.is_main(sid):
                     tools = build_tools(
                         factory.app.state.org, agent_id=record.agent_id, session_id=sid
                     )
@@ -355,38 +373,177 @@ def test_a_failing_file_migration_does_not_stop_the_app(
     assert any("falha de teste" in str(r.exc_info[1]) for r in caplog.records if r.exc_info)
 
 
-# Project work and the agents no longer exclude each other --------------------------------
+# The migration of the old work system at startup -----------------------------------------
 
 
-def test_the_cto_mode_can_be_turned_on_while_an_agent_works(
+def test_startup_migrates_the_old_work_after_the_folders(
+    home: Path, data_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from claudio_maestro.org import migration
+
+    order: list[str] = []
+    real_files, real_work = migration.migrate_files, migration.migrate_work
+
+    def files(*args: Any, **kwargs: Any):
+        order.append("files")
+        return real_files(*args, **kwargs)
+
+    def work(data: Path, conn: Any, *, files: AgentFiles, **kwargs: Any):
+        order.append("work")
+        assert data == data_dir and files.root == data_dir / "agents"
+        return real_work(data, conn, files=files, **kwargs)
+
+    monkeypatch.setattr("claudio_maestro.app.migrate_files", files)
+    monkeypatch.setattr("claudio_maestro.app.migrate_work", work)
+    app = create_app(settings=Settings(home_dir=home, data_dir=data_dir), agent_factory=Factory())
+
+    with TestClient(app, base_url=BACKEND_URL, headers={"x-maestro": "1"}):
+        assert order == ["files", "work"]
+
+
+def test_a_failing_work_migration_does_not_stop_the_app(
+    home: Path, data_dir: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    def explode(*args: Any, **kwargs: Any):
+        raise RuntimeError("falha do trabalho")
+
+    monkeypatch.setattr("claudio_maestro.app.migrate_work", explode)
+    app = create_app(settings=Settings(home_dir=home, data_dir=data_dir), agent_factory=Factory())
+
+    with caplog.at_level(logging.ERROR, logger="claudio_maestro"):
+        with TestClient(
+            app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}
+        ) as client:
+            assert client.get("/api/agents").status_code == 200
+
+    assert any("falha do trabalho" in str(r.exc_info[1]) for r in caplog.records if r.exc_info)
+
+
+# Tasks, decisions and CI wired into the app ---------------------------------------------
+
+
+def test_the_app_wires_the_task_board_and_drops_the_old_work_system(api: TestClient):
+    state = api.app.state
+    assert isinstance(state.tasks, TaskService)
+    assert isinstance(state.decisions, DecisionService)
+    assert state.org.tasks is state.tasks
+    assert state.org.decisions is state.decisions
+    assert isinstance(state.org.ci, CiService)
+    assert state.scheduler._tasks is state.tasks
+    assert state.scheduler._decisions is state.decisions
+    for gone in ("work", "work_prs", "work_pr_task"):
+        assert not hasattr(state, gone)
+    assert api.get("/api/work-items").status_code == 404
+    assert api.get("/api/work/decisions").status_code == 404
+
+
+def create_team(api: TestClient, project_id: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    cto = api.post(
+        "/api/agents",
+        json={"name": "CTO", "slug": "cto", "project_id": project_id, "kind": "cto"},
+    )
+    assert cto.status_code == 201, cto.text
+    worker = api.post(
+        "/api/agents",
+        json={
+            "name": "Trabalhador", "slug": "trabalhador", "project_id": project_id,
+            "kind": "worker", "reports_to": cto.json()["id"],
+        },
+    )
+    assert worker.status_code == 201, worker.text
+    return cto.json(), worker.json()
+
+
+def task_wakeups(api: TestClient, agent_id: int) -> list[dict[str, Any]]:
+    with closing(db.connect(api.app.state.settings.db_path)) as conn:
+        rows = conn.execute(
+            "SELECT source, task_id, payload FROM wakeups WHERE agent_id = ? AND task_id IS NOT NULL"
+            " ORDER BY id",
+            (agent_id,),
+        ).fetchall()
+    return [{**dict(row), "payload": json.loads(row["payload"])} for row in rows]
+
+
+def test_a_task_from_the_api_runs_in_the_worker_and_is_closed_by_it(
     api: TestClient, project: dict[str, Any], factory: Factory
 ):
-    factory.summary = None  # the run never concludes: the agent stays busy
-    agent = create_agent(api, project["id"])
-    assert api.post(f"/api/agents/{agent['id']}/wake", json={"text": "Trabalhe."}).status_code == 202
-    until(lambda: any(r["outcome"] == "running" for r in runs_of(api, agent["id"])))
+    cto, worker = create_team(api, project["id"])
+    calls: list[tuple[int, int]] = []
 
-    response = api.post(f"/api/projects/{project['id']}/work-mode", json={"action": "enable"})
+    async def on_task_run(agent_id: int, task_id: int, tools: dict[str, Any]) -> None:
+        calls.append((agent_id, task_id))
+        if agent_id == worker["id"]:
+            for status, text in (("in_progress", "Comecei."), ("done", "Corrigi o botão.")):
+                result = await tools["tarefa_atualizar"](
+                    {"id": task_id, "status": status, "comentario": text}
+                )
+                assert not result.get("is_error"), result
 
-    assert response.status_code == 200, response.text
-    assert api.get(f"/api/projects/{project['id']}/work-mode").json()["enabled"] is True
+    factory.on_task_run = on_task_run
+
+    response = api.post(
+        "/api/tasks",
+        json={
+            "project_id": project["id"], "title": "Ajustar login", "description": "Corrigir o botão.",
+            "assignee_agent_id": worker["id"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    task_id = response.json()["id"]
+
+    task = until(
+        lambda: (t := api.get(f"/api/tasks/{task_id}").json())["task"]["status"] == "done"
+        and [r["outcome"] for r in t["runs"]] == ["concluded"]
+        and t
+    )
+    assert calls == [(worker["id"], task_id)]
+    assert [(c["author_kind"], c["text"]) for c in task["comments"]][-1] == (
+        "agent", "Corrigi o botão."
+    )
+    # The person created it, so nobody else is told when it closes.
+    assert task_wakeups(api, cto["id"]) == []
 
 
-def test_an_agent_wakes_in_a_project_whose_cto_mode_is_on(
+def test_the_cto_that_created_the_task_is_woken_with_a_comment_when_it_is_done(
     api: TestClient, project: dict[str, Any], factory: Factory
 ):
-    agent = create_agent(api, project["id"])
-    assert (
-        api.post(f"/api/projects/{project['id']}/work-mode", json={"action": "enable"}).status_code
-        == 200
+    cto, worker = create_team(api, project["id"])
+
+    async def on_task_run(agent_id: int, task_id: int, tools: dict[str, Any]) -> None:
+        if agent_id == worker["id"]:
+            for status, text in (("in_progress", "Comecei."), ("done", "Corrigi o botão.")):
+                result = await tools["tarefa_atualizar"](
+                    {"id": task_id, "status": status, "comentario": text}
+                )
+                assert not result.get("is_error"), result
+        else:
+            await tools["tarefa_comentar"]({"id": task_id, "texto": "Recebi o resultado."})
+
+    factory.on_task_run = on_task_run
+    main = api.post(f"/api/agents/{cto['id']}/main").json()["session_id"]
+    create = next(
+        t.handler
+        for t in build_tools(api.app.state.org, agent_id=cto["id"], session_id=main)
+        if t.name == "tarefa_criar"
     )
 
-    assert api.post(f"/api/agents/{agent['id']}/wake", json={"text": "Vá."}).status_code == 202
+    result = api.portal.call(
+        create,
+        {"titulo": "Ajustar login", "descricao": "Corrigir o botão.", "responsavel": "trabalhador"},
+    )
+    assert not result.get("is_error"), result
+    task_id = json.loads(result["content"][0]["text"])["tarefa"]["id"]
 
-    run = until(lambda: next((r for r in runs_of(api, agent["id"]) if r["outcome"] == "concluded"), None))
-    assert sent_texts(factory, run["session_id"]) == ["Vá."]
-    main = api.post(f"/api/agents/{agent['id']}/main").json()["session_id"]
-    assert api.post(f"/api/sessions/{main}/messages", json={"text": "Oi"}).status_code == 202
+    until(lambda: api.get(f"/api/tasks/{task_id}").json()["task"]["status"] == "done")
+    woken = until(
+        lambda: [w for w in task_wakeups(api, cto["id"]) if w["source"] == "comment"]
+    )
+    assert woken[0]["task_id"] == task_id
+    assert woken[0]["payload"]["reason"] == "closed"
+    run = until(
+        lambda: next((r for r in runs_of(api, cto["id"]) if r["outcome"] == "concluded"), None)
+    )
+    assert run["source"] == "comment"
 
 
 # Deleting a project ----------------------------------------------------------------------

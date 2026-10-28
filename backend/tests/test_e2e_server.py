@@ -125,7 +125,7 @@ def test_isolated_env_keeps_the_routines_scheduler_off_whatever_is_inherited(tmp
 
 def test_isolated_env_turns_off_outside_work(tmp_path):
     env = e2e.isolated_env({}, tmp_path, 6620)
-    assert env['MAESTRO_WORK_DISPATCHER'] == '0'
+    assert 'MAESTRO_WORK_DISPATCHER' not in env
     assert env['MAESTRO_REMOTE_RECONNECT'] == '0'
     assert env['MAESTRO_ROUTINES_SCHEDULER'] == '0'
 
@@ -638,7 +638,6 @@ def test_main_cleans_the_temporary_folder_when_interrupted_while_seeding(
 def test_chat_e2e_uses_only_the_opt_in_fake_client(tmp_path, monkeypatch):
     env = e2e.isolated_env({'MAESTRO_E2E_CHAT': '1'}, tmp_path, 6620)
     assert env['MAESTRO_E2E_CHAT'] == '1'
-    assert env['MAESTRO_WORK_DISPATCHER'] == '1'
     apply_env(monkeypatch, env)
     e2e.seed(tmp_path)
     attempts = forbid_claude(monkeypatch)
@@ -648,77 +647,6 @@ def test_chat_e2e_uses_only_the_opt_in_fake_client(tmp_path, monkeypatch):
         assert client.app.state.agentd is None
         project_id = client.get("/api/projects").json()[0]["id"]
         assert client.get(f"/api/projects/{project_id}/commands").status_code == 200
-    assert attempts == []
-
-
-def test_work_e2e_delegates_decides_and_reviews_with_fake_only(tmp_path, monkeypatch):
-    from claude_agent_sdk import UserMessage
-
-    from claudio_maestro.agent.fake import FakeAgentClient
-
-    # Observe the SDK messages the manager actually receives, without creating
-    # acknowledgements or touching production callbacks/signals.
-    emitted_user_uuids = set()
-    original_messages = FakeAgentClient.messages
-
-    async def observed_messages(client):
-        async for message in original_messages(client):
-            if isinstance(message, UserMessage):
-                emitted_user_uuids.add((client.options.session_id, message.uuid))
-            yield message
-
-    monkeypatch.setattr(FakeAgentClient, 'messages', observed_messages)
-    apply_env(monkeypatch, e2e.isolated_env({'MAESTRO_E2E_CHAT': '1'}, tmp_path, 6620))
-    e2e.seed(tmp_path)
-    attempts = forbid_claude(monkeypatch)
-    with TestClient(e2e.build_app(6620), base_url='http://127.0.0.1:6620',
-                    headers={'x-maestro': '1', 'origin': 'http://localhost:6620'}) as client:
-        project = next((p for p in client.get('/api/projects').json() if p['name'] == 'Trabalho Demo'), None)
-        assert project is not None, 'o cenário de trabalho isolado deve ser semeado somente no chat fake'
-        assert Path(project['path']).is_relative_to(tmp_path)
-        assert (Path(project['path']) / '.git').is_dir()
-        sid = client.post(f"/api/projects/{project['id']}/cto").json()['session_id']
-        response = client.post(f'/api/sessions/{sid}/messages', json={'text': 'E2E tarefa: Analisar contrato de pagamento'})
-        assert response.status_code == 202, response.text
-
-        def until(get, predicate):
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline:
-                value = get()
-                if predicate(value):
-                    return value
-                time.sleep(.02)
-            pytest.fail(f'fluxo fake não avançou: {value}')
-
-        items = until(lambda: client.get('/api/work-items', params={'project_id': project['id']}).json()['items'], bool)
-        assert len(items) == 1
-        item_id = items[0]['id']
-        decisions = until(lambda: client.get('/api/work/decisions', params={'item_id': item_id}).json()['items'], bool)
-        decision = decisions[0]
-        detail = client.get(f'/api/work-items/{item_id}').json()
-        initial = detail['attempts'][0]
-        assert initial['session_id'] != sid
-        assert initial['role'] == 'investigator'
-        snapshot = client.get(f"/api/sessions/{initial['session_id']}").json()
-        assert 'Investigação inicial do contrato' in json.dumps(snapshot, ensure_ascii=False)
-        answer = client.post(f"/api/work/decisions/{decision['id']}/answer", json={
-            'expected_revision': decision['revision'], 'receipt': 'e2e-human-contract', 'answer': 'Manter contrato atual',
-        })
-        assert answer.status_code == 202, answer.text
-        detail = until(lambda: client.get(f'/api/work-items/{item_id}').json(), lambda d: d['item']['status'] == 'done')
-        assert [a['role'] for a in detail['attempts']] == ['investigator', 'investigator', 'reviewer']
-        assert len({a['session_id'] for a in detail['attempts']}) == 3
-        assert detail['reviews'][0]['status'] == 'approved'
-        assert detail['reviews'][0]['author_attempt_id'] == detail['attempts'][1]['id']
-        assert detail['reviews'][0]['review_attempt_id'] == detail['attempts'][2]['id']
-        assert detail['attempts'][1]['result']['summary'] == 'Contrato atual preservado, investigação concluída.'
-        assert detail['attempts'][0]['result']['summary'] != detail['attempts'][1]['result']['summary']
-        assert detail['decisions'][0]['answer']['answer'] == 'Manter contrato atual'
-        with closing(db.connect(client.app.state.work.db_path)) as conn:
-            receipts = [dict(conn.execute('SELECT dispatch_id, correlated_result FROM work_attempt_signals WHERE attempt_id=?', (attempt['id'],)).fetchone()) for attempt in detail['attempts']]
-        assert all(receipt['dispatch_id'] and receipt['correlated_result'] == 1 for receipt in receipts)
-        assert len({receipt['dispatch_id'] for receipt in receipts}) == 3
-        assert all((attempt['session_id'], receipt['dispatch_id']) in emitted_user_uuids for attempt, receipt in zip(detail['attempts'], receipts, strict=True))
     assert attempts == []
 
 
@@ -733,41 +661,19 @@ def test_e2e_drops_github_credentials_and_never_selects_real_gh(tmp_path, monkey
         pytest.fail('o transporte GitHub real nunca deve ser selecionado pelo E2E')
     monkeypatch.setattr(app_module, 'default_run_gh', external)
     with TestClient(e2e.build_app(6620), base_url='http://127.0.0.1:6620') as client:
-        assert client.app.state.work_prs._run_gh is e2e.refuse_gh
-        assert client.portal.call(client.app.state.work_prs._run_gh, ['api', 'anything']) == (127, '')
+        assert client.app.state.ci._run_gh is e2e.refuse_gh
+        assert client.portal.call(client.app.state.ci._run_gh, ['api', 'anything']) == (127, '')
 
 
-def test_collection_e2e_waits_for_guidance_then_releases_next_source(tmp_path, monkeypatch):
+def test_chat_e2e_has_no_old_work_scenario(tmp_path, monkeypatch):
     apply_env(monkeypatch, e2e.isolated_env({'MAESTRO_E2E_CHAT': '1'}, tmp_path, 6620))
     e2e.seed(tmp_path)
     attempts = forbid_claude(monkeypatch)
     with TestClient(e2e.build_app(6620), base_url='http://127.0.0.1:6620',
                     headers={'x-maestro': '1', 'origin': 'http://localhost:6620'}) as client:
-        project = next(p for p in client.get('/api/projects').json() if p['name'] == 'Coleta Demo')
-        assert Path(project['path']).is_relative_to(tmp_path)
-        assert not (Path(project['path']) / '.git').exists()
-        sid = client.post(f"/api/projects/{project['id']}/cto").json()['session_id']
-        assert client.post(f'/api/sessions/{sid}/messages', json={'text': 'E2E coleta: Investigar filtros disponíveis'}).status_code == 202
-
-        def until(get, predicate):
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline:
-                value = get()
-                if predicate(value):
-                    return value
-                time.sleep(.02)
-            pytest.fail(f'coleta fake não avançou: {value}')
-
-        overview = until(lambda: client.get(f"/api/projects/{project['id']}/work-overview").json(), lambda value: value['counts']['continuation'] == 1)
-        assert overview['counts']['queued'] == 1
-        target = next(item for item in overview['items'] if item['can_continue'])
-        queued = next(item for item in overview['items'] if item['kind'] == 'queued')
-        assert queued['queue_reason']['work_item_id'] == target['work_item_id']
-        detail = client.get(f"/api/work-items/{target['work_item_id']}").json()
-        assert detail['decisions'] == [] and detail['attempts'][0]['result_ref'] is None
-        response = client.post(f"/api/sessions/{target['session_id']}/messages", json={'text': 'Use o ambiente verificado e continue a coleta.'})
-        assert response.status_code == 202, response.text
-        collections = until(lambda: client.get(f"/api/projects/{project['id']}/collections").json()['items'], lambda values: len(values) == 2 and all(value['status'] == 'done' for value in values))
-        assert all(value['finalized'] for value in collections)
-        assert client.get(f"/api/work-items/{target['work_item_id']}").json()['attempts'][0]['id'] == target['attempt_id']
-        assert attempts == []
+        names = [p['name'] for p in client.get('/api/projects').json()]
+        assert 'Trabalho Demo' not in names and 'Coleta Demo' not in names
+        assert not hasattr(client.app.state, 'work')
+        assert client.app.state.tasks is not None
+        assert client.get('/api/tasks').status_code == 200
+    assert attempts == []

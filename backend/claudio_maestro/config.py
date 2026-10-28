@@ -128,9 +128,6 @@ class Settings:
     # Start the agents at the times of their routines (`MAESTRO_ROUTINES_SCHEDULER=0` turns it
     # off; "Rodar agora" still works). Off in an isolated instance on a copy of the database.
     routines_scheduler: bool = True
-    # Work admission follows the existing safe-copy switch unless explicitly
-    # overridden with MAESTRO_WORK_DISPATCHER. Manual messages remain explicit.
-    work_dispatcher: bool | None = None
     # Startup/retry of marked Remote Control sessions; explicit sends still work.
     remote_reconnect: bool = True
     # Port of the listener that receives signed GitHub webhooks (`MAESTRO_HOOKS_PORT`).
@@ -143,10 +140,6 @@ class Settings:
     @property
     def db_path(self) -> Path:
         return self.data_dir / DB_FILENAME
-
-    @property
-    def work_dispatcher_enabled(self) -> bool:
-        return self.routines_scheduler if self.work_dispatcher is None else self.work_dispatcher
 
 
 def default_data_dir(home: Path) -> Path:
@@ -260,7 +253,6 @@ def load_settings() -> Settings:
         usage_check=os.environ.get("MAESTRO_USAGE_CHECK", "1") != "0",
         claude_check=os.environ.get("MAESTRO_CLAUDE_CHECK", "1") != "0",
         routines_scheduler=routines_scheduler_enabled(),
-        work_dispatcher=(os.environ['MAESTRO_WORK_DISPATCHER'] != '0' if 'MAESTRO_WORK_DISPATCHER' in os.environ else None),
         remote_reconnect=os.environ.get('MAESTRO_REMOTE_RECONNECT', '1') != '0',
         hooks_port=hooks_port(),
     )

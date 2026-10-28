@@ -188,9 +188,6 @@ def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, st
             "MAESTRO_AGENTD": "0",
             "MAESTRO_REMOTE_RECONNECT": "0",
             "MAESTRO_E2E_CHAT": "1" if base.get("MAESTRO_E2E_CHAT") == "1" else "0",
-            # Only the opt-in fake chat harness may start queued work. An
-            # inherited dispatcher override never leaks into this environment.
-            "MAESTRO_WORK_DISPATCHER": "1" if base.get("MAESTRO_E2E_CHAT") == "1" else "0",
             # No routine of the seeded agents fires by the clock during a spec.
             "MAESTRO_ROUTINES_SCHEDULER": "0",
             "MAESTRO_UPDATE_CHECK": "0",
@@ -585,15 +582,6 @@ def seed(root: Path) -> None:
                 )
         seed_git(root, settings.home_dir, conn)
         _seed_agents(settings, conn, now)
-        if os.environ.get("MAESTRO_E2E_CHAT") == "1":
-            # Dedicated to work-flow.e2e.ts. Existing Git/conversation scenarios
-            # keep their own repositories and all their original session counts.
-            work_dir = _new_repo(settings.home_dir / "projetos" / "trabalho-demo")
-            _commit(work_dir, "contrato.txt", "Registrar contrato de exemplo", "Contrato atual: preservar o comportamento.\n")
-            projects.create_project(conn, name="Trabalho Demo", path=str(work_dir), color="#3fb950", home=settings.home_dir)
-            collection_dir = settings.home_dir / "projetos" / "coleta-demo"
-            collection_dir.mkdir(parents=True, exist_ok=True)
-            projects.create_project(conn, name="Coleta Demo", path=str(collection_dir), color="#58a6ff", home=settings.home_dir)
 
 
 def refuse_agent(options: AgentOptions) -> AgentClient:
@@ -669,116 +657,18 @@ def build_app(port: int) -> FastAPI:
     (inside the temporary root), their sessions go through `agent_factory` and their
     schedules read the usage through `fetch_usage`, so nothing of theirs reaches real data.
     """
-    from claude_agent_sdk import TextBlock, ToolUseBlock, UserMessage
-
-    from claudio_maestro.agent.fake import (
-        FailStep,
-        FakeAgentClient,
-        init_message,
-        response_messages,
-        result_message,
-        text_turn,
-        tool_result_message,
-    )
+    from claudio_maestro.agent.fake import FakeAgentClient, text_turn
     from claudio_maestro.app import create_app
     from claudio_maestro.commands import NO_HOOKS
-    from claudio_maestro.work.tools import build_tools
 
     clients: list[FakeAgentClient] = []
-
-    class WorkScenarioClient(FakeAgentClient):
-        """Deterministic agent, real WorkService/MCP handlers and normal SDK messages.
-
-        Only this throwaway server constructs it. No test-only endpoint or
-        dispatcher path is installed in the production application.
-        """
-
-        async def _run_steps(self, steps):
-            sid = self.options.session_id
-            host = app.state.work
-            identity = host.session_identity(sid)
-            scenario = Path(self.options.cwd).resolve().name
-            scenario_root = load_settings().home_dir / 'projetos'
-            if identity is None or scenario not in ('trabalho-demo', 'coleta-demo') or Path(self.options.cwd).resolve().parent != scenario_root.resolve():
-                return await super()._run_steps(steps)
-            tools = {entry.name: entry for entry in build_tools(host, sid)}
-
-            async def call(name, args):
-                tool_id = str(uuid.uuid4())
-                await super(WorkScenarioClient, self)._run_steps(response_messages(sid, [
-                    ToolUseBlock(id=tool_id, name=f'mcp__maestro_work__{name}', input=args),
-                ], stop_reason='tool_use'))
-                result = await tools[name].handler(args)
-                await super(WorkScenarioClient, self)._run_steps([
-                    tool_result_message(tool_id, json.dumps(result, ensure_ascii=False), is_error=result.get('is_error', False)),
-                ])
-                if result.get('is_error'):
-                    raise AgentError(str(result))
-                return json.loads(result['content'][0]['text'])
-
-            async def say(text):
-                await super(WorkScenarioClient, self)._run_steps(response_messages(sid, [TextBlock(text=text)]))
-
-            try:
-                # FakeAgentClient.send prepends the host's exact UUID echo.
-                # Preserve that envelope before substituting the response body;
-                # never synthesize an acknowledgement from the session identity.
-                for step in steps:
-                    if not isinstance(step, UserMessage):
-                        break
-                    await super()._run_steps([step])
-                await super()._run_steps([init_message(sid)])
-                role = identity['work_role']
-                if role == 'coordinator':
-                    content = self.sent[-1]
-                    if scenario == 'coleta-demo' and isinstance(content, str) and content.startswith('E2E coleta: '):
-                        for source in ('sentry', 'kbgen'):
-                            await call('collect_source', {'source': source, 'source_instance': 'demo', 'source_project': 'demo', 'query': 'environment:production'})
-                        await say('Coletas delegadas. Acompanhe as sessões responsáveis e a fila.')
-                    elif isinstance(content, str) and content.startswith('E2E tarefa: '):
-                        title = content.removeprefix('E2E tarefa: ').strip()
-                        await call('delegate_work', {'title': title, 'objective': title, 'acceptance': 'Conferir contrato.txt, registrar decisão humana e validar por revisão independente.', 'role': 'investigator'})
-                        await say('Tarefa delegada a uma investigação própria. Acompanhe o trabalho abaixo.')
-                    else:
-                        await say('Atualização do trabalho recebida pelo CTO.')
-                elif scenario == 'coleta-demo':
-                    dossier = host.dossier(identity['work_item_id'])
-                    assert dossier['kind'] == 'collection'
-                    content = self.sent[-1]
-                    if dossier['source'] == 'sentry' and len(self.sent) == 1:
-                        await say('O ambiente production não foi encontrado. A fonte informa o alias prd. Qual filtro devo usar para continuar?')
-                    else:
-                        await call('publish_collection', {'items': [{'external_id': f"demo-{dossier['source']}", 'title': f"Issue demonstrativa {dossier['source']}", 'priority': 'normal', 'source_revision': 'demo-1', 'url': 'https://example.com/issues/demo'}], 'cursor': '', 'next_cursor': None})
-                        await say('Coleta concluída com metadados publicados.')
-                elif role == 'reviewer':
-                    evidence = await call('get_review_evidence', {})
-                    assert evidence['target']['complete']
-                    assert (Path(self.options.cwd) / 'contrato.txt').read_text().startswith('Contrato atual:')
-                    await call('submit_review', {'binding_id': evidence['binding']['id'], 'disposition': 'approve', 'summary': 'Revisão independente: contrato e resposta humana conferidos.', 'evidence': ['contrato.txt:1, alvo completo capturado pelo backend e entrega do autor conferidos.']})
-                    await say('Revisão independente aprovada com evidências.')
-                else:
-                    decisions = host.decisions(item_id=identity['work_item_id'], pending_only=False)['items']
-                    answered = next((d for d in decisions if d['answer']), None)
-                    await call('declare_workspaces', {'workspaces': [str(self.options.cwd)]})
-                    if answered is None:
-                        await say('Investigação inicial do contrato: o comportamento atual foi localizado em contrato.txt.')
-                        await call('request_decision', {'question': 'Manter o contrato atual nesta investigação?', 'action': 'Preservar somente o comportamento de contrato.txt; sem publicação.', 'options': ['Manter contrato atual', 'Rever a proposta'], 'evidence': ['contrato.txt:1, comportamento atual do cenário descartável.']})
-                        await say('Investigação inicial registrada, aguardando a decisão humana.')
-                    else:
-                        assert answered['answer']['answer'] == 'Manter contrato atual'
-                        assert (Path(self.options.cwd) / 'contrato.txt').read_text().startswith('Contrato atual:')
-                        await call('conclude', {'result_kind': 'investigation', 'delivery_type': 'investigation_complete', 'summary': 'Contrato atual preservado, investigação concluída.', 'evidence': ['contrato.txt:1 e resposta humana vinculada à tentativa anterior.'], 'tests': [{'executed': False, 'status': 'not_run', 'command': 'Investigação sem alteração de código; nenhum teste executado.', 'output_ref': ''}], 'next_action': 'Conferir a revisão independente.'})
-                        await say('Contrato atual preservado, investigação concluída.')
-                await super()._run_steps([result_message(sid)])
-            except Exception as error:
-                await super()._run_steps([FailStep(f'Falha no cenário de trabalho E2E: {error}')])
 
     def chat_agent(options: AgentOptions) -> AgentClient:
         # Agent chats and read-only command probes use the fake. Ordinary
         # conversations retain the refusal that the existing specs exercise.
         if not options.system_prompt_append and options.settings != NO_HOOKS:
             return refuse_agent(options)
-        client = WorkScenarioClient(
+        client = FakeAgentClient(
             options, script=lambda content: text_turn(options.session_id, f"Resposta de teste: {content}")
         )
         clients.append(client)

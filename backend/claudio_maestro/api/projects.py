@@ -136,7 +136,7 @@ def _holds_folder(session: Any, folder: Path) -> bool:
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_project(project_id: int, conn: DbDep, request: Request, fence_id: str | None = None) -> Response:
+async def delete_project(project_id: int, conn: DbDep, request: Request) -> Response:
     """Close the project's active sessions (pending prompts cancelled), then delete it."""
     manager = request.app.state.sessions
     try:
@@ -145,38 +145,29 @@ async def delete_project(project_id: int, conn: DbDep, request: Request, fence_i
         if any(org.is_busy(agent.id) for agent in org_store.list_agents(conn, project_id)):
             # Deleting would cut a run in the middle and leave a notice of an erased agent.
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PROJECT_BUSY_TEXT)
-        work = request.app.state.work
-        receipt = work.reserve_project_deletion(project_id, fence_id=fence_id)
-        try:
-            # An agent of another project may hold this folder in its `addDirs`: its live
-            # process keeps reading the folder, so it is closed before the project goes.
-            folder = Path(projects.get_project(conn, project_id).path)
-            for sid in manager.active_ids():
-                session = manager.get(sid)
-                if (
-                    session.record.agent_id is not None
-                    and session.record.project_id != project_id
-                    and session.client is not None
-                    and _holds_folder(session, folder)
-                ):
-                    await session.close()
-            await manager.close_project(project_id)
-            # Their groups die with the project: remember who sat in them from other projects.
-            released = groups.foreign_members(conn, project_id)
-            # The cascade takes the project's agents out of the database; their folders
-            # (definition, memory, secrets) go too.
-            orphans = org_store.list_agents(conn, project_id)
-            with db.transaction(conn):
-                fence = conn.execute('SELECT fence_id FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone()
-                if fence is None or fence['fence_id'] != receipt:
-                    from claudio_maestro.work.store import WorkConflictError
-                    raise WorkConflictError('O recibo da exclusão mudou.')
-                if any(org.is_busy(agent.id) for agent in orphans):
-                    # A run started while the sessions were being closed.
-                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PROJECT_BUSY_TEXT)
-                projects.delete_project(conn, project_id)
-        finally:
-            work.release_deletion_owner(project_id)
+        # An agent of another project may hold this folder in its `addDirs`: its live
+        # process keeps reading the folder, so it is closed before the project goes.
+        folder = Path(projects.get_project(conn, project_id).path)
+        for sid in manager.active_ids():
+            session = manager.get(sid)
+            if (
+                session.record.agent_id is not None
+                and session.record.project_id != project_id
+                and session.client is not None
+                and _holds_folder(session, folder)
+            ):
+                await session.close()
+        await manager.close_project(project_id)
+        # Their groups die with the project: remember who sat in them from other projects.
+        released = groups.foreign_members(conn, project_id)
+        # The cascade takes the project's agents out of the database; their folders
+        # (definition, memory, secrets) go too.
+        orphans = org_store.list_agents(conn, project_id)
+        with db.transaction(conn):
+            if any(org.is_busy(agent.id) for agent in orphans):
+                # A run started while the sessions were being closed.
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PROJECT_BUSY_TEXT)
+            projects.delete_project(conn, project_id)
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
     for agent in orphans:

@@ -1468,6 +1468,9 @@ def test_answer_decision_wakes_agent(board, project, agent, events):
 
 
 def test_task_routes_without_the_services_are_503(api, project, agent):
+    # The app wires them at startup; take them away to see the guard of the routes.
+    del api.app.state.tasks
+    del api.app.state.decisions
     for method, url, body in (
         ("get", "/api/tasks", None),
         ("post", "/api/tasks", {"project_id": project["id"], "title": "x"}),
