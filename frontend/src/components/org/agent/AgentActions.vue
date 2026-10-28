@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ConfirmDialog from '../../ConfirmDialog.vue'
-import { deleteAgent, duplicateAgent, errorMessage, updateAgent, wakeAgent } from '../../../api/http'
+import { duplicateAgent, errorMessage, updateAgent, wakeAgent } from '../../../api/http'
 import { SLUG_MAX_LENGTH, slugify } from '../../../org'
 import { useOrgStore } from '../../../stores/org'
 import { useProjectsStore } from '../../../stores/projects'
@@ -133,7 +133,7 @@ async function remove(): Promise<void> {
   confirmingDelete.value = false
   if (!begin()) return
   try {
-    await deleteAgent(props.agentId)
+    await org.deleteAgent(props.agentId)
     emit('deleted')
     org.removeAgent(props.agentId)
   } catch (e) {

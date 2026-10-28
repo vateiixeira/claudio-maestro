@@ -8,6 +8,7 @@ import {
 } from '../../test/factories'
 
 beforeEach(() => setActivePinia(createPinia()))
+const flushMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 afterEach(() => vi.unstubAllGlobals())
 
 describe('org store: árvore', () => {
@@ -139,6 +140,53 @@ describe('org store: eventos', () => {
     store.applyEvent('agent.changed', { id: 7 })
     await vi.waitFor(() => expect(store.byId(7)).toBeUndefined())
     expect(store.runsOf(7)).toEqual([])
+  })
+
+  it('deleteAgent exclui e não relê o agente que o evento de remoção anuncia', async () => {
+    const fetch = routeFetch({
+      'DELETE /api/agents/1': () => jsonResponse(undefined, 204),
+      'GET /api/agents/1': () => jsonResponse({ detail: 'Agente não encontrado.' }, 404),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    store.agents = [makeAgent(), makeAgent({ id: 2, slug: 'b', name: 'B' })]
+    const deleting = store.deleteAgent(1)
+    // The event of the removal may arrive before the answer of the DELETE.
+    store.applyEvent('agent.changed', { id: 1 })
+    await deleting
+    store.removeAgent(1)
+    store.applyEvent('agent.changed', { id: 1 })
+    store.applyEvent('agent.announcement', { id: 9, agent_id: 1, run_id: null, session_id: null, text: 'x', created_at: 1, delivered_at: null })
+    await flushMicrotasks()
+    expect(store.byId(1)).toBeUndefined()
+    expect(fetch.mock.calls.filter(([u, init]) => u === '/api/agents/1' && (init?.method ?? 'GET') === 'GET')).toHaveLength(0)
+  })
+
+  it('deleteAgent que falha deixa o agente e volta a reler os eventos dele', async () => {
+    const fetch = routeFetch({
+      'DELETE /api/agents/1': () => jsonResponse({ detail: 'O agente está executando.' }, 409),
+      'GET /api/agents/1': () => jsonResponse(makeAgent({ unseen: 3 })),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    store.agents = [makeAgent()]
+    await expect(store.deleteAgent(1)).rejects.toThrow('O agente está executando.')
+    expect(store.byId(1)).toBeDefined()
+    store.applyEvent('agent.changed', { id: 1 })
+    await vi.waitFor(() => expect(store.byId(1)?.unseen).toBe(3))
+  })
+
+  it('um agente novo com o id de um excluído volta a ser relido', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'DELETE /api/agents/1': () => jsonResponse(undefined, 204),
+      'GET /api/agents/1': () => jsonResponse(makeAgent({ name: 'Reaproveitou o id' })),
+    }))
+    const store = useOrgStore()
+    store.agents = [makeAgent()]
+    await store.deleteAgent(1)
+    store.upsertAgent(makeAgent({ name: 'Novo' }))
+    store.applyEvent('agent.changed', { id: 1 })
+    await vi.waitFor(() => expect(store.byId(1)?.name).toBe('Reaproveitou o id'))
   })
 
   it('agent.changed com falha de rede mantém o agente como estava', async () => {

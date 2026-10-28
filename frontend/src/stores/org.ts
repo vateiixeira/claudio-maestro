@@ -64,6 +64,8 @@ export const useOrgStore = defineStore('org', () => {
 
   const runLoads = new Map<number, { events: Map<number, Run> }>()
   const agentTickets = new Map<number, number>()
+  /** Agents this screen deleted: their removal event must not make the store reread (and 404) them. */
+  const deleted = new Set<number>()
   let listTicket = 0
   const noticeListeners = new Set<(notice: Notice) => void>()
 
@@ -119,6 +121,7 @@ export const useOrgStore = defineStore('org', () => {
       const fresh = await api.listAgents()
       if (mine !== listTicket) return
       agents.value = fresh
+      for (const agent of fresh) deleted.delete(agent.id)
       error.value = null
     } catch (e) {
       if (mine !== listTicket) return
@@ -130,6 +133,7 @@ export const useOrgStore = defineStore('org', () => {
 
   /** Puts an agent the API answered with in the list right away (replacing it in place, or adding it). */
   function upsertAgent(agent: Agent): void {
+    deleted.delete(agent.id) // the id came back (a new agent may take the id of a deleted one)
     const index = agents.value.findIndex((a) => a.id === agent.id)
     if (index >= 0) agents.value.splice(index, 1, agent)
     else agents.value.push(agent)
@@ -143,8 +147,24 @@ export const useOrgStore = defineStore('org', () => {
     runs.value = rest
   }
 
+  /**
+   * Deletes the agent on the server; the caller drops it with `removeAgent` once the screen has left it. The id
+   * is remembered before the request, because the `agent.changed` of the removal can arrive before the answer;
+   * a failure forgets it again.
+   */
+  async function deleteAgent(agentId: number): Promise<void> {
+    deleted.add(agentId)
+    try {
+      await api.deleteAgent(agentId)
+    } catch (e) {
+      deleted.delete(agentId)
+      throw e
+    }
+  }
+
   /** Rereads one agent. A 404 means it is gone; any other failure keeps what the list had. */
   async function refreshAgent(agentId: number): Promise<void> {
+    if (deleted.has(agentId)) return
     const ticket = (agentTickets.get(agentId) ?? 0) + 1
     agentTickets.set(agentId, ticket)
     try {
@@ -330,7 +350,7 @@ export const useOrgStore = defineStore('org', () => {
 
   return {
     agents, loaded, error, notices, noticesLoaded, noticesError, runs, routines, decisionsPending, changes, unreadCount,
-    byId, byProject, tree, topOf, isMainSession, runsOf, routinesOf, upsertAgent, removeAgent,
+    byId, byProject, tree, topOf, isMainSession, runsOf, routinesOf, upsertAgent, removeAgent, deleteAgent,
     load, loadNotices, loadRuns, loadRoutines, loadDecisions, reloadOpen, openMain, markRead, applyEvent, onNewNotice,
   }
 })
