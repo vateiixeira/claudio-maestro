@@ -210,7 +210,8 @@ describe('página de leitura', () => {
 it('nas novas telas compactas o menu devolve o foco ao fechar com Escape', async () => {
   const width = window.innerWidth
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
-  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ items: [], total: 0, limit: 30, offset: 0, dispatcher_enabled: false })))
+  // The organization routes answer lists (tasks, agents, decisions).
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
   const router = createAppRouter(createMemoryHistory()); await router.push('/tarefas')
   const wrapper = mount(App, { global: { plugins: [pinia, router] }, attachTo: document.body })
   await flushPromises()

@@ -1,65 +1,121 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ApiError, errorMessage, request } from '../api/http'
-import { useWorkStore } from '../stores/work'
-import { useProjectsStore } from '../stores/projects'
-import { label } from '../types/work'
-import WorkPage from '../components/work/WorkPage.vue'
-import WorkStatus from '../components/work/WorkStatus.vue'
-import AttemptResult from '../components/work/AttemptResult.vue'
-import DecisionRequest from '../components/work/DecisionRequest.vue'
-import TaskActivity from '../components/work/TaskActivity.vue'
-import ReviewRecord from '../components/work/ReviewRecord.vue'
-import TaskPullRequests from '../components/work/TaskPullRequests.vue'
-const props = defineProps<{ id: string }>()
-const work = useWorkStore(), projects = useProjectsStore()
-const detail = computed(() => work.details[Number(props.id)])
-const loading = ref(true), error = ref(''), busy = ref(false), mutationError = ref('')
-const nextStep = computed(() => { const value = detail.value; if (!value) return ''; if (value.attention?.kind === 'continuation') return 'A execução parou sem registrar uma entrega. Leia a última resposta e oriente a continuação abaixo.'; if (value.attention?.kind === 'permission') return 'Abra a conversa desta tentativa para responder ao pedido pendente.'; if (value.attention?.kind === 'uncertain') return 'Envio incerto. Aguarde a conciliação antes de repetir uma mensagem.'; const last = value.attempts.at(-1); return String(last?.result?.next_action ?? ({ backlog: 'Iniciar a tarefa quando estiver pronta.', ready: 'Aguardando um trabalhador disponível.', active: 'Trabalhador em execução. Acompanhe a tentativa abaixo.', waiting: 'Confira o pedido desta tentativa abaixo.', blocked: 'Conferir o bloqueio antes de reavaliar.', review: 'Aguardando a revisão independente.', done: 'Entrega concluída e registrada.', cancelled: 'Trabalho cancelado.' }[value.item.status])) })
-const eligible = computed(() => detail.value && ['backlog', 'ready', 'blocked'].includes(detail.value.item.status))
-let ticket = 0
-async function load() {
-  const mine = ++ticket; loading.value = true; error.value = ''
-  try { await work.loadDetail(Number(props.id)) } catch (e) { if (mine === ticket) error.value = errorMessage(e) }
-  finally { if (mine === ticket) loading.value = false }
-}
-async function start() {
-  if (!detail.value || busy.value) return
-  busy.value = true; mutationError.value = ''
-  try { await request('POST', `/api/work-items/${props.id}/start`, { expected_revision: detail.value.item.revision }); await load() }
-  catch (e) { mutationError.value = errorMessage(e); if (e instanceof ApiError && e.status === 409) await load() }
-  finally { busy.value = false }
-}
-const when = (timestamp: number) => new Date(timestamp * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+import TaskComposer from '../components/org/tasks/TaskComposer.vue'
+import TaskHeader from '../components/org/tasks/TaskHeader.vue'
+import TaskMarkdown from '../components/org/tasks/TaskMarkdown.vue'
+import TaskRuns from '../components/org/tasks/TaskRuns.vue'
+import TaskSidebar from '../components/org/tasks/TaskSidebar.vue'
+import TaskThread from '../components/org/tasks/TaskThread.vue'
+import TasksPage from '../components/org/tasks/TasksPage.vue'
+import { errorMessage } from '../api/http'
+import { BTN, ERROR } from '../components/org/styles'
+import { TaskConflictError, useTasksStore } from '../stores/tasks'
+import type { Task, TaskUpdate } from '../types/org'
 
-void work.runtime().catch(() => {})
-watch(() => [props.id, work.changeVersion], () => { void load() }, { immediate: true })
-onBeforeUnmount(() => ticket++)
+const props = defineProps<{ id: string }>()
+const tasks = useTasksStore()
+
+const taskId = computed(() => Number(props.id))
+const detail = computed(() => tasks.details[taskId.value])
+
+const loading = ref(true)
+const loadError = ref<string | null>(null)
+let loadTicket = 0
+
+async function load(): Promise<void> {
+  const mine = ++loadTicket
+  loading.value = true
+  loadError.value = null
+  try {
+    await tasks.refresh(taskId.value)
+  } catch (e) {
+    if (mine === loadTicket) loadError.value = errorMessage(e)
+  } finally {
+    if (mine === loadTicket) loading.value = false
+  }
+}
+
+// Subtasks and the parent come from the tasks of the same project.
+const related = ref<Task[]>([])
+let relatedTicket = 0
+async function loadRelated(projectId: number): Promise<void> {
+  const mine = ++relatedTicket
+  try {
+    const list = await tasks.list({ project_id: projectId, limit: 500 })
+    if (mine === relatedTicket) related.value = list
+  } catch {
+    // They only complement the screen; without them the task still opens.
+  }
+}
+const projectId = computed(() => detail.value?.task.project_id)
+watch(() => [projectId.value, tasks.version], () => {
+  if (projectId.value !== undefined) void loadRelated(projectId.value)
+}, { immediate: true })
+const subtasks = computed(() => related.value.filter((t) => t.parent_task_id === taskId.value))
+const parent = computed(() => {
+  const parentId = detail.value?.task.parent_task_id
+  return parentId == null ? null : related.value.find((t) => t.id === parentId) ?? null
+})
+
+watch(taskId, () => { related.value = []; void load() }, { immediate: true })
+onBeforeUnmount(() => { loadTicket++; relatedTicket++ })
+
+// Changes --------------------------------------------------------------------
+const busy = ref(false)
+const actionError = ref<string | null>(null)
+const resetKey = ref(0)
+
+/** Saves a change against the revision this screen read; a refusal reloads the task and applies nothing again. */
+async function run(action: (revision: number) => Promise<unknown>): Promise<void> {
+  const current = detail.value
+  if (!current || busy.value) return
+  busy.value = true
+  actionError.value = null
+  try {
+    await action(current.task.revision)
+  } catch (e) {
+    resetKey.value++
+    actionError.value = e instanceof TaskConflictError && e.stale ? 'A tarefa mudou. Veja a versão atual.' : errorMessage(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+const change = (patch: Omit<TaskUpdate, 'expected_revision'>) => run((revision) => tasks.update(taskId.value, { expected_revision: revision, ...patch }))
+const unblock = () => run((revision) => tasks.unblock(taskId.value, revision))
+const cancel = () => change({ status: 'cancelled' })
 </script>
+
 <template>
-  <WorkPage :title="detail?.item.title ?? 'Tarefa'" :eyebrow="`Tarefa #${id}`">
-    <template #actions><RouterLink class="work-button" to="/tarefas">← Tarefas</RouterLink></template>
-    <p v-if="error" role="alert" class="work-error">{{ error }} <button class="work-button" type="button" @click="load">Tentar novamente</button></p>
-    <div v-if="loading && !detail" class="work-skeleton" role="status"><span class="sr-only">Carregando tarefa…</span><span /><span /><span /></div>
-    <template v-if="detail">
-      <div class="task-top"><WorkStatus :status="detail.item.status" /><button v-if="eligible" class="work-button work-primary" :disabled="busy" @click="start">{{ busy ? 'Registrando…' : detail.attempts.length ? 'Reavaliar tarefa' : 'Iniciar tarefa' }}</button><RouterLink class="work-link" :to="`/cto?projeto=${detail.item.project_id}`">Conversar com CTO ↗</RouterLink></div>
-      <p v-if="nextStep" class="work-note"><span class="block text-fg text-xs mb-1">Próximo passo</span>{{ nextStep }}</p>
-      <p v-if="mutationError" class="work-error" role="alert">{{ mutationError }}</p>
-      <p v-if="work.dispatcherEnabled === false" class="work-note">Despacho automático desligado. A tarefa permanece registrada e não iniciará um trabalhador agora.</p>
-      <div class="work-detail-grid"><div class="min-w-0">
-        <p v-if="detail.dossier?.unavailable" role="alert" class="work-error">{{ detail.dossier.reason }} Não é possível conferir o objetivo e os critérios desta tarefa.</p>
-        <section class="work-section"><div class="work-section-header"><h2>Objetivo</h2></div><p class="work-prose">{{ detail.dossier?.objective || 'Objetivo não disponível.' }}</p></section>
-        <section v-if="detail.dossier?.acceptance" class="work-section"><div class="work-section-header"><h2>Critérios de aceite</h2></div><p class="work-prose">{{ detail.dossier.acceptance }}</p></section>
-        <section v-if="detail.decisions?.length" class="work-section"><div class="work-section-header"><h2>Decisões</h2></div><DecisionRequest v-for="decision in detail.decisions" :key="decision.id" :decision="decision" @answered="load" @stale="load" /></section>
-        <section class="work-section"><div class="work-section-header"><h2>Execuções</h2><span class="work-muted">{{ detail.attempts.length }} tentativas</span></div><AttemptResult v-for="attempt in detail.attempts" :key="attempt.id" :attempt="attempt" :attention="detail.attention" live @sent="load" @stale="load" /><p v-if="!detail.attempts.length" class="work-muted">O andamento aparecerá aqui quando um trabalhador iniciar.</p></section>
-        <section v-if="detail.reviews?.length" class="work-section"><div class="work-section-header"><h2>Revisão independente</h2></div><ReviewRecord v-for="(review, index) in detail.reviews" :key="index" :review="review" /></section>
-        <TaskPullRequests v-if="detail.pull_requests?.items.length" :page="detail.pull_requests" />
-        <TaskActivity :key="detail.item.id" :item-id="detail.item.id" :events="detail.events" :page="detail.events_page" />
-      </div><aside><dl class="work-facts"><div><dt>Projeto</dt><dd><RouterLink class="work-link" :to="`/projects/${detail.item.project_id}`">{{ projects.byId(detail.item.project_id)?.name ?? detail.item.project_id }}</RouterLink></dd></div><div><dt>Responsável</dt><dd>{{ detail.attempts.length ? label(detail.attempts[detail.attempts.length - 1]!.role) : 'CTO' }}</dd></div><div><dt>Fase</dt><dd>{{ ({ investigation: 'Investigação', implementation: 'Implementação', testing: 'Teste', review: 'Revisão' } as Record<string,string>)[detail.item.phase] ?? detail.item.phase }}</dd></div><div><dt>Origem</dt><dd>{{ detail.item.source }} {{ detail.item.external_id }}</dd></div><div><dt>Atualizada</dt><dd>{{ when(detail.item.updated_at) }}</dd></div><div><dt>Revisão da tarefa</dt><dd class="font-mono">{{ detail.item.revision }}</dd></div><div v-if="detail.item.parent_id"><dt>Tarefa de origem</dt><dd><RouterLink class="work-link" :to="`/tarefas/${detail.item.parent_id}`">#{{ detail.item.parent_id }}</RouterLink></dd></div><div v-if="detail.dependencies?.length"><dt>Dependências</dt><dd><ul class="task-dependencies"><li v-for="dependency in detail.dependencies" :key="dependency"><RouterLink class="work-link" :to="`/tarefas/${dependency}`">Tarefa #{{ dependency }}</RouterLink></li></ul></dd></div></dl></aside></div>
+  <TasksPage title="Tarefa">
+    <template #heading><RouterLink data-test="task-back" to="/tarefas" class="rounded text-sm text-info-soft no-underline hover:underline focus-visible:outline-2 focus-visible:outline-primary">← Tarefas</RouterLink><span class="grow" /></template>
+
+    <div v-if="loadError && !detail" role="alert" :class="ERROR" class="flex flex-wrap items-center gap-3">
+      <span>{{ loadError }}</span>
+      <button type="button" data-test="task-retry" :class="BTN" @click="load">Tentar de novo</button>
+    </div>
+    <p v-else-if="!detail" role="status" class="m-0 text-fg-subtle">Carregando tarefa…</p>
+
+    <template v-else>
+      <p v-if="actionError" role="alert" data-test="task-error" :class="ERROR">{{ actionError }}</p>
+      <div class="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div class="flex min-w-0 flex-col gap-6">
+          <TaskHeader :detail="detail" :parent="parent" :subtasks="subtasks" :busy="busy" :reset-key="resetKey" @change="change" @unblock="unblock" @cancel="cancel" />
+          <section v-if="detail.task.description" aria-label="Descrição" data-test="task-description">
+            <TaskMarkdown :text="detail.task.description" />
+          </section>
+          <section aria-labelledby="task-thread-title" class="flex flex-col gap-3">
+            <h2 id="task-thread-title" class="m-0 text-sm font-semibold">Conversa</h2>
+            <TaskThread :comments="detail.comments" />
+            <TaskComposer :task-id="detail.task.id" />
+          </section>
+          <TaskRuns :runs="detail.runs" />
+        </div>
+        <aside aria-label="Decisões, pull requests e verificações" class="min-w-0 max-lg:order-first">
+          <TaskSidebar :detail="detail" />
+        </aside>
+      </div>
     </template>
-  </WorkPage>
+  </TasksPage>
 </template>
-<style scoped>
-.task-top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin:6px 0 25px}.task-top>.work-link{font-size:0.75rem}.review-record{font-size:0.75rem;padding:12px 0;border-top:1px solid var(--color-line)}summary{cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:0.6875rem;max-height:340px;overflow:auto;line-height:1.7}
-</style>
