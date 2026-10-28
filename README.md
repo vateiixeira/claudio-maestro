@@ -211,7 +211,7 @@ O comando que abre arquivos no editor (padrão: `code`) fica nas Preferências d
 
 ## Agentes
 
-Os agentes, as tarefas e as rotinas estão descritos em [Organização](#organização). Esta seção reúne o que o painel de um agente mostra e faz; o que os agentes podem fazer na sua máquina está em [SECURITY.md](SECURITY.md#agentes-e-tarefas). Abra o agente na árvore de **Agentes** (`/agentes/<projeto>?agente=<identificador>`).
+Os agentes, as tarefas e as rotinas estão descritos em [Organização](#organização). Esta seção reúne o que o painel de um agente mostra e faz; o que os agentes podem fazer na sua máquina está em [SECURITY.md](SECURITY.md#agentes-e-tarefas). Abra o agente na árvore de **Agentes** (`/agentes/<projeto>?agente=<id>`).
 
 O painel tem seis abas:
 
@@ -228,7 +228,7 @@ As ações do painel: **Rodar agora** (com uma instrução opcional para essa ve
 
 Comentários seus nos PRs abertos por um agente voltam à sessão que abriu o PR (numa tarefa, é a sessão dela). Se ela não existir mais, vão à conversa principal do agente. O Maestro consulta os comentários ao iniciar e a cada hora, usando o `gh` já autenticado, e só aceita os do login do GitHub que você salvou.
 
-O login e o segredo do webhook são gravados pela API `PUT /api/agents-github`; ainda não há tela para isso. O login tem até 39 letras, números ou hífens, e o segredo, de 16 a 256 caracteres. Com o app rodando na porta padrão:
+O login e o segredo do webhook são gravados pela API `PUT /api/agents-github`; ainda não há tela para isso. O login tem até 39 letras, números ou hífens, e o segredo, de 16 a 256 caracteres. O exemplo usa a porta padrão, 6660; com outro `MAESTRO_PORT`, troque a porta no endereço e no `Origin`, que precisam bater com a porta do app:
 
 ```bash
 curl -X PUT http://127.0.0.1:6660/api/agents-github \

@@ -9,18 +9,17 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - Tela Projetos no menu lateral, com todos os projetos cadastrados, caminhos das pastas e edição do nome no Maestro sem renomear a pasta.
 - **Organização de agentes.** A tela Agentes mostra, por projeto, a árvore de chefes e subordinados, com o estado de cada agente de relance. Cada agente é um `AGENT.md` que você edita no próprio app (um arquivo inválido mostra o erro na linha e mantém o que você digitou), com memória, registro, segredos, conversas e execuções à vista, e as ações de rodar agora, desligar, trocar o chefe, duplicar e apagar. As tarefas ficam num quadro, com responsável, revisor, comentários e decisões; um comentário acorda o outro lado, mas uma resposta a uma resposta não o acorda de volta, para chefe e subordinado não se acordarem em laço. Cada agente tem as suas rotinas, com horários, instrução e a opção de abrir uma tarefa a cada disparo, e cada disparo vira uma execução com o relato do que o agente fez. Os agentes trabalham com as ferramentas `maestro`: consultar e gravar o registro, avisar, listar, ler, criar, atualizar e comentar tarefas, decidir (perguntar a você), verificar o resultado de uma execução de CI do GitHub Actions e concluir. Um agente com `worktree: true` trabalha cada tarefa numa worktree própria, que o git do projeto ignora.
 - Início e Inbox sobre a organização: o Início mostra o que precisa de você, o que está em andamento e as tarefas concluídas recentes, e a Inbox reúne as decisões e os avisos dos agentes. A conversa de um agente mostra a tarefa e as execuções dele.
-- Comentários seus nos PRs voltam ao agente que abriu o PR, por consulta periódica ao GitHub ou por webhook assinado. O agente responde na conversa dele e não comenta no GitHub.
+- Comentários seus nos PRs voltam ao agente que abriu o PR, por consulta periódica ao GitHub ou por webhook assinado. O agente responde na conversa dele e não comenta no GitHub (configuração pela API, ver README).
 
 ### Alterado
 
-- Quem tinha agentes na 0.8.0: a página Agentes virou a organização. O `SKILL.md` de cada agente vira o corpo do `AGENT.md` e o `aprendizados.md` vira o `memoria.md`, na pasta `agents/<nome>/` da pasta de dados; as pastas antigas ficam em `specialists/<nome>.migrado`, sem apagar nada. Os horários viram uma rotina por agente. A migração é automática na primeira subida e deixa um relatório em `agents/migracao-<data>.md`.
+- Quem tinha agentes na 0.8.0: a página Agentes virou a organização. O `SKILL.md` de cada agente vira o corpo do `AGENT.md` e o `aprendizados.md` vira o `memoria.md`, na pasta `agents/<nome>/` da pasta de dados; as pastas antigas ficam em `specialists/<nome>.migrado`, sem apagar nada. Os horários viram uma rotina por agente. Os comandos que um agente antigo mandava pedir o seu ok passam a ser negados no `disallowedTools` e aparecem no relatório e num aviso na Inbox; edite o `AGENT.md` para liberá-los. A migração é automática na primeira subida e deixa um relatório em `agents/migracao-<data>.md`.
 - O agente roda sem pedir ok para nada (`permissionMode: bypassPermissions`). A autonomia e a política de comandos da 0.8.0 saem; o que você quer proibir vai em `disallowedTools`, no `AGENT.md`, pelo nome da ferramenta (`mcp__servidor__ferramenta`, `WebFetch`) ou pelo servidor MCP inteiro (`mcp__servidor`).
 - A variável `MAESTRO_SPECIALISTS_SCHEDULER` passou a se chamar `MAESTRO_ROUTINES_SCHEDULER`; o nome antigo continua valendo por esta versão.
 
 ### Removido
 
-- A página Agentes antiga, a fila pausável por agente, a autonomia "pede ok para fora" e a política de comandos.
-- O merge e o push deixam de pedir ok por conta do app. Se precisar proibir algum, use `disallowedTools` no `AGENT.md`.
+- A página Agentes antiga, a autonomia "pede ok para fora" e a política de comandos. O merge e o push deixam de pedir ok por conta do app; se precisar proibir algum, use `disallowedTools` no `AGENT.md`.
 
 ### Corrigido
 
