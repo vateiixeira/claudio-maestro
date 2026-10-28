@@ -43,7 +43,7 @@ def test_seeded_ready_work_obeys_dispatcher_in_lifespan(tmp_path, monkeypatch, s
     with closing(db.connect(path)) as source, closing(db.connect(data / 'maestro.db')) as target:
         source.backup(target)
     settings = Settings(home_dir=tmp_path / 'home', data_dir=data,
-        specialists_scheduler=scheduler, work_dispatcher=override)
+        routines_scheduler=scheduler, work_dispatcher=override)
     app = create_app(settings=settings, agent_factory=factory)
     with TestClient(app, base_url='http://127.0.0.1:6660', headers={'origin': 'http://localhost:6600', 'x-maestro': '1'}) as api:
         deadline = time.monotonic() + .4

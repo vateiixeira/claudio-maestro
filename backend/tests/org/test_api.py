@@ -1,10 +1,9 @@
 """API of the organization of agents: agents, `AGENT.md`, memory, secrets, registry,
 conversations, wakeups, runs, routines, notices and the GitHub settings.
 
-The app still wires the old `SpecialistService`; the fixture below puts the `OrgService` and
-the `AgentFiles` in `app.state` the way the final wiring will (`app.state.org`,
-`app.state.agent_files`). `OrgService.kick` is silenced so no drainer opens real sessions: the
-queue is checked by what stays pending. The real SDK is never touched."""
+The app wires the `OrgService` and the `AgentFiles` (`app.state.org`, `app.state.agent_files`).
+`OrgService.kick` is silenced by the fixture below so no drainer opens real sessions: the queue
+is checked by what stays pending. The real SDK is never touched."""
 
 import json
 import threading
@@ -24,7 +23,6 @@ from claudio_maestro.app import create_app
 from claudio_maestro.org import store
 from claudio_maestro.org.definition import definition_hash
 from claudio_maestro.org.files import AgentFiles
-from claudio_maestro.org.service import OrgService
 
 APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
@@ -66,15 +64,6 @@ def api(factory: FakeAgentFactory, events):
         app, base_url=BACKEND_URL, headers={"origin": APP_ORIGIN, "x-maestro": "1"}
     ) as c:
         state = c.app.state
-        state.agent_files = AgentFiles(state.settings.data_dir / "agents")
-        state.org = OrgService(
-            state.settings.db_path,
-            sessions=state.sessions,
-            files=state.agent_files,
-            publish=lambda kind, data: state.hub.publish(
-                {"session_id": None, "seq": 0, "type": kind, "data": data}
-            ),
-        )
         kicks: list[int | None] = []
         state.org.kick = lambda agent_id=None: kicks.append(agent_id)
         c.kicks = kicks
@@ -160,7 +149,8 @@ def test_create_rejects_bad_slug(api, project, slug):
     assert response.status_code == 422
     assert api.get("/api/agents").json() == []
     root = agents_dir(api)
-    assert not root.exists() or list(root.iterdir()) == []
+    # The report of the file migration (written at startup) is the only thing there.
+    assert not root.exists() or [p.name for p in root.iterdir() if not p.name.startswith("migracao-")] == []
     assert not (root.parent / "fora").exists()
     assert not (root.parent.parent / "fora").exists()
 

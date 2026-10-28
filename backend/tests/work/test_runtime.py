@@ -188,19 +188,13 @@ async def test_restart_preserves_pending_result_without_sending_again(world):
     await other.shutdown()
 
 
-async def test_activation_uses_shared_transaction_and_legacy_gate(world):
+async def test_agents_and_project_work_no_longer_exclude_each_other(world):
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
         assert world.service.can_legacy_dispatch(conn, world.project.id)
     world.service.activate_project(world.project.id)
+    assert world.service.project_mode(world.project.id)['enabled']
     with closing(db.connect(world.db_path)) as conn, db.transaction(conn):
-        assert not world.service.can_legacy_dispatch(conn, world.project.id)
-
-
-async def test_busy_legacy_prevents_project_activation(world):
-    world.service.legacy_busy = lambda conn, project_id: True
-    with pytest.raises(store.WorkConflictError):
-        world.service.activate_project(world.project.id)
-    assert not world.service.project_mode(world.project.id)['enabled']
+        assert world.service.can_legacy_dispatch(conn, world.project.id)
 
 
 async def test_budget_stops_new_delegation(world):

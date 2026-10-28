@@ -31,7 +31,7 @@ from pathlib import Path
 from claudio_maestro import db
 from claudio_maestro.api.gitops import project_repo
 from claudio_maestro.gitinfo import run_git
-from claudio_maestro.specialists.gh_comments import GhRunner
+from claudio_maestro.org.gh_comments import GhRunner
 
 from . import store
 from .ci_schema import CI_SCHEMA  # noqa: F401 - public pure migration contract

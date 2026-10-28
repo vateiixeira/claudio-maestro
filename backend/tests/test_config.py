@@ -137,3 +137,49 @@ def test_hooks_port_must_differ_from_default_ports(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("MAESTRO_HOOKS_PORT", "6660")
     with pytest.raises(config.PortError, match="MAESTRO_PORT"):
         config.hooks_port()
+
+
+# Scheduler of the routines ---------------------------------------------------------
+
+
+def test_routines_scheduler_is_on_by_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("MAESTRO_ROUTINES_SCHEDULER", raising=False)
+    monkeypatch.delenv("MAESTRO_SPECIALISTS_SCHEDULER", raising=False)
+    assert load_settings().routines_scheduler is True
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("0", False), ("1", True)])
+def test_routines_scheduler_follows_its_variable(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: bool
+):
+    monkeypatch.delenv("MAESTRO_SPECIALISTS_SCHEDULER", raising=False)
+    monkeypatch.setenv("MAESTRO_ROUTINES_SCHEDULER", raw)
+    assert load_settings().routines_scheduler is expected
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("0", False), ("1", True)])
+def test_old_scheduler_variable_still_counts_as_an_alias(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: bool
+):
+    monkeypatch.delenv("MAESTRO_ROUTINES_SCHEDULER", raising=False)
+    monkeypatch.setenv("MAESTRO_SPECIALISTS_SCHEDULER", raw)
+    assert load_settings().routines_scheduler is expected
+
+
+@pytest.mark.parametrize(("new", "old", "expected"), [("1", "0", True), ("0", "1", False)])
+def test_new_scheduler_variable_wins_over_the_old_one(
+    monkeypatch: pytest.MonkeyPatch, new: str, old: str, expected: bool
+):
+    monkeypatch.setenv("MAESTRO_ROUTINES_SCHEDULER", new)
+    monkeypatch.setenv("MAESTRO_SPECIALISTS_SCHEDULER", old)
+    assert load_settings().routines_scheduler is expected
+
+
+def test_work_dispatcher_follows_the_routines_scheduler_unless_overridden(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.delenv("MAESTRO_WORK_DISPATCHER", raising=False)
+    monkeypatch.setenv("MAESTRO_ROUTINES_SCHEDULER", "0")
+    assert load_settings().work_dispatcher_enabled is False
+    monkeypatch.setenv("MAESTRO_WORK_DISPATCHER", "1")
+    assert load_settings().work_dispatcher_enabled is True

@@ -22,12 +22,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from claudio_maestro import db
-from claudio_maestro.specialists.gh_comments import (
+from claudio_maestro.org.gh_comments import (
     CLOCK_MARGIN_SECONDS,
     parse_pages,
     parse_pr_url,
 )
-from claudio_maestro.specialists.github_hooks import parse_event
+from claudio_maestro.org.github_hooks import parse_event
 
 from .files import WorkFiles
 from .store import WorkValidationError

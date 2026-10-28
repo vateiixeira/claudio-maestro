@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
-import time
 from dataclasses import asdict
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -11,7 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from claudio_maestro import db, groups, projects
 from claudio_maestro.api.deps import DbDep, SettingsDep
-from claudio_maestro.specialists import store
+from claudio_maestro.api.org import BUSY_TEXT
+from claudio_maestro.org import store as org_store
+from claudio_maestro.security import is_within
 
 logger = logging.getLogger(__name__)
 
@@ -127,46 +129,60 @@ def update_project(project_id: int, body: ProjectUpdate, conn: DbDep) -> project
         raise _http_error(exc) from exc
 
 
+def _holds_folder(session: Any, folder: Path) -> bool:
+    """Whether the live process of the session reads `folder` or something inside it (its
+    extra folders may be any folder of a project)."""
+    return any(is_within(path, folder) for path in session.extra_dirs)
+
+
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(project_id: int, conn: DbDep, request: Request, fence_id: str | None = None) -> Response:
     """Close the project's active sessions (pending prompts cancelled), then delete it."""
     manager = request.app.state.sessions
     try:
         projects.get_project(conn, project_id)
+        org = request.app.state.org
+        if any(org.is_busy(agent.id) for agent in org_store.list_agents(conn, project_id)):
+            # Deleting would cut a run in the middle and leave a notice of an erased agent.
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BUSY_TEXT)
         work = request.app.state.work
         receipt = work.reserve_project_deletion(project_id, fence_id=fence_id)
         try:
-            # The fence still covers the old extra-project registry here. Close
-            # cached idle contexts in other projects before pruning that registry.
-            affected = {owner.id for owner in request.app.state.specialists.owners_for_project(conn, project_id)}
+            # An agent of another project may hold this folder in its `addDirs`: its live
+            # process keeps reading the folder, so it is closed before the project goes.
+            folder = Path(projects.get_project(conn, project_id).path)
             for sid in manager.active_ids():
                 session = manager.get(sid)
-                if session.record.agent_id in affected and session.record.project_id != project_id and session.client is not None:
+                if (
+                    session.record.agent_id is not None
+                    and session.record.project_id != project_id
+                    and session.client is not None
+                    and _holds_folder(session, folder)
+                ):
                     await session.close()
             await manager.close_project(project_id)
             # Their groups die with the project: remember who sat in them from other projects.
             released = groups.foreign_members(conn, project_id)
             # The cascade takes the project's agents out of the database; their folders
-            # (skill, learnings, secrets) go too.
-            orphans = [s for s in store.list_specialists(conn) if s.project_id == project_id]
+            # (definition, memory, secrets) go too.
+            orphans = org_store.list_agents(conn, project_id)
             with db.transaction(conn):
                 fence = conn.execute('SELECT fence_id FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone()
                 if fence is None or fence['fence_id'] != receipt:
                     from claudio_maestro.work.store import WorkConflictError
                     raise WorkConflictError('O recibo da exclusão mudou.')
+                if any(org.is_busy(agent.id) for agent in orphans):
+                    # A run started while the sessions were being closed.
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BUSY_TEXT)
                 projects.delete_project(conn, project_id)
-                # The id may be given to a project added later: no agent may read that one.
-                pruned = store.remove_extra_project(conn, project_id, int(time.time()))
         finally:
             work.release_deletion_owner(project_id)
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
-    for specialist in orphans:
-        request.app.state.specialist_files.delete(specialist.slug)
-    for specialist_id in [s.id for s in orphans] + pruned:
+    for agent in orphans:
+        request.app.state.agent_files.delete(agent.slug)
         request.app.state.hub.publish(
-            {"session_id": None, "seq": 0, "type": "specialist.changed",
-             "data": {"id": specialist_id}}
+            {"session_id": None, "seq": 0, "type": "agent.changed", "data": {"id": agent.id}}
         )
     # The cascade took the project's sessions, and their labels, out of the database.
     manager.reconcile_label_ids()

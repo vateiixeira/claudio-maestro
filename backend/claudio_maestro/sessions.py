@@ -1256,6 +1256,11 @@ class ActiveSession:
     # State -----------------------------------------------------------------
 
     @property
+    def extra_dirs(self) -> list[Path]:
+        """The extra folders the live process was opened with (empty without a process)."""
+        return list(self._extras.add_dirs) if self._extras is not None else []
+
+    @property
     def state(self) -> SessionState:
         if self._connecting and not self._quiet_connect:
             return "connecting"

@@ -21,18 +21,18 @@ from claudio_maestro.work.service import WorkService
 
 @pytest.mark.parametrize('kind,scheduler,dispatcher,remote,fenced,expected', [
     ('work', True, False, True, False, False),
-    ('legacy', False, True, True, False, False),
+    ('agent', False, True, True, False, False),
     ('manual', True, True, False, False, False),
     ('manual', True, False, True, False, True),
     ('work', True, True, True, False, True),
     ('work_ended', True, True, True, False, False),
-    ('legacy', True, True, True, False, True),
+    ('agent', True, True, True, False, True),
     ('manual', True, True, True, True, False),
-    ('legacy', True, True, True, True, False),
+    ('agent', True, True, True, True, False),
 ])
 def test_boot_remote_admission_and_manual_send(home, kind, scheduler, dispatcher, remote, fenced, expected):
     factory = FakeAgentFactory(script=lambda content: text_turn(factory.clients[-1].options.session_id, 'feito'))
-    settings = replace(load_settings(), remote_reconnect=False, specialists_scheduler=False, work_dispatcher=False)
+    settings = replace(load_settings(), remote_reconnect=False, routines_scheduler=False, work_dispatcher=False)
     headers = {'origin': 'http://localhost:6600', 'x-maestro': '1'}
     with TestClient(create_app(settings=settings, agent_factory=factory), base_url='http://127.0.0.1:6660', headers=headers) as api:
         project = make_project(api, home)
@@ -48,9 +48,9 @@ def test_boot_remote_admission_and_manual_send(home, kind, scheduler, dispatcher
         elif kind == 'work':
             sid = api.post(f"/api/projects/{project['id']}/cto").json()['session_id']
             api.post(f"/api/projects/{project['id']}/work-mode", json={'action': 'enable'})
-        elif kind == 'legacy':
-            owner = api.post('/api/specialists', json={'name': 'Source', 'slug': 'source', 'project_id': project['id']}).json()
-            sid = api.post(f"/api/specialists/{owner['id']}/main").json()['session_id']
+        elif kind == 'agent':
+            owner = api.post('/api/agents', json={'name': 'Source', 'slug': 'source', 'project_id': project['id']}).json()
+            sid = api.post(f"/api/agents/{owner['id']}/main").json()['session_id']
         else:
             sid = api.post(f"/api/projects/{project['id']}/sessions").json()['session_id']
         with closing(db.connect(settings.db_path)) as conn:
@@ -59,7 +59,7 @@ def test_boot_remote_admission_and_manual_send(home, kind, scheduler, dispatcher
             api.app.state.work.reserve_project_deletion(project['id'])
             api.app.state.work.release_deletion_owner(project['id'])
     assert not factory.clients
-    live = replace(settings, remote_reconnect=remote, specialists_scheduler=scheduler, work_dispatcher=dispatcher)
+    live = replace(settings, remote_reconnect=remote, routines_scheduler=scheduler, work_dispatcher=dispatcher)
     with TestClient(create_app(settings=live, agent_factory=factory, history_exists=lambda sid, cwd: True), base_url='http://127.0.0.1:6660', headers=headers) as api:
         deadline = time.monotonic() + .4
         while time.monotonic() < deadline:

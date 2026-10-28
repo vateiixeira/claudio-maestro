@@ -78,8 +78,6 @@ class NotificationsMixin:
                     continue
                 with closing(db.connect(self.db_path)) as conn, db.transaction(conn):
                     self.assert_project_admission(conn, identity['project_id'])
-                    if self.legacy_busy(conn, identity['project_id']):
-                        continue
                     rows = conn.execute("SELECT * FROM work_notifications WHERE coordinator_session_id=? AND dispatch_state='queued' ORDER BY id LIMIT 20", (sid,)).fetchall()
                     ids = [r['id'] for r in rows]
                     if not ids:

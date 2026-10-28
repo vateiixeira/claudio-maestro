@@ -116,10 +116,18 @@ def test_isolated_env_keeps_the_git_config_of_whoever_runs_it_out(tmp_path):
     assert Path(env["HOME"]).is_relative_to(tmp_path)
 
 
+def test_isolated_env_keeps_the_routines_scheduler_off_whatever_is_inherited(tmp_path):
+    base = {"MAESTRO_ROUTINES_SCHEDULER": "1", "MAESTRO_SPECIALISTS_SCHEDULER": "1"}
+    env = e2e.isolated_env(base, tmp_path, 6620)
+    assert env["MAESTRO_ROUTINES_SCHEDULER"] == "0"
+    assert "MAESTRO_SPECIALISTS_SCHEDULER" not in env
+
+
 def test_isolated_env_turns_off_outside_work(tmp_path):
     env = e2e.isolated_env({}, tmp_path, 6620)
     assert env['MAESTRO_WORK_DISPATCHER'] == '0'
     assert env['MAESTRO_REMOTE_RECONNECT'] == '0'
+    assert env['MAESTRO_ROUTINES_SCHEDULER'] == '0'
 
     assert env["MAESTRO_AGENTD"] == "0"
     assert env["MAESTRO_UPDATE_CHECK"] == "0"
@@ -476,15 +484,15 @@ def test_agents_live_in_the_temporary_root_and_run_without_the_real_agent(tmp_pa
     ) as client:
         project_id = client.get("/api/projects").json()[0]["id"]
         created = client.post(
-            "/api/specialists", json={"name": "Teste", "slug": "teste", "project_id": project_id}
+            "/api/agents", json={"name": "Teste", "slug": "teste", "project_id": project_id}
         )
         assert created.status_code == 201
-        ran = client.post(f"/api/specialists/{created.json()['id']}/run", json={})
-        assert ran.status_code == 202
-        folder = client.app.state.specialist_files.root
+        woke = client.post(f"/api/agents/{created.json()['id']}/wake", json={})
+        assert woke.status_code == 202
+        folder = client.app.state.agent_files.root
 
-    assert folder == tmp_path / "data" / "specialists"
-    assert (folder / "teste" / "SKILL.md").is_file()
+    assert folder == tmp_path / "data" / "agents"
+    assert (folder / "teste" / "AGENT.md").is_file()
     assert attempts == []
 
 

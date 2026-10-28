@@ -83,10 +83,9 @@ não bastam para aceitar uma entrega após reinício.
   SDK. Envio incerto é pausado e não reenviado; `False` comprovado exige retomada
   explícita. Tentativa encerrada não recebe mensagens silenciosamente.
 - `activate_project`, `deactivate_project`, `pause_project`, `resume_project` e
-  `project_mode` controlam admissão. `can_legacy_dispatch(conn, project_id)` é
-  uma leitura para a transação do despachante legado; não abre transação aninhada.
-  O integrador deve fornecer `legacy_busy(conn, project_id)` com os estados em
-  memória e os recebimentos legados que também impedem a transição.
+  `project_mode` controlam admissão. As rotinas dos agentes e o trabalho do
+  projeto não se excluem mais: `can_legacy_dispatch(conn, project_id)` sempre
+  devolve `True` e ativar o modo CTO não espera os agentes ficarem ociosos.
 - `assert_deletion_allowed(project_id=... ou session_id=...)` deve rodar antes
   de fechar/remover sessões ou projetos; envio incerto conserva suas reservas.
 
@@ -149,7 +148,7 @@ ser cancelada por outro pedido concorrente.
 
 O dispatcher também respeita `MAESTRO_WORK_DISPATCHER`: `0` impede `dispatch_once`
 de iniciar trabalho mesmo se houver fila pronta persistida. Sem override explícito,
-acompanha `MAESTRO_SPECIALISTS_SCHEDULER`, preservando a configuração segura de
+acompanha `MAESTRO_ROUTINES_SCHEDULER`, preservando a configuração segura de
 instância isolada com cópia do banco. `GET /api/work/runtime` informa
 `dispatcher_enabled` e o snapshot do `pool`. Isso não transforma mensagens manuais em automatismos nem
 libera envios incertos. No E2E, somente a opção de chat falso habilita o dispatcher.

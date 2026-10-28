@@ -37,6 +37,20 @@ from claudio_maestro.events import EventHub
 from claudio_maestro.filesearch import FileIndex
 from claudio_maestro.frontend_static import mount_frontend
 from claudio_maestro.gitmonitor import GitMonitor
+from claudio_maestro.org import store as org_store
+from claudio_maestro.org.comments import CommentDispatcher, run_poll
+from claudio_maestro.org.files import AgentFiles
+from claudio_maestro.org.gh_comments import GhRunner
+from claudio_maestro.org.gh_comments import run_gh as default_run_gh
+from claudio_maestro.org.github_hooks import (
+    build_hooks_app,
+    get_owner,
+    serve_hooks,
+    stop_hooks,
+)
+from claudio_maestro.org.migration import migrate_files
+from claudio_maestro.org.scheduler import Scheduler
+from claudio_maestro.org.service import OrgService
 from claudio_maestro.picker import PickFolder
 from claudio_maestro.picker import pick_folder as system_pick_folder
 from claudio_maestro.runmode import RunMode
@@ -51,23 +65,6 @@ from claudio_maestro.sessions import (
     RenameSession,
     SessionError,
     SessionManager,
-)
-from claudio_maestro.specialists import store
-from claudio_maestro.specialists.comments import CommentDispatcher, run_poll
-from claudio_maestro.specialists.files import SpecialistFiles
-from claudio_maestro.specialists.gh_comments import GhRunner
-from claudio_maestro.specialists.gh_comments import run_gh as default_run_gh
-from claudio_maestro.specialists.github_hooks import (
-    build_hooks_app,
-    get_owner,
-    serve_hooks,
-    stop_hooks,
-)
-from claudio_maestro.specialists.scheduler import Scheduler
-from claudio_maestro.specialists.service import (
-    UNCERTAIN_SEND,
-    LegacyWorkModeError,
-    SpecialistService,
 )
 from claudio_maestro.terminal import TerminalManager
 from claudio_maestro.textindex import INDEX_FILENAME, TextIndex
@@ -92,6 +89,26 @@ def publish_synced(publish: Callable[[dict[str, Any]], None], project_ids: set[i
         )
 
 
+def migrate_agent_files(settings: Settings) -> None:
+    """Move the folders of the old agents (`specialists/`) to the new ones (`agents/`). It runs
+    at every start and does nothing once everything moved. A failure is logged and the app
+    starts all the same: the agents that did not move just have no folder yet."""
+    try:
+        with closing(db.connect(settings.db_path)) as conn:
+            report = migrate_files(settings.data_dir, conn)
+    except Exception:
+        logger.exception("Falha ao migrar os arquivos dos agentes")
+        return
+    if report.migrated:
+        logger.info(
+            "Agentes migrados para a nova organização: %s. Relatório em %s.",
+            ", ".join(item.slug for item in report.migrated),
+            report.report_path,
+        )
+    for warning in report.warnings:
+        logger.warning("Migração dos agentes: %s", warning)
+
+
 def start_hooks_listener(app: FastAPI, app_ports_in_use: tuple[int, ...]) -> "asyncio.Task[None] | None":
     """Start the GitHub webhook listener when `MAESTRO_HOOKS_PORT` is set.
 
@@ -109,7 +126,7 @@ def start_hooks_listener(app: FastAPI, app_ports_in_use: tuple[int, ...]) -> "as
     hooks_app = build_hooks_app(
         db_path=settings.db_path,
         data_dir=settings.data_dir,
-        is_agent_pr=app.state.specialists.is_agent_pr,
+        is_agent_pr=app.state.org.is_agent_pr,
         on_queued=app.state.comments.wake,
         is_work_pr=app.state.work_prs.bridge.is_pr,
         queue_work_comment=app.state.work_prs.bridge.queue_comment,
@@ -177,6 +194,7 @@ def create_app(
         app.state.settings = settings or load_settings()
         app.state.restart = restart
         db.init_db(app.state.settings.db_path)
+        await asyncio.to_thread(migrate_agent_files, app.state.settings)
         app.state.hub = EventHub()
         app.state.spawn_editor = spawn_editor or spawn_detached
         app.state.pick_folder = pick_folder or system_pick_folder
@@ -229,13 +247,13 @@ def create_app(
             app.state.background.add(task)
             task.add_done_callback(app.state.background.discard)
 
-        def finish_for_specialists(session_id: str, finished_at: int) -> None:
+        def finish_for_agents(session_id: str, finished_at: int) -> None:
             # Agentes: a run still open counts as concluded.
-            app.state.specialists.on_finished(session_id, finished_at)
+            app.state.org.on_finished(session_id, finished_at)
 
         def on_finished(session_id: str, finished_at: int) -> None:
             # Each hook is isolated: one failing never stops the other.
-            for hook in (finish_for_deliveries, finish_for_specialists):
+            for hook in (finish_for_deliveries, finish_for_agents):
                 try:
                     hook(session_id, finished_at)
                 except Exception:
@@ -295,12 +313,11 @@ def create_app(
                                 return False
                         mode = app.state.work.project_mode(record.project_id)
                         return app.state.work.dispatch_enabled and mode['enabled'] and not mode['paused']
-                    if record.agent_id is not None:
-                        if not app.state.settings.specialists_scheduler:
-                            return False
-                        owner = store.get_specialist(conn, record.agent_id)
-                        app.state.specialists.assert_legacy_admission(conn, owner, session_id=record.session_id)
-                except (work_store.WorkError, store.SpecialistError):
+                    if record.agent_id is not None and not app.state.settings.routines_scheduler:
+                        # An isolated instance (copy of the database) must not reopen the
+                        # processes of agents by itself.
+                        return False
+                except work_store.WorkError:
                     return False
             return True
 
@@ -308,10 +325,6 @@ def create_app(
             # No await between this final check and the client factory. Held
             # processes bypass this hook so recovery can inspect/close them.
             app.state.work.assert_session_start(record)
-            if record.agent_id is not None:
-                with closing(db.connect(app.state.settings.db_path)) as conn:
-                    owner = store.get_specialist(conn, record.agent_id)
-                    app.state.specialists.assert_legacy_admission(conn, owner, session_id=record.session_id)
 
         app.state.sessions = SessionManager(
             app.state.settings.db_path,
@@ -339,72 +352,29 @@ def create_app(
             on_session_result=lambda sid, result: app.state.work.on_session_result(sid, result),
             on_session_turn_end=lambda sid: app.state.work.on_session_turn_end(sid),
             on_session_error=lambda sid, error: app.state.work.on_session_error(sid, error),
-            session_setup=lambda record: app.state.specialists.session_setup(record),
-            on_turn_error=lambda session_id, error: app.state.specialists.on_turn_error(
-                session_id, error
-            ),
-            on_init=lambda session_id, servers: app.state.specialists.on_init(
-                session_id, servers
-            ),
-            prepare_message=lambda record, text: app.state.specialists.prepare_message(
-                record, text
-            ),
+            session_setup=lambda record: app.state.org.session_setup(record),
+            on_turn_error=lambda session_id, error: app.state.org.on_turn_error(session_id, error),
+            on_init=lambda session_id, servers: app.state.org.on_init(session_id, servers),
+            prepare_message=lambda record, text: app.state.org.prepare_message(record, text),
             on_session_pr_created=lambda sid, url: app.state.work_prs.on_pr_created(sid, url),
-            on_pr_created=lambda session_id, url: app.state.specialists.on_pr_created(
-                session_id, url
-            ),
+            on_pr_created=lambda session_id, url: app.state.org.on_pr_created(session_id, url),
         )
-        app.state.specialist_files = SpecialistFiles(app.state.settings.data_dir / "specialists")
-        app.state.specialists = SpecialistService(
+        app.state.agent_files = AgentFiles(app.state.settings.data_dir / "agents")
+
+        def publish_org(kind: str, data: dict[str, Any]) -> None:
+            # The service publishes `(type, data)`; the hub takes the whole envelope.
+            app.state.hub.publish({"session_id": None, "seq": 0, "type": kind, "data": data})
+
+        app.state.org = OrgService(
             app.state.settings.db_path,
-            files=app.state.specialist_files,
             sessions=app.state.sessions,
-            publish=app.state.hub.publish,
+            files=app.state.agent_files,
+            publish=publish_org,
         )
-        def legacy_busy(conn, project_id: int) -> bool:
-            # A configuration edited by an older version does not rewrite the
-            # project of the sessions/runs it already dispatched.
-            if conn.execute("SELECT 1 FROM specialist_runs r JOIN sessions s ON s.session_id=r.session_id WHERE s.project_id=? AND (r.outcome IN ('queued','starting','running','waiting') OR (r.outcome='failed' AND r.reason=?))", (project_id, UNCERTAIN_SEND)).fetchone():
-                return True
-            if conn.execute("SELECT 1 FROM specialist_pr_comments c JOIN specialist_prs p ON p.url=c.pr_url JOIN sessions s ON s.session_id=p.session_id WHERE s.project_id=? AND c.status IN ('queued','dispatching','uncertain')", (project_id,)).fetchone():
-                return True
-            if conn.execute('SELECT 1 FROM sessions WHERE project_id=? AND agent_id IS NOT NULL AND turn_open=1', (project_id,)).fetchone():
-                return True
-            for sid in app.state.sessions.active_ids():
-                session = app.state.sessions.get(sid)
-                if session.record.agent_id is not None and session.record.project_id == project_id:
-                    if session.users or getattr(session, '_connecting', False) or session.state in ('connecting', 'running', 'awaiting_decision') or session.subagents_running or session.record.turn_open:
-                        return True
-            owners = [specialist for specialist in store.list_specialists(conn)
-                      if project_id == specialist.project_id or project_id in specialist.extra_project_ids]
-            for specialist in owners:
-                if conn.execute("SELECT 1 FROM specialist_runs WHERE specialist_id=? AND (outcome IN ('queued','starting','running','waiting') OR (outcome='failed' AND reason=?))", (specialist.id, UNCERTAIN_SEND)).fetchone():
-                    return True
-                if conn.execute("SELECT 1 FROM specialist_pr_comments WHERE specialist_id=? AND status IN ('queued','dispatching','uncertain')", (specialist.id,)).fetchone():
-                    return True
-                if conn.execute('SELECT 1 FROM sessions WHERE agent_id=? AND turn_open=1', (specialist.id,)).fetchone():
-                    return True
-                lock = app.state.specialists._queue_locks.get(specialist.id)
-                if (lock and lock.locked()) or app.state.specialists.is_busy(specialist.id):
-                    return True
-            return False
-
-        def legacy_deletion_busy(conn, project_id: int) -> bool:
-            try:
-                for owner in app.state.specialists.owners_for_project(conn, project_id):
-                    lock = app.state.specialists._queue_locks.get(owner.id)
-                    if lock and lock.locked():
-                        return True
-                    app.state.specialists.assert_origin_change_safe(conn, owner.id)
-            except work_store.WorkConflictError:
-                return True
-            return False
-
         app.state.work = WorkService(
             app.state.settings.db_path, sessions=app.state.sessions,
             files=WorkFiles(app.state.settings.data_dir / 'work'),
-            publish=app.state.hub.publish, legacy_busy=legacy_busy,
-            legacy_deletion_busy=legacy_deletion_busy,
+            publish=app.state.hub.publish,
         )
         app.state.work.dispatch_enabled = app.state.settings.work_dispatcher_enabled
         app.state.work.ci_verifier = CiVerifier(app.state.work, run_gh=gh_runner or default_run_gh)
@@ -414,19 +384,12 @@ def create_app(
         app.state.work_prs = WorkPrIntegration(app.state.work, owner=work_comment_owner,
             run_gh=gh_runner or default_run_gh)
         app.state.scheduler = Scheduler(
-            app.state.specialists,
-            app.state.sessions,
-            app.state.usage,
-            app.state.settings.db_path,
-            time.time,
+            app.state.org, app.state.usage, app.state.settings.db_path, time.time
         )
         app.state.comments = CommentDispatcher(
-            app.state.specialists,
-            app.state.usage,
-            app.state.settings.db_path,
-            time.time,
+            app.state.org, app.state.settings.db_path, time.time
         )
-        app.state.scheduler.enabled = app.state.settings.specialists_scheduler
+        app.state.scheduler.enabled = app.state.settings.routines_scheduler
         # What the agentd may still hold, for the Remote Control reconnect below; `None`
         # when it could not be asked (nothing is reconnected then).
         agentd_held: set[str] | None = None
@@ -438,9 +401,9 @@ def create_app(
         try:
             # Agents' sessions whose finish was lost when the backend went down; after the
             # reattach, so a session kept by the agentd is only finished when its turn ends.
-            await app.state.specialists.recover()
+            await app.state.org.recover()
         except Exception:
-            logger.exception("Falha ao retomar a finalização das sessões de agente")
+            logger.exception("Falha ao retomar as execuções e a fila dos agentes")
         try:
             await app.state.work.recover()
         except Exception:
@@ -454,12 +417,19 @@ def create_app(
                 with closing(db.connect(app.state.settings.db_path)) as conn:
                     app.state.work.assert_project_admission(conn, record.project_id)
                 if record.agent_id is not None:
-                    await app.state.specialists.send_message(session_id, text)
+                    with closing(db.connect(app.state.settings.db_path)) as conn:
+                        if not org_store.get_agent(conn, record.agent_id).enabled:
+                            # Nothing may be left pending for a message reported as not sent.
+                            return False
+                    await app.state.org.wake(
+                        record.agent_id, source="message", text=text,
+                        payload={"session_id": session_id},
+                    )
                 elif app.state.work.session_identity(session_id) is not None:
                     await app.state.work.send_message(session_id, text)
                 else:
                     await app.state.sessions.send(session_id, text)
-            except (SessionError, store.SpecialistError, work_store.WorkError):
+            except (SessionError, org_store.OrgError, work_store.WorkError):
                 return False
             return True
 
@@ -478,7 +448,7 @@ def create_app(
             app.state.sessions,
             app.state.hub.publish,
             digest_model or SdkDigestModel(agent_dir, cli_path=app.state.claude_cli.cli_path),
-            on_closure=app.state.specialists.on_closure,
+            on_closure=app.state.org.on_closure,
         )
 
         def on_history_change(session_ids: set[str]) -> None:
@@ -535,7 +505,7 @@ def create_app(
         app.state.scheduler_task = None
         app.state.comments_task = None
         app.state.comment_poll_task = None
-        if app.state.settings.specialists_scheduler:
+        if app.state.settings.routines_scheduler:
             app.state.scheduler_task = asyncio.create_task(app.state.scheduler.run())
             tasks.append(app.state.scheduler_task)
             # The owner's PR comments: delivered to the agents (a tick at startup treats what
@@ -619,7 +589,7 @@ def create_app(
             if app.state.hooks_task is not None:
                 await stop_hooks(app.state.hooks_task)
             await app.state.work.shutdown()
-            await app.state.specialists.shutdown()
+            await app.state.org.shutdown()
             await app.state.commands.aclose()
             await app.state.terminals.aclose()
             await app.state.sessions.shutdown()
@@ -635,10 +605,6 @@ def create_app(
         allowed_hosts=allowed_hosts(ports),
         allowed_origins=allowed_origins(ports),
     )
-    @app.exception_handler(LegacyWorkModeError)
-    async def legacy_work_error(request: Request, error: LegacyWorkModeError):
-        return JSONResponse(status_code=409, content={"detail": str(error)})
-
     @app.exception_handler(work_store.WorkError)
     async def work_error(request: Request, error: work_store.WorkError):
         code = 404 if isinstance(error, work_store.WorkNotFoundError) else (409 if isinstance(error, work_store.WorkConflictError) else 422)

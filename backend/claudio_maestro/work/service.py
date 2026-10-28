@@ -42,14 +42,10 @@ TURN_OPEN = ('connecting', 'running', 'awaiting_decision')
 class WorkService(PresentationMixin, SourcesMixin, ReviewsMixin, DecisionsMixin, NotificationsMixin, ProcessCloseMixin):
     def __init__(self, db_path: Path, *, sessions: SessionManager, files: WorkFiles,
                  publish: Callable[[dict], None], clock: Callable[[], float] = time.time,
-                 legacy_busy: Callable[[sqlite3.Connection, int], bool] | None = None,
-                 legacy_deletion_busy: Callable[[sqlite3.Connection, int], bool] | None = None,
                  max_tasks: int = 25, max_attempts: int = 3, max_seconds: int = 3600,
                  resource_keys: Callable[[projects.Project], list[str]] | None = None):
         self.db_path, self.sessions, self.files = db_path, sessions, files
         self.publish, self.clock = publish, clock
-        self.legacy_busy = legacy_busy or self._legacy_busy
-        self.legacy_deletion_busy = legacy_deletion_busy or self.legacy_busy
         self.max_tasks, self.max_attempts, self.max_seconds = max_tasks, max_attempts, max_seconds
         self._custom_resource_keys = resource_keys
         self.resource_keys = self._project_resources
@@ -115,28 +111,8 @@ class WorkService(PresentationMixin, SourcesMixin, ReviewsMixin, DecisionsMixin,
 
     @staticmethod
     def can_legacy_dispatch(conn: sqlite3.Connection, project_id: int) -> bool:
-        """Read inside the legacy caller's own write transaction; never nests one."""
-        if conn.execute('SELECT 1 FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone():
-            return False
-        row = conn.execute('SELECT enabled FROM work_project_modes WHERE project_id = ?', (project_id,)).fetchone()
-        return row is None or not row['enabled']
-
-    @staticmethod
-    def _legacy_busy(conn: sqlite3.Connection, project_id: int) -> bool:
-        from claudio_maestro.specialists.service import UNCERTAIN_SEND
-
-        owners = []
-        for row in conn.execute('SELECT id, project_id, extra_project_ids FROM specialists'):
-            if row['project_id'] == project_id or project_id in json.loads(row['extra_project_ids']):
-                owners.append(row['id'])
-        for owner in owners:
-            if conn.execute("SELECT 1 FROM specialist_runs WHERE specialist_id = ? AND (outcome IN ('queued', 'starting', 'running', 'waiting') OR (outcome='failed' AND reason=?))", (owner, UNCERTAIN_SEND)).fetchone():
-                return True
-            if conn.execute("SELECT 1 FROM sessions WHERE agent_id = ? AND turn_open = 1", (owner,)).fetchone():
-                return True
-            if conn.execute("SELECT 1 FROM specialist_pr_comments WHERE specialist_id = ? AND status IN ('queued', 'dispatching', 'uncertain')", (owner,)).fetchone():
-                return True
-        return False
+        """Always true: the agents' routines and the project work no longer exclude each other."""
+        return True
 
     def project_mode(self, project_id: int) -> dict[str, Any]:
         with closing(db.connect(self.db_path)) as conn:
@@ -158,8 +134,6 @@ class WorkService(PresentationMixin, SourcesMixin, ReviewsMixin, DecisionsMixin,
         mode = conn.execute('SELECT enabled FROM work_project_modes WHERE project_id = ?', (project_id,)).fetchone()
         if mode and mode['enabled']:
             return
-        if self.legacy_busy(conn, project_id):
-            raise store.WorkConflictError('O projeto ainda tem trabalho legado pendente. Concilie antes de ativar o CTO.')
         conn.execute('INSERT INTO work_project_modes (project_id, enabled, paused, updated_at) VALUES (?, 1, 0, ?) ON CONFLICT(project_id) DO UPDATE SET enabled = 1, updated_at = excluded.updated_at', (project_id, self._now()))
 
     def activate_project(self, project_id: int) -> None:
@@ -934,8 +908,6 @@ class WorkService(PresentationMixin, SourcesMixin, ReviewsMixin, DecisionsMixin,
         with closing(db.connect(self.db_path)) as conn, db.transaction(conn):
             projects.get_project(conn, project_id)
             self._assert_pr_idle(conn, project_id=project_id)
-            if self.legacy_deletion_busy(conn, project_id):
-                raise store.WorkConflictError('Um agente que usa este projeto tem trabalho ativo, pendente ou incerto. Concilie antes de excluir.')
             if conn.execute("SELECT 1 FROM work_attempts a JOIN work_items i ON i.id=a.work_item_id WHERE i.project_id=? AND a.state IN ('starting','dispatching','running','waiting','uncertain')", (project_id,)).fetchone():
                 raise store.WorkConflictError('Há trabalho ativo ou incerto neste projeto.')
             current = conn.execute('SELECT fence_id FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone()
@@ -964,10 +936,6 @@ class WorkService(PresentationMixin, SourcesMixin, ReviewsMixin, DecisionsMixin,
             row = conn.execute('SELECT fence_id FROM work_project_fences WHERE project_id=?', (project_id,)).fetchone()
             if row is None or row['fence_id'] != fence_id:
                 raise store.WorkConflictError('O recibo de exclusão mudou. Atualize o projeto antes de cancelar.')
-            # A lost legacy send cannot be turned into permission to resume by
-            # cancelling a deletion. Proven queued work may resume afterwards.
-            if conn.execute("SELECT 1 FROM specialist_runs r JOIN sessions s ON s.session_id=r.session_id WHERE s.project_id=? AND r.outcome='failed' AND r.reason LIKE '%envio foi interrompido%'", (project_id,)).fetchone():
-                raise store.WorkConflictError('Há um envio legado incerto. Concilie antes de cancelar a exclusão.')
             conn.execute('DELETE FROM work_project_fences WHERE project_id=? AND fence_id=?', (project_id, fence_id))
         self._wake.set()
 

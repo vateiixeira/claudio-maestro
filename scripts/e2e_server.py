@@ -191,6 +191,8 @@ def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, st
             # Only the opt-in fake chat harness may start queued work. An
             # inherited dispatcher override never leaks into this environment.
             "MAESTRO_WORK_DISPATCHER": "1" if base.get("MAESTRO_E2E_CHAT") == "1" else "0",
+            # No routine of the seeded agents fires by the clock during a spec.
+            "MAESTRO_ROUTINES_SCHEDULER": "0",
             "MAESTRO_UPDATE_CHECK": "0",
             "MAESTRO_USAGE_CHECK": "0",
             "MAESTRO_CLAUDE_CHECK": "0",

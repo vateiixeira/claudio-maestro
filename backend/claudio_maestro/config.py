@@ -125,9 +125,9 @@ class Settings:
     usage_check: bool = True
     usage_check_delay_seconds: float = 5
     usage_check_interval_seconds: float = 180
-    # Start the agents at their scheduled times (`MAESTRO_SPECIALISTS_SCHEDULER=0` turns it
+    # Start the agents at the times of their routines (`MAESTRO_ROUTINES_SCHEDULER=0` turns it
     # off; "Rodar agora" still works). Off in an isolated instance on a copy of the database.
-    specialists_scheduler: bool = True
+    routines_scheduler: bool = True
     # Work admission follows the existing safe-copy switch unless explicitly
     # overridden with MAESTRO_WORK_DISPATCHER. Manual messages remain explicit.
     work_dispatcher: bool | None = None
@@ -146,7 +146,7 @@ class Settings:
 
     @property
     def work_dispatcher_enabled(self) -> bool:
-        return self.specialists_scheduler if self.work_dispatcher is None else self.work_dispatcher
+        return self.routines_scheduler if self.work_dispatcher is None else self.work_dispatcher
 
 
 def default_data_dir(home: Path) -> Path:
@@ -241,7 +241,8 @@ def load_settings() -> Settings:
     `MAESTRO_UPDATE_CHECK=0` turns off the daily check for a newer release.
     `MAESTRO_USAGE_CHECK=0` turns off the read of the subscription usage.
     `MAESTRO_CLAUDE_CHECK=0` turns off the daily read of the newest `claude` version.
-    `MAESTRO_SPECIALISTS_SCHEDULER=0` keeps the agents from starting at their scheduled times.
+    `MAESTRO_ROUTINES_SCHEDULER=0` keeps the agents from starting at the times of their routines
+    (`MAESTRO_SPECIALISTS_SCHEDULER` is read as its old name; the new one wins when both exist).
     `MAESTRO_HOOKS_PORT` turns on the GitHub webhook listener on that port.
     """
     home_env = os.environ.get("MAESTRO_HOME")
@@ -258,11 +259,20 @@ def load_settings() -> Settings:
         update_check=os.environ.get("MAESTRO_UPDATE_CHECK", "1") != "0",
         usage_check=os.environ.get("MAESTRO_USAGE_CHECK", "1") != "0",
         claude_check=os.environ.get("MAESTRO_CLAUDE_CHECK", "1") != "0",
-        specialists_scheduler=os.environ.get("MAESTRO_SPECIALISTS_SCHEDULER", "1") != "0",
+        routines_scheduler=routines_scheduler_enabled(),
         work_dispatcher=(os.environ['MAESTRO_WORK_DISPATCHER'] != '0' if 'MAESTRO_WORK_DISPATCHER' in os.environ else None),
         remote_reconnect=os.environ.get('MAESTRO_REMOTE_RECONNECT', '1') != '0',
         hooks_port=hooks_port(),
     )
+
+
+def routines_scheduler_enabled() -> bool:
+    """`MAESTRO_ROUTINES_SCHEDULER`, or its old name `MAESTRO_SPECIALISTS_SCHEDULER` (kept as an
+    alias for one release); on unless set to `0`. The new name wins when both are set."""
+    for name in ("MAESTRO_ROUTINES_SCHEDULER", "MAESTRO_SPECIALISTS_SCHEDULER"):
+        if name in os.environ:
+            return os.environ[name] != "0"
+    return True
 
 
 def claude_config_dir() -> Path:

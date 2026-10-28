@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from claudio_maestro import db, projects
@@ -42,7 +42,19 @@ from claudio_maestro.specialists.service import (
 )
 from claudio_maestro.work.store import WorkConflictError
 
-router = APIRouter(prefix="/api")
+OLD_API_GONE = (
+    "A API antiga de agentes foi desligada: os agentes agora são a organização de "
+    "agentes (/api/agents). A tela ainda não foi atualizada."
+)
+
+
+def _old_api_gone() -> None:
+    """The old service is no longer built (the organization took its place), so every route
+    of this module answers 503 until the module itself is removed."""
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=OLD_API_GONE)
+
+
+router = APIRouter(prefix="/api", dependencies=[Depends(_old_api_gone)])
 
 MAX_NAME = 100
 MAX_PATTERNS = 100

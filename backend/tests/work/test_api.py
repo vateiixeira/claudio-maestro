@@ -1,9 +1,6 @@
 """Work HTTP routes run only against isolated data and a scripted agent."""
 
-import asyncio
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
 import pytest
@@ -13,7 +10,6 @@ from test_sessions_api import make_project
 from claudio_maestro import db
 from claudio_maestro.agent.fake import FakeAgentFactory, PauseStep, text_turn
 from claudio_maestro.app import create_app
-from claudio_maestro.specialists.service import UNCERTAIN_SEND
 
 
 @pytest.fixture
@@ -43,12 +39,9 @@ def wait_for(read, timeout=3):
     raise AssertionError('condição não atendida')
 
 
-def agent(api, project, **changes):
-    response = api.post('/api/specialists', json={'name': 'Legado', 'slug': 'legacy', 'project_id': project['id']})
+def agent(api, project):
+    response = api.post('/api/agents', json={'name': 'Agente', 'slug': 'agente', 'project_id': project['id']})
     assert response.status_code == 201, response.text
-    if changes:
-        response = api.patch(f"/api/specialists/{response.json()['id']}", json=changes)
-        assert response.status_code == 200, response.text
     return response.json()
 
 
@@ -122,33 +115,6 @@ def test_http_start_result_and_finish_guard_use_real_service(api, home):
     assert not api.portal.call(lambda: api.app.state.terminals._send_message(sid, 'Saída do terminal não pode reabrir histórico'))
 
 
-@pytest.mark.parametrize('blocker', ['queued', 'uncertain', 'comment'])
-def test_activation_refuses_legacy_queue_uncertainty_and_comments(api, home, blocker):
-    project = make_project(api, home)
-    old = agent(api, project)
-    with closing(db.connect(api.app.state.settings.db_path)) as conn:
-        if blocker == 'comment':
-            conn.execute("INSERT INTO specialist_prs(url,specialist_id,session_id,created_at) VALUES ('https://github.com/o/r/pull/1',?,NULL,0)", (old['id'],))
-            conn.execute("INSERT INTO specialist_pr_comments(comment_id,pr_url,specialist_id,author,body,html_url,created_at,received_at,status) VALUES ('issue:1','https://github.com/o/r/pull/1',?,'owner','hello','https://github.com/o/r/pull/1#x',0,0,'uncertain')", (old['id'],))
-        else:
-            conn.execute("INSERT INTO specialist_runs(specialist_id,trigger,started_at,outcome,reason) VALUES (?,'manual',0,?,?)", (old['id'], 'queued' if blocker == 'queued' else 'failed', UNCERTAIN_SEND if blocker == 'uncertain' else None))
-    response = api.post(f"/api/projects/{project['id']}/work-mode", json={'action': 'enable'})
-    assert response.status_code == 409, response.text
-    assert not api.get(f"/api/projects/{project['id']}/work-mode").json()['enabled']
-
-
-def test_extra_project_mode_blocks_legacy_and_reconfiguration(api, home):
-    project = make_project(api, home)
-    extra = make_project(api, home, 'extra')
-    old = agent(api, project, extra_project_ids=[extra['id']])
-    assert api.post(f"/api/projects/{extra['id']}/work-mode", json={'action': 'enable'}).status_code == 200
-    assert api.post(f"/api/specialists/{old['id']}/run").status_code == 409
-    assert api.patch(f"/api/specialists/{old['id']}", json={'extra_project_ids': []}).status_code == 409
-    assert api.delete(f"/api/specialists/{old['id']}").status_code == 409
-    with closing(db.connect(api.app.state.settings.db_path)) as conn:
-        assert conn.execute('SELECT COUNT(*) FROM specialist_runs').fetchone()[0] == 0
-
-
 def test_invalid_work_payload_and_security_do_not_mutate(api, home):
     project = make_project(api, home)
     assert api.post('/api/work-items', json={'project_id': project['id'], 'title': 'x', 'objective': '', 'cwd': '/tmp'}).status_code == 422
@@ -157,26 +123,6 @@ def test_invalid_work_payload_and_security_do_not_mutate(api, home):
     assert api.post(f"/api/projects/{project['id']}/cto", headers={'origin': 'https://evil.example'}).status_code == 403
     assert api.get('/api/work-items', headers={'host': 'evil.example'}).status_code == 400
     assert not api.get(f"/api/projects/{project['id']}/work-mode").json()['enabled']
-
-
-def test_mode_blocks_legacy_direct_message_and_preserves_payload(api, home):
-    project = make_project(api, home)
-    old = agent(api, project)
-    sid = api.post(f"/api/specialists/{old['id']}/main").json()['session_id']
-    assert api.post(f"/api/projects/{project['id']}/work-mode", json={'action': 'enable'}).status_code == 200
-    response = api.post(f'/api/sessions/{sid}/messages', json={'text': 'não deve entrar na fila antiga'})
-    assert response.status_code == 409, response.text
-    with closing(db.connect(api.app.state.settings.db_path)) as conn:
-        assert conn.execute('SELECT COUNT(*) FROM specialist_runs').fetchone()[0] == 0
-    assert api.factory.clients == []
-
-
-def test_live_legacy_turn_prevents_activation_even_without_run(api, home):
-    project = make_project(api, home)
-    old = agent(api, project)
-    sid = api.post(f"/api/specialists/{old['id']}/main").json()['session_id']
-    api.portal.call(lambda: api.app.state.sessions.send(sid, 'turno legado já em voo'))
-    assert api.post(f"/api/projects/{project['id']}/work-mode", json={'action': 'enable'}).status_code == 409
 
 
 def test_private_patch_rejects_empty_or_null_and_active_state_override(api, home):
@@ -228,46 +174,6 @@ def test_delete_fence_blocks_admission_during_await_and_can_be_cancelled(api, ho
     assert not api.get(f"/api/projects/{project['id']}/work-mode").json().get('deleting', False)
 
 
-def test_uncertain_legacy_origin_cannot_be_moved_or_hidden(api, home):
-    project = make_project(api, home)
-    other = make_project(api, home, 'other')
-    old = agent(api, project)
-    sid = api.post(f"/api/specialists/{old['id']}/main").json()['session_id']
-    with closing(db.connect(api.app.state.settings.db_path)) as conn:
-        conn.execute("INSERT INTO specialist_runs(specialist_id,session_id,trigger,started_at,outcome,reason) VALUES (?,?,'manual',0,'failed',?)", (old['id'], sid, UNCERTAIN_SEND))
-    assert api.patch(f"/api/specialists/{old['id']}", json={'project_id': other['id']}).status_code == 409
-    assert api.delete(f"/api/specialists/{old['id']}").status_code == 409
-    # Databases made by older versions may already have moved the configuration.
-    with closing(db.connect(api.app.state.settings.db_path)) as conn:
-        conn.execute('UPDATE specialists SET project_id=? WHERE id=?', (other['id'], old['id']))
-    assert api.post(f"/api/projects/{project['id']}/work-mode", json={'action': 'enable'}).status_code == 409
-
-
-def test_running_legacy_without_live_client_cannot_erase_origin(api, home):
-    project = make_project(api, home)
-    other = make_project(api, home, 'other')
-    old = agent(api, project)
-    sid = api.post(f"/api/specialists/{old['id']}/main").json()['session_id']
-    with closing(db.connect(api.app.state.settings.db_path)) as conn:
-        conn.execute("INSERT INTO specialist_runs(specialist_id,session_id,trigger,started_at,outcome) VALUES (?,?,'manual',0,'running')", (old['id'], sid))
-    assert api.patch(f"/api/specialists/{old['id']}", json={'project_id': other['id']}).status_code == 409
-    assert api.delete(f"/api/specialists/{old['id']}").status_code == 409
-
-
-def test_historical_legacy_session_cannot_admit_after_config_was_moved(api, home):
-    project = make_project(api, home)
-    other = make_project(api, home, 'other')
-    old = agent(api, project)
-    sid = api.post(f"/api/specialists/{old['id']}/main").json()['session_id']
-    api.patch(f"/api/specialists/{old['id']}", json={'project_id': other['id']})
-    assert api.post(f"/api/projects/{project['id']}/work-mode", json={'action': 'enable'}).status_code == 200
-    assert api.post(f'/api/sessions/{sid}/messages', json={'text': 'origem antiga'}).status_code == 409
-    from claudio_maestro.specialists.service import LegacyWorkModeError
-    with pytest.raises(LegacyWorkModeError):
-        api.portal.call(lambda: api.app.state.specialists._send_comment_message(sid, 'comentário na conversa histórica'))
-    assert api.factory.clients == []
-
-
 def test_terminal_uses_managed_admission_and_fence_survives_recovery(api, home, monkeypatch):
     project = make_project(api, home)
     sid = api.post(f"/api/projects/{project['id']}/cto").json()['session_id']
@@ -292,123 +198,6 @@ def test_terminal_uses_managed_admission_and_fence_survives_recovery(api, home, 
     assert response.status_code == 204, response.text
 
 
-def test_delete_additional_project_refuses_live_legacy_owner(api, home):
-    first, extra = make_project(api, home, 'first'), make_project(api, home, 'extra')
-    old = agent(api, first, extra_project_ids=[extra['id']])
-    sid = api.post(f"/api/specialists/{old['id']}/main").json()['session_id']
-    api.portal.call(lambda: api.app.state.sessions.send(sid, 'trabalho nos dois projetos'))
-    assert api.delete(f"/api/projects/{extra['id']}").status_code == 409
-    assert api.get(f'/api/sessions/{sid}').json()['state'] == 'running'
-    with closing(db.connect(api.app.state.settings.db_path)) as conn:
-        assert conn.execute('SELECT extra_project_ids FROM specialists WHERE id=?', (old['id'],)).fetchone()[0] == f"[{extra['id']}]"
-
-
-@pytest.mark.parametrize('mutation', ['delete', 'patch'])
-def test_quiescent_legacy_scope_change_rebuilds_cached_client(api, home, mutation):
-    first, extra = make_project(api, home, 'first'), make_project(api, home, 'extra')
-    old = agent(api, first, extra_project_ids=[extra['id']])
-    sid = api.post(f"/api/specialists/{old['id']}/main").json()['session_id']
-    api.portal.call(lambda: api.app.state.sessions.send(sid, 'terminar turno'))
-    api.portal.call(api.pause.release.set)
-    wait_for(lambda: api.get(f'/api/sessions/{sid}').json()['state'] == 'idle')
-    previous = api.factory.clients[-1]
-    assert extra['path'] in [str(path) for path in previous.options.add_dirs]
-    if mutation == 'delete':
-        assert api.delete(f"/api/projects/{extra['id']}").status_code == 204
-        replacement = api.post('/api/projects', json={'name': 'extra again', 'path': extra['path'], 'color': '#ff8800'}).json()
-        assert api.post(f"/api/projects/{replacement['id']}/work-mode", json={'action': 'enable'}).status_code == 200
-    else:
-        assert api.patch(f"/api/specialists/{old['id']}", json={'extra_project_ids': []}).status_code == 200
-        assert api.post(f"/api/projects/{extra['id']}/work-mode", json={'action': 'enable'}).status_code == 200
-    assert previous.closed
-    assert api.post(f'/api/sessions/{sid}/messages', json={'text': 'novo turno'}).status_code == 202
-    wait_for(lambda: len(api.factory.clients) > 1)
-    assert api.factory.clients[-1] is not previous
-    assert extra['path'] not in [str(path) for path in api.factory.clients[-1].options.add_dirs]
-
-
-@pytest.mark.parametrize('control', [
-    {'remote_control': True}, {'model': 'sonnet'}, {'effort': 'high'},
-    {'permission_mode': 'default'}, None,
-])
-def test_routing_mutation_blocks_sdk_controls_and_auto_reconnect(api, home, monkeypatch, control):
-    first, extra = make_project(api, home, 'first'), make_project(api, home, 'extra')
-    old = agent(api, first, extra_project_ids=[extra['id']])
-    sid = api.post(f"/api/specialists/{old['id']}/main").json()['session_id']
-    api.portal.call(lambda: api.app.state.sessions.send(sid, 'terminar'))
-    api.portal.call(api.pause.release.set)
-    wait_for(lambda: api.get(f'/api/sessions/{sid}').json()['state'] == 'idle')
-    session = api.app.state.sessions.get(sid)
-    api.portal.call(lambda: session.save(remote_control=True))
-    original = session.close
-    entered, release = threading.Event(), threading.Event()
-
-    async def pause_after_close(*args, **kwargs):
-        await original(*args, **kwargs)
-        entered.set()
-        while not release.is_set():
-            await asyncio.sleep(.005)
-
-    monkeypatch.setattr(session, 'close', pause_after_close)
-    with ThreadPoolExecutor() as executor:
-        mutation = executor.submit(api.patch, f"/api/specialists/{old['id']}", json={'extra_project_ids': []})
-        try:
-            assert entered.wait(2)
-            count = len(api.factory.clients)
-            if control is not None:
-                response = api.patch(f'/api/sessions/{sid}', json=control)
-                assert response.status_code == 409, response.text
-            else:
-                api.portal.call(api.app.state.sessions.reconnect_remote_sessions)
-            assert len(api.factory.clients) == count
-        finally:
-            release.set()
-        assert mutation.result(timeout=3).status_code == 200
-
-
-def test_prechecked_control_cannot_recreate_sdk_after_extra_delete_fence(api, home, monkeypatch):
-    first, extra = make_project(api, home, 'first'), make_project(api, home, 'extra')
-    old = agent(api, first, extra_project_ids=[extra['id']])
-    sid = api.post(f"/api/specialists/{old['id']}/main").json()['session_id']
-    api.pause.release.set()
-    api.portal.call(lambda: api.app.state.sessions.send(sid, 'terminar'))
-    wait_for(lambda: api.get(f'/api/sessions/{sid}').json()['state'] == 'idle')
-    manager, session = api.app.state.sessions, api.app.state.sessions.get(sid)
-    original_update, original_close = manager.update, session.close
-    prechecked, resume_control = threading.Event(), threading.Event()
-    closed, resume_delete = threading.Event(), threading.Event()
-
-    async def delayed_update(target, **kwargs):
-        if target == sid and kwargs.get('remote_control') is True:
-            prechecked.set()
-            while not resume_control.is_set():
-                await asyncio.sleep(.005)
-        return await original_update(target, **kwargs)
-
-    async def delayed_close(*args, **kwargs):
-        await original_close(*args, **kwargs)
-        closed.set()
-        while not resume_delete.is_set():
-            await asyncio.sleep(.005)
-
-    monkeypatch.setattr(manager, 'update', delayed_update)
-    monkeypatch.setattr(session, 'close', delayed_close)
-    with ThreadPoolExecutor() as executor:
-        control = executor.submit(api.patch, f'/api/sessions/{sid}', json={'remote_control': True})
-        try:
-            assert prechecked.wait(2)
-            deletion = executor.submit(api.delete, f"/api/projects/{extra['id']}")
-            assert closed.wait(2)
-            count = len(api.factory.clients)
-            resume_control.set()
-            control.result(timeout=3)
-            assert len(api.factory.clients) == count
-        finally:
-            resume_control.set()
-            resume_delete.set()
-        assert deletion.result(timeout=3).status_code == 204
-
-
 @pytest.mark.parametrize('managed', [False, True])
 def test_stale_normal_client_cannot_start_after_project_cascade(api, home, managed):
     project = make_project(api, home)
@@ -426,7 +215,7 @@ def test_stale_normal_client_cannot_start_after_project_cascade(api, home, manag
     assert len(api.factory.clients) == count
 
 
-@pytest.mark.parametrize('kind', ['coordinator', 'uncertain_worker', 'legacy'])
+@pytest.mark.parametrize('kind', ['coordinator', 'uncertain_worker', 'agent'])
 def test_held_process_reattaches_under_fence_without_starting_a_new_turn(api, home, kind):
     import os
     from types import SimpleNamespace
@@ -434,9 +223,9 @@ def test_held_process_reattaches_under_fence_without_starting_a_new_turn(api, ho
     from claudio_maestro.work import store as work_store
 
     project = make_project(api, home)
-    if kind == 'legacy':
+    if kind == 'agent':
         owner = agent(api, project)
-        sid = api.post(f"/api/specialists/{owner['id']}/main").json()['session_id']
+        sid = api.post(f"/api/agents/{owner['id']}/main").json()['session_id']
     elif kind == 'coordinator':
         sid = api.post(f"/api/projects/{project['id']}/cto").json()['session_id']
     else:
@@ -455,7 +244,7 @@ def test_held_process_reattaches_under_fence_without_starting_a_new_turn(api, ho
     client = api.factory.clients[-1]
     assert client.options.attach is not None
     assert client.sent == []
-    if kind != 'legacy':
+    if kind != 'agent':
         assert 'maestro_work' in client.options.mcp_servers
 
 

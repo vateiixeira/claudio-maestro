@@ -16,6 +16,9 @@ router = APIRouter(prefix="/api")
 # How often a route that may wait long looks at whether the client is still there.
 DISCONNECT_POLL_SECONDS = 0.25
 
+# The longest message typed in the conversation of an agent.
+AGENT_MESSAGE_MAX_CHARS = 100_000
+
 # Every route is async: sessions live on the event loop and must not be read
 # or changed from the threadpool.
 
@@ -324,10 +327,6 @@ async def update_session(
         record = manager.find_record(session_id)
         with closing(db.connect(request.app.state.settings.db_path)) as conn:
             request.app.state.work.assert_project_admission(conn, record.project_id)
-            if record.agent_id is not None and any(value is not None for value in (body.remote_control, body.model, body.effort, body.permission_mode)):
-                from claudio_maestro.specialists import store as specialist_store
-                owner = specialist_store.get_specialist(conn, record.agent_id)
-                request.app.state.specialists.assert_legacy_admission(conn, owner, session_id=session_id)
         if body.finished is True:
             request.app.state.work.assert_deletion_allowed(session_id=session_id)
         updated = await manager.update(
@@ -416,6 +415,45 @@ async def _wait_for_disconnect(request: Request) -> None:
         await asyncio.sleep(DISCONNECT_POLL_SECONDS)
 
 
+async def _send_to_agent(
+    request: Request, session: sessions.ActiveSession, body: MessageIn
+) -> dict[str, Any]:
+    """A message typed in the conversation of an agent is a wakeup of the queue
+    (`source="message"`): the agent's drainer delivers it, one thing at a time. The answer
+    waits for the drainer to serve what can be served now, so the session already shows the
+    message when the screen reloads it."""
+    from claudio_maestro.api.org import AGENT_DISABLED
+    from claudio_maestro.org import store as org_store
+    from claudio_maestro.org.service import AgentDisabledError, QueueFullError
+
+    if len(body.text) > AGENT_MESSAGE_MAX_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A mensagem pode ter até 100.000 caracteres.",
+        )
+    org = request.app.state.org
+    agent_id = session.record.agent_id
+    try:
+        wakeup = await org.wake(
+            agent_id,
+            source="message",
+            text=body.text,
+            images=[image.model_dump() for image in body.images],
+            payload={"session_id": session.record.session_id},
+        )
+    except AgentDisabledError as exc:
+        # The message stays in the queue and goes out when the agent is turned on.
+        raise HTTPException(status_code=409, detail=AGENT_DISABLED) from exc
+    except QueueFullError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except org_store.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except org_store.OrgError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    await org.drain(agent_id)
+    return {"state": session.state, "external_activity": False, "queued": True, "wakeup_id": wakeup.id}
+
+
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
 async def send_message(session_id: str, body: MessageIn, manager: ManagerDep, request: Request) -> dict[str, Any]:
     session = _get_session(manager, session_id)
@@ -426,26 +464,7 @@ async def send_message(session_id: str, body: MessageIn, manager: ManagerDep, re
         request.app.state.work.assert_project_admission(conn, session.record.project_id)
     try:
         if session.record.agent_id is not None:
-            from claudio_maestro.specialists.service import (
-                LegacyWorkModeError,
-                QueueFullError,
-            )
-            from claudio_maestro.specialists.store import (
-                SpecialistError,
-                SpecialistNotFoundError,
-            )
-
-            try:
-                run = await request.app.state.specialists.send_message(
-                    session_id, body.text, [image.model_dump() for image in body.images]
-                )
-            except SpecialistNotFoundError as exc:
-                raise HTTPException(status_code=404, detail=str(exc)) from exc
-            except (QueueFullError, LegacyWorkModeError) as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
-            except SpecialistError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
-            return {"state": session.state, "external_activity": False, "queued": True, "run_id": run.id}
+            return await _send_to_agent(request, session, body)
         if request.app.state.work.session_identity(session_id) is not None:
             return await request.app.state.work.send_message(
                 session_id, body.text, [image.model_dump() for image in body.images]
