@@ -4,10 +4,10 @@ O que o Cláudio Maestro já faz está no [README](README.md). Aqui fica o que p
 
 ## Próximos passos possíveis
 
-- **Criação guiada de agentes.** Descrever a rotina, revisar a skill e os acessos, acompanhar uma primeira execução e só então ligar os horários.
-- **Refinar as fontes e a priorização.** Ampliar a configuração guiada de coleta e facilitar a escolha de issues do backlog, usando as tarefas e evidências já disponíveis.
-- **Versões e diagnóstico dos agentes.** Comparar e restaurar skills e aprendizados, identificar a configuração usada por cada execução e exportar diagnóstico técnico com prévia.
-- **Expandir a delegação com evidências.** Medir o piloto de CTO e tarefas em issues comparáveis, ajustar recuperação e coordenação de recursos e acrescentar provedores de CI com contratos verificáveis além do GitHub Actions. Mais paralelismo depende dessas provas.
+- **Criação guiada de agentes.** Descrever o que o agente faz, revisar o `AGENT.md` gerado, acompanhar a primeira execução e só então ligar as rotinas.
+- **Versões e diagnóstico dos agentes.** Histórico do `AGENT.md` e da memória, com a possibilidade de restaurar uma versão.
+- **Modelos de agente prontos.** Pontos de partida para triagem de issues, revisão de PR e conferência de deploy.
+- **Mais de uma execução por agente.** Hoje é uma de cada vez. O paralelismo depende de provas de que as execuções não se atropelam.
 - **Instalar sem clonar.** Pacote no PyPI com o frontend já compilado, para rodar com `uvx claudio-maestro`, sem Node.
 - **Windows.** Testar e ajustar caminhos, git, processos e o seletor de pastas.
 - **Outros idiomas na interface.** Hoje ela é só em português.
