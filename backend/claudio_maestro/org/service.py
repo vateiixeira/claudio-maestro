@@ -119,8 +119,18 @@ ANNOUNCED_OUTCOMES = {
 # A concluded session is finished when its turn ends. The wait has no limit (a session is
 # never finished with its turn open); past this long it is only logged.
 FINISH_WARN_SECONDS = 300.0
+# How long a new run on a session waits for the finish of the run before it.
+FINISH_SETTLE_SECONDS = 5.0
 POLL_SECONDS = 0.25
 FINISH_PREFIX = "org_finish:"
+
+# The last line of a batch of the owner's PR comments: the session that opened the PR concludes
+# when done; the main conversation just answers. A batch meant for the first that has to go to
+# the second gets its line swapped.
+COMMENT_ASK_ORIGIN = (
+    "Resolva o que foi pedido. Não comente no GitHub; ao terminar, chame concluir com o resumo."
+)
+COMMENT_ASK_MAIN = "Resolva o que foi pedido e responda aqui."
 
 Publish = Callable[[str, dict[str, Any]], None]
 UsageGate = Callable[[], tuple[int, str] | None]
@@ -270,6 +280,7 @@ class OrgService:
         self._poller: asyncio.Task[None] | None = None
         self._watchers: dict[int, asyncio.Task[None]] = {}
         self._finish_tasks: set[asyncio.Task[None]] = set()
+        self._finish_by_session: dict[str, asyncio.Task[None]] = {}
         # session id -> text of the last "needs you" alert, so the same check does not warn
         # twice. Memory only: after a restart the same alert may come once more.
         self._last_alert: dict[str, str] = {}
@@ -421,6 +432,18 @@ class OrgService:
             return conn.execute(
                 "SELECT 1 FROM agents WHERE main_session_id = ?", (session_id,)
             ).fetchone() is not None
+
+    def comment_session(self, agent_id: int, session_id: str | None) -> str | None:
+        """The session the owner's comments on a PR go to: `session_id` (the one that opened
+        it) while it exists and is the agent's own; None when it is gone, unknown or another
+        agent's, which sends them to the main conversation."""
+        if session_id is None:
+            return None
+        try:
+            record = self._sessions.find_record(session_id)
+        except SessionNotFoundError:
+            return None
+        return session_id if record.agent_id == agent_id else None
 
     def is_conversation(self, session_id: str) -> bool:
         """The main conversation, or a chat opened with `open_conversation`."""
@@ -644,6 +667,8 @@ class OrgService:
             body, limit = text or "", None
         elif text is not None and text.strip():
             body = text
+            if source == "comment":
+                limit = None  # the owner's own comments, as many as the batch holds
         else:
             body = wake_text(
                 source=source,
@@ -825,6 +850,12 @@ class OrgService:
             with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
                 if not store.drop_wakeup(conn, wakeup.id, now):
                     continue
+                if wakeup.source == "comment":
+                    # The owner's comments are not lost with the skipped run: they wait in
+                    # the queue of the PR comments for the usage to come down.
+                    store.mark_comments(
+                        conn, list((wakeup.payload or {}).get("comment_ids") or []), "queued", None
+                    )
                 run = store.insert_run(
                     conn, agent_id=agent.id, source=wakeup.source, started_at=now, ended_at=now,
                     outcome="skipped", reason=reason, routine_id=wakeup.routine_id,
@@ -855,13 +886,24 @@ class OrgService:
                 if active is None or (target is not None and active.session_id == target):
                     return wakeup
                 continue
-            if active is not None:
+            if active is not None and not self._answers_waiting_run(active, wakeup):
                 continue
             if turn_open is None:
                 turn_open = self._turn_open(agent.id)
             if not turn_open:
                 return wakeup
         return None
+
+    @staticmethod
+    def _answers_waiting_run(active: store.Run, wakeup: store.Wakeup) -> bool:
+        """The comments on a PR are for the very run that is waiting for the person (it opened
+        the PR): they are the answer it waits for, not a new run."""
+        return (
+            wakeup.source == "comment"
+            and active.outcome == "waiting"
+            and active.session_id is not None
+            and active.session_id == (wakeup.payload or {}).get("session_id")
+        )
 
     def _turn_open(self, agent_id: int) -> bool:
         """Some live session of the agent has a turn in progress (including the main
@@ -882,7 +924,9 @@ class OrgService:
                 return True
         return self._turn_open(agent_id)
 
-    def _claim_run(self, agent_id: int, wakeup: store.Wakeup) -> store.Run | None:
+    def _claim_run(
+        self, agent_id: int, wakeup: store.Wakeup, *, session_id: str | None = None
+    ) -> store.Run | None:
         """The one place a run is born from a wakeup. In a single `BEGIN IMMEDIATE` transaction
         it checks that the agent has no active run, writes the run as `starting` and marks the
         wakeup taken by it; None when the agent is held or the wakeup was already served. The
@@ -897,7 +941,7 @@ class OrgService:
                         raise _Refused
                     run = store.insert_run(
                         conn, agent_id=agent_id, source=wakeup.source, started_at=now,
-                        outcome="starting", routine_id=wakeup.routine_id,
+                        outcome="starting", routine_id=wakeup.routine_id, session_id=session_id,
                         scheduled_for=(wakeup.payload or {}).get("scheduled_for"),
                     )
                     if not store.take_wakeup(conn, wakeup.id, run.id, now):
@@ -907,10 +951,57 @@ class OrgService:
         return run
 
     async def _serve_comment(self, agent: Agent, wakeup: store.Wakeup) -> bool:
-        """A comment wakeup. Extension point of the comments (a later task): for now it opens
-        a new session and a `comment` run, like a manual one; the comments will send the text
-        to `payload["session_id"]` instead, resuming it if needed."""
-        return await self._serve_run(agent, wakeup)
+        """The owner's comments on a PR of the agent. They go to the session that opened it
+        (`payload["session_id"]`), which a new `comment` run follows; a closed process is
+        resumed by the send. When that session is gone, is not the agent's, or is the main
+        conversation, they go to the main conversation instead, which has no run (the agent
+        answers there; nothing would ever conclude a run on it). When the run that opened the
+        PR is still waiting for the person, the comments are the message that answers it."""
+        session_id = self.comment_session(agent.id, (wakeup.payload or {}).get("session_id"))
+        if session_id is None or self.is_main(session_id):
+            return await self._serve_comment_to_main(agent, wakeup, session_id)
+        with closing(db.connect(self._db_path)) as conn:
+            active = store.active_run(conn, agent.id)
+        if active is not None and active.session_id == session_id:
+            if active.outcome != "waiting":
+                return False  # it went back to work meanwhile: the comments wait their turn
+            return await self._serve_message(agent, wakeup, target=session_id)
+        return await self._serve_comment_run(agent, wakeup, session_id)
+
+    async def _serve_comment_to_main(
+        self, agent: Agent, wakeup: store.Wakeup, main_id: str | None
+    ) -> bool:
+        try:
+            target = main_id or await self.ensure_main(agent.id)
+        except (store.NotFoundError, ProjectUnavailableError) as error:
+            number = str((wakeup.payload or {}).get("pr_url") or "").rstrip("/").rsplit("/", 1)[-1]
+            label = f"Comentário no PR #{number}" if number.isdigit() else "Comentário no PR"
+            self._drop_message(agent, wakeup, f"{label} não entregue: {error}")
+            return True
+        return await self._serve_message(agent, wakeup, target=target)
+
+    async def _serve_comment_run(
+        self, agent: Agent, wakeup: store.Wakeup, session_id: str
+    ) -> bool:
+        """Claim the wakeup as a `comment` run on the session that opened the PR and send it
+        the comments. The same guard as any run: the agent must have no active run."""
+        await self._settle_finish(session_id)
+        try:
+            run = self._claim_run(agent.id, wakeup, session_id=session_id)
+        except sqlite3.IntegrityError:
+            # The session was deleted between the look and the claim (the transaction rolled
+            # back): there is no session of the PR any more.
+            return await self._serve_comment_to_main(agent, wakeup, None)
+        if run is None:
+            return False
+        self._publish_run(run)
+        try:
+            text, images = self._files.read_wake_text(agent.slug, wakeup.id)
+        except (OSError, ValueError):
+            self._fail_run(run, agent, WAKE_TEXT_LOST)
+            return True
+        self._clear_pending(session_id)  # the PR came back to life: it is not to be finished
+        return await self._deliver_run_text(run, agent, wakeup, session_id, text, images)
 
     async def _serve_run(self, agent: Agent, wakeup: store.Wakeup) -> bool:
         """Claim the wakeup, open a session of its own and send the text. Every way it can go
@@ -953,8 +1044,23 @@ class OrgService:
             )
         except Exception:
             logger.exception("Falha ao dar título à sessão do agente %s", agent.slug)
+        return await self._deliver_run_text(
+            run, agent, wakeup, record.session_id, text, images
+        )
+
+    async def _deliver_run_text(
+        self,
+        run: store.Run,
+        agent: Agent,
+        wakeup: store.Wakeup,
+        session_id: str,
+        text: str,
+        images: list[dict[str, Any]],
+    ) -> bool:
+        """Send the request of a claimed run to its session and settle how it went: running,
+        or failed (freeing the agent) when the text cannot be sent."""
         try:
-            result = await self._sessions.send(record.session_id, text, images or None)
+            result = await self._sessions.send(session_id, text, images or None)
         except asyncio.CancelledError:
             # A lost acknowledgement cannot prove that the provider did not start work: the run
             # stays `starting` and `recover` settles it.
@@ -965,6 +1071,7 @@ class OrgService:
             return True
         if isinstance(result, dict) and result.get("send_started") is False:
             self._fail_run(run, agent, NOT_CONNECTED, alert=True)
+            self._requeue_comments(wakeup)  # it provably did not leave: they may go again
             return True
         if isinstance(result, dict) and result.get("state") == "error":
             self._fail_run(run, agent, UNCERTAIN_SEND, alert=True)
@@ -975,8 +1082,25 @@ class OrgService:
         else:
             # Cancelled (or failed by the time cap) while the text was on its way: the send
             # went through and a turn is running that nobody wants. Stop it.
-            await self._interrupt(record.session_id)
+            await self._interrupt(session_id)
         return True
+
+    def _requeue_comments(self, wakeup: store.Wakeup) -> None:
+        """A comment send that provably did not start: the batch goes back to the queue of the
+        PR comments (and its quiet window starts again, so a connection that stays down is
+        tried once a minute, not at every tick). Sends without confirmation never come here."""
+        if wakeup.source != "comment":
+            return
+        ids = list((wakeup.payload or {}).get("comment_ids") or [])
+        if not ids:
+            return
+        marks = ", ".join("?" for _ in ids)
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            store.mark_comments(conn, ids, "queued", None)
+            conn.execute(
+                f"UPDATE agent_pr_comments SET received_at = ? WHERE comment_id IN ({marks})",
+                (self._now(), *ids),
+            )
 
     def _attach_session(self, run_id: int, session_id: str) -> bool:
         """Point the run at its session, if it is still `starting` (it may have been cancelled
@@ -1010,10 +1134,13 @@ class OrgService:
         if row is not None:
             self._files.delete_wake_text(row["slug"], row["id"])
 
-    async def _serve_message(self, agent: Agent, wakeup: store.Wakeup) -> bool:
-        """Send a message to the agent's main conversation (or the session in its payload).
-        It is not a run. A message that can never be delivered is dropped with an alert."""
-        target = (wakeup.payload or {}).get("session_id")
+    async def _serve_message(
+        self, agent: Agent, wakeup: store.Wakeup, *, target: str | None = None
+    ) -> bool:
+        """Send a message to the agent's main conversation (or the session in its payload, or
+        `target`, which the comments pass already resolved). It is not a run. A message that
+        can never be delivered is dropped with an alert."""
+        target = target or (wakeup.payload or {}).get("session_id")
         try:
             if target is None:
                 target = await self.ensure_main(agent.id)
@@ -1027,15 +1154,20 @@ class OrgService:
         except (OSError, ValueError):
             self._drop_message(agent, wakeup, MESSAGE_LOST)
             return True
+        if wakeup.source == "comment" and self.is_main(target):
+            # Meant for the session that opened the PR, which is gone: nobody concludes here.
+            text = text.replace(COMMENT_ASK_ORIGIN, COMMENT_ASK_MAIN)
         if not self._claim_message(agent.id, wakeup, target):
             return False
         # A message has no run for `recover` to settle: once taken, its file goes whatever
         # happens next (sent, failed, or cancelled in the middle of the send).
         try:
-            try:
-                await self.open_conversation(agent.id, session_id=target)
-            except Exception:
-                logger.exception("Falha ao marcar a conversa do agente %s", agent.slug)
+            # The comments for a run that waits are no chat: the session stays the run's.
+            if wakeup.source != "comment" or self.is_main(target):
+                try:
+                    await self.open_conversation(agent.id, session_id=target)
+                except Exception:
+                    logger.exception("Falha ao marcar a conversa do agente %s", agent.slug)
             self._clear_pending(target)  # the person took the session back: never finish it
             try:
                 result = await self._sessions.send(target, text, images or None)
@@ -1047,9 +1179,10 @@ class OrgService:
                 return True
         finally:
             self._files.delete_wake_text(agent.slug, wakeup.id)
-        if isinstance(result, dict) and (
-            result.get("send_started") is False or result.get("state") == "error"
-        ):
+        if isinstance(result, dict) and result.get("send_started") is False:
+            self._add_notice(agent.id, None, "alert", MESSAGE_NOT_DELIVERED)
+            self._requeue_comments(wakeup)  # it provably did not leave: they may go again
+        elif isinstance(result, dict) and result.get("state") == "error":
             self._add_notice(agent.id, None, "alert", MESSAGE_NOT_DELIVERED)
         else:
             self._resume_waiting(target)
@@ -1665,7 +1798,13 @@ class OrgService:
             self._finish_when_turn_ends(session_id, session, session.activity_marker)
         )
         self._finish_tasks.add(task)
+        self._finish_by_session[session_id] = task
         task.add_done_callback(self._finish_tasks.discard)
+        task.add_done_callback(
+            lambda done, key=session_id: self._finish_by_session.pop(key, None)
+            if self._finish_by_session.get(key) is done
+            else None
+        )
 
     async def _finish_when_turn_ends(
         self, session_id: str, session: ActiveSession, marker: tuple[int, int]
@@ -1703,6 +1842,27 @@ class OrgService:
             raise
         except Exception:
             logger.exception("Falha ao finalizar a sessão de agente %s", session_id)
+
+    async def _settle_finish(self, session_id: str) -> None:
+        """Before a new run starts on a session whose last run just ended: let the finish that
+        run asked for end first. A finish still on its way would otherwise land on the new run
+        (a session finished "by the person" under it). A mark left without a task is finished
+        here, as `recover` would."""
+        task = self._finish_by_session.get(session_id)
+        if task is not None and not task.done():
+            _, unfinished = await asyncio.wait({task}, timeout=FINISH_SETTLE_SECONDS)
+            if unfinished:
+                logger.warning(
+                    "A sessão %s ainda não terminou de ser finalizada; seguindo com os comentários",
+                    session_id,
+                )
+        try:
+            record = self._sessions.find_record(session_id)
+        except SessionNotFoundError:
+            return
+        task = self._finish_by_session.get(session_id)
+        if task is None or task.done():
+            await self._finish_if_pending(session_id, record)
 
     async def _finish_if_pending(self, session_id: str, record: SessionRecord) -> None:
         """Finish now a session whose finish is still pending, when its turn is closed (no

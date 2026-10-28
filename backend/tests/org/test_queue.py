@@ -120,15 +120,32 @@ async def test_wake_payload_is_stored_as_json_with_the_scheduled_time(world):
     assert wakeup.payload == {"session_id": "abc", "n": 1, "scheduled_for": NOW}
 
 
-async def test_a_comment_wakeup_opens_a_new_session_and_a_comment_run_for_now(world):
+async def test_a_comment_wakeup_without_a_session_goes_to_the_main_conversation(world):
     agent = world.add_agent()
 
     await world.service.wake(agent, source="comment", text="Comentário no PR.", payload={"x": 1})
     await world.service.drain(agent)
 
+    main = world.agent(agent).main_session_id
+    assert main is not None
+    assert await sent_to(world, main) == ["Comentário no PR."]
+    assert world.runs(agent) == []  # the main conversation has no run
+    [row] = wakeup_rows(world, agent)
+    assert (row["state"], row["run_id"]) == ("taken", None)
+
+
+async def test_a_comment_wakeup_with_a_session_opens_a_comment_run_on_it(world):
+    agent = world.add_agent()
+    session = world.session_of(agent)
+
+    await world.service.wake(
+        agent, source="comment", text="Comentário no PR.", payload={"session_id": session.session_id}
+    )
+    await world.service.drain(agent)
+
     [run] = world.runs(agent)
-    assert run.source == "comment" and run.outcome == "running"
-    assert await sent_to(world, run.session_id) == ["Comentário no PR."]
+    assert (run.source, run.outcome, run.session_id) == ("comment", "running", session.session_id)
+    assert await sent_to(world, session.session_id) == ["Comentário no PR."]
 
 
 async def test_routine_wakeups_of_the_same_routine_are_grouped(world):
