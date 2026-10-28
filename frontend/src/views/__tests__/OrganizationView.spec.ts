@@ -87,12 +87,12 @@ describe('OrganizationView', () => {
     useOrgStore(pinia).agents = [makeAgent({ id: 1 }), makeAgent({ id: 2, slug: 'dev', name: 'Dev', reports_to: 1 })]
     const { wrapper, router } = await mountAt('/agentes/1?agente=2')
     expect(wrapper.find('[data-test="agent-panel"]').attributes('data-agent-id')).toBe('2')
-    expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
+    expect(wrapper.find('[role="tablist"][aria-label="Organização"]').exists()).toBe(false)
     await wrapper.get('[data-test="org-back"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.agente).toBeUndefined()
     expect(wrapper.find('[data-test="agent-panel"]').exists()).toBe(false)
-    expect(wrapper.find('[role="tablist"]').exists()).toBe(true)
+    expect(wrapper.find('[role="tablist"][aria-label="Organização"]').exists()).toBe(true)
   })
 
   it('agente da query que não é do projeto mostra aviso em vez do painel', async () => {
@@ -112,7 +112,7 @@ describe('OrganizationView', () => {
     await wrapper.get('[data-test="new-name"]').setValue('Dev')
     await wrapper.get('[data-test="confirm-ok"]').trigger('click')
     await flushPromises()
-    const body = JSON.parse(String(fetch.mock.calls[0]![1]!.body))
+    const body = JSON.parse(String(fetch.mock.calls.find(([, init]) => init?.method === 'POST')![1]!.body))
     expect(body).toMatchObject({ name: 'Dev', slug: 'dev', project_id: 1, reports_to: 1, kind: 'worker' })
     expect(router.currentRoute.value.query).toMatchObject({ agente: '9', aba: 'definicao' })
     expect(wrapper.find('[data-test="new-name"]').exists()).toBe(false)
