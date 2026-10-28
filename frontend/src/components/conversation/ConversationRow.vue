@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
-import AgentBadge from '../agents/AgentBadge.vue'
+import AgentBadge from '../org/AgentBadge.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import MarkIcon from '../MarkIcon.vue'
 import MarkPopover from '../marks/MarkPopover.vue'
@@ -101,7 +101,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
         class="min-w-0 truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
         :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal', session.digest_short && !compact ? 'max-w-[55%] shrink-0' : '']"
       >{{ session.title }}</RouterLink>
-      <AgentBadge v-if="session.agent_id != null && !compact" :specialist-id="session.agent_id" />
+      <AgentBadge v-if="session.agent_id != null && !compact" :agent-id="session.agent_id" />
       <PlanBadge v-if="!compact" :session="session" />
       <GroupTag v-if="!compact" :group-id="session.group_id" />
       <LabelBadges :ids="session.label_ids" :compact="compact" />

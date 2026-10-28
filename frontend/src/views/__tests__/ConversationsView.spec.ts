@@ -302,14 +302,3 @@ describe('Conversas: Descartar ao lado de Finalizar', () => {
     expect(wrapper.find('[data-test="row-discard"]').exists()).toBe(false)
   })
 })
-
-it('catálogo de tarefas separa CTO e trabalhadores do histórico de conversas manuais', async () => {
-  const { useWorkStore } = await import('../../stores/work')
-  useSessionsStore(pinia).setForProject(1, ['manual', 'cto', 'worker'].map(session_id => makeSession({ session_id, title: session_id, last_activity_at: now })))
-  useWorkStore(pinia).catalog = {
-    cto: { work_role: 'coordinator', project_id: 1, work_item_id: null, work_attempt_id: null },
-    worker: { work_role: 'investigator', project_id: 1, work_item_id: 1, work_attempt_id: 2 },
-  }
-  const { wrapper } = await mountList()
-  expect(wrapper.findAll('[data-test="row-link"]').map(r => r.text())).toEqual(['manual'])
-})

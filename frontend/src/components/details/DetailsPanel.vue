@@ -26,13 +26,12 @@ import {
   clampDetailsWidth, detailsMaxWidth, readDetailsWidth, writeDetailsWidth,
 } from '../../detailsWidthPref'
 import type { DetailsTab } from '../../detailsTabPref'
-import { coordinatorAvailable, coordinatorStateLabel, displayStateLabel } from '../../sessionState'
+import { displayStateLabel } from '../../sessionState'
 import { useChangesPanelStore } from '../../stores/changesPanel'
 import { useConversationStore } from '../../stores/conversation'
 import { useGitStore } from '../../stores/git'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import { useWorkStore } from '../../stores/work'
 import { useTerminalStore } from '../../stores/terminal'
 import type { ChangedFile, ChangesGroup } from '../../types/api'
 import IconBack from '../icons/IconBack.vue'
@@ -79,7 +78,6 @@ const conversations = useConversationStore()
 const projects = useProjectsStore()
 const git = useGitStore()
 const panel = useChangesPanelStore()
-const work = useWorkStore()
 
 const session = computed(() => sessions.find(props.sessionId))
 const conv = computed(() => conversations.get(props.sessionId))
@@ -88,11 +86,9 @@ const project = computed(() => (projectId.value != null ? projects.byId(projectI
 const repos = computed(() => (projectId.value != null ? git.reposFor(projectId.value) : []))
 const context = computed(() => session.value?.context ?? conv.value?.context ?? null)
 const turns = computed(() => (conv.value?.items ?? []).filter((i) => i.type === 'user' && !('parent_tool_use_id' in i && i.parent_tool_use_id)).length)
-const coordinatorIdle = computed(() => work.catalog[props.sessionId]?.work_role === 'coordinator' && !!session.value && coordinatorAvailable(session.value, !!conv.value?.prompts.length))
 const stateText = computed(() => {
   const s = session.value
   if (!s) return ''
-  if (coordinatorIdle.value) return coordinatorStateLabel(s)
   return waitingReason(s) ?? displayStateLabel(s)
 })
 
@@ -271,8 +267,8 @@ function resetWidth() {
           <div class="overflow-hidden rounded-lg border border-line bg-panel">
             <dl data-test="props-session" class="m-0 grid grid-cols-[7.2rem_1fr] gap-x-3 gap-y-2 px-3 py-2.5 text-[0.8125rem]">
               <dt class="text-fg-muted">Estado</dt>
-              <dd data-test="prop-state" class="m-0 flex items-center gap-1.5" :class="session?.display_state === 'waiting' ? (!coordinatorIdle && needsYou(session) ? 'font-medium text-secondary-soft' : 'text-fg-muted') : ''">
-                <DisplayStateIcon v-if="session" :display="session.display_state" :quiet="coordinatorIdle || !needsYou(session)" />{{ stateText }}
+              <dd data-test="prop-state" class="m-0 flex items-center gap-1.5" :class="session?.display_state === 'waiting' ? (needsYou(session) ? 'font-medium text-secondary-soft' : 'text-fg-muted') : ''">
+                <DisplayStateIcon v-if="session" :display="session.display_state" :quiet="!needsYou(session)" />{{ stateText }}
               </dd>
               <dt class="text-fg-muted">Turnos</dt>
               <dd data-test="prop-turns" class="m-0">{{ turns }}</dd>

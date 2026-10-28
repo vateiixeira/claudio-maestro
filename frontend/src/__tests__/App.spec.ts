@@ -12,7 +12,8 @@ import AppSidebar from '../components/sidebar/AppSidebar.vue'
 import { createAppRouter } from '../router'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useSessionsStore } from '../stores/sessions'
-import { jsonResponse, makeSession, routeFetch } from '../test/factories'
+import { useTasksStore } from '../stores/tasks'
+import { jsonResponse, makeSession, makeTask, makeTaskDetail, routeFetch } from '../test/factories'
 import { loadEverything } from '../stores/realtime'
 
 enableAutoUnmount(afterEach)
@@ -107,6 +108,21 @@ describe('estrutura do app', () => {
 
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }))
     expect(useNewConversationStore(pinia).presetGroupId).toBeNull()
+  })
+
+  it('o atalho C numa tarefa abre o modal no projeto dela', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/layout': () => jsonResponse({}),
+      'GET /api/tasks/7': () => jsonResponse(makeTaskDetail({ task: makeTask({ id: 7, project_id: 3 }) })),
+    }))
+    useTasksStore(pinia).details = { 7: makeTaskDetail({ task: makeTask({ id: 7, project_id: 3 }) }) }
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/tarefas/7')
+    mount(App, { global: { plugins: [pinia, router] }, attachTo: document.body })
+    await flushPromises()
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }))
+    expect(useNewConversationStore(pinia).presetProjectId).toBe(3)
   })
 
   it('o atalho C fora de uma conversa não indica agrupador (undefined)', async () => {

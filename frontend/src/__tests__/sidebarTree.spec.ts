@@ -95,7 +95,7 @@ describe('sessões descartadas na árvore do menu', () => {
 })
 
 describe('sessões de agente fora da árvore', () => {
-  it('sidebarTree excludes specialist sessions', () => {
+  it('a árvore deixa de fora as sessões de agente', () => {
     const sessions = [
       makeSession({ session_id: 'a1', group_id: 1, display_state: 'running' }),
       makeSession({ session_id: 'ag', group_id: 1, display_state: 'running', agent_id: 3 }),

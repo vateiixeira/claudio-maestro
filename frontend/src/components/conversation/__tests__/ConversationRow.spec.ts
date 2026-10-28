@@ -8,8 +8,8 @@ import { useGitStore } from '../../../stores/git'
 import { useGroupsStore } from '../../../stores/groups'
 import { useLabelsStore } from '../../../stores/labels'
 import { useProjectsStore } from '../../../stores/projects'
-import { useSpecialistsStore } from '../../../stores/specialists'
-import { jsonResponse, makeGitRepo, makeGroup, makeLabel, makeProject, makeSession, makeSpecialist, routeFetch } from '../../../test/factories'
+import { useOrgStore } from '../../../stores/org'
+import { jsonResponse, makeGitRepo, makeGroup, makeLabel, makeProject, makeSession, makeAgent, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -429,7 +429,7 @@ describe('etiquetas na linha de conversa', () => {
 
 describe('selo de agente na linha', () => {
   it('sessão de agente mostra "Agente · nome"', () => {
-    useSpecialistsStore(pinia).list = [makeSpecialist({ id: 4, name: 'Triagem' })]
+    useOrgStore(pinia).agents = [makeAgent({ id: 4, name: 'Triagem' })]
     const w = mountRow(makeSession({ agent_id: 4 }))
     expect(w.get('[data-test="row-title"]').get('[data-test="agent-badge"]').text()).toBe('Agente · Triagem')
   })

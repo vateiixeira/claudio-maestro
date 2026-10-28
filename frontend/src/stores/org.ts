@@ -128,13 +128,15 @@ export const useOrgStore = defineStore('org', () => {
     }
   }
 
-  function replace(agent: Agent): void {
+  /** Puts an agent the API answered with in the list right away (replacing it in place, or adding it). */
+  function upsertAgent(agent: Agent): void {
     const index = agents.value.findIndex((a) => a.id === agent.id)
     if (index >= 0) agents.value.splice(index, 1, agent)
     else agents.value.push(agent)
   }
 
-  function forget(agentId: number): void {
+  /** Drops an agent and what was loaded for it. */
+  function removeAgent(agentId: number): void {
     agents.value = agents.value.filter((a) => a.id !== agentId)
     runLoads.delete(agentId)
     const { [agentId]: _, ...rest } = runs.value
@@ -147,9 +149,9 @@ export const useOrgStore = defineStore('org', () => {
     agentTickets.set(agentId, ticket)
     try {
       const fresh = await api.getAgent(agentId)
-      if (agentTickets.get(agentId) === ticket) replace(fresh)
+      if (agentTickets.get(agentId) === ticket) upsertAgent(fresh)
     } catch (e) {
-      if (agentTickets.get(agentId) === ticket && e instanceof api.ApiError && e.status === 404) forget(agentId)
+      if (agentTickets.get(agentId) === ticket && e instanceof api.ApiError && e.status === 404) removeAgent(agentId)
     }
   }
 
@@ -328,7 +330,7 @@ export const useOrgStore = defineStore('org', () => {
 
   return {
     agents, loaded, error, notices, noticesLoaded, noticesError, runs, routines, decisionsPending, changes, unreadCount,
-    byId, byProject, tree, topOf, isMainSession, runsOf, routinesOf,
+    byId, byProject, tree, topOf, isMainSession, runsOf, routinesOf, upsertAgent, removeAgent,
     load, loadNotices, loadRuns, loadRoutines, loadDecisions, reloadOpen, openMain, markRead, applyEvent, onNewNotice,
   }
 })

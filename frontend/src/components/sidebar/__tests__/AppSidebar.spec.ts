@@ -810,19 +810,12 @@ describe('seção Agentes no topo', () => {
   })
 })
 
-it('tarefas e agentes são entradas principais e as sessões de trabalho não entram como conversas manuais', async () => {
-  const { useWorkStore } = await import('../../../stores/work')
+it('início, tarefas e agentes são entradas principais do menu', () => {
   useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
-  useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'manual-one' }), makeSession({ session_id: 'cto-one' }), makeSession({ session_id: 'worker-one' })])
-  useWorkStore(pinia).catalog = {
-    'cto-one': { work_role: 'coordinator', project_id: 1, work_item_id: null, work_attempt_id: null },
-    'worker-one': { work_role: 'investigator', project_id: 1, work_item_id: 7, work_attempt_id: 9 },
-  }
+  useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'manual-one' })])
   const wrapper = mountSidebar()
   expect(wrapper.get('[data-test="nav-start"]').attributes('href')).toBe('/inicio')
   expect(wrapper.get('[data-test="nav-tasks"]').attributes('href')).toBe('/tarefas')
   expect(wrapper.get('[data-test="nav-agents"]').attributes('href')).toBe('/agentes')
   expect(wrapper.find('[href="/sessions/manual-one"]').exists()).toBe(true)
-  expect(wrapper.find('[href="/sessions/cto-one"]').exists()).toBe(false)
-  expect(wrapper.find('[href="/sessions/worker-one"]').exists()).toBe(false)
 })

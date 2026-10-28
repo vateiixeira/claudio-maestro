@@ -15,7 +15,7 @@ import { shouldOpenNewConversation } from './newConversationShortcut'
 import { nextNeedsYou } from './nextNeedsYou'
 import { shouldGoToNextNeedsYou } from './nextNeedsYouShortcut'
 import { useNewConversationStore } from './stores/newConversation'
-import { useWorkStore } from './stores/work'
+import { useTasksStore } from './stores/tasks'
 import { useUpdatesStore } from './stores/updates'
 
 const layout = useLayoutStore()
@@ -61,7 +61,7 @@ function currentProjectId(): number | null {
   if (route.name === 'project') return Number(route.params.id)
   if (route.name === 'agents') return Number(route.params.projectId) || null
   if (route.name === 'tasks' || route.name === 'start') return Number(route.query.project ?? route.query.projeto) || null
-  if (route.name === 'task') return useWorkStore().details[Number(route.params.id)]?.item.project_id ?? null
+  if (route.name === 'task') return useTasksStore().details[Number(route.params.id)]?.task.project_id ?? null
   if (route.name === 'session') return sessions.find(String(route.params.id))?.project_id ?? null
   return null
 }
@@ -75,7 +75,6 @@ function currentGroupId(): number | null | undefined {
 // The conversation in view, full screen or beside its project (`?sessao=`): the "next" one is never it.
 function currentSessionId(): string | null {
   if (route.name === 'session') return String(route.params.id)
-  if (route.name === 'cto') return useWorkStore().coordinators[Number(route.query.projeto)] ?? null
   if (route.name === 'project' && typeof route.query.sessao === 'string') return route.query.sessao
   return null
 }

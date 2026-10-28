@@ -418,20 +418,6 @@ describe('bindRealtime', () => {
     expect(org.decisionsPending).toEqual([])
   })
 
-  it('os eventos work.* e specialist.* não têm mais ouvinte', () => {
-    const sockets: FakeSocket[] = []
-    const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s } })
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
-    bindRealtime(socket)
-    socket.connect()
-    sockets[0]!.onopen?.({})
-    const fetchMock = vi.mocked(fetch)
-    for (const type of ['work.changed', 'work.mode', 'work.notification', 'work.decision', 'specialist.changed', 'specialist.run']) {
-      sockets[0]!.onmessage?.({ data: JSON.stringify({ session_id: null, seq: 0, type, data: { id: 1 } }) })
-    }
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
   it('ao reconectar, deixa as tarefas velhas e relê decisões pendentes', async () => {
     const sockets: FakeSocket[] = []
     const socket = new EventSocket({ url: 'ws://x/ws', createSocket: () => { const s = new FakeSocket(); sockets.push(s); return s }, initialDelay: 10 })

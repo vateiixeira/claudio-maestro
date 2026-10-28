@@ -59,6 +59,27 @@ describe('org store: árvore', () => {
   })
 })
 
+describe('org store: mudança local de agente', () => {
+  it('upsertAgent troca o agente existente no mesmo lugar e acrescenta o novo', () => {
+    const store = useOrgStore()
+    store.agents = [makeAgent({ id: 1, name: 'Um' }), makeAgent({ id: 2, slug: 'b', name: 'Dois' })]
+    store.upsertAgent(makeAgent({ id: 1, name: 'Um renomeado' }))
+    expect(store.agents.map((a) => a.name)).toEqual(['Um renomeado', 'Dois'])
+    store.upsertAgent(makeAgent({ id: 3, slug: 'c', name: 'Três' }))
+    expect(store.agents.map((a) => a.id)).toEqual([1, 2, 3])
+  })
+
+  it('removeAgent tira o agente e as execuções guardadas dele', () => {
+    const store = useOrgStore()
+    store.agents = [makeAgent({ id: 1 }), makeAgent({ id: 2, slug: 'b' })]
+    store.runs = { 1: [makeRun({ id: 9, agent_id: 1 })], 2: [makeRun({ id: 10, agent_id: 2 })] }
+    store.removeAgent(1)
+    expect(store.agents.map((a) => a.id)).toEqual([2])
+    expect(store.runsOf(1)).toEqual([])
+    expect(store.runsOf(2)).toHaveLength(1)
+  })
+})
+
 describe('org store: carga', () => {
   it('carrega a lista e guarda a mensagem quando falha', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/agents': () => jsonResponse([makeAgent(), makeAgent({ id: 2, slug: 'b', name: 'B' })]) }))

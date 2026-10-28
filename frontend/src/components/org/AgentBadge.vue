@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useSpecialistsStore } from '../../stores/specialists'
+import { useOrgStore } from '../../stores/org'
 
 // "Agente · nome" on a session an agent started. An agent not loaded yet, or deleted since, leaves just "Agente".
-const props = defineProps<{ specialistId: number }>()
-const specialists = useSpecialistsStore()
+const props = defineProps<{ agentId: number }>()
+const org = useOrgStore()
 const label = computed(() => {
-  const name = specialists.byId(props.specialistId)?.name
+  const name = org.byId(props.agentId)?.name
   return name ? `Agente · ${name}` : 'Agente'
 })
 </script>

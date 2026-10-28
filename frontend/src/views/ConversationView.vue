@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import AgentChatQueue from '../components/agents/AgentChatQueue.vue'
 import AwaySummary from '../components/conversation/AwaySummary.vue'
 import ConversationHeader from '../components/conversation/ConversationHeader.vue'
 import ConversationThread from '../components/conversation/ConversationThread.vue'
@@ -38,7 +37,6 @@ const projects = useProjectsStore()
 const changesPanel = useChangesPanelStore()
 const terminal = useTerminalStore()
 
-const specialistId = computed(() => sessions.find(props.id)?.agent_id)
 const title = computed(() => conversations.get(props.id)?.title ?? sessions.find(props.id)?.title ?? '')
 const project = computed(() => {
   const id = sessions.find(props.id)?.project_id ?? conversations.get(props.id)?.projectId
@@ -225,7 +223,6 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
             </button>
           </template>
         </ConversationHeader>
-        <AgentChatQueue v-if="specialistId != null" :key="id" :agent-id="specialistId" :session-id="id" />
         <div v-if="awayShown && awayStats" data-test="away-slot" class="max-h-[45vh] shrink-0 overflow-y-auto px-4 pt-3">
           <div class="mx-auto w-full max-w-(--chat-width)">
             <AwaySummary

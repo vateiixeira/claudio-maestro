@@ -7,7 +7,6 @@ import { SLUG_MAX_LENGTH, slugify } from '../../../org'
 import { useOrgStore } from '../../../stores/org'
 import { useProjectsStore } from '../../../stores/projects'
 import { BTN, BTN_PRIMARY, BTN_SMALL, ERROR, FIELD } from '../styles'
-import type { Agent } from '../../../types/org'
 
 // What you do with an agent: run it now, turn it off or on, change its boss, copy it to another project, delete it.
 const props = defineProps<{ agentId: number }>()
@@ -25,13 +24,6 @@ const bosses = computed(() => (agent.value ? org.byProject(agent.value.project_i
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const busy = ref(false)
-
-/** Shows the agent the API answered with right away; the `agent.changed` event rereads it later. */
-function apply(updated: Agent): void {
-  const index = org.agents.findIndex((a) => a.id === updated.id)
-  if (index >= 0) org.agents.splice(index, 1, updated)
-  else org.agents.push(updated)
-}
 
 function begin(): boolean {
   if (busy.value) return false
@@ -67,7 +59,7 @@ async function run(): Promise<void> {
 async function toggle(): Promise<void> {
   if (!agent.value || !begin()) return
   try {
-    apply(await updateAgent(props.agentId, { enabled: !agent.value.enabled }))
+    org.upsertAgent(await updateAgent(props.agentId, { enabled: !agent.value.enabled }))
   } catch (e) {
     error.value = errorMessage(e)
   } finally {
@@ -87,7 +79,7 @@ async function changeBoss(event: Event): Promise<void> {
     return
   }
   try {
-    apply(await updateAgent(props.agentId, { reports_to: raw === '' ? null : Number(raw) }))
+    org.upsertAgent(await updateAgent(props.agentId, { reports_to: raw === '' ? null : Number(raw) }))
   } catch (e) {
     error.value = errorMessage(e)
     // The select goes back to the boss the agent really has.
@@ -123,7 +115,7 @@ async function duplicate(): Promise<void> {
   dupError.value = null
   try {
     const copy = await duplicateAgent(props.agentId, { project_id: Number(dupProject.value), slug: dupSlug.value })
-    apply(copy)
+    org.upsertAgent(copy)
     duplicating.value = false
     await router.push({ name: 'agents', params: { projectId: copy.project_id }, query: { agente: String(copy.id), aba: 'definicao' } })
   } catch (e) {
@@ -143,7 +135,7 @@ async function remove(): Promise<void> {
   try {
     await deleteAgent(props.agentId)
     emit('deleted')
-    org.agents = org.agents.filter((a) => a.id !== props.agentId)
+    org.removeAgent(props.agentId)
   } catch (e) {
     error.value = errorMessage(e)
   } finally {

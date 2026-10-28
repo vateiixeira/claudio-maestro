@@ -55,7 +55,7 @@ async function create(): Promise<void> {
       kind: kind.value,
     })
     // Shows it in the tree now; the `agent.changed` event rereads it later.
-    org.agents = [...org.agents.filter((a) => a.id !== agent.id), agent]
+    org.upsertAgent(agent)
     emit('created', agent)
   } catch (e) {
     error.value = errorMessage(e)

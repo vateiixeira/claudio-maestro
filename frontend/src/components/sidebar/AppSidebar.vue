@@ -27,9 +27,9 @@ import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
-import { useWorkStore } from '../../stores/work'
 import { useSessionsStore } from '../../stores/sessions'
 import { useOrgStore } from '../../stores/org'
+import { useTasksStore } from '../../stores/tasks'
 import { useUpdatesStore } from '../../stores/updates'
 import type { GitRepo, Project, Session, SessionGroup } from '../../types/api'
 import IconAgents from '../icons/IconAgents.vue'
@@ -44,9 +44,8 @@ import IconSettings from '../icons/IconSettings.vue'
 
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
-const work = useWorkStore()
-const manualSessions = computed(() => sessions.all.filter(session => !work.catalog[session.session_id]))
 const org = useOrgStore()
+const tasks = useTasksStore()
 const git = useGitStore()
 const groups = useGroupsStore()
 const newConversation = useNewConversationStore()
@@ -85,9 +84,9 @@ function resetResize() {
 
 // Only the waits that need you count; an ordinary wait with nothing new is not a reason to look.
 const isWaitingOnYou = (s: Session) => s.display_state === 'waiting' && needsYou(s) && !isDiscarded(s)
-const waitingCount = computed(() => manualSessions.value.filter(isWaitingOnYou).length)
+const waitingCount = computed(() => sessions.all.filter(isWaitingOnYou).length)
 // The agents' sessions are listed (and counted) in the "Agentes" section, not under their project.
-const isOrdinary = (s: Session) => s.agent_id == null && !work.catalog[s.session_id]
+const isOrdinary = (s: Session) => s.agent_id == null
 function waitingIn(projectId: number): number {
   return sessions.forProject(projectId).filter((s) => isOrdinary(s) && isWaitingOnYou(s)).length
 }
@@ -97,13 +96,13 @@ function runningIn(projectId: number): boolean {
 // Groups under each project: those created in it and those holding one of its conversations.
 const groupsByProject = computed(() => {
   const map = new Map<number, SessionGroup[]>()
-  for (const p of projects.projects) map.set(p.id, groups.visibleIn(p.id, manualSessions.value))
+  for (const p of projects.projects) map.set(p.id, groups.visibleIn(p.id, sessions.all))
   return map
 })
 // The ones the sidebar actually lists: a group without an open conversation is hidden, so it does not count as a child.
 const listedGroupsByProject = computed(() => {
   const map = new Map<number, number>()
-  for (const [id, list] of groupsByProject.value) map.set(id, projectTree(list, manualSessions.value).length)
+  for (const [id, list] of groupsByProject.value) map.set(id, projectTree(list, sessions.all).length)
   return map
 })
 // Open conversations of each project outside its groups, the ones waiting for you first; grouped ones show under their group.
@@ -111,7 +110,7 @@ const listedGroupsByProject = computed(() => {
 const looseByProject = computed(() => {
   const map = new Map<number, Session[]>()
   for (const p of projects.projects) {
-    map.set(p.id, looseOpenSessions(manualSessions.value, p.id, new Set((groupsByProject.value.get(p.id) ?? []).map((g) => g.id))))
+    map.set(p.id, looseOpenSessions(sessions.all, p.id, new Set((groupsByProject.value.get(p.id) ?? []).map((g) => g.id))))
   }
   return map
 })
@@ -119,7 +118,7 @@ function hasChildren(projectId: number): boolean {
   return (listedGroupsByProject.value.get(projectId) ?? 0) > 0 || (looseByProject.value.get(projectId)?.length ?? 0) > 0
 }
 // "Em andamento": projects with an open conversation. "Outros projetos": the rest, kept in one folded line.
-const split = computed(() => splitProjects(projects.projects, manualSessions.value))
+const split = computed(() => splitProjects(projects.projects, sessions.all))
 // The project on screen stays visible even when it has no open conversation and the list is folded.
 const activeIsOther = computed(() => split.value.others.some((p) => p.id === activeProjectId.value))
 const othersOpen = computed(() => isSectionOpened('others') || activeIsOther.value)
@@ -140,7 +139,7 @@ const activeProjectId = computed<number | null>(() => {
   if (route.name === 'project') return Number(route.params.id)
   if (route.name === 'agents') return Number(route.params.projectId) || null
   if (route.name === 'tasks') return Number(route.query.project) || null
-  if (route.name === 'task') return work.details[Number(route.params.id)]?.item.project_id ?? null
+  if (route.name === 'task') return tasks.details[Number(route.params.id)]?.task.project_id ?? null
   if (route.name === 'session') return sessions.find(String(route.params.id))?.project_id ?? null
   return null
 })

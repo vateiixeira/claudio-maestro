@@ -10,6 +10,8 @@ import {
   SOURCE_LABELS,
   TASK_STATUS_LABELS,
   agentState,
+  formatRunDate,
+  slugify,
   outcomeShape,
   taskStatusShape,
 } from '../org'
@@ -87,5 +89,34 @@ describe('rótulos e formas', () => {
     expect(MEMORY_MAX).toBe(4000)
     expect(DEFINITION_MAX_BYTES).toBe(100_000)
     expect(DAYS.map((d) => d.digit).join('')).toBe('1234567')
+  })
+})
+
+describe('slugify', () => {
+  it('sugere o identificador a partir do nome', () => {
+    expect(slugify('Agente do Sentry')).toBe('agente-do-sentry')
+    expect(slugify('  Revisão de PRs!! ')).toBe('revisao-de-prs')
+    expect(slugify('---a--b---')).toBe('a-b')
+  })
+
+  it('corta no limite do backend sem terminar em hífen', () => {
+    const slug = slugify('a'.repeat(39) + ' b')
+    expect(slug.length).toBeLessThanOrEqual(SLUG_MAX_LENGTH)
+    expect(slug.endsWith('-')).toBe(false)
+  })
+
+  it('devolve vazio quando não sobra nada', () => {
+    expect(slugify('!!!')).toBe('')
+  })
+})
+
+describe('formatRunDate', () => {
+  const now = new Date(2026, 9, 28, 12, 0)
+  it('mostra dia, mês abreviado e hora, sem o ano corrente', () => {
+    expect(formatRunDate(new Date(2026, 9, 28, 14, 5).getTime() / 1000, now)).toBe('28 out 14:05')
+  })
+
+  it('acrescenta o ano quando não é o corrente', () => {
+    expect(formatRunDate(new Date(2025, 0, 3, 9, 7).getTime() / 1000, now)).toBe('3 jan 2025 09:07')
   })
 })

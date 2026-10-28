@@ -24,8 +24,11 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
-- Agentes refeitos como organização por projeto; o Sentry e o KBGen migram automaticamente.
-- Tarefas passam a ser coordenadas pelos agentes da organização; o CTO e as tarefas abertas migram automaticamente. Um comentário acorda o outro lado, mas uma resposta a uma resposta não o acorda de volta, para chefe e responsável não se acordarem em laço; reabrir ou desbloquear uma tarefa acorda o responsável; acima do corte de uso da assinatura os despertares de tarefa esperam em vez de se perderem; e agentes com worktree por tarefa trabalham nela, que o git do projeto ignora.
+- Organização: a tela Agentes mostra, por projeto, a árvore de chefes e subordinados, com os estados de relance e as abas Tarefas, Rotinas e Execuções. O Sentry e o KBGen migram automaticamente para agentes da organização.
+- Painel do agente: edite o `AGENT.md` no próprio app (um arquivo inválido mostra o erro na linha e mantém o que você digitou), veja memória, registro, segredos, conversas e execuções, e rode agora, desligue, troque o chefe, duplique ou apague o agente.
+- Tarefas coordenadas pelos agentes da organização: lista com filtros, tela da tarefa com responsável, revisor, comentários, decisões e execuções. O CTO e as tarefas abertas migram automaticamente. Um comentário acorda o outro lado, mas uma resposta a uma resposta não o acorda de volta, para chefe e responsável não se acordarem em laço; reabrir ou desbloquear uma tarefa acorda o responsável; acima do corte de uso da assinatura os despertares de tarefa esperam em vez de se perderem; e agentes com worktree por tarefa trabalham nela, que o git do projeto ignora.
+- Rotinas: horários, instrução e agente de cada rotina na aba Rotinas do projeto, com "Rodar agora" e a opção de abrir uma tarefa a cada disparo.
+- Início e Inbox sobre a organização: o Início mostra o que precisa de você, o que está em andamento e as tarefas concluídas recentes, e o objetivo vai para o CTO do projeto; a Inbox reúne as decisões e os avisos dos agentes. A conversa de um agente mostra a tarefa e as execuções dele.
 - A variável `MAESTRO_SPECIALISTS_SCHEDULER` passou a se chamar `MAESTRO_ROUTINES_SCHEDULER`; o nome antigo continua valendo por esta versão.
 - O CTO mostra os próximos passos acima da conversa, separando decisões, permissões e execuções que precisam de orientação. Tentativas elegíveis têm campo próprio para continuar com uma mensagem humana, mantendo o rascunho quando o envio falha. Em celulares e telas baixas, os controles secundários ficam recolhíveis para preservar o espaço da conversa.
 - Tarefas ainda não iniciadas aparecem como “Na fila”, com a causa da espera quando comprovada. O CTO ocioso aparece disponível, sem sugerir uma resposta obrigatória.
@@ -37,6 +40,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - A conversa principal do agente agora mostra suas execuções no mesmo lugar: rodadas em andamento abertas com atualização ao vivo e histórico expansível, sem trocar o contexto das mensagens.
 
 - Página do agente redesenhada: seletor compacto, conversa principal em destaque, busca de assuntos, fila separada do histórico e filtro de problemas. Configuração em quatro grupos com atalhos, rascunhos preservados entre abas e navegação adaptada a celulares.
+
+### Removido
+
+- As telas Agentes (antiga), CTO e a política de comandos dos agentes. Elas dão lugar à organização, ao painel do agente e às tarefas.
 
 ### Corrigido
 

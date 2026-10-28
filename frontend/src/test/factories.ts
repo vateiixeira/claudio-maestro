@@ -174,62 +174,6 @@ export function logUrl(projectId: number, repo: string, skip = 0, ref: string | 
   return `GET /api/projects/${projectId}/git/log?${query}`
 }
 
-export function makeSpecialist(overrides: Partial<import('../types/api').Specialist> = {}): import('../types/api').Specialist {
-  return {
-    id: 1,
-    slug: 'sentry',
-    name: 'Sentry',
-    description: 'Trata os erros novos do Sentry',
-    project_id: 1,
-    extra_project_ids: [],
-    autonomy: 'ask',
-    outward_patterns: [],
-    always_ask_patterns: [],
-    denied_tools: [],
-    close_by_check: false,
-    model: null,
-    effort: null,
-    run_text: 'Siga a skill.',
-    enabled: true,
-    last_mcp: [],
-    schedules: [],
-    queue_paused: false,
-    last_run: null,
-    open_sessions: 0,
-    main_session_id: null,
-    unseen: 0,
-    ...overrides,
-  }
-}
-
-export function makeSpecialistRun(overrides: Partial<import('../types/api').SpecialistRun> = {}): import('../types/api').SpecialistRun {
-  return {
-    id: 1,
-    specialist_id: 1,
-    session_id: 's1',
-    trigger: 'manual',
-    scheduled_for: null,
-    started_at: 1_790_000_000,
-    ended_at: null,
-    outcome: 'running',
-    reason: null,
-    ...overrides,
-  }
-}
-
-export function makeSpecialistNotice(overrides: Partial<import('../types/api').SpecialistNotice> = {}): import('../types/api').SpecialistNotice {
-  return {
-    id: 1,
-    specialist_id: 1,
-    session_id: 's1',
-    kind: 'summary',
-    text: 'Tratei 2 erros.',
-    created_at: 1_790_000_000,
-    read_at: null,
-    ...overrides,
-  }
-}
-
 export function makeRun(overrides: Partial<import('../types/org').Run> = {}): import('../types/org').Run {
   return {
     id: 1,

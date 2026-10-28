@@ -31,7 +31,6 @@ import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
 import type { ToolItem } from '../../types/conversation'
-import { useMessageOrigins } from '../../conversation/messageOrigins'
 import { isBareShortcut } from '../../keyboardShortcutGuard'
 
 const props = withDefaults(defineProps<{ id: string; visible?: boolean; find?: string }>(), { visible: true })
@@ -43,15 +42,13 @@ const projects = useProjectsStore()
 const org = useOrgStore()
 const mainAgent = computed(() => org.isMainSession(props.id))
 // A run of an agent (not its main conversation): the agent and the task it works on.
-const { agent: runAgent, taskId: runTaskId, agentId: runAgentId } = useRunTask(toRef(props, 'id'))
+const { agent: runAgent, taskId: runTaskId } = useRunTask(toRef(props, 'id'))
 const socket = useEventSocket()
 
 const loadError = ref<string | null>(null)
 // Something arrived while the user was reading above: 'prompt' (needs them) outranks 'news'.
 const unseen = ref<'news' | 'prompt' | null>(null)
 const conv = computed(() => conversations.get(props.id))
-const origins = useMessageOrigins(computed(() => props.id), computed(() => conv.value?.items.filter(item => item.type === 'user').map(item => item.id) ?? []))
-watch(() => (runAgentId.value != null ? org.changes[runAgentId.value] : mainAgent.value ? org.changes[mainAgent.value.id] : undefined), () => { void origins.refresh() })
 const project = computed(() => (conv.value?.projectId != null ? projects.byId(conv.value.projectId) : undefined))
 // The project's folder was deleted or moved: nothing that runs in it can work.
 const unavailableReason = computed(() =>
@@ -139,7 +136,7 @@ watch(
     offs = [
       socket.onSession(id, (event) => conversations.receive(event)),
       // Every opening, the first included: events between the snapshot and it were lost.
-      socket.onOpen(() => { void reload(); void origins.refresh() }),
+      socket.onOpen(() => { void reload() }),
     ]
     loadError.value = null
     unseen.value = null
@@ -425,7 +422,7 @@ watch(() => turns.value.length, async () => {
   await nextTick()
   updateCurrentTurn()
 })
-const currentTurnText = computed(() => { const user = turns.value[currentTurn.value]?.turn.user; return user && origins.automatic.value.has(user.id) ? 'Atualização automática' : user?.text || 'Início da sessão' })
+const currentTurnText = computed(() => { const user = turns.value[currentTurn.value]?.turn.user; return user?.text || 'Início da sessão' })
 function goToTurn(index: number) {
   const anchor = turnAnchors()[index]
   if (!anchor) return
@@ -550,7 +547,7 @@ function resolvePrompt(promptId: string) {
               :tabindex="index === 0 ? -1 : undefined"
               class="flex scroll-mt-11 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
             >
-              <UserMessage v-if="turn.user" :item="turn.user" :automatic="origins.automatic.value.has(turn.user.id)" :class="{ 'animate-enter': isLive(turn.user.id) }" />
+              <UserMessage v-if="turn.user" :item="turn.user" :class="{ 'animate-enter': isLive(turn.user.id) }" />
               <div v-if="turn.entries.length" class="relative flex flex-col gap-[18px]">
                 <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
                 <div v-for="entry in turn.entries" :key="entryKey(entry)" data-test="turn-entry" class="relative flex items-start gap-3" :class="{ 'animate-enter': isLive(entryKey(entry)) }">
