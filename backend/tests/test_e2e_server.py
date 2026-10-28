@@ -163,17 +163,21 @@ def test_seed_creates_the_triagem_agent_with_routine_runs_and_notices(tmp_path, 
         project = next(p for p in projects.list_projects(conn) if p.name == "Loja Demo")
         agents = store.list_agents(conn)
         assert [(a.slug, a.name, a.project_id) for a in agents] == [
-            ("triagem", "Triagem", project.id)
+            ("maestro", "Maestro", project.id),
+            ("triagem", "Triagem", project.id),
+            ("revisor", "Revisor", project.id),
         ]
-        assert agents[0].legacy is None
-        routines = store.list_routines(conn, agent_id=agents[0].id)
+        triagem = agents[1]
+        assert triagem.legacy is None
+        routines = store.list_routines(conn, agent_id=triagem.id)
         schedules = store.list_schedules(conn, routines[0].id)
-        runs = store.list_runs(conn, agents[0].id)
+        runs = [r for r in store.list_runs(conn, triagem.id) if r.task_id is None]
         notices = store.list_notices(conn)
-        announcements = store.pending_announcements(conn, agents[0].id)
+        announcements = store.pending_announcements(conn, triagem.id)
     assert len(announcements) == 1
     assert announcements[0].text == e2e.TRIAGEM_SUMMARY_TEXT
     assert [r.name for r in routines] == ["Triagem"]
+    assert routines[0].create_task is True
     assert [(s.days, s.time) for s in schedules] == [("12345", "03:00")]
     assert sorted(r.outcome for r in runs) == ["concluded", "failed"]
     assert {r.source for r in runs} == {"routine"}
@@ -193,6 +197,76 @@ def test_seed_creates_the_triagem_agent_with_routine_runs_and_notices(tmp_path, 
         tmp_path.resolve()
     )
     assert not (settings.data_dir / "specialists").exists()
+
+
+def test_seed_builds_the_organization_tree_with_valid_definitions(tmp_path, monkeypatch):
+    from claudio_maestro.org import store
+    from claudio_maestro.org.definition import definition_hash
+    from claudio_maestro.org.files import AgentFiles
+
+    apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
+
+    e2e.seed(tmp_path)
+
+    settings = load_settings()
+    files = AgentFiles(settings.data_dir / "agents")
+    with closing(db.connect(settings.db_path)) as conn:
+        by_slug = {a.slug: a for a in store.list_agents(conn)}
+    maestro, triagem, revisor = by_slug["maestro"], by_slug["triagem"], by_slug["revisor"]
+    assert maestro.reports_to is None
+    assert triagem.reports_to == maestro.id and revisor.reports_to == maestro.id
+    assert all(a.enabled for a in by_slug.values())
+    for agent in by_slug.values():
+        # Every file opens and the hash on the row is the one of the file, as the API leaves it.
+        files.read_definition(agent.slug)
+        assert agent.definition_hash == definition_hash(files.read_definition_text(agent.slug))
+    assert files.read_definition("maestro").name == "Maestro"
+    assert files.read_definition("revisor").name == "Revisor"
+
+
+def test_seed_creates_the_tasks_with_thread_run_and_decision(tmp_path, monkeypatch):
+    from claudio_maestro.org import store
+
+    apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
+
+    e2e.seed(tmp_path)
+
+    with closing(db.connect(load_settings().db_path)) as conn:
+        agents = {a.slug: a for a in store.list_agents(conn)}
+        tasks = {t.title: t for t in store.list_tasks(conn, limit=500)}
+        by_title = {title: tasks[title] for title in e2e.TASK_TITLES.values()}
+        first = by_title[e2e.TASK_TITLES["urgent"]]
+        comments = store.list_comments(conn, first.id)
+        runs = store.list_task_runs(conn, first.id)
+        decisions = store.list_decisions(conn)
+        project = projects.list_projects(conn)[0]
+
+    titles = e2e.TASK_TITLES
+    assert {t.project_id for t in tasks.values()} == {project.id}
+    assert first.status == "in_progress"
+    assert first.assignee_agent_id == agents["triagem"].id
+    assert [c.author_kind for c in comments] == ["human", "agent", "app"]
+    assert comments[1].author_agent_id == agents["triagem"].id
+    assert [(r.outcome, r.source) for r in runs] == [("concluded", "assignment")]
+    assert first.run_count == 1
+    review = by_title[titles["review"]]
+    assert review.status == "in_review"
+    assert review.assignee_agent_id == agents["triagem"].id
+    assert review.reviewer_agent_id == agents["revisor"].id
+    blocked = by_title[titles["blocked"]]
+    assert blocked.status == "blocked" and blocked.blocked_reason == e2e.BLOCKED_REASON
+    assert by_title[titles["done"]].status == "done"
+    assert by_title[titles["done"]].closed_at is not None
+    # The tasks that the specs change are theirs alone and nobody works on them: no wake-up.
+    for key in ("loose", "unblock"):
+        assert by_title[titles[key]].assignee_agent_id is None
+    assert by_title[titles["loose"]].status == "todo"
+    assert by_title[titles["unblock"]].status == "blocked"
+    assert [(d.question, d.task_id, d.status) for d in decisions] == [
+        (e2e.DECISION_QUESTION, first.id, "pending")
+    ]
+    assert decisions[0].options == e2e.DECISION_OPTIONS
+    assert decisions[0].agent_id == agents["triagem"].id
 
 
 def _seeded(tmp_path, monkeypatch) -> Path:
@@ -676,4 +750,23 @@ def test_chat_e2e_has_no_old_work_scenario(tmp_path, monkeypatch):
         assert not hasattr(client.app.state, 'work')
         assert client.app.state.tasks is not None
         assert client.get('/api/tasks').status_code == 200
+    assert attempts == []
+
+
+def test_seeded_organization_is_served_by_the_api(tmp_path, monkeypatch):
+    apply_env(monkeypatch, e2e.isolated_env({'MAESTRO_E2E_CHAT': '1'}, tmp_path, 6620))
+    e2e.seed(tmp_path)
+    attempts = forbid_claude(monkeypatch)
+    with TestClient(e2e.build_app(6620), base_url='http://127.0.0.1:6620',
+                    headers={'x-maestro': '1', 'origin': 'http://localhost:6620'}) as client:
+        agents = client.get('/api/agents').json()
+        tasks = client.get('/api/tasks', params={'limit': 100}).json()
+        pending = client.get('/api/decisions').json()
+        detail = client.get(f"/api/tasks/{next(t['id'] for t in tasks if t['title'] == e2e.TASK_TITLES['urgent'])}").json()
+    assert [a['name'] for a in agents] == ['Maestro', 'Triagem', 'Revisor']
+    assert all(a['definition_error'] is None for a in agents)
+    assert sorted(t['title'] for t in tasks) == sorted(e2e.TASK_TITLES.values())
+    assert [d['question'] for d in pending] == [e2e.DECISION_QUESTION]
+    assert [c['text'] for c in detail['comments']] == list(e2e.URGENT_COMMENTS.values())
+    assert len(detail['runs']) == 1 and len(detail['decisions']) == 1
     assert attempts == []

@@ -39,6 +39,7 @@ from claudio_maestro.config import (
 )
 from claudio_maestro.digest.model import DigestModelError, DigestRequest
 from claudio_maestro.org import store as org_store
+from claudio_maestro.org.definition import definition_hash, template
 from claudio_maestro.org.files import AgentFiles
 from claudio_maestro.runmode import RunMode
 from claudio_maestro.updates import ReleaseInfo
@@ -121,7 +122,8 @@ GIT_SCENARIO = [
 ]
 
 
-# The agent the "Agentes" and Inbox specs expect (seeded by `_seed_agents`).
+# The organization the specs in frontend/e2e/org-*.e2e.ts expect (seeded by `_seed_agents`): in
+# "Loja Demo", the CTO "Maestro" on top, with "Triagem" and "Revisor" reporting to it.
 TRIAGEM_PROJECT = "Loja Demo"
 TRIAGEM_FAILURE_REASON = "O token do repositório expirou."
 TRIAGEM_ALERT_TEXT = "A Triagem falhou nas últimas execuções."
@@ -137,6 +139,26 @@ description: Separa os chamados novos por urgência e responde os simples.
 2. Marque como urgentes os que citam queda ou cobrança em duplicidade.
 3. Responda os pedidos simples e deixe o resto para uma pessoa.
 """
+
+# The titles of the seeded tasks, by role. Each spec that changes a task owns one of them, and the
+# ones without an assignee wake nobody, so the specs do not depend on each other or on the order.
+TASK_TITLES = {
+    "urgent": "Separar chamados urgentes",  # in progress, Triagem, thread of 3 and a finished run
+    "review": "Revisar resposta padrão",  # in review, Triagem, reviewed by Revisor
+    "blocked": "Atualizar a base de respostas",  # blocked with a reason; only read
+    "done": "Fechar chamados da semana",  # done
+    "loose": "Rascunhar o guia de estilo",  # to do, nobody responsible; comments and status
+    "unblock": "Liberar acesso ao painel",  # blocked, nobody responsible; the unblock spec
+}
+BLOCKED_REASON = "Falta acesso ao repositório de respostas."
+UNBLOCK_REASON = "O painel pede um login que ninguém tem."
+DECISION_QUESTION = "Responder em inglês ou português?"
+DECISION_OPTIONS = ["Em português", "Em inglês"]
+URGENT_COMMENTS = {
+    "human": "Priorize os chamados de cobrança em duplicidade.",
+    "agent": "Separei 3 chamados urgentes e deixei o resto na fila.",
+    "app": "Execução concluída: Triagem respondeu na tarefa.",
+}
 
 
 class E2EError(Exception):
@@ -508,18 +530,29 @@ def seed_git(root: Path, home: Path, conn) -> None:
 
 
 def _seed_agents(settings, conn, now: datetime) -> None:
-    """Seed the "Triagem" agent (with an `AGENT.md`, a routine with a schedule, two runs and two
-    notices), so the Agentes page and the Inbox have something to show. Everything goes under
-    the temporary data folder: no route creates notices, only the service during a run."""
+    """Seed the organization of "Loja Demo": the CTO "Maestro" on top, "Triagem" (with its routine
+    that opens tasks, two runs and two notices) and "Revisor" under it, and six tasks and one
+    decision, so the Organização, Tarefas, Início and Inbox pages have something to show.
+    Everything goes under the temporary data folder through the same store the services use: no
+    route creates notices, only the service during a run."""
     stamp = int(now.timestamp())
     project = next(p for p in projects.list_projects(conn) if p.name == TRIAGEM_PROJECT)
-    AgentFiles(settings.data_dir / "agents").create("triagem", TRIAGEM_SKILL)
-    agent = org_store.create_agent(
-        conn, slug="triagem", name="Triagem", project_id=project.id, reports_to=None, now=stamp
-    )
+    files = AgentFiles(settings.data_dir / "agents")
+
+    def new_agent(slug: str, name: str, text: str, reports_to: int | None):
+        # The row, the folder and the hash of the file, as `POST /api/agents` leaves them.
+        agent = org_store.create_agent(
+            conn, slug=slug, name=name, project_id=project.id, reports_to=reports_to, now=stamp
+        )
+        files.create(slug, text)
+        return org_store.update_agent(conn, agent.id, now=stamp, definition_hash=definition_hash(text))
+
+    maestro = new_agent("maestro", "Maestro", template("Maestro", "cto"), None)
+    agent = new_agent("triagem", "Triagem", TRIAGEM_SKILL, maestro.id)
+    revisor = new_agent("revisor", "Revisor", template("Revisor", "reviewer"), maestro.id)
     routine = org_store.create_routine(
         conn, project_id=project.id, agent_id=agent.id, name="Triagem",
-        instruction="Faça a triagem dos chamados novos.", now=stamp,
+        instruction="Faça a triagem dos chamados novos.", create_task=True, now=stamp,
     )
     org_store.replace_schedules(conn, routine.id, [("12345", "03:00")], stamp)
     for hours_ago, outcome, reason in ((26, "concluded", None), (2, "failed", TRIAGEM_FAILURE_REASON)):
@@ -541,6 +574,51 @@ def _seed_agents(settings, conn, now: datetime) -> None:
     org_store.add_announcement(
         conn, agent_id=agent.id, run_id=None, session_id=None,
         text=TRIAGEM_SUMMARY_TEXT, created_at=stamp - 25 * 3600,
+    )
+    _seed_tasks(conn, project.id, stamp, triagem=agent.id, reviewer=revisor.id)
+
+
+def _seed_tasks(conn, project_id: int, stamp: int, *, triagem: int, reviewer: int) -> None:
+    """The tasks of `TASK_TITLES`, the thread and the finished run of the first one and the
+    decision it waits on."""
+
+    def new_task(title: str, status: str, minutes_ago: int, blocked_reason: str | None = None, **fields):
+        moment = stamp - minutes_ago * 60
+        task = org_store.create_task(conn, project_id=project_id, title=title, now=moment, **fields)
+        if status == "todo":
+            return task
+        extra = {"blocked_reason": blocked_reason} if blocked_reason else {}
+        return org_store.update_task(
+            conn, task.id, expected_revision=task.revision, now=moment, status=status, **extra
+        )
+
+    urgent = new_task(
+        TASK_TITLES["urgent"], "in_progress", 50, priority="high", assignee_agent_id=triagem,
+        description="Leia os chamados abertos e separe os que citam queda ou cobrança em duplicidade.",
+    )
+    new_task(
+        TASK_TITLES["review"], "in_review", 40, assignee_agent_id=triagem,
+        reviewer_agent_id=reviewer, description="Conferir o texto da resposta padrão dos chamados.",
+    )
+    new_task(TASK_TITLES["blocked"], "blocked", 30, BLOCKED_REASON)
+    new_task(TASK_TITLES["done"], "done", 20, assignee_agent_id=triagem)
+    new_task(TASK_TITLES["loose"], "todo", 15)
+    new_task(TASK_TITLES["unblock"], "blocked", 10, UNBLOCK_REASON)
+
+    run = org_store.insert_run(
+        conn, agent_id=triagem, source="assignment", started_at=stamp - 45 * 60,
+        outcome="concluded", task_id=urgent.id, ended_at=stamp - 43 * 60,
+    )
+    org_store.bump_run_count(conn, urgent.id, stamp - 43 * 60)
+    for minutes_ago, kind, author_agent in ((49, "human", None), (47, "agent", triagem), (44, "app", None)):
+        org_store.add_comment(
+            conn, task_id=urgent.id, author_kind=kind, author_agent_id=author_agent,
+            run_id=run.id if kind == "agent" else None, text=URGENT_COMMENTS[kind],
+            now=stamp - minutes_ago * 60,
+        )
+    org_store.create_decision(
+        conn, project_id=project_id, task_id=urgent.id, agent_id=triagem, run_id=run.id,
+        question=DECISION_QUESTION, options=DECISION_OPTIONS, now=stamp - 42 * 60,
     )
 
 
