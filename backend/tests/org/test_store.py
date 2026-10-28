@@ -534,3 +534,485 @@ def test_chats(conn):
     assert store.get_chat(conn, "s1") == store.Chat(session_id="s1", agent_id=agent.id)
     assert store.get_chat(conn, "x") is None
     assert [c.session_id for c in store.list_chats(conn, agent.id)] == ["s1", "s2"]
+
+
+# Tasks -----------------------------------------------------------------------------
+
+
+def make_task(conn, title: str = "Tarefa", project_id: int = 1, **kwargs):
+    return store.create_task(conn, project_id=project_id, title=title, now=100, **kwargs)
+
+
+def test_create_task_defaults(conn):
+    task = make_task(conn)
+
+    assert task == store.get_task(conn, task.id)
+    assert (task.title, task.description, task.status, task.priority) == ("Tarefa", "", "todo", "normal")
+    assert (task.assignee_agent_id, task.reviewer_agent_id, task.parent_task_id) == (None, None, None)
+    assert (task.created_by, task.created_by_agent_id, task.routine_id) == ("human", None, None)
+    assert (task.revision, task.run_count, task.max_runs) == (1, 0, store.DEFAULT_MAX_RUNS)
+    assert (task.worktree_path, task.branch, task.blocked_reason, task.legacy) == (None, None, None, None)
+    assert (task.created_at, task.updated_at, task.closed_at) == (100, 100, None)
+    assert store.DEFAULT_MAX_RUNS == 20
+    assert store.TASK_STATUSES == ("todo", "in_progress", "in_review", "blocked", "done", "cancelled")
+    assert store.TASK_PRIORITIES == ("urgent", "high", "normal", "low")
+
+
+def test_create_task_with_people_and_parent(conn):
+    boss, worker = make(conn, "boss"), make(conn, "worker", reports_to=None)
+    parent = make_task(conn, "Mãe")
+
+    child = make_task(
+        conn, "Filha", description="texto", assignee_agent_id=worker.id, reviewer_agent_id=boss.id,
+        parent_task_id=parent.id, priority="urgent", created_by="agent", created_by_agent_id=boss.id,
+    )
+
+    assert (child.assignee_agent_id, child.reviewer_agent_id, child.parent_task_id) == (worker.id, boss.id, parent.id)
+    assert (child.priority, child.created_by, child.created_by_agent_id) == ("urgent", "agent", boss.id)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"title": ""}, "título"),
+        ({"title": "x" * 161}, "título"),
+        ({"description": "x" * 20001}, "descrição"),
+        ({"priority": "meh"}, "(?i)prioridade"),
+        ({"created_by": "robot"}, "(?i)autor"),
+        ({"parent_task_id": 999}, "tarefa-mãe"),
+    ],
+)
+def test_create_task_validates_fields(conn, kwargs, message):
+    with pytest.raises(store.TaskValidationError, match=message):
+        make_task(conn, **{"title": "ok", **kwargs})
+
+
+def test_create_task_rejects_parent_of_another_project(conn):
+    other = make_task(conn, "Outra", project_id=2)
+    with pytest.raises(store.TaskValidationError, match="mesmo projeto"):
+        make_task(conn, "Filha", parent_task_id=other.id)
+
+
+def test_get_task_missing_raises(conn):
+    with pytest.raises(store.TaskNotFoundError, match="Tarefa não encontrada."):
+        store.get_task(conn, 99)
+    assert issubclass(store.TaskNotFoundError, store.NotFoundError)
+
+
+def test_update_task_checks_revision(conn):
+    task = make_task(conn)
+
+    updated = store.update_task(conn, task.id, expected_revision=1, now=150, title="Novo", status="in_progress")
+
+    assert (updated.title, updated.status, updated.revision, updated.updated_at) == ("Novo", "in_progress", 2, 150)
+    with pytest.raises(store.TaskRevisionError, match="A tarefa mudou; recarregue e tente de novo."):
+        store.update_task(conn, task.id, expected_revision=1, now=160, title="Velho")
+    assert store.get_task(conn, task.id).title == "Novo"
+    with pytest.raises(store.TaskNotFoundError):
+        store.update_task(conn, 99, expected_revision=1, now=160, title="x")
+
+
+def test_update_task_clears_with_none_and_rejects_unknown(conn):
+    worker = make(conn, "worker")
+    task = make_task(conn, assignee_agent_id=worker.id)
+
+    updated = store.update_task(conn, task.id, expected_revision=1, now=110, assignee_agent_id=None)
+
+    assert updated.assignee_agent_id is None
+    with pytest.raises(ValueError, match="id"):
+        store.update_task(conn, task.id, expected_revision=2, now=120, id=5)
+
+
+def test_update_task_validates_fields(conn):
+    task = make_task(conn)
+    for fields, message in (
+        ({"title": ""}, "título"), ({"status": "backlog"}, "(?i)estado"), ({"priority": "x"}, "(?i)prioridade"),
+        ({"description": "x" * 20001}, "descrição"), ({"parent_task_id": task.id}, "tarefa-mãe"),
+    ):
+        with pytest.raises(store.TaskValidationError, match=message):
+            store.update_task(conn, task.id, expected_revision=1, now=110, **fields)
+    assert store.get_task(conn, task.id).revision == 1
+
+
+def test_update_task_refuses_a_parent_cycle(conn):
+    top = make_task(conn, "Topo")
+    middle = make_task(conn, "Meio", parent_task_id=top.id)
+    with pytest.raises(store.TaskValidationError, match="tarefa-mãe"):
+        store.update_task(conn, top.id, expected_revision=1, now=110, parent_task_id=middle.id)
+
+
+def test_update_task_sets_closed_at_on_done(conn):
+    task = make_task(conn)
+
+    done = store.update_task(conn, task.id, expected_revision=1, now=200, status="done")
+    assert (done.status, done.closed_at) == ("done", 200)
+    # Staying closed keeps the first closing time; reopening clears it.
+    same = store.update_task(conn, task.id, expected_revision=2, now=210, status="cancelled")
+    assert same.closed_at == 200
+    reopened = store.update_task(conn, task.id, expected_revision=3, now=220, status="todo")
+    assert (reopened.status, reopened.closed_at) == ("todo", None)
+    cancelled = store.update_task(conn, task.id, expected_revision=4, now=230, status="cancelled")
+    assert cancelled.closed_at == 230
+
+
+def test_list_tasks_filters_by_assignee_and_status(conn):
+    a, b = make(conn, "a"), make(conn, "b")
+    t1 = make_task(conn, "t1", assignee_agent_id=a.id)
+    t2 = make_task(conn, "t2", assignee_agent_id=a.id)
+    t3 = make_task(conn, "t3", assignee_agent_id=b.id)
+    t4 = make_task(conn, "t4", project_id=2)
+    store.update_task(conn, t2.id, expected_revision=1, now=110, status="in_progress")
+    store.update_task(conn, t3.id, expected_revision=1, now=110, status="done")
+
+    def ids(**kw):
+        return [task.id for task in store.list_tasks(conn, **kw)]
+
+    assert ids() == [t1.id, t2.id, t3.id, t4.id]
+    assert ids(project_id=1) == [t1.id, t2.id, t3.id]
+    assert ids(assignee_agent_id=a.id) == [t1.id, t2.id]
+    assert ids(assignee_agent_id=a.id, statuses=["in_progress"]) == [t2.id]
+    assert ids(statuses=["todo", "done"]) == [t1.id, t3.id, t4.id]
+    assert ids(statuses=[]) == []
+    assert ids(limit=2) == [t1.id, t2.id]
+    assert ids(limit=2, offset=2) == [t3.id, t4.id]
+
+
+def test_count_open_children(conn):
+    parent = make_task(conn, "Mãe")
+    c1 = make_task(conn, "c1", parent_task_id=parent.id)
+    c2 = make_task(conn, "c2", parent_task_id=parent.id)
+    make_task(conn, "c3", parent_task_id=parent.id)
+    assert store.count_open_children(conn, parent.id) == 3
+    store.update_task(conn, c1.id, expected_revision=1, now=110, status="done")
+    store.update_task(conn, c2.id, expected_revision=1, now=110, status="cancelled")
+    assert store.count_open_children(conn, parent.id) == 1
+    assert store.count_open_children(conn, c1.id) == 0
+
+
+def test_deleting_the_parent_task_keeps_the_children(conn):
+    parent = make_task(conn, "Mãe")
+    child = make_task(conn, "Filha", parent_task_id=parent.id)
+    conn.execute("DELETE FROM tasks WHERE id = ?", (parent.id,))
+    assert store.get_task(conn, child.id).parent_task_id is None
+
+
+# Comments --------------------------------------------------------------------------
+
+
+def make_run(conn, agent, task_id=None, outcome="running", started_at=100, **kwargs):
+    return store.insert_run(
+        conn, agent_id=agent.id, source="assignment", started_at=started_at, outcome=outcome,
+        task_id=task_id, **kwargs,
+    )
+
+
+def test_add_comment_and_list(conn):
+    agent = make(conn)
+    task = make_task(conn)
+
+    first = store.add_comment(
+        conn, task_id=task.id, author_kind="human", author_agent_id=None, run_id=None, text="Oi", now=110
+    )
+    second = store.add_comment(
+        conn, task_id=task.id, author_kind="agent", author_agent_id=agent.id, run_id=None, text="Olá", now=120
+    )
+
+    assert (first.task_id, first.author_kind, first.author_agent_id, first.run_id) == (task.id, "human", None, None)
+    assert (first.text, first.created_at) == ("Oi", 110)
+    assert second.id > first.id
+    assert store.list_comments(conn, task.id) == [first, second]
+    assert store.list_comments(conn, task.id, after_id=first.id) == [second]
+    assert store.list_comments(conn, task.id, limit=1) == [first]
+    assert store.list_comments(conn, task.id, limit=1, latest=True) == [second]
+    assert store.last_comment_id(conn, task.id) == second.id
+
+
+def test_last_comment_id_is_zero_without_comments(conn):
+    assert store.last_comment_id(conn, make_task(conn).id) == 0
+
+
+def test_add_comment_validates(conn):
+    task = make_task(conn)
+    for text in ("", "x" * 20001):
+        with pytest.raises(store.TaskValidationError, match="comentário"):
+            store.add_comment(conn, task_id=task.id, author_kind="human", author_agent_id=None, run_id=None, text=text, now=1)
+    with pytest.raises(store.TaskValidationError, match="(?i)autor"):
+        store.add_comment(conn, task_id=task.id, author_kind="robot", author_agent_id=None, run_id=None, text="x", now=1)
+    with pytest.raises(store.TaskNotFoundError):
+        store.add_comment(conn, task_id=99, author_kind="human", author_agent_id=None, run_id=None, text="x", now=1)
+
+
+def test_add_comment_marks_run_commented_when_run_given(conn):
+    agent = make(conn)
+    task = make_task(conn)
+    run = make_run(conn, agent, task.id)
+    other = make_run(conn, agent, task.id, started_at=101)
+    assert (run.commented, run.rewoken, run.task_id) == (False, False, task.id)
+
+    comment = store.add_comment(
+        conn, task_id=task.id, author_kind="agent", author_agent_id=agent.id, run_id=run.id, text="Feito", now=120
+    )
+
+    assert comment.run_id == run.id
+    assert store.get_run(conn, run.id).commented is True
+    assert store.get_run(conn, other.id).commented is False
+    # A comment without a run (a human's) marks nothing.
+    store.add_comment(conn, task_id=task.id, author_kind="human", author_agent_id=None, run_id=None, text="Ok", now=130)
+    assert store.get_run(conn, other.id).commented is False
+
+
+def test_mark_run_commented_and_rewoken(conn):
+    agent = make(conn)
+    run = make_run(conn, agent)
+    store.mark_run_commented(conn, run.id)
+    store.mark_run_rewoken(conn, run.id)
+    done = store.get_run(conn, run.id)
+    assert (done.commented, done.rewoken) == (True, True)
+
+
+def test_deleting_a_task_deletes_its_comments(conn):
+    task = make_task(conn)
+    store.add_comment(conn, task_id=task.id, author_kind="app", author_agent_id=None, run_id=None, text="x", now=1)
+    conn.execute("DELETE FROM tasks WHERE id = ?", (task.id,))
+    assert conn.execute("SELECT COUNT(*) FROM task_comments").fetchone()[0] == 0
+
+
+# Task sessions ----------------------------------------------------------------------
+
+
+def test_task_session_roundtrip(conn):
+    agent = make(conn)
+    task = make_task(conn)
+    add_session(conn, "s1")
+    add_session(conn, "s2")
+    assert store.get_task_session(conn, agent.id, task.id) is None
+
+    store.set_task_session(conn, agent.id, task.id, session_id="s1", cwd="/tmp/p1", now=100)
+    first = store.get_task_session(conn, agent.id, task.id)
+    assert first == store.TaskSession(agent_id=agent.id, task_id=task.id, session_id="s1", cwd="/tmp/p1", created_at=100)
+
+    store.set_task_session(conn, agent.id, task.id, session_id="s2", cwd="/tmp/p1/wt", now=200)
+    second = store.get_task_session(conn, agent.id, task.id)
+    assert (second.session_id, second.cwd, second.created_at) == ("s2", "/tmp/p1/wt", 200)
+
+    store.clear_task_session(conn, agent.id, task.id)
+    assert store.get_task_session(conn, agent.id, task.id) is None
+    store.clear_task_session(conn, agent.id, task.id)  # nothing there: no error
+
+
+def test_task_session_survives_without_session_row(conn):
+    agent = make(conn)
+    task = make_task(conn)
+    add_session(conn, "s1")
+    store.set_task_session(conn, agent.id, task.id, session_id="s1", cwd="/tmp/p1", now=100)
+    conn.execute("DELETE FROM sessions WHERE session_id = 's1'")
+    found = store.get_task_session(conn, agent.id, task.id)
+    assert found is not None and found.session_id is None
+
+
+# Runs of tasks ---------------------------------------------------------------------
+
+
+def test_active_run_for_task(conn):
+    agent, other = make(conn, "a"), make(conn, "b")
+    task = make_task(conn)
+    elsewhere = make_task(conn, "outra")
+    assert store.active_run_for_task(conn, task.id) is None
+    make_run(conn, agent, task.id, outcome="concluded", started_at=100)
+    make_run(conn, other, elsewhere.id, outcome="running", started_at=101)
+    assert store.active_run_for_task(conn, task.id) is None
+
+    older = make_run(conn, agent, task.id, outcome="waiting", started_at=110)
+    newer = make_run(conn, other, task.id, outcome="starting", started_at=120)
+
+    assert store.active_run_for_task(conn, task.id) == newer
+    store.update_run(conn, newer.id, outcome="failed")
+    assert store.active_run_for_task(conn, task.id) == older
+
+
+def test_bump_run_count(conn):
+    task = make_task(conn)
+    assert store.bump_run_count(conn, task.id, now=110) == 1
+    assert store.bump_run_count(conn, task.id, now=120) == 2
+    fresh = store.get_task(conn, task.id)
+    assert (fresh.run_count, fresh.updated_at, fresh.revision) == (2, 120, 1)
+    with pytest.raises(store.TaskNotFoundError):
+        store.bump_run_count(conn, 99, now=1)
+
+
+def test_enqueue_wakeup_and_insert_run_carry_task_id(conn):
+    agent = make(conn)
+    task = make_task(conn)
+
+    wakeup = store.enqueue_wakeup(
+        conn, agent_id=agent.id, source="assignment", payload={"task_id": task.id}, task_id=task.id, now=100
+    )
+    plain = store.enqueue_wakeup(conn, agent_id=agent.id, source="manual", payload=None, now=101)
+    run = make_run(conn, agent, task.id)
+
+    assert wakeup.task_id == task.id and plain.task_id is None
+    assert store.next_wakeup(conn, agent.id).task_id is None  # manual outranks assignment
+    assert store.pending_wakeups(conn)[1].task_id == task.id
+    assert store.get_run(conn, run.id).task_id == task.id
+    assert store.list_runs(conn, agent.id)[0].task_id == task.id
+    conn.execute("DELETE FROM tasks WHERE id = ?", (task.id,))
+    assert store.get_run(conn, run.id).task_id is None
+    assert store.pending_wakeups(conn)[1].task_id is None
+
+
+def test_routine_has_create_task_flag(conn):
+    agent = make(conn)
+    plain = store.create_routine(conn, project_id=1, agent_id=agent.id, name="r", instruction="i", now=100)
+    flagged = store.create_routine(
+        conn, project_id=1, agent_id=agent.id, name="r2", instruction="i", create_task=True, now=100
+    )
+    assert plain.create_task is False and flagged.create_task is True
+    assert store.update_routine(conn, plain.id, now=110, create_task=True).create_task is True
+    assert store.update_routine(conn, plain.id, now=120, name="novo").create_task is True
+    assert store.update_routine(conn, flagged.id, now=130, create_task=False).create_task is False
+
+
+# Decisions -------------------------------------------------------------------------
+
+
+def make_decision(conn, agent, task=None, **kwargs):
+    return store.create_decision(
+        conn, project_id=1, task_id=task.id if task else None, agent_id=agent.id, run_id=None,
+        question="Qual caminho?", options=["A", "B"], now=100, **kwargs,
+    )
+
+
+def test_create_decision_and_list(conn):
+    agent = make(conn)
+    task = make_task(conn)
+    add_session(conn, "s1")
+    run = make_run(conn, agent, task.id)
+
+    decision = store.create_decision(
+        conn, project_id=1, task_id=task.id, agent_id=agent.id, run_id=run.id, session_id="s1",
+        question="Qual caminho?", options=["A", "B"], now=100,
+    )
+
+    assert decision == store.get_decision(conn, decision.id)
+    assert (decision.status, decision.answer, decision.receipt, decision.answered_at) == ("pending", None, None, None)
+    assert (decision.options, decision.session_id, decision.run_id, decision.task_id) == (["A", "B"], "s1", run.id, task.id)
+    free = make_decision(conn, agent)
+    assert free.session_id is None and free.task_id is None
+    assert [d.id for d in store.list_decisions(conn)] == [decision.id, free.id]
+    assert [d.id for d in store.list_decisions(conn, task_id=task.id)] == [decision.id]
+    assert [d.id for d in store.list_decisions(conn, project_id=2)] == []
+    with pytest.raises(store.NotFoundError, match="Decisão não encontrada"):
+        store.get_decision(conn, 99)
+
+
+def test_create_decision_validates(conn):
+    agent = make(conn)
+
+    def create(**kw):
+        return store.create_decision(
+            conn, project_id=1, task_id=None, agent_id=agent.id, run_id=None,
+            **{"question": "Q?", "options": [], "now": 1, **kw},
+        )
+
+    for question in ("", "x" * 2001):
+        with pytest.raises(store.OrgError, match="pergunta"):
+            create(question=question)
+    with pytest.raises(store.OrgError, match="opções"):
+        create(options=[str(i) for i in range(9)])
+    with pytest.raises(store.OrgError, match="opção"):
+        create(options=["x" * 201])
+    with pytest.raises(store.OrgError, match="opção"):
+        create(options=[""])
+    assert create(options=[str(i) for i in range(8)]).options == [str(i) for i in range(8)]
+    assert create(options=["x" * 200]).options == ["x" * 200]
+
+
+def test_decision_answer_sets_receipt_once(conn):
+    agent = make(conn)
+    decision = make_decision(conn, agent)
+
+    answered = store.answer_decision(conn, decision.id, answer="A", receipt="rec-1", now=200)
+
+    assert (answered.status, answered.answer, answered.receipt, answered.answered_at) == ("answered", "A", "rec-1", 200)
+    with pytest.raises(store.OrgError, match="já foi respondida"):
+        store.answer_decision(conn, decision.id, answer="B", receipt="rec-2", now=210)
+    assert store.get_decision(conn, decision.id).receipt == "rec-1"
+    other = make_decision(conn, agent)
+    with pytest.raises(store.OrgError, match="recibo"):
+        store.answer_decision(conn, other.id, answer="A", receipt="rec-1", now=220)
+    assert store.get_decision(conn, other.id).status == "pending"
+    with pytest.raises(store.NotFoundError):
+        store.answer_decision(conn, 99, answer="A", receipt="x", now=1)
+    assert [d.id for d in store.list_decisions(conn)] == [other.id]
+    assert [d.id for d in store.list_decisions(conn, pending_only=False)] == [decision.id, other.id]
+
+
+def test_expire_decision(conn):
+    agent = make(conn)
+    decision = make_decision(conn, agent)
+
+    assert store.expire_decision(conn, decision.id) is True
+    assert store.get_decision(conn, decision.id).status == "expired"
+    assert store.expire_decision(conn, decision.id) is False
+    assert store.list_decisions(conn) == []
+    with pytest.raises(store.OrgError, match="já foi respondida"):
+        store.answer_decision(conn, decision.id, answer="A", receipt="r", now=1)
+
+
+def test_deleting_a_task_keeps_its_decisions(conn):
+    agent = make(conn)
+    task = make_task(conn)
+    decision = make_decision(conn, agent, task)
+    conn.execute("DELETE FROM tasks WHERE id = ?", (task.id,))
+    assert store.get_decision(conn, decision.id).task_id is None
+
+
+# CI receipts -----------------------------------------------------------------------
+
+
+def test_ci_receipts_roundtrip(conn):
+    agent = make(conn)
+    task = make_task(conn)
+    run = make_run(conn, agent, task.id)
+
+    receipt = store.add_ci_receipt(
+        conn, project_id=1, task_id=task.id, agent_id=agent.id, run_id=run.id,
+        run_url="https://github.com/o/r/actions/runs/1", repository="o/r", head_sha="abc",
+        conclusion="success", jobs=[{"name": "test", "conclusion": "success"}], receipt="ci-1", now=300,
+    )
+
+    assert receipt.jobs == [{"name": "test", "conclusion": "success"}]
+    assert (receipt.task_id, receipt.agent_id, receipt.run_id, receipt.created_at) == (task.id, agent.id, run.id, 300)
+    assert store.list_ci_receipts(conn, task.id) == [receipt]
+    assert store.list_ci_receipts(conn, make_task(conn, "outra").id) == []
+    with pytest.raises(store.OrgError, match="recibo"):
+        store.add_ci_receipt(
+            conn, project_id=1, task_id=task.id, agent_id=agent.id, run_id=None, run_url=None,
+            repository=None, head_sha=None, conclusion=None, jobs=None, receipt="ci-1", now=301,
+        )
+    empty = store.add_ci_receipt(
+        conn, project_id=1, task_id=task.id, agent_id=None, run_id=None, run_url=None, repository=None,
+        head_sha=None, conclusion=None, jobs=None, receipt="ci-2", now=302,
+    )
+    assert empty.jobs is None
+
+
+# Legacy work (handed from migration 33 to the file migration) -----------------------
+
+
+def test_legacy_work_list_and_delete(conn):
+    for kind, task_id in (("coordinator", None), ("decision", 5), ("pr", 6)):
+        conn.execute(
+            "INSERT INTO org_legacy_work (kind, project_id, task_id, data) VALUES (?, 1, ?, ?)",
+            (kind, task_id, '{"k": 1}'),
+        )
+
+    everything = store.list_legacy_work(conn)
+
+    assert [(row.kind, row.project_id, row.task_id, row.data) for row in everything] == [
+        ("coordinator", 1, None, {"k": 1}), ("decision", 1, 5, {"k": 1}), ("pr", 1, 6, {"k": 1}),
+    ]
+    assert [row.kind for row in store.list_legacy_work(conn, kind="pr")] == ["pr"]
+    store.delete_legacy_work(conn, everything[1].id)
+    assert [row.kind for row in store.list_legacy_work(conn)] == ["coordinator", "pr"]
+    store.delete_legacy_work(conn, everything[1].id)  # already gone: no error

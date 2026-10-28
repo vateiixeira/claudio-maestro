@@ -1,5 +1,5 @@
 """Organização de agentes em SQLite: agentes, rotinas, fila de despertar, execuções,
-registro, avisos, anúncios, PRs e conversas.
+registro, avisos, anúncios, PRs, conversas, tarefas, comentários, decisões e recibos de CI.
 
 Funções simples sobre uma conexão. Quem chama é dono da transação quando várias escritas
 precisam ser atômicas (`db.transaction`).
@@ -27,6 +27,19 @@ PRIORITY: Final = {
 ACTIVE_OUTCOMES: Final = ("starting", "running", "waiting")
 # Outcomes that count toward the alert on repeated problems (the rest is noise or in flight).
 COUNTED_OUTCOMES: Final = ("failed", "skipped", "concluded", "closed", "waiting")
+
+TASK_STATUSES: Final = ("todo", "in_progress", "in_review", "blocked", "done", "cancelled")
+TASK_PRIORITIES: Final = ("urgent", "high", "normal", "low")
+TASK_CLOSED_STATUSES: Final = ("done", "cancelled")
+COMMENT_AUTHORS: Final = ("human", "agent", "app")
+TASK_CREATORS: Final = ("human", "agent", "routine")
+DEFAULT_MAX_RUNS: Final = 20
+TASK_TITLE_MAX = 160
+TASK_DESCRIPTION_MAX = 20000
+COMMENT_MAX = 20000
+DECISION_QUESTION_MAX = 2000
+DECISION_OPTIONS_MAX = 8
+DECISION_OPTION_MAX = 200
 
 ROUTINE_NAME_MAX = 80
 ROUTINE_INSTRUCTION_MAX = 5000
@@ -66,6 +79,20 @@ class ReportsToOtherProjectError(OrgError):
         super().__init__("O chefe precisa ser um agente do mesmo projeto.")
 
 
+class TaskNotFoundError(NotFoundError):
+    def __init__(self) -> None:
+        super().__init__("Tarefa não encontrada.")
+
+
+class TaskRevisionError(OrgError):
+    def __init__(self) -> None:
+        super().__init__("A tarefa mudou; recarregue e tente de novo.")
+
+
+class TaskValidationError(OrgError):
+    """A task field is out of range; the message names the field."""
+
+
 @dataclass(frozen=True)
 class Agent:
     id: int
@@ -91,6 +118,7 @@ class Routine:
     name: str
     instruction: str
     enabled: bool
+    create_task: bool  # each firing opens a task instead of a bare run
     created_at: int
     updated_at: int
 
@@ -116,6 +144,7 @@ class Wakeup:
     run_id: int | None
     created_at: int
     taken_at: int | None
+    task_id: int | None
 
 
 @dataclass(frozen=True)
@@ -130,6 +159,9 @@ class Run:
     ended_at: int | None
     outcome: Outcome
     reason: str | None
+    task_id: int | None
+    commented: bool  # the run left a comment on its task
+    rewoken: bool  # the run was woken once more because it ended without commenting
 
 
 @dataclass(frozen=True)
@@ -194,6 +226,105 @@ class PrComment:
 class Chat:
     session_id: str
     agent_id: int
+
+
+TaskStatus = Literal["todo", "in_progress", "in_review", "blocked", "done", "cancelled"]
+TaskPriority = Literal["urgent", "high", "normal", "low"]
+CommentAuthor = Literal["human", "agent", "app"]
+TaskCreator = Literal["human", "agent", "routine"]
+DecisionStatus = Literal["pending", "answered", "expired"]
+
+
+@dataclass(frozen=True)
+class Task:
+    id: int
+    project_id: int
+    parent_task_id: int | None
+    title: str
+    description: str
+    status: TaskStatus
+    priority: TaskPriority
+    assignee_agent_id: int | None
+    reviewer_agent_id: int | None
+    created_by_agent_id: int | None
+    created_by: TaskCreator
+    routine_id: int | None
+    revision: int
+    run_count: int
+    max_runs: int
+    worktree_path: str | None
+    branch: str | None
+    blocked_reason: str | None
+    # {dossier_ref, source, external_id, coordinator_session_id} of the old work item this task
+    # came from; `None` on new tasks and once the file migration absorbed it.
+    legacy: dict[str, Any] | None
+    created_at: int
+    updated_at: int
+    closed_at: int | None
+
+
+@dataclass(frozen=True)
+class Comment:
+    id: int
+    task_id: int
+    author_kind: CommentAuthor
+    author_agent_id: int | None
+    run_id: int | None
+    text: str
+    created_at: int
+
+
+@dataclass(frozen=True)
+class TaskSession:
+    agent_id: int
+    task_id: int
+    session_id: str | None
+    cwd: str
+    created_at: int
+
+
+@dataclass(frozen=True)
+class Decision:
+    id: int
+    project_id: int
+    task_id: int | None
+    agent_id: int
+    run_id: int | None
+    session_id: str | None  # the session that asked
+    question: str
+    options: list[str]
+    answer: str | None
+    receipt: str | None
+    status: DecisionStatus
+    created_at: int
+    answered_at: int | None
+
+
+@dataclass(frozen=True)
+class CiReceipt:
+    id: int
+    project_id: int
+    task_id: int | None
+    agent_id: int | None
+    run_id: int | None
+    run_url: str | None
+    repository: str | None
+    head_sha: str | None
+    conclusion: str | None
+    jobs: Any  # decoded JSON, as given to `add_ci_receipt`
+    receipt: str | None
+    created_at: int
+
+
+@dataclass(frozen=True)
+class LegacyWork:
+    """A row handed from migration 33 to the file migration (`kind`: coordinator, decision, pr)."""
+
+    id: int
+    kind: str
+    project_id: int | None
+    task_id: int | None
+    data: dict[str, Any]
 
 
 def _fields(row: sqlite3.Row) -> dict[str, Any]:
@@ -358,13 +489,16 @@ def subtree(conn: sqlite3.Connection, agent_id: int) -> list[int]:
 
 # Routines and their schedules ----------------------------------------------------
 
-_ROUTINE_COLUMNS = "id, project_id, agent_id, name, instruction, enabled, created_at, updated_at"
-_ROUTINE_UPDATABLE = ("name", "instruction", "enabled")
+_ROUTINE_COLUMNS = (
+    "id, project_id, agent_id, name, instruction, enabled, create_task, created_at, updated_at"
+)
+_ROUTINE_UPDATABLE = ("name", "instruction", "enabled", "create_task")
 
 
 def _routine(row: sqlite3.Row) -> Routine:
     fields = _fields(row)
     fields["enabled"] = bool(fields["enabled"])
+    fields["create_task"] = bool(fields["create_task"])
     return Routine(**fields)
 
 
@@ -385,13 +519,14 @@ def create_routine(
     name: str,
     instruction: str,
     enabled: bool = True,
+    create_task: bool = False,
     now: int,
 ) -> Routine:
     _check_routine_text(name, instruction)
     cursor = conn.execute(
-        "INSERT INTO routines (project_id, agent_id, name, instruction, enabled, created_at,"
-        " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (project_id, agent_id, name, instruction, int(enabled), now, now),
+        "INSERT INTO routines (project_id, agent_id, name, instruction, enabled, create_task,"
+        " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, agent_id, name, instruction, int(enabled), int(create_task), now, now),
     )
     assert cursor.lastrowid is not None
     return get_routine(conn, cursor.lastrowid)
@@ -428,14 +563,17 @@ def update_routine(
     name: str | _Unset = UNSET,
     instruction: str | _Unset = UNSET,
     enabled: bool | _Unset = UNSET,
+    create_task: bool | _Unset = UNSET,
 ) -> Routine:
     get_routine(conn, routine_id)
     values = _changes(
-        _ROUTINE_UPDATABLE, {"name": name, "instruction": instruction, "enabled": enabled}
+        _ROUTINE_UPDATABLE,
+        {"name": name, "instruction": instruction, "enabled": enabled, "create_task": create_task},
     )
     _check_routine_text(values.get("name"), values.get("instruction"))
-    if "enabled" in values:
-        values["enabled"] = int(values["enabled"])
+    for flag in ("enabled", "create_task"):
+        if flag in values:
+            values[flag] = int(values[flag])
     values["updated_at"] = now
     assignments = ", ".join(f"{key} = ?" for key in values)
     conn.execute(f"UPDATE routines SET {assignments} WHERE id = ?", (*values.values(), routine_id))
@@ -488,7 +626,8 @@ def mark_fired(conn: sqlite3.Connection, schedule_id: int, at: int) -> None:
 # Wakeup queue -------------------------------------------------------------------
 
 _WAKEUP_COLUMNS = (
-    "id, agent_id, source, priority, routine_id, payload, state, run_id, created_at, taken_at"
+    "id, agent_id, source, priority, routine_id, payload, state, run_id, created_at, taken_at,"
+    " task_id"
 )
 
 
@@ -505,6 +644,7 @@ def enqueue_wakeup(
     source: Source,
     payload: dict[str, Any] | None,
     routine_id: int | None = None,
+    task_id: int | None = None,
     now: int,
 ) -> Wakeup:
     """Queue a wakeup. Only routine wakeups group: when the agent already has a pending one
@@ -523,9 +663,9 @@ def enqueue_wakeup(
     if encoded is not None and len(encoded) > WAKEUP_PAYLOAD_MAX:
         raise OrgError(f"O texto do despertar passa de {WAKEUP_PAYLOAD_MAX} caracteres.")
     cursor = conn.execute(
-        "INSERT INTO wakeups (agent_id, source, priority, routine_id, payload, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (agent_id, source, PRIORITY[source], routine_id, encoded, now),
+        "INSERT INTO wakeups (agent_id, source, priority, routine_id, payload, created_at, task_id)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (agent_id, source, PRIORITY[source], routine_id, encoded, now, task_id),
     )
     row = conn.execute(
         f"SELECT {_WAKEUP_COLUMNS} FROM wakeups WHERE id = ?", (cursor.lastrowid,)
@@ -579,12 +719,15 @@ def pending_wakeups(conn: sqlite3.Connection, agent_id: int | None = None) -> li
 
 _RUN_COLUMNS = (
     "id, agent_id, session_id, source, routine_id, scheduled_for, started_at, ended_at,"
-    " outcome, reason"
+    " outcome, reason, task_id, commented, rewoken"
 )
 
 
 def _run(row: sqlite3.Row) -> Run:
-    return Run(**_fields(row))
+    fields = _fields(row)
+    fields["commented"] = bool(fields["commented"])
+    fields["rewoken"] = bool(fields["rewoken"])
+    return Run(**fields)
 
 
 def insert_run(
@@ -599,12 +742,13 @@ def insert_run(
     scheduled_for: int | None = None,
     reason: str | None = None,
     ended_at: int | None = None,
+    task_id: int | None = None,
 ) -> Run:
     cursor = conn.execute(
         "INSERT INTO runs (agent_id, session_id, source, routine_id, scheduled_for, started_at,"
-        " ended_at, outcome, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " ended_at, outcome, reason, task_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (agent_id, session_id, source, routine_id, scheduled_for, started_at, ended_at, outcome,
-         reason),
+         reason, task_id),
     )
     assert cursor.lastrowid is not None
     return get_run(conn, cursor.lastrowid)
@@ -1066,3 +1210,507 @@ def list_chats(conn: sqlite3.Connection, agent_id: int) -> list[Chat]:
         (agent_id,),
     ).fetchall()
     return [Chat(**_fields(row)) for row in rows]
+
+
+# Tasks --------------------------------------------------------------------------
+
+_TASK_COLUMNS = (
+    "id, project_id, parent_task_id, title, description, status, priority, assignee_agent_id,"
+    " reviewer_agent_id, created_by_agent_id, created_by, routine_id, revision, run_count,"
+    " max_runs, worktree_path, branch, blocked_reason, legacy_json, created_at, updated_at,"
+    " closed_at"
+)
+_TASK_UPDATABLE = (
+    "title", "description", "status", "priority", "assignee_agent_id", "reviewer_agent_id",
+    "parent_task_id", "run_count", "max_runs", "worktree_path", "branch", "blocked_reason",
+)
+
+
+def _task(row: sqlite3.Row) -> Task:
+    fields = _fields(row)
+    legacy = fields.pop("legacy_json")
+    fields["legacy"] = json.loads(legacy) if legacy else None
+    return Task(**fields)
+
+
+def _check_task_fields(values: dict[str, Any]) -> None:
+    """Range checks shared by `create_task` and `update_task`; the message names the field."""
+    title = values.get("title")
+    if "title" in values and (not isinstance(title, str) or not 1 <= len(title) <= TASK_TITLE_MAX):
+        raise TaskValidationError(f"O título precisa ter de 1 a {TASK_TITLE_MAX} caracteres.")
+    description = values.get("description")
+    if "description" in values and (
+        not isinstance(description, str) or len(description) > TASK_DESCRIPTION_MAX
+    ):
+        raise TaskValidationError(
+            f"A descrição passa de {TASK_DESCRIPTION_MAX} caracteres."
+        )
+    if "status" in values and values["status"] not in TASK_STATUSES:
+        raise TaskValidationError("Estado da tarefa inválido.")
+    if "priority" in values and values["priority"] not in TASK_PRIORITIES:
+        raise TaskValidationError("Prioridade da tarefa inválida.")
+    if "created_by" in values and values["created_by"] not in TASK_CREATORS:
+        raise TaskValidationError("Autor da tarefa inválido.")
+    max_runs = values.get("max_runs")
+    if "max_runs" in values and (not isinstance(max_runs, int) or max_runs < 1):
+        raise TaskValidationError("O teto de execuções precisa ser um número maior que zero.")
+    run_count = values.get("run_count")
+    if "run_count" in values and (not isinstance(run_count, int) or run_count < 0):
+        raise TaskValidationError("A contagem de execuções não pode ser negativa.")
+
+
+def _check_parent(
+    conn: sqlite3.Connection, *, project_id: int, parent_task_id: int, task_id: int | None
+) -> None:
+    """The parent exists, is of the same project and is not the task itself or below it."""
+    parent = conn.execute(
+        "SELECT project_id FROM tasks WHERE id = ?", (parent_task_id,)
+    ).fetchone()
+    if parent is None:
+        raise TaskValidationError("A tarefa-mãe não existe.")
+    if parent["project_id"] != project_id:
+        raise TaskValidationError("A tarefa-mãe precisa ser do mesmo projeto.")
+    if task_id is None:
+        return
+    # Walk up from the parent; meeting the task means a cycle. Bounded by the number of tasks.
+    seen: set[int] = set()
+    current: int | None = parent_task_id
+    while current is not None and current not in seen:
+        if current == task_id:
+            raise TaskValidationError("A tarefa-mãe não pode ser a própria tarefa nem uma filha dela.")
+        seen.add(current)
+        row = conn.execute("SELECT parent_task_id FROM tasks WHERE id = ?", (current,)).fetchone()
+        current = row["parent_task_id"] if row else None
+
+
+def create_task(
+    conn: sqlite3.Connection,
+    *,
+    project_id: int,
+    title: str,
+    description: str = "",
+    assignee_agent_id: int | None = None,
+    reviewer_agent_id: int | None = None,
+    parent_task_id: int | None = None,
+    priority: TaskPriority = "normal",
+    created_by: TaskCreator = "human",
+    created_by_agent_id: int | None = None,
+    routine_id: int | None = None,
+    now: int,
+) -> Task:
+    _check_task_fields(
+        {"title": title, "description": description, "priority": priority, "created_by": created_by}
+    )
+    if parent_task_id is not None:
+        _check_parent(conn, project_id=project_id, parent_task_id=parent_task_id, task_id=None)
+    cursor = conn.execute(
+        "INSERT INTO tasks (project_id, parent_task_id, title, description, priority,"
+        " assignee_agent_id, reviewer_agent_id, created_by_agent_id, created_by, routine_id,"
+        " max_runs, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, parent_task_id, title, description, priority, assignee_agent_id,
+         reviewer_agent_id, created_by_agent_id, created_by, routine_id, DEFAULT_MAX_RUNS, now,
+         now),
+    )
+    assert cursor.lastrowid is not None
+    return get_task(conn, cursor.lastrowid)
+
+
+def get_task(conn: sqlite3.Connection, task_id: int) -> Task:
+    row = conn.execute(f"SELECT {_TASK_COLUMNS} FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFoundError()
+    return _task(row)
+
+
+def list_tasks(
+    conn: sqlite3.Connection,
+    *,
+    project_id: int | None = None,
+    assignee_agent_id: int | None = None,
+    statuses: list[str] | tuple[str, ...] | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Task]:
+    """Oldest id first. `statuses=None` means any; an empty list matches nothing."""
+    conditions: list[str] = []
+    values: list[Any] = []
+    if project_id is not None:
+        conditions.append("project_id = ?")
+        values.append(project_id)
+    if assignee_agent_id is not None:
+        conditions.append("assignee_agent_id = ?")
+        values.append(assignee_agent_id)
+    if statuses is not None:
+        conditions.append(f"status IN ({', '.join('?' for _ in statuses)})")
+        values.extend(statuses)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"SELECT {_TASK_COLUMNS} FROM tasks{where} ORDER BY id LIMIT ? OFFSET ?",
+        (*values, limit, offset),
+    ).fetchall()
+    return [_task(row) for row in rows]
+
+
+def update_task(
+    conn: sqlite3.Connection, task_id: int, *, expected_revision: int, now: int, **fields: Any
+) -> Task:
+    """Change the fields passed (`None` clears the nullable ones) when the task is still at
+    `expected_revision`; the revision goes up by one. `closed_at` is set when the task enters
+    `done` or `cancelled` and cleared when it leaves them. Unknown fields raise `ValueError`."""
+    values = _changes(_TASK_UPDATABLE, fields)
+    task = get_task(conn, task_id)
+    if task.revision != expected_revision:
+        raise TaskRevisionError()
+    _check_task_fields(values)
+    if values.get("parent_task_id") is not None:
+        _check_parent(
+            conn, project_id=task.project_id, parent_task_id=values["parent_task_id"],
+            task_id=task_id,
+        )
+    new_status = values.get("status", task.status)
+    if new_status in TASK_CLOSED_STATUSES and task.status not in TASK_CLOSED_STATUSES:
+        values["closed_at"] = now
+    elif new_status not in TASK_CLOSED_STATUSES:
+        values["closed_at"] = None
+    values["updated_at"] = now
+    assignments = ", ".join(f"{key} = ?" for key in values)
+    cursor = conn.execute(
+        f"UPDATE tasks SET {assignments}, revision = revision + 1 WHERE id = ? AND revision = ?",
+        (*values.values(), task_id, expected_revision),
+    )
+    if cursor.rowcount == 0:
+        raise TaskRevisionError()
+    return get_task(conn, task_id)
+
+
+def count_open_children(conn: sqlite3.Connection, task_id: int) -> int:
+    marks = ", ".join("?" for _ in TASK_CLOSED_STATUSES)
+    return conn.execute(
+        f"SELECT COUNT(*) FROM tasks WHERE parent_task_id = ? AND status NOT IN ({marks})",
+        (task_id, *TASK_CLOSED_STATUSES),
+    ).fetchone()[0]
+
+
+def bump_run_count(conn: sqlite3.Connection, task_id: int, now: int) -> int:
+    """Count one more run on the task (no revision bump: a run is not an edit) and return the
+    new total."""
+    row = conn.execute(
+        "UPDATE tasks SET run_count = run_count + 1, updated_at = ? WHERE id = ?"
+        " RETURNING run_count",
+        (now, task_id),
+    ).fetchone()
+    if row is None:
+        raise TaskNotFoundError()
+    return row[0]
+
+
+def active_run_for_task(conn: sqlite3.Connection, task_id: int) -> Run | None:
+    """The run of the task that is `starting`, `running` or `waiting` (newest if several)."""
+    marks = ", ".join("?" for _ in ACTIVE_OUTCOMES)
+    row = conn.execute(
+        f"SELECT {_RUN_COLUMNS} FROM runs WHERE task_id = ? AND outcome IN ({marks})"
+        " ORDER BY started_at DESC, id DESC LIMIT 1",
+        (task_id, *ACTIVE_OUTCOMES),
+    ).fetchone()
+    return _run(row) if row else None
+
+
+def mark_run_commented(conn: sqlite3.Connection, run_id: int) -> None:
+    conn.execute("UPDATE runs SET commented = 1 WHERE id = ?", (run_id,))
+
+
+def mark_run_rewoken(conn: sqlite3.Connection, run_id: int) -> None:
+    conn.execute("UPDATE runs SET rewoken = 1 WHERE id = ?", (run_id,))
+
+
+# Task comments ------------------------------------------------------------------
+
+_TASK_COMMENT_COLUMNS = "id, task_id, author_kind, author_agent_id, run_id, text, created_at"
+
+
+def _task_comment(row: sqlite3.Row) -> Comment:
+    return Comment(**_fields(row))
+
+
+def add_comment(
+    conn: sqlite3.Connection,
+    *,
+    task_id: int,
+    author_kind: CommentAuthor,
+    author_agent_id: int | None,
+    run_id: int | None,
+    text: str,
+    now: int,
+) -> Comment:
+    """Append a comment. When `run_id` is given the run is marked as having commented."""
+    if author_kind not in COMMENT_AUTHORS:
+        raise TaskValidationError("Autor do comentário inválido.")
+    if not isinstance(text, str) or not 1 <= len(text) <= COMMENT_MAX:
+        raise TaskValidationError(f"O comentário precisa ter de 1 a {COMMENT_MAX} caracteres.")
+    get_task(conn, task_id)
+    cursor = conn.execute(
+        "INSERT INTO task_comments (task_id, author_kind, author_agent_id, run_id, text,"
+        " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (task_id, author_kind, author_agent_id, run_id, text, now),
+    )
+    if run_id is not None:
+        mark_run_commented(conn, run_id)
+    row = conn.execute(
+        f"SELECT {_TASK_COMMENT_COLUMNS} FROM task_comments WHERE id = ?", (cursor.lastrowid,)
+    ).fetchone()
+    return _task_comment(row)
+
+
+def list_comments(
+    conn: sqlite3.Connection,
+    task_id: int,
+    after_id: int = 0,
+    limit: int = 200,
+    latest: bool = False,
+) -> list[Comment]:
+    """Comments with id above `after_id`, oldest first. With `latest`, the newest `limit` of
+    them (still oldest first)."""
+    if latest:
+        rows = conn.execute(
+            f"SELECT {_TASK_COMMENT_COLUMNS} FROM (SELECT {_TASK_COMMENT_COLUMNS} FROM task_comments"
+            " WHERE task_id = ? AND id > ? ORDER BY id DESC LIMIT ?) ORDER BY id",
+            (task_id, after_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            f"SELECT {_TASK_COMMENT_COLUMNS} FROM task_comments WHERE task_id = ? AND id > ?"
+            " ORDER BY id LIMIT ?",
+            (task_id, after_id, limit),
+        ).fetchall()
+    return [_task_comment(row) for row in rows]
+
+
+def last_comment_id(conn: sqlite3.Connection, task_id: int) -> int:
+    """Id of the newest comment of the task, 0 when there is none."""
+    row = conn.execute(
+        "SELECT COALESCE(MAX(id), 0) FROM task_comments WHERE task_id = ?", (task_id,)
+    ).fetchone()
+    return row[0]
+
+
+# Task sessions (the conversation of an agent about a task) ------------------------
+
+_TASK_SESSION_COLUMNS = "agent_id, task_id, session_id, cwd, created_at"
+
+
+def get_task_session(conn: sqlite3.Connection, agent_id: int, task_id: int) -> TaskSession | None:
+    row = conn.execute(
+        f"SELECT {_TASK_SESSION_COLUMNS} FROM task_sessions WHERE agent_id = ? AND task_id = ?",
+        (agent_id, task_id),
+    ).fetchone()
+    return TaskSession(**_fields(row)) if row else None
+
+
+def set_task_session(
+    conn: sqlite3.Connection,
+    agent_id: int,
+    task_id: int,
+    *,
+    session_id: str | None,
+    cwd: str,
+    now: int,
+) -> TaskSession:
+    conn.execute(
+        "INSERT INTO task_sessions (agent_id, task_id, session_id, cwd, created_at)"
+        " VALUES (?, ?, ?, ?, ?)"
+        " ON CONFLICT (agent_id, task_id) DO UPDATE SET session_id = excluded.session_id,"
+        " cwd = excluded.cwd, created_at = excluded.created_at",
+        (agent_id, task_id, session_id, cwd, now),
+    )
+    found = get_task_session(conn, agent_id, task_id)
+    assert found is not None
+    return found
+
+
+def clear_task_session(conn: sqlite3.Connection, agent_id: int, task_id: int) -> None:
+    conn.execute(
+        "DELETE FROM task_sessions WHERE agent_id = ? AND task_id = ?", (agent_id, task_id)
+    )
+
+
+# Decisions (questions an agent puts to the human) --------------------------------
+
+_DECISION_COLUMNS = (
+    "id, project_id, task_id, agent_id, run_id, session_id, question, options, answer, receipt,"
+    " status, created_at, answered_at"
+)
+
+
+def _decision(row: sqlite3.Row) -> Decision:
+    fields = _fields(row)
+    fields["options"] = json.loads(fields["options"])
+    return Decision(**fields)
+
+
+def create_decision(
+    conn: sqlite3.Connection,
+    *,
+    project_id: int,
+    task_id: int | None,
+    agent_id: int,
+    run_id: int | None,
+    question: str,
+    options: list[str],
+    session_id: str | None = None,
+    now: int,
+) -> Decision:
+    if not isinstance(question, str) or not 1 <= len(question) <= DECISION_QUESTION_MAX:
+        raise OrgError(f"A pergunta precisa ter de 1 a {DECISION_QUESTION_MAX} caracteres.")
+    if len(options) > DECISION_OPTIONS_MAX:
+        raise OrgError(f"Use no máximo {DECISION_OPTIONS_MAX} opções.")
+    for option in options:
+        if not isinstance(option, str) or not 1 <= len(option) <= DECISION_OPTION_MAX:
+            raise OrgError(f"Cada opção precisa ter de 1 a {DECISION_OPTION_MAX} caracteres.")
+    cursor = conn.execute(
+        "INSERT INTO decisions (project_id, task_id, agent_id, run_id, session_id, question,"
+        " options, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, task_id, agent_id, run_id, session_id, question,
+         json.dumps(options, ensure_ascii=False), now),
+    )
+    assert cursor.lastrowid is not None
+    return get_decision(conn, cursor.lastrowid)
+
+
+def get_decision(conn: sqlite3.Connection, decision_id: int) -> Decision:
+    row = conn.execute(
+        f"SELECT {_DECISION_COLUMNS} FROM decisions WHERE id = ?", (decision_id,)
+    ).fetchone()
+    if row is None:
+        raise NotFoundError("Decisão não encontrada.")
+    return _decision(row)
+
+
+def list_decisions(
+    conn: sqlite3.Connection,
+    *,
+    project_id: int | None = None,
+    task_id: int | None = None,
+    pending_only: bool = True,
+) -> list[Decision]:
+    conditions: list[str] = []
+    values: list[Any] = []
+    if project_id is not None:
+        conditions.append("project_id = ?")
+        values.append(project_id)
+    if task_id is not None:
+        conditions.append("task_id = ?")
+        values.append(task_id)
+    if pending_only:
+        conditions.append("status = 'pending'")
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(f"SELECT {_DECISION_COLUMNS} FROM decisions{where} ORDER BY id", values)
+    return [_decision(row) for row in rows.fetchall()]
+
+
+def answer_decision(
+    conn: sqlite3.Connection, decision_id: int, *, answer: str, receipt: str, now: int
+) -> Decision:
+    """Record the answer and its receipt, once: a decision that is no longer pending refuses."""
+    if not isinstance(answer, str) or not 1 <= len(answer) <= COMMENT_MAX:
+        raise OrgError(f"A resposta precisa ter de 1 a {COMMENT_MAX} caracteres.")
+    get_decision(conn, decision_id)
+    try:
+        cursor = conn.execute(
+            "UPDATE decisions SET answer = ?, receipt = ?, status = 'answered', answered_at = ?"
+            " WHERE id = ? AND status = 'pending'",
+            (answer, receipt, now, decision_id),
+        )
+    except sqlite3.IntegrityError as error:
+        if "decisions.receipt" in str(error):
+            raise OrgError("Esse recibo já foi usado em outra decisão.") from error
+        raise
+    if cursor.rowcount == 0:
+        raise OrgError("Esta decisão já foi respondida ou expirou.")
+    return get_decision(conn, decision_id)
+
+
+def expire_decision(conn: sqlite3.Connection, decision_id: int) -> bool:
+    """Close a pending decision nobody will answer; False when it was not pending."""
+    cursor = conn.execute(
+        "UPDATE decisions SET status = 'expired' WHERE id = ? AND status = 'pending'",
+        (decision_id,),
+    )
+    return cursor.rowcount == 1
+
+
+# CI receipts (backend-issued proof of a GitHub Actions run) ------------------------
+
+_CI_COLUMNS = (
+    "id, project_id, task_id, agent_id, run_id, run_url, repository, head_sha, conclusion, jobs,"
+    " receipt, created_at"
+)
+
+
+def _ci_receipt(row: sqlite3.Row) -> CiReceipt:
+    fields = _fields(row)
+    fields["jobs"] = json.loads(fields["jobs"]) if fields["jobs"] is not None else None
+    return CiReceipt(**fields)
+
+
+def add_ci_receipt(
+    conn: sqlite3.Connection,
+    *,
+    project_id: int,
+    task_id: int | None,
+    agent_id: int | None,
+    run_id: int | None,
+    run_url: str | None,
+    repository: str | None,
+    head_sha: str | None,
+    conclusion: str | None,
+    jobs: Any,
+    receipt: str | None,
+    now: int,
+) -> CiReceipt:
+    encoded = json.dumps(jobs, ensure_ascii=False) if jobs is not None else None
+    try:
+        cursor = conn.execute(
+            "INSERT INTO ci_receipts (project_id, task_id, agent_id, run_id, run_url, repository,"
+            " head_sha, conclusion, jobs, receipt, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (project_id, task_id, agent_id, run_id, run_url, repository, head_sha, conclusion,
+             encoded, receipt, now),
+        )
+    except sqlite3.IntegrityError as error:
+        if "ci_receipts.receipt" in str(error):
+            raise OrgError("Esse recibo de CI já foi registrado.") from error
+        raise
+    row = conn.execute(
+        f"SELECT {_CI_COLUMNS} FROM ci_receipts WHERE id = ?", (cursor.lastrowid,)
+    ).fetchone()
+    return _ci_receipt(row)
+
+
+def list_ci_receipts(conn: sqlite3.Connection, task_id: int) -> list[CiReceipt]:
+    rows = conn.execute(
+        f"SELECT {_CI_COLUMNS} FROM ci_receipts WHERE task_id = ? ORDER BY id", (task_id,)
+    ).fetchall()
+    return [_ci_receipt(row) for row in rows]
+
+
+# Legacy work (handed from migration 33 to the file migration) ---------------------
+
+
+def list_legacy_work(conn: sqlite3.Connection, kind: str | None = None) -> list[LegacyWork]:
+    """Rows migration 33 left for `migrate_work`, oldest first, of one `kind` or all."""
+    where, values = ("WHERE kind = ?", (kind,)) if kind is not None else ("", ())
+    rows = conn.execute(
+        f"SELECT id, kind, project_id, task_id, data FROM org_legacy_work {where} ORDER BY id",
+        values,
+    ).fetchall()
+    result = []
+    for row in rows:
+        fields = _fields(row)
+        fields["data"] = json.loads(fields["data"])
+        result.append(LegacyWork(**fields))
+    return result
+
+
+def delete_legacy_work(conn: sqlite3.Connection, legacy_id: int) -> None:
+    """Forget a row once `migrate_work` consumed it (nothing happens when it is gone)."""
+    conn.execute("DELETE FROM org_legacy_work WHERE id = ?", (legacy_id,))

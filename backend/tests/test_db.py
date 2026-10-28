@@ -634,10 +634,16 @@ def test_migration_32_drops_specialist_tables(tmp_path: Path):
                 statement(conn) if callable(statement) else conn.execute(statement)
             conn.execute("PRAGMA user_version = 31")
         assert set(SPECIALIST_TABLES) <= table_names(conn)
+        copied = ("agents", "routines", "routine_schedules", "runs", "registry", "notices",
+                  "announcements", "agent_chats", "agent_prs", "agent_pr_comments")
+        # Later migrations add columns to some of these; compare only what existed at version 31.
+        columns = {
+            table: ", ".join(row["name"] for row in conn.execute(f"PRAGMA table_info({table})"))
+            for table in copied
+        }
         before = {
-            table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY 1, 2")]
-            for table in ("agents", "routines", "routine_schedules", "runs", "registry", "notices",
-                          "announcements", "agent_chats", "agent_prs", "agent_pr_comments")
+            table: [tuple(row) for row in conn.execute(f"SELECT {columns[table]} FROM {table} ORDER BY 1, 2")]
+            for table in copied
         }
         sessions_before = [
             tuple(row) for row in conn.execute("SELECT session_id, agent_id FROM sessions ORDER BY 1")
@@ -659,7 +665,7 @@ def test_migration_32_drops_specialist_tables(tmp_path: Path):
         ).fetchone()[0] == 0
         # What was copied stays exactly as it was.
         for table, rows in before.items():
-            now = [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY 1, 2")]
+            now = [tuple(row) for row in conn.execute(f"SELECT {columns[table]} FROM {table} ORDER BY 1, 2")]
             assert now == rows, table
         assert [
             tuple(row) for row in conn.execute("SELECT session_id, agent_id FROM sessions ORDER BY 1")
@@ -689,7 +695,7 @@ def test_migration_32_on_a_database_without_specialists(tmp_path: Path):
     with open_db(tmp_path / "t.db") as conn:
         db.migrate(conn)
         assert not set(SPECIALIST_TABLES) & table_names(conn)
-        assert db.SCHEMA_VERSION == 32
+        assert db.SCHEMA_VERSION == 33
 
 
 def test_migration_31_keeps_autoincrement_watermark(tmp_path: Path):
@@ -859,3 +865,183 @@ def test_legacy_specialists_are_mirrored_into_agents_until_the_old_tables_go(tmp
         names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
         assert not {name for name in names if name.startswith("specialists_mirror")}
         assert conn.execute("SELECT COUNT(*) FROM agents").fetchone()[0] == 1
+
+
+def _build_v32_with_work(conn) -> None:
+    """A database at version 32 with work items, attempts, a coordinator, a pending decision and a PR."""
+    for statements in db.MIGRATIONS[:32]:
+        for statement in statements:
+            statement(conn) if callable(statement) else conn.execute(statement)
+    conn.execute("PRAGMA user_version = 32")
+    conn.execute("INSERT INTO projects (id, name, path, color, position, created_at) VALUES (1, 'p', '/p1', '#fff', 0, 0)")
+    for sid in ("coord", "s-a1", "s-a2", "s-a3"):
+        conn.execute(
+            "INSERT INTO sessions (session_id, project_id, cwd, title, created_at, last_activity_at)"
+            f" VALUES ('{sid}', 1, '/p1', 't', 0, 0)"
+        )
+
+    def item(item_id, status, *, parent=None, priority="normal", source="manual", external="e"):
+        conn.execute(
+            "INSERT INTO work_items (id, project_id, parent_id, source, source_instance, source_project,"
+            " external_id, title, priority, status, phase, revision, created_at, updated_at)"
+            " VALUES (?, 1, ?, ?, 'i', 'sp', ?, ?, ?, ?, 'implementation', 3, 100, 200)",
+            (item_id, parent, source, f"{external}{item_id}", f"Item {item_id}", priority, status),
+        )
+
+    item(1, "review", priority="high", source="github", external="gh")
+    item(2, "active", parent=1)
+    conn.execute("INSERT INTO work_specs (work_item_id, dossier_ref, role) VALUES (2, 'dossier-2.json', 'implementer')")
+
+    def attempt(attempt_id, item_id, session, role, state, created):
+        conn.execute(
+            "INSERT INTO work_attempts (id, work_item_id, session_id, role, state, work_revision, created_at,"
+            " updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+            (attempt_id, item_id, session, role, state, created, created),
+        )
+
+    attempt(10, 2, "s-a1", "implementer", "failed", 110)
+    attempt(11, 2, "s-a2", "reviewer", "succeeded", 120)
+    attempt(12, 2, None, "implementer", "running", 130)
+    attempt(13, 1, "s-a3", "investigator", "cancelled", 140)
+    conn.execute("INSERT INTO work_coordinators (project_id, session_id, created_at) VALUES (1, 'coord', 50)")
+    conn.execute(
+        "INSERT INTO work_decision_requests (id, work_item_id, attempt_id, work_revision, dossier_ref, target_ref,"
+        " request_ref, status, created_at) VALUES (1, 2, 12, 1, 'd', 't', 'request-1.json', 'pending', 150)"
+    )
+    conn.execute(
+        "INSERT INTO work_decision_requests (id, work_item_id, attempt_id, work_revision, dossier_ref, target_ref,"
+        " request_ref, status, created_at, answered_at) VALUES (2, 2, 11, 1, 'd', 't', 'request-2.json', 'answered',"
+        " 151, 160)"
+    )
+    conn.execute(
+        "INSERT INTO work_prs (url, project_id, work_item_id, origin_attempt_id, last_attempt_id, origin_session_id,"
+        " last_session_id, workspace, target_ref, created_at, closed)"
+        " VALUES ('https://github.com/o/r/pull/9', 1, 2, 10, 12, 's-a1', 's-a2', '/p1', 't', 170, 1)"
+    )
+
+
+def test_migration_33_copies_work_items_into_tasks(tmp_path: Path):
+    import json
+
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v32_with_work(conn)
+
+        db.migrate(conn)
+
+        assert db.schema_version(conn) == 33
+        tasks = {row["id"]: row for row in conn.execute("SELECT * FROM tasks")}
+        assert sorted(tasks) == [1, 2]
+        assert (tasks[1]["status"], tasks[1]["priority"], tasks[1]["parent_task_id"]) == ("in_review", "high", None)
+        assert (tasks[2]["status"], tasks[2]["priority"], tasks[2]["parent_task_id"]) == ("in_progress", "normal", 1)
+        for task in tasks.values():
+            assert (task["project_id"], task["created_by"], task["description"]) == (1, "human", "")
+            assert (task["assignee_agent_id"], task["reviewer_agent_id"], task["routine_id"]) == (None, None, None)
+            assert (task["revision"], task["run_count"], task["max_runs"]) == (1, 0, 20)
+            assert (task["created_at"], task["updated_at"], task["blocked_reason"]) == (100, 200, None)
+        assert tasks[1]["title"] == "Item 1" and tasks[1]["closed_at"] is None
+        assert json.loads(tasks[2]["legacy_json"]) == {
+            "dossier_ref": "dossier-2.json", "source": "manual", "external_id": "e2",
+            "coordinator_session_id": "coord",
+        }
+        assert json.loads(tasks[1]["legacy_json"])["dossier_ref"] is None
+        assert json.loads(tasks[1]["legacy_json"])["source"] == "github"
+
+        # One `app` comment per attempt, numbered in order inside each task.
+        comments = [
+            (row["task_id"], row["author_kind"], row["text"], row["created_at"])
+            for row in conn.execute("SELECT * FROM task_comments ORDER BY id")
+        ]
+        assert comments == [
+            (1, "app", "Tentativa 1 (investigador): cancelada, sessão s-a3", 140),
+            (2, "app", "Tentativa 1 (implementador): falhou, sessão s-a1", 110),
+            (2, "app", "Tentativa 2 (revisor): concluída, sessão s-a2", 120),
+            (2, "app", "Tentativa 3 (implementador): em andamento, sem sessão", 130),
+        ]
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        # New tasks continue after the old ids.
+        new = conn.execute(
+            "INSERT INTO tasks (project_id, title, created_at, updated_at) VALUES (1, 'n', 1, 1)"
+        )
+        assert new.lastrowid == 3
+
+
+def test_migration_33_maps_every_work_status(tmp_path: Path):
+    with open_db(tmp_path / "old.db") as conn:
+        for statements in db.MIGRATIONS[:32]:
+            for statement in statements:
+                statement(conn) if callable(statement) else conn.execute(statement)
+        conn.execute("PRAGMA user_version = 32")
+        conn.execute("INSERT INTO projects (id, name, path, color, position, created_at) VALUES (1, 'p', '/p1', '#fff', 0, 0)")
+        statuses = ("backlog", "ready", "active", "waiting", "blocked", "review", "done", "cancelled")
+        for index, status in enumerate(statuses, start=1):
+            conn.execute(
+                "INSERT INTO work_items (id, project_id, source, source_instance, source_project, external_id,"
+                " title, priority, status, phase, created_at, updated_at)"
+                " VALUES (?, 1, 's', 'i', 'p', ?, 't', 'low', ?, 'review', 10, 20)",
+                (index, f"x{index}", status),
+            )
+
+        db.migrate(conn)
+
+        rows = {
+            row["id"]: (row["status"], row["blocked_reason"], row["closed_at"])
+            for row in conn.execute("SELECT id, status, blocked_reason, closed_at FROM tasks")
+        }
+        assert rows == {
+            1: ("todo", None, None), 2: ("todo", None, None), 3: ("in_progress", None, None),
+            4: ("blocked", "Aguardava decisão no sistema anterior.", None),
+            5: ("blocked", None, None), 6: ("in_review", None, None),
+            7: ("done", None, 20), 8: ("cancelled", None, 20),
+        }
+        assert conn.execute("SELECT priority FROM tasks WHERE id = 1").fetchone()[0] == "low"
+        assert conn.execute("SELECT COUNT(*) FROM task_comments").fetchone()[0] == 0
+
+
+def test_migration_33_keeps_legacy_work_for_the_file_migration(tmp_path: Path):
+    import json
+
+    with open_db(tmp_path / "old.db") as conn:
+        _build_v32_with_work(conn)
+
+        db.migrate(conn)
+
+        rows = [
+            (row["kind"], row["project_id"], row["task_id"], json.loads(row["data"]))
+            for row in conn.execute("SELECT * FROM org_legacy_work ORDER BY id")
+        ]
+        assert rows == [
+            ("coordinator", 1, None, {"session_id": "coord", "created_at": 50}),
+            ("decision", 1, 2, {"request_ref": "request-1.json", "created_at": 150}),
+            ("pr", 1, 2, {
+                "url": "https://github.com/o/r/pull/9", "last_session_id": "s-a2",
+                "created_at": 170, "closed": 1,
+            }),
+        ]
+        # Only pending decisions are carried; the answered one is history.
+        assert conn.execute("SELECT COUNT(*) FROM org_legacy_work WHERE kind = 'decision'").fetchone()[0] == 1
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO org_legacy_work (kind, data) VALUES ('other', '{}')")
+
+
+def test_migration_33_creates_the_new_tables_and_columns(tmp_path: Path):
+    with open_db(tmp_path / "t.db") as conn:
+        db.migrate(conn)
+
+        assert {"tasks", "task_comments", "task_sessions", "decisions", "ci_receipts",
+                "org_legacy_work"} <= table_names(conn)
+        for table, column in (
+            ("runs", "task_id"), ("runs", "commented"), ("runs", "rewoken"), ("wakeups", "task_id"),
+            ("routines", "create_task"), ("agent_prs", "task_id"), ("decisions", "session_id"),
+        ):
+            assert column in {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}, (table, column)
+        conn.execute("INSERT INTO projects (id, name, path, color, position, created_at) VALUES (1, 'p', '/p', '#fff', 0, 0)")
+        for title in ("", "x" * 161):
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute("INSERT INTO tasks (project_id, title, created_at, updated_at) VALUES (1, ?, 0, 0)", (title,))
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO tasks (project_id, title, status, created_at, updated_at) VALUES (1, 't', 'backlog', 0, 0)")
+        conn.execute("INSERT INTO tasks (id, project_id, title, created_at, updated_at) VALUES (1, 1, 't', 0, 0)")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO task_comments (task_id, author_kind, text, created_at) VALUES (1, 'human', '', 0)")
+        conn.execute("DELETE FROM projects WHERE id = 1")
+        assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0

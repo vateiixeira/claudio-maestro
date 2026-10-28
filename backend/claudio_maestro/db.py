@@ -1071,6 +1071,192 @@ MIGRATIONS.append([
     "CREATE INDEX IF NOT EXISTS sessions_agent ON sessions(agent_id)",
 ])
 
+def carry_task_sequence(conn: sqlite3.Connection) -> None:
+    """Keep the AUTOINCREMENT watermark of `work_items` on `tasks`, so the id of an item deleted
+    before the copy is never reused (a dossier on disk may still carry it)."""
+    row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'work_items'").fetchone()
+    if row is None:
+        return
+    if conn.execute("SELECT 1 FROM sqlite_sequence WHERE name = 'tasks'").fetchone():
+        conn.execute("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'tasks'", (row[0],))
+    else:
+        conn.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('tasks', ?)", (row[0],))
+
+
+# Organização de agentes, marco 2: tarefas. Os `work_items` viram `tasks` (mesmo id) e cada
+# tentativa antiga vira um comentário `app`. O que a cópia não alcança sem os arquivos em disco
+# (coordenadores, decisões pendentes, PRs) vai para `org_legacy_work`, que o `migrate_work` lê e
+# esvazia; a migração seguinte apaga as tabelas `work_*` e não toca nessa de passagem.
+_TASK_STATUSES = "'todo', 'in_progress', 'in_review', 'blocked', 'done', 'cancelled'"
+MIGRATIONS.append([
+    f"""
+    CREATE TABLE tasks (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id          INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      parent_task_id      INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+      title               TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 160),
+      description         TEXT NOT NULL DEFAULT '' CHECK (length(description) <= 20000),
+      status              TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ({_TASK_STATUSES})),
+      priority            TEXT NOT NULL DEFAULT 'normal'
+                          CHECK (priority IN ('urgent', 'high', 'normal', 'low')),
+      assignee_agent_id   INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      reviewer_agent_id   INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      created_by_agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      created_by          TEXT NOT NULL DEFAULT 'human'
+                          CHECK (created_by IN ('human', 'agent', 'routine')),
+      routine_id          INTEGER REFERENCES routines(id) ON DELETE SET NULL,
+      revision            INTEGER NOT NULL DEFAULT 1,
+      run_count           INTEGER NOT NULL DEFAULT 0,
+      max_runs            INTEGER NOT NULL DEFAULT 20,
+      worktree_path       TEXT,
+      branch              TEXT,
+      blocked_reason      TEXT,
+      legacy_json         TEXT,
+      created_at          INTEGER NOT NULL,
+      updated_at          INTEGER NOT NULL,
+      closed_at           INTEGER
+    )
+    """,
+    "CREATE INDEX tasks_project_status ON tasks(project_id, status, id)",
+    "CREATE INDEX tasks_assignee ON tasks(assignee_agent_id, status)",
+    """
+    CREATE TABLE task_comments (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id          INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      author_kind      TEXT NOT NULL CHECK (author_kind IN ('human', 'agent', 'app')),
+      author_agent_id  INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      run_id           INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+      text             TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 20000),
+      created_at       INTEGER NOT NULL
+    )
+    """,
+    "CREATE INDEX task_comments_task ON task_comments(task_id, id)",
+    """
+    CREATE TABLE task_sessions (
+      agent_id    INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      cwd         TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, task_id)
+    )
+    """,
+    """
+    CREATE TABLE decisions (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      task_id      INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+      agent_id     INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      run_id       INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+      session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      question     TEXT NOT NULL CHECK (length(question) BETWEEN 1 AND 2000),
+      options      TEXT NOT NULL DEFAULT '[]',
+      answer       TEXT,
+      receipt      TEXT UNIQUE,
+      status       TEXT NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending', 'answered', 'expired')),
+      created_at   INTEGER NOT NULL,
+      answered_at  INTEGER
+    )
+    """,
+    "CREATE INDEX decisions_status ON decisions(status, created_at)",
+    """
+    CREATE TABLE ci_receipts (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      task_id     INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+      agent_id    INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      run_id      INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+      run_url     TEXT,
+      repository  TEXT,
+      head_sha    TEXT,
+      conclusion  TEXT,
+      jobs        TEXT,
+      receipt     TEXT UNIQUE,
+      created_at  INTEGER NOT NULL
+    )
+    """,
+    "CREATE INDEX ci_receipts_task ON ci_receipts(task_id, id)",
+    """
+    CREATE TABLE org_legacy_work (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind        TEXT NOT NULL CHECK (kind IN ('coordinator', 'decision', 'pr')),
+      project_id  INTEGER,
+      task_id     INTEGER,
+      data        TEXT NOT NULL
+    )
+    """,
+    "ALTER TABLE runs ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL",
+    "ALTER TABLE runs ADD COLUMN commented INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE runs ADD COLUMN rewoken INTEGER NOT NULL DEFAULT 0",
+    "CREATE INDEX runs_task ON runs(task_id)",
+    "ALTER TABLE wakeups ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL",
+    "ALTER TABLE routines ADD COLUMN create_task INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE agent_prs ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL",
+    # --- Cópia dos `work_items` (mesmo id) ---
+    """
+    INSERT INTO tasks (id, project_id, parent_task_id, title, status, priority, blocked_reason,
+                       created_by, legacy_json, created_at, updated_at, closed_at)
+    SELECT w.id, w.project_id, w.parent_id, w.title,
+           CASE w.status WHEN 'backlog' THEN 'todo' WHEN 'ready' THEN 'todo'
+                         WHEN 'active' THEN 'in_progress' WHEN 'waiting' THEN 'blocked'
+                         WHEN 'review' THEN 'in_review' ELSE w.status END,
+           w.priority,
+           CASE WHEN w.status = 'waiting' THEN 'Aguardava decisão no sistema anterior.' END,
+           'human',
+           json_object(
+             'dossier_ref', (SELECT dossier_ref FROM work_specs WHERE work_item_id = w.id),
+             'source', w.source, 'external_id', w.external_id,
+             'coordinator_session_id',
+             (SELECT session_id FROM work_coordinators WHERE project_id = w.project_id)),
+           w.created_at, w.updated_at,
+           CASE WHEN w.status IN ('done', 'cancelled') THEN w.updated_at END
+    FROM work_items w
+    ORDER BY w.id
+    """,
+    carry_task_sequence,
+    # Each old attempt becomes a note on its task, numbered in order inside the task.
+    """
+    INSERT INTO task_comments (task_id, author_kind, text, created_at)
+    SELECT a.work_item_id, 'app',
+           'Tentativa ' || a.n || ' (' ||
+           CASE a.role WHEN 'investigator' THEN 'investigador' WHEN 'implementer' THEN 'implementador'
+                       ELSE 'revisor' END
+           || '): ' ||
+           CASE a.state WHEN 'starting' THEN 'iniciando' WHEN 'dispatching' THEN 'enviando'
+                        WHEN 'running' THEN 'em andamento' WHEN 'waiting' THEN 'aguardando'
+                        WHEN 'uncertain' THEN 'incerta' WHEN 'succeeded' THEN 'concluída'
+                        WHEN 'failed' THEN 'falhou' ELSE 'cancelada' END
+           || ', ' || COALESCE('sessão ' || a.session_id, 'sem sessão'),
+           a.created_at
+    FROM (SELECT work_item_id, id, role, state, session_id, created_at,
+                 ROW_NUMBER() OVER (PARTITION BY work_item_id ORDER BY id) AS n
+          FROM work_attempts) a
+    ORDER BY a.work_item_id, a.id
+    """,
+    # --- Passagem para `migrate_work`, que precisa dos arquivos em disco ---
+    """
+    INSERT INTO org_legacy_work (kind, project_id, task_id, data)
+    SELECT 'coordinator', project_id, NULL,
+           json_object('session_id', session_id, 'created_at', created_at)
+    FROM work_coordinators ORDER BY project_id
+    """,
+    """
+    INSERT INTO org_legacy_work (kind, project_id, task_id, data)
+    SELECT 'decision', w.project_id, d.work_item_id,
+           json_object('request_ref', d.request_ref, 'created_at', d.created_at)
+    FROM work_decision_requests d JOIN work_items w ON w.id = d.work_item_id
+    WHERE d.status = 'pending' ORDER BY d.id
+    """,
+    """
+    INSERT INTO org_legacy_work (kind, project_id, task_id, data)
+    SELECT 'pr', project_id, work_item_id,
+           json_object('url', url, 'last_session_id', last_session_id, 'created_at', created_at,
+                       'closed', closed)
+    FROM work_prs ORDER BY created_at, url
+    """,
+])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 
