@@ -107,6 +107,8 @@ def build_sdk_options(
         kwargs["resume"] = options.session_id
         if options.fork_session:
             kwargs["fork_session"] = True
+            if options.fork_session_id is not None:
+                kwargs["session_id"] = options.fork_session_id
     else:
         kwargs["session_id"] = options.session_id
     if options.model is not None:

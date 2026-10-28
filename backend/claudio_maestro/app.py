@@ -330,6 +330,7 @@ def create_app(
             agentd_new_sessions=new_through_agentd,
             cli_identity=cli_identity,
             text_index=app.state.textindex,
+            claude_projects=app.state.settings.claude_projects_dir,
             # The agents service is built right after the manager (it needs it); the
             # hooks look it up when called.
             connection_admission=connection_admission,
@@ -492,6 +493,7 @@ def create_app(
             on_projects_changed=lambda ids: publish_synced(app.state.hub.publish, ids),
             is_in_use=app.state.sessions.in_use,
             ignored_dirs=[agent_dir, legacy_agent_dir],
+            is_throwaway=app.state.sessions.is_throwaway,
         )
         tasks = [
             asyncio.create_task(

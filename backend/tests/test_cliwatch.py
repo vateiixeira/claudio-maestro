@@ -86,6 +86,7 @@ class Env:
             on_change=self.manager.refresh_records,
             on_projects_changed=lambda ids: publish_synced(self.events.append, ids),
             is_in_use=self.manager.in_use,
+            is_throwaway=self.manager.is_throwaway,
         )
         self.watch = FakeWatch()
         self.processed: list[str] = []
@@ -724,3 +725,23 @@ async def test_foreign_reply_with_background_work_is_remembered_not_released(env
     assert session.foreign_pending is True
     assert "conversation.reset" not in env.types("s1")
     monkeypatch.undo()
+
+
+@pytest.mark.anyio
+async def test_file_of_a_throwaway_session_is_ignored(env):
+    env.manager.mark_throwaway("fork-1")
+    env.fake.add(str(env.folder), info("fork-1", str(env.folder), first_prompt="cópia"))
+    env.fake.add(str(env.folder), info("real-1", str(env.folder), first_prompt="de verdade"))
+    env.start()
+    env.watch.push(
+        (Change.added, env.file("fork-1")),
+        (Change.added, env.history_dir / "fork-1" / "subagents" / "agent-1.jsonl"),
+    )
+    env.watch.push((Change.added, env.file("real-1")))
+
+    await wait_until(lambda: env.processed == ["real-1"])
+    await asyncio.sleep(0.2)
+
+    assert env.processed == ["real-1"]
+    assert env.watcher.pending == 0
+    assert row(env.db_path, "fork-1") is None

@@ -263,6 +263,8 @@ class CliWatcher:
             subagent = path
         else:
             return  # memory and anything not a session file
+        if self._sessions.is_throwaway(session_id):
+            return  # the copy a context measurement opened; it is deleted when done
         burst = self._bursts.get(session_id)
         if burst is None:
             burst = _Burst(folder=main.parent.name)

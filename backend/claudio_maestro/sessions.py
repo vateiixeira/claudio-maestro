@@ -50,8 +50,8 @@ from claudio_maestro.agent.base import (
     AgentOptions,
     AttachInfo,
 )
-from claudio_maestro.config import read_user_claude_settings
-from claudio_maestro.contextprobe import probe_context
+from claudio_maestro.config import claude_projects_dir, read_user_claude_settings
+from claudio_maestro.contextprobe import delete_fork_files, probe_context
 from claudio_maestro.contextusage import context_breakdown
 from claudio_maestro.conversation import (
     INTERRUPTED_REASONS,
@@ -248,6 +248,8 @@ CONTEXT_READ_LIMIT = 10.0  # seconds
 # How long a temporary process may take to measure a closed conversation, from its start
 # (connect included) to its answer.
 CONTEXT_PROBE_LIMIT = 30.0  # seconds
+# How many ids of temporary conversation copies are remembered (see `mark_throwaway`).
+THROWAWAY_ID_LIMIT = 1024
 # An error of the CLI that tells it does not know the `get_context_usage` request.
 _UNSUPPORTED_CONTEXT = re.compile(
     r"unsupported control request|unknown control|unrecognized.*subtype", re.IGNORECASE
@@ -3588,7 +3590,13 @@ class SessionManager:
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
         on_pr_created: Callable[[str, str], None] | None = None,
         prepare_message: PrepareMessage | None = None,
+        claude_projects: Path | None = None,
     ) -> None:
+        # The CLI's projects folder (None: `claude_projects_dir()` when needed).
+        self._claude_projects = claude_projects
+        # Ids of the temporary copies context measurements open, oldest first. Kept after
+        # the measurement too (bounded), so a file the CLI writes late is still ignored.
+        self._throwaway_ids: OrderedDict[str, None] = OrderedDict()
         # Gives the sessions of an agent their skill, folders, MCP server and policy.
         self._session_setup = session_setup
         self._context_setup = context_setup
@@ -4074,8 +4082,14 @@ class SessionManager:
             probe.started = True
             started_at = time.time()
             try:
+                options = self._probe_options(record)
+                fork_id = options.fork_session_id
+                loop = asyncio.get_running_loop()
                 usage = await probe_context(
-                    self._agent_factory, self._probe_options(record), CONTEXT_PROBE_LIMIT
+                    self._agent_factory,
+                    options,
+                    CONTEXT_PROBE_LIMIT,
+                    after_close=lambda: self._discard_fork(fork_id, loop) if fork_id else None,
                 )
             except Exception as error:
                 # An `AgentError` (connect, read, a factory that refuses) or the timeout.
@@ -4096,19 +4110,59 @@ class SessionManager:
         """A resumed copy of the conversation that sends nothing and runs no tool or hook.
 
         It loads the folder's settings (MCP, skills, CLAUDE.md, agents), so the breakdown
-        is the real one; the SDK starts it directly, not through the agentd. A fork writes
-        no file under `~/.claude/projects` until a message is sent, so it needs no
-        entrypoint to hide it from the editor extension."""
+        is the real one; the SDK starts it directly, not through the agentd.
+
+        The copy is not always invisible: when the conversation had a background subagent
+        alive (the machine froze), the CLI queues a notification about it on loading, and
+        that makes it save the copy as `<new id>.jsonl`, with the whole history and the
+        same title, under the folder of the original conversation's cwd. So the copy gets
+        an id chosen here: it is marked throwaway before the process starts (the history
+        sync, the CLI watcher and the search index never register it) and its files are
+        deleted when the process is gone (`_discard_fork`)."""
+        fork_id = str(uuid.uuid4())
+        self.mark_throwaway(fork_id)
         return AgentOptions(
             cwd=Path(record.work_dir()),
             session_id=record.session_id,
             resume=True,
             fork_session=True,
+            fork_session_id=fork_id,
             can_use_tool=_deny_all,
             model=None if record.model == DEFAULT_MODEL_VALUE else record.model,
             settings='{"disableAllHooks": true}',
             setting_sources=None,
             agentd=None,
+        )
+
+    def mark_throwaway(self, session_id: str) -> None:
+        """Never register this id as a session (a temporary copy of a conversation)."""
+        self._throwaway_ids[session_id] = None
+        self._throwaway_ids.move_to_end(session_id)
+        while len(self._throwaway_ids) > THROWAWAY_ID_LIMIT:
+            self._throwaway_ids.popitem(last=False)
+
+    def is_throwaway(self, session_id: str) -> bool:
+        return session_id in self._throwaway_ids
+
+    def _discard_fork(self, fork_id: str, loop: asyncio.AbstractEventLoop) -> None:
+        """Delete what a measurement's copy left (its files, and its row if some path
+        registered it anyway). Blocking: runs in a thread, once the process is gone;
+        the event is published on `loop`."""
+        try:
+            delete_fork_files(self._claude_projects or claude_projects_dir(), fork_id)
+        except OSError:
+            logger.warning("Não foi possível apagar a cópia temporária %s", fork_id, exc_info=True)
+        with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
+            row = conn.execute(
+                "SELECT project_id FROM sessions WHERE session_id = ?", (fork_id,)
+            ).fetchone()
+            if row is None:
+                return
+            conn.execute("DELETE FROM sessions WHERE session_id = ?", (fork_id,))
+        loop.call_soon_threadsafe(
+            self._publish,
+            {"session_id": None, "seq": 0, "type": "project.synced",
+             "data": {"project_id": row["project_id"]}},
         )
 
     def _keep_probed(self, session_id: str, breakdown: dict[str, Any], measured_at: float) -> None:

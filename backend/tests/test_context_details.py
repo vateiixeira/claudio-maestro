@@ -5,12 +5,15 @@ Uses the scripted fake agent; nothing here touches the real SDK.
 
 import asyncio
 import time
+import uuid
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
 import pytest
-from claude_agent_sdk import PermissionResultDeny
+from claude_agent_sdk import PermissionResultDeny, SDKSessionInfo
 from fastapi.testclient import TestClient
+from history_fakes import info, now_ms
 from test_context_breakdown import FULL_USAGE
 from test_context_permission import (
     APP_ORIGIN,
@@ -23,10 +26,12 @@ from test_context_permission import (
 )
 from test_sessions import by_session, wait_until
 
+from claudio_maestro import db
 from claudio_maestro.agent.base import AgentError
 from claudio_maestro.agent.fake import text_turn
 from claudio_maestro.app import create_app
 from claudio_maestro.contextusage import context_breakdown
+from claudio_maestro.history import HistoryIndex
 from claudio_maestro.sessions import DEFAULT_MODEL_VALUE, SessionNotFoundError
 
 NO_PROCESS = {"available": False, "reason": "no_process", "context": None}
@@ -1113,3 +1118,236 @@ async def test_a_client_that_hangs_up_drops_its_queued_measurement(home):
         assert one.body()["available"] is True
         assert len(factory.clients) == 1  # the second one never opened a process
         assert manager._probes == {}
+
+
+# The copy a measurement opens must never show up as a session ---------------------
+
+
+def projects_folder(tmp_path: Path) -> Path:
+    """The CLI's projects folder the manager uses in tests (see conftest)."""
+    return tmp_path / "claude-config" / "projects"
+
+
+class ForkWritingFactory(ProbeFactory):
+    """Clients that write `<fork id>.jsonl` (and a folder) under the ORIGINAL cwd's history
+    folder while connecting, the way the CLI does when it loads a conversation that had a
+    live background subagent."""
+
+    def __init__(self, folder: Path) -> None:
+        super().__init__()
+        self.folder = folder
+
+    def __call__(self, options):
+        client = super().__call__(options)
+        connect = client.connect
+
+        async def writing_connect():
+            await connect()
+            self.folder.mkdir(parents=True, exist_ok=True)
+            (self.folder / f"{options.fork_session_id}.jsonl").write_text('{"type":"x"}\n')
+            (self.folder / options.fork_session_id).mkdir(exist_ok=True)
+
+        client.connect = writing_connect
+        return client
+
+
+def fork_env(make_env, env_cleanup, tmp_path):  # noqa: F811
+    folder = projects_folder(tmp_path) / "-home-original"
+    factory = ForkWritingFactory(folder)
+    env, _ = probe_env(make_env, env_cleanup, factory)
+    return env, factory, folder
+
+
+@pytest.mark.anyio
+async def test_the_copy_gets_an_id_of_its_own(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    session = env.new_session()
+
+    await env.manager.context_details(session.session_id)
+
+    options = factory.clients[0].options
+    assert options.resume is True and options.fork_session is True
+    assert options.session_id == session.session_id
+    fork_id = options.fork_session_id
+    assert fork_id and fork_id != session.session_id
+    assert str(uuid.UUID(fork_id)) == fork_id
+    assert env.manager.is_throwaway(fork_id)
+    assert not env.manager.is_throwaway(session.session_id)
+
+
+@pytest.mark.anyio
+async def test_each_measurement_gets_a_new_id(make_env, env_cleanup):  # noqa: F811
+    env, factory = probe_env(make_env, env_cleanup)
+    session = env.new_session()
+    await env.manager.context_details(session.session_id)
+    forget(env, session)
+    env.manager._kept_breakdowns.clear()
+    session = env.manager.get(session.session_id)
+    session.last_breakdown = session.last_breakdown_at = None
+
+    await env.manager.context_details(session.session_id)
+
+    ids = [c.options.fork_session_id for c in factory.clients]
+    assert len(ids) == 2 and len(set(ids)) == 2
+
+
+@pytest.mark.anyio
+async def test_the_copy_file_is_deleted_and_never_listed(  # noqa: F811
+    make_env, env_cleanup, tmp_path
+):
+    env, factory, folder = fork_env(make_env, env_cleanup, tmp_path)
+    session = env.new_session()
+    original = folder / f"{session.session_id}.jsonl"
+    folder.mkdir(parents=True)
+    original.write_text("{}\n")
+    index = HistoryIndex(
+        env.db_path, lambda directory: listed_files(folder, env.project.path),
+        folder_signature=lambda directory: None, is_throwaway=env.manager.is_throwaway,
+    )
+    factory.hold = asyncio.Event()
+    caller = asyncio.create_task(env.manager.context_details(session.session_id))
+    await wait_until(lambda: factory.reading == 1)
+    fork_id = factory.clients[0].options.fork_session_id
+    assert (folder / f"{fork_id}.jsonl").is_file()  # the file exists mid-measurement
+
+    await index.sync_all()  # the periodic sync (and the cliwatch) run now
+    assert fork_id not in db_session_ids(env.db_path)
+
+    factory.hold.set()
+    result = await caller
+
+    assert result["available"] is True
+    await wait_until(lambda: not (folder / f"{fork_id}.jsonl").exists())
+    assert not (folder / fork_id).exists()
+    assert original.is_file()  # the real conversation is untouched
+    await index.sync_all()
+    assert fork_id not in db_session_ids(env.db_path)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["error", "timeout", "cancelled"])
+async def test_the_copy_file_is_deleted_when_the_measurement_fails(  # noqa: F811
+    make_env, env_cleanup, tmp_path, monkeypatch, failure
+):
+    env, factory, folder = fork_env(make_env, env_cleanup, tmp_path)
+    session = env.new_session()
+    if failure == "error":
+        factory.read_error = AgentError("quebrou")
+    else:
+        factory.hold = asyncio.Event()  # never opens
+    if failure == "timeout":
+        monkeypatch.setattr("claudio_maestro.sessions.CONTEXT_PROBE_LIMIT", 0.05)
+    caller = asyncio.create_task(env.manager.context_details(session.session_id))
+    if failure == "cancelled":
+        await wait_until(lambda: factory.reading == 1)
+        caller.cancel()
+        await env.manager.shutdown()  # cancels the measurement itself
+    await asyncio.wait([caller])
+
+    fork_id = factory.clients[0].options.fork_session_id
+    await wait_until(lambda: not (folder / f"{fork_id}.jsonl").exists())
+    assert not (folder / fork_id).exists()
+    assert env.manager.is_throwaway(fork_id)
+
+
+@pytest.mark.anyio
+async def test_the_copy_file_is_deleted_when_the_close_outlives_the_limit(  # noqa: F811
+    make_env, env_cleanup, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("claudio_maestro.contextprobe.CLOSE_LIMIT", 0.05)
+    env, factory, folder = fork_env(make_env, env_cleanup, tmp_path)
+    close_gate = asyncio.Event()
+    make = factory.__call__
+
+    def slow_close_factory(options):
+        client = make(options)
+        close = client.close
+
+        async def slow_close():
+            await close_gate.wait()
+            await close()
+
+        client.close = slow_close
+        return client
+
+    env.manager._agent_factory = slow_close_factory
+    session = env.new_session()
+
+    await env.manager.context_details(session.session_id)
+
+    fork_id = factory.clients[0].options.fork_session_id
+    assert (folder / f"{fork_id}.jsonl").is_file()  # the process is still going away
+    close_gate.set()
+    await wait_until(lambda: not (folder / f"{fork_id}.jsonl").exists())
+
+
+@pytest.mark.anyio
+async def test_another_sessions_file_is_never_deleted(  # noqa: F811
+    make_env, env_cleanup, tmp_path
+):
+    env, factory, folder = fork_env(make_env, env_cleanup, tmp_path)
+    session = env.new_session()
+    other = "11111111-2222-4333-8444-555555555555"
+    folder.mkdir(parents=True)
+    (folder / f"{other}.jsonl").write_text("{}\n")
+    (folder / f"{session.session_id}.jsonl").write_text("{}\n")
+    elsewhere = projects_folder(tmp_path) / "-home-other"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / f"{other}.jsonl").write_text("{}\n")
+
+    await env.manager.context_details(session.session_id)
+
+    fork_id = factory.clients[0].options.fork_session_id
+    await wait_until(lambda: not (folder / f"{fork_id}.jsonl").exists())
+    assert sorted(p.name for p in folder.iterdir()) == sorted(
+        [f"{other}.jsonl", f"{session.session_id}.jsonl"]
+    )
+    assert (elsewhere / f"{other}.jsonl").is_file()
+
+
+@pytest.mark.anyio
+async def test_a_row_of_the_copy_that_got_in_is_removed(  # noqa: F811
+    make_env, env_cleanup, tmp_path
+):
+    env, factory, _folder = fork_env(make_env, env_cleanup, tmp_path)
+    session = env.new_session()
+    factory.hold = asyncio.Event()
+    caller = asyncio.create_task(env.manager.context_details(session.session_id))
+    await wait_until(lambda: factory.reading == 1)
+    fork_id = factory.clients[0].options.fork_session_id
+    # Some path other than the guarded ones registered the copy.
+    with closing(db.connect(env.db_path)) as conn, db.transaction(conn):
+        conn.execute(
+            "INSERT INTO sessions (session_id, project_id, cwd, title, created_at,"
+            " last_activity_at, last_seen_at, finished, file_modified_at)"
+            " VALUES (?, ?, ?, 'cópia', 1, 1, 1, 0, 1)",
+            (fork_id, env.project.id, env.project.path),
+        )
+    env.recorder.envelopes.clear()
+
+    factory.hold.set()
+    await caller
+
+    await wait_until(lambda: fork_id not in db_session_ids(env.db_path))
+    assert session.session_id in db_session_ids(env.db_path)
+    await wait_until(
+        lambda: any(
+            e["type"] == "project.synced" and e["data"] == {"project_id": env.project.id}
+            for e in env.recorder.envelopes
+        )
+    )
+
+
+def listed_files(folder: Path, cwd: str) -> list[SDKSessionInfo]:
+    """What the SDK's `list_sessions` would answer: one entry per session file."""
+    if not folder.is_dir():
+        return []
+    return [
+        info(path.stem, cwd, first_prompt="mesmo título", modified_ms=now_ms())
+        for path in folder.glob("*.jsonl")
+    ]
+
+
+def db_session_ids(db_path: Path) -> set[str]:
+    with closing(db.connect(db_path)) as conn:
+        return {row[0] for row in conn.execute("SELECT session_id FROM sessions")}

@@ -120,6 +120,33 @@ def test_build_options_fork_needs_resume(tmp_path):
     assert sdk.fork_session is False
 
 
+FORK_ID = "0b7e5c52-6f3a-4d0e-8a64-2f9d1c3b7a10"
+
+
+def test_build_options_fork_gets_its_own_session_id(tmp_path):
+    sdk = build_sdk_options(
+        make_options(tmp_path, resume=True, fork_session=True, fork_session_id=FORK_ID)
+    )
+
+    assert sdk.resume == SESSION_ID
+    assert sdk.fork_session is True
+    assert sdk.session_id == FORK_ID
+
+
+def test_build_options_fork_without_an_id_leaves_it_to_the_cli(tmp_path):
+    sdk = build_sdk_options(make_options(tmp_path, resume=True, fork_session=True))
+
+    assert sdk.session_id is None
+
+
+def test_build_options_fork_id_is_ignored_without_a_fork(tmp_path):
+    resumed = build_sdk_options(make_options(tmp_path, resume=True, fork_session_id=FORK_ID))
+    new = build_sdk_options(make_options(tmp_path, resume=False, fork_session_id=FORK_ID))
+
+    assert resumed.session_id is None and resumed.resume == SESSION_ID
+    assert new.session_id == SESSION_ID
+
+
 def test_build_options_does_not_set_setting_sources(tmp_path):
     sdk = build_sdk_options(make_options(tmp_path))
 

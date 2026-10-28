@@ -37,6 +37,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Corrigido
 
+- Abrir uma sessão depois de um travamento não cria mais uma cópia dela na lateral. A cópia temporária usada para medir o contexto fica fora da lista e seus arquivos são apagados ao fim da medição.
+
 - A fila, a conversa principal e os comentários de PR agora coordenam os turnos do mesmo agente. Finalizar uma conversa ainda em execução não libera uma segunda tarefa, e falhas de conexão preservam o pedido para retomar a fila.
 
 - O cabeçalho da conversa acomoda o nome do agente e as ações em linhas separadas quando falta espaço, sem sobrepor os controles.

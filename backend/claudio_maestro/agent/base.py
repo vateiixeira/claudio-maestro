@@ -75,6 +75,10 @@ class AgentOptions:
     # With resume: the agent opens a copy of the conversation under a new session id and
     # leaves the original file alone (throwaway clients that only read it).
     fork_session: bool = False
+    # With resume and fork_session: the id the copy gets (the CLI picks one when None). The
+    # caller knows it before the process starts, so it can keep the copy out of the
+    # session list and delete its file; ignored without a fork.
+    fork_session_id: str | None = None
     # False: the process is not started with the switch that lets the mode become
     # bypassPermissions later (sessions of an agent never leave the default mode).
     allow_bypass: bool = True

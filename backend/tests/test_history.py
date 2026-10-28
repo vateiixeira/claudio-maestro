@@ -996,3 +996,51 @@ async def test_ignored_dirs_are_resolved(tmp_path: Path) -> None:
     index = HistoryIndex(db_path, fake.list_sessions, ignored_dirs=[link / "digest-agent"])
     await index.sync_all()
     assert set(rows(db_path)) == {"mine"}
+
+
+# Throwaway sessions (the copy a context measurement opens) --------------------------
+
+
+@pytest.mark.anyio
+async def test_sync_skips_a_throwaway_session(tmp_path):
+    db_path = tmp_path / "data" / "maestro.db"
+    db.init_db(db_path)
+    fake = FakeHistory()
+    changed: list[set[str]] = []
+    index = HistoryIndex(
+        db_path, fake.list_sessions, on_change=changed.append,
+        is_throwaway=lambda sid: sid == "fork-1",
+    )
+    folder = tmp_path / "home" / "app"
+    add_project(db_path, folder)
+    fake.add(str(folder), info("real-1", str(folder)), info("fork-1", str(folder)))
+
+    await index.sync_all()
+
+    assert set(rows(db_path)) == {"real-1"}
+    assert changed == [{"real-1"}]
+    # Still skipped on a later pass, when the file changes.
+    fake.by_directory[str(folder)][1] = info("fork-1", str(folder), modified_ms=2_000_000_000_000)
+    await index.sync_all()
+    assert set(rows(db_path)) == {"real-1"}
+
+
+@pytest.mark.anyio
+async def test_a_throwaway_session_that_got_in_is_not_updated_by_the_sync(tmp_path):
+    """The sync neither adds nor refreshes it; the manager removes the row (see
+    test_context_details)."""
+    db_path = tmp_path / "data" / "maestro.db"
+    db.init_db(db_path)
+    fake = FakeHistory()
+    throwaway: set[str] = set()
+    index = HistoryIndex(db_path, fake.list_sessions, is_throwaway=throwaway.__contains__)
+    folder = tmp_path / "home" / "app"
+    add_project(db_path, folder)
+    fake.add(str(folder), info("fork-1", str(folder), first_prompt="antes"))
+    await index.sync_all()
+    throwaway.add("fork-1")
+    fake.by_directory[str(folder)][0] = info("fork-1", str(folder), first_prompt="depois")
+
+    await index.sync_all()
+
+    assert rows(db_path)["fork-1"]["first_prompt"] == "antes"

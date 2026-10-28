@@ -869,8 +869,12 @@ class HistoryIndex:
         session_file: Callable[[str, str], Path | None] | None = None,
         detect_worktree: Callable[[Path], tuple[bool, Worktree | None]] | None = None,
         ignored_dirs: Iterable[Path] = (),
+        is_throwaway: Callable[[str], bool] | None = None,
     ) -> None:
         self._db_path = db_path
+        # Ids of temporary copies of conversations (see `SessionManager.is_throwaway`):
+        # their files are never registered, wherever they show up.
+        self._is_throwaway = is_throwaway or (lambda session_id: False)
         # Sessions whose cwd is inside one of these folders never enter the index.
         self._ignored = tuple(str(Path(d).resolve()) for d in ignored_dirs)
         # A directory whose history folder did not change is not listed again.
@@ -1137,6 +1141,8 @@ class HistoryIndex:
             ]
             current = {project_id for project_id, _ in projects}
             for session_id, (info, directory, fallback) in listed.items():
+                if self._is_throwaway(session_id):
+                    continue  # the only door new sessions found on disk go through
                 cwd = info.cwd or directory
                 if any(_is_within(cwd, ignored) for ignored in self._ignored):
                     continue  # the digest agent's own throwaway sessions

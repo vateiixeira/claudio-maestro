@@ -200,3 +200,82 @@ async def test_a_refusing_factory_raises_without_a_client(tmp_path):
 
     with pytest.raises(AgentError):
         await probe_context(refuse, options(tmp_path), 5)
+
+
+# `after_close`: runs once the client's close finished ---------------------------------
+
+
+@pytest.mark.anyio
+async def test_after_close_runs_after_the_client_closed(factory, tmp_path):
+    seen: list[bool] = []
+    after = lambda: seen.append(factory.clients[0].closed)  # noqa: E731
+
+    await probe_context(factory, options(tmp_path), 5, after_close=after)
+
+    assert seen == [True]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["connect", "read", "timeout", "close"])
+async def test_after_close_runs_on_every_path(factory, tmp_path, failure):
+    calls: list[int] = []
+    limit = 5.0
+    if failure == "connect":
+        factory.connect_error = AgentError("não abriu")
+    elif failure == "read":
+        factory.read_error = AgentError("quebrou")
+    elif failure == "timeout":
+        factory.read_gate = asyncio.Event()
+        limit = 0.05
+    else:
+        factory.close_error = AgentError("não fechou")
+
+    try:
+        await probe_context(factory, options(tmp_path), limit, after_close=lambda: calls.append(1))
+    except (AgentError, TimeoutError):
+        pass
+
+    assert calls == [1]
+
+
+@pytest.mark.anyio
+async def test_after_close_runs_when_the_caller_is_cancelled(factory, tmp_path):
+    calls: list[int] = []
+    factory.read_gate = asyncio.Event()
+    task = asyncio.create_task(
+        probe_context(factory, options(tmp_path), 30, after_close=lambda: calls.append(1))
+    )
+    await asyncio.wait_for(factory.read_started.wait(), 2)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert calls == [1]
+
+
+@pytest.mark.anyio
+async def test_after_close_runs_even_when_the_close_outlives_the_limit(
+    factory, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(contextprobe, "CLOSE_LIMIT", 0.05)
+    calls: list[int] = []
+    factory.close_gate = asyncio.Event()
+
+    await probe_context(factory, options(tmp_path), 5, after_close=lambda: calls.append(1))
+    assert calls == []  # the probe stopped waiting; the close goes on
+
+    factory.close_gate.set()
+    for _ in range(100):
+        if calls:
+            break
+        await asyncio.sleep(0.01)
+    assert calls == [1]
+
+
+@pytest.mark.anyio
+async def test_a_failing_after_close_never_replaces_the_result(factory, tmp_path):
+    def boom() -> None:
+        raise OSError("disco")
+
+    assert await probe_context(factory, options(tmp_path), 5, after_close=boom) == FULL_USAGE
