@@ -3,7 +3,9 @@
 `due_slot` finds the newest scheduled time that has come and not been fired yet. The
 `Scheduler` checks every schedule of the routines on each tick: a slot that is too late is only
 recorded as `missed`; any other slot wakes the agent of the routine through the service, which
-queues the wakeup and serves it one run at a time. The scheduler also supplies the service's
+queues the wakeup and serves it one run at a time; a routine that creates a task opens the task
+instead, assigned to its agent (the assignment is what wakes it). Each tick also expires the
+decisions nobody answered in time. The scheduler also supplies the service's
 `usage_gate`: while the subscription is over the cut, the service turns the wakeups that are not
 the person's into `skipped` runs, and the scheduler warns once per window of each limit.
 """
@@ -18,7 +20,9 @@ from typing import Any
 
 from claudio_maestro import db
 from claudio_maestro.org import store
+from claudio_maestro.org.decisions import DecisionService
 from claudio_maestro.org.service import OrgService
+from claudio_maestro.org.tasks import TaskService
 from claudio_maestro.usage import UsageChecker
 
 logger = logging.getLogger(__name__)
@@ -29,6 +33,21 @@ USAGE_LIMIT_PERCENT = 90
 TICK_SECONDS = 30
 # Days to look back for the newest slot: a schedule of a single weekday repeats in 7.
 LOOKBACK_DAYS = 7
+TASK_TITLE_MAX = store.TASK_TITLE_MAX
+NO_TASK_SERVICE = "O serviço de tarefas não está disponível."
+
+
+class RoutineAgentDisabledError(store.OrgError):
+    """"Run now" of a routine whose agent is off: nothing is created."""
+
+    def __init__(self) -> None:
+        super().__init__("O agente está desligado.")
+
+
+def routine_task_title(name: str, moment: datetime) -> str:
+    """`"<name> · dd/mm"`, with the name cut so the title fits the limit of a task title."""
+    suffix = f" · {moment:%d/%m}"
+    return name[: TASK_TITLE_MAX - len(suffix)].rstrip() + suffix
 
 
 def limits_over(usage: UsageChecker, now: float) -> list[dict[str, Any]]:
@@ -82,8 +101,12 @@ class Scheduler:
         usage: UsageChecker,
         db_path: Path,
         clock: Callable[[], float],
+        tasks: TaskService | None = None,
+        decisions: DecisionService | None = None,
     ) -> None:
         self._service = service
+        self._tasks = tasks
+        self._decisions = decisions
         self._usage = usage
         self._db_path = db_path
         self._clock = clock
@@ -113,6 +136,7 @@ class Scheduler:
                 await self._tick()
 
     async def _tick(self) -> None:
+        await self._expire_decisions()
         now = self._clock()
         local = datetime.fromtimestamp(now).astimezone()
         with closing(db.connect(self._db_path)) as conn:
@@ -139,6 +163,16 @@ class Scheduler:
                 )
                 self._warn_failed(routine, error)
 
+    async def _expire_decisions(self) -> None:
+        if self._decisions is None:
+            return
+        try:
+            await self._decisions.expire_stale()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Falha ao expirar as decisões sem resposta")
+
     async def _handle(
         self,
         schedule: store.Schedule,
@@ -162,11 +196,55 @@ class Scheduler:
             return
         # Over the cut, the service skips the wakeup by itself (`usage_gate`); the warning is ours.
         self._warn_usage(routine.agent_id, now)
+        if routine.create_task:
+            await self._fire_task(routine, scheduled_for, now)
+            return
         await self._service.wake(
             routine.agent_id,
             source="routine",
             routine_id=routine.id,
             scheduled_for=scheduled_for,
+        )
+
+    async def run_now(self, routine: store.Routine) -> store.Task:
+        """"Run now" of a routine that creates a task, the same path as a scheduled firing.
+        Returns the new task. Being the person's (`manual`), it is created even over the usage
+        cut; only the assignment wakeup is held by the service until the usage comes down."""
+        if not routine.create_task:
+            raise store.OrgError("A rotina não cria tarefas.")
+        with closing(db.connect(self._db_path)) as conn:
+            if not store.get_agent(conn, routine.agent_id).enabled:
+                raise RoutineAgentDisabledError
+        return await self._create_task(routine, self._clock())
+
+    async def _fire_task(
+        self, routine: store.Routine, scheduled_for: int | None, now: float
+    ) -> store.Task | store.Run:
+        """A scheduled firing is gated: its assignment wakeup would be dropped over the usage
+        cut, so over it no task is created and the firing is `skipped`."""
+        over = self._service.usage_gate()
+        if over is not None:
+            percent, label = over
+            return self._service.record_skipped(
+                routine.agent_id,
+                f"Uso da assinatura em {percent}% ({label}).",
+                routine_id=routine.id,
+                scheduled_for=scheduled_for,
+            )
+        return await self._create_task(routine, now)
+
+    async def _create_task(self, routine: store.Routine, now: float) -> store.Task:
+        """Open the task of the routine, assigned to its agent (the assignment wakes it)."""
+        if self._tasks is None:
+            raise store.OrgError(NO_TASK_SERVICE)
+        return await self._tasks.create_task(
+            project_id=routine.project_id,
+            title=routine_task_title(routine.name, datetime.fromtimestamp(now).astimezone()),
+            description=routine.instruction,
+            assignee_agent_id=routine.agent_id,
+            actor_agent_id=None,
+            created_by="routine",
+            routine_id=routine.id,
         )
 
     def _warn_failed(self, routine: store.Routine, error: Exception) -> None:

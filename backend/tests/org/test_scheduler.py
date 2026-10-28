@@ -7,6 +7,7 @@ import logging
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,10 +19,12 @@ from claudio_maestro.org.scheduler import (
     GRACE_SECONDS,
     TICK_SECONDS,
     USAGE_LIMIT_PERCENT,
+    RoutineAgentDisabledError,
     Scheduler,
     due_slot,
     limit_over,
     limits_over,
+    routine_task_title,
 )
 from claudio_maestro.usage import UsageChecker, UsageLimit, UsageReport
 
@@ -110,6 +113,7 @@ class FakeService:
         self.usage_gate: Any = lambda: None
         self.wakes: list[dict[str, Any]] = []
         self.missed: list[tuple[int, int | None, int]] = []
+        self.skipped: list[dict[str, Any]] = []
         self.alerts: list[tuple[int, str]] = []
         self.fail_for: set[int] = set()
         self.hold: asyncio.Event | None = None
@@ -124,8 +128,39 @@ class FakeService:
     def record_missed(self, agent_id: int, routine_id: int | None, scheduled_for: int) -> None:
         self.missed.append((agent_id, routine_id, scheduled_for))
 
+    def record_skipped(self, agent_id: int, reason: str, **kwargs: Any) -> dict[str, Any]:
+        entry = {"agent_id": agent_id, "reason": reason, **kwargs}
+        self.skipped.append(entry)
+        return entry
+
     def add_alert(self, agent_id: int, text: str) -> None:
         self.alerts.append((agent_id, text))
+
+
+class FakeTasks:
+    """The part of `TaskService` the scheduler touches."""
+
+    def __init__(self) -> None:
+        self.created: list[dict[str, Any]] = []
+        self.fail = False
+
+    async def create_task(self, **kwargs: Any) -> store.Task:
+        if self.fail:
+            raise store.OrgError("tarefa recusada")
+        self.created.append(kwargs)
+        return SimpleNamespace(id=len(self.created), **kwargs)  # type: ignore[return-value]
+
+
+class FakeDecisions:
+    def __init__(self) -> None:
+        self.expired = 0
+        self.fail = False
+
+    async def expire_stale(self) -> int:
+        self.expired += 1
+        if self.fail:
+            raise RuntimeError("banco travado")
+        return 0
 
 
 class World:
@@ -136,6 +171,8 @@ class World:
         self.now = float(ts(at(MONDAY, 8)))
         self.recorder = Recorder()
         self.service = FakeService()
+        self.tasks = FakeTasks()
+        self.decisions = FakeDecisions()
         self.limits: list[UsageLimit] = []
         self.usage_error = False
         self.usage = UsageChecker(self.recorder, enabled=True, fetch=self._fetch)
@@ -144,6 +181,8 @@ class World:
             self.usage,
             self.db_path,
             clock=lambda: self.now,
+            tasks=self.tasks,  # type: ignore[arg-type]
+            decisions=self.decisions,  # type: ignore[arg-type]
         )
 
     async def _fetch(self) -> UsageReport:
@@ -175,11 +214,12 @@ class World:
         instruction: str = "Faça a ronda.",
         schedules: tuple[tuple[str, str], ...] = ((EVERY_DAY, "09:00"),),
         enabled: bool = True,
+        create_task: bool = False,
     ) -> int:
         with closing(db.connect(self.db_path)) as conn, db.transaction(conn):
             routine = store.create_routine(
                 conn, project_id=self.project.id, agent_id=agent_id, name=name,
-                instruction=instruction, enabled=enabled, now=1,
+                instruction=instruction, enabled=enabled, create_task=create_task, now=1,
             )
             store.replace_schedules(conn, routine.id, list(schedules), now=int(self.now))
         return routine.id
@@ -543,3 +583,178 @@ async def test_a_wake_that_fails_warns_the_owner_of_the_agent(world):
     # The slot was consumed: the next tick does not warn again.
     await world.scheduler.tick()
     assert len([a for a in world.service.alerts if a[0] == broken]) == 1
+
+
+# Routines that create a task -----------------------------------------------------
+
+
+async def test_routine_with_create_task_creates_task_instead_of_wake(world):
+    agent = world.add_agent()
+    routine = world.add_routine(
+        agent, name="Ronda", instruction="Veja o Sentry.", create_task=True
+    )
+    world.move_to(at(MONDAY, 9, 0, 5))
+
+    await world.scheduler.tick()
+    await world.scheduler.tick()
+
+    assert world.service.wakes == [] and world.service.missed == []
+    [call] = world.tasks.created
+    assert call == {
+        "project_id": world.project.id,
+        "title": "Ronda · 26/10",
+        "description": "Veja o Sentry.",
+        "assignee_agent_id": agent,
+        "actor_agent_id": None,
+        "created_by": "routine",
+        "routine_id": routine,
+    }
+    # The slot is consumed: no second task on the next tick.
+    assert world.schedules(routine)[0].last_fired_at == int(world.now)
+
+
+async def test_create_task_title_fits_the_limit_of_160(world):
+    agent = world.add_agent()
+    world.add_routine(agent, name="R" * 80, create_task=True)
+    world.move_to(at(MONDAY, 9, 0, 5))
+
+    await world.scheduler.tick()
+
+    [call] = world.tasks.created
+    assert call["title"] == "R" * 80 + " · 26/10" and len(call["title"]) <= 160
+
+
+def test_task_title_cuts_the_name_when_too_long():
+    long_name = "N" * 200
+    title = routine_task_title(long_name, datetime(2026, 10, 5, 9, 0))
+
+    assert len(title) == 160 and title.endswith(" · 05/10") and title.startswith("N" * 10)
+
+
+async def test_create_task_routine_over_the_cut_is_skipped_without_a_task(world):
+    agent = world.add_agent()
+    routine = world.add_routine(agent, create_task=True)
+    await world.set_usage(limit(97))
+    world.move_to(at(MONDAY, 9, 0, 5))
+
+    await world.scheduler.tick()
+
+    assert world.tasks.created == [] and world.service.wakes == []
+    [skipped] = world.service.skipped
+    assert skipped["agent_id"] == agent and skipped["routine_id"] == routine
+    assert skipped["scheduled_for"] == ts(at(MONDAY, 9))
+    assert "97%" in skipped["reason"]
+    assert len(world.usage_alerts()) == 1
+    assert world.schedules(routine)[0].last_fired_at == int(world.now)
+
+
+async def test_create_task_failure_warns_the_owner_like_a_failed_wake(world):
+    agent = world.add_agent()
+    world.add_routine(agent, name="Ronda", create_task=True)
+    world.tasks.fail = True
+    world.move_to(at(MONDAY, 9, 0, 5))
+
+    await world.scheduler.tick()
+
+    [(agent_id, text)] = world.service.alerts
+    assert agent_id == agent
+    assert 'rotina "Ronda"' in text and "tarefa recusada" in text
+
+
+async def test_create_task_routine_without_a_task_service_warns(world):
+    bare = Scheduler(world.service, world.usage, world.db_path, clock=lambda: world.now)  # type: ignore[arg-type]
+    agent = world.add_agent()
+    world.add_routine(agent, name="Ronda", create_task=True)
+    world.move_to(at(MONDAY, 9, 0, 5))
+
+    await bare.tick()
+
+    [(agent_id, text)] = world.service.alerts
+    assert agent_id == agent and 'rotina "Ronda"' in text
+    assert world.service.wakes == []
+
+
+async def test_a_scheduler_without_tasks_and_decisions_still_ticks(world):
+    bare = Scheduler(world.service, world.usage, world.db_path, clock=lambda: world.now)  # type: ignore[arg-type]
+    agent = world.add_agent()
+    world.add_routine(agent)
+    world.move_to(at(MONDAY, 9, 0, 5))
+
+    await bare.tick()
+
+    assert len(world.service.wakes) == 1
+
+
+async def test_routine_run_now_with_create_task(world):
+    agent = world.add_agent()
+    routine_id = world.add_routine(agent, name="Ronda", instruction="Veja.", create_task=True)
+    with closing(db.connect(world.db_path)) as conn:
+        routine = store.get_routine(conn, routine_id)
+
+    task = await world.scheduler.run_now(routine)
+
+    assert world.service.wakes == []
+    [call] = world.tasks.created
+    assert call["created_by"] == "routine" and call["routine_id"] == routine_id
+    assert call["assignee_agent_id"] == agent and call["description"] == "Veja."
+    assert task.id == 1
+
+
+async def test_routine_run_now_with_create_task_over_the_cut_still_creates_the_task(world):
+    agent = world.add_agent()
+    routine_id = world.add_routine(agent, create_task=True)
+    await world.set_usage(limit(97))
+    with closing(db.connect(world.db_path)) as conn:
+        routine = store.get_routine(conn, routine_id)
+
+    task = await world.scheduler.run_now(routine)
+
+    # The person's request goes through; only the assignment wakeup is held by the service.
+    assert world.service.skipped == [] and task.id == 1
+    assert [c["routine_id"] for c in world.tasks.created] == [routine_id]
+
+
+async def test_routine_run_now_of_a_disabled_agent_creates_nothing(world):
+    agent = world.add_agent(enabled=False)
+    routine_id = world.add_routine(agent, create_task=True)
+    with closing(db.connect(world.db_path)) as conn:
+        routine = store.get_routine(conn, routine_id)
+
+    with pytest.raises(RoutineAgentDisabledError):
+        await world.scheduler.run_now(routine)
+
+    assert world.tasks.created == []
+
+
+async def test_run_now_refuses_a_routine_that_does_not_create_tasks(world):
+    agent = world.add_agent()
+    routine_id = world.add_routine(agent)
+    with closing(db.connect(world.db_path)) as conn:
+        routine = store.get_routine(conn, routine_id)
+
+    with pytest.raises(store.OrgError):
+        await world.scheduler.run_now(routine)
+
+
+async def test_every_tick_expires_stale_decisions_and_a_failure_is_only_logged(world, caplog):
+    agent = world.add_agent()
+    world.add_routine(agent)
+    world.move_to(at(MONDAY, 9, 0, 5))
+
+    await world.scheduler.tick()
+    world.decisions.fail = True
+    with caplog.at_level("ERROR"):
+        await world.scheduler.tick()
+
+    assert world.decisions.expired == 2
+    assert "decisões" in caplog.text
+    # The routines were handled in both ticks.
+    assert len(world.service.wakes) == 1
+
+
+async def test_expiring_decisions_runs_even_with_the_scheduler_off(world):
+    world.scheduler.enabled = False
+
+    await world.scheduler.tick()
+
+    assert world.decisions.expired == 0

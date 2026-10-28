@@ -23,6 +23,8 @@ from claudio_maestro.app import create_app
 from claudio_maestro.org import store
 from claudio_maestro.org.definition import definition_hash
 from claudio_maestro.org.files import AgentFiles
+from claudio_maestro.org.scheduler import Scheduler
+from claudio_maestro.org.tasks import TaskService
 
 APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
@@ -160,6 +162,14 @@ def test_create_bad_slug_is_one_sentence_in_portuguese(api, project):
         "/api/agents", json={"name": "X", "slug": "A b", "project_id": project["id"]}
     )
     assert "identificador" in response.json()["detail"]
+
+
+def test_create_agent_accepts_the_reviewer_template(api, project):
+    agent = create_agent(api, project["id"], "revisor-pr", "Revisor PR", kind="reviewer")
+
+    text = (agents_dir(api) / "revisor-pr" / "AGENT.md").read_text()
+    assert "name: Revisor PR" in text
+    assert agent["description"] and "Coordena" not in agent["description"]
 
 
 def test_create_accepts_the_longest_slug(api, project):
@@ -1148,6 +1158,76 @@ def test_routines_follow_the_agent_when_it_is_deleted(api, agent):
     create_routine(api, agent)
     api.delete(f"/api/agents/{agent['id']}")
     assert api.get("/api/routines").json() == []
+
+
+def with_task_service(api: TestClient) -> None:
+    """Gives the app's scheduler the task service (the app wires it later)."""
+    state = api.app.state
+    state.scheduler = Scheduler(
+        state.org,
+        state.usage,
+        state.settings.db_path,
+        time.time,
+        tasks=TaskService(state.settings.db_path, org=state.org, publish=lambda kind, data: None),
+    )
+
+
+def test_api_routine_accepts_create_task(api, agent):
+    assert create_routine(api, agent).json()["create_task"] is False
+
+    created = create_routine(api, agent, create_task=True)
+    assert created.status_code == 201 and created.json()["create_task"] is True
+    routine_id = created.json()["id"]
+
+    patched = api.patch(f"/api/routines/{routine_id}", json={"create_task": False})
+    assert patched.status_code == 200 and patched.json()["create_task"] is False
+    assert api.patch(f"/api/routines/{routine_id}", json={"create_task": None}).status_code == 422
+    assert api.get("/api/routines").json()[-1]["create_task"] is False
+    with conn_of(api) as conn:
+        assert store.get_routine(conn, routine_id).create_task is False
+
+
+def test_routine_run_now_with_create_task_opens_a_task(api, agent):
+    with_task_service(api)
+    routine = create_routine(api, agent, create_task=True, instruction="Veja o Sentry.").json()
+
+    response = api.post(f"/api/routines/{routine['id']}/run")
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["title"].startswith("Manhã · ") and body["created_by"] == "routine"
+    assert body["routine_id"] == routine["id"] and body["assignee_agent_id"] == agent["id"]
+    with conn_of(api) as conn:
+        [task] = store.list_tasks(conn)
+        assert task.id == body["id"] and task.description == "Veja o Sentry."
+        # The assignment wakes the agent; no bare manual run of the routine is queued.
+        assert [w.source for w in store.pending_wakeups(conn, agent["id"])] == ["assignment"]
+
+
+def test_routine_run_now_with_create_task_of_a_disabled_agent_is_409(api, agent):
+    with_task_service(api)
+    routine = create_routine(api, agent, create_task=True).json()
+    patch(api, agent["id"], enabled=False)
+
+    response = api.post(f"/api/routines/{routine['id']}/run")
+
+    assert response.status_code == 409 and response.json()["detail"] == "O agente está desligado."
+    with conn_of(api) as conn:
+        assert store.list_tasks(conn) == []
+
+
+def test_routine_run_now_with_create_task_over_the_cut_still_creates_the_task(api, agent):
+    with_task_service(api)
+    api.app.state.scheduler._service.usage_gate = lambda: (97, "Sessão")
+    routine = create_routine(api, agent, create_task=True).json()
+
+    response = api.post(f"/api/routines/{routine['id']}/run")
+
+    assert response.status_code == 202
+    assert response.json()["created_by"] == "routine" and "outcome" not in response.json()
+    with conn_of(api) as conn:
+        [task] = store.list_tasks(conn)
+        assert task.id == response.json()["id"]
 
 
 # Notices -----------------------------------------------------------------------------

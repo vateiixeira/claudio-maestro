@@ -47,6 +47,7 @@ from claudio_maestro.org.files import (
     MemoryTooLongError,
     SecretsFileError,
 )
+from claudio_maestro.org.scheduler import RoutineAgentDisabledError
 from claudio_maestro.org.service import (
     AddDirOutsideProjectsError,
     AgentDisabledError,
@@ -111,7 +112,7 @@ class AgentCreate(BaseModel):
     slug: str = Field(max_length=200)
     project_id: int
     reports_to: int | None = None
-    kind: Literal["cto", "worker"] | None = None
+    kind: Literal["cto", "worker", "reviewer"] | None = None
 
 
 class AgentPatch(BaseModel):
@@ -175,6 +176,8 @@ class RoutineCreate(BaseModel):
     name: RoutineText
     instruction: RoutineText
     enabled: bool = True
+    # Each firing opens a task for the agent instead of a bare run.
+    create_task: bool = False
     schedules: Annotated[list[ScheduleIn], Field(max_length=MAX_SCHEDULES)] = []
 
 
@@ -184,6 +187,7 @@ class RoutinePatch(BaseModel):
     name: RoutineText | None = None
     instruction: RoutineText | None = None
     enabled: bool | None = None
+    create_task: bool | None = None
     schedules: Annotated[list[ScheduleIn], Field(max_length=MAX_SCHEDULES)] | None = None
 
 
@@ -885,7 +889,8 @@ async def create_routine(body: RoutineCreate, request: Request, conn: DbDep) -> 
                 raise _unprocessable(ROUTINE_OTHER_PROJECT)
             routine = store.create_routine(
                 conn, project_id=agent.project_id, agent_id=agent.id, name=body.name,
-                instruction=body.instruction, enabled=body.enabled, now=_now(),
+                instruction=body.instruction, enabled=body.enabled,
+                create_task=body.create_task, now=_now(),
             )
             store.replace_schedules(conn, routine.id, schedules, _now())
     except store.OrgError as exc:
@@ -932,11 +937,22 @@ async def delete_routine(routine_id: int, request: Request, conn: DbDep) -> Resp
 
 @router.post("/routines/{routine_id}/run", status_code=status.HTTP_202_ACCEPTED)
 async def run_routine(routine_id: int, request: Request, conn: DbDep) -> dict[str, Any]:
-    """"Run now": a manual wakeup with the instruction of the routine."""
+    """"Run now": a manual wakeup with the instruction of the routine; a routine that creates
+    a task opens it instead (the task, or the `skipped` run over the usage cut, is returned)."""
     try:
         routine = store.get_routine(conn, routine_id)
     except store.NotFoundError as exc:
         raise _not_found(str(exc)) from exc
+    if routine.create_task:
+        try:
+            result = await request.app.state.scheduler.run_now(routine)
+        except RoutineAgentDisabledError as exc:
+            raise _conflict(AGENT_DISABLED) from exc
+        except store.NotFoundError as exc:
+            raise _not_found(str(exc)) from exc
+        except store.OrgError as exc:
+            raise _unprocessable(str(exc)) from exc
+        return asdict(result)
     return await _wake(request, routine.agent_id, text=None, routine_id=routine.id)
 
 
