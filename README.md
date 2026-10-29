@@ -142,6 +142,8 @@ Antes de instalar, feche o Maestro que estiver rodando no terminal: a porta prec
 
 O rodapé do menu lateral mostra a versão instalada e avisa quando sai uma versão nova. No aviso, **Atualizar agora** baixa a versão, instala as dependências, compila o frontend e reinicia o app. A página recarrega sozinha, e as sessões continuam rodando enquanto o agentd estiver ligado (o padrão). Com `MAESTRO_AGENTD=0`, o app pede confirmação antes de reiniciar e as sessões caem.
 
+Antes de migrar o banco para uma versão nova, o app guarda uma cópia em `<pasta de dados>/backups/antes-migracao-<de>-para-<para>-<data>.db` e mantém as cinco mais recentes. Se a cópia falhar, o app não sobe e diz o motivo.
+
 O botão funciona quando:
 
 - o app foi iniciado com `uv run claudio-maestro` (no terminal ou pelo serviço);

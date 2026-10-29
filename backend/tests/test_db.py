@@ -1,6 +1,7 @@
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -1186,3 +1187,68 @@ def test_migration_34_on_a_new_database_ends_without_work_tables(tmp_path: Path)
         assert db.schema_version(conn) == 34
         assert not [name for name in table_names(conn) if name.startswith("work_")]
         assert "org_legacy_work" in table_names(conn)
+
+
+def make_outdated_db(path: Path) -> None:
+    """A database from before any migration: `user_version` 0 and a marker table."""
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("PRAGMA user_version = 0")
+        conn.execute("CREATE TABLE marcador (x)")
+        conn.commit()
+
+
+def backup_files(path: Path) -> list[Path]:
+    return sorted((path.parent / "backups").glob("antes-migracao-*.db"))
+
+
+def test_init_db_backs_up_outdated_database(tmp_path: Path):
+    p = tmp_path / "maestro.db"
+    make_outdated_db(p)
+    db.init_db(p)
+    backups = sorted((tmp_path / "backups").glob(f"antes-migracao-0-para-{db.SCHEMA_VERSION}-*.db"))
+    assert len(backups) == 1
+    assert len(backup_files(p)) == 1
+    assert backups[0].stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "backups").stat().st_mode & 0o777 == 0o700
+    with closing(sqlite3.connect(backups[0])) as copy:
+        assert copy.execute("PRAGMA user_version").fetchone()[0] == 0
+        assert copy.execute("SELECT name FROM sqlite_master WHERE name = 'marcador'").fetchone()
+    with open_db(p) as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
+
+
+def test_init_db_skips_backup_when_up_to_date(tmp_path: Path):
+    p = tmp_path / "maestro.db"
+    make_outdated_db(p)
+    db.init_db(p)
+    db.init_db(p)
+    assert len(backup_files(p)) == 1
+
+
+def test_init_db_skips_backup_for_new_database(tmp_path: Path):
+    p = tmp_path / "maestro.db"
+    db.init_db(p)
+    assert not (tmp_path / "backups").exists()
+
+
+def test_backup_keeps_only_the_newest_five(tmp_path: Path):
+    p = tmp_path / "maestro.db"
+    make_outdated_db(p)
+    for minute in range(6):
+        db.backup_before_migration(
+            p, 0, 1, now=lambda minute=minute: datetime(2026, 10, 29, 12, minute, 0)
+        )
+    names = [f.name for f in backup_files(p)]
+    assert names == [f"antes-migracao-0-para-1-20261029-12{minute:02d}00.db" for minute in range(1, 6)]
+
+
+def test_init_db_refuses_to_migrate_without_backup(tmp_path: Path):
+    p = tmp_path / "maestro.db"
+    make_outdated_db(p)
+    (tmp_path / "backups").write_text("not a folder")
+    with pytest.raises(RuntimeError, match="backups"):
+        db.init_db(p)
+    with closing(sqlite3.connect(p)) as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 0
+        # Nothing touched the old file, not even the switch to WAL.
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"

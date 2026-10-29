@@ -1,9 +1,13 @@
 """SQLite connection and schema migrations versioned by `PRAGMA user_version`."""
 
+import logging
 import sqlite3
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
+from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Titles the app or the sync set by themselves (history.DEFAULT_APP_TITLE, history.UNTITLED).
 _AUTOMATIC_TITLES = ("Nova sessão", "Sessão sem título")
@@ -1467,11 +1471,56 @@ def migrate(conn: sqlite3.Connection) -> None:
             conn.execute(f"PRAGMA user_version = {current}")
 
 
+BACKUPS_DIRNAME = "backups"
+BACKUPS_KEPT = 5
+
+
+def backup_before_migration(
+    path: Path,
+    current: int,
+    target: int,
+    *,
+    keep: int = BACKUPS_KEPT,
+    now: Callable[[], datetime] | None = None,
+) -> Path | None:
+    """Copy the database to `backups/` (next to it) before migrating `current` -> `target`.
+
+    Uses SQLite's backup API, which copies a consistent read even with WAL. The
+    folder is 0700 and the copy 0600. Keeps only the `keep` newest copies.
+    """
+    backups_dir = path.parent / BACKUPS_DIRNAME
+    backups_dir.mkdir(mode=0o700, exist_ok=True)
+    stamp = (now or datetime.now)()
+    dest = backups_dir / f"antes-migracao-{current}-para-{target}-{stamp:%Y%m%d-%H%M%S}.db"
+    with closing(sqlite3.connect(path)) as src, closing(sqlite3.connect(dest)) as dst:
+        src.backup(dst)
+    dest.chmod(0o600)
+    for old in sorted(backups_dir.glob("antes-migracao-*.db"))[:-keep]:
+        old.unlink(missing_ok=True)
+    return dest
+
+
 def init_db(path: Path) -> None:
-    """Create the data folder if needed and bring the schema up to date."""
+    """Create the data folder if needed and bring the schema up to date.
+
+    An existing database that is behind gets a copy in `backups/` first. The copy
+    is made before `PRAGMA journal_mode = WAL`, which already rewrites the header
+    of a database that is not in WAL yet.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    existed = path.exists()
     conn = connect(path)
     try:
+        current = schema_version(conn)
+        if existed and current < SCHEMA_VERSION:
+            try:
+                copy = backup_before_migration(path, current, SCHEMA_VERSION)
+            except (OSError, sqlite3.Error) as exc:
+                raise RuntimeError(
+                    "Não foi possível copiar o banco antes de migrar para "
+                    f"{path.parent / BACKUPS_DIRNAME}: {exc}"
+                ) from exc
+            logger.info("Cópia do banco antes de migrar: %s", copy)
         conn.execute("PRAGMA journal_mode = WAL")
         migrate(conn)
     finally:
