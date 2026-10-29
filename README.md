@@ -228,20 +228,12 @@ As ações do painel: **Rodar agora** (com uma instrução opcional para essa ve
 
 Comentários seus nos PRs abertos por um agente voltam à sessão que abriu o PR (numa tarefa, é a sessão dela). Se ela não existir mais, vão à conversa principal do agente. O Maestro consulta os comentários ao iniciar e a cada hora, usando o `gh` já autenticado, e só aceita os do login do GitHub que você salvou.
 
-O login e o segredo do webhook são gravados pela API `PUT /api/agents-github`; ainda não há tela para isso. O login tem até 39 letras, números ou hífens, e o segredo, de 16 a 256 caracteres. O exemplo usa a porta padrão, 6660; com outro `MAESTRO_PORT`, troque a porta no endereço e no `Origin`, que precisam bater com a porta do app:
-
-```bash
-curl -X PUT http://127.0.0.1:6660/api/agents-github \
-  -H 'X-Maestro: 1' -H 'Origin: http://127.0.0.1:6660' -H 'Content-Type: application/json' \
-  -d '{"login": "seu-usuario", "secret": "um-segredo-com-16-ou-mais-caracteres"}'
-```
-
-O `GET` na mesma rota mostra o login, se o segredo está definido, a porta do receptor e quantos comentários estão na fila; o segredo nunca volta.
+Salve o seu login do GitHub e o segredo do webhook em **Preferências → GitHub**. O login tem até 39 letras, números ou hífens; o segredo, de 16 a 256 caracteres. A tela mostra se o segredo está definido, a porta do receptor e quantos comentários estão na fila; o segredo nunca volta.
 
 Para receber os comentários sem esperar a consulta:
 
 1. Defina `MAESTRO_HOOKS_PORT` com uma porta livre na máquina do Maestro (por exemplo, `6670`) e reinicie o backend. O receptor escuta só em `127.0.0.1`, separado da API.
-2. Grave o segredo pela rota acima. Ele fica em `github-webhook.secret` na pasta de dados, com permissão `600`.
+2. Grave o segredo em **Preferências → GitHub**. Ele fica em `github-webhook.secret` na pasta de dados, com permissão `600`.
 3. Se usar um servidor público com Caddy e um túnel SSH até ele, encaminhe apenas o receptor. Exemplo no bloco do domínio no Caddy:
 
    ```caddyfile

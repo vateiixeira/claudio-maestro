@@ -84,7 +84,7 @@ describe('tela de preferências', () => {
     expect(w.find('#pref-editor').exists()).toBe(false)
   })
 
-  it('a aba Notificações abre pela URL e tem a ordem Geral, Agente, Execução, Notificações, Etiquetas nas setas', async () => {
+  it('a aba Notificações abre pela URL e tem a ordem Geral, Agente, Execução, Notificações, GitHub, Etiquetas nas setas', async () => {
     stub({ preferences: {} })
     vi.stubGlobal('Notification', undefined)
     const router = createAppRouter(createMemoryHistory())
@@ -98,6 +98,9 @@ describe('tela de preferências', () => {
     expect(w.find('[data-test="tab-notifications"]').attributes('aria-selected')).toBe('true')
     expect(w.find('[data-test="notif-unsupported"]').exists()).toBe(true)
     expect(w.find('#pref-editor').exists()).toBe(false)
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
+    await flushPromises()
+    expect(w.find('[data-test="tab-github"]').attributes('aria-selected')).toBe('true')
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()
     expect(w.find('[data-test="tab-labels"]').attributes('aria-selected')).toBe('true')
@@ -123,10 +126,25 @@ describe('tela de preferências', () => {
     expect(w.find('#pref-editor').exists()).toBe(false)
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
     await flushPromises()
-    expect(router.currentRoute.value.query.aba).toBe('notificacoes')
+    expect(router.currentRoute.value.query.aba).toBe('github')
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()
     expect(router.currentRoute.value.query.aba).toBe('etiquetas')
+  })
+
+  it('a aba GitHub abre pela URL e mostra a configuração', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/state': () => jsonResponse({ preferences: {} }),
+      'GET /api/agents-github': () => jsonResponse({ login: 'vini', secret_set: true, hooks_port: null, queued: 0 }),
+    }))
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias?aba=github')
+    const w = mount(PreferencesView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="tab-github"]').text()).toBe('GitHub')
+    expect(w.find('[data-test="tab-github"]').attributes('aria-selected')).toBe('true')
+    expect(w.find<HTMLInputElement>('[data-test="github-login"]').element.value).toBe('vini')
+    expect(w.find('#pref-editor').exists()).toBe(false)
   })
 
   it('a aba ativa vem da URL e as setas trocam de aba', async () => {
