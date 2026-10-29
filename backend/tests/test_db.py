@@ -1252,3 +1252,59 @@ def test_init_db_refuses_to_migrate_without_backup(tmp_path: Path):
         assert conn.execute("PRAGMA user_version").fetchone()[0] == 0
         # Nothing touched the old file, not even the switch to WAL.
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+
+
+def test_backup_removes_partial_copy_when_chmod_fails(tmp_path: Path, monkeypatch):
+    p = tmp_path / "maestro.db"
+    make_outdated_db(p)
+    real_chmod = Path.chmod
+
+    def failing_chmod(self, mode, *args, **kwargs):
+        if self.name.startswith("antes-migracao-"):
+            raise PermissionError("chmod failed")
+        return real_chmod(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "chmod", failing_chmod)
+    with pytest.raises(PermissionError):
+        db.backup_before_migration(p, 0, 1)
+    assert backup_files(p) == []
+
+
+def test_backup_removes_partial_copy_when_copy_fails(tmp_path: Path):
+    p = tmp_path / "maestro.db"
+    p.write_bytes(b"this is not a sqlite database" * 200)
+    with pytest.raises(sqlite3.Error):
+        db.backup_before_migration(p, 0, 1)
+    assert backup_files(p) == []
+
+
+def test_backup_cleanup_orders_by_timestamp_not_by_name(tmp_path: Path):
+    p = tmp_path / "maestro.db"
+    make_outdated_db(p)
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    old = [
+        "antes-migracao-8-para-9-20260101-100000.db",
+        "antes-migracao-99-para-100-20260102-100000.db",
+    ]
+    for name in old:
+        (backups / name).write_bytes(b"")
+    # "100-para-101" sorts before "99-para-100" by name, but it is the newest.
+    new = db.backup_before_migration(
+        p, 100, 101, keep=2, now=lambda: datetime(2026, 10, 29, 12, 0, 0)
+    )
+    assert new is not None and new.exists()
+    assert sorted(f.name for f in backup_files(p)) == [
+        "antes-migracao-100-para-101-20261029-120000.db",
+        "antes-migracao-99-para-100-20260102-100000.db",
+    ]
+
+
+def test_backup_fixes_permissions_of_existing_folder(tmp_path: Path):
+    p = tmp_path / "maestro.db"
+    make_outdated_db(p)
+    backups = tmp_path / "backups"
+    backups.mkdir(mode=0o755)
+    backups.chmod(0o755)
+    db.backup_before_migration(p, 0, 1)
+    assert backups.stat().st_mode & 0o777 == 0o700

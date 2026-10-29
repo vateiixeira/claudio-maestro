@@ -1490,14 +1490,26 @@ def backup_before_migration(
     """
     backups_dir = path.parent / BACKUPS_DIRNAME
     backups_dir.mkdir(mode=0o700, exist_ok=True)
+    backups_dir.chmod(0o700)  # a folder that already existed may have looser permissions
     stamp = (now or datetime.now)()
     dest = backups_dir / f"antes-migracao-{current}-para-{target}-{stamp:%Y%m%d-%H%M%S}.db"
-    with closing(sqlite3.connect(path)) as src, closing(sqlite3.connect(dest)) as dst:
-        src.backup(dst)
-    dest.chmod(0o600)
-    for old in sorted(backups_dir.glob("antes-migracao-*.db"))[:-keep]:
+    try:
+        with closing(sqlite3.connect(path)) as src, closing(sqlite3.connect(dest)) as dst:
+            src.backup(dst)
+        dest.chmod(0o600)
+    except BaseException:
+        dest.unlink(missing_ok=True)  # a partial copy must not take one of the kept slots
+        raise
+    # Order by the timestamp at the end of the name: the versions have a varying number of digits.
+    copies = sorted(backups_dir.glob("antes-migracao-*.db"), key=_backup_stamp)
+    for old in copies[:-keep]:
         old.unlink(missing_ok=True)
     return dest
+
+
+def _backup_stamp(file: Path) -> tuple[str, str]:
+    """Sort key of a backup: the `%Y%m%d-%H%M%S` that ends its name, then the name itself."""
+    return file.stem[-15:], file.name
 
 
 def init_db(path: Path) -> None:
