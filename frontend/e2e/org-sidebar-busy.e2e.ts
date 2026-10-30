@@ -29,18 +29,20 @@ test('o ícone do agente na barra lateral volta a ocioso quando o turno de uma s
     const response = await route.fetch()
     const list = (await response.json()) as Array<Record<string, unknown>>
     // Every conversation seeded belongs to Triagem for this spec, so it does not depend on which ones other specs left.
-    for (const s of list) sessionIds.add(s.session_id as string)
-    await route.fulfill({ response, json: list.map((s) => ({ ...s, agent_id: triagemId, state: server.state })) })
+    const state = server.state
+    await route.fulfill({ response, json: list.map((s) => ({ ...s, agent_id: triagemId, state })) })
+    // Counted once delivered with an open turn: the turn has to open on the page before it can close.
+    if (state === 'running') for (const s of list) sessionIds.add(s.session_id as string)
   })
 
   await page.goto('/inicio')
   const row = page.getByTestId('sidebar-agent-row').filter({ hasText: 'Triagem' })
   await expect(row.getByTestId('agent-state')).toHaveAttribute('data-state', 'busy')
+  await expect.poll(() => sessionIds.size).toBeGreaterThan(0)
 
   // The turn closes: the page is not reloaded and no agent event arrives, only the session state.
   server.state = 'idle'
   await expect.poll(() => socket !== null).toBe(true)
-  expect(sessionIds.size).toBeGreaterThan(0)
   for (const id of sessionIds) {
     socket!.send(JSON.stringify({ session_id: id, seq: 1000, type: 'session.state', data: { state: 'idle', error: null } }))
   }
