@@ -9,6 +9,8 @@ import type { Agent, Decision, Notice, Routine, Run } from '../types/org'
 const RUNS_LIMIT = 50
 /** Runs that hold the agent: they stay in the list however many newer ones finish. */
 const ACTIVE_OUTCOMES: ReadonlySet<string> = new Set(['starting', 'running', 'waiting'])
+/** Session states with an open turn: the ones the backend counts as `busy` for the agent (`TURN_OPEN_STATES`). */
+const TURN_OPEN_STATES: ReadonlySet<string> = new Set(['connecting', 'running', 'awaiting_decision'])
 
 export interface TreeNode {
   agent: Agent
@@ -260,6 +262,24 @@ export const useOrgStore = defineStore('org', () => {
       .join(',')
   })
   watch(waitingMains, () => { void load() })
+
+  // `busy` also counts an open turn in any session of the agent, and the backend publishes nothing when that turn
+  // closes (`concluir` runs inside the turn, so the announcement is reread while it is still open). So the store
+  // rereads the agents whose open-turn status changed. The key holds just the ids with an open turn now.
+  const turnOpenAgents = computed(() => {
+    const ids = new Set<number>()
+    for (const s of sessions.all) {
+      if (s.agent_id != null && TURN_OPEN_STATES.has(s.state)) ids.add(s.agent_id)
+    }
+    return [...ids].sort((a, b) => a - b).join(',')
+  })
+  watch(turnOpenAgents, (now, before) => {
+    const parse = (key: string) => new Set(key ? key.split(',').map(Number) : [])
+    const [after, previous] = [parse(now), parse(before)]
+    for (const id of new Set([...after, ...previous])) {
+      if (after.has(id) !== previous.has(id)) void refreshAgent(id)
+    }
+  })
 
   // Events -------------------------------------------------------------------
 

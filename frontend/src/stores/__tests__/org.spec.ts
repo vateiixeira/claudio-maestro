@@ -430,6 +430,64 @@ describe('org store: espera da conversa principal', () => {
   })
 })
 
+describe('org store: turno aberto de uma sessão do agente', () => {
+  it('relê o agente quando o turno da execução fecha e tira o busy preso', async () => {
+    let busy = true
+    const fetch = routeFetch({
+      'GET /api/agents/1': () => jsonResponse(makeAgent({ busy })),
+      'GET /api/agents/2': () => jsonResponse(makeAgent({ id: 2, slug: 'b', busy: false })),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    const sessions = useSessionsStore()
+    store.agents = [makeAgent({ busy: false }), makeAgent({ id: 2, slug: 'b' })]
+    sessions.setForProject(1, [makeSession({ session_id: 'run', agent_id: 1, state: 'running' })])
+    await vi.waitFor(() => expect(store.byId(1)?.busy).toBe(true))
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    // `concluir` runs inside the turn: the announcement rereads the agent while the turn is still open.
+    store.applyEvent('agent.announcement', { agent_id: 1 })
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    expect(store.byId(1)?.busy).toBe(true)
+
+    busy = false
+    sessions.setForProject(1, [makeSession({ session_id: 'run', agent_id: 1, state: 'idle' })])
+    await vi.waitFor(() => expect(store.byId(1)?.busy).toBe(false))
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(fetch.mock.calls.every(([u]) => u === '/api/agents/1')).toBe(true)
+  })
+
+  it('vale para qualquer sessão do agente, não só a principal', async () => {
+    const fetch = routeFetch({ 'GET /api/agents/1': () => jsonResponse(makeAgent({ busy: true, main_session_id: 'main' })) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    const sessions = useSessionsStore()
+    store.agents = [makeAgent({ main_session_id: 'main' })]
+    sessions.setForProject(1, [makeSession({ session_id: 'run', agent_id: 1, state: 'awaiting_decision' })])
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+  })
+
+  it('mudança irrelevante nas sessões não relê nada', async () => {
+    const fetch = routeFetch({ 'GET /api/agents/1': () => jsonResponse(makeAgent()) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    const sessions = useSessionsStore()
+    store.agents = [makeAgent()]
+    sessions.setForProject(1, [
+      makeSession({ session_id: 'run', agent_id: 1, state: 'idle' }),
+      makeSession({ session_id: 'other', state: 'running' }),
+    ])
+    await nextTick()
+    sessions.setForProject(1, [
+      makeSession({ session_id: 'run', agent_id: 1, state: 'closed', title: 'Outro título', last_activity_at: 1_790_000_100 }),
+      makeSession({ session_id: 'other', state: 'idle' }),
+    ])
+    await nextTick()
+    await flushMicrotasks()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
 describe('org store: reloadOpen', () => {
   it('relê só as execuções e rotinas que já foram abertas', async () => {
     const fetch = routeFetch({

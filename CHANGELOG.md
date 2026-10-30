@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Corrigido
+
+- A bolinha de um agente na barra lateral não fica mais girando depois que a execução termina.
+
 ## [0.9.0] - 2026-10-29
 
 Chega a organização de agentes: por projeto, um agente no topo e subordinados, cada um um AGENT.md editado no app, com tarefas, rotinas, decisões e execuções num lugar só. Os agentes da 0.8.0 migram sozinhos, e o banco ganha uma cópia automática antes de cada migração.
