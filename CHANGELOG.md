@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- A conversa principal de um agente mostra no topo o run em andamento, com link para a sessão dele, e fica laranja quando o run espera sua resposta.
+
 ### Corrigido
 
 - A bolinha de um agente na barra lateral não fica mais girando depois que a execução termina.

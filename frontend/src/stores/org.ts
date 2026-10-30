@@ -2,15 +2,12 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import * as api from '../api/http'
 import { isActive } from '../groupList'
+import { ACTIVE_RUN_OUTCOMES as ACTIVE_OUTCOMES, TURN_OPEN_STATES } from '../org'
 import { useSessionsStore } from './sessions'
 import type { Router } from 'vue-router'
 import type { Agent, Decision, Notice, Routine, Run } from '../types/org'
 
 const RUNS_LIMIT = 50
-/** Runs that hold the agent: they stay in the list however many newer ones finish. */
-const ACTIVE_OUTCOMES: ReadonlySet<string> = new Set(['starting', 'running', 'waiting'])
-/** Session states with an open turn: the ones the backend counts as `busy` for the agent (`TURN_OPEN_STATES`). */
-const TURN_OPEN_STATES: ReadonlySet<string> = new Set(['connecting', 'running', 'awaiting_decision'])
 
 export interface TreeNode {
   agent: Agent
