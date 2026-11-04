@@ -11,6 +11,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 ### Corrigido
 
 - A bolinha de um agente na barra lateral não fica mais girando depois que a execução termina.
+- A busca de sessões não espreme mais os resultados quando eles passam da altura da lista: título, etiquetas e trecho aparecem inteiros e a lista rola.
 
 ## [0.9.0] - 2026-10-29
 
