@@ -517,7 +517,7 @@ GIT_SEEDERS = {
 }
 
 
-def seed_git(root: Path, home: Path, conn) -> None:
+def seed_git(root: Path, home: Path, conn, data_dir: Path) -> None:
     for entry in GIT_SCENARIO:
         project_dir = home / "projetos" / entry["slug"]
         if not project_dir.resolve().is_relative_to(root):
@@ -525,7 +525,8 @@ def seed_git(root: Path, home: Path, conn) -> None:
         project_dir.mkdir(parents=True, exist_ok=True)
         GIT_SEEDERS[entry["git"]](project_dir, root)
         projects.create_project(
-            conn, name=entry["name"], path=str(project_dir), color=entry["color"], home=home
+            conn, name=entry["name"], path=str(project_dir), color=entry["color"], home=home,
+            data_dir=data_dir,
         )
 
 
@@ -649,7 +650,7 @@ def seed(root: Path) -> None:
             project_dir.mkdir(parents=True, exist_ok=True)
             project = projects.create_project(
                 conn, name=entry["name"], path=str(project_dir), color=entry["color"],
-                home=settings.home_dir,
+                home=settings.home_dir, data_dir=settings.data_dir,
             )
             folder = _history_folder(projects_dir, Path(project.path))
             for index, conversation in enumerate(entry["conversations"]):
@@ -658,7 +659,7 @@ def seed(root: Path) -> None:
                     folder, Path(project.path), conversation["prompt"], conversation["reply"],
                     started, conversation.get("subagents"), conversation.get("filler_turns", 0),
                 )
-        seed_git(root, settings.home_dir, conn)
+        seed_git(root, settings.home_dir, conn, settings.data_dir)
         _seed_agents(settings, conn, now)
 
 

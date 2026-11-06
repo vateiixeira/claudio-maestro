@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from claudio_maestro import db, gitinfo, history, runmode, selfupdate
+from claudio_maestro import db, gitinfo, history, projects, runmode, selfupdate
 from claudio_maestro.activity import ActivityReader, SessionFile
 from claudio_maestro.agent.agentd_client import AgentdClient
 from claudio_maestro.agent.base import AgentFactory
@@ -207,6 +207,8 @@ def create_app(
         app.state.settings = settings or load_settings()
         app.state.restart = restart
         db.init_db(app.state.settings.db_path)
+        with closing(db.connect(app.state.settings.db_path)) as conn:
+            projects.ensure_scratch_project(conn, app.state.settings.data_dir)
         await asyncio.to_thread(migrate_agent_files, app.state.settings)
         # Before the sessions are loaded: it rebinds the old coordinators' sessions to the CTO.
         await asyncio.to_thread(migrate_old_work, app.state.settings)
