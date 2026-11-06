@@ -96,9 +96,11 @@ async def list_plans(
     project_id: int, conn: DbDep, manager: ManagerDep
 ) -> list[dict[str, Any]]:
     try:
-        project = projects.get_project(conn, project_id)
+        project = projects.require_regular(projects.get_project(conn, project_id))
     except projects.ProjectNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except projects.ScratchProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     if not project.available:
         return []
     return await asyncio.to_thread(list_project_plans, Path(project.path), manager.plan_cache)

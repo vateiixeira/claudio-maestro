@@ -149,11 +149,19 @@ def create_project(
     return get_project(conn, cursor.lastrowid)
 
 
-def refuse_scratch(project: Project) -> None:
+SCRATCH_IMMUTABLE_MESSAGE = 'O projeto embutido "Sem projeto" não pode ser alterado nem removido.'
+SCRATCH_NO_PROJECT_FEATURES_MESSAGE = "Conversas sem projeto não têm git, agentes nem tarefas."
+
+
+def refuse_scratch(project: Project, message: str = SCRATCH_IMMUTABLE_MESSAGE) -> None:
     if project.kind == SCRATCH_KIND:
-        raise ScratchProjectError(
-            'O projeto embutido "Sem projeto" não pode ser alterado nem removido.'
-        )
+        raise ScratchProjectError(message)
+
+
+def require_regular(project: Project) -> Project:
+    """The project, or ScratchProjectError when it is the built-in "Sem projeto"."""
+    refuse_scratch(project, SCRATCH_NO_PROJECT_FEATURES_MESSAGE)
+    return project
 
 
 def update_project(
