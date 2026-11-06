@@ -383,3 +383,40 @@ describe('tela do projeto', () => {
     expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/git/details'))).toBe(false)
   })
 })
+
+describe('tela do projeto embutido "Sem projeto"', () => {
+  function seedScratch() {
+    const projects = useProjectsStore(pinia)
+    projects.projects = [makeProject({ id: 1, name: 'Sem projeto', kind: 'scratch', path: '/home/vi/.local/share/claudio-maestro/scratch' })]
+    projects.loaded = true
+  }
+
+  it('mostra só o nome, "Nova sessão" e as conversas', async () => {
+    seedScratch()
+    const fetchMock = routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([makeSession({ session_id: 'a', title: 'Pergunta rápida' })]),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = await mountView()
+
+    expect(wrapper.find('h1').text()).toBe('Sem projeto')
+    expect(wrapper.find('[data-test="new-session"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-test="conversation-row"]')).toHaveLength(1)
+    for (const t of ['rename', 'remove', 'open-editor', 'open-organization', 'sync', 'repos']) {
+      expect(wrapper.find(`[data-test="${t}"]`).exists(), t).toBe(false)
+    }
+    expect(wrapper.text()).not.toContain('/home/vi/.local/share/claudio-maestro/scratch')
+    expect(wrapper.text()).not.toContain('sem repositório git')
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/git'))).toBe(false)
+  })
+
+  it('mantém tudo no projeto comum', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
+    const wrapper = await mountView()
+    for (const t of ['rename', 'remove', 'open-editor', 'open-organization', 'sync', 'new-session']) {
+      expect(wrapper.find(`[data-test="${t}"]`).exists(), t).toBe(true)
+    }
+    expect(wrapper.text()).toContain('/home/vi/dev/loja-online')
+  })
+})

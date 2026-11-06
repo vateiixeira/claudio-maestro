@@ -6,6 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- Conversas sem projeto: escolha "Sem projeto" em "Nova conversa" para abrir uma conversa numa pasta própria, criada pelo app, para tarefas na máquina e perguntas rápidas.
 - A conversa principal de um agente mostra no topo o run em andamento, com link para a sessão dele, e fica laranja quando o run espera sua resposta.
 
 ### Corrigido
