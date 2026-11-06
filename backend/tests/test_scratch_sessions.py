@@ -90,6 +90,17 @@ async def test_scratch_session_rejects_client_cwd(env: Env, env_cleanup):
         env.manager.create_session(env.scratch_project, cwd=env.regular.path)
 
 
+@pytest.mark.anyio
+async def test_failed_scratch_session_leaves_no_folder(env: Env, env_cleanup):
+    env_cleanup.append(env.manager)
+    before = sorted(p.name for p in env.root.iterdir())
+    with pytest.raises(Exception):
+        env.manager.create_session(env.scratch_project, group_id=987654)
+    assert sorted(p.name for p in env.root.iterdir()) == before
+    with closing(db.connect(env.db_path)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+
+
 def test_new_folder_retries_on_collision(tmp_path: Path):
     root = tmp_path / "scratch"
     root.mkdir()

@@ -3778,6 +3778,10 @@ class SessionManager:
             raise InvalidDecisionError("Modelo inválido.")
         if not project.available:
             raise ProjectUnavailableError("A pasta do projeto não está disponível.")
+        # Same transaction: the group cannot vanish between the check and the insert. It comes
+        # before the folder, which a scratch session creates on disk: a failure leaves no orphan.
+        if group_id is not None:
+            groups.get_group(conn, group_id)
         folder, worktree_name, worktree_path = _session_folder(project, cwd)
         now = _now()
         default_model, default_effort, mode = new_session_defaults(conn)
@@ -3802,9 +3806,6 @@ class SessionManager:
             group_id=group_id,
             agent_id=agent_id,
         )
-        # Same transaction: the group cannot vanish between the check and the insert.
-        if group_id is not None:
-            groups.get_group(conn, group_id)
         conn.execute(
             f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id,"
             " agent_id, worktree_name, worktree_path)"
