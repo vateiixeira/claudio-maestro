@@ -1044,3 +1044,117 @@ async def test_a_throwaway_session_that_got_in_is_not_updated_by_the_sync(tmp_pa
     await index.sync_all()
 
     assert rows(db_path)["fork-1"]["first_prompt"] == "antes"
+
+
+# Built-in "Sem projeto" project (kind = 'scratch') -----------------------------
+
+
+def add_scratch(db_path: Path, folder: Path) -> int:
+    folder.mkdir(parents=True, exist_ok=True)
+    with closing(db.connect(db_path)) as conn:
+        cursor = conn.execute(
+            "INSERT INTO projects (name, path, color, position, created_at, kind)"
+            " VALUES ('Sem projeto', ?, '#71717A', 0, 0, 'scratch')",
+            (str(folder),),
+        )
+        return cursor.lastrowid
+
+
+@pytest.mark.anyio
+async def test_scratch_project_lists_each_subfolder(tmp_path: Path):
+    root = tmp_path / "scratch"
+    db_path = new_db(tmp_path)
+    pid = add_scratch(db_path, root)
+    (root / "a").mkdir()
+    (root / "b").mkdir()
+    fake = FakeHistory()
+    fake.add(str(root / "a"), info("sa", str(root / "a")))
+    fake.add(str(root / "b"), info("sb", str(root / "b")))
+    idx = make_index(db_path, fake)
+
+    await idx.sync_all()
+
+    got = rows(db_path)
+    assert got["sa"]["project_id"] == pid
+    assert got["sb"]["project_id"] == pid
+    assert fake.list_calls == [str(root), str(root / "a"), str(root / "b")]
+
+
+@pytest.mark.anyio
+async def test_scratch_project_skips_repositories_and_worktrees(tmp_path: Path, monkeypatch):
+    root = tmp_path / "scratch"
+    db_path = new_db(tmp_path)
+    add_scratch(db_path, root)
+    (root / "a" / ".git" / "worktrees").mkdir(parents=True)  # looks like a repository
+    fake = FakeHistory()
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("não deve ser chamado para o projeto embutido")
+
+    async def forbidden_worktrees(repo: Path):
+        raise AssertionError("não deve ser chamado para o projeto embutido")
+
+    monkeypatch.setattr("claudio_maestro.history.scan_repositories", forbidden)
+    idx = make_index(db_path, fake)
+    idx._list_worktrees = forbidden_worktrees
+    monkeypatch.setattr(idx, "_worktrees_of", forbidden_worktrees)
+
+    await idx.sync_all()
+
+    assert fake.list_calls == [str(root), str(root / "a")]
+
+
+@pytest.mark.anyio
+async def test_scratch_project_ignores_symlinked_subfolder(tmp_path: Path):
+    root = tmp_path / "scratch"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    db_path = new_db(tmp_path)
+    add_scratch(db_path, root)
+    (root / "real").mkdir()
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    fake = FakeHistory()
+    fake.add(str(outside), info("so", str(outside)))
+    fake.add(str(root / "link"), info("sl", str(root / "link")))
+    idx = make_index(db_path, fake)
+
+    await idx.sync_all()
+
+    assert fake.list_calls == [str(root), str(root / "real")]
+    assert rows(db_path) == {}
+
+
+@pytest.mark.anyio
+async def test_scratch_ignores_plain_files_at_the_root(tmp_path: Path):
+    root = tmp_path / "scratch"
+    db_path = new_db(tmp_path)
+    add_scratch(db_path, root)
+    (root / "notes.txt").write_text("x")
+    fake = FakeHistory()
+    idx = make_index(db_path, fake)
+
+    await idx.sync_all()
+
+    assert fake.list_calls == [str(root)]
+
+
+@pytest.mark.anyio
+async def test_scratch_listing_failure_keeps_sessions(tmp_path: Path):
+    root = tmp_path / "scratch"
+    db_path = new_db(tmp_path)
+    add_scratch(db_path, root)
+    (root / "a").mkdir()
+    (root / "b").mkdir()
+    fake = FakeHistory()
+    fake.add(str(root / "a"), info("sa", str(root / "a")))
+    fake.add(str(root / "b"), info("sb", str(root / "b")))
+    idx = make_index(db_path, fake)
+    await idx.sync_all()
+    assert set(rows(db_path)) == {"sa", "sb"}
+
+    fake.failing.add(str(root / "b"))
+    fake.by_directory[str(root / "a")] = []
+    idx._file_exists = lambda sid, d: False  # would be removed if the project were complete
+    await idx.sync_all()
+
+    assert set(rows(db_path)) == {"sa", "sb"}
