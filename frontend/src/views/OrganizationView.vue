@@ -27,8 +27,8 @@ const navigation = inject(AGENTS_NAVIGATION_KEY, undefined)
 const compactNavigation = computed(() => navigation?.enabled.value ?? false)
 const navigationOpen = computed(() => navigation?.open.value ?? false)
 
-const project = computed(() => (props.projectId === undefined ? undefined : projects.byId(props.projectId)))
-const projectsReady = computed(() => projects.loaded || projects.projects.length > 0)
+const project = computed(() => (props.projectId === undefined ? undefined : projects.regular.find((p) => p.id === props.projectId)))
+const projectsReady = computed(() => projects.loaded || projects.regular.length > 0)
 
 function remembered(): number | null {
   try {
@@ -46,7 +46,7 @@ watchEffect(() => {
     return
   }
   const last = remembered()
-  if (last !== null && projects.byId(last)) void router.replace({ name: 'agents', params: { projectId: last } })
+  if (last !== null && projects.regular.some((p) => p.id === last)) void router.replace({ name: 'agents', params: { projectId: last } })
 })
 
 function switchProject(event: Event): void {
@@ -100,11 +100,11 @@ async function talkToTop(): Promise<void> {
       </button>
       <h1 id="org-pick-title" class="m-0 text-xl font-semibold tracking-tight">Agentes</h1>
       <p v-if="!projectsReady" role="status" class="m-0 text-fg-muted">Carregando projetos…</p>
-      <p v-else-if="projects.projects.length === 0" class="m-0 text-fg-muted">Nenhum projeto ainda. <RouterLink to="/projects/new">Registre um projeto</RouterLink> para montar a organização dele.</p>
+      <p v-else-if="projects.regular.length === 0" class="m-0 text-fg-muted">Nenhum projeto ainda. <RouterLink to="/projects/new">Registre um projeto</RouterLink> para montar a organização dele.</p>
       <template v-else>
         <p class="m-0 text-fg-muted">Escolha o projeto cuja organização você quer ver.</p>
         <ul aria-labelledby="org-pick-title" class="m-0 flex list-none flex-col gap-px p-0">
-          <li v-for="p in projects.projects" :key="p.id">
+          <li v-for="p in projects.regular" :key="p.id">
             <RouterLink :to="`/agentes/${p.id}`" data-test="org-project-option" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-fg no-underline hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">
               <span class="size-3 shrink-0 rounded-[3px]" :style="{ backgroundColor: p.color }" aria-hidden="true" />
               <span class="truncate">{{ p.name }}</span>
@@ -128,10 +128,10 @@ async function talkToTop(): Promise<void> {
         <div class="flex min-w-0 grow items-center gap-3">
           <span class="size-3 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" aria-hidden="true" />
           <h1 class="m-0 truncate text-xl font-semibold tracking-tight">{{ project.name }}</h1>
-          <label v-if="projects.projects.length > 1" class="shrink-0 text-xs text-fg-subtle">
+          <label v-if="projects.regular.length > 1" class="shrink-0 text-xs text-fg-subtle">
             <span class="sr-only">Trocar de projeto</span>
             <select data-test="org-project-select" class="h-8 max-w-40 rounded-md border border-line-strong bg-surface px-2 text-xs text-fg-muted focus-visible:outline-2 focus-visible:outline-primary" :value="project.id" @change="switchProject">
-              <option v-for="p in projects.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+              <option v-for="p in projects.regular" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select>
           </label>
         </div>

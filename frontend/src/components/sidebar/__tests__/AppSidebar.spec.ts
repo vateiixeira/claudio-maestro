@@ -601,6 +601,14 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     expect(row.text()).toContain('pasta indisponível')
   })
 
+  it('com só o embutido cadastrado mostra "Nenhum projeto ainda."', () => {
+    const projects = useProjectsStore(pinia)
+    projects.projects = [makeProject({ id: 99, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
+    projects.loaded = true
+    const w = mountSidebar()
+    expect(w.text()).toContain('Nenhum projeto ainda.')
+  })
+
   it('as faixas Para revisar e Depois continuam, depois dos projetos', () => {
     twoProjects()
     useSessionsStore(pinia).setForProject(1, [

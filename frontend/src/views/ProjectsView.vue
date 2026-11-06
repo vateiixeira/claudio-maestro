@@ -81,17 +81,17 @@ async function retry() {
       Não foi possível carregar os projetos. {{ projects.loadError }}
       <button type="button" data-test="retry-projects" class="org-button ml-2" :disabled="retrying" @click="retry">{{ retrying ? 'Carregando…' : 'Tentar novamente' }}</button>
     </p>
-    <div v-if="!projects.loaded && !projects.projects.length" class="org-skeleton" role="status">
+    <div v-if="!projects.loaded && !projects.regular.length" class="org-skeleton" role="status">
       <span class="sr-only">Carregando projetos…</span><span /><span /><span />
     </div>
-    <div v-else-if="projects.loaded && !projects.projects.length && !projects.loadError" class="org-empty">
+    <div v-else-if="projects.loaded && !projects.regular.length && !projects.loadError" class="org-empty">
       <strong>Nenhum projeto cadastrado</strong>
       Adicione uma pasta em Novo projeto para começar.
     </div>
-    <template v-if="projects.projects.length">
-      <p class="org-muted mb-3">{{ projects.projects.length }} {{ projects.projects.length === 1 ? 'projeto cadastrado' : 'projetos cadastrados' }}</p>
+    <template v-if="projects.regular.length">
+      <p class="org-muted mb-3">{{ projects.regular.length }} {{ projects.regular.length === 1 ? 'projeto cadastrado' : 'projetos cadastrados' }}</p>
       <ul class="m-0 list-none p-0" aria-label="Projetos cadastrados">
-        <li v-for="project in projects.projects" :key="project.id" data-test="project-row" class="flex flex-wrap items-start gap-x-4 gap-y-3 border-t border-line py-5">
+        <li v-for="project in projects.regular" :key="project.id" data-test="project-row" class="flex flex-wrap items-start gap-x-4 gap-y-3 border-t border-line py-5">
           <span aria-hidden="true" class="mt-1.5 size-2.5 shrink-0 rounded-sm" :style="{ backgroundColor: project.color }" />
           <div class="min-w-0 flex-1 basis-44">
             <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="font-medium break-words text-fg no-underline hover:underline focus-visible:outline-2 focus-visible:outline-primary">{{ project.name }}</RouterLink>

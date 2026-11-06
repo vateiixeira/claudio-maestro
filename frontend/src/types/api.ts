@@ -10,6 +10,8 @@ export interface Project {
   available: boolean
   /** Sessions stopped for more than 3 days, left out of the menu. */
   hidden_sessions: number
+  /** "scratch" is the built-in "Sem projeto" (conversations outside any project). */
+  kind: 'regular' | 'scratch'
 }
 
 export interface ProjectCreate {

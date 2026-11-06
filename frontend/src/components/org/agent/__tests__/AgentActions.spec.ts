@@ -28,7 +28,7 @@ async function mountActions(agent: Partial<Agent> = {}, handlers: Handlers = {})
     makeAgent({ id: 4, slug: 'fora', name: 'De outro projeto', project_id: 9 }),
   ]
   const projects = useProjectsStore(pinia)
-  projects.projects = [makeProject({ id: 1, name: 'Loja' }), makeProject({ id: 9, name: 'Blog' })]
+  projects.projects = [makeProject({ id: 1, name: 'Loja' }), makeProject({ id: 9, name: 'Blog' }), makeProject({ id: 99, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
   projects.loaded = true
   const fetch = routeFetch(handlers)
   vi.stubGlobal('fetch', fetch)
@@ -137,6 +137,13 @@ describe('AgentActions', () => {
     expect(org.byId(10)?.project_id).toBe(9)
     expect(router.currentRoute.value.fullPath).toBe('/agentes/9?agente=10&aba=definicao')
     expect(wrapper.find('[data-test="duplicate-slug"]').exists()).toBe(false)
+  })
+
+  it('o diálogo de duplicar não oferece o embutido "Sem projeto"', async () => {
+    const { wrapper } = await mountActions()
+    await wrapper.get('[data-test="agent-duplicate"]').trigger('click')
+    const options = wrapper.get('[data-test="duplicate-project"]').findAll('option').map((o) => o.text())
+    expect(options).toEqual(['Loja', 'Blog'])
   })
 
   it('duplicar mostra o erro dentro do diálogo e mantém o diálogo aberto', async () => {

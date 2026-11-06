@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { useProjectsStore } from '../projects'
+import { isScratch, useProjectsStore } from '../projects'
 import { useSessionsStore } from '../sessions'
 import { useGroupsStore } from '../groups'
 import { jsonResponse, makeGroup, makeProject, makeSession } from '../../test/factories'
@@ -42,5 +42,26 @@ describe('store de projetos', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: 'Pasta já usada.' }, 409)))
     await expect(store.create({ name: 'x', path: '/x', color: '#B28CFF' })).rejects.toThrow('Pasta já usada.')
     expect(store.projects).toEqual([])
+  })
+
+  it('separa os projetos comuns do embutido "Sem projeto"', async () => {
+    const store = useProjectsStore()
+    const a = makeProject({ id: 1, name: 'a' })
+    const scratch = makeProject({ id: 9, name: 'Sem projeto', kind: 'scratch', position: 99 })
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([a, scratch])))
+    await store.load()
+    expect(store.regular.map((p) => p.id)).toEqual([1])
+    expect(store.scratch?.id).toBe(9)
+    expect(isScratch(store.scratch)).toBe(true)
+    expect(isScratch(a)).toBe(false)
+    expect(isScratch(undefined)).toBe(false)
+    expect(store.projects).toHaveLength(2)
+  })
+
+  it('sem o embutido na lista, scratch é indefinido', () => {
+    const store = useProjectsStore()
+    store.projects = [makeProject({ id: 1 })]
+    expect(store.scratch).toBeUndefined()
+    expect(store.regular).toHaveLength(1)
   })
 })
