@@ -339,6 +339,7 @@ def create_app(
             cli_identity=cli_identity,
             text_index=app.state.textindex,
             claude_projects=app.state.settings.claude_projects_dir,
+            scratch_root=projects.scratch_root(app.state.settings.data_dir),
             remote_reconnect_allowed=remote_reconnect_allowed,
             # The agents service is built right after the manager (it needs it); the
             # hooks look it up when called.

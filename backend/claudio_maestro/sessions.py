@@ -43,6 +43,7 @@ from claude_agent_sdk import (
 
 from claudio_maestro import db, groups, labels
 from claudio_maestro import history as history_module
+from claudio_maestro import scratch as scratch_module
 from claudio_maestro.agent.agentd_client import AgentdUnavailable
 from claudio_maestro.agent.base import (
     AgentClient,
@@ -74,7 +75,7 @@ from claudio_maestro.plans import (
     read_new_lines,
 )
 from claudio_maestro.procinfo import process_started_at
-from claudio_maestro.projects import Project
+from claudio_maestro.projects import SCRATCH_KIND, Project
 from claudio_maestro.projects import project_roots as registered_project_roots
 from claudio_maestro.termformat import terminal_title_text
 from claudio_maestro.textindex import Match
@@ -848,6 +849,12 @@ def _session_folder(project: Project, cwd: str | None) -> tuple[str, str | None,
     that create the worktree (`org.worktrees.ensure_task_worktree`) have already proven it with
     `git worktree list` too.
     """
+    if project.kind == SCRATCH_KIND:
+        # Every conversation without a project gets a folder of its own, never one the
+        # client names.
+        if cwd is not None:
+            raise InvalidDecisionError("Conversas sem projeto sempre abrem numa pasta nova.")
+        return str(scratch_module.new_folder(Path(project.path))), None, None
     if cwd is None or os.path.realpath(cwd) == os.path.realpath(project.path):
         return project.path, None, None
     error = InvalidDecisionError("A pasta da sessão precisa ser o projeto ou uma worktree dele.")
@@ -1069,8 +1076,11 @@ class ActiveSession:
         on_init: Callable[[str, list[dict[str, str]]], None] | None = None,
         on_pr_created: Callable[[str, str], None] | None = None,
         prepare_message: PrepareMessage | None = None,
+        scratch_root: Path | None = None,
     ) -> None:
         self.record = record
+        # Root of the folders of conversations without a project (see `scratch`).
+        self._scratch_root = scratch_root
         # Hooks of the agents feature, called only for the sessions of an agent: a turn
         # or the session ended in error (session id, text), and an init arrived (session
         # id, the MCP servers it reports), and a PR that its `gh pr create` opened (session
@@ -1785,6 +1795,9 @@ class ActiveSession:
         client: AgentClient | None = None
         self._last_admission_error = None
         try:
+            if self._in_scratch_folder():
+                # Its folder may have been cleaned away since the last turn.
+                scratch_module.ensure_folder(self.record.work_dir(), self._scratch_root)
             missing = self._missing_folder_text()
             if missing is not None:
                 raise AgentError(missing)
@@ -1974,6 +1987,11 @@ class ActiveSession:
                 )
                 raise AgentError(AGENT_SETUP_FAILED_TEXT) from None
         self._extras = extras
+        scratch_prompt = (
+            scratch_module.SCRATCH_PROMPT
+            if not agent_session and self._in_scratch_folder()
+            else None
+        )
         return self._agent_factory(
             AgentOptions(
                 cwd=Path(self.record.work_dir()),
@@ -2000,8 +2018,10 @@ class ActiveSession:
                 # attaching always uses it (MAESTRO_AGENTD=0 still reattaches).
                 agentd=self._agentd if attach is None else self._agentd_any,
                 attach=attach,
+                system_prompt_append=(
+                    extras.system_prompt_append if extras is not None else scratch_prompt
+                ),
                 **({} if extras is None else {
-                    "system_prompt_append": extras.system_prompt_append,
                     "add_dirs": extras.add_dirs,
                     "env": extras.env,
                     "mcp_servers": extras.mcp_servers,
@@ -2377,6 +2397,14 @@ class ActiveSession:
         self._cancel_remote_retry()
         self._remote_attempts = 0
         self._set_remote("off")
+
+    def _in_scratch_folder(self) -> bool:
+        """True for a conversation without a project (its folder is inside the scratch root)."""
+        return (
+            self._scratch_root is not None
+            and self.record.agent_id is None
+            and scratch_module.is_scratch_cwd(self.record.work_dir(), self._scratch_root)
+        )
 
     def _missing_folder_text(self) -> str | None:
         work_dir = self.record.work_dir()
@@ -3509,7 +3537,10 @@ class SessionManager:
         on_pr_created: Callable[[str, str], None] | None = None,
         prepare_message: PrepareMessage | None = None,
         claude_projects: Path | None = None,
+        scratch_root: Path | None = None,
     ) -> None:
+        # Root of the folders of conversations without a project (None: none are special).
+        self._scratch_root = scratch_root
         # The CLI's projects folder (None: `claude_projects_dir()` when needed).
         self._claude_projects = claude_projects
         # Ids of the temporary copies context measurements open, oldest first. Kept after
@@ -3852,6 +3883,7 @@ class SessionManager:
             on_init=self._on_init,
             on_pr_created=self._on_pr_created,
             prepare_message=self._prepare_message,
+            scratch_root=self._scratch_root,
         )
         forgotten = self._forgotten.pop(session_id, None)
         if forgotten is not None:
