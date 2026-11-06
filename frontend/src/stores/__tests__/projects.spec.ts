@@ -44,6 +44,20 @@ describe('store de projetos', () => {
     expect(store.projects).toEqual([])
   })
 
+  it('um projeto novo entra antes do "Sem projeto", que continua por último', async () => {
+    const store = useProjectsStore()
+    const a = makeProject({ id: 1, name: 'a' })
+    const scratch = makeProject({ id: 9, name: 'Sem projeto', kind: 'scratch', position: 99 })
+    const b = makeProject({ id: 2, name: 'b', position: 1 })
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([a, scratch])))
+    await store.load()
+
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(b, 201)))
+    await store.create({ name: 'b', path: b.path, color: b.color })
+
+    expect(store.projects.map((p) => p.id)).toEqual([1, 2, 9])
+  })
+
   it('separa os projetos comuns do embutido "Sem projeto"', async () => {
     const store = useProjectsStore()
     const a = makeProject({ id: 1, name: 'a' })

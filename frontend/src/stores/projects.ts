@@ -26,7 +26,12 @@ export const useProjectsStore = defineStore('projects', () => {
   function replace(project: Project): void {
     const index = projects.value.findIndex((p) => p.id === project.id)
     if (index >= 0) projects.value[index] = project
-    else projects.value.push(project)
+    else {
+      // The built-in "Sem projeto" stays last: a new project goes in before it.
+      const last = projects.value.length - 1
+      if (last >= 0 && isScratch(projects.value[last])) projects.value.splice(last, 0, project)
+      else projects.value.push(project)
+    }
   }
 
   async function load(): Promise<Project[]> {
