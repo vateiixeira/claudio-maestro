@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.10.0] - 2026-11-10
+
+Chegam as conversas sem projeto: escolha "Sem projeto" em "Nova conversa" para abrir uma conversa numa pasta própria, sem cadastrar projeto. A conversa principal de um agente passa a mostrar o run em andamento, e a busca de sessões e a bolinha dos agentes na barra lateral foram corrigidas.
+
 ### Adicionado
 
 - Conversas sem projeto: escolha "Sem projeto" em "Nova conversa" para abrir uma conversa numa pasta própria, criada pelo app, para tarefas na máquina e perguntas rápidas.
