@@ -7,7 +7,7 @@ import asyncio
 import logging
 from collections import deque
 from collections.abc import Callable
-from contextlib import aclosing
+from contextlib import ExitStack, aclosing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -18,6 +18,7 @@ from claudio_maestro.agent.sdk_client import (
     LOGIN_MESSAGE,
     to_agent_error,
 )
+from claudio_maestro.authsettings import auxiliary_auth_settings
 from claudio_maestro.conversation import rate_limit_text
 from claudio_maestro.digest.prompt import DIGEST_SCHEMA
 
@@ -149,59 +150,63 @@ class SdkDigestModel:
         )
         from claude_agent_sdk.types import RateLimitEvent
 
-        self._cwd.mkdir(parents=True, exist_ok=True)
-        stderr_lines: deque[str] = deque(maxlen=50)
-        options = build_digest_options(
-            request,
-            self._cwd,
-            stderr_lines.append,
-            cli_path=self._cli_path() if self._cli_path is not None else None,
-        )
-        session_id: str | None = None
-        output: Any = None
-        failure: str | None = None
-        login_seen = False
-        try:
-            async with aclosing(self._query(prompt=request.prompt, options=options)) as stream:
-                async for message in stream:
-                    if isinstance(message, SystemMessage) and message.subtype == "init":
-                        session_id = message.data.get("session_id") or session_id
-                        if self._on_init is not None:
-                            self._on_init(message.data)
-                    elif isinstance(message, AssistantMessage):
-                        texts = [b.text for b in message.content if isinstance(b, TextBlock)]
-                        if message.error == "authentication_failed" or _has_login_marker(*texts):
-                            login_seen = True
-                    elif isinstance(message, RateLimitEvent):
-                        info = message.rate_limit_info
-                        if info.status == "rejected":
-                            raise DigestModelError(
-                                rate_limit_text(info.resets_at), stop_pass=True,
-                                resets_at=info.resets_at,
-                            )
-                    elif isinstance(message, ResultMessage):
-                        session_id = session_id or message.session_id
-                        failed = message.is_error or message.structured_output is None
-                        if failed and _has_login_marker(message.result, *(message.errors or [])):
-                            login_seen = True
-                        if failed and login_seen:
-                            raise DigestModelError(LOGIN_MESSAGE, stop_pass=True)
-                        if failed:
-                            failure = NO_OUTPUT
-                        else:
-                            output = message.structured_output
-        except DigestModelError:
-            raise
-        except CLINotFoundError as error:
-            raise DigestModelError(CLI_NOT_FOUND_MESSAGE, stop_pass=True) from error
-        except Exception as error:
-            texts = [*stderr_lines, str(error), getattr(error, "stderr", None) or ""]
-            if (login_seen and output is None) or _has_login_marker(*texts):
-                raise DigestModelError(LOGIN_MESSAGE, stop_pass=True) from error
-            raise DigestModelError(to_agent_error(error).message_pt) from error
-        finally:
-            if session_id:
-                await asyncio.to_thread(self._delete_quietly, session_id)
+        with ExitStack() as stack:
+            self._cwd.mkdir(parents=True, exist_ok=True)
+            stderr_lines: deque[str] = deque(maxlen=50)
+            options = build_digest_options(
+                request,
+                self._cwd,
+                stderr_lines.append,
+                cli_path=self._cli_path() if self._cli_path is not None else None,
+            )
+            session_id: str | None = None
+            output: Any = None
+            failure: str | None = None
+            login_seen = False
+            try:
+                auth = stack.enter_context(auxiliary_auth_settings())
+                options.env = auth.env
+                options.settings = auth.settings
+                async with aclosing(self._query(prompt=request.prompt, options=options)) as stream:
+                    async for message in stream:
+                        if isinstance(message, SystemMessage) and message.subtype == "init":
+                            session_id = message.data.get("session_id") or session_id
+                            if self._on_init is not None:
+                                self._on_init(message.data)
+                        elif isinstance(message, AssistantMessage):
+                            texts = [b.text for b in message.content if isinstance(b, TextBlock)]
+                            if message.error == "authentication_failed" or _has_login_marker(*texts):
+                                login_seen = True
+                        elif isinstance(message, RateLimitEvent):
+                            info = message.rate_limit_info
+                            if info.status == "rejected":
+                                raise DigestModelError(
+                                    rate_limit_text(info.resets_at), stop_pass=True,
+                                    resets_at=info.resets_at,
+                                )
+                        elif isinstance(message, ResultMessage):
+                            session_id = session_id or message.session_id
+                            failed = message.is_error or message.structured_output is None
+                            if failed and _has_login_marker(message.result, *(message.errors or [])):
+                                login_seen = True
+                            if failed and login_seen:
+                                raise DigestModelError(LOGIN_MESSAGE, stop_pass=True)
+                            if failed:
+                                failure = NO_OUTPUT
+                            else:
+                                output = message.structured_output
+            except DigestModelError:
+                raise
+            except CLINotFoundError as error:
+                raise DigestModelError(CLI_NOT_FOUND_MESSAGE, stop_pass=True) from error
+            except Exception as error:
+                texts = [*stderr_lines, str(error), getattr(error, "stderr", None) or ""]
+                if (login_seen and output is None) or _has_login_marker(*texts):
+                    raise DigestModelError(LOGIN_MESSAGE, stop_pass=True) from error
+                raise DigestModelError(to_agent_error(error).message_pt) from error
+            finally:
+                if session_id:
+                    await asyncio.to_thread(self._delete_quietly, session_id)
         if login_seen and output is None:
             raise DigestModelError(LOGIN_MESSAGE, stop_pass=True)
         if output is None:

@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- Pasta do Claude em Preferências → Geral: escolha, por exemplo, `~/.claude-api` e reinicie o Maestro para usar um perfil separado. Cada pasta mantém suas conversas e os dados do Maestro; voltar à pasta padrão recupera o perfil anterior.
+
 ### Corrigido
 
 - Clicar fora de um modal não o fecha mais. Esc, X e ações explícitas continuam funcionando, preservando as proteções enquanto uma operação está em andamento.

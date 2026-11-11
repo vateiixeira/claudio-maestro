@@ -13,6 +13,7 @@ import { UI_SCALES, setUiScale, uiScale } from '../../uiScale'
 import { formatActivity } from '../../format'
 import { useUpdatesStore } from '../../stores/updates'
 import ThemePicker from './ThemePicker.vue'
+import ClaudeProfilePreferences from './ClaudeProfilePreferences.vue'
 
 const MIN_DAYS = 1
 const MAX_DAYS = 365
@@ -276,6 +277,8 @@ onMounted(load)
           <span class="font-mono">settings.json</span>. Dá para mudar na própria conversa. "Sem perguntas" pede confirmação ao escolher.
         </p>
       </fieldset>
+
+      <ClaudeProfilePreferences />
 
       <div v-if="updates.state" class="flex flex-col gap-2">
         <span class="font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Versão</span>

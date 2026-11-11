@@ -1,6 +1,7 @@
 # backend/tests/test_digest_model.py
 """Digest model: SDK options, real client over a stubbed query, fake client."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -248,3 +249,50 @@ def test_options_use_the_request_schema(tmp_path) -> None:
     closure = build_digest_options(
         DigestRequest("s", "p", "haiku", "low", schema=CLOSURE_SCHEMA), tmp_path)
     assert closure.output_format["schema"] is CLOSURE_SCHEMA
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("fail", [False, True, "cancel"])
+async def test_digest_auth_survives_until_stream_close(tmp_path, fail):
+    import json
+
+    from claudio_maestro import config
+
+    folder = config.claude_config_dir()
+    folder.mkdir(parents=True)
+    (folder / "settings.json").write_text(json.dumps({
+        "env": {"ANTHROPIC_API_KEY": "digest-fake"}, "apiKeyHelper": "printf fake",
+        "hooks": {"SessionStart": ["bad"]}, "enabledPlugins": {"bad": True},
+    }))
+    paths = []
+    closed = []
+
+    async def query(*, prompt, options):
+        assert options.env == {"ANTHROPIC_API_KEY": "digest-fake"}
+        assert options.setting_sources == [] and options.strict_mcp_config
+        path = Path(options.settings)
+        paths.append(path)
+        assert json.loads(path.read_text()) == {"apiKeyHelper": "printf fake"}
+        try:
+            yield SystemMessage(subtype="init", data={"session_id": "sess-1"})
+            if fail == "cancel":
+                raise asyncio.CancelledError
+            if fail:
+                raise RuntimeError("fake failure")
+            yield result()
+        finally:
+            assert path.exists()
+            closed.append(True)
+
+    deleted = []
+    model = SdkDigestModel(tmp_path, query_fn=query, delete_fn=lambda s, d: deleted.append(s))
+    if fail == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            await model.summarize(REQUEST)
+    elif fail:
+        with pytest.raises(DigestModelError):
+            await model.summarize(REQUEST)
+    else:
+        assert await model.summarize(REQUEST) == OUTPUT
+    assert closed == [True] and deleted == ["sess-1"]
+    assert len(paths) == 1 and not paths[0].exists()

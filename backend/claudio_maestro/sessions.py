@@ -19,7 +19,7 @@ import unicodedata
 import uuid
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Collection
-from contextlib import closing, suppress
+from contextlib import ExitStack, closing, suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from types import EllipsisType
@@ -52,6 +52,7 @@ from claudio_maestro.agent.base import (
     AgentOptions,
     AttachInfo,
 )
+from claudio_maestro.authsettings import auxiliary_auth_settings
 from claudio_maestro.config import claude_projects_dir, read_user_claude_settings
 from claudio_maestro.contextprobe import delete_fork_files, probe_context
 from claudio_maestro.contextusage import context_breakdown
@@ -3705,26 +3706,30 @@ class SessionManager:
         was received; failures are logged and leave the stored list as it is."""
         if not force and not self._models_stale():
             return False
-        client: AgentClient | None = None
-        try:
-            client = self._agent_factory(
-                AgentOptions(
-                    cwd=Path.home(),
-                    session_id=str(uuid.uuid4()),
-                    resume=False,
-                    can_use_tool=_deny_all,
-                    setting_sources=[],
+        with ExitStack() as stack:
+            client: AgentClient | None = None
+            try:
+                auth = stack.enter_context(auxiliary_auth_settings())
+                client = self._agent_factory(
+                    AgentOptions(
+                        cwd=Path.home(),
+                        session_id=str(uuid.uuid4()),
+                        resume=False,
+                        can_use_tool=_deny_all,
+                        setting_sources=[],
+                        env=auth.env,
+                        settings=auth.settings,
+                    )
                 )
-            )
-            await client.connect()
-            return await self._fetch_models(client)
-        except Exception:
-            logger.exception("Falha ao atualizar a lista de modelos")
-            return False
-        finally:
-            if client is not None:
-                with suppress(Exception):
-                    await client.close()
+                await client.connect()
+                return await self._fetch_models(client)
+            except Exception:
+                logger.exception("Falha ao atualizar a lista de modelos")
+                return False
+            finally:
+                if client is not None:
+                    with suppress(Exception):
+                        await client.close()
 
     async def run_models_refresh(
         self, interval: float, sleep: Callable[[float], Any] = asyncio.sleep

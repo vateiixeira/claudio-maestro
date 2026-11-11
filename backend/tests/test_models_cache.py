@@ -312,3 +312,54 @@ async def test_on_connected_refetches_when_the_cli_changed(tmp_path):
     client = env.factory(None)
     await manager._on_connected(client)
     assert client.server_info_calls == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("fail", [False, True, "cancel"])
+async def test_catalog_auth_survives_until_client_close(tmp_path, fail):
+    import json
+
+    from claudio_maestro import config
+
+    folder = config.claude_config_dir()
+    folder.mkdir(parents=True)
+    (folder / "settings.json").write_text(json.dumps({
+        "env": {"ANTHROPIC_API_KEY": "catalog-fake"}, "apiKeyHelper": "printf fake",
+        "hooks": {"SessionStart": ["bad"]}, "enabledPlugins": {"bad": True},
+    }))
+    env = Env(tmp_path)
+    manager = env.manager()
+    paths = []
+    closed = []
+
+    def factory(options):
+        assert options.env == {"ANTHROPIC_API_KEY": "catalog-fake"}
+        assert options.setting_sources == []
+        path = Path(options.settings)
+        paths.append(path)
+        assert json.loads(path.read_text()) == {"apiKeyHelper": "printf fake"}
+        client = env.factory(options)
+        original_close = client.close
+
+        async def close():
+            assert path.exists()
+            closed.append(True)
+            await original_close()
+
+        client.close = close
+        if fail == "cancel":
+            async def connect():
+                raise asyncio.CancelledError
+            client.connect = connect
+        return client
+
+    manager._agent_factory = factory
+    if fail:
+        env.factory.connect_error = "fake failure"
+    if fail == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            await manager.refresh_models_if_stale()
+    else:
+        assert await manager.refresh_models_if_stale() is not fail
+    assert closed == [True]
+    assert len(paths) == 1 and not paths[0].exists()

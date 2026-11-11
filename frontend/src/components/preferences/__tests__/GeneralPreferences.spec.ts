@@ -40,7 +40,7 @@ function stub(preferences: Record<string, unknown>) {
 }
 
 async function mountTab() {
-  const w = mount(GeneralPreferences, { global: { plugins: [pinia] }, attachTo: document.body })
+  const w = mount(GeneralPreferences, { global: { plugins: [pinia], stubs: { ClaudeProfilePreferences: true } }, attachTo: document.body })
   await flushPromises()
   return w
 }

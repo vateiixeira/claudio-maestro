@@ -211,6 +211,12 @@ As portas precisam estar entre 1024 e 65535, fora de 6665 a 6669 (os navegadores
 
 O comando que abre arquivos no editor (padrão: `code`) fica nas Preferências do app.
 
+Em **Preferências → Geral → Pasta do Claude**, você pode escolher outra pasta de configuração, como `~/.claude-api`, já preparada com sua autenticação. Use um caminho absoluto ou `~/...` dentro da sua pasta pessoal (ou `MAESTRO_HOME`). Clique em **Salvar pasta** e reinicie o Maestro para aplicar. Salvar não interrompe nem muda a autenticação das sessões em andamento.
+
+Cada pasta usa suas próprias credenciais e conversas e um conjunto separado de projetos cadastrados, agentes, preferências e índices do Maestro. Os dados anteriores ficam preservados. **Usar pasta padrão** volta ao `CLAUDE_CONFIG_DIR` do ambiente de inicialização, ou a `~/.claude` se a variável não estiver definida, após reiniciar. As opções herdadas de autenticação e provedor são desconsideradas ao usar uma pasta alternativa; configure a autenticação nessa pasta.
+
+A escolha fica em `claude-profile.json` na pasta de dados original, e os metadados dos perfis alternativos ficam em `profiles/`. O arquivo da escolha guarda apenas o caminho. Se a pasta escolhida for removida e impedir a inicialização, restaure essa pasta ou remova apenas `claude-profile.json` para voltar ao padrão; as conversas e os dados dos perfis não são apagados.
+
 ## Agentes
 
 Os agentes, as tarefas e as rotinas estão descritos em [Organização](#organização). Esta seção reúne o que o painel de um agente mostra e faz; o que os agentes podem fazer na sua máquina está em [SECURITY.md](SECURITY.md#agentes-e-tarefas). Abra o agente na árvore de **Agentes** (`/agentes/<projeto>?agente=<id>`).

@@ -12,6 +12,7 @@ enableAutoUnmount(afterEach)
 
 let pinia: Pinia
 let saved: unknown[]
+const profile = { active_folder: '/home/test/.claude', default_folder: '/home/test/.claude', selected_folder: null, restart_required: false }
 
 beforeEach(() => {
   pinia = createPinia()
@@ -22,6 +23,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 function stub(state: unknown, put?: (body: unknown) => Response) {
   const fetchMock = routeFetch({
+    'GET /api/claude-profile': () => jsonResponse(profile),
     'GET /api/state': () => jsonResponse(state),
     'PUT /api/state/preferences': (init) => {
       const body = JSON.parse(String(init?.body))
@@ -245,6 +247,7 @@ describe('tela de preferências', () => {
   it('falha ao ler as preferências mostra o erro e permite tentar de novo', async () => {
     let ok = false
     vi.stubGlobal('fetch', routeFetch({
+      'GET /api/claude-profile': () => jsonResponse(profile),
       'GET /api/state': () => (ok ? jsonResponse({ preferences: { finished_after_days: 4 } }) : jsonResponse({ detail: 'Banco indisponível.' }, 500)),
     }))
     const w = await mountView()

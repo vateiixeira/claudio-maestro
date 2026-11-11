@@ -20,6 +20,7 @@ from claudio_maestro.api import router
 from claudio_maestro.api.editor import SpawnEditor, spawn_detached
 from claudio_maestro.claudecli import CACHE_SECONDS as CLAUDE_CLI_CACHE_SECONDS
 from claudio_maestro.claudecli import ClaudeCli, ClaudeCliResolver
+from claudio_maestro.claudeprofile import profile_environment
 from claudio_maestro.cliwatch import CliWatcher
 from claudio_maestro.commands import CommandCatalog
 from claudio_maestro.config import (
@@ -205,6 +206,12 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         clean_inherited_env()
         app.state.settings = settings or load_settings()
+        with profile_environment(app.state.settings):
+            async with initialized_lifespan(app):
+                yield
+
+    @asynccontextmanager
+    async def initialized_lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.restart = restart
         db.init_db(app.state.settings.db_path)
         with closing(db.connect(app.state.settings.db_path)) as conn:

@@ -7,6 +7,7 @@ from claudio_maestro.api import (
     agentd,
     app_state,
     claude_cli,
+    claude_profile,
     deliveries,
     digest,
     editor,
@@ -48,6 +49,7 @@ router.include_router(editor.router)
 router.include_router(suggestions.router)
 router.include_router(updates.router)
 router.include_router(claude_cli.router)
+router.include_router(claude_profile.router)
 router.include_router(agentd.router)
 router.include_router(usage.router)
 router.include_router(terminal.router)
