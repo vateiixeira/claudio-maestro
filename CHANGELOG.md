@@ -22,6 +22,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Corrigido
 
+- Os seletores de branches usam campos de pesquisa sem autocomplete e com indicação para gerenciadores de senhas ignorarem o campo, evitando sugestões de credenciais ao trocar, mesclar ou consultar uma branch.
+
 - O painel Git descobre worktrees vinculadas aos repositórios do projeto, inclusive em pastas ocultas ou externas, sem depender da sessão que as criou. Alterações e Commits usam a mesma lista; a identidade da worktree é preservada após preparar ou despreparar arquivos.
 
 - Abrir a aba Git começa a carregar as alterações sem esperar outra consulta de resumo. Leituras simultâneas do resumo são compartilhadas, e respostas antigas não substituem eventos recentes. O servidor usa explicitamente `asyncio`, reduzindo a latência das consultas com muitos subprocessos Git no ambiente medido.

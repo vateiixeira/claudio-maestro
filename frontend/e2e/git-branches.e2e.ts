@@ -25,6 +25,8 @@ async function openCommits(page: import('@playwright/test').Page) {
 test('criar branch, trocar e mesclar sem conflito', async ({ page }) => {
   const repo = await openRepo(page)
   await repo.getByTestId('branch-chip').click()
+  await expect(page.getByTestId('branch-search')).toHaveAttribute('type', 'search')
+  await expect(page.getByTestId('branch-search')).toHaveAttribute('autocomplete', 'off')
   await page.getByTestId('branch-search').fill('fix frete')
   await expect(page.getByTestId('branch-create')).toBeVisible()
   await page.getByTestId('branch-create').click()
@@ -43,6 +45,7 @@ test('criar branch, trocar e mesclar sem conflito', async ({ page }) => {
   await expect(repo.getByTestId('branch-chip')).toHaveText('main')
 
   await repo.getByTestId('repo-merge').click()
+  await expect(page.getByTestId('branch-search')).toHaveAttribute('type', 'search')
   await page.locator('[data-test="branch-item"][data-name="feat/docs"]').click()
   await expect(page.getByRole('dialog')).toContainText('Entra 1 commit de feat/docs.')
   await page.getByRole('dialog').getByTestId('confirm-ok').click()
@@ -64,8 +67,10 @@ test('merge com conflito mostra o bloco e aborta', async ({ page, consoleErrors 
   await expect(conflict.getByTestId('file-stage')).toHaveCount(0)
   await expect(conflict.getByTestId('file-discard')).toHaveCount(0)
   await conflict.locator('[data-test="file-open"]').click()
-  await expect(repo.locator('[data-marker="ours"]')).toContainText('main (sua branch)')
-  await expect(repo.locator('[data-marker="theirs"]')).toContainText('feat/cupom (a que entra)')
+  await expect(page.getByRole('dialog').locator('[data-marker="ours"]')).toContainText('main (sua branch)')
+  await expect(page.getByRole('dialog').locator('[data-marker="theirs"]')).toContainText('feat/cupom (a que entra)')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
   // While the merge is open the disabled icons say why.
   await expect(repo.getByTestId('repo-commit')).toHaveAttribute('title', 'Conclua o merge com Concluir merge')
   await expect(repo.getByTestId('repo-merge')).toHaveAttribute('title', 'Já há um merge em andamento')

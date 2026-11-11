@@ -32,6 +32,13 @@ async function open(mode: 'switch' | 'merge' = 'switch') {
 }
 
 describe('menu de branches', () => {
+  it.each(['switch', 'merge'] as const)('identifica a busca como pesquisa, sem preenchimento de credenciais em %s', async mode => {
+    const wrapper = await open(mode)
+    expect(wrapper.get('[data-test="branch-search"]').attributes()).toMatchObject({
+      type: 'search', autocomplete: 'off', 'data-bwignore': 'true', 'data-1p-ignore': 'true',
+    })
+  })
+
   it('lista criar, locais e remotas sem a que já tem local, e marca a atual', async () => {
     const wrapper = await open()
     expect(document.activeElement?.getAttribute('data-test')).toBe('branch-search')
