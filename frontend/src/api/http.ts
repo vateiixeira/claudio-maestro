@@ -29,6 +29,7 @@ import type {
   MarkdownFile,
   PlanState,
   RepoLog,
+  LogQuery,
   SearchResult,
   Project,
   ProjectCreate,
@@ -429,10 +430,17 @@ export function getFileDiff(projectId: number, repo: string, file: string, signa
 /** History of a branch (null: HEAD), `limit` commits after `skip`. */
 export function getRepoLog(
   projectId: number, repo: string, ref: string | null = null, skip = 0, limit?: number, signal?: AbortSignal,
+  options?: LogQuery,
 ): Promise<RepoLog> {
   const query = new URLSearchParams({ repo, skip: String(skip) })
   if (ref) query.set('ref', ref)
   if (limit !== undefined) query.set('limit', String(limit))
+  query.set('include_incoming', 'false')
+  if (options?.direction && options.direction !== 'all') query.set('direction', options.direction)
+  if (options?.snapshot) {
+    query.set('snapshot_head', options.snapshot.head)
+    query.set('snapshot_upstream', options.snapshot.upstream ?? '-')
+  }
   return request('GET', `/api/projects/${projectId}/git/log?${query}`, undefined, signal)
 }
 

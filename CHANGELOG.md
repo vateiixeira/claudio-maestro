@@ -4,10 +4,16 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Alterado
+
+- As seções de alterações e commits compartilham a leitura inicial do projeto. Preparar ou despreparar arquivos não recarrega mais o histórico; as atualizações ficam no repositório afetado e mudanças externas continuam sendo reconciliadas.
+- O histórico mantém as páginas já abertas quando chegam novos commits e avisa quando há uma atualização para aplicar. As listas de commits para subir e baixar têm paginação própria e só são consultadas ao abrir; o painel de alterações deixa de buscar o histórico que não está sendo mostrado.
+
 ### Corrigido
 
 - Os diffs de arquivos preparados mostram só o conteúdo que entra no commit; os de alterações mostram o que mudou depois da preparação. Renomeações preparadas preservam a origem e o destino, sem aparecer como arquivos inteiramente novos.
 - Ao trocar rapidamente de arquivo no histórico de commits, respostas atrasadas não substituem mais o diff selecionado nem mostram erros do arquivo anterior.
+- Históricos com mais de mil commits locais não marcam mais commits ainda não enviados como enviados. Carregar novas páginas mantém a versão e os nomes das branches que estão sendo consultadas, mesmo depois de um checkout.
 
 ## [0.10.0] - 2026-11-10
 

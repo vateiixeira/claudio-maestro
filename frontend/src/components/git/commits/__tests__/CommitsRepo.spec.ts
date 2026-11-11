@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import CommitsRepo from '../CommitsRepo.vue'
+import { useGitLogStore } from '../../../../stores/gitLog'
 import { jsonResponse, logUrl, makeLogCommit, makeRepoDetails, makeRepoLog, routeFetch } from '../../../../test/factories'
 
 enableAutoUnmount(afterEach)
@@ -16,6 +17,75 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('repositório da seção Commits', () => {
+  it('mantém os commits visíveis quando a revalidação falha', async () => {
+    let failed = false
+    vi.stubGlobal('fetch', vi.fn(async () => failed
+      ? jsonResponse({ detail: 'Não foi possível consultar o Git.' }, 502)
+      : jsonResponse(makeRepoLog({ head_sha: 'a'.repeat(40), commits: [makeLogCommit({ subject: 'preservado' })] }))))
+    const wrapper = mount(CommitsRepo, {
+      props: { projectId: 1, repo: makeRepoDetails({ path: API }), collapseAll: 0 },
+      global: { plugins: [pinia] },
+    })
+    await wrapper.get('[data-test="commits-repo-toggle"]').trigger('click')
+    await flushPromises()
+    failed = true
+    await useGitLogStore().refresh(1, API)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Não foi possível')
+    expect(wrapper.get('[data-test="commit-row"]').text()).toContain('preservado')
+  })
+
+  it('carrega e pagina cada direção sem depender da página do histórico', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const query = new URL(url, 'http://localhost').searchParams
+      const direction = query.get('direction')
+      const skip = Number(query.get('skip'))
+      return jsonResponse(makeRepoLog({
+        head_sha: 'a'.repeat(40), upstream_sha: 'b'.repeat(40),
+        incoming_count: 101, outgoing_count: 1101,
+        commits: direction ? Array.from({ length: 30 }, (_, i) => makeLogCommit({ full_hash: `${direction}-${skip + i}`, subject: `${direction} ${skip + i}` })) : [makeLogCommit({ subject: 'histórico principal' })],
+        has_more: !!direction, next_skip: direction ? skip + 30 : null,
+      }))
+    }))
+    const wrapper = mount(CommitsRepo, {
+      props: { projectId: 1, repo: makeRepoDetails({ path: API }), collapseAll: 0 },
+      global: { plugins: [pinia] },
+    })
+    await wrapper.get('[data-test="commits-repo-toggle"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="group-incoming"] > button').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="incoming-list"] [data-test="commit-row"]')).toHaveLength(30)
+    await wrapper.get('[data-test="load-more-incoming"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="incoming-list"] [data-test="commit-row"]')).toHaveLength(60)
+    await wrapper.get('[data-test="group-outgoing"] > button').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="outgoing-list"] [data-test="commit-row"]')).toHaveLength(30)
+    expect(wrapper.get('[data-test="group-outgoing"]').text()).toContain('1101 commits')
+    expect(wrapper.text()).toContain('histórico principal')
+  })
+
+  it('preserva leitura durante refresh e aplica novo snapshot apenas pelo botão', async () => {
+    let changed = false
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(makeRepoLog({
+      head_sha: (changed ? 'b' : 'a').repeat(40),
+      commits: [makeLogCommit({ subject: changed ? 'novo' : 'antigo' })],
+    }))))
+    const wrapper = mount(CommitsRepo, {
+      props: { projectId: 1, repo: makeRepoDetails({ path: API }), collapseAll: 0 },
+      global: { plugins: [pinia] },
+    })
+    await wrapper.get('[data-test="commits-repo-toggle"]').trigger('click')
+    await flushPromises()
+    changed = true
+    await useGitLogStore().refresh(1, API)
+    expect(wrapper.text()).toContain('antigo')
+    await wrapper.get('[data-test="apply-history-update"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('novo')
+    expect(wrapper.text()).not.toContain('antigo')
+  })
+
   it('reabrir um repositório já carregado relê o histórico', async () => {
     let served = 0
     const fetchMock = routeFetch({

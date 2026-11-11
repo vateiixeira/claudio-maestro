@@ -7,6 +7,7 @@ time limit. A failure becomes an `error` on that repository only.
 
 import asyncio
 import contextvars
+import hashlib
 import logging
 import os
 import re
@@ -113,6 +114,9 @@ class RepoStatus:
     # the last failure (one line) and whether one is running now.
     fetched_at: float | None = None
     fetch_error: str | None = None
+    # Includes non-HEAD branches so a selected history refreshes after ref rewrites.
+    # None means the bounded read was unavailable, requiring conservative invalidation.
+    refs_signature: str | None = None
     fetching: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -430,7 +434,22 @@ async def repo_status(
         status.error = _failure(err)
         return status
     _parse_status(status, out)
+    status.refs_signature = await refs_signature(repo, timeout=timeout)
     return status
+
+
+async def refs_signature(repo: Path, *, timeout: float = GIT_TIMEOUT) -> str | None:
+    """Stable digest of branch identities, tips and upstream configuration."""
+    try:
+        code, out, _ = await run_git(
+            repo, "for-each-ref", "--sort=refname", "--format=%(refname)%00%(objectname)%00%(upstream)",
+            "refs/heads/", "refs/remotes/", timeout=timeout, limit=FILES_READ_LIMIT,
+        )
+    except GitError:
+        return None
+    if code != 0 or len(out.encode("utf-8")) > FILES_READ_LIMIT:
+        return None
+    return hashlib.sha256(out.encode("utf-8")).hexdigest()
 
 
 def discover_scan(root: Path) -> tuple[list[Path], bool]:
@@ -802,7 +821,8 @@ async def _repo_commits(repo: Path, has_upstream: bool, timeout: float) -> list[
 
 
 async def repo_details(
-    repo: Path, root: Path | None = None, *, timeout: float = GIT_TIMEOUT
+    repo: Path, root: Path | None = None, *, timeout: float = GIT_TIMEOUT,
+    include_commits: bool = True,
 ) -> dict[str, Any]:
     """Status of a repository plus its changed files and last commits.
 
@@ -818,10 +838,11 @@ async def repo_details(
         files, truncated = await _within(timeout, _repo_files(repo, timeout, status))
         commits = await repo_commits(
             repo, has_upstream=status.upstream is not None, timeout=timeout
-        )
+        ) if include_commits else []
         code, out, _ = await run_git(repo, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
         head_sha = out.strip() if code == 0 else None
         state = await repo_state(repo, timeout=timeout)
+        status.refs_signature = await refs_signature(repo, timeout=timeout)
     except GitError as exc:
         return _detail(status, error=str(exc))
     except Exception:
@@ -846,11 +867,13 @@ def _detail(
 
 
 async def project_details_scan(
-    root: Path, *, timeout: float = GIT_TIMEOUT
+    root: Path, *, timeout: float = GIT_TIMEOUT, include_commits: bool = True,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Details of every repository of a folder, and whether the limit was reached."""
     paths, limit_reached = await asyncio.to_thread(discover_scan, root)
-    repos = await asyncio.gather(*(repo_details(path, root, timeout=timeout) for path in paths))
+    repos = await asyncio.gather(*(
+        repo_details(path, root, timeout=timeout, include_commits=include_commits) for path in paths
+    ))
     return list(repos), limit_reached
 
 
@@ -951,75 +974,123 @@ async def _log(repo: Path, target: str, timeout: float, *extra: str) -> str:
     return out
 
 
+LogDirection = Literal["all", "incoming", "outgoing"]
+FULL_SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
 async def repo_log(
     repo: Path, ref: str | None = None, *, skip: int = 0, limit: int = LOG_PAGE,
-    timeout: float = GIT_TIMEOUT,
+    snapshot_head: str | None = None, snapshot_upstream: str | None = None,
+    direction: LogDirection = "all", include_incoming: bool = True, timeout: float = GIT_TIMEOUT,
 ) -> dict[str, Any]:
-    """`limit` commits of `ref` (a full branch ref; None follows HEAD) after skipping `skip`.
+    """A bounded page of a branch snapshot, with independent synchronization ranges.
 
-    With an upstream, `pushed` tells which commits it has, `outgoing_count`/`incoming_count`
-    how many each side lacks and, on the first page, `incoming` lists up to MAX_INCOMING of
-    the upstream's commits that `ref` lacks. Raises RefNotFoundError for an unknown ref.
+    Continuations send both returned hashes ("-" for no upstream). They never follow
+    a moving branch tip. Legacy callers can still omit snapshots and read `incoming`.
     """
-    return await _within(timeout, _repo_log(repo, ref, skip, limit, timeout))
+    if direction not in ("all", "incoming", "outgoing"):
+        raise RefNotFoundError(BRANCH_NOT_FOUND)
+    if (snapshot_head is None) != (snapshot_upstream is None):
+        raise RefNotFoundError(COMMIT_NOT_FOUND)
+    if snapshot_head is not None and (
+        not FULL_SHA_RE.fullmatch(snapshot_head)
+        or (snapshot_upstream != "-" and not FULL_SHA_RE.fullmatch(snapshot_upstream or ""))
+    ):
+        raise RefNotFoundError(COMMIT_NOT_FOUND)
+    return await _within(timeout, _repo_log(
+        repo, ref, skip, limit, timeout, snapshot_head, snapshot_upstream, direction, include_incoming,
+    ))
 
 
 async def _repo_log(
-    repo: Path, ref: str | None, skip: int, limit: int, timeout: float
+    repo: Path, ref: str | None, skip: int, limit: int, timeout: float,
+    snapshot_head: str | None, snapshot_upstream: str | None, direction: LogDirection,
+    include_incoming: bool,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
-        "ref": None, "branch": None, "upstream": None, "upstream_sha": None, "commits": [],
-        "has_more": False, "incoming": [], "incoming_count": None, "outgoing_count": None,
+        "ref": None, "branch": None, "head_sha": None, "upstream": None,
+        "upstream_sha": None, "commits": [], "has_more": False, "next_skip": None,
+        "direction": direction, "incoming": [], "incoming_has_more": False,
+        "incoming_count": None, "outgoing_count": None,
     }
     if ref is None:
         code, out, _ = await run_git(repo, "symbolic-ref", "-q", "HEAD", timeout=timeout)
         head_ref = out.strip() if code == 0 else None
-        code, out, _ = await run_git(repo, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
-        head_sha = out.strip() if code == 0 else None
+        if snapshot_head is None:
+            code, out, _ = await run_git(repo, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+            target = out.strip() if code == 0 else None
+        else:
+            target = await _resolve_commit(repo, snapshot_head, timeout)
         result["ref"] = head_ref
-        result["branch"] = _short_ref(head_ref) if head_ref else (head_sha or "")[:7] or None
-        if head_sha is None:
-            return result  # no commits yet
-        target = head_ref or head_sha
+        result["branch"] = _short_ref(head_ref) if head_ref else (target or "")[:7] or None
+        if target is None:
+            return result
     else:
-        await verify_branch_ref(repo, ref, timeout=timeout)
-        target = ref
+        current = await verify_branch_ref(repo, ref, timeout=timeout)
+        target = current if snapshot_head is None else await _resolve_commit(repo, snapshot_head, timeout)
         result["ref"], result["branch"] = ref, _short_ref(ref)
-
-    commits = _parse_log(await _log(repo, target, timeout, f"--skip={skip}", "-n", str(limit + 1)))
-    result["has_more"] = len(commits) > limit
-    result["commits"] = commits[:limit]
+    result["head_sha"] = target
 
     upstream = None
+    upstream_sha = None
     if result["ref"] and result["ref"].startswith("refs/heads/"):
         code, out, _ = await run_git(
-            repo, "for-each-ref", "--format=%(upstream)", result["ref"], timeout=timeout
+            repo, "for-each-ref", "--format=%(upstream)", result["ref"], timeout=timeout,
         )
         candidate = out.strip() if code == 0 else ""
         if candidate.startswith("refs/remotes/"):
-            code, out, _ = await run_git(
-                repo, "rev-parse", "--verify", "-q", "--end-of-options", f"{candidate}^{{commit}}",
-                timeout=timeout,
-            )
-            if code == 0:
-                upstream = candidate
-                result["upstream_sha"] = out.strip()
-    if upstream is None:
-        return result
-    result["upstream"] = _short_ref(upstream)
-    code, out, _ = await run_git(
-        repo, "rev-list", "--max-count=1000", "--end-of-options", f"{upstream}..{target}", "--",
-        timeout=timeout,
-    )
-    unpushed = set(out.split()) if code == 0 else set()
-    for commit in result["commits"]:
-        commit["pushed"] = commit["full_hash"] not in unpushed
-    result["outgoing_count"] = await _rev_count(repo, f"{upstream}..{target}", timeout)
-    result["incoming_count"] = await _rev_count(repo, f"{target}..{upstream}", timeout)
-    if skip == 0 and result["incoming_count"]:
-        result["incoming"] = _parse_log(
-            await _log(repo, f"{target}..{upstream}", timeout, "-n", str(MAX_INCOMING)), pushed=True
+            upstream = candidate
+            if snapshot_upstream is None:
+                code, out, _ = await run_git(
+                    repo, "rev-parse", "--verify", "-q", "--end-of-options", f"{candidate}^{{commit}}",
+                    timeout=timeout,
+                )
+                if code == 0:
+                    upstream_sha = out.strip()
+    if snapshot_upstream is not None:
+        upstream_sha = None if snapshot_upstream == "-" else await _resolve_commit(repo, snapshot_upstream, timeout)
+    if upstream_sha is not None:
+        result["upstream"] = _short_ref(upstream)
+        result["upstream_sha"] = upstream_sha
+        code, out, err = await run_git(
+            repo, "rev-list", "--left-right", "--count", "--end-of-options",
+            f"{target}...{upstream_sha}", "--", timeout=timeout,
         )
+        if code != 0:
+            raise GitError(_failure(err))
+        outgoing_count, incoming_count = map(int, out.split())
+        result["outgoing_count"], result["incoming_count"] = outgoing_count, incoming_count
+    elif direction != "all":
+        return result
+
+    revision = target if direction == "all" else (
+        f"{target}..{upstream_sha}" if direction == "incoming" else f"{upstream_sha}..{target}"
+    )
+    pushed = True if direction == "incoming" else False if direction == "outgoing" else None
+    commits = _parse_log(await _log(repo, revision, timeout, f"--skip={skip}", "-n", str(limit + 1)), pushed)
+    result["has_more"] = len(commits) > limit
+    result["commits"] = commits[:limit]
+    result["next_skip"] = skip + len(result["commits"]) if result["has_more"] else None
+    if upstream_sha is None:
+        return result
+    if direction == "all":
+        # A bounded *complete* range proves membership. An incomplete/failed query
+        # can prove an observed commit is outgoing, never that an absent one is sent.
+        code, out, _ = await run_git(
+            repo, "rev-list", "--end-of-options", f"{upstream_sha}..{target}", "--",
+            timeout=timeout, limit=FILES_READ_LIMIT,
+        )
+        unpushed = set(out.split()) if code == 0 else set()
+        complete = code == 0 and len(out.encode("utf-8")) <= FILES_READ_LIMIT
+        for commit in result["commits"]:
+            commit["pushed"] = False if commit["full_hash"] in unpushed else True if complete else None
+        result["incoming_has_more"] = bool(result["incoming_count"])
+        if include_incoming and skip == 0 and result["incoming_count"]:
+            incoming = _parse_log(
+                await _log(repo, f"{target}..{upstream_sha}", timeout, "-n", str(MAX_INCOMING + 1)), pushed=True,
+            )
+            result["incoming"] = incoming[:MAX_INCOMING]
+            result["incoming_has_more"] = len(incoming) > MAX_INCOMING
     return result
 
 

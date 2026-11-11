@@ -50,7 +50,7 @@ const busy = computed(() => (busyKind.value ? busyLabel(busyKind.value, props.re
 const error = computed(() => ops.errorFor(props.repo.path))
 const showOutput = ref(false)
 watch(error, () => { showOutput.value = false })
-const revision = computed(() => details.revisionFor(props.projectId))
+const revision = computed(() => details.revisionFor(props.projectId, props.repo.path))
 const branchName = computed(() => (props.repo.detached ? (props.repo.head ?? '') : (props.repo.branch ?? '')))
 const dirty = computed(() => props.repo.files.length > 0)
 

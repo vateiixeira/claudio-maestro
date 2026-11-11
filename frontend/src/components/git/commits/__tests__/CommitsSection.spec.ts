@@ -25,6 +25,8 @@ async function mountWith(log: ReturnType<typeof makeRepoLog>, extra: Record<stri
   const fetchMock = routeFetch({
     [DETAILS]: () => jsonResponse({ repos: [repo], limit_reached: false }),
     [logUrl(1, API)]: () => jsonResponse(log),
+    [`${logUrl(1, API)}&direction=incoming`]: () => jsonResponse({ ...log, commits: log.incoming }),
+    [`${logUrl(1, API)}&direction=outgoing`]: () => jsonResponse({ ...log, commits: log.commits.filter((c) => c.pushed === false) }),
     ...extra,
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -67,6 +69,7 @@ describe('seção Commits', () => {
     expect(rows[0].text()).toContain('Você')
     expect(rows[2].find('[data-test="upstream-tag"]').text()).toBe('origin')
     await wrapper.find('[data-test="group-incoming"] button').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-test="incoming-list"]').text()).toContain('do remoto')
   })
 
@@ -79,6 +82,7 @@ describe('seção Commits', () => {
     })
     const { wrapper } = await mountWith(log)
     await wrapper.find('[data-test="group-incoming"] button').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-test="incoming-list"] [data-test="upstream-tag"]').text()).toBe('origin')
   })
 

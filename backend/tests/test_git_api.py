@@ -80,6 +80,7 @@ def test_project_git(api, home):
         "head": repos[0]["head"], "changed": {"staged": 0, "unstaged": 0, "untracked": 2},  # novo.txt + api/ (nested)
         "upstream": None, "ahead": None, "behind": None, "error": None,
         "fetched_at": None, "fetch_error": None, "fetching": False,
+        "refs_signature": repos[0]["refs_signature"],
     }
     assert repos[1]["detached"] is True and repos[1]["branch"] is None
     assert repos[1]["head"]

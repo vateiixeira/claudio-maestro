@@ -361,15 +361,14 @@ def test_details_route_shape(api, home):  # noqa: F811
     assert set(api_repo) == {
         "path", "rel_path", "branch", "detached", "head", "changed", "upstream",
         "ahead", "behind", "error", "files", "files_truncated", "commits",
-        "fetched_at", "fetch_error", "fetching", "head_sha", "state",
+        "fetched_at", "fetch_error", "fetching", "head_sha", "state", "refs_signature",
     }
     assert api_repo["branch"] == "dev" and api_repo["upstream"] is None
     assert api_repo["files"] == [
         {"path": "README.md", "status": "unstaged", "kind": "M", "added": 1, "removed": 1}
     ]
-    assert set(api_repo["commits"][0]) == {
-        "hash", "full_hash", "subject", "author", "date", "pushed",
-    }
+    assert api_repo["commits"] == []  # History has its own lazy endpoint.
+    assert len(api_repo["refs_signature"]) == 64
 
 
 def test_details_route_unknown_project(api):  # noqa: F811
@@ -410,7 +409,8 @@ def test_details_route_error_in_one_repo(api, home):  # noqa: F811
     body = api.get(f"/api/projects/{project['id']}/git/details").json()
     repos = {r["rel_path"]: r for r in body["repos"]}
     assert repos["broken"]["error"] and repos["broken"]["files"] == []
-    assert repos["good"]["error"] is None and repos["good"]["commits"]
+    assert repos["good"]["error"] is None and repos["good"]["head_sha"]
+    assert repos["good"]["commits"] == []
 
 
 def test_git_route_includes_upstream_fields(api, home):  # noqa: F811

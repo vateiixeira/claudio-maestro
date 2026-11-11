@@ -148,6 +148,7 @@ export function makeLogCommit(overrides: Partial<import('../types/api').LogCommi
 export function makeRepoLog(overrides: Partial<import('../types/api').RepoLog> = {}): import('../types/api').RepoLog {
   return {
     ref: 'refs/heads/main', branch: 'main', upstream: 'origin/main', upstream_sha: null,
+    head_sha: null, direction: 'all', next_skip: null, incoming_has_more: false,
     commits: [], has_more: false, incoming: [], incoming_count: 0, outgoing_count: 0,
     ...overrides,
   }
@@ -172,6 +173,7 @@ export function logUrl(projectId: number, repo: string, skip = 0, ref: string | 
   const query = new URLSearchParams({ repo, skip: String(skip) })
   if (ref) query.set('ref', ref)
   if (limit !== undefined) query.set('limit', String(limit))
+  query.set('include_incoming', 'false')
   return `GET /api/projects/${projectId}/git/log?${query}`
 }
 

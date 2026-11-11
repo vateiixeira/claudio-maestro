@@ -38,12 +38,14 @@ Validação executada em 11/11/2026: 11 testes de escopo no backend passaram, in
 
 Arquivos: stores `gitDetails.ts`, `git.ts`, `gitOps.ts`, componentes de seção, `CommitsRepo.vue`, `api/gitops.py`, `gitmonitor.py`, tipos de evento.
 
-- [ ] Testar montagem simultânea de SCM + Commits: exatamente uma carga de detalhes em andamento por projeto.
-- [ ] Carregar na transição de zero para um consumidor; demais consumidores compartilham a promise. Revalidar ao reabrir quando stale, sem assumir que cache é sempre atual.
-- [ ] Separar revisão por repo/domínio: arquivos/index, HEAD/refs e estado remoto. Usar sinal explícito para alteração de conteúdo sem mudança de contagem.
-- [ ] Stage/unstage atualiza arquivos e diff correspondente, sem invalidar commits. Commit invalida HEAD/log; fetch invalida refs remotas e sincronização.
-- [ ] Reconciliar resposta da mutação e evento por versão/id; não simplesmente ignorar o próximo evento, que pode representar mudança externa.
-- [ ] Preservar reconexão do socket, geração contra respostas antigas e atualização após fim de turno do agente.
+- [x] Testar montagem simultânea de SCM + Commits: exatamente uma carga de detalhes em andamento por projeto.
+- [x] Carregar na transição de zero para um consumidor; demais consumidores usam a mesma carga em andamento, sem iniciá-la novamente. Revalidar ao reabrir quando stale, sem assumir que cache é sempre atual.
+- [x] Separar revisão por repo/domínio: arquivos/index, HEAD/refs e estado remoto. Usar sinal explícito para alteração de conteúdo sem mudança de contagem.
+- [x] Stage/unstage atualiza arquivos e diff correspondente, sem invalidar commits. Commit invalida HEAD/log; fetch invalida refs remotas e sincronização.
+- [x] Reconciliar resposta da mutação e evento por versão/id; não simplesmente ignorar o próximo evento, que pode representar mudança externa.
+- [x] Preservar reconexão do socket, geração contra respostas antigas e atualização após fim de turno do agente.
+
+Validação focada executada: 133 testes frontend, 42 backend e ruff passaram. Refresh manual continua substituindo consultas antigas; o compartilhamento ocorre nas inscrições das seções. Revisão integrada e E2E final ainda pendentes.
 
 Aceite: um GET inicial; stage não chama endpoint de log; ação no repo A não relê histórico do repo B; evento equivalente à resposta não duplica consulta; mudança externa real nunca se perde.
 
@@ -51,14 +53,20 @@ Aceite: um GET inicial; stage não chama endpoint de log; ação no repo A não 
 
 Arquivos: `gitinfo.py`, rotas Git, modelos HTTP, `gitLog.ts`, `CommitsRepo.vue`, respectivos testes.
 
-- [ ] Inventariar todos os consumidores de `RepoDetails.commits` antes de removê-lo ou torná-lo opcional.
-- [ ] Retirar consulta dos dez commits do caminho crítico de alterações. Histórico é carregado somente quando visível.
-- [ ] Definir consulta com snapshot resolvido: repo + SHA de HEAD + SHA de upstream + ref selecionada + filtros. Paginar dentro do snapshot.
-- [ ] Quando HEAD mudar, manter posição e páginas existentes até atualização explícita/segura. Não trocar silenciosamente 600 itens por 300.
-- [ ] Incoming/outgoing têm consultas e cursores próprios, contagem total, `has_more` e aviso quando a resposta é parcial.
-- [ ] Remover inferência incorreta de `pushed` por ausência nos primeiros 1000 hashes. Resolver pertinência dos hashes da página e representar desconhecido em falhas.
-- [ ] Limitar cache de detalhes/diffs por quantidade e/ou bytes; usar LRU e descarte ao remover projeto. Preservar deduplicação de promises e remoção de erro do cache.
-- [ ] Avaliar numstat sob demanda sem perder a informação necessária à confirmação de descarte.
+- [x] Inventariar todos os consumidores de `RepoDetails.commits` antes de removê-lo ou torná-lo opcional.
+- [x] Retirar consulta dos dez commits do caminho crítico de alterações. Histórico é carregado somente quando visível.
+- [x] Definir consulta com snapshot resolvido: repo + SHA de HEAD + SHA de upstream + ref selecionada + filtros. Paginar dentro do snapshot.
+- [x] Quando HEAD mudar, manter posição e páginas existentes até atualização explícita/segura. Não trocar silenciosamente 600 itens por 300.
+- [x] Incoming/outgoing têm consultas e cursores próprios, contagem total, `has_more` e aviso quando a resposta é parcial.
+- [x] Remover inferência incorreta de `pushed` por ausência nos primeiros 1000 hashes. Resolver pertinência dos hashes da página e representar desconhecido em falhas.
+- [x] Limitar cache de detalhes/diffs por quantidade e/ou bytes; usar LRU e descarte ao remover projeto. Preservar deduplicação de promises e remoção de erro do cache.
+- [x] Avaliar numstat sob demanda sem perder a informação necessária à confirmação de descarte.
+
+Implementado e validado em testes focados. A API de detalhes usa `include_commits=False`, preservando o contrato legado de `repo_details` para outros consumidores; a busca de consumidores não encontrou leitura de `RepoDetails.commits` na interface atual. A API de log preserva incoming legado por padrão; o novo cliente envia `include_incoming=false` e abre cada direção sob demanda.
+
+O numstat foi avaliado e mantido: as contagens ainda alimentam os diálogos de descarte e removê-las exigiria uma consulta adicional nesse fluxo. A mudança desta etapa retira o histórico redundante, sem sacrificar as contagens já exibidas. Uma entrega parcial de numstat permanece uma otimização condicionada às medições da fase 6.
+
+Validação executada: 37 testes frontend em sete arquivos, `vue-tsc -b` e `git diff --check` passaram. Após a revisão encontrar que carregar outra página apagava o aviso de atualização, o teste reproduziu a falha e a correção preservou o aviso; o subconjunto final foi repetido. O implementador backend reportou 56 testes focados e ruff aprovados. E2E integrado e benchmark posterior ainda serão executados nas próximas etapas.
 
 Aceite: novo commit entre páginas não duplica/omite itens do snapshot; 101 incoming e 1.101 outgoing são navegáveis; nenhum commit ganha indicação falsa de enviado; cache tem limite testável; painel fechado não busca log.
 

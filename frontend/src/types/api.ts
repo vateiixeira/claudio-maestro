@@ -307,6 +307,8 @@ export interface GitRepo {
   branch: string | null
   detached: boolean
   head: string | null
+  /** Digest of local and remote refs; absent on older backends. */
+  refs_signature?: string | null
   changed: { staged: number; unstaged: number; untracked: number }
   /** Tracked remote branch ("origin/main"); null when the branch has none. */
   upstream: string | null
@@ -383,6 +385,13 @@ export interface LogCommit {
   pushed: boolean | null
 }
 
+export type LogDirection = 'all' | 'incoming' | 'outgoing'
+
+export interface LogQuery {
+  direction?: LogDirection
+  snapshot?: { head: string; upstream: string | null }
+}
+
 export interface RepoLog {
   /** Full ref shown ("refs/heads/main"); null for a detached HEAD. */
   ref: string | null
@@ -390,10 +399,14 @@ export interface RepoLog {
   branch: string | null
   upstream: string | null
   upstream_sha: string | null
+  head_sha: string | null
+  direction: LogDirection
+  next_skip: number | null
   commits: LogCommit[]
   has_more: boolean
   /** Upstream commits the branch lacks (first page only, up to 100). */
   incoming: LogCommit[]
+  incoming_has_more: boolean
   incoming_count: number | null
   outgoing_count: number | null
 }
@@ -444,6 +457,7 @@ export type GitOpKind =
 
 /** Answer of a Git action: the repository as it is now. */
 export interface GitOpAnswer {
+  mutation_id?: string
   repo: RepoDetails
   /** Merge, pull and sync: the merge stopped with conflicts. */
   conflicts?: boolean

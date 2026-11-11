@@ -102,11 +102,16 @@ export const useGitStore = defineStore('git', () => {
   }
 
   function applyEvent(event: WsEvent): void {
-    const data = event.data as { project_id?: unknown; repos?: unknown; limit_reached?: unknown } | null
+    const data = event.data as { project_id?: unknown; repos?: unknown; limit_reached?: unknown; changed_repos?: unknown; mutation_id?: unknown; mutation_repo?: unknown } | null
     if (typeof data?.project_id !== 'number' || !Array.isArray(data.repos)) return
     set(data.project_id, data.repos as GitRepo[], typeof data.limit_reached === 'boolean' ? data.limit_reached : undefined)
     // Files and commits are not in the event: the screen that shows them rereads.
-    useGitDetailsStore().notifyChanged(data.project_id)
+    useGitDetailsStore().notifyChanged(
+      data.project_id,
+      Array.isArray(data.changed_repos) && data.changed_repos.every(path => typeof path === 'string') ? data.changed_repos : null,
+      typeof data.mutation_id === 'string' ? data.mutation_id : undefined,
+      typeof data.mutation_repo === 'string' ? data.mutation_repo : undefined,
+    )
   }
 
   return { byProject, reposFor, isLoaded, limitReached, set, load, ensure, applyEvent, isFetching, fetchError, fetchNow }

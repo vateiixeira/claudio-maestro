@@ -25,7 +25,8 @@ const showIncoming = ref(false)
 const state = computed(() => log.logFor(props.projectId, props.repo.path))
 const name = computed(() => repoLabel(props.repo, projects.byId(props.projectId)?.name))
 const sync = computed(() => syncCounts(props.repo))
-const outgoing = computed(() => (state.value?.commits ?? []).filter((c) => c.pushed === false))
+const outgoingState = computed(() => log.logFor(props.projectId, props.repo.path, 'outgoing'))
+const incomingState = computed(() => log.logFor(props.projectId, props.repo.path, 'incoming'))
 const remoteName = computed(() => state.value?.upstream?.split('/')[0] ?? null)
 const fetched = computed(() => (props.repo.fetched_at ? `buscado ${formatActivity(props.repo.fetched_at)}` : null))
 
@@ -43,8 +44,15 @@ function toggle(): void {
 
 watch(() => props.collapseAll, () => { open.value = false; menuOpen.value = false })
 // The details were reread (a commit, a fetch, a turn that ended): reread the history shown.
-watch(() => details.revisionFor(props.projectId), () => {
+watch(() => details.historyRevisionFor(props.projectId, props.repo.path), () => {
   if (open.value && state.value) void log.refresh(props.projectId, props.repo.path)
+})
+
+// Reopen cached directions without another request; a new snapshot clears their caches.
+watch(() => [state.value?.loading, state.value?.headSha, showOutgoing.value, showIncoming.value], () => {
+  if (!open.value || !state.value || state.value.loading) return
+  if (showOutgoing.value && !outgoingState.value) void log.loadDirection(props.projectId, props.repo.path, 'outgoing')
+  if (showIncoming.value && !incomingState.value) void log.loadDirection(props.projectId, props.repo.path, 'incoming')
 })
 
 function pick(refName: string): void {
@@ -95,23 +103,34 @@ function pick(refName: string): void {
 
     <div v-if="open" class="flex flex-col pl-5">
       <p v-if="state?.error" role="alert" class="m-0 py-1 text-xs text-diff-del-fg">{{ state.error }}</p>
-      <p v-else-if="!state || (state.loading && state.commits.length === 0)" class="m-0 py-1 text-xs text-fg-muted">Carregando…</p>
+      <p v-if="!state || (state.loading && state.commits.length === 0)" class="m-0 py-1 text-xs text-fg-muted">Carregando…</p>
       <template v-else>
+        <button v-if="state.updateAvailable" type="button" data-test="apply-history-update" :disabled="state.loading" class="self-start rounded px-1.5 py-1 text-xs text-info-soft hover:bg-elevated" @click="log.load(projectId, repo.path)">Há alterações no histórico. Atualizar</button>
         <div data-test="group-outgoing">
           <button type="button" :aria-expanded="showOutgoing" class="flex h-6 w-full items-center gap-1.5 text-left text-xs text-fg-muted hover:text-fg" :disabled="!state.outgoingCount" @click="showOutgoing = !showOutgoing">
             <IconChevron :open="showOutgoing" :size="12" class="text-fg-subtle" />{{ outgoingLabel }}
           </button>
-          <ul v-if="showOutgoing" class="m-0 list-none p-0 pl-4">
-            <CommitRow v-for="c in outgoing" :key="c.full_hash" :project-id="projectId" :repo-path="repo.path" :commit="c" :upstream-label="null" :user-email="repo.state?.user_email ?? null" />
-          </ul>
+          <div v-if="showOutgoing" class="pl-4">
+            <p v-if="outgoingState?.error" role="alert" class="m-0 py-1 text-xs text-diff-del-fg">{{ outgoingState.error }} <button type="button" class="underline" @click="log.loadDirection(projectId, repo.path, 'outgoing')">Tentar novamente</button></p>
+            <p v-if="!outgoingState || (outgoingState.loading && !outgoingState.commits.length)" class="m-0 py-1 text-xs text-fg-muted">Carregando…</p>
+            <ul data-test="outgoing-list" class="m-0 list-none p-0">
+            <CommitRow v-for="c in outgoingState?.commits ?? []" :key="c.full_hash" :project-id="projectId" :repo-path="repo.path" :commit="c" :upstream-label="null" :user-email="repo.state?.user_email ?? null" />
+            </ul>
+            <button v-if="outgoingState?.hasMore" type="button" data-test="load-more-outgoing" :disabled="outgoingState.loading" class="h-6 rounded px-1.5 text-xs text-fg-muted hover:bg-elevated" @click="log.loadMore(projectId, repo.path, 'outgoing')">{{ outgoingState.loading ? 'Carregando…' : 'Carregar mais para subir' }}</button>
+          </div>
         </div>
         <div data-test="group-incoming">
           <button type="button" :aria-expanded="showIncoming" class="flex h-6 w-full items-center gap-1.5 text-left text-xs text-fg-muted hover:text-fg" :disabled="!state.incomingCount" @click="showIncoming = !showIncoming">
             <IconChevron :open="showIncoming" :size="12" class="text-fg-subtle" />{{ incomingLabel }}
           </button>
-          <ul v-if="showIncoming" data-test="incoming-list" class="m-0 list-none p-0 pl-4">
-            <CommitRow v-for="c in state.incoming" :key="c.full_hash" :project-id="projectId" :repo-path="repo.path" :commit="c" :upstream-label="c.full_hash === state.upstreamSha ? remoteName : null" :user-email="repo.state?.user_email ?? null" />
-          </ul>
+          <div v-if="showIncoming" class="pl-4">
+            <p v-if="incomingState?.error" role="alert" class="m-0 py-1 text-xs text-diff-del-fg">{{ incomingState.error }} <button type="button" class="underline" @click="log.loadDirection(projectId, repo.path, 'incoming')">Tentar novamente</button></p>
+            <p v-if="!incomingState || (incomingState.loading && !incomingState.commits.length)" class="m-0 py-1 text-xs text-fg-muted">Carregando…</p>
+            <ul data-test="incoming-list" class="m-0 list-none p-0">
+            <CommitRow v-for="c in incomingState?.commits ?? []" :key="c.full_hash" :project-id="projectId" :repo-path="repo.path" :commit="c" :upstream-label="c.full_hash === state.upstreamSha ? remoteName : null" :user-email="repo.state?.user_email ?? null" />
+            </ul>
+            <button v-if="incomingState?.hasMore" type="button" data-test="load-more-incoming" :disabled="incomingState.loading" class="h-6 rounded px-1.5 text-xs text-fg-muted hover:bg-elevated" @click="log.loadMore(projectId, repo.path, 'incoming')">{{ incomingState.loading ? 'Carregando…' : 'Carregar mais para baixar' }}</button>
+          </div>
         </div>
         <ul class="m-0 list-none p-0">
           <CommitRow
@@ -124,7 +143,7 @@ function pick(refName: string): void {
             :user-email="repo.state?.user_email ?? null"
           />
         </ul>
-        <p v-if="state.commits.length === 0" class="m-0 py-1 text-xs text-fg-muted">Ainda não há commits.</p>
+        <p v-if="state.commits.length === 0 && !state.error" class="m-0 py-1 text-xs text-fg-muted">Ainda não há commits.</p>
         <button v-if="state.hasMore" type="button" data-test="load-more" :disabled="state.loading" class="h-6 self-start rounded px-1.5 text-xs text-fg-muted hover:bg-elevated hover:text-fg" @click="log.loadMore(projectId, repo.path)">{{ state.loading ? 'Carregando…' : 'Carregar mais' }}</button>
       </template>
     </div>

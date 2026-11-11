@@ -67,7 +67,7 @@ async def project_git_details(project_id: int, conn: DbDep) -> dict[str, Any]:
     project = _project(conn, project_id)
     if not project.available:
         return {"repos": [], "limit_reached": False}
-    repos, limit_reached = await gitinfo.project_details_scan(Path(project.path))
+    repos, limit_reached = await gitinfo.project_details_scan(Path(project.path), include_commits=False)
     return {"repos": repos, "limit_reached": limit_reached}
 
 

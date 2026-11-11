@@ -72,7 +72,7 @@ describe('repositório na seção Alterações', () => {
     expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBe('Ajustar o frete')
     await input.trigger('keydown', { key: 'Enter', ctrlKey: true })
     await flushPromises()
-    expect(bodyOf(fetchMock.mock.calls[0])).toEqual({ repo: PATH, message: 'Ajustar o frete' })
+    expect(bodyOf(fetchMock.mock.calls[0])).toMatchObject({ repo: PATH, message: 'Ajustar o frete' })
     expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBeNull()
     expect((input.element as HTMLInputElement).value).toBe('')
   })
@@ -123,7 +123,7 @@ describe('repositório na seção Alterações', () => {
     await wrapper.find('[data-test="scm-file"] [data-test="file-discard"]').trigger('click')
     await wrapper.find('[data-test="confirm-ok"]').trigger('click')
     await flushPromises()
-    expect(bodyOf(fetchMock.mock.calls[0])).toEqual({ repo: PATH, paths: ['novo.ts'] })
+    expect(bodyOf(fetchMock.mock.calls[0])).toMatchObject({ repo: PATH, paths: ['novo.ts'] })
   })
 
   it('descartar o grupo mostra a contagem', async () => {

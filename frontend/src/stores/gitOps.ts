@@ -32,12 +32,15 @@ export const useGitOpsStore = defineStore('gitOps', () => {
   async function run(projectId: number, repoPath: string, kind: GitOpKind, body: Record<string, unknown> = {}): Promise<GitOpAnswer | null> {
     if (busy.value[repoPath]) return null
     busy.value[repoPath] = kind
+    const mutationId = crypto.randomUUID()
+    details.beginMutation(projectId, repoPath, mutationId)
     try {
-      const answer = await api.gitOp(projectId, kind, { repo: repoPath, ...body })
+      const answer = await api.gitOp(projectId, kind, { repo: repoPath, ...body, mutation_id: mutationId })
       errors.value[repoPath] = null
-      details.replaceRepo(projectId, answer.repo)
+      details.finishMutation(projectId, repoPath, mutationId, answer.repo)
       return answer
     } catch (e) {
+      details.finishMutation(projectId, repoPath, mutationId)
       const output = e instanceof api.ApiError && typeof e.data?.output === 'string' ? e.data.output : ''
       errors.value[repoPath] = { message: api.errorMessage(e), output }
       return null

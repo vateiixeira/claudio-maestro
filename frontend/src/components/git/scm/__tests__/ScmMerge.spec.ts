@@ -55,7 +55,12 @@ const posts = (fetchMock: ReturnType<typeof routeFetch>) =>
     .filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST')
     .map((c) => {
       const body = (c[1] as RequestInit).body
-      return [String(c[0]).split('/git/').pop(), body ? JSON.parse(String(body)) : null]
+      const parsed = body ? JSON.parse(String(body)) : null
+      if (parsed && String(c[0]).includes('/git/')) {
+        expect(parsed.mutation_id).toMatch(/^[0-9a-f-]{36}$/)
+        delete parsed.mutation_id
+      }
+      return [String(c[0]).split('/git/').pop(), parsed]
     })
 
 describe('branches e merge no repositório', () => {
