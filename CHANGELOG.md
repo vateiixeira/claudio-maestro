@@ -4,12 +4,21 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- Comparação entre branches na seção Commits: base escolhida por repositório, commits exclusivos de cada lado, arquivos e diffs desde o ancestral comum, sem trocar a branch de trabalho.
+
 ### Alterado
+
+- O único repositório abre automaticamente nas seções de alterações e commits. A escolha de expandir ou recolher fica salva por projeto, repositório e seção; reabrir um histórico já carregado só consulta o Git se houve mudança enquanto estava fechado.
+- As listas Git mantêm linhas compactas no desktop, ações disponíveis por teclado e toque e espaço reservado para elas. Metadados e nomes longos são limitados para preservar a leitura em painéis estreitos.
 
 - As seções de alterações e commits compartilham a leitura inicial do projeto. Preparar ou despreparar arquivos não recarrega mais o histórico; as atualizações ficam no repositório afetado e mudanças externas continuam sendo reconciliadas.
 - O histórico mantém as páginas já abertas quando chegam novos commits e avisa quando há uma atualização para aplicar. As listas de commits para subir e baixar têm paginação própria e só são consultadas ao abrir; o painel de alterações deixa de buscar o histórico que não está sendo mostrado.
 
 ### Corrigido
+
+- Em telas estreitas, a página do projeto usa o menu recolhível já disponível nas demais telas, preservando espaço para alterações e commits. Sincronizar um repositório não recolhe mais sua lista quando ele fica em dia.
 
 - Os diffs de arquivos preparados mostram só o conteúdo que entra no commit; os de alterações mostram o que mudou depois da preparação. Renomeações preparadas preservam a origem e o destino, sem aparecer como arquivos inteiramente novos.
 - Ao trocar rapidamente de arquivo no histórico de commits, respostas atrasadas não substituem mais o diff selecionado nem mostram erros do arquivo anterior.

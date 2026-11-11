@@ -441,6 +441,30 @@ export interface BranchList {
   remote: BranchRef[]
 }
 
+export type ComparisonDirection = 'ahead' | 'behind'
+export interface BranchComparison {
+  head_ref: string | null
+  base_ref: string
+  head_sha: string
+  base_sha: string
+  merge_base: string | null
+  ahead_count: number
+  behind_count: number
+  unrelated: boolean
+  notice: string | null
+}
+export interface ComparisonCommits {
+  commits: LogCommit[]
+  has_more: boolean
+  next_skip: number | null
+}
+export interface ComparisonFiles {
+  files: CommitFile[]
+  files_truncated: boolean
+  base_sha: string
+  target_sha: string
+}
+
 export interface RepoDetails extends GitRepo {
   files: RepoFile[]
   files_truncated: boolean

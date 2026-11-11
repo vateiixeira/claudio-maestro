@@ -12,8 +12,9 @@ import AppSidebar from '../components/sidebar/AppSidebar.vue'
 import { createAppRouter } from '../router'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useSessionsStore } from '../stores/sessions'
+import { useProjectsStore } from '../stores/projects'
 import { useTasksStore } from '../stores/tasks'
-import { jsonResponse, makeSession, makeTask, makeTaskDetail, routeFetch } from '../test/factories'
+import { jsonResponse, makeProject, makeSession, makeTask, makeTaskDetail, routeFetch } from '../test/factories'
 import { loadEverything } from '../stores/realtime'
 
 enableAutoUnmount(afterEach)
@@ -240,4 +241,30 @@ it('nas novas telas compactas o menu devolve o foco ao fechar com Escape', async
   expect(wrapper.get('.agents-mobile-sidebar').classes()).not.toContain('is-open')
   expect(document.activeElement).toBe(toggle.element)
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+})
+
+
+it('no projeto a 360 px mantém navegação recolhida e abre/fecha pelo menu e backdrop', async () => {
+  const width = window.innerWidth
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 })
+  try {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(url === '/api/projects' ? [makeProject({ id: 1 })] : [])))
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/projects/1')
+    const wrapper = mount(App, { global: { plugins: [pinia, router] }, attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.get('.agents-mobile-sidebar').classes()).not.toContain('is-open')
+    const toggle = wrapper.get('[aria-label="Abrir navegação"]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    await toggle.trigger('click')
+    expect(wrapper.get('main').attributes('inert')).toBeDefined()
+    await wrapper.get('.agents-nav-backdrop').trigger('click')
+    await flushPromises()
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(toggle.element)
+    expect(wrapper.get('[data-test="project-pane"]').classes()).toEqual(expect.arrayContaining(['px-4', 'sm:px-10']))
+  } finally {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+  }
 })

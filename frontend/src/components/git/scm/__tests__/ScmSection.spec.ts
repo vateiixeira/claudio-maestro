@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import ScmSection from '../ScmSection.vue'
+import { useGitDetailsStore } from '../../../../stores/gitDetails'
 import { useProjectsStore } from '../../../../stores/projects'
 import { jsonResponse, makeProject, makeRepoDetails, routeFetch } from '../../../../test/factories'
 import type { RepoDetails } from '../../../../types/api'
@@ -11,6 +12,7 @@ const DETAILS = 'GET /api/projects/1/git/details'
 let pinia: Pinia
 
 beforeEach(() => {
+  localStorage.clear()
   pinia = createPinia()
   setActivePinia(pinia)
   useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja' })]
@@ -52,6 +54,16 @@ describe('seção Alterações', () => {
     expect(web.find('[data-test="scm-body"]').exists()).toBe(true)
     await wrapper.find('[data-test="scm-collapse-all"]').trigger('click')
     expect(wrapper.find('[data-test="scm-body"]').exists()).toBe(false)
+  })
+
+  it('mantém aberto o repositório que ficou limpo entre vários repositórios', async () => {
+    const repo = makeRepoDetails({ path: '/p/api', rel_path: 'api', ahead: 1, behind: 1, files: [{ path: 'a.ts', status: 'unstaged', kind: 'M', added: 1, removed: 0 }] })
+    const wrapper = await mountWith([repo, makeRepoDetails({ path: '/p/web', rel_path: 'web' })])
+    expect(wrapper.get('[data-repo="/p/api"] [data-test="scm-repo-toggle"]').attributes('aria-expanded')).toBe('true')
+    useGitDetailsStore().replaceRepo(1, { ...repo, files: [], ahead: 0, behind: 0 })
+    await flushPromises()
+    expect(wrapper.get('[data-repo="/p/api"] [data-test="scm-repo-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-repo="/p/api"] [data-test="scm-body"]').exists()).toBe(true)
   })
 
   it('erro de um repositório aparece só nele', async () => {

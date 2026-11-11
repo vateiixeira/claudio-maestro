@@ -69,7 +69,7 @@ function startOpen(repo: RepoDetails): boolean {
     <template v-else>
       <p v-if="error" role="alert" class="m-0 px-1 text-xs text-diff-del-fg">Não foi possível atualizar: {{ error }}</p>
       <ul class="m-0 flex list-none flex-col p-0">
-        <ScmRepo v-for="repo in repos" :key="repo.path" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" :start-open="startOpen(repo)" />
+        <ScmRepo v-for="repo in repos" :key="`${projectId}:${repo.path}`" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" :start-open="startOpen(repo)" />
       </ul>
     </template>
   </section>

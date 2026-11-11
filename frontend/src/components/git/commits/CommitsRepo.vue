@@ -1,10 +1,17 @@
+<script lang="ts">
+// Keep observed revisions across panel remounts, scoped to the Pinia store lifetime.
+const observedRevisions = new WeakMap<object, Map<string, number>>()
+</script>
+
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import CommitRow from './CommitRow.vue'
 import HistoryRefMenu from './HistoryRefMenu.vue'
+import BranchComparison from './BranchComparison.vue'
 import IconArrowDown from '../../icons/IconArrowDown.vue'
 import IconArrowUp from '../../icons/IconArrowUp.vue'
 import IconChevron from '../../icons/IconChevron.vue'
+import { useRepoExpansion } from '../../../git/repoExpansion'
 import { repoLabel, syncCounts } from '../../../git/repoLabel'
 import { formatActivity } from '../../../format'
 import { useGitDetailsStore } from '../../../stores/gitDetails'
@@ -12,19 +19,19 @@ import { useGitLogStore } from '../../../stores/gitLog'
 import { useProjectsStore } from '../../../stores/projects'
 import type { RepoDetails } from '../../../types/api'
 
-const props = defineProps<{ projectId: number; repo: RepoDetails; collapseAll: number }>()
+const props = defineProps<{ projectId: number; repo: RepoDetails; collapseAll: number; startOpen?: boolean }>()
 
 const details = useGitDetailsStore()
 const log = useGitLogStore()
 const projects = useProjectsStore()
-const open = ref(false)
+const open = useRepoExpansion(() => props.projectId, () => props.repo.path, 'commits', () => props.startOpen ?? false)
 const menuOpen = ref(false)
 const showOutgoing = ref(false)
 const showIncoming = ref(false)
 
 const state = computed(() => log.logFor(props.projectId, props.repo.path))
 const name = computed(() => repoLabel(props.repo, projects.byId(props.projectId)?.name))
-const sync = computed(() => syncCounts(props.repo))
+const sync = computed(() => syncCounts(state.value && (state.value.headSha !== null || state.value.incomingCount !== null) ? { upstream: state.value.upstream, ahead: state.value.outgoingCount, behind: state.value.incomingCount } : props.repo))
 const outgoingState = computed(() => log.logFor(props.projectId, props.repo.path, 'outgoing'))
 const incomingState = computed(() => log.logFor(props.projectId, props.repo.path, 'incoming'))
 const remoteName = computed(() => state.value?.upstream?.split('/')[0] ?? null)
@@ -36,16 +43,24 @@ const incomingLabel = computed(() => `Para baixar — ${state.value?.incomingCou
 
 function toggle(): void {
   open.value = !open.value
-  if (!open.value) return
-  // Reopening shows what was loaded before, which may be old: git changed while it was closed.
-  if (state.value) void log.refresh(props.projectId, props.repo.path)
-  else void log.load(props.projectId, props.repo.path)
 }
 
+const revisionKey = computed(() => JSON.stringify([props.projectId, props.repo.path]))
+let revisions = observedRevisions.get(log)
+if (!revisions) {
+  revisions = new Map()
+  observedRevisions.set(log, revisions)
+}
+function ensureHistory(force = false): void {
+  const revision = details.historyRevisionFor(props.projectId, props.repo.path)
+  if (!state.value) void log.load(props.projectId, props.repo.path)
+  else if (force || state.value.error || revisions!.get(revisionKey.value) !== revision) void log.refresh(props.projectId, props.repo.path)
+  revisions!.set(revisionKey.value, revision)
+}
+watch(open, (value) => { if (value) ensureHistory() }, { immediate: true })
 watch(() => props.collapseAll, () => { open.value = false; menuOpen.value = false })
-// The details were reread (a commit, a fetch, a turn that ended): reread the history shown.
 watch(() => details.historyRevisionFor(props.projectId, props.repo.path), () => {
-  if (open.value && state.value) void log.refresh(props.projectId, props.repo.path)
+  if (open.value) ensureHistory()
 })
 
 // Reopen cached directions without another request; a new snapshot clears their caches.
@@ -62,8 +77,8 @@ function pick(refName: string): void {
 </script>
 
 <template>
-  <li data-test="commits-repo" class="flex flex-col">
-    <div class="relative flex h-7 items-center gap-1.5 rounded px-1 hover:bg-elevated">
+  <li data-test="commits-repo" class="flex min-w-0 flex-col">
+    <div class="relative flex min-w-0 h-7 items-center gap-1.5 rounded px-1 hover:bg-elevated">
       <button type="button" data-test="commits-repo-toggle" :aria-expanded="open" class="flex min-w-0 grow items-center gap-1.5 text-left" @click="toggle">
         <IconChevron :open="open" :size="12" class="text-fg-subtle" />
         <span class="truncate font-mono text-[0.8125rem] font-semibold text-fg">{{ name }}</span>
@@ -74,7 +89,7 @@ function pick(refName: string): void {
         aria-haspopup="listbox"
         :aria-expanded="menuOpen"
         title="Escolher a branch do histórico (não troca de branch)"
-        class="h-6 max-w-48 truncate rounded px-1.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg"
+        class="h-6 max-w-[35%] shrink truncate rounded px-1.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg"
         @click="menuOpen = !menuOpen"
       >{{ state?.branch ?? repo.branch ?? repo.head ?? '' }}</button>
       <span
@@ -90,7 +105,7 @@ function pick(refName: string): void {
           <span class="inline-flex items-center" :class="sync.ahead > 0 ? 'text-fg' : 'text-fg-subtle'"><IconArrowUp :size="12" />{{ sync.ahead }}</span>
         </template>
       </span>
-      <span v-if="fetched" data-test="fetched-ago" class="shrink-0 text-xs text-fg-subtle">{{ fetched }}</span>
+      <span v-if="fetched" data-test="fetched-ago" class="max-w-[25%] truncate text-xs text-fg-subtle" :title="fetched">{{ fetched }}</span>
       <HistoryRefMenu
         v-if="menuOpen"
         :project-id="projectId"
@@ -102,7 +117,7 @@ function pick(refName: string): void {
     </div>
 
     <div v-if="open" class="flex flex-col pl-5">
-      <p v-if="state?.error" role="alert" class="m-0 py-1 text-xs text-diff-del-fg">{{ state.error }}</p>
+      <p v-if="state?.error" role="alert" class="m-0 py-1 text-xs text-diff-del-fg">{{ state.error }} <button type="button" data-test="history-retry" class="underline" :disabled="state.loading" @click="ensureHistory(true)">Tentar novamente</button></p>
       <p v-if="!state || (state.loading && state.commits.length === 0)" class="m-0 py-1 text-xs text-fg-muted">Carregando…</p>
       <template v-else>
         <button v-if="state.updateAvailable" type="button" data-test="apply-history-update" :disabled="state.loading" class="self-start rounded px-1.5 py-1 text-xs text-info-soft hover:bg-elevated" @click="log.load(projectId, repo.path)">Há alterações no histórico. Atualizar</button>
@@ -132,6 +147,13 @@ function pick(refName: string): void {
             <button v-if="incomingState?.hasMore" type="button" data-test="load-more-incoming" :disabled="incomingState.loading" class="h-6 rounded px-1.5 text-xs text-fg-muted hover:bg-elevated" @click="log.loadMore(projectId, repo.path, 'incoming')">{{ incomingState.loading ? 'Carregando…' : 'Carregar mais para baixar' }}</button>
           </div>
         </div>
+        <BranchComparison
+          :project-id="projectId" :repo-path="repo.path" :head-ref="state.ref"
+          :branch="(state.ref ? state.branch : repo.branch) ?? 'HEAD'"
+          :revision="details.historyRevisionFor(projectId, repo.path)"
+          :default-base="repo.upstream ? `refs/remotes/${repo.upstream}` : null"
+          :user-email="repo.state?.user_email ?? null"
+        />
         <ul class="m-0 list-none p-0">
           <CommitRow
             v-for="c in state.commits"

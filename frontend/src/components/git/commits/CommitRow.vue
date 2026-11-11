@@ -87,7 +87,7 @@ const LETTER_CLASS: Record<string, string> = { M: 'text-fg-muted', A: 'text-diff
 
 <template>
   <li data-test="commit-row" class="flex flex-col">
-    <div class="group flex h-6 items-center gap-1.5 rounded px-1 hover:bg-elevated" :class="{ 'bg-card': open }">
+    <div class="group flex h-8 min-w-0 sm:h-6 items-center gap-1.5 rounded px-1 hover:bg-elevated" :class="{ 'bg-card': open }">
       <button
         type="button"
         data-test="commit-toggle"
@@ -102,22 +102,22 @@ const LETTER_CLASS: Record<string, string> = { M: 'text-fg-muted', A: 'text-diff
         <span v-if="upstreamLabel" data-test="upstream-tag" class="shrink-0 rounded-full border border-info-soft px-1.5 font-mono text-[0.625rem] leading-4 text-info-soft">{{ upstreamLabel }}</span>
         <span class="min-w-0 truncate text-[0.8125rem] text-fg">{{ commit.subject }}</span>
       </button>
-      <span class="shrink-0 text-xs text-fg-subtle group-hover:hidden group-focus-within:hidden">{{ who }}, {{ when }}</span>
-      <span class="hidden shrink-0 items-center group-hover:flex group-focus-within:flex">
+      <span class="max-w-[32%] truncate text-xs text-fg-subtle" :title="`${who}, ${when}`">{{ who }}, {{ when }}</span>
+      <span class="flex shrink-0 items-center opacity-100 sm:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
         <button type="button" data-test="copy-hash" class="flex size-6 items-center justify-center rounded text-fg-muted hover:bg-card hover:text-fg" :aria-label="copied === 'hash' ? 'Hash copiado' : 'Copiar hash'" :title="copied === 'hash' ? 'Copiado' : 'Copiar hash'" @click="copy('hash')"><IconCopy :size="14" /></button>
-        <button type="button" data-test="copy-message" class="flex h-6 items-center rounded px-1.5 text-xs text-fg-muted hover:bg-card hover:text-fg" @click="copy('message')">{{ copied === 'message' ? 'Copiado' : 'Copiar mensagem' }}</button>
+        <button type="button" data-test="copy-message" class="flex size-8 sm:size-6 items-center justify-center rounded text-xs text-fg-muted hover:bg-card hover:text-fg" :aria-label="copied === 'message' ? 'Mensagem copiada' : 'Copiar mensagem'" title="Copiar mensagem" @click="copy('message')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /></svg></button>
       </span>
     </div>
 
     <div v-if="open" data-test="commit-detail" class="my-1 ml-5 flex flex-col gap-2 rounded-md border border-line bg-bg px-3 py-2">
       <p v-if="error" role="alert" class="m-0 text-xs text-diff-del-fg">{{ error }}</p>
       <template v-else>
-        <p class="m-0 flex flex-wrap gap-x-3 font-mono text-[0.6875rem] text-fg-subtle">
+        <p class="m-0 flex flex-wrap break-all gap-x-3 font-mono text-[0.6875rem] text-fg-subtle">
           <span class="select-all">{{ commit.full_hash }}</span>
           <span>{{ commit.author }} &lt;{{ commit.email }}&gt;</span>
           <span>{{ new Date(commit.date).toLocaleString('pt-BR') }}</span>
         </p>
-        <p v-if="commit.body" class="m-0 text-[0.8125rem] whitespace-pre-wrap text-fg">{{ commit.body }}</p>
+        <p v-if="commit.body" class="m-0 break-words text-[0.8125rem] whitespace-pre-wrap text-fg">{{ commit.body }}</p>
         <p v-if="!detail" class="m-0 text-xs text-fg-muted">Carregando…</p>
         <ul v-else class="m-0 flex list-none flex-col p-0">
           <li v-for="file in detail.files" :key="file.path" data-test="commit-file" class="flex flex-col">

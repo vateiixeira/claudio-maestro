@@ -36,7 +36,7 @@ function onKeydown(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="absolute right-0 z-20 mt-1 flex w-80 flex-col gap-0.5 rounded-xl border border-line-strong bg-card p-1.5 shadow-lg" @keydown="onKeydown">
+  <div class="absolute right-0 z-20 mt-1 flex w-80 max-w-[calc(100vw-3rem)] flex-col gap-0.5 rounded-xl border border-line-strong bg-card p-1.5 shadow-lg" @keydown="onKeydown">
     <input
       ref="input"
       v-model="query"

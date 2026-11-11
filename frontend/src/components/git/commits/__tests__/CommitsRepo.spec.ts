@@ -1,3 +1,5 @@
+import { ref } from 'vue'
+import { useGitDetailsStore } from '../../../../stores/gitDetails'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
@@ -11,12 +13,34 @@ const API = '/home/vi/dev/loja/api'
 let pinia: Pinia
 
 beforeEach(() => {
+  localStorage.clear()
   pinia = createPinia()
   setActivePinia(pinia)
 })
 afterEach(() => vi.unstubAllGlobals())
 
 describe('repositório da seção Commits', () => {
+  it('compara a branch atual quando o histórico segue HEAD e ainda mostra snapshot antigo', async () => {
+    const fetch = vi.fn(async (url: string) => url.includes('/comparison?')
+      ? jsonResponse({ head_ref: 'refs/heads/feature', base_ref: 'refs/remotes/origin/main', head_sha: 'b'.repeat(40), base_sha: 'a'.repeat(40), merge_base: 'a'.repeat(40), ahead_count: 1, behind_count: 0, unrelated: false, notice: null })
+      : jsonResponse(makeRepoLog({ head_sha: 'a'.repeat(40), branch: 'main', commits: [makeLogCommit({ subject: 'snapshot antigo' })] })))
+    vi.stubGlobal('fetch', fetch)
+    const wrapper = mount(CommitsRepo, { props: { projectId: 1, repo: makeRepoDetails({ path: API, branch: 'main', upstream: 'origin/main' }), collapseAll: 0 }, global: { plugins: [pinia] } })
+    await wrapper.get('[data-test="commits-repo-toggle"]').trigger('click'); await flushPromises()
+    await wrapper.setProps({ repo: makeRepoDetails({ path: API, branch: 'feature', upstream: 'origin/main', ahead: 9, behind: 2 }) })
+    expect(wrapper.get('[data-test="history-ref"]').text()).toBe('main')
+    expect(wrapper.get('[data-test="sync-counts"]').text()).toBe('em dia')
+    useGitLogStore().logFor(1, API)!.loading = true
+    await flushPromises()
+    expect(wrapper.get('[data-test="sync-counts"]').text()).toBe('em dia')
+    useGitLogStore().logFor(1, API)!.loading = false
+    expect(wrapper.get('[data-test="comparison-toggle"]').text()).toContain('Comparar feature')
+    await wrapper.get('[data-test="comparison-toggle"]').trigger('click'); await flushPromises()
+    const url = fetch.mock.calls.find(([url]) => url.includes('/comparison?'))![0]
+    expect(new URL(url, 'http://localhost').searchParams.has('ref')).toBe(false)
+    expect(wrapper.text()).toContain('referências atuais')
+  })
+
   it('mantém os commits visíveis quando a revalidação falha', async () => {
     let failed = false
     vi.stubGlobal('fetch', vi.fn(async () => failed
@@ -86,7 +110,35 @@ describe('repositório da seção Commits', () => {
     expect(wrapper.text()).not.toContain('antigo')
   })
 
-  it('reabrir um repositório já carregado relê o histórico', async () => {
+  it('revalida cache após desmontar e mudar a revisão', async () => {
+    const revision = ref(0)
+    vi.spyOn(useGitDetailsStore(), 'historyRevisionFor').mockImplementation(() => revision.value)
+    const fetch = vi.fn(async () => jsonResponse(makeRepoLog({ head_sha: 'a'.repeat(40) })))
+    vi.stubGlobal('fetch', fetch)
+    const options = { props: { projectId: 1, repo: makeRepoDetails({ path: API }), collapseAll: 0, startOpen: true }, global: { plugins: [pinia] } }
+    const first = mount(CommitsRepo, options)
+    await flushPromises()
+    first.unmount()
+    revision.value++
+    const next = mount(CommitsRepo, options)
+    await flushPromises()
+    expect(next.get('[data-test="commits-repo-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('oferece nova tentativa depois de erro inicial', async () => {
+    const fetch = vi.fn().mockRejectedValueOnce(new Error('falha')).mockResolvedValue(jsonResponse(makeRepoLog({ commits: [makeLogCommit({ subject: 'recuperado' })] })))
+    vi.stubGlobal('fetch', fetch)
+    const wrapper = mount(CommitsRepo, { props: { projectId: 1, repo: makeRepoDetails({ path: API }), collapseAll: 0, startOpen: true }, global: { plugins: [pinia] } })
+    await flushPromises()
+    await wrapper.get('[data-test="history-retry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('recuperado')
+  })
+
+  it('reabrir um repositório já carregado reutiliza o histórico', async () => {
+    const revision = ref(0)
+    vi.spyOn(useGitDetailsStore(), 'historyRevisionFor').mockImplementation(() => revision.value)
     let served = 0
     const fetchMock = routeFetch({
       [logUrl(1, API)]: () => jsonResponse(makeRepoLog({ commits: [makeLogCommit({ subject: 'antigo' })] })),
@@ -111,8 +163,16 @@ describe('repositório da seção Commits', () => {
     expect(wrapper.find('[data-test="commit-row"]').exists()).toBe(false)
     await toggle()
     await flushPromises()
+    expect(served).toBe(0)
+    expect(wrapper.text()).toContain('antigo')
+    expect(wrapper.text()).not.toContain('novo')
+    await toggle()
+    revision.value++
+    await flushPromises()
+    expect(served).toBe(0)
+    await toggle()
+    await flushPromises()
     expect(served).toBe(1)
     expect(wrapper.text()).toContain('novo')
-    expect(wrapper.text()).not.toContain('antigo')
   })
 })

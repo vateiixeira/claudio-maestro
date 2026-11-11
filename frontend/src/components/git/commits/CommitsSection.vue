@@ -33,7 +33,7 @@ watch(
       </button>
     </header>
     <ul class="m-0 flex list-none flex-col p-0">
-      <CommitsRepo v-for="repo in repos" :key="repo.path" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" />
+      <CommitsRepo v-for="repo in repos" :key="`${projectId}:${repo.path}`" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" :start-open="repos.length === 1" />
     </ul>
   </section>
 </template>

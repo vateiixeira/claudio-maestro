@@ -16,7 +16,8 @@ async function openRepo(page: import('@playwright/test').Page) {
 
 async function openCommits(page: import('@playwright/test').Page) {
   const commits = page.getByTestId('commits-section').getByTestId('commits-repo').first()
-  if (await commits.getByTestId('commit-row').count() === 0) await commits.getByTestId('commits-repo-toggle').click()
+  if (await commits.getByTestId('commits-repo-toggle').getAttribute('aria-expanded') !== 'true') await commits.getByTestId('commits-repo-toggle').click()
+  await commits.getByTestId('apply-history-update').click()
   return commits
 }
 

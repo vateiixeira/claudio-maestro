@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, inject, nextTick, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import SessionStateIcon from '../components/SessionStateIcon.vue'
 import ConversationRow from '../components/conversation/ConversationRow.vue'
@@ -17,11 +17,13 @@ import { useNewConversationStore } from '../stores/newConversation'
 import { isDiscarded } from '../conversation/marks'
 import { useSessionsStore } from '../stores/sessions'
 import { readSplitPercent, writeSplitPercent } from '../projectSplitPref'
+import { AGENTS_NAVIGATION_KEY } from '../agentsNavigation'
 import { useMediaQuery } from '../useMediaQuery'
 
 // `session` is the conversation open beside the project (`?sessao=`).
 const props = defineProps<{ id: number; session?: string }>()
 
+const navigation = inject(AGENTS_NAVIGATION_KEY, undefined)
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const git = useGitStore()
@@ -184,7 +186,8 @@ async function remove(): Promise<void> {
 </script>
 
 <template>
-  <div v-if="!project" class="px-10 py-8">
+  <div v-if="!project" class="px-4 py-8 sm:px-10">
+    <button v-if="navigation?.enabled.value" type="button" data-test="project-mobile-menu" class="flex size-9 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg" aria-label="Abrir navegação" :aria-expanded="navigation.open.value" @click="navigation.toggle($event.currentTarget as HTMLElement)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
     <p v-if="projects.loaded" class="text-fg-muted">
       Projeto não encontrado.
       <RouterLink to="/inbox" class="text-info-soft hover:underline">Voltar ao início</RouterLink>
@@ -196,10 +199,11 @@ async function remove(): Promise<void> {
     <div
       data-test="project-pane"
       class="flex flex-col gap-6"
-      :class="split ? 'min-w-0 shrink-0 overflow-y-auto px-6 py-6 [&>*]:shrink-0' : 'max-w-5xl px-10 py-8'"
+      :class="split ? 'min-w-0 shrink-0 overflow-y-auto px-6 py-6 [&>*]:shrink-0' : 'min-w-0 max-w-5xl px-4 py-8 sm:px-10'"
       :style="split ? { width: `${splitPercent}%` } : undefined"
     >
       <header class="flex flex-wrap items-start gap-4">
+        <button v-if="navigation?.enabled.value" type="button" data-test="project-mobile-menu" class="flex size-9 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg" aria-label="Abrir navegação" :aria-expanded="navigation.open.value" @click="navigation.toggle($event.currentTarget as HTMLElement)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
         <div class="flex min-w-0 flex-1 flex-col gap-1.5">
           <form
             v-if="renaming && !scratch"

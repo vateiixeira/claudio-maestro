@@ -12,6 +12,7 @@ from claudio_maestro.api import (
     editor,
     fs,
     git,
+    gitcompare,
     gitops,
     groups,
     health,
@@ -43,6 +44,7 @@ router.include_router(org.router)
 router.include_router(activity.router)
 router.include_router(app_state.router)
 router.include_router(git.router)
+router.include_router(gitcompare.router)
 router.include_router(gitops.router)
 router.include_router(editor.router)
 router.include_router(suggestions.router)

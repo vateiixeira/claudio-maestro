@@ -18,6 +18,7 @@ import { conflictPrompt } from '../../../git/conflictPrompt'
 import { clearDraft, readDraft, readMergeMessage, writeDraft, writeMergeMessage } from '../../../git/commitDraft'
 import { runningLine, type Confirmation } from '../../../git/confirmation'
 import { primaryAction, type PrimaryKind } from '../../../git/primaryAction'
+import { useRepoExpansion } from '../../../git/repoExpansion'
 import { repoLabel, syncCounts } from '../../../git/repoLabel'
 import { runningSessionIn } from '../../../git/runningSession'
 import { useGitDetailsStore } from '../../../stores/gitDetails'
@@ -34,9 +35,8 @@ const ops = useGitOpsStore()
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 
-const open = ref(props.startOpen)
+const open = useRepoExpansion(() => props.projectId, () => props.repo.path, 'scm', () => props.startOpen)
 watch(() => props.collapseAll, () => { open.value = false })
-watch(() => props.startOpen, (value) => { if (value) open.value = true })
 
 const name = computed(() => repoLabel(props.repo, projects.byId(props.projectId)?.name))
 const state = computed(() => props.repo.state ?? null)
@@ -393,7 +393,7 @@ defineExpose({ ask, act, handlers })
 </script>
 
 <template>
-  <li data-test="scm-repo" :data-repo="repo.path" class="relative flex flex-col">
+  <li data-test="scm-repo" :data-repo="repo.path" class="relative flex min-w-0 flex-col">
     <div class="flex h-7 items-center gap-1.5 rounded pr-1 hover:bg-elevated">
       <button type="button" data-test="scm-repo-toggle" :aria-expanded="open" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left" @click="open = !open">
         <IconChevron :open="open" :size="12" class="text-fg-subtle" />
@@ -408,7 +408,7 @@ defineExpose({ ask, act, handlers })
           data-test="branch-chip"
           :disabled="!!readOnly || !!busyKind || preparingMerge || merging"
           :title="branchTitle"
-          class="max-w-48 truncate rounded px-1.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg disabled:hover:bg-transparent"
+          class="max-w-[30%] truncate rounded px-1.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg disabled:hover:bg-transparent"
           @click="menu = 'switch'"
         ><span data-test="scm-branch" :title="repo.detached ? 'HEAD solto' : undefined">{{ branchName }}{{ dirty ? '*' : '' }}</span></button>
         <span v-if="merging" data-test="merging-tag" class="flex shrink-0 items-center gap-1 text-xs text-secondary"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>merge em andamento</span>

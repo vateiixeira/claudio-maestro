@@ -37,7 +37,7 @@ test('histórico de commits: grupos, abrir commit, carregar mais e escolher bran
   await expect(api.getByTestId('commit-row').first()).toContainText('Criar o relatório de vendas')
 })
 
-test('histórico de commits: copiar hash e mensagem e recarregar ao reabrir', async ({ page, context }) => {
+test('histórico de commits: copiar hash e mensagem e reutilizar histórico ao reabrir', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.goto('/inbox')
   const nav = page.getByRole('navigation', { name: 'Navegação' })
@@ -50,16 +50,21 @@ test('histórico de commits: copiar hash e mensagem e recarregar ao reabrir', as
   const row = web.getByTestId('commit-row').filter({ hasText: 'Montar a página 3' })
   await row.getByTestId('commit-toggle').click()
   await row.getByTestId('copy-message').click()
-  await expect(row.getByTestId('copy-message')).toHaveText('Copiado')
+  await expect(row.getByTestId('copy-message')).toHaveAttribute('aria-label', 'Mensagem copiada')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('Montar a página 3')
   await row.getByTestId('copy-hash').click()
   await expect(row.getByTestId('copy-hash')).toHaveAttribute('aria-label', 'Hash copiado')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^[0-9a-f]{40}$/)
 
-  // Closing and reopening the block asks for the history again.
+  // An unchanged repository reuses its snapshot when reopened.
+  const historyRequests: string[] = []
+  page.on('request', (request) => {
+    if (request.url().includes('/git/log')) historyRequests.push(request.url())
+  })
+  await page.clock.install()
   await toggle.click()
-  const reload = page.waitForRequest((request) => request.url().includes('/git/log'))
   await toggle.click()
-  await reload
+  await page.clock.runFor(500)
+  expect(historyRequests).toHaveLength(0)
   await expect(web.getByTestId('commit-row').first()).toContainText('Montar a página 3')
 })

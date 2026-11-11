@@ -12,6 +12,7 @@ const API = '/home/vi/dev/loja/api'
 let pinia: Pinia
 
 beforeEach(() => {
+  localStorage.clear()
   pinia = createPinia()
   setActivePinia(pinia)
   useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja' })]
@@ -32,14 +33,21 @@ async function mountWith(log: ReturnType<typeof makeRepoLog>, extra: Record<stri
   vi.stubGlobal('fetch', fetchMock)
   const wrapper = mount(CommitsSection, { props: { projectId: 1 }, global: { plugins: [pinia] } })
   await flushPromises()
-  await wrapper.find('[data-test="commits-repo-toggle"]').trigger('click')
-  await flushPromises()
   return { wrapper, fetchMock }
 }
 
 describe('seção Commits', () => {
+  it('abre o único repositório e conserva recolher todos após remontar', async () => {
+    const { wrapper } = await mountWith(makeRepoLog({ commits: [makeLogCommit()] }))
+    expect(wrapper.get('[data-test="commits-repo-toggle"]').attributes('aria-expanded')).toBe('true')
+    await wrapper.get('[data-test="commits-collapse-all"]').trigger('click')
+    wrapper.unmount()
+    const next = await mountWith(makeRepoLog())
+    expect(next.wrapper.get('[data-test="commits-repo-toggle"]').attributes('aria-expanded')).toBe('false')
+  })
+
   it('mostra o cabeçalho com a contagem de repositórios e a linha do repositório', async () => {
-    const { wrapper } = await mountWith(makeRepoLog())
+    const { wrapper } = await mountWith(makeRepoLog({ outgoing_count: 2, incoming_count: 1 }))
     expect(wrapper.find('[data-test="commits-title"]').text()).toContain('Commits')
     expect(wrapper.find('[data-test="commits-count"]').text()).toBe('1 repositório')
     const row = wrapper.find('[data-test="commits-repo"]')

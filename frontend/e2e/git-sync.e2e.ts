@@ -95,6 +95,7 @@ test('enviar puro: o botão largo e o ícone seguem o estado, e a seção Commit
   await expect(commits.getByTestId('group-outgoing')).toContainText('Para subir — 1 commit')
   await loja.getByTestId('primary-action').click()
   await expect(loja.getByTestId('sync-counts')).toHaveText('em dia')
+  await commits.getByTestId('apply-history-update').click()
   await expect(commits.getByTestId('group-outgoing')).toContainText('Para subir — nenhum')
   await expect(loja.getByTestId('repo-push')).toBeDisabled()
   await expect(loja.getByTestId('repo-push')).toHaveAttribute('title', 'Nada para enviar')
@@ -113,6 +114,7 @@ test('baixar puro: o botão largo baixa e a seção Commits mostra o grupo Para 
   await expect(commits.getByTestId('group-incoming')).toContainText('Para baixar — 1 commit')
   await loja.getByTestId('primary-action').click()
   await expect(loja.getByTestId('sync-counts')).toHaveText('em dia')
+  await commits.getByTestId('apply-history-update').click()
   await expect(commits.getByTestId('group-incoming')).toContainText('Para baixar — nenhum')
 })
 
