@@ -9,6 +9,7 @@ import {
   SLUG_MAX_LENGTH,
   SOURCE_LABELS,
   TASK_STATUS_LABELS,
+  agentRunFocus,
   agentState,
   formatRunDate,
   slugify,
@@ -118,5 +119,88 @@ describe('formatRunDate', () => {
 
   it('acrescenta o ano quando não é o corrente', () => {
     expect(formatRunDate(new Date(2025, 0, 3, 9, 7).getTime() / 1000, now)).toBe('3 jan 2025 09:07')
+  })
+})
+
+describe('agentRunFocus', () => {
+  const main = makeSession({ session_id: 'main', agent_id: 1, state: 'closed' })
+  const agent = (over = {}) => makeAgent({ id: 1, main_session_id: 'main', busy: true, ...over })
+
+  it('aponta a sessão do run em andamento, com o título dela', () => {
+    const run = makeSession({ session_id: 'run', agent_id: 1, title: 'Rotina da manhã', state: 'running' })
+    const focus = agentRunFocus(agent({ last_run: makeRun({ outcome: 'running', session_id: 'run' }) }), [main, run])
+    expect(focus).toEqual({ sessionId: 'run', title: 'Rotina da manhã', waiting: false })
+  })
+
+  it('não mostra nada com o run ainda sem sessão', () => {
+    const other = makeSession({ session_id: 'other', agent_id: 1, state: 'running' })
+    expect(agentRunFocus(agent({ last_run: makeRun({ outcome: 'starting', session_id: null }) }), [main, other])).toBeNull()
+  })
+
+  it('sem run ativo, aponta a sessão do agente com turno aberto', () => {
+    const open = makeSession({ session_id: 'open', agent_id: 1, title: 'Tarefa 7', state: 'connecting' })
+    const closed = makeSession({ session_id: 'closed', agent_id: 1, state: 'closed' })
+    const foreign = makeSession({ session_id: 'foreign', agent_id: 2, state: 'running' })
+    expect(agentRunFocus(agent({ last_run: makeRun({ outcome: 'concluded', session_id: 'closed' }) }), [main, closed, foreign, open]))
+      .toEqual({ sessionId: 'open', title: 'Tarefa 7', waiting: false })
+  })
+
+  it('a conversa principal com turno aberto não conta', () => {
+    const busyMain = makeSession({ session_id: 'main', agent_id: 1, state: 'running' })
+    expect(agentRunFocus(agent(), [busyMain])).toBeNull()
+  })
+
+  it('o run que roda na própria principal não vira faixa', () => {
+    const busyMain = makeSession({ session_id: 'main', agent_id: 1, state: 'running' })
+    expect(agentRunFocus(agent({ last_run: makeRun({ outcome: 'running', session_id: 'main' }) }), [busyMain])).toBeNull()
+  })
+
+  it('com várias sessões abertas, pega a de atividade mais recente', () => {
+    const older = makeSession({ session_id: 'older', agent_id: 1, state: 'running', last_activity_at: 100 })
+    const newer = makeSession({ session_id: 'newer', agent_id: 1, state: 'running', last_activity_at: 200 })
+    expect(agentRunFocus(agent(), [older, newer, main])?.sessionId).toBe('newer')
+  })
+
+  it('o run ativo vence a sessão com turno aberto', () => {
+    const run = makeSession({ session_id: 'run', agent_id: 1, state: 'closed', last_activity_at: 1 })
+    const open = makeSession({ session_id: 'open', agent_id: 1, state: 'running', last_activity_at: 999 })
+    expect(agentRunFocus(agent({ last_run: makeRun({ outcome: 'running', session_id: 'run' }) }), [open, run])?.sessionId).toBe('run')
+  })
+
+  it('espera você quando a sessão tem pergunta ou permissão pendente', () => {
+    const asking = makeSession({ session_id: 'run', agent_id: 1, state: 'running', pending_kind: 'question' })
+    expect(agentRunFocus(agent({ last_run: makeRun({ outcome: 'running', session_id: 'run' }) }), [asking])?.waiting).toBe(true)
+  })
+
+  it('espera você quando a sessão aguarda uma decisão', () => {
+    const asking = makeSession({ session_id: 'open', agent_id: 1, state: 'awaiting_decision' })
+    expect(agentRunFocus(agent(), [asking])).toEqual(expect.objectContaining({ sessionId: 'open', waiting: true }))
+  })
+
+  it('espera você quando o run está em waiting, mesmo sem a sessão na lista', () => {
+    const focus = agentRunFocus(agent({ last_run: makeRun({ outcome: 'waiting', session_id: 'gone' }) }), [main])
+    expect(focus).toEqual(expect.objectContaining({ sessionId: 'gone', waiting: true }))
+  })
+
+  it('usa um título de reserva, pela origem do run, quando a sessão não está na lista', () => {
+    const focus = agentRunFocus(agent({ last_run: makeRun({ outcome: 'running', source: 'routine', session_id: 'gone' }) }), [main])
+    expect(focus).toEqual({ sessionId: 'gone', title: 'Execução de rotina', waiting: false })
+  })
+
+  it('usa a reserva da origem quando a sessão do run tem título vazio', () => {
+    const run = makeSession({ session_id: 'run', agent_id: 1, title: '', state: 'running' })
+    const focus = agentRunFocus(agent({ last_run: makeRun({ outcome: 'running', source: 'assignment', session_id: 'run' }) }), [main, run])
+    expect(focus?.title).toBe('Execução de tarefa')
+  })
+
+  it('usa "Conversa sem título" quando a sessão com turno aberto tem título vazio', () => {
+    const open = makeSession({ session_id: 'open', agent_id: 1, title: '', state: 'running' })
+    expect(agentRunFocus(agent(), [main, open])).toEqual({ sessionId: 'open', title: 'Conversa sem título', waiting: false })
+  })
+
+  it('sem run nem turno aberto, não há faixa', () => {
+    const closed = makeSession({ session_id: 'closed', agent_id: 1, state: 'closed' })
+    expect(agentRunFocus(agent({ busy: false, last_run: makeRun({ outcome: 'concluded', session_id: 'closed' }) }), [main, closed])).toBeNull()
+    expect(agentRunFocus(agent({ busy: false, last_run: null }), [])).toBeNull()
   })
 })

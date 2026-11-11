@@ -24,6 +24,8 @@ beforeEach(() => {
   projects.projects = [makeProject({ id: 1, name: 'a' }), makeProject({ id: 2, name: 'b', path: '/b' })]
   projects.loaded = true
   useSessionsStore(pinia).loaded = true
+  projects.projects.push(makeProject({ id: 99, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 }))
+  useGitStore(pinia).set(99, [makeGitRepo({ path: '/scratch', changed: { staged: 1, unstaged: 0, untracked: 0 } })])
   useGitStore(pinia).set(1, [makeGitRepo({ changed: { staged: 0, unstaged: 2, untracked: 1 } })])
   useGitStore(pinia).set(2, [makeGitRepo({ path: '/b' })])
   useSessionsStore(pinia).setForProject(1, [
@@ -109,6 +111,13 @@ describe('Dashboard', () => {
     const rows = wrapper.findAll('[data-test="projects-list"] a')
     expect(rows[0]!.find('[data-test="project-waiting"]').exists()).toBe(false)
     expect(rows[1]!.find('[data-test="project-waiting"]').text()).toBe('1')
+  })
+
+  it('a lista de projetos e a contagem de projetos com mudanças deixam de fora o embutido', async () => {
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.findAll('[data-test="projects-list"] a')).toHaveLength(2)
+    expect(wrapper.find('[data-test="projects-list"]').text()).not.toContain('Sem projeto')
+    expect(wrapper.find('[data-test="stat-projects-changes"]').text()).toContain('1')
   })
 
   it('lista conversas recentes e projetos', async () => {

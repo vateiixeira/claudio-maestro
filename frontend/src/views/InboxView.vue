@@ -171,7 +171,7 @@ async function markAll() {
 <template>
   <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-6 py-6">
     <h1 class="m-0 font-mono text-sm tracking-[0.08em] text-fg uppercase">Inbox</h1>
-    <FirstSteps v-if="projects.loaded && !projects.loadError && projects.projects.length === 0" />
+    <FirstSteps v-if="projects.loaded && !projects.loadError && projects.regular.length === 0" />
     <template v-else>
       <AgentNotices />
       <div class="flex flex-wrap items-center gap-3">

@@ -27,6 +27,7 @@ from typing import Any
 
 from claudio_maestro import db
 from claudio_maestro.conversation import cap_content, omit_images
+from claudio_maestro.projects import REGULAR_KIND, SCRATCH_KIND
 from claudio_maestro.worktree import Worktree, current_worktree, parse_worktree_list
 
 logger = logging.getLogger(__name__)
@@ -407,6 +408,15 @@ def _is_real_dir(path: Path) -> bool:
         return stat.S_ISDIR(os.lstat(path).st_mode)
     except OSError:
         return False
+
+
+def _scratch_subfolders(folder: Path) -> list[str]:
+    """First-level real subfolders (no symlinks) of the "Sem projeto" folder, by name."""
+    return [
+        str(entry)
+        for entry in sorted(folder.iterdir(), key=lambda e: e.name)
+        if _is_real_dir(entry)
+    ]
 
 
 def _read_small_json(path: Path) -> Any:
@@ -961,15 +971,15 @@ class HistoryIndex:
         async with self._lock:
             with closing(db.connect(self._db_path)) as conn:
                 projects = [
-                    (row["id"], row["path"])
-                    for row in conn.execute("SELECT id, path FROM projects")
+                    (row["id"], row["path"], row["kind"])
+                    for row in conn.execute("SELECT id, path, kind FROM projects")
                 ]
             targets = [p for p in projects if only is None or p[0] == only]
             # session_id -> (info, directory, fallback project for a cwd outside every project)
             listed: dict[str, tuple[Any, str, int | None]] = {}
             complete: set[int] = set()  # projects listed without failures
-            for project_id, path in targets:
-                entries, ok = await self._list_project(path)
+            for project_id, path, kind in targets:
+                entries, ok = await self._list_project(path, kind)
                 if ok:
                     complete.add(project_id)
                 for info, directory, from_worktree in entries:
@@ -986,29 +996,43 @@ class HistoryIndex:
             self._on_projects_changed(projects_changed)
         return changed
 
-    async def _list_project(self, path: str) -> tuple[list[tuple[Any, str, bool]], bool]:
+    async def _list_project(
+        self, path: str, kind: str = REGULAR_KIND
+    ) -> tuple[list[tuple[Any, str, bool]], bool]:
         """Sessions listed for the project and whether every listing succeeded.
 
         The third item is True for sessions found in a worktree's history folder:
         when their cwd is outside every project, they belong to this one.
+
+        The built-in "Sem projeto" project (`scratch`) has no repositories or
+        worktrees: each of its conversations lives in a first-level subfolder.
         """
         folder = Path(path)
         if not folder.is_dir():
             return [], False
-        try:
-            repos, ok = await asyncio.to_thread(scan_repositories, folder)
-        except Exception:
-            logger.exception("Falha ao procurar repositórios em %s", path)
-            repos, ok = [], False
-        directories = [str(folder), *(str(repo) for repo in repos)]
         worktrees: list[str] = []
-        for directory in directories:
+        if kind == SCRATCH_KIND:
+            ok = True
             try:
-                found = await self._worktrees_of(directory)
+                subfolders = await asyncio.to_thread(_scratch_subfolders, folder)
+            except OSError:
+                logger.exception("Falha ao listar as pastas de %s", path)
+                subfolders, ok = [], False
+            directories = [str(folder), *subfolders]
+        else:
+            try:
+                repos, ok = await asyncio.to_thread(scan_repositories, folder)
             except Exception:
-                logger.exception("Falha ao listar as worktrees de %s", directory)
-                continue  # without worktrees; the project stays complete
-            worktrees.extend(w for w in found if w not in directories and w not in worktrees)
+                logger.exception("Falha ao procurar repositórios em %s", path)
+                repos, ok = [], False
+            directories = [str(folder), *(str(repo) for repo in repos)]
+            for directory in directories:
+                try:
+                    found = await self._worktrees_of(directory)
+                except Exception:
+                    logger.exception("Falha ao listar as worktrees de %s", directory)
+                    continue  # without worktrees; the project stays complete
+                worktrees.extend(w for w in found if w not in directories and w not in worktrees)
         result: list[tuple[Any, str, bool]] = []
         for directory, from_worktree in [
             *((d, False) for d in directories), *((w, True) for w in worktrees)

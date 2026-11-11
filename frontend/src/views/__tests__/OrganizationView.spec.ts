@@ -15,7 +15,7 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   localStorage.removeItem('maestro.org.project')
-  useProjectsStore().projects = [makeProject({ id: 1, name: 'Loja' }), makeProject({ id: 2, name: 'API' })]
+  useProjectsStore().projects = [makeProject({ id: 1, name: 'Loja' }), makeProject({ id: 2, name: 'API' }), makeProject({ id: 77, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
   useProjectsStore().loaded = true
   useOrgStore().loaded = true
 })
@@ -50,6 +50,32 @@ describe('OrganizationView', () => {
 
     const again = await mountAt('/agentes')
     expect(again.router.currentRoute.value.fullPath).toBe('/agentes/2')
+  })
+
+  it('o projeto embutido não aparece no seletor de projetos nem no seletor de troca', async () => {
+    const { wrapper } = await mountAt('/agentes/1')
+    expect(wrapper.text()).not.toContain('Sem projeto')
+    const switcher = wrapper.findAll('select option').map((o) => o.text())
+    expect(switcher).toEqual(expect.arrayContaining(['Loja', 'API']))
+    expect(switcher).not.toContain('Sem projeto')
+  })
+
+  it('com só o embutido cadastrado diz que não há projeto', async () => {
+    useProjectsStore().projects = [makeProject({ id: 77, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
+    const { wrapper } = await mountAt('/agentes')
+    expect(wrapper.findAll('[data-test="org-project-option"]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('Nenhum projeto ainda')
+  })
+
+  it('o embutido não é um projeto da organização: nem pela URL nem como último lembrado', async () => {
+    localStorage.setItem('maestro.org.project', '77')
+    const { wrapper, router } = await mountAt('/agentes')
+    expect(router.currentRoute.value.fullPath).toBe('/agentes')
+    expect(wrapper.findAll('[data-test="org-project-option"]')).toHaveLength(2)
+    wrapper.unmount()
+    const direct = await mountAt('/agentes/77')
+    expect(direct.wrapper.find('[data-test="org-project-missing"]').exists()).toBe(true)
+    expect(localStorage.getItem('maestro.org.project')).toBe('77')
   })
 
   it('ignora o último projeto lembrado quando ele não existe mais', async () => {

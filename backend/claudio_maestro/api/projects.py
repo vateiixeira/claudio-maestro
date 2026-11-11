@@ -47,6 +47,7 @@ class ProjectOut(BaseModel):
     position: int
     created_at: int
     available: bool
+    kind: str
     hidden_sessions: int = 0
 
 
@@ -55,6 +56,7 @@ _STATUS = {
     projects.DuplicateProjectPathError: status.HTTP_409_CONFLICT,
     projects.InvalidProjectPathError: status.HTTP_400_BAD_REQUEST,
     projects.ProjectPathNotAllowedError: status.HTTP_403_FORBIDDEN,
+    projects.ScratchProjectError: status.HTTP_403_FORBIDDEN,
 }
 
 
@@ -78,7 +80,8 @@ async def create_project(
 ) -> dict[str, Any]:
     try:
         project = projects.create_project(
-            conn, name=body.name, path=body.path, color=body.color, home=settings.home_dir
+            conn, name=body.name, path=body.path, color=body.color,
+            home=settings.home_dir, data_dir=settings.data_dir,
         )
     except projects.ProjectError as exc:
         raise _http_error(exc) from exc
@@ -140,7 +143,7 @@ async def delete_project(project_id: int, conn: DbDep, request: Request) -> Resp
     """Close the project's active sessions (pending prompts cancelled), then delete it."""
     manager = request.app.state.sessions
     try:
-        projects.get_project(conn, project_id)
+        projects.refuse_scratch(projects.get_project(conn, project_id))
         org = request.app.state.org
         if any(org.is_busy(agent.id) for agent in org_store.list_agents(conn, project_id)):
             # Deleting would cut a run in the middle and leave a notice of an erased agent.

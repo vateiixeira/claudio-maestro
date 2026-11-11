@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import AgentRunBanner from '../components/conversation/AgentRunBanner.vue'
 import AwaySummary from '../components/conversation/AwaySummary.vue'
 import ConversationHeader from '../components/conversation/ConversationHeader.vue'
 import ConversationThread from '../components/conversation/ConversationThread.vue'
@@ -223,6 +224,8 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
             </button>
           </template>
         </ConversationHeader>
+        <!-- Outside the thread's scroller: it stays under the header while the messages scroll. -->
+        <AgentRunBanner :session-id="id" />
         <div v-if="awayShown && awayStats" data-test="away-slot" class="max-h-[45vh] shrink-0 overflow-y-auto px-4 pt-3">
           <div class="mx-auto w-full max-w-(--chat-width)">
             <AwaySummary

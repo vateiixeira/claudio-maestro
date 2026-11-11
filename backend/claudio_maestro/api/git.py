@@ -17,11 +17,19 @@ router = APIRouter(prefix="/api")
 EDIT_TOOLS = ("Edit", "MultiEdit", "Write", "NotebookEdit")
 
 
-def _project(conn: sqlite3.Connection, project_id: int) -> projects.Project:
+def _any_project(conn: sqlite3.Connection, project_id: int) -> projects.Project:
     try:
         return projects.get_project(conn, project_id)
     except projects.ProjectNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+def _project(conn: sqlite3.Connection, project_id: int) -> projects.Project:
+    """A project with git: the built-in "Sem projeto" is refused (403) before any git runs."""
+    try:
+        return projects.require_regular(_any_project(conn, project_id))
+    except projects.ScratchProjectError as exc:
+        raise _forbidden(str(exc)) from exc
 
 
 def _forbidden(detail: str) -> HTTPException:
@@ -206,7 +214,8 @@ async def session_changes(session_id: str, conn: DbDep, request: Request) -> dic
         session = manager.get(session_id)
     except sessions.SessionError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    project = _project(conn, session.record.project_id)
+    # A conversation without a project still lists its edits, just without any git.
+    project = _any_project(conn, session.record.project_id)
     snapshot = await manager.open(session_id)
     root = Path(project.path).resolve()
     items = list(snapshot.get("items", []))
@@ -223,9 +232,10 @@ async def session_changes(session_id: str, conn: DbDep, request: Request) -> dic
         })
     files = _edited_files(items, Path(session.record.work_dir()))
 
-    repos = await gitinfo.project_repos(root) if project.available else []
+    has_git = project.available and project.kind != projects.SCRATCH_KIND
+    repos = await gitinfo.project_repos(root) if has_git else []
     worktree_names: dict[str, str] = {}
-    if project.available:
+    if has_git:
         repos = await _with_worktrees(repos, files, root, worktree_names)
     groups: dict[str | None, list[tuple[Path, list[int] | None]]] = {}
     owners: dict[str | None, gitinfo.RepoStatus | None] = {}

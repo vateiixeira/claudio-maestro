@@ -99,3 +99,22 @@ it('mostra carregamento, estado vazio e falha com opção de tentar novamente', 
   await flushPromises()
   expect(w.findAll('[data-test="project-row"]')).toHaveLength(1)
 })
+
+it('não lista o projeto embutido "Sem projeto" nem o conta', async () => {
+  const store = useProjectsStore()
+  store.loaded = true
+  store.projects = [makeProject(), makeProject({ id: 99, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
+  const w = await mountView()
+  expect(w.findAll('[data-test="project-row"]')).toHaveLength(1)
+  expect(w.text()).not.toContain('Sem projeto')
+  expect(w.text()).toContain('1 projeto cadastrado')
+})
+
+it('com só o embutido cadastrado mostra o estado vazio', async () => {
+  const store = useProjectsStore()
+  store.loaded = true
+  store.projects = [makeProject({ id: 99, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
+  const w = await mountView()
+  expect(w.findAll('[data-test="project-row"]')).toHaveLength(0)
+  expect(w.text()).toContain('Nenhum projeto cadastrado')
+})

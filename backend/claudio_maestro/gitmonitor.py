@@ -110,7 +110,10 @@ class GitMonitor:
 
         def available() -> list[int]:
             with closing(db.connect(self._db_path)) as conn:
-                return [p.id for p in projects.list_projects(conn) if p.available]
+                return [
+                    p.id for p in projects.list_projects(conn)
+                    if p.available and p.kind != projects.SCRATCH_KIND
+                ]
 
         project_ids = await asyncio.to_thread(available)
         results = await asyncio.gather(
@@ -141,7 +144,10 @@ class GitMonitor:
     async def refresh_all(self) -> None:
         def ids() -> list[int]:
             with closing(db.connect(self._db_path)) as conn:
-                return [p.id for p in projects.list_projects(conn)]
+                return [
+                    p.id for p in projects.list_projects(conn)
+                    if p.kind != projects.SCRATCH_KIND
+                ]
 
         project_ids = await asyncio.to_thread(ids)
         for stale in set(self._last) - set(project_ids):

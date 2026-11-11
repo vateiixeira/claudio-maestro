@@ -4,6 +4,7 @@ import * as api from '../api/http'
 import type { GitRepo } from '../types/api'
 import type { WsEvent } from '../types/events'
 import { useGitDetailsStore } from './gitDetails'
+import { isScratch, useProjectsStore } from './projects'
 
 /** Branch as the user reads it: name, "HEAD solto · hash" or "branch indisponível". */
 export function branchText(repo: Pick<GitRepo, 'branch' | 'detached' | 'head' | 'error'>): string {
@@ -54,7 +55,16 @@ export const useGitStore = defineStore('git', () => {
     if (typeof limit === 'boolean') limited.value[projectId] = limit
   }
 
+  /** The built-in "Sem projeto" has no folder to be a repository: the backend refuses its git routes. */
+  function isBuiltIn(projectId: number): boolean {
+    return isScratch(useProjectsStore().byId(projectId))
+  }
+
   async function load(projectId: number): Promise<GitRepo[]> {
+    if (isBuiltIn(projectId)) {
+      set(projectId, [], false)
+      return []
+    }
     const result = await api.getProjectGit(projectId)
     const repos = Array.isArray(result?.repos) ? result.repos : []
     set(projectId, repos, result?.limit_reached === true)
@@ -72,7 +82,7 @@ export const useGitStore = defineStore('git', () => {
 
   /** Asks the backend to fetch the project's remotes now and shows the result. A click while one runs is ignored. */
   async function fetchNow(projectId: number): Promise<void> {
-    if (isFetching(projectId)) return
+    if (isFetching(projectId) || isBuiltIn(projectId)) return
     fetching.value[projectId] = true
     fetchErrors.value[projectId] = null
     try {
