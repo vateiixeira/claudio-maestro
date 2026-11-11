@@ -36,6 +36,7 @@ const diffGroup = computed<ChangesGroup>(() => ({
 }))
 const changedFile = (f: RepoFile): ChangedFile => ({
   path: `${props.repo.path}/${f.path}`, rel_path: f.path, added: f.added, removed: f.removed, uncommitted: true,
+  diff_scope: f.status === 'staged' ? 'staged' : f.status === 'conflict' ? 'combined' : 'unstaged',
 })
 const paths = computed(() => [...new Set(props.files.map((f) => f.path))])
 const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg-muted hover:bg-card hover:text-fg disabled:opacity-50'

@@ -238,7 +238,7 @@ describe('branches e merge no repositório', () => {
   it('diff do arquivo em conflito nomeia as branches', async () => {
     const repo = merging(['src/a.vue'], [conflict('src/a.vue')])
     const { wrapper } = mountRepo(repo, {
-      [`GET /api/projects/1/diff?${new URLSearchParams({ repo: 'api', file: 'src/a.vue' })}`]: () => jsonResponse({ diff: '@@ -1 +1,5 @@\n+<<<<<<< HEAD\n+nosso\n+=======\n+deles\n+>>>>>>> feat/agente\n', truncated: false }),
+      [`GET /api/projects/1/diff?${new URLSearchParams({ repo: 'api', file: 'src/a.vue', scope: 'combined' })}`]: () => jsonResponse({ diff: '@@ -1 +1,5 @@\n+<<<<<<< HEAD\n+nosso\n+=======\n+deles\n+>>>>>>> feat/agente\n', truncated: false }),
     })
     await wrapper.find('[data-test="scm-file"] [data-test="file-open"]').trigger('click')
     await flushPromises()

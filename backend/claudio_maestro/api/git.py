@@ -82,7 +82,9 @@ async def _worktree_root(repo: str, root: Path) -> Path | None:
 
 
 @router.get("/projects/{project_id}/diff")
-async def file_diff(project_id: int, repo: str, file: str, conn: DbDep) -> dict[str, Any]:
+async def file_diff(
+    project_id: int, repo: str, file: str, conn: DbDep, scope: gitinfo.DiffScope = "combined"
+) -> dict[str, Any]:
     project = _project(conn, project_id)
     root = Path(project.path).resolve()
     try:
@@ -104,7 +106,7 @@ async def file_diff(project_id: int, repo: str, file: str, conn: DbDep) -> dict[
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Informe um arquivo.")
     relative = file_path.relative_to(repo_path).as_posix()
     try:
-        result = await gitinfo.file_diff(repo_path, relative)
+        result = await gitinfo.file_diff(repo_path, relative, scope=scope)
     except gitinfo.FileGoneError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except gitinfo.GitError as exc:

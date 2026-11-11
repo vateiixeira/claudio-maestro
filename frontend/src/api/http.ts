@@ -18,6 +18,7 @@ import type {
   ChangesGroup,
   DisplayState,
   FileDiff,
+  DiffScope,
   FoundRepos,
   GitOpAnswer,
   GitOpKind,
@@ -418,9 +419,11 @@ export function gitOp(projectId: number, kind: GitOpKind, body: Record<string, u
   return request('POST', `/api/projects/${projectId}/git/${kind}`, body)
 }
 
-/** Current diff of a file against the last commit. `file` is relative to the repository. */
-export function getFileDiff(projectId: number, repo: string, file: string, signal?: AbortSignal): Promise<FileDiff> {
-  return request('GET', `/api/projects/${projectId}/diff?${new URLSearchParams({ repo, file })}`, undefined, signal)
+/** `file` is relative to the repository; omitted scope keeps the combined diff against HEAD. */
+export function getFileDiff(projectId: number, repo: string, file: string, signal?: AbortSignal, scope?: DiffScope): Promise<FileDiff> {
+  const query = new URLSearchParams({ repo, file })
+  if (scope) query.set('scope', scope)
+  return request('GET', `/api/projects/${projectId}/diff?${query}`, undefined, signal)
 }
 
 /** History of a branch (null: HEAD), `limit` commits after `skip`. */

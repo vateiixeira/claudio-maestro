@@ -19,7 +19,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from claudio_maestro.gitfetch import registry as fetch_registry
 from claudio_maestro.history import REPO_MAX_COUNT, scan_repositories
@@ -545,33 +545,67 @@ async def dirty_files(repo: Path, *, timeout: float = GIT_TIMEOUT) -> set[str]:
     return result
 
 
-async def file_diff(repo: Path, file: str, *, timeout: float = GIT_TIMEOUT) -> FileDiff:
-    return await _within(timeout, _file_diff(repo, file, timeout))
+DiffScope = Literal["combined", "staged", "unstaged"]
 
 
-async def _file_diff(repo: Path, file: str, timeout: float) -> FileDiff:
-    """Current diff of `file` (relative to `repo`) against HEAD.
+async def file_diff(
+    repo: Path, file: str, *, scope: DiffScope = "combined", timeout: float = GIT_TIMEOUT
+) -> FileDiff:
+    return await _within(timeout, _file_diff(repo, file, timeout, scope))
 
-    Untracked files, and files in a repository without commits, are compared
-    with an empty file.
+
+async def _file_diff(repo: Path, file: str, timeout: float, scope: DiffScope) -> FileDiff:
+    """Diff of `file` against HEAD, the index, or between HEAD and the index.
+
+    Untracked files are compared with an empty file. An unborn repository still
+    has an index, so prepared content and later edits remain distinct.
     """
     common = ("--no-color", "--no-ext-diff", "--no-textconv", DIFF_SUBMODULES)
-    code, _, _ = await run_git(repo, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
-    has_head = code == 0
+    if scope == "staged":
+        # With no HEAD, --cached compares the index to the empty tree. Never read
+        # the working copy here: it can differ from the content being committed.
+        # Filtering by only the destination loses rename detection. Discover its
+        # source in Git's index/HEAD comparison, never from caller-supplied argv.
+        code, names, err = await run_git(
+            repo, "diff", *common, "--cached", "--name-status", "-z",
+            "--find-renames", "--diff-filter=R", "--",
+            timeout=timeout, limit=FILES_READ_LIMIT,
+        )
+        if code != 0:
+            raise GitError(_failure(err))
+        paths = [file]
+        records = names.split("\x00")
+        for i in range(0, len(records) - 2, 3):
+            kind, old, new = records[i:i + 3]
+            if kind.startswith("R") and new == file:
+                paths.insert(0, old)
+                break
+        code, out, err = await run_git(
+            repo, "diff", *common, "--cached", "--find-renames", "--", *paths,
+            timeout=timeout, limit=DIFF_READ_LIMIT,
+        )
+        if code != 0:
+            raise GitError(_failure(err))
+        return FileDiff(out[:DIFF_LIMIT], len(out) > DIFF_LIMIT)
+    has_head = False
+    if scope == "combined":
+        code, _, _ = await run_git(repo, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+        has_head = code == 0
     tracked = False
-    if has_head:
+    if has_head or scope == "unstaged":
         code, _, _ = await run_git(
             repo, "ls-files", "--error-unmatch", "--", file, timeout=timeout
         )
         tracked = code == 0
-        if not tracked:
+        if not tracked and scope == "combined":
             code, out, _ = await run_git(
                 repo, "ls-tree", "--name-only", "HEAD", "--", file, timeout=timeout
             )
             tracked = bool(out.strip())
     if tracked:
         code, out, err = await run_git(
-            repo, "diff", *common, "HEAD", "--", file, timeout=timeout, limit=DIFF_READ_LIMIT
+            repo, "diff", *common, *(("HEAD",) if scope == "combined" else ()), "--", file,
+            timeout=timeout, limit=DIFF_READ_LIMIT,
         )
         if code != 0:
             raise GitError(_failure(err))

@@ -177,7 +177,7 @@ describe('repositório na seção Alterações', () => {
   it('abre o diff do arquivo ao clicar na linha', async () => {
     const repo = makeRepoDetails({ path: PATH, rel_path: 'api', files: [file('a.ts', 'unstaged')] })
     const { wrapper } = mountRepo(repo, {
-      [`GET /api/projects/1/diff?${new URLSearchParams({ repo: 'api', file: 'a.ts' })}`]: () => jsonResponse({ diff: '@@ -1 +1 @@\n-a\n+b\n', truncated: false }),
+      [`GET /api/projects/1/diff?${new URLSearchParams({ repo: 'api', file: 'a.ts', scope: 'unstaged' })}`]: () => jsonResponse({ diff: '@@ -1 +1 @@\n-a\n+b\n', truncated: false }),
     })
     await wrapper.find('[data-test="scm-file"] [data-test="file-open"]').trigger('click')
     await flushPromises()

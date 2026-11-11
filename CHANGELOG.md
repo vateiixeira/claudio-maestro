@@ -4,6 +4,11 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Corrigido
+
+- Os diffs de arquivos preparados mostram só o conteúdo que entra no commit; os de alterações mostram o que mudou depois da preparação. Renomeações preparadas preservam a origem e o destino, sem aparecer como arquivos inteiramente novos.
+- Ao trocar rapidamente de arquivo no histórico de commits, respostas atrasadas não substituem mais o diff selecionado nem mostram erros do arquivo anterior.
+
 ## [0.10.0] - 2026-11-10
 
 Chegam as conversas sem projeto: escolha "Sem projeto" em "Nova conversa" para abrir uma conversa numa pasta própria, sem cadastrar projeto. A conversa principal de um agente passa a mostrar o run em andamento, e a busca de sessões e a bolinha dos agentes na barra lateral foram corrigidas.

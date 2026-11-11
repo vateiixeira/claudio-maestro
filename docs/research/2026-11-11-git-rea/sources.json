@@ -1,0 +1,55 @@
+{
+  "date": "2026-11-11",
+  "rea_version": "6.7.0",
+  "maestro_commit": "952628481d8f2d279deebde120667ec2270492d9",
+  "source_files": [
+    {
+      "repo": "microsoft/vscode",
+      "commit": "a1a15017f8a43824e9153beaf13dfce7f2a9e2b6",
+      "path": "extensions/git/src/repository.ts",
+      "url": "https://github.com/microsoft/vscode/blob/a1a15017f8a43824e9153beaf13dfce7f2a9e2b6/extensions/git/src/repository.ts"
+    },
+    {
+      "repo": "microsoft/vscode",
+      "commit": "a1a15017f8a43824e9153beaf13dfce7f2a9e2b6",
+      "path": "extensions/git/src/decorators.ts",
+      "url": "https://github.com/microsoft/vscode/blob/a1a15017f8a43824e9153beaf13dfce7f2a9e2b6/extensions/git/src/decorators.ts"
+    },
+    {
+      "repo": "microsoft/vscode",
+      "commit": "a1a15017f8a43824e9153beaf13dfce7f2a9e2b6",
+      "path": "src/vs/workbench/contrib/scm/browser/scmViewPane.ts",
+      "url": "https://github.com/microsoft/vscode/blob/a1a15017f8a43824e9153beaf13dfce7f2a9e2b6/src/vs/workbench/contrib/scm/browser/scmViewPane.ts"
+    },
+    {
+      "repo": "gitkraken/vscode-gitlens",
+      "commit": "4a58ac0b4ede9fc803259278940bc943d9f60320",
+      "path": "src/views/commitsView.ts",
+      "url": "https://github.com/gitkraken/vscode-gitlens/blob/4a58ac0b4ede9fc803259278940bc943d9f60320/src/views/commitsView.ts"
+    },
+    {
+      "repo": "gitkraken/vscode-gitlens",
+      "commit": "4a58ac0b4ede9fc803259278940bc943d9f60320",
+      "path": "src/views/nodes/branchNode.ts",
+      "url": "https://github.com/gitkraken/vscode-gitlens/blob/4a58ac0b4ede9fc803259278940bc943d9f60320/src/views/nodes/branchNode.ts"
+    },
+    {
+      "repo": "gitkraken/vscode-gitlens",
+      "commit": "4a58ac0b4ede9fc803259278940bc943d9f60320",
+      "path": "src/views/nodes/compareBranchNode.ts",
+      "url": "https://github.com/gitkraken/vscode-gitlens/blob/4a58ac0b4ede9fc803259278940bc943d9f60320/src/views/nodes/compareBranchNode.ts"
+    },
+    {
+      "repo": "gitkraken/vscode-gitlens",
+      "commit": "4a58ac0b4ede9fc803259278940bc943d9f60320",
+      "path": "src/views/nodes/commitNode.ts",
+      "url": "https://github.com/gitkraken/vscode-gitlens/blob/4a58ac0b4ede9fc803259278940bc943d9f60320/src/views/nodes/commitNode.ts"
+    },
+    {
+      "repo": "gitkraken/vscode-gitlens",
+      "commit": "4a58ac0b4ede9fc803259278940bc943d9f60320",
+      "path": "src/system/decorators/gate.ts",
+      "url": "https://github.com/gitkraken/vscode-gitlens/blob/4a58ac0b4ede9fc803259278940bc943d9f60320/src/system/decorators/gate.ts"
+    }
+  ]
+}

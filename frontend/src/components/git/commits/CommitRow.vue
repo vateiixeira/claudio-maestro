@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import DiffLines from '../../conversation/DiffLines.vue'
 import IconChevron from '../../icons/IconChevron.vue'
 import IconArrowUp from '../../icons/IconArrowUp.vue'
@@ -27,31 +27,46 @@ const openFile = ref<string | null>(null)
 const diff = ref<FileDiff | null>(null)
 const diffError = ref<string | null>(null)
 const copied = ref<'hash' | 'message' | null>(null)
+let detailGeneration = 0
+let diffGeneration = 0
+
+// Requests stay in the shared store cache; only the active selection may render them.
+onBeforeUnmount(() => { detailGeneration++; diffGeneration++ })
 
 const who = computed(() => (props.userEmail && props.commit.email === props.userEmail ? 'Você' : props.commit.author))
 const when = computed(() => formatActivity(Date.parse(props.commit.date) / 1000))
 const message = computed(() => (props.commit.body ? `${props.commit.subject}\n\n${props.commit.body}` : props.commit.subject))
 
 async function toggle(): Promise<void> {
+  const generation = ++detailGeneration
   open.value = !open.value
+  if (!open.value) {
+    diffGeneration++
+    openFile.value = null
+    diff.value = null
+    diffError.value = null
+  }
   if (!open.value || detail.value) return
   error.value = null
   try {
-    detail.value = await log.commit(props.projectId, props.repoPath, props.commit.full_hash)
+    const result = await log.commit(props.projectId, props.repoPath, props.commit.full_hash)
+    if (generation === detailGeneration) detail.value = result
   } catch (e) {
-    error.value = errorMessage(e)
+    if (generation === detailGeneration) error.value = errorMessage(e)
   }
 }
 
 async function toggleFile(file: CommitFile): Promise<void> {
+  const generation = ++diffGeneration
   if (openFile.value === file.path) { openFile.value = null; return }
   openFile.value = file.path
   diff.value = null
   diffError.value = null
   try {
-    diff.value = await log.commitDiff(props.projectId, props.repoPath, props.commit.full_hash, file.path)
+    const result = await log.commitDiff(props.projectId, props.repoPath, props.commit.full_hash, file.path)
+    if (generation === diffGeneration) diff.value = result
   } catch (e) {
-    diffError.value = errorMessage(e)
+    if (generation === diffGeneration) diffError.value = errorMessage(e)
   }
 }
 

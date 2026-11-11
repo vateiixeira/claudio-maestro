@@ -20,7 +20,7 @@ let generation = 0
 let controller: AbortController | null = null
 
 // What the request depends on. Same identity again (new revision) means a reread of the same file.
-const identity = () => JSON.stringify([props.projectId, props.group.path, props.group.rel_path, props.file.path, props.file.rel_path])
+const identity = () => JSON.stringify([props.projectId, props.group.path, props.group.rel_path, props.file.path, props.file.rel_path, props.file.diff_scope ?? 'combined'])
 
 async function load() {
   const mine = ++generation
@@ -38,7 +38,7 @@ async function load() {
   if (props.group.rel_path == null) return
   const ctrl = (controller = new AbortController())
   try {
-    const result = await getFileDiff(props.projectId, props.group.rel_path, props.file.rel_path, ctrl.signal)
+    const result = await getFileDiff(props.projectId, props.group.rel_path, props.file.rel_path, ctrl.signal, props.file.diff_scope)
     if (mine !== generation) return
     lines.value = diffFromUnified(result.diff)
     note.value = result.notice ?? diffWithoutHunks(result.diff)

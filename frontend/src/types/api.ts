@@ -456,12 +456,16 @@ export interface ProjectGitDetails {
   limit_reached: boolean
 }
 
+export type DiffScope = 'combined' | 'staged' | 'unstaged'
+
 export interface ChangedFile {
   path: string
   rel_path: string
   added: number | null
   removed: number | null
   uncommitted: boolean
+  /** Omitted for session changes, which compare the complete working copy to HEAD. */
+  diff_scope?: DiffScope
 }
 
 /** Files changed in a session, per repository. The group without a repository has nulls. */
