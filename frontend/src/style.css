@@ -2,6 +2,19 @@
 @import 'tailwindcss';
 @import './themes.css';
 
+/* Give all standard actions the same pointer affordance. Keep this in the base
+   layer so controls with a specific cursor (for example dragging) can override it. */
+@layer base {
+  :where(button, [role="button"], a[href], summary, select, input[type="button"], input[type="submit"], input[type="reset"], input[type="checkbox"], input[type="radio"]):not(:disabled):not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
+
+/* Disabled controls must not inherit an unconditional cursor-pointer utility. */
+:where(button, [role="button"], a[href], summary, select, input[type="button"], input[type="submit"], input[type="reset"], input[type="checkbox"], input[type="radio"]):is(:disabled, [aria-disabled="true"]) {
+  cursor: default;
+}
+
 :root {
   --chat-width: 1120px;
   /* Motion: two durations and one curve. Movement only shows what arrived or changed, then stops. */

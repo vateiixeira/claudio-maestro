@@ -306,10 +306,10 @@ describe('atualizar pelo app', () => {
     expect(useUpdatesStore().modalOpen).toBe(true)
   })
 
-  it('clique fora fecha quando não há atualização em andamento', async () => {
+  it('clique fora mantém aberto mesmo sem atualização em andamento', async () => {
     const w = mountModal()
     await w.get('[role="dialog"]').element.parentElement!.click()
-    expect(useUpdatesStore().modalOpen).toBe(false)
+    expect(useUpdatesStore().modalOpen).toBe(true)
   })
 
   it('mostra "Desfazendo…" ao desfazer', () => {

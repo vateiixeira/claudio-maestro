@@ -188,7 +188,7 @@ describe('preferências gerais: "Sem perguntas" como modo padrão', () => {
     expect(puts[0]).toMatchObject({ new_session_mode: 'plan' })
   })
 
-  it('Esc e clique no fundo cancelam', async () => {
+  it('Esc cancela, mas clicar no fundo mantém a confirmação aberta', async () => {
     stub({})
     const w = await mountTab()
     await choose(w, 'pref-new-mode', 'Sem perguntas')
@@ -196,7 +196,7 @@ describe('preferências gerais: "Sem perguntas" como modo padrão', () => {
     expect(overlay(w).exists()).toBe(false)
     await choose(w, 'pref-new-mode', 'Sem perguntas')
     await overlay(w).trigger('click')
-    expect(overlay(w).exists()).toBe(false)
+    expect(overlay(w).exists()).toBe(true)
     expect(trigger(w, 'pref-new-mode').text()).toBe('Modo padrão')
   })
 

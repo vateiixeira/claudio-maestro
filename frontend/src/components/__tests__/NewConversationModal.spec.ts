@@ -280,6 +280,14 @@ describe('modal de nova conversa', () => {
 })
 
 describe('modal de nova conversa: revisão', () => {
+  it('clique no fundo mantém o modal e o texto preenchido', async () => {
+    const { wrapper } = await openModal(2)
+    await wrapper.get('[data-test="nc-prompt"]').setValue('Rascunho ainda não enviado')
+    await wrapper.trigger('click')
+    expect(useNewConversationStore(pinia).isOpen).toBe(true)
+    expect(wrapper.get<HTMLTextAreaElement>('[data-test="nc-prompt"]').element.value).toBe('Rascunho ainda não enviado')
+  })
+
   it('Esc num menu aberto fecha só o menu', async () => {
     const { wrapper } = await openModal(2)
     const trigger = wrapper.find('button[aria-label="Modelo"]')

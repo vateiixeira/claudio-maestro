@@ -34,7 +34,7 @@ function onKey(event: KeyboardEvent) {
   <div
     data-test="bypass-overlay"
     class="fixed inset-0 z-40 flex items-center justify-center bg-bg/70 p-4"
-    @click.self="emit('cancel')"
+    @mousedown.self.prevent
     @keydown="onKey"
   >
     <div

@@ -4,6 +4,11 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Corrigido
+
+- Clicar fora de um modal não o fecha mais. Esc, X e ações explícitas continuam funcionando, preservando as proteções enquanto uma operação está em andamento.
+- Botões e outros controles clicáveis habilitados mostram o cursor de clique.
+
 ## [0.10.0] - 2026-11-10
 
 Chegam as conversas sem projeto: escolha "Sem projeto" em "Nova conversa" para abrir uma conversa numa pasta própria, sem cadastrar projeto. A conversa principal de um agente passa a mostrar o run em andamento, e a busca de sessões e a bolinha dos agentes na barra lateral foram corrigidas.

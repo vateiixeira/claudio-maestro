@@ -242,12 +242,18 @@ describe('seletores da sessão', () => {
     expect(document.activeElement).toBe(w.find('[data-test="bypass-cancel"]').element)
   })
 
+  it('clique no fundo mantém a confirmação de permissão aberta', async () => {
+    const w = await mountControls()
+    await openBypass(w)
+    await w.get('[data-test="bypass-overlay"]').trigger('click')
+    expect(w.find('[role="alertdialog"]').exists()).toBe(true)
+  })
+
   for (const [how, act] of [
     ['cancelar', (w: ReturnType<typeof mount>) => w.find('[data-test="bypass-cancel"]').trigger('click')],
     ['confirmar', (w: ReturnType<typeof mount>) => w.find('[data-test="bypass-confirm"]').trigger('click')],
     ['Esc', (w: ReturnType<typeof mount>) => w.find('[role="alertdialog"]').trigger('keydown', { key: 'Escape' })],
     ['Esc no fundo', (w: ReturnType<typeof mount>) => w.find('[data-test="bypass-overlay"]').trigger('keydown', { key: 'Escape' })],
-    ['clique no fundo', (w: ReturnType<typeof mount>) => w.find('[data-test="bypass-overlay"]').trigger('click')],
   ] as const) {
     it(`devolve o foco ao seletor de modo ao ${how}`, async () => {
       const w = await mountControls()

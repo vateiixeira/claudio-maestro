@@ -293,9 +293,14 @@ describe('modal de nova conversa: sessão criada e PATCH falhou', () => {
     expectLeftToCreated(opened)
   })
 
-  it('clicar no fundo leva à conversa criada', async () => {
+  it('clicar no fundo preserva a recuperação até fechar explicitamente', async () => {
     const opened = await failedPatch()
     await opened.wrapper.trigger('click')
+    await flushPromises()
+    expect(useNewConversationStore(pinia).isOpen).toBe(true)
+    expect(opened.router.currentRoute.value.fullPath).toBe('/inbox')
+    expect(opened.wrapper.get('[data-test="nc-error"]').text()).toContain('Modelo indisponível.')
+    await opened.wrapper.get('[data-test="nc-close"]').trigger('click')
     await flushPromises()
     expectLeftToCreated(opened)
   })

@@ -110,8 +110,8 @@ function close(): void {
   updates.closeModal()
 }
 
-// Esc and a click outside do not close the modal while the update runs; the X button always does.
-function closeFromBackdrop(): void {
+// Esc does not close the modal while the update runs; the X button always does.
+function closeFromEscape(): void {
   if (!running.value) close()
 }
 
@@ -145,7 +145,7 @@ function onKeydown(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @keydown.esc.prevent="closeFromBackdrop" @keydown="onKeydown" @click.self="closeFromBackdrop">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @keydown.esc.prevent="closeFromEscape" @keydown="onKeydown" @mousedown.self.prevent>
     <div
       v-if="latest"
       ref="dialogEl"

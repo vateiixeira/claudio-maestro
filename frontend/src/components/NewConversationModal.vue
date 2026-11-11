@@ -361,7 +361,7 @@ async function leaveToCreated(sessionId: string) {
   opener?.focus()
   await router.push({ name: 'session', params: { id: sessionId } })
 }
-// Neither Esc, × nor the backdrop closes the modal while a request is out.
+// Neither Esc nor × closes the modal while a request is out.
 function close() {
   if (submitting.value) return
   if (createdId.value !== null) {
@@ -400,7 +400,7 @@ function onKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @keydown.esc.prevent="close" @keydown="onKeydown" @click.self="close" @dragover="onDragOver" @drop="onDrop">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @keydown.esc.prevent="close" @keydown="onKeydown" @mousedown.self.prevent @dragover="onDragOver" @drop="onDrop">
     <div
       ref="dialogEl"
       data-test="new-conversation-modal"

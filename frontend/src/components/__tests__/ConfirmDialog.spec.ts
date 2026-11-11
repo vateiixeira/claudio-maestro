@@ -5,6 +5,13 @@ import ConfirmDialog from '../ConfirmDialog.vue'
 enableAutoUnmount(afterEach)
 
 describe('ConfirmDialog', () => {
+  it('clique no fundo mantém o diálogo aberto', async () => {
+    const wrapper = mount(ConfirmDialog, { props: { title: 'Descartar alterações?', confirmLabel: 'Descartar' }, attachTo: document.body })
+    await flushPromises()
+    await wrapper.trigger('click')
+    expect(wrapper.emitted('cancel')).toBeUndefined()
+  })
+
   it('foca em Cancelar, confirma e cancela', async () => {
     const wrapper = mount(ConfirmDialog, { props: { title: 'Descartar alterações?', confirmLabel: 'Descartar', tone: 'danger' }, slots: { default: '<p>Texto</p>' }, attachTo: document.body })
     await flushPromises()
