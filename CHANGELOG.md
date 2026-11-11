@@ -10,10 +10,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
-- A página do projeto separa Conversas, Git e Organização em abas. Conversas ficam numa lista única com busca, filtro por agrupador e estado; a gestão dos agrupadores é inline, e as ações do projeto ficam num menu. O Git carrega detalhes e histórico apenas ao abrir sua aba.
+- A página do projeto separa Conversas, Git e Organização em abas, abrindo Git por padrão. Conversas ficam numa lista única com busca, filtro por agrupador e estado; a gestão dos agrupadores é inline, e as ações do projeto ficam num menu. O Git carrega detalhes e histórico apenas ao abrir sua aba.
 
 - O diff de um arquivo na lista de alterações abre em um modal amplo, com rolagem própria e fechamento por Escape, preservando a posição da lista e a distinção entre alterações preparadas e não preparadas.
-- Repositórios Git usam fundos alternados, separadores e cabeçalhos destacados, com indicadores de alterações e sincronização em texto e ícones. Pull e Push têm botões com rótulos; sessões em execução aparecem como informação estática, diferenciando o projeto do repositório, sem simular carregamento.
+- Repositórios Git usam fundos alternados, separadores e cabeçalhos destacados, com indicadores de alterações e sincronização em texto e ícones. Pull e Push têm botões com rótulos; a lista não exibe indicadores de sessão em execução.
 - O único repositório abre automaticamente nas seções de alterações e commits. A escolha de expandir ou recolher fica salva por projeto, repositório e seção; reabrir um histórico já carregado só consulta o Git se houve mudança enquanto estava fechado.
 - As listas Git mantêm linhas compactas no desktop, ações disponíveis por teclado e toque e espaço reservado para elas. Metadados e nomes longos são limitados para preservar a leitura em painéis estreitos.
 

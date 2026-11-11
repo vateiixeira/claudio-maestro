@@ -42,16 +42,6 @@ const state = computed(() => props.repo.state ?? null)
 const readOnly = computed(() => state.value?.read_only ?? null)
 const sync = computed(() => syncCounts(props.repo))
 const running = computed(() => runningSessionIn(sessions.all, props.repo.path))
-const runningContext = computed(() => {
-  const session = running.value
-  if (!session) return null
-  const cwd = session.cwd.replace(/\/+$/, '') || '/'
-  const repoPath = props.repo.path.replace(/\/+$/, '') || '/'
-  const ancestor = !session.worktree_path && cwd !== repoPath && repoPath.startsWith(cwd === '/' ? '/' : `${cwd}/`)
-  return ancestor
-    ? { label: 'Sessão no projeto', description: `${session.title} está em execução na pasta do projeto e pode acessar este repositório. Isso não confirma que esteja alterando arquivos aqui.` }
-    : { label: 'Sessão no repositório', description: `${session.title} está em execução ${session.worktree_path ? 'na worktree' : 'dentro deste repositório'}. Isso não indica uma operação Git em andamento.` }
-})
 const busyKind = computed(() => ops.busyFor(props.repo.path))
 // Between choosing the branch and the dialog, while the commits that would come in are counted.
 const preparingMerge = ref(false)
@@ -426,9 +416,6 @@ defineExpose({ ask, act, handlers })
         <span v-if="merging" data-test="merging-tag" class="flex shrink-0 items-center gap-1 text-xs text-secondary"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>merge em andamento</span>
       </slot>
       <RepoStateBadges :sync="sync" :changes="repo.changed.staged + repo.changed.unstaged + repo.changed.untracked" :error="!!repo.error || !!error" :title="syncTitle" />
-      <span v-if="runningContext" data-test="running-session" :title="runningContext.description" class="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-1 text-[0.6875rem] text-primary-soft">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="m8 9 3 3-3 3m6 0h3" /></svg>{{ runningContext.label }}
-      </span>
       <div v-if="!repo.error" class="ml-auto flex shrink-0 items-center gap-0.5 lg:ml-2">
         <button
           type="button"

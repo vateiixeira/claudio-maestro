@@ -22,6 +22,19 @@ async function scrollProjectTop(page: Page) {
 }
 
 
+test('projeto abre diretamente no Git e permite escolher Conversas explicitamente', async ({ page, request }) => {
+  const data = await project(request, 'Histórico Demo')
+  await page.goto(`/projects/${data.id}`)
+  await expect(page.getByTestId('project-tab-git')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('scm-repo')).toHaveCount(2)
+  await expect(page.getByTestId('scm-section').getByTestId('running-session')).toHaveCount(0)
+  await page.getByTestId('project-tab-conversas').click()
+  await expect(page.getByTestId('project-conversations')).toBeVisible()
+  expect(new URL(page.url()).searchParams.get('visao')).toBe('conversas')
+  await page.reload()
+  await expect(page.getByTestId('project-tab-conversas')).toHaveAttribute('aria-selected', 'true')
+})
+
 // No artificial wait: we wait for the conversation content, then drain delayed events with
 // the browser's clock so an accidental deferred Git load cannot escape the assertion.
 test('conversas abrem sem detalhes Git; abas permitem teclado e voltar do navegador', async ({ page, request }) => {
@@ -32,7 +45,7 @@ test('conversas abrem sem detalhes Git; abas permitem teclado e voltar do navega
     if (url.pathname === `/api/projects/${data.id}/git/details` || url.pathname === `/api/projects/${data.id}/git/log`) gitReads.push(url.pathname)
   })
   await page.clock.install()
-  await page.goto(`/projects/${data.id}`)
+  await page.goto(`/projects/${data.id}?visao=conversas`)
   await expect(tab(page, 'Conversas')).toHaveAttribute('aria-selected', 'true')
   await expect(conversations(page).getByTestId('row-link').filter({ hasText: 'Explique a estrutura do projeto' })).toHaveCount(1)
   await page.clock.runFor(1000)
@@ -60,7 +73,7 @@ test('busca e agrupador filtram uma lista única; gestão inline preserva conver
   const renamed = 'Layout aprovado renomeado'
   let groupId: string | null = null
   try {
-    await page.goto(`/projects/${data.id}`)
+    await page.goto(`/projects/${data.id}?visao=conversas`)
     const list = conversations(page)
     await expect(list.getByTestId('row-link').filter({ hasText: 'Explique a estrutura do projeto' })).toHaveCount(1)
     const originalRows = await list.getByTestId('conversation-row').count()
@@ -118,7 +131,7 @@ test('selecionar agente e seção mantém a organização dentro do projeto', as
 
 test('ações secundárias ficam no menu e cancelar remoção mantém o projeto', async ({ page, request }) => {
   const data = await project(request, 'Loja Demo')
-  await page.goto(`/projects/${data.id}`)
+  await page.goto(`/projects/${data.id}?visao=conversas`)
   const menu = page.getByTestId('project-actions')
   await menu.click()
   await page.getByTestId('rename').click()
@@ -136,7 +149,7 @@ test('layout de abas cabe em 360, 768 e 1440 px e scratch não mostra Git', asyn
   const data = await project(request, 'Loja Demo')
   const output = resolve('..', 'docs/design/2026-11-11-project-layout/implemented')
   mkdirSync(output, { recursive: true })
-  await page.goto(`/projects/${data.id}`)
+  await page.goto(`/projects/${data.id}?visao=conversas`)
   await expect(conversations(page).getByTestId('conversation-row').first()).toBeVisible()
   for (const width of [360, 768, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
@@ -176,7 +189,7 @@ test('layout de abas cabe em 360, 768 e 1440 px e scratch não mostra Git', asyn
 test('organização permanece legível ao lado de uma conversa aberta', async ({ page, request }) => {
   const data = await project(request, 'Loja Demo')
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await page.goto(`/projects/${data.id}`)
+  await page.goto(`/projects/${data.id}?visao=conversas`)
   await conversations(page).getByTestId('row-link').filter({ hasText: 'Explique a estrutura do projeto' }).click()
   await expect(page).toHaveURL(/sessao=/)
   await tab(page, 'Organização').click()
@@ -214,6 +227,7 @@ test('onze repositórios continuam distintos em temas e larguras diferentes', as
     await expect(page.getByTestId('scm-repo')).toHaveCount(11)
     await expect(page.getByTestId('commits-repo')).toHaveCount(11)
     await expect(page.getByTestId('scm-section').getByTestId('running-arc')).toHaveCount(0)
+    await expect(page.getByTestId('scm-section').getByTestId('running-session')).toHaveCount(0)
     const api = page.getByTestId('commits-repo').filter({ hasText: 'api' })
     await api.getByTestId('commits-repo-toggle').click()
     await expect(api.getByTestId('commit-row').first()).toBeVisible()

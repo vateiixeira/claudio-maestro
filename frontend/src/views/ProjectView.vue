@@ -65,7 +65,7 @@ const TABS = [
   { id: 'organizacao', label: 'Organização' },
 ] as const
 type ProjectTab = (typeof TABS)[number]['id']
-const activeTab = computed<ProjectTab>(() => scratch.value ? 'conversas' : TABS.find(tab => tab.id === route.query.visao)?.id ?? 'conversas')
+const activeTab = computed<ProjectTab>(() => scratch.value ? 'conversas' : TABS.find(tab => tab.id === route.query.visao)?.id ?? 'git')
 const tabButtons = ref<HTMLButtonElement[]>([])
 async function selectTab(tab: ProjectTab): Promise<void> {
   if (activeTab.value === tab) return

@@ -24,6 +24,7 @@ const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Navegaçã
 async function openProject(page: Page, name: string) {
   await sidebar(page).getByTestId('project').filter({ hasText: name }).click()
   await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible()
+  await page.getByTestId('project-tab-conversas').click()
 }
 
 async function openConversation(page: Page, title: string) {

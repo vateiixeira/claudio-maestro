@@ -19,7 +19,7 @@ beforeEach(async () => {
   pinia = createPinia()
   setActivePinia(pinia)
   router = createAppRouter(createMemoryHistory())
-  await router.push('/projects/1')
+  await router.push('/projects/1?visao=conversas')
 })
 
 afterEach(() => vi.unstubAllGlobals())
@@ -59,7 +59,20 @@ describe('tela do projeto', () => {
     expect(wrapper.text()).toContain('Conversa atual')
   })
 
-  it('começa em Conversas e só busca detalhes Git ao abrir sua aba', async () => {
+  it.each(['/projects/1', '/projects/1?visao=invalida'])('abre Git por padrão em %s', async (path) => {
+    seed()
+    await router.replace(path)
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'GET /api/projects/1/git/details': () => jsonResponse({ repos: [makeRepoDetails()], limit_reached: false }),
+    }))
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="project-tab-git"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-test="scm-section"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-test="project-conversations"]').isVisible()).toBe(false)
+  })
+
+  it('respeita Conversas explícita e só busca detalhes Git ao abrir sua aba', async () => {
     seed()
     const fetchMock = routeFetch({
       'GET /api/projects/1/sessions': () => jsonResponse([]),
@@ -81,7 +94,7 @@ describe('tela do projeto', () => {
   it('as abas respondem a teclado, URL e voltar sem apagar a conversa ao lado', async () => {
     seed()
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
-    await router.replace('/projects/1?sessao=a&aba=rotinas')
+    await router.replace('/projects/1?visao=conversas&sessao=a&aba=rotinas')
     const wrapper = await mountView()
     await wrapper.get('[data-test="project-tab-conversas"]').trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()

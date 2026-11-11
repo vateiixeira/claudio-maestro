@@ -39,39 +39,15 @@ describe('repositório na seção Alterações', () => {
     expect(wrapper.get('[data-test="repo-push"]').text()).toBe('Push')
   })
 
-  it('sessão na pasta ancestral identifica alcance potencial, não atividade Git em todos os repositórios', () => {
-    useSessionsStore(pinia).setForProject(1, [makeSession({ title: 'Planejar loja', cwd: '/home/vi/dev/loja', display_state: 'running' })])
+  it.each([
+    { cwd: '/home/vi/dev/loja' },
+    { cwd: PATH },
+    { cwd: '/home/vi/dev/loja', worktree_path: PATH },
+  ])('não mostra indicador de sessão na lista Git: %j', (location) => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ ...location, display_state: 'running' })])
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
-    const indicator = wrapper.get('[data-test="running-session"]')
-    expect(indicator.text()).toBe('Sessão no projeto')
-    expect(indicator.attributes('title')).toContain('pode acessar este repositório')
-    expect(indicator.attributes('title')).toContain('não confirma')
+    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="running-arc"]').exists()).toBe(false)
-  })
-
-  it('sessão da worktree identifica o repositório; sem sessão não há indicador', async () => {
-    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
-    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
-    useSessionsStore(pinia).setForProject(1, [makeSession({ title: 'Worktree ativa', cwd: '/home/vi/dev/loja', worktree_path: PATH, display_state: 'running' })])
-    await flushPromises()
-    expect(wrapper.get('[data-test="running-session"]').text()).toBe('Sessão no repositório')
-    expect(wrapper.get('[data-test="running-session"]').attributes('title')).toContain('worktree')
-  })
-
-  it('sessão parada ou em outra worktree não aparece como atividade no repositório', async () => {
-    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
-    useSessionsStore(pinia).setForProject(1, [makeSession({ cwd: PATH, display_state: 'waiting' })])
-    await flushPromises()
-    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
-    useSessionsStore(pinia).setForProject(1, [makeSession({ cwd: PATH, worktree_path: `${PATH}/.worktrees/test`, display_state: 'running' })])
-    await flushPromises()
-    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
-  })
-
-  it('barra final do caminho não transforma sessão local em sessão ancestral', () => {
-    useSessionsStore(pinia).setForProject(1, [makeSession({ cwd: `${PATH}/`, display_state: 'running' })])
-    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
-    expect(wrapper.get('[data-test="running-session"]').text()).toBe('Sessão no repositório')
   })
 
   it('mantém o resumo das alterações e sincronização quando recolhido', async () => {
@@ -182,12 +158,11 @@ describe('repositório na seção Alterações', () => {
     expect(wrapper.find('[role="dialog"]').text()).toContain('Descartar 2 alterações?')
   })
 
-  it('com sessão no repositório: indicador contextual e confirmação nomeando a sessão', async () => {
+  it('com sessão no repositório: confirmação continua nomeando a sessão', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ title: 'Chatbot whatsapp', cwd: `${PATH}/src`, display_state: 'running' })])
     const repo = makeRepoDetails({ path: PATH, rel_path: 'api', files: [file('a.ts', 'unstaged')] })
     const { wrapper } = mountRepo(repo)
-    expect(wrapper.get('[data-test="running-session"]').text()).toBe('Sessão no repositório')
-    expect(wrapper.get('[data-test="running-session"]').attributes('title')).toContain('Chatbot whatsapp')
+    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="running-arc"]').exists()).toBe(false)
     await wrapper.find('[data-test="scm-file"] [data-test="file-discard"]').trigger('click')
     const dialog = wrapper.find('[role="dialog"]')

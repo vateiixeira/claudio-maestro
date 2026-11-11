@@ -21,3 +21,15 @@ O antigo arco animado representava uma conversa em execução, não uma consulta
 O diff de arquivos alterados passa a abrir em um modal amplo, por solicitação do usuário. A visualização reutiliza o leitor de diff existente, mantendo o escopo preparado/não preparado e a proteção contra respostas atrasadas. O histórico de commits mantém sua navegação existente.
 
 [Validação no navegador](BROWSER-VALIDATION.md) · [Git com 11 repositórios](implemented/git-11-repos-maestro-1440.png) · [Modal de diff](implemented/git-diff-modal-1440.png)
+
+## Ajuste posterior solicitado
+
+A página passa a abrir na aba Git quando a URL não especifica uma aba válida. Links com `visao=conversas` ou `visao=organizacao` continuam respeitados; “Sem projeto” continua mostrando Conversas. O indicador de sessão foi retirado dos repositórios. A detecção de sessões permanece apenas nas confirmações das operações que já a utilizavam. As capturas acima registram a entrega anterior a este ajuste.
+
+## Diagnóstico de worktree ausente (11/11/2026)
+
+A sessão `b9cb0b20-773c-447d-b016-29d5238ba9d3` está vinculada à raiz do projeto 6, sem `worktree_path` nos metadados. O Git lista a worktree `angular-body/.worktrees/perf-abertura-agenda`, na branch `perf/abertura-agenda`, e a validação `project_worktree` a aceita. Na consulta, ela estava limpa e tinha 11 commits exclusivos em relação a `develop`.
+
+A resposta real de `/api/projects/6/git/details` continha 11 repositórios, sem erros nem limite atingido, mas não incluía essa worktree. `project_details_scan` usa `discover_scan`, que delega a `history.scan_repositories`; esta ignora diretórios cujo nome começa com ponto. O endpoint de branches do repositório principal inclui `perf/abertura-agenda`, portanto seus commits podem ser vistos selecionando essa branch na seção Commits, sem checkout.
+
+Diagnóstico: lacuna na descoberta de worktrees, não perda de commits. Correção recomendada, ainda não implementada: complementar a descoberta com `git worktree list` dos repositórios encontrados, validar cada vínculo pelo mecanismo existente e deduplicar antes de consultar status/histórico. Não ampliar indiscriminadamente a varredura de diretórios ocultos nem depender de a sessão conhecer a worktree.
