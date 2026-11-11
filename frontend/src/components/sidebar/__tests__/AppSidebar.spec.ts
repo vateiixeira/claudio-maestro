@@ -141,6 +141,18 @@ describe('menu lateral', () => {
     expect(project.find('[data-test="project-waiting"] .sr-only').text()).toContain('aguardando você')
   })
 
+  it('o projeto embutido "Sem projeto" não mostra branch nem commits atrás', () => {
+    useProjectsStore(pinia).projects = [
+      makeProject({ id: 1, name: 'loja-online' }),
+      makeProject({ id: 2, name: 'Sem projeto', kind: 'scratch' }),
+    ]
+    useSessionsStore(pinia).setForProject(2, [makeSession({ session_id: 'a', project_id: 2 })])
+    const row = mountSidebar().findAll('[data-test="project"]').find((p) => p.text().includes('Sem projeto'))!
+    expect(row.exists()).toBe(true)
+    expect(row.find('[data-test="project-branch"]').exists()).toBe(false)
+    expect(row.find('[data-test="project-behind"]').exists()).toBe(false)
+  })
+
   it('o nome só é limitado a 60% quando a branch aparece ao lado', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'sem-git' }), makeProject({ id: 2, name: 'com-git' })]
     useGitStore(pinia).set(1, [])
@@ -599,6 +611,14 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     const row = mountSidebar().get('[data-test="other-project"]')
     expect(row.attributes('data-available')).toBe('false')
     expect(row.text()).toContain('pasta indisponível')
+  })
+
+  it('com só o embutido cadastrado mostra "Nenhum projeto ainda."', () => {
+    const projects = useProjectsStore(pinia)
+    projects.projects = [makeProject({ id: 99, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
+    projects.loaded = true
+    const w = mountSidebar()
+    expect(w.text()).toContain('Nenhum projeto ainda.')
   })
 
   it('as faixas Para revisar e Depois continuam, depois dos projetos', () => {

@@ -146,6 +146,12 @@ describe('Inbox', () => {
     expect(wrapper.find('[data-test="first-steps"]').exists()).toBe(true)
   })
 
+  it('com só o embutido cadastrado mostra os primeiros passos', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 99, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
+    const { wrapper } = await mountInbox()
+    expect(wrapper.find('[data-test="first-steps"]').exists()).toBe(true)
+  })
+
   it('enquanto as conversas carregam mostra "Carregando…" e não o aviso de vazio', async () => {
     useSessionsStore(pinia).loaded = false
     useSessionsStore(pinia).setForProject(1, [])

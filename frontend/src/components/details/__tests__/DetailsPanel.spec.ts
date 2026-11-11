@@ -108,6 +108,29 @@ describe('painel Detalhes', () => {
     expect(groups[1].find('[data-test="prop-group"]').exists()).toBe(true)
   })
 
+  it('numa conversa sem projeto não mostra a linha Branch nem a seção Plano', async () => {
+    const projects = useProjectsStore(pinia)
+    projects.projects = [makeProject({ id: 1, name: 'Sem projeto', kind: 'scratch' })]
+    const wrapper = await mountPanel()
+
+    const labels = wrapper.find('[data-test="details-properties"]').findAll('dt').map((dt) => dt.text())
+    expect(labels).toContain('Projeto')
+    expect(labels).not.toContain('Branch')
+    expect(wrapper.find('[data-test="prop-branch"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('sem repositório git')
+    expect(wrapper.find('[data-test="details-plan"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="prop-plan"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Escolher plano')
+  })
+
+  it('num projeto comum mostra a linha Branch e o seletor de plano', async () => {
+    const wrapper = await mountPanel()
+
+    expect(wrapper.find('[data-test="prop-branch"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="details-plan"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Escolher plano')
+  })
+
   it('com worktree, a linha Worktree fica entre Branch e Contexto', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({
       session_id: 's1', worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias',

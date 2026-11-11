@@ -34,12 +34,15 @@ def session_folder(manager: sessions.SessionManager, session_id: str) -> Path:
     return _existing(Path(record.work_dir()))
 
 
-def project_folder(conn: Any, project_id: int) -> Path:
+def _project(conn: Any, project_id: int) -> projects.Project:
     try:
-        project = projects.get_project(conn, project_id)
+        return projects.get_project(conn, project_id)
     except projects.ProjectNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return _existing(Path(project.path))
+
+
+def project_folder(conn: Any, project_id: int) -> Path:
+    return _existing(Path(_project(conn, project_id).path))
 
 
 async def _commands(request: Request, folder: Path) -> list[dict[str, str]]:
@@ -84,4 +87,7 @@ async def session_files(
 async def project_files(
     project_id: int, request: Request, conn: DbDep, q: Q = ""
 ) -> list[dict[str, str]]:
+    # "Sem projeto" has no files to suggest: its folder holds only the conversations' scratch.
+    if _project(conn, project_id).kind == projects.SCRATCH_KIND:
+        return []
     return await _files(request, project_folder(conn, project_id), q)

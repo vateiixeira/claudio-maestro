@@ -134,3 +134,44 @@ export function agentState(
   if (agent.busy) return 'busy'
   return 'idle'
 }
+
+/** Session states with an open turn: the ones the backend counts as `busy` for the agent (`TURN_OPEN_STATES`). */
+export const TURN_OPEN_STATES: ReadonlySet<string> = new Set(['connecting', 'running', 'awaiting_decision'])
+/** Runs that hold the agent: they stay in the list however many newer ones finish. */
+export const ACTIVE_RUN_OUTCOMES: ReadonlySet<string> = new Set(['starting', 'running', 'waiting'])
+
+/** Where the strip of the main conversation points: the session in flight, and whether it waits for the user. */
+export interface AgentRunFocus {
+  sessionId: string
+  title: string
+  waiting: boolean
+}
+
+/**
+ * What an agent is doing in a conversation other than its main one: the session of its active run (it has a
+ * session once it starts), otherwise its session with an open turn (the newest, when several). Null when there is
+ * nothing to show. A run that is starting has no session, so it shows nothing. The title is the session's own; when the session is not in the list (yet), the run's origin.
+ */
+export function agentRunFocus(
+  agent: Pick<Agent, 'id' | 'main_session_id' | 'last_run'>,
+  sessions: Session[],
+): AgentRunFocus | null {
+  const run = agent.last_run
+  if (run && ACTIVE_RUN_OUTCOMES.has(run.outcome)) {
+    // An active run without a session is still starting: nothing to open yet.
+    if (!run.session_id) return null
+    // A run in the main conversation is what the reader is looking at: look for another session instead.
+    if (run.session_id !== agent.main_session_id) {
+      const session = sessions.find((s) => s.session_id === run.session_id)
+      return {
+        sessionId: run.session_id,
+        title: session?.title || `Execução de ${SOURCE_LABELS[run.source].toLowerCase()}`,
+        waiting: run.outcome === 'waiting' || (session !== undefined && asksForYou(session)),
+      }
+    }
+  }
+  const open = sessions
+    .filter((s) => s.agent_id === agent.id && s.session_id !== agent.main_session_id && TURN_OPEN_STATES.has(s.state))
+    .sort((a, b) => b.last_activity_at - a.last_activity_at)[0]
+  return open ? { sessionId: open.session_id, title: open.title || 'Conversa sem título', waiting: asksForYou(open) } : null
+}

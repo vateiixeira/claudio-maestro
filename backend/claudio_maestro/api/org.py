@@ -315,10 +315,13 @@ def _check_slug(slug: str) -> None:
 
 
 def _require_project(conn: sqlite3.Connection, project_id: int) -> projects.Project:
+    """A registered project that can have agents and tasks: not the built-in "Sem projeto"."""
     try:
-        return projects.get_project(conn, project_id)
+        return projects.require_regular(projects.get_project(conn, project_id))
     except projects.ProjectNotFoundError as exc:
         raise _not_found(PROJECT_NOT_FOUND) from exc
+    except projects.ScratchProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
 def _read_definition(files: AgentFiles, slug: str) -> tuple[AgentDefinition | None, str | None]:

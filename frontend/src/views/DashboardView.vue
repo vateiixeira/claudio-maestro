@@ -40,7 +40,7 @@ const toReview = computed(() => sessions.all.filter((s) => s.display_state !== '
 const startOfToday = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000 }
 const finishedToday = computed(() => sessions.all.filter((s) => s.finished && (s.finished_at ?? 0) >= startOfToday()).length)
 const changedFiles = (projectId: number) => git.reposFor(projectId).reduce((sum, r) => sum + changedCount(r), 0)
-const projectsWithChanges = computed(() => projects.projects.filter((p) => changedFiles(p.id) > 0).length)
+const projectsWithChanges = computed(() => projects.regular.filter((p) => changedFiles(p.id) > 0).length)
 const waitingIn = (projectId: number) => sessions.forProject(projectId).filter(isWaitingOnYou).length
 const recent = computed(() => sessions.all.filter((s) => !isDiscarded(s)).slice(0, 8))
 
@@ -59,7 +59,7 @@ async function loadActivity() {
   }
 }
 onMounted(() => {
-  projects.projects.forEach((p) => git.ensure(p.id))
+  projects.regular.forEach((p) => git.ensure(p.id))
   void loadActivity()
 })
 
@@ -110,7 +110,7 @@ function scrollToProjects() {
       </section>
       <section id="dashboard-projetos" data-test="projects-list" aria-labelledby="projects-title" class="flex flex-col gap-2 rounded-lg border border-line bg-panel p-3">
         <h2 id="projects-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Projetos</h2>
-        <RouterLink v-for="p in projects.projects" :key="p.id" :to="{ name: 'project', params: { id: p.id } }" class="flex min-h-11 items-center gap-3 rounded-md px-2 text-fg no-underline hover:bg-card">
+        <RouterLink v-for="p in projects.regular" :key="p.id" :to="{ name: 'project', params: { id: p.id } }" class="flex min-h-11 items-center gap-3 rounded-md px-2 text-fg no-underline hover:bg-card">
           <span class="size-2.5 rounded-[3px]" :style="{ backgroundColor: p.color }" />
           <span class="min-w-0 grow truncate">{{ p.name }}</span>
           <BranchLabel v-if="git.reposFor(p.id)[0]" :text="repoLabel(git.reposFor(p.id)[0]!)" muted />

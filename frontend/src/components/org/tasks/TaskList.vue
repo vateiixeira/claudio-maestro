@@ -139,7 +139,7 @@ const projectName = (task: Task) => (props.projectId === undefined ? projects.by
         Projeto
         <select data-test="project-filter" :class="FIELD" class="max-w-48" :value="filters.project ?? ''" @change="pickProject">
           <option value="">Todos os projetos</option>
-          <option v-for="p in projects.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+          <option v-for="p in projects.regular" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
       </label>
       <label class="flex items-center gap-2 text-xs text-fg-subtle">

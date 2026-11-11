@@ -12,7 +12,7 @@ import { useGitStore } from '../stores/git'
 import { errorMessage, openInEditor } from '../api/http'
 import { groupByDate } from '../conversationList'
 import { useGroupsStore } from '../stores/groups'
-import { useProjectsStore } from '../stores/projects'
+import { isScratch, useProjectsStore } from '../stores/projects'
 import { useNewConversationStore } from '../stores/newConversation'
 import { isDiscarded } from '../conversation/marks'
 import { useSessionsStore } from '../stores/sessions'
@@ -55,6 +55,8 @@ function rowTarget(sessionId: string) {
 }
 
 const project = computed(() => projects.byId(props.id))
+// The built-in "Sem projeto" shows only its conversations: no path, git or project actions.
+const scratch = computed(() => isScratch(project.value))
 // The store keeps the order of the last listing, not of later `session.updated` events.
 const projectSessions = computed(() =>
   [...sessions.forProject(props.id)].filter((s) => !isDiscarded(s)).sort(
@@ -112,7 +114,7 @@ async function load(): Promise<void> {
   if (!project.value) return
   editorError.value = null
   // Branches are secondary: a failure leaves the section out.
-  git.load(props.id).catch(() => {})
+  if (!scratch.value) git.load(props.id).catch(() => {})
   try {
     await sessions.loadForProject(props.id)
   } catch (e) {
@@ -200,7 +202,7 @@ async function remove(): Promise<void> {
       <header class="flex flex-wrap items-start gap-4">
         <div class="flex min-w-0 flex-1 flex-col gap-1.5">
           <form
-            v-if="renaming"
+            v-if="renaming && !scratch"
             data-test="rename-form"
             class="flex flex-wrap items-center gap-2"
             @submit.prevent="saveRename"
@@ -231,11 +233,12 @@ async function remove(): Promise<void> {
             <span class="size-3.5 shrink-0 rounded-[4px]" :style="{ backgroundColor: project.color }" />
             <h1 class="m-0 truncate text-[1.75rem] font-semibold tracking-tight">{{ project.name }}</h1>
           </div>
-          <div class="font-mono text-[0.8125rem] break-all text-fg-subtle">{{ project.path }}</div>
+          <div v-if="!scratch" class="font-mono text-[0.8125rem] break-all text-fg-subtle">{{ project.path }}</div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
           <RouterLink
+            v-if="!scratch"
             :to="`/agentes/${project.id}`"
             data-test="open-organization"
             class="flex h-11 items-center rounded-lg border border-line-strong px-4 font-medium text-fg no-underline hover:bg-card"
@@ -243,6 +246,7 @@ async function remove(): Promise<void> {
             Organização
           </RouterLink>
           <button
+            v-if="!scratch"
             type="button"
             data-test="open-editor"
             class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card"
@@ -251,6 +255,7 @@ async function remove(): Promise<void> {
             Abrir no editor
           </button>
           <button
+            v-if="!scratch"
             type="button"
             data-test="rename"
             class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card"
@@ -259,6 +264,7 @@ async function remove(): Promise<void> {
             Renomear
           </button>
           <button
+            v-if="!scratch"
             type="button"
             ref="removeButton"
             data-test="remove"
@@ -268,6 +274,7 @@ async function remove(): Promise<void> {
             Remover
           </button>
           <button
+            v-if="!scratch"
             type="button"
             data-test="sync"
             title="Reler o histórico do CLI deste projeto"
@@ -295,7 +302,7 @@ async function remove(): Promise<void> {
       </header>
 
       <p
-        v-if="!project.available"
+        v-if="!project.available && !scratch"
         id="new-session-hint"
         class="flex items-start gap-2 rounded-lg border border-secondary/40 bg-card px-4 py-3 text-sm text-secondary-soft"
       >
@@ -314,7 +321,7 @@ async function remove(): Promise<void> {
         {{ editorError }}
       </p>
 
-      <section v-if="git.isLoaded(id)" data-test="repos" class="flex flex-col gap-3">
+      <section v-if="!scratch && git.isLoaded(id)" data-test="repos" class="flex flex-col gap-3">
         <p v-if="repos.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
         <template v-else>
           <ScmSection :project-id="id" />
@@ -326,7 +333,7 @@ async function remove(): Promise<void> {
       </section>
 
       <section
-        v-if="confirmingRemove"
+        v-if="confirmingRemove && !scratch"
         data-test="confirm-remove"
         role="alertdialog"
         aria-labelledby="confirm-remove-title"
@@ -372,7 +379,7 @@ async function remove(): Promise<void> {
 
       <p v-if="sessionsError" role="alert" class="text-sm text-diff-del-fg">{{ sessionsError }}</p>
       <p v-else-if="projectSessions.length === 0" class="text-sm text-fg-muted">
-        Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa nesta pasta.
+        {{ scratch ? 'Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa sem projeto.' : 'Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa nesta pasta.' }}
       </p>
       <template v-else>
         <h2 v-if="hasGroups && ungrouped.length" id="ungrouped-title" data-test="ungrouped-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Sem agrupador</h2>
