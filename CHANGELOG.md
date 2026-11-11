@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.11.0] - 2026-11-11
+
+Agora é possível trocar somente a autenticação de API sem separar conversas e dados. O Início mostra a configuração em uso e dá acesso à troca; modais preservam o conteúdo ao clicar fora e os controles indicam melhor as ações clicáveis.
+
 ### Adicionado
 
 - O Início mostra a origem e a pasta de autenticação do Claude, avisa quando há troca pendente de reinício e oferece um atalho direto para alterar a configuração.
