@@ -731,7 +731,7 @@ def test_migration_32_on_a_database_without_specialists(tmp_path: Path):
     with open_db(tmp_path / "t.db") as conn:
         db.migrate(conn)
         assert not set(SPECIALIST_TABLES) & table_names(conn)
-        assert db.SCHEMA_VERSION == 34
+        assert db.SCHEMA_VERSION >= 34
 
 
 def test_migration_31_keeps_autoincrement_watermark(tmp_path: Path):
@@ -1146,7 +1146,7 @@ def test_migration_34_drops_work_tables(tmp_path: Path):
 
         db.migrate(conn)
 
-        assert db.schema_version(conn) == 34 == db.SCHEMA_VERSION
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         assert not [name for name in table_names(conn) if name.startswith("work_")]
         leftovers = [
             tuple(row) for row in conn.execute(
@@ -1184,7 +1184,7 @@ def test_migration_34_can_run_twice(tmp_path: Path):
 def test_migration_34_on_a_new_database_ends_without_work_tables(tmp_path: Path):
     with open_db(tmp_path / "t.db") as conn:
         db.migrate(conn)
-        assert db.schema_version(conn) == 34
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         assert not [name for name in table_names(conn) if name.startswith("work_")]
         assert "org_legacy_work" in table_names(conn)
 
@@ -1308,3 +1308,24 @@ def test_backup_fixes_permissions_of_existing_folder(tmp_path: Path):
     backups.chmod(0o755)
     db.backup_before_migration(p, 0, 1)
     assert backups.stat().st_mode & 0o777 == 0o700
+
+
+def test_projects_kind_defaults_to_regular_and_allows_one_scratch(tmp_path: Path):
+    with open_db(tmp_path / "kind.db") as conn:
+        db.migrate(conn)
+        columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(projects)")}
+        assert "kind" in columns
+        assert columns["kind"]["dflt_value"] == "'regular'"
+        conn.execute(
+            "INSERT INTO projects (name, path, color, position, created_at) VALUES ('a', '/a', '#fff', 0, 0)"
+        )
+        assert conn.execute("SELECT kind FROM projects").fetchone()["kind"] == "regular"
+        conn.execute(
+            "INSERT INTO projects (name, path, color, position, created_at, kind)"
+            " VALUES ('s', '/s', '#fff', 0, 0, 'scratch')"
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO projects (name, path, color, position, created_at, kind)"
+                " VALUES ('s2', '/s2', '#fff', 0, 0, 'scratch')"
+            )

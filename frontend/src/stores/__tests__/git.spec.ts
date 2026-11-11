@@ -3,7 +3,8 @@ import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { branchText, dirBranchText, repoLabel, useGitStore } from '../git'
 import { useGitDetailsStore } from '../gitDetails'
-import { jsonResponse, makeGitRepo, routeFetch } from '../../test/factories'
+import { useProjectsStore } from '../projects'
+import { jsonResponse, makeGitRepo, makeProject, routeFetch } from '../../test/factories'
 import { diffFromUnified } from '../../conversation/diff'
 
 beforeEach(() => setActivePinia(createPinia()))
@@ -121,6 +122,34 @@ describe('store git', () => {
     git.ensure(3)
     await flushPromises()
     expect(git.reposFor(3)).toEqual([])
+  })
+})
+
+describe('store git, projeto embutido', () => {
+  function seedScratch() {
+    useProjectsStore().projects = [makeProject({ id: 1 }), makeProject({ id: 9, name: 'Sem projeto', kind: 'scratch' })]
+  }
+
+  it('ensure e load não chamam a API para o embutido', async () => {
+    const fetchMock = routeFetch({})
+    vi.stubGlobal('fetch', fetchMock)
+    seedScratch()
+    const git = useGitStore()
+    git.ensure(9)
+    expect(await git.load(9)).toEqual([])
+    await flushPromises()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(git.reposFor(9)).toEqual([])
+  })
+
+  it('projeto comum continua carregando', async () => {
+    const fetchMock = routeFetch({ 'GET /api/projects/1/git': () => jsonResponse({ repos: [makeGitRepo({ branch: 'main' })], limit_reached: false }) })
+    vi.stubGlobal('fetch', fetchMock)
+    seedScratch()
+    const git = useGitStore()
+    await git.load(1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(git.reposFor(1)[0]!.branch).toBe('main')
   })
 })
 

@@ -98,11 +98,11 @@ const dupError = ref<string | null>(null)
 const dupBusy = ref(false)
 const dupSlugValid = computed(() => dupSlug.value.length <= SLUG_MAX_LENGTH && SLUG_OK.test(dupSlug.value))
 
-onMounted(() => { if (!projects.loaded && projects.projects.length === 0) void projects.load().catch(() => {}) })
+onMounted(() => { if (!projects.loaded && projects.regular.length === 0) void projects.load().catch(() => {}) })
 
 function openDuplicate(): void {
   if (!agent.value) return
-  const other = projects.projects.find((p) => p.id !== agent.value!.project_id) ?? projects.projects[0]
+  const other = projects.regular.find((p) => p.id !== agent.value!.project_id) ?? projects.regular[0]
   dupProject.value = String(other?.id ?? agent.value.project_id)
   dupSlug.value = agent.value.slug || slugify(agent.value.name)
   dupError.value = null
@@ -181,7 +181,7 @@ async function remove(): Promise<void> {
         <label class="flex flex-col gap-1 text-sm">
           <span class="text-fg-muted">Projeto</span>
           <select v-model="dupProject" data-test="duplicate-project" :class="FIELD">
-            <option v-for="p in projects.projects" :key="p.id" :value="String(p.id)">{{ p.name }}</option>
+            <option v-for="p in projects.regular" :key="p.id" :value="String(p.id)">{{ p.name }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1 text-sm">

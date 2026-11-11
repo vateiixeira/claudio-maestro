@@ -20,7 +20,7 @@ beforeEach(() => {
     makeAgent({ id: 1, name: 'CTO' }),
     makeAgent({ id: 2, slug: 'dev', name: 'Dev', reports_to: 1 }),
   ]
-  useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'Loja' }), makeProject({ id: 2, name: 'Blog' })]
+  useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'Loja' }), makeProject({ id: 2, name: 'Blog' }), makeProject({ id: 99, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -144,5 +144,14 @@ describe('TaskList', () => {
     await wrapper.get('[data-test="status-chip-done"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.status).toBe('todo,in_progress,in_review,blocked,done')
+  })
+
+  it('o filtro de projeto não oferece o embutido "Sem projeto"', async () => {
+    stubTasks(() => [])
+    const { wrapper } = await mountList({ syncQuery: true }, '/tarefas')
+    const options = wrapper.get('[data-test="project-filter"]').findAll('option').map((o) => o.text())
+    expect(options).toContain('Loja')
+    expect(options).toContain('Blog')
+    expect(options).not.toContain('Sem projeto')
   })
 })

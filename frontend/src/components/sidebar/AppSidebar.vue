@@ -232,7 +232,7 @@ const itemClass = sidebarItemClass
           <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-[26px] items-center justify-center rounded-md text-fg-subtle no-underline hover:bg-card hover:text-fg"><IconPlus :size="13" /></RouterLink>
         </div>
         <p v-if="projects.loadError" class="px-2.5 py-2 text-xs text-diff-del-fg" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
-        <p v-else-if="projects.loaded && projects.projects.length === 0" class="px-2.5 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
+        <p v-else-if="projects.loaded && projects.regular.length === 0" class="px-2.5 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
         <p v-else-if="projects.projects.length > 0 && split.active.length === 0" data-test="no-open" class="px-2.5 py-1 text-xs text-fg-subtle">Nenhuma conversa aberta</p>
         <template v-for="(project, index) in split.active" :key="project.id">
           <div class="flex items-center" :class="{ 'mt-1.5': index > 0 }">

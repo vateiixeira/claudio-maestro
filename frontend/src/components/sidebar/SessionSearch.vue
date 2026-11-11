@@ -131,7 +131,7 @@ onBeforeUnmount(() => {
         type="button"
         role="listitem"
         data-test="search-result"
-        class="flex min-h-11 w-full cursor-pointer flex-col gap-0.5 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
+        class="flex min-h-11 w-full shrink-0 cursor-pointer flex-col gap-0.5 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
         @click="open(session)"
       >
         <span class="w-full min-w-0 truncate text-[0.8125rem] font-medium">{{ session.title }}</span>

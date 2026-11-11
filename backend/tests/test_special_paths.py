@@ -114,7 +114,7 @@ def test_create_project_link_to_outside_home_rejected(api, home, tmp_path):  # n
         "/api/projects", json={"name": "x", "path": str(home / "atalho"), "color": "#ff8800"}
     )
     assert response.status_code == 403
-    assert api.get("/api/projects").json() == []
+    assert [p["kind"] for p in api.get("/api/projects").json()] == ["scratch"]
 
 
 def test_project_git_does_not_follow_links_out_of_the_project(api, home, tmp_path):  # noqa: F811

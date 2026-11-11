@@ -30,7 +30,7 @@ import { displayStateLabel } from '../../sessionState'
 import { useChangesPanelStore } from '../../stores/changesPanel'
 import { useConversationStore } from '../../stores/conversation'
 import { useGitStore } from '../../stores/git'
-import { useProjectsStore } from '../../stores/projects'
+import { isScratch, useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useTerminalStore } from '../../stores/terminal'
 import type { ChangedFile, ChangesGroup } from '../../types/api'
@@ -83,6 +83,8 @@ const session = computed(() => sessions.find(props.sessionId))
 const conv = computed(() => conversations.get(props.sessionId))
 const projectId = computed(() => session.value?.project_id ?? conv.value?.projectId ?? null)
 const project = computed(() => (projectId.value != null ? projects.byId(projectId.value) : undefined))
+// "Sem projeto" has no git repository and no plans folder: its Branch row and plan section stay out.
+const scratch = computed(() => isScratch(project.value))
 const repos = computed(() => (projectId.value != null ? git.reposFor(projectId.value) : []))
 const context = computed(() => session.value?.context ?? conv.value?.context ?? null)
 const turns = computed(() => (conv.value?.items ?? []).filter((i) => i.type === 'user' && !('parent_tool_use_id' in i && i.parent_tool_use_id)).length)
@@ -285,8 +287,8 @@ function resetWidth() {
                   <span class="truncate">{{ project.name }}</span>
                 </RouterLink>
               </dd>
-              <dt class="text-fg-muted">Branch</dt>
-              <dd data-test="prop-branch" class="m-0 flex min-w-0 flex-col gap-1">
+              <dt v-if="!scratch" class="text-fg-muted">Branch</dt>
+              <dd v-if="!scratch" data-test="prop-branch" class="m-0 flex min-w-0 flex-col gap-1">
                 <template v-if="session?.worktree_name">
                   <BranchLabel v-if="session.git_branch" :text="session.git_branch" />
                   <span v-else class="text-fg-muted">desconhecido</span>
@@ -313,7 +315,7 @@ function resetWidth() {
             </dl>
           </div>
         </section>
-        <section v-if="session && projectId != null" data-test="details-plan" aria-labelledby="plan-title" class="flex flex-col gap-2">
+        <section v-if="session && projectId != null && !scratch" data-test="details-plan" aria-labelledby="plan-title" class="flex flex-col gap-2">
           <h3 id="plan-title" class="m-0 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Plano</h3>
           <PlanStrip v-if="planVisible(session)" :key="sessionId" :session="session" variant="panel">
             <template #actions><PlanProperty :session-id="sessionId" :project-id="projectId" :summary="false" /></template>

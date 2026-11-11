@@ -15,10 +15,70 @@ def create(client, path, name="Meu projeto", color="#4ADE80"):
     return client.post("/api/projects", json={"name": name, "path": str(path), "color": color})
 
 
-def test_list_starts_empty(client):
+def regular(client) -> list[dict]:
+    return [p for p in client.get("/api/projects").json() if p["kind"] == "regular"]
+
+
+def scratch_id(client) -> int:
+    return next(p["id"] for p in client.get("/api/projects").json() if p["kind"] == "scratch")
+
+
+def test_list_starts_with_only_the_scratch_project(client):
     response = client.get("/api/projects")
     assert response.status_code == 200
-    assert response.json() == []
+    assert regular(client) == []
+    assert [p["kind"] for p in response.json()] == ["scratch"]
+
+
+def test_list_has_scratch_project_last(client, home):
+    create(client, make_dir(home, "dev/app"))
+    body = client.get("/api/projects").json()
+    assert [p["kind"] for p in body] == ["regular", "scratch"]
+    scratch = body[-1]
+    assert scratch["name"] == "Sem projeto"
+    assert scratch["available"] is True
+
+
+def test_first_regular_project_keeps_position_zero(client, home):
+    assert create(client, make_dir(home, "dev/app")).json()["position"] == 0
+
+
+def test_scratch_cannot_be_renamed_recolored_moved_or_deleted(client):
+    sid = scratch_id(client)
+    for body in ({"name": "x"}, {"color": "#000000"}, {"position": 3}):
+        assert client.patch(f"/api/projects/{sid}", json=body).status_code == 403
+    assert client.delete(f"/api/projects/{sid}").status_code == 403
+    assert scratch_id(client) == sid
+
+
+@pytest.mark.parametrize("sub", ["", "scratch", "scratch/scratch-2026-11-06-abcdef"])
+def test_cannot_register_folder_inside_data_dir(client, data_dir, sub):
+    folder = data_dir / sub
+    folder.mkdir(parents=True, exist_ok=True)
+    assert create(client, folder).status_code == 403
+
+
+def test_ensure_scratch_is_idempotent_and_follows_data_dir(tmp_path):
+    from contextlib import closing
+
+    from claudio_maestro import db, projects
+
+    a, b = tmp_path / "a", tmp_path / "b"
+    db_path = tmp_path / "x.db"
+    db.init_db(db_path)
+    with closing(db.connect(db_path)) as conn:
+        first = projects.ensure_scratch_project(conn, a)
+        again = projects.ensure_scratch_project(conn, a)
+        assert first.id == again.id
+        assert first.path == str((a / "scratch").resolve())
+        moved = projects.ensure_scratch_project(conn, b)
+        assert moved.id == first.id
+        assert moved.path == str((b / "scratch").resolve())
+        assert conn.execute("SELECT COUNT(*) FROM projects WHERE kind = 'scratch'").fetchone()[0] == 1
+        assert moved.kind == projects.SCRATCH_KIND
+        assert moved.name == projects.SCRATCH_NAME
+        assert projects.scratch_root(b) == b / "scratch"
+    assert ((b / "scratch").stat().st_mode & 0o777) == 0o700
 
 
 def test_create_project(client, home: Path):
@@ -53,7 +113,7 @@ def test_create_through_symlink_inside_home_stores_target(client, home: Path):
 def test_list_projects_in_creation_order(client, home: Path):
     create(client, make_dir(home, "a"), name="A")
     create(client, make_dir(home, "b"), name="B")
-    body = client.get("/api/projects").json()
+    body = regular(client)
     assert [p["name"] for p in body] == ["A", "B"]
     assert [p["position"] for p in body] == [0, 1]
 
@@ -83,7 +143,7 @@ def test_create_duplicate_through_symlink_conflicts(client, home: Path):
 def test_create_nonexistent_path(client, home: Path):
     response = create(client, home / "nope")
     assert response.status_code == 400
-    assert client.get("/api/projects").json() == []
+    assert regular(client) == []
 
 
 def test_create_file_instead_of_dir(client, home: Path):
@@ -181,7 +241,7 @@ def test_delete_project_keeps_folder(client, home: Path):
     project = create(client, folder).json()
     response = client.delete(f"/api/projects/{project['id']}")
     assert response.status_code == 204
-    assert client.get("/api/projects").json() == []
+    assert regular(client) == []
     assert (folder / "file.txt").read_text() == "keep me"
 
 
@@ -200,7 +260,7 @@ def test_deleted_folder_shows_unavailable(client, home: Path):
     folder = make_dir(home, "app")
     create(client, folder)
     shutil.rmtree(folder)
-    body = client.get("/api/projects").json()
+    body = regular(client)
     assert len(body) == 1
     assert body[0]["available"] is False
 
@@ -230,7 +290,7 @@ def test_projects_persist_across_restarts(home: Path):
     with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=headers) as c:
         create(c, folder)
     with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers=headers) as c:
-        assert len(c.get("/api/projects").json()) == 1
+        assert len([p for p in c.get("/api/projects").json() if p["kind"] == "regular"]) == 1
 
 
 def test_create_without_origin_rejected(home: Path):
@@ -242,7 +302,7 @@ def test_create_without_origin_rejected(home: Path):
     with TestClient(create_app(), base_url="http://127.0.0.1:6660", headers={"x-maestro": "1"}) as c:
         response = create(c, folder)
         assert response.status_code == 403
-        assert c.get("/api/projects").json() == []
+        assert [p["kind"] for p in c.get("/api/projects").json()] == ["scratch"]
 
 
 def test_project_roots_feed_path_validation(client, home: Path, data_dir: Path):
@@ -258,7 +318,25 @@ def test_project_roots_feed_path_validation(client, home: Path, data_dir: Path):
         roots = project_roots(conn)
     finally:
         conn.close()
-    assert roots == [folder]
+    # The built-in project is a registered project like the others.
+    assert sorted(roots) == sorted([folder, (data_dir / "scratch").resolve()])
     assert resolve_within(folder / "src" / "main.py", roots) == folder / "src" / "main.py"
     with pytest.raises(PathNotAllowedError):
         resolve_within(home / "other", roots)
+
+
+@pytest.mark.parametrize("sub", ["", "scratch", "scratch/scratch-2026-11-06-abcdef"])
+def test_create_refuses_folder_inside_data_dir_even_when_inside_home(tmp_path, home, sub):
+    from contextlib import closing
+
+    from claudio_maestro import db, projects
+
+    data_dir = make_dir(home, "data")
+    folder = data_dir / sub
+    folder.mkdir(parents=True, exist_ok=True)
+    db_path = tmp_path / "x.db"
+    db.init_db(db_path)
+    with closing(db.connect(db_path)) as conn, pytest.raises(projects.ProjectPathNotAllowedError):
+        projects.create_project(
+            conn, name="n", path=str(folder), color="#4ADE80", home=home, data_dir=data_dir
+        )

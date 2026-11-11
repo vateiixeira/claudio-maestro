@@ -1532,7 +1532,8 @@ def test_delete_project_refused_while_agent_busy(api, project, agent):
     assert response.json()["detail"] == PROJECT_BUSY_TEXT == (
         "Há agentes deste projeto executando; aguarde ou cancele."
     )
-    assert [p["id"] for p in api.get("/api/projects").json()] == [project["id"]]
+    regular = [p["id"] for p in api.get("/api/projects").json() if p["kind"] == "regular"]
+    assert regular == [project["id"]]
     assert api.get(f"/api/agents/{agent['id']}").status_code == 200
 
 

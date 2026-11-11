@@ -11,6 +11,7 @@ export function makeProject(overrides: Partial<Project> = {}): Project {
     created_at: 1_790_000_000,
     available: true,
     hidden_sessions: 0,
+    kind: 'regular',
     ...overrides,
   }
 }

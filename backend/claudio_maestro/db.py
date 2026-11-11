@@ -1416,6 +1416,12 @@ LEGACY_WORK_TABLES = (
 )
 MIGRATIONS.append([f"DROP TABLE IF EXISTS {table}" for table in LEGACY_WORK_TABLES])
 
+# The built-in "Sem projeto" project (`kind = 'scratch'`): at most one row.
+MIGRATIONS.append([
+    "ALTER TABLE projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'regular'",
+    "CREATE UNIQUE INDEX projects_one_scratch ON projects(kind) WHERE kind = 'scratch'",
+])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

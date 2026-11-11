@@ -4,6 +4,20 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.10.0] - 2026-11-10
+
+Chegam as conversas sem projeto: escolha "Sem projeto" em "Nova conversa" para abrir uma conversa numa pasta própria, sem cadastrar projeto. A conversa principal de um agente passa a mostrar o run em andamento, e a busca de sessões e a bolinha dos agentes na barra lateral foram corrigidas.
+
+### Adicionado
+
+- Conversas sem projeto: escolha "Sem projeto" em "Nova conversa" para abrir uma conversa numa pasta própria, criada pelo app, para tarefas na máquina e perguntas rápidas.
+- A conversa principal de um agente mostra no topo o run em andamento, com link para a sessão dele, e fica laranja quando o run espera sua resposta.
+
+### Corrigido
+
+- A bolinha de um agente na barra lateral não fica mais girando depois que a execução termina.
+- A busca de sessões não espreme mais os resultados quando eles passam da altura da lista: título, etiquetas e trecho aparecem inteiros e a lista rola.
+
 ## [0.9.0] - 2026-10-29
 
 Chega a organização de agentes: por projeto, um agente no topo e subordinados, cada um um AGENT.md editado no app, com tarefas, rotinas, decisões e execuções num lugar só. Os agentes da 0.8.0 migram sozinhos, e o banco ganha uma cópia automática antes de cada migração.

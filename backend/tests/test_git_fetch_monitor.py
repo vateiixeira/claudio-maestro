@@ -279,3 +279,27 @@ def test_loop_survives_a_failing_pass(factory, spawn, home, data_dir, fake, monk
         monkeypatch.setattr(monitor, "fetch_due", broken)
         with api.websocket_connect(WS_URL, headers=HEADERS):
             assert wait_for(lambda: len(fake.calls) >= 1)
+
+
+def test_monitor_lists_skip_the_scratch_project(
+    factory, spawn, home, data_dir, fake, clock, monkeypatch
+):
+    app = started(factory, spawn, home, data_dir, fake, git_fetch_interval_seconds=0)
+    with TestClient(app, base_url=BACKEND_URL, headers=HEADERS) as api:
+        add_project(api, two_repos(home))
+        scratch = (data_dir / "scratch").resolve()
+        assert scratch.is_dir()
+        monitor = app.state.git_monitor
+        scans: list[Path] = []
+        real = gitinfo.discover_scan
+        monkeypatch.setattr(
+            gitinfo, "discover_scan", lambda root: (scans.append(root), real(root))[1]
+        )
+        api.portal.call(monitor.refresh_all)
+        api.portal.call(monitor.fetch_due, 300)
+        assert scans and all(Path(root).resolve() != scratch for root in scans)
+        assert all(call.resolve() != scratch for call in fake.calls)
+        scratch_id = next(
+            p["id"] for p in api.get("/api/projects").json() if p["kind"] == "scratch"
+        )
+        assert scratch_id not in monitor._last
