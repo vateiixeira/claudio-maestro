@@ -1,6 +1,5 @@
-"""Folder selection must never mix profiles or touch credential files."""
+"""Authentication selection must preserve conversations and application data."""
 
-import json
 import os
 from dataclasses import replace
 
@@ -12,6 +11,7 @@ from claudio_maestro.agent.fake import FakeAgentFactory
 from claudio_maestro.app import create_app
 from claudio_maestro.claudeprofile import (
     ProfileError,
+    active_auth_folder,
     profile_environment,
     read_selection,
     save_selection,
@@ -48,25 +48,21 @@ def test_folder_validation(home, tmp_path):
         validate_folder(str(home / "file"), home)
 
 
-def test_saved_folder_isolated_and_reset_returns_original(home, data_dir):
+def test_saved_folder_preserves_history_and_metadata(home, data_dir):
     original = load_settings()
     folder = home / ".claude-api"
     folder.mkdir()
-    credentials = folder / ".credentials.json"
-    credentials.write_text('{"secret":"never read or copy"}')
     save_selection(data_dir, str(folder), home)
     selected = load_settings()
-    assert selected.claude_config_dir == folder
-    assert selected.claude_projects_dir == folder / "projects"
-    assert selected.data_dir != original.data_dir
-    assert selected.data_dir.is_relative_to(data_dir / "profiles")
-    assert selected.profile_root == data_dir
-    assert load_settings().data_dir == selected.data_dir
-    assert credentials.read_text() == '{"secret":"never read or copy"}'
-    assert not selected.data_dir.exists()  # startup creates the data, selecting doesn't
+    assert selected.claude_auth_dir == folder
+    assert selected.claude_config_dir == original.claude_config_dir
+    assert selected.claude_projects_dir == original.claude_projects_dir
+    assert selected.data_dir == original.data_dir
+    assert selected.db_path == original.db_path
+    assert not (data_dir / "profiles").exists()
     save_selection(data_dir, None, home)
+    assert load_settings().claude_auth_dir is None
     assert load_settings().data_dir == original.data_dir
-    assert load_settings().claude_config_dir == original.claude_config_dir
 
 
 def test_default_folder_uses_existing_data(home, data_dir):
@@ -96,7 +92,7 @@ def test_selected_profile_identity_survives_different_launch_environment(
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(folder))
     second = load_settings()
     assert second.data_dir == first.data_dir
-    assert second.data_dir != data_dir
+    assert second.data_dir == data_dir
 
 
 def test_invalid_saved_selection_fails_closed(home, data_dir):
@@ -116,22 +112,23 @@ def test_invalid_encoding_is_a_profile_error(data_dir):
         load_settings()
 
 
-def test_environment_lasts_for_lifespan_and_restores_even_on_error(
+def test_auth_scope_restores_even_on_error_without_mutating_env(
     home, data_dir, monkeypatch
 ):
-    original_env = os.environ["CLAUDE_CONFIG_DIR"]
     monkeypatch.setenv("ANTHROPIC_API_KEY", "original-test-secret")
     folder = home / ".claude-api"
     folder.mkdir()
     save_selection(data_dir, str(folder), home)
     settings = load_settings()
+    original_env = os.environ.copy()
+    assert active_auth_folder() is None
     with pytest.raises(RuntimeError):
         with profile_environment(settings):
-            assert claude_config_dir() == folder
-            assert "ANTHROPIC_API_KEY" not in os.environ
+            assert active_auth_folder() == folder
+            assert os.environ == original_env
             raise RuntimeError("startup failure")
-    assert os.environ["CLAUDE_CONFIG_DIR"] == original_env
-    assert os.environ["ANTHROPIC_API_KEY"] == "original-test-secret"
+    assert active_auth_folder() is None
+    assert os.environ == original_env
 
 
 def test_long_unicode_path_roundtrips(home, data_dir):
@@ -139,35 +136,6 @@ def test_long_unicode_path_roundtrips(home, data_dir):
     folder.mkdir(parents=True)
     save_selection(data_dir, str(folder), home)
     assert read_selection(data_dir, home) == folder
-
-
-def test_custom_profile_clears_inherited_provider_in_spawn(home, data_dir, monkeypatch):
-    from claude_agent_sdk import ClaudeAgentOptions
-
-    from claudio_maestro.agent.spawn import build_cli_spawn
-
-    inherited = {
-        "ANTHROPIC_BASE_URL": "https://old-gateway.invalid",
-        "ANTHROPIC_API_KEY": "old-test-key",
-        "CLAUDE_CODE_USE_BEDROCK": "1",
-        "CLAUDE_CODE_USE_VERTEX": "1",
-        "CLAUDE_CODE_USE_FOUNDRY": "1",
-        "CLAUDE_CODE_SKIP_VERTEX_AUTH": "1",
-        "CLAUDE_CODE_OAUTH_TOKEN": "old-test-oauth",
-    }
-    for key, value in inherited.items():
-        monkeypatch.setenv(key, value)
-    folder = home / ".claude-api"
-    folder.mkdir()
-    save_selection(data_dir, str(folder), home)
-    with profile_environment(load_settings()):
-        spec = build_cli_spawn(ClaudeAgentOptions(cwd=str(home)))
-        assert spec.env["CLAUDE_CONFIG_DIR"] == str(folder)
-        assert all(key not in spec.env for key in inherited)
-        assert all(
-            value not in str(spec.cmd) for value in inherited.values() if len(value) > 1
-        )
-    assert all(os.environ[key] == value for key, value in inherited.items())
 
 
 def test_api_save_is_pending_until_restart_and_can_cancel(home, data_dir):
@@ -231,7 +199,7 @@ def test_same_folder_explicit_profile_still_needs_restart(home, data_dir, monkey
         result = client.put("/api/claude-profile", json={"folder": str(folder)})
         assert result.status_code == 200
         assert result.json()["restart_required"] is True
-    assert load_settings().data_dir != settings.data_dir
+    assert load_settings().data_dir == settings.data_dir
 
 
 def test_invalid_pending_selection_can_be_reset(home, data_dir):
@@ -250,12 +218,33 @@ def test_invalid_pending_selection_can_be_reset(home, data_dir):
         assert response.json()["restart_required"] is False
 
 
-def test_restart_reads_selected_history_and_uses_separate_database(home, data_dir):
+def test_restart_preserves_existing_data_and_history(home, data_dir):
+    original = replace(
+        load_settings(), routines_scheduler=False, remote_reconnect=False
+    )
+    history = original.claude_projects_dir / "project" / "existing.jsonl"
+    history.parent.mkdir(parents=True)
+    history.write_text("original transcript\n")
+    with TestClient(
+        create_app(settings=original, agent_factory=FakeAgentFactory()),
+        base_url=BACKEND_URL,
+        headers=HEADERS,
+    ) as client:
+        assert (
+            client.put(
+                "/api/state/preferences", json={"editor_command": ["test-editor"]}
+            ).status_code
+            == 200
+        )
+        projects = client.get("/api/projects").json()
     folder = home / ".claude-api"
     folder.mkdir()
     save_selection(data_dir, str(folder), home)
     settings = replace(
-        load_settings(), routines_scheduler=False, remote_reconnect=False
+        load_settings(),
+        routines_scheduler=False,
+        remote_reconnect=False,
+        usage_check=True,
     )
     with TestClient(
         create_app(settings=settings, agent_factory=FakeAgentFactory()),
@@ -265,10 +254,16 @@ def test_restart_reads_selected_history_and_uses_separate_database(home, data_di
         state = client.get("/api/claude-profile").json()
         assert state["active_folder"] == str(folder)
         assert state["restart_required"] is False
-        assert client.app.state.settings.db_path.is_file()
-        assert not (data_dir / "maestro.db").exists()
-        assert claude_config_dir() == folder
-    assert claude_config_dir() != folder
-    assert json.loads((data_dir / "claude-profile.json").read_text()) == {
-        "folder": str(folder)
-    }
+        assert settings.db_path == original.db_path
+        assert settings.claude_projects_dir == original.claude_projects_dir
+        assert client.get("/api/projects").json() == projects
+        assert client.get("/api/state").json()["preferences"]["editor_command"] == [
+            "test-editor"
+        ]
+        assert claude_config_dir() == original.claude_config_dir
+        assert active_auth_folder() == folder
+        assert client.app.state.usage.snapshot()["enabled"] is False
+    assert active_auth_folder() is None
+    assert history.read_text() == "original transcript\n"
+    assert not (folder / "projects").exists()
+    assert not (data_dir / "profiles").exists()

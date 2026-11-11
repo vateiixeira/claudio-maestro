@@ -6,7 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
-- Pasta do Claude em Preferências → Geral: escolha, por exemplo, `~/.claude-api` e reinicie o Maestro para usar um perfil separado. Cada pasta mantém suas conversas e os dados do Maestro; voltar à pasta padrão recupera o perfil anterior.
+- Pasta do Claude em Preferências → Geral: escolha, por exemplo, `~/.claude-api` para trocar somente a autenticação de API após reiniciar. Conversas, projetos, agentes e preferências permanecem os mesmos; a autenticação original continua disponível pelo botão Usar pasta padrão.
 
 ### Corrigido
 

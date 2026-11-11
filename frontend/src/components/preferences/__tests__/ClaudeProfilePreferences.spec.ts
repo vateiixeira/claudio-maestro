@@ -7,7 +7,7 @@ enableAutoUnmount(afterEach)
 afterEach(() => vi.unstubAllGlobals())
 const initial = { active_folder: '/home/test/.claude', default_folder: '/home/test/.claude', selected_folder: null, restart_required: false }
 
-it('salva uma pasta separada sem trocar a ativa e permite cancelar a troca', async () => {
+it('salva somente a fonte de autenticação e permite cancelar a troca', async () => {
   const bodies: unknown[] = []
   vi.stubGlobal('fetch', routeFetch({
     'GET /api/claude-profile': () => jsonResponse(initial),
@@ -19,6 +19,7 @@ it('salva uma pasta separada sem trocar a ativa e permite cancelar a troca', asy
   }))
   const w = mount(ClaudeProfilePreferences)
   await flushPromises()
+  expect(w.text()).toContain('Suas conversas, projetos, agentes e preferências continuam os mesmos.')
   expect(w.get('[data-test="profile-active"]').text()).toContain(initial.active_folder)
   expect(w.get('input').element.value).toBe('')
   expect(w.get('[data-test="profile-save"]').attributes('disabled')).toBeDefined()
@@ -31,7 +32,7 @@ it('salva uma pasta separada sem trocar a ativa e permite cancelar a troca', asy
   await w.get('[data-test="profile-reset"]').trigger('click')
   await flushPromises()
   expect(bodies[1]).toEqual({ folder: null })
-  expect(w.text()).not.toContain('Reinicie')
+  expect(w.get('[role="status"]').text()).not.toContain('Reinicie')
 })
 
 it('preserva a entrada quando a pasta é recusada', async () => {

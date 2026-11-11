@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from claudio_maestro.claudeprofile import profile_data_dir, read_selection
+from claudio_maestro.claudeprofile import read_selection
 
 logger = logging.getLogger(__name__)
 
@@ -138,10 +138,9 @@ class Settings:
     # Folder where the CLI saves conversations, watched for real-time updates.
     # None: `$CLAUDE_CONFIG_DIR/projects` or `~/.claude/projects`, resolved at startup.
     claude_projects_dir: Path | None = None
-    # The root keeps the selection; alternate profiles isolate all Maestro state,
-    # including the database, search index, agents, usage cache and agentd socket.
+    # Authentication selection never changes history or Maestro data directories.
     profile_root: Path | None = None
-    profile_isolated: bool = False
+    claude_auth_dir: Path | None = None
     claude_config_dir: Path | None = None
     default_claude_config_dir: Path | None = None
 
@@ -255,16 +254,14 @@ def load_settings() -> Settings:
     profile_root = data_dir
     default_config = claude_config_dir().expanduser().resolve()
     selection = read_selection(profile_root, home)
-    selected_config = selection or default_config
-    data_dir = profile_data_dir(profile_root, selection)
 
     return Settings(
         home_dir=home,
         data_dir=data_dir,
-        claude_projects_dir=selected_config / "projects",
+        claude_projects_dir=default_config / "projects",
         profile_root=profile_root,
-        profile_isolated=selection is not None,
-        claude_config_dir=selected_config,
+        claude_auth_dir=selection,
+        claude_config_dir=default_config,
         default_claude_config_dir=default_config,
         update_check=os.environ.get("MAESTRO_UPDATE_CHECK", "1") != "0",
         usage_check=os.environ.get("MAESTRO_USAGE_CHECK", "1") != "0",

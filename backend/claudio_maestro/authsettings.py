@@ -2,7 +2,9 @@
 
 import json
 import os
+import shlex
 import stat
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -10,6 +12,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from claudio_maestro import claudeprofile
+from claudio_maestro.auth_key_helper import ERROR, read_source
 from claudio_maestro.config import claude_config_dir
 
 MAX_SETTINGS_BYTES = 1024 * 1024
@@ -53,6 +57,47 @@ def _read_settings() -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def selected_auth_settings(existing: str | None = None) -> AuxiliaryAuth | None:
+    """Overlay only API authentication, leaving history and ordinary settings alone.
+
+    The inline JSON has no credentials: a stable helper reads the selected source
+    at credential-request time. It also survives an agentd detach/backend restart.
+    """
+    folder = claudeprofile.active_auth_folder()
+    if folder is None:
+        return None
+    read_source(folder)  # refuse to start a client that could fall back to the old login
+    settings: dict[str, Any] = {}
+    if existing:
+        try:
+            if existing.lstrip().startswith("{"):
+                value = json.loads(existing)
+            else:
+                # The app's session settings are inline permission overrides.
+                # Reading a caller's arbitrary file into inline JSON could expose
+                # unrelated secrets in argv; refuse that unsupported combination.
+                raise ValueError
+            if not isinstance(value, dict):
+                raise ValueError
+            settings = value
+        except (OSError, ValueError, RecursionError):
+            raise ValueError(ERROR) from None
+    cleared = {
+        key: "" for key in AUTH_ENV_KEYS | {
+            "CLAUDE_CODE_OAUTH_REFRESH_TOKEN", "CLAUDE_CODE_OAUTH_SCOPES",
+        } if key.startswith(("ANTHROPIC_", "CLAUDE_CODE_"))
+    }
+    # Keep model/default-model/cache options and ordinary AWS/Google credentials:
+    # those are settings of the current session, not this auth selection.
+    cleared["ANTHROPIC_BASE_URL"] = "https://api.anthropic.com"
+    old_env = settings.get("env")
+    settings["env"] = {**(old_env if isinstance(old_env, dict) else {}), **cleared}
+    settings["apiKeyHelper"] = shlex.join([
+        sys.executable, "-I", str(Path(__file__).with_name("auth_key_helper.py")), str(folder),
+    ])
+    return AuxiliaryAuth(env=cleared, settings=json.dumps(settings))
+
+
 @contextmanager
 def auxiliary_auth_settings() -> Iterator[AuxiliaryAuth]:
     """Keep a private helper-settings file alive until the caller closes its SDK client.
@@ -61,6 +106,10 @@ def auxiliary_auth_settings() -> Iterator[AuxiliaryAuth]:
     apiKeyHelper is intentionally allowed, but no other executable settings are loaded.
     Neither credentials nor helper commands go into command-line arguments or logs.
     """
+    selected = selected_auth_settings()
+    if selected is not None:
+        yield selected
+        return
     settings = _read_settings()
     raw_env = settings.get("env")
     env = {

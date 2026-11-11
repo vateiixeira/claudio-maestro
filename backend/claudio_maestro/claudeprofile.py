@@ -1,9 +1,5 @@
-"""Select a Claude home at startup, with separate Maestro data per folder.
+"""Select an authentication source without moving history or application data."""
 
-Only a folder name is stored. Credential files are neither read nor copied here.
-"""
-
-import hashlib
 import json
 import os
 import tempfile
@@ -15,7 +11,7 @@ if TYPE_CHECKING:
     from claudio_maestro.config import Settings
 
 FILENAME = "claude-profile.json"
-AUTH_ENV = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_API_KEY_HELPER_TTL_MS")
+_auth_folder: Path | None = None
 
 
 class ProfileError(ValueError):
@@ -84,37 +80,19 @@ def save_selection(root: Path, raw: str | None, home: Path) -> None:
         Path(name).unlink(missing_ok=True)
 
 
-def profile_data_dir(root: Path, folder: Path | None) -> Path:
-    if folder is None:
-        return root
-    key = hashlib.sha256(os.fsencode(folder)).hexdigest()
-    return root / "profiles" / key
+def active_auth_folder() -> Path | None:
+    """Process-wide app scope, also visible to HTTP tasks and SDK worker threads."""
+    return _auth_folder
 
 
 @contextmanager
 def profile_environment(settings: "Settings"):
-    folder = settings.claude_config_dir
-    # Unset CLAUDE_CONFIG_DIR differs from an explicit ~/.claude for the CLI's
-    # global config and keychain. Preserve the original environment by default.
-    if folder is None or not settings.profile_isolated:
-        yield
-        return
-    changed = ["CLAUDE_CONFIG_DIR"]
-    changed.extend(AUTH_ENV)
-    changed.extend(
-        key
-        for key in os.environ
-        if key.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_", "CLAUDE_CODE_SKIP_"))
-    )
-    previous = {key: os.environ.get(key) for key in changed}
+    # Uvicorn's lifespan and HTTP tasks are siblings, so a ContextVar set in
+    # lifespan would not reach requests. There is one app per process.
+    global _auth_folder
+    previous = _auth_folder
+    _auth_folder = settings.claude_auth_dir
     try:
-        for key in changed:
-            os.environ.pop(key, None)
-        os.environ["CLAUDE_CONFIG_DIR"] = str(folder)
         yield
     finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+        _auth_folder = previous

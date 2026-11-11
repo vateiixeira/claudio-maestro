@@ -244,7 +244,8 @@ def create_app(
         )
         app.state.usage = UsageChecker(
             app.state.hub.publish,
-            enabled=app.state.settings.usage_check,
+            # The subscription counter belongs to the default login, not API billing.
+            enabled=app.state.settings.usage_check and app.state.settings.claude_auth_dir is None,
             fetch=fetch_usage or default_fetch_usage,
             cache_path=app.state.settings.data_dir / "usage.json",
         )

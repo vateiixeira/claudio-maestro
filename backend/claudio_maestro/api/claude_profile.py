@@ -20,14 +20,13 @@ def profile_state(request: Request) -> dict:
     default = (
         settings.default_claude_config_dir or claude_config_dir().expanduser().resolve()
     )
-    active = settings.claude_config_dir or default
+    active = settings.claude_auth_dir or default
     selected = read_selection(root, settings.home_dir)
     return {
         "active_folder": str(active),
         "default_folder": str(default),
         "selected_folder": str(selected) if selected is not None else None,
-        "restart_required": (selected or default) != active
-        or (selected is not None) != settings.profile_isolated,
+        "restart_required": selected != settings.claude_auth_dir,
     }
 
 

@@ -50,14 +50,14 @@ onMounted(load)
   <section aria-label="Pasta do Claude" class="flex flex-col gap-2" :aria-busy="busy">
     <h2 class="m-0 font-mono text-xs font-normal tracking-[0.08em] text-fg-subtle uppercase">Pasta do Claude</h2>
     <p class="m-0 text-xs text-fg-muted">
-      Use outra pasta, como ~/.claude-api, para alternar entre sua assinatura e uma configuração de API.
-      Cada pasta mantém suas próprias credenciais, conversas, projetos e agentes. Ao voltar à pasta anterior, seus dados continuam lá.
-      Para retornar ao perfil original, use o botão "Usar pasta padrão".
+      Use outra pasta, como ~/.claude-api, somente para a autenticação de API.
+      Suas conversas, projetos, agentes e preferências continuam os mesmos.
+      Para retornar à autenticação original, use o botão "Usar pasta padrão".
     </p>
     <p v-if="state" data-test="profile-active" class="m-0 break-all text-xs text-fg-muted">
-      Em uso: <span class="font-mono">{{ state.active_folder }}</span>
+      Autenticação em uso: <span class="font-mono">{{ state.active_folder }}</span>
     </p>
-    <label for="pref-claude-folder" class="text-sm text-fg">Pasta de configuração</label>
+    <label for="pref-claude-folder" class="text-sm text-fg">Pasta de autenticação</label>
     <input
       id="pref-claude-folder"
       v-model="folder"
@@ -72,8 +72,8 @@ onMounted(load)
       @keydown.enter.prevent="save(folder)"
     />
     <p id="pref-claude-folder-help" class="m-0 text-xs text-fg-muted">
-      Escolha uma pasta existente dentro da sua pasta pessoal, já configurada para o Claude.
-      A mudança só entra em vigor depois de reiniciar o Maestro.
+      Escolha uma pasta existente dentro da sua pasta pessoal com a chave de API no settings.json ou um apiKeyHelper configurado.
+      Reinicie o Maestro para aplicar aos novos processos. O indicador de consumo da assinatura fica desligado enquanto essa pasta estiver selecionada.
     </p>
     <div class="flex flex-wrap gap-2">
       <button type="button" data-test="profile-save" :disabled="busy || !folder" class="h-11 rounded-lg border border-line-strong px-4 text-sm font-medium text-fg hover:bg-card disabled:opacity-40" @click="save(folder)">
@@ -85,7 +85,8 @@ onMounted(load)
     </div>
     <p v-if="error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <p v-if="state?.restart_required" role="status" class="m-0 text-sm text-fg-muted">
-      Reinicie o Maestro para usar {{ state.selected_folder ?? state.default_folder }}. As sessões atuais continuam na pasta em uso.
+      Reinicie o Maestro para usar a autenticação de {{ state.selected_folder ?? state.default_folder }}.
+      Processos já abertos mantêm a autenticação anterior até serem encerrados. O histórico permanece no mesmo lugar.
     </p>
     <p v-else-if="saved" role="status" class="m-0 text-sm text-primary-soft">Pasta salva.</p>
   </section>

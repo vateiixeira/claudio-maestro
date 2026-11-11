@@ -23,6 +23,7 @@ from claude_agent_sdk import (
 from claudio_maestro.agent.agentd_transport import AgentdConnectError, AgentdTransport
 from claudio_maestro.agent.base import AgentError, AgentOptions
 from claudio_maestro.agent.spawn import build_cli_spawn
+from claudio_maestro.authsettings import selected_auth_settings
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,14 @@ def build_sdk_options(
         env["CLAUDE_CODE_ENTRYPOINT"] = options.entrypoint
     if env:
         kwargs["env"] = env
+    # A selected folder changes authentication only. The helper/overlay contains
+    # no credential, so it is safe in argv and survives agentd-backed sessions.
+    # Reattaching starts no process and must not depend on the newly selected key.
+    if options.attach is None:
+        auth = selected_auth_settings(options.settings)
+        if auth is not None:
+            kwargs["env"] = {**env, **auth.env}
+            kwargs["settings"] = auth.settings
     return ClaudeAgentOptions(**kwargs)
 
 
