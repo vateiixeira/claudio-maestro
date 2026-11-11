@@ -47,7 +47,7 @@ onMounted(load)
 </script>
 
 <template>
-  <section aria-label="Pasta do Claude" class="flex flex-col gap-2" :aria-busy="busy">
+  <section id="claude-authentication" tabindex="-1" aria-label="Pasta do Claude" class="flex flex-col gap-2 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary" :aria-busy="busy">
     <h2 class="m-0 font-mono text-xs font-normal tracking-[0.08em] text-fg-subtle uppercase">Pasta do Claude</h2>
     <p class="m-0 text-xs text-fg-muted">
       Use outra pasta, como ~/.claude-api, somente para a autenticação de API.

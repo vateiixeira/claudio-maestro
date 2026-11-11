@@ -148,10 +148,12 @@ def test_api_save_is_pending_until_restart_and_can_cancel(home, data_dir):
     app = create_app(settings=settings, agent_factory=factory)
     with TestClient(app, base_url=BACKEND_URL, headers=HEADERS) as client:
         initial = client.get("/api/claude-profile").json()
+        assert initial["active_source"] == "default"
         response = client.put("/api/claude-profile", json={"folder": str(folder)})
         assert response.status_code == 200
         state = response.json()
         assert state["active_folder"] == initial["active_folder"]
+        assert state["active_source"] == "default"
         assert state["selected_folder"] == str(folder)
         assert state["restart_required"] is True
         assert claude_config_dir() == settings.claude_config_dir
@@ -253,6 +255,7 @@ def test_restart_preserves_existing_data_and_history(home, data_dir):
     ) as client:
         state = client.get("/api/claude-profile").json()
         assert state["active_folder"] == str(folder)
+        assert state["active_source"] == "api_folder"
         assert state["restart_required"] is False
         assert settings.db_path == original.db_path
         assert settings.claude_projects_dir == original.claude_projects_dir

@@ -6,6 +6,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Adicionado
 
+- O Início mostra a origem e a pasta de autenticação do Claude, avisa quando há troca pendente de reinício e oferece um atalho direto para alterar a configuração.
+
 - Pasta do Claude em Preferências → Geral: escolha, por exemplo, `~/.claude-api` para trocar somente a autenticação de API após reiniciar. Conversas, projetos, agentes e preferências permanecem os mesmos; a autenticação original continua disponível pelo botão Usar pasta padrão.
 
 ### Corrigido

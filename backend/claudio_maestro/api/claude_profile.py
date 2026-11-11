@@ -23,6 +23,7 @@ def profile_state(request: Request) -> dict:
     active = settings.claude_auth_dir or default
     selected = read_selection(root, settings.home_dir)
     return {
+        "active_source": "api_folder" if settings.claude_auth_dir is not None else "default",
         "active_folder": str(active),
         "default_folder": str(default),
         "selected_folder": str(selected) if selected is not None else None,

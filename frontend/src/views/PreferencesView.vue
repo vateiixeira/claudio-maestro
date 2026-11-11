@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DigestAgentPreferences from '../components/preferences/DigestAgentPreferences.vue'
 import ExecutionPreferences from '../components/preferences/ExecutionPreferences.vue'
@@ -21,6 +21,16 @@ type Tab = (typeof TABS)[number]['id']
 const route = useRoute()
 const router = useRouter()
 const tab = computed<Tab>(() => TABS.find((t) => t.id === route.query.aba)?.id ?? 'geral')
+
+async function focusAuthentication() {
+  if (route.hash !== '#claude-authentication' || tab.value !== 'geral') return
+  await nextTick()
+  const section = document.getElementById('claude-authentication')
+  section?.focus({ preventScroll: true })
+  section?.scrollIntoView({ block: 'center' })
+}
+onMounted(focusAuthentication)
+watch(() => route.fullPath, focusAuthentication, { flush: 'post' })
 
 function select(id: Tab) {
   if (id === tab.value) return

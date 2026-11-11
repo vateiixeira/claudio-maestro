@@ -13,6 +13,7 @@ import { goalDrafts } from '../goalDrafts'
 import type { Task, TaskStatus } from '../types/org'
 import DecisionCard from '../components/org/tasks/DecisionCard.vue'
 import StartTaskRow from '../components/start/StartTaskRow.vue'
+import ClaudeAuthStatus from '../components/start/ClaudeAuthStatus.vue'
 import { BTN, BTN_PRIMARY, ERROR } from '../components/org/styles'
 
 const ACTIVE: TaskStatus[] = ['in_progress', 'in_review', 'blocked']
@@ -119,6 +120,7 @@ const SECTION_TITLE = 'm-0 text-[0.9375rem] font-medium'
         </div>
         <RouterLink :class="[BTN, 'inline-flex items-center no-underline']" to="/tarefas">Ver tarefas →</RouterLink>
       </header>
+      <ClaudeAuthStatus />
 
       <form class="flex max-w-[900px] flex-col gap-3 rounded-[9px] border border-line-strong bg-panel px-4 pt-4 pb-3.5" @submit.prevent="submit">
         <label>
