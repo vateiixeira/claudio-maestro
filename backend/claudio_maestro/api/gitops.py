@@ -181,8 +181,7 @@ async def _repo_answer(
         await monitor.refresh_project(
             project_id, force=True, mutation_id=mutation_id, mutation_repo=str(repo_path)
         )
-    base = root if repo_path.is_relative_to(root) else None
-    answer = {"repo": await gitinfo.repo_details(repo_path, base, include_commits=False), **extra}
+    answer = {"repo": await gitinfo.repo_details(repo_path, root, include_commits=False), **extra}
     if mutation_id is not None:
         answer["mutation_id"] = mutation_id
     return answer

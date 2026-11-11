@@ -9,6 +9,7 @@ Chrome do sistema, Playwright, backend descartável na porta 6632. Nenhum dado r
 - Suíte completa: **206 passaram, 2 falharam**, 208 testes, 4,8 minutos. As duas falhas eram seletores novos que também encontravam o título do projeto na navegação lateral; foram corrigidos para o título de nível 1.
 - Após as correções e as mudanças finais de Organização compacta, rótulos Pull/Push e modal de diff: **21 passaram, zero falhas**, 33,1 segundos. Comando: `MAESTRO_E2E_PORT=6632 pnpm --dir frontend exec playwright test project-layout.e2e.ts git-diff-modal.e2e.ts git-diff-scopes.e2e.ts git-changes.e2e.ts git-sync.e2e.ts`.
 - Após o pedido final de Git como aba inicial e remoção do indicador de sessão: **18 passaram, zero falhas**, 26,7 segundos. Comando: `MAESTRO_E2E_PORT=6632 pnpm --dir frontend exec playwright test project-layout.e2e.ts groups.e2e.ts zz-groups-finish.e2e.ts git-rea.e2e.ts scratch-conversation.e2e.ts`. Inclui Git inicial, Conversas explícita persistida no reload, carregamento tardio ao entrar por Conversas, grupos e scratch.
+- Após a descoberta geral de worktrees ocultas e externas: **17 passaram, zero falhas**, 30,2 segundos. Comando: `MAESTRO_E2E_PORT=6632 pnpm --dir frontend exec playwright test git-worktrees.e2e.ts git-diff-scopes.e2e.ts git-sync.e2e.ts git-rea.e2e.ts`.
 - A suíte completa não foi repetida após essas últimas mudanças; os fluxos diretamente afetados foram reexecutados. A fixture automática também verificou ausência de erros no console em todos os testes aprovados.
 - Os specs foram escritos antes da conclusão da interface. A tentativa de RED no navegador não chegou aos testes: o servidor detectou fontes novas e tentou compilar automaticamente, falhando antes de iniciar. Não se registra isso como RED funcional.
 
@@ -34,3 +35,9 @@ Inspeção visual confirmou cabeçalho completo nas capturas de onze repositóri
 O cenário visual adiciona nove repositórios vazios aos dois históricos existentes, dentro da pasta temporária validada por realpath. As nove pastas são removidas no `finally`. O indicador de sessão do Git foi removido por pedido posterior. O E2E verifica ausência dos antigos elementos `running-session` e `running-arc`; o cenário de sessão ativa permanece coberto pelos testes de componente.
 
 Ao final, o servidor encerrou normalmente, a porta 6632 ficou livre e a pasta temporária da execução foi removida.
+
+## Worktrees ocultas e externas
+
+`git-worktrees.e2e.ts` cria, apenas dentro da fixture temporária validada por realpath, uma worktree em `.worktrees/e2e-hidden-worktree` e outra fora da pasta do projeto, como irmã `e2e-external-worktree`. Cada uma recebe branch, commit e alteração exclusivos. O teste verificou três entradas únicas em Alterações e Commits, o histórico de cada worktree, caminho e conteúdo do diff no modal, preparar/despreparar e reabrir o diff sem perder a identidade da worktree externa. HEAD e índice do repositório principal permaneceram iguais; o arquivo exclusivo não apareceu nele. As worktrees e branches foram removidas no `finally`; a porta 6632 ficou livre após shutdown normal.
+
+Rodada de worktrees: **17/17 passaram**, em 30,2 segundos (`git-worktrees`, `git-diff-scopes`, `git-sync` e `git-rea`).

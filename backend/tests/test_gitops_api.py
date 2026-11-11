@@ -313,3 +313,15 @@ def test_push_rejection_is_409_with_output(api, home, git_home, tmp_path, local_
     detail = response.json()["detail"]
     assert detail["code"] == "git" and detail["message"].startswith("O envio não foi feito")
     assert "[rejected]" in detail["output"]
+
+
+def test_external_worktree_stage_keeps_discovery_identity(api, home, git_home, tmp_path):
+    project, root = project_with_repo(api, home)
+    wt = tmp_path / 'external'
+    git(root, 'worktree', 'add', '-q', '-b', 'external', str(wt))
+    (wt / 'README.md').write_text('worktree change\n')
+    response = post(api, project, 'stage', repo=str(wt), paths=['README.md'])
+    assert response.status_code == 200, response.text
+    assert response.json()['repo']['rel_path'] == str(wt)
+    assert response.json()['repo']['path'] == str(wt)
+    assert git(root, 'diff', '--cached', '--name-only') == ''

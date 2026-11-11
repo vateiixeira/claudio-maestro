@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -106,8 +107,23 @@ class GitMonitor:
             # The periodic pass reuses the repositories of the last refresh (at most
             # `git_refresh_interval_seconds` old) instead of walking the folders every tick.
             repos = [Path(repo["path"]) for repo in last[0]]
+            # Cached membership cannot authorize an external path after its linked
+            # worktree pointers change. Recheck proof without walking the project.
+            real_root, real_repos = await asyncio.to_thread(
+                lambda: (Path(os.path.realpath(path)),
+                         [Path(os.path.realpath(repo)) for repo in repos])
+            )
+
+            async def authorized(repo: Path) -> bool:
+                if repo.is_relative_to(real_root):
+                    return True
+                found = await gitinfo.project_worktree(repo, [real_root])
+                return found is not None and found.path == repo
+
+            allowed = await asyncio.gather(*(authorized(repo) for repo in real_repos))
+            repos = [repo for repo, valid in zip(real_repos, allowed, strict=True) if valid]
         else:
-            repos, _ = await asyncio.to_thread(gitinfo.discover_scan, path)
+            repos, _ = await gitinfo.discover_project_scan(path)
         if interval is not None:
             repos = [repo for repo in repos if fetch_registry.due(repo, interval)]
         if not repos:

@@ -414,7 +414,7 @@ def _parse_status(repo: RepoStatus, output: str) -> None:
 
 
 def _rel_path(repo: Path, root: Path) -> str:
-    return repo.relative_to(root).as_posix() if repo != root else "."
+    return repo.relative_to(root).as_posix() if repo.is_relative_to(root) else str(repo)
 
 
 async def repo_status(
@@ -471,11 +471,71 @@ def discover(root: Path) -> list[Path]:
     return discover_scan(root)[0]
 
 
+async def discover_project_scan(
+    root: Path, *, timeout: float = GIT_TIMEOUT,
+) -> tuple[list[Path], bool]:
+    """Physical repositories plus linked worktrees proven by their in-project main.
+
+    Hidden folders are never walked. Only main repositories already discovered in
+    the project may provide candidates, and no Git command runs in a candidate
+    until both pointers and its membership in that main's listing agree.
+    """
+    def physical() -> tuple[list[Path], bool, list[Path], int]:
+        paths, limited = discover_scan(root)
+        paths = list(dict.fromkeys(Path(os.path.realpath(path)) for path in paths))
+        real_root = Path(os.path.realpath(root))
+        mains = [path for path in paths if path.is_relative_to(real_root)
+                 and (path / ".git").is_dir() and (path / ".git/worktrees").is_dir()]
+        capacity = REPO_MAX_COUNT + int(real_root in paths)
+        return paths, limited, mains, capacity
+
+    paths, limited, mains, capacity = await asyncio.to_thread(physical)
+
+    async def linked(main: Path) -> list[Path]:
+        try:
+            code, out, _ = await run_git(
+                main, "worktree", "list", "--porcelain", timeout=timeout, limit=FILES_READ_LIMIT,
+            )
+        except GitError:
+            return []
+        if code != 0 or len(out.encode("utf-8")) > FILES_READ_LIMIT:
+            return []
+
+        def prove() -> list[Path]:
+            result: list[Path] = []
+            for entry in parse_worktree_list(out):
+                candidate = Path(os.path.realpath(entry))
+                if candidate == main:
+                    continue
+                proven = _prove_worktree(candidate, [root])
+                if proven is not None:
+                    found, _ = proven
+                    if found.path == candidate and found.main_repo == main:
+                        result.append(candidate)
+                        if len(result) > REPO_MAX_COUNT:
+                            break
+            return result
+
+        return await asyncio.to_thread(prove)
+
+    seen = set(paths)
+    for linked_paths in await asyncio.gather(*(linked(main) for main in mains)):
+        for path in linked_paths:
+            if path in seen:
+                continue
+            seen.add(path)
+            if len(paths) >= capacity:
+                limited = True
+            else:
+                paths.append(path)
+    return paths, limited
+
+
 async def project_repos_scan(
     root: Path, *, timeout: float = GIT_TIMEOUT
 ) -> tuple[list[RepoStatus], bool]:
     """Status of every repository of a folder, and whether the limit was reached."""
-    paths, limit_reached = await asyncio.to_thread(discover_scan, root)
+    paths, limit_reached = await discover_project_scan(root, timeout=timeout)
     repos = await asyncio.gather(*(repo_status(path, root, timeout=timeout) for path in paths))
     return list(repos), limit_reached
 
@@ -870,7 +930,7 @@ async def project_details_scan(
     root: Path, *, timeout: float = GIT_TIMEOUT, include_commits: bool = True,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Details of every repository of a folder, and whether the limit was reached."""
-    paths, limit_reached = await asyncio.to_thread(discover_scan, root)
+    paths, limit_reached = await discover_project_scan(root, timeout=timeout)
     repos = await asyncio.gather(*(
         repo_details(path, root, timeout=timeout, include_commits=include_commits) for path in paths
     ))

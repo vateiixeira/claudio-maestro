@@ -32,4 +32,18 @@ A sessão `b9cb0b20-773c-447d-b016-29d5238ba9d3` está vinculada à raiz do proj
 
 A resposta real de `/api/projects/6/git/details` continha 11 repositórios, sem erros nem limite atingido, mas não incluía essa worktree. `project_details_scan` usa `discover_scan`, que delega a `history.scan_repositories`; esta ignora diretórios cujo nome começa com ponto. O endpoint de branches do repositório principal inclui `perf/abertura-agenda`, portanto seus commits podem ser vistos selecionando essa branch na seção Commits, sem checkout.
 
-Diagnóstico: lacuna na descoberta de worktrees, não perda de commits. Correção recomendada, ainda não implementada: complementar a descoberta com `git worktree list` dos repositórios encontrados, validar cada vínculo pelo mecanismo existente e deduplicar antes de consultar status/histórico. Não ampliar indiscriminadamente a varredura de diretórios ocultos nem depender de a sessão conhecer a worktree.
+Diagnóstico: lacuna na descoberta de worktrees, não perda de commits. Correção identificada no diagnóstico: complementar a descoberta com `git worktree list` dos repositórios encontrados, validar cada vínculo pelo mecanismo existente e deduplicar antes de consultar status/histórico. Não ampliar indiscriminadamente a varredura de diretórios ocultos nem depender de a sessão conhecer a worktree.
+
+### Correção geral aplicada
+
+`discover_project_scan` complementa a varredura física com a lista oficial de worktrees dos repositórios principais encontrados. Valida os ponteiros de ida e volta, a raiz exata do candidato e seu vínculo com o repositório listado dentro do projeto. Deduplica por caminho real, preserva o limite de repositórios e ignora candidatos inválidos ou removidos. Só executa a listagem extra quando existe `.git/worktrees`; não mantém cache novo de descoberta.
+
+Resumo, detalhes e fetch do monitor compartilham a descoberta. Worktrees externas conservam seu caminho absoluto em `rel_path`, inclusive nas respostas de preparar/despreparar, para que diffs posteriores continuem lendo a worktree correta.
+
+Verificação real após reiniciar somente o backend: projeto 6 passou de 11 para 12 repositórios, incluindo `perf/abertura-agenda`, sem erro nessa worktree. Os dois registros antigos de Cursor apontam para diretórios administrativos inexistentes e foram corretamente excluídos. O processo agentd permaneceu ativo.
+
+Medições HTTP locais, cinco leituras por endpoint: antes, resumo mediano 53,84 ms e detalhes 120,81 ms; depois, resumo 69,43 ms e detalhes 102,32 ms. São medições locais sob carga variável, não uma garantia de desempenho para outros projetos.
+
+A revisão acrescentou revalidação das worktrees externas reutilizadas pelo fetch periódico: caminhos são canonicalizados e os ponteiros precisam continuar válidos antes da consulta Git. Testes de regressão cobrem vínculo rompido e tentativa de reutilizar uma subpasta como raiz.
+
+Validação da correção: 4.964 testes do backend passaram (4 pulados); após a revalidação do cache, 71 testes focados passaram. Ruff e revisão independente aprovados. No navegador, 17 testes passaram, incluindo worktrees ocultas/externas, diffs, sincronização e histórico.
