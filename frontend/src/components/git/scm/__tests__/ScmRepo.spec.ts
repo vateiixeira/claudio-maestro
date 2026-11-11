@@ -33,6 +33,25 @@ function mountRepo(repo: RepoDetails, handlers: Record<string, () => Response | 
 const bodyOf = (call: unknown[]) => JSON.parse(String((call[1] as RequestInit).body))
 
 describe('repositório na seção Alterações', () => {
+  it('oculta o formulário e os avisos sem alterações, preservando o rascunho', async () => {
+    localStorage.setItem(`maestro.commitDraft:${PATH}`, 'Meu rascunho')
+    const repo = makeRepoDetails({ path: PATH, ahead: 2, state: makeRepoState({ has_hooks: true, gpgsign: true }) })
+    const { wrapper } = mountRepo(repo)
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="hooks-note"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="gpg-note"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="primary-action"]').text()).toContain('Enviar')
+    await wrapper.setProps({ repo: { ...repo, files: [file('a.ts', 'unstaged')] } })
+    expect((wrapper.get('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('Meu rascunho')
+  })
+
+  it('destaca o nome da worktree mantendo o caminho completo acessível', () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, rel_path: 'angular-body/.worktrees/perf-abertura-agenda' }))
+    expect(wrapper.get('[data-test="repo-short-name"]').text()).toBe('perf-abertura-agenda')
+    expect(wrapper.get('[data-test="repo-parent-name"]').text()).toBe('angular-body/.worktrees')
+    expect(wrapper.get('[data-test="scm-repo-toggle"]').attributes('title')).toContain('angular-body/.worktrees/perf-abertura-agenda')
+  })
+
   it('ações de rede mostram texto além dos ícones', () => {
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 2, behind: 1 }))
     expect(wrapper.get('[data-test="repo-pull"]').text()).toBe('Pull')

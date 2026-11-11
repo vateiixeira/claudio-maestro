@@ -6,10 +6,10 @@ import IconChevron from '../../icons/IconChevron.vue'
 import HistoryRefMenu from './HistoryRefMenu.vue'
 import ComparisonDirection from './ComparisonDirection.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   projectId: number; repoPath: string; headRef: string | null; branch: string
-  defaultBase: string | null; userEmail: string | null; revision?: number
-}>()
+  defaultBase: string | null; userEmail: string | null; revision?: number; active?: boolean
+}>(), { active: true })
 const storageKey = () => `maestro.gitComparison:${props.projectId}:${props.repoPath}`
 function savedBase(): string | null {
   try { return localStorage.getItem(storageKey()) || props.defaultBase } catch { return props.defaultBase }
@@ -23,12 +23,15 @@ const comparison = ref<BranchComparison | null>(null)
 const expanded = ref({ ahead: false, behind: false })
 const short = (name: string) => name.replace(/^refs\/(heads|remotes)\//, '')
 const label = computed(() => `Comparar ${props.branch} com ${base.value ? short(base.value) : 'outra branch'}`)
+let stale = false
 let generation = 0
 let controller: AbortController | undefined
 function cancel(): void { generation++; controller?.abort(); controller = undefined; loading.value = false }
 onBeforeUnmount(cancel)
 
 async function load(): Promise<void> {
+  if (!props.active) { stale = true; return }
+  stale = false
   cancel()
   comparison.value = null
   expanded.value = { ahead: false, behind: false }
@@ -57,6 +60,13 @@ function select(value: string): void {
   open.value = true
   void load()
 }
+watch(() => props.active, (active) => {
+  if (!active) {
+    if (loading.value) { stale = true; cancel() }
+    return
+  }
+  if (stale) void load()
+})
 watch(() => [props.projectId, props.repoPath, props.headRef, props.branch, props.revision], (now, previous) => {
   if (now[0] !== previous[0] || now[1] !== previous[1]) base.value = savedBase()
   void load()

@@ -26,7 +26,8 @@ test('sincronizar, publicar e buscar no remoto', async ({ page }) => {
   await expect(loja.getByTestId('primary-action')).toHaveText('Sincronizar 1↓ 1↑')
   await loja.getByTestId('primary-action').click()
   await expect(loja.getByTestId('sync-counts')).toHaveText('em dia')
-  await expect(loja.getByTestId('primary-action')).toHaveText('Commitar')
+  await expect(loja.getByTestId('primary-action')).toHaveCount(0)
+  await expect(loja.getByTestId('commit-message')).toHaveCount(0)
 
   const site = repo(page, 'site')
   if (await site.getByTestId('primary-action').count() === 0) await site.getByTestId('scm-repo-toggle').click()
@@ -91,13 +92,17 @@ test('enviar puro: o botão largo e o ícone seguem o estado, e a seção Commit
   await expect(loja.getByTestId('primary-action')).toHaveText('Enviar 1 commit')
   await expect(loja.getByTestId('repo-pull')).toBeDisabled()
   await expect(loja.getByTestId('repo-pull')).toHaveAttribute('title', 'Nada para baixar')
+  await page.getByTestId('git-view-commits').click()
   const commits = page.getByTestId('commits-repo').filter({ hasText: 'loja' })
   await commits.getByTestId('commits-repo-toggle').click()
   await expect(commits.getByTestId('group-outgoing')).toContainText('Para subir — 1 commit')
+  await page.getByTestId('git-view-changes').click()
   await loja.getByTestId('primary-action').click()
   await expect(loja.getByTestId('sync-counts')).toHaveText('em dia')
+  await page.getByTestId('git-view-commits').click()
   await commits.getByTestId('apply-history-update').click()
   await expect(commits.getByTestId('group-outgoing')).toContainText('Para subir — nenhum')
+  await page.getByTestId('git-view-changes').click()
   await expect(loja.getByTestId('repo-push')).toBeDisabled()
   await expect(loja.getByTestId('repo-push')).toHaveAttribute('title', 'Nada para enviar')
 })
@@ -110,11 +115,14 @@ test('baixar puro: o botão largo baixa e a seção Commits mostra o grupo Para 
   await page.getByTestId('menu-fetch').click()
   await expect(loja.getByTestId('primary-action')).toHaveText('Baixar 1 commit')
   await expect(loja.getByTestId('repo-push')).toBeDisabled()
+  await page.getByTestId('git-view-commits').click()
   const commits = page.getByTestId('commits-repo').filter({ hasText: 'loja' })
   await commits.getByTestId('commits-repo-toggle').click()
   await expect(commits.getByTestId('group-incoming')).toContainText('Para baixar — 1 commit')
+  await page.getByTestId('git-view-changes').click()
   await loja.getByTestId('primary-action').click()
   await expect(loja.getByTestId('sync-counts')).toHaveText('em dia')
+  await page.getByTestId('git-view-commits').click()
   await commits.getByTestId('apply-history-update').click()
   await expect(commits.getByTestId('group-incoming')).toContainText('Para baixar — nenhum')
 })
@@ -248,6 +256,7 @@ async function divergeLoja(page: Page, file: string): Promise<{ local: string; b
 }
 
 async function syncLoja(page: Page): Promise<void> {
+  await page.getByTestId('git-view-changes').click()
   const loja = repo(page, 'loja')
   await loja.getByTestId('primary-action').click()
   await expect(loja.getByTestId('sync-counts')).toHaveText('em dia')
@@ -267,6 +276,7 @@ test('o ícone Baixar só baixa: faz o merge e não envia nada', async ({ page }
   expect(posts).toContain(`/api/projects/${new URL(page.url()).pathname.split('/')[2]}/git/pull`)
   expect(posts.filter((path) => /\/git\/(sync|push)$/.test(path))).toEqual([])
   expect(git(bare, 'rev-parse', 'main')).toBe(remoteBefore)
+  await page.getByTestId('git-view-commits').click()
   const commits = page.getByTestId('commits-repo').filter({ hasText: 'loja' })
   if (await commits.getByTestId('group-outgoing').count() === 0) await commits.getByTestId('commits-repo-toggle').click()
   await expect(commits.getByTestId('group-outgoing')).toContainText('Para subir — 2 commits')
@@ -276,7 +286,7 @@ test('o ícone Baixar só baixa: faz o merge e não envia nada', async ({ page }
   expect(git(bare, 'rev-parse', 'main')).toBe(git(local, 'rev-parse', 'HEAD'))
 })
 
-test('Ctrl+Enter no campo de mensagem não faz nada de rede, em Sincronizar, Baixar, Enviar', async ({ page }) => {
+test('sem alterações locais, não há composer e Ctrl+Enter não sincroniza nem envia', async ({ page }) => {
   await openProject(page)
   const loja = repo(page, 'loja')
   const { local, bare } = await divergeLoja(page, 'atalho')
@@ -285,23 +295,27 @@ test('Ctrl+Enter no campo de mensagem não faz nada de rede, em Sincronizar, Bai
   const remoteBefore = git(bare, 'rev-parse', 'main')
   const headBefore = git(local, 'rev-parse', 'HEAD')
 
-  await message.fill('mensagem que não vira commit')
-  await message.press('Control+Enter')
+  await expect(message).toHaveCount(0)
+  await page.getByTestId('git-repo-search').focus()
+  await page.keyboard.press('Control+Enter')
   await expect(loja.getByTestId('primary-action')).toHaveText('Sincronizar 1↓ 1↑')
+
+  expect(posts).toEqual([])
 
   // Baixar: after the pull the wide button offers Enviar; Ctrl+Enter must not push it.
   await loja.getByTestId('repo-pull').click()
   await expect(loja.getByTestId('primary-action')).toHaveText('Enviar 2 commits')
   const afterPull = posts.length
-  await message.press('Control+Enter')
+  await expect(message).toHaveCount(0)
+  await page.getByTestId('git-repo-search').focus()
+  await page.keyboard.press('Control+Enter')
   await expect(loja.getByTestId('primary-action')).toHaveText('Enviar 2 commits')
   expect(posts.length).toBe(afterPull)
   expect(git(bare, 'rev-parse', 'main')).toBe(remoteBefore)
   expect(git(local, 'rev-parse', 'HEAD')).not.toBe(headBefore)
-  await expect(message).toHaveValue('mensagem que não vira commit')
+  await expect(message).toHaveCount(0)
   expect(posts.filter((path) => /\/git\/(sync|push|publish)$/.test(path))).toEqual([])
 
-  await message.fill('')
   await syncLoja(page)
 })
 

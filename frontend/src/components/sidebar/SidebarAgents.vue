@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import IconChevron from '../icons/IconChevron.vue'
+import { isSectionOpened, setSectionOpened } from '../../sidebarCollapse'
 import AgentStateIcon from '../org/AgentStateIcon.vue'
 import { sidebarItemClass } from './itemClass'
 import { errorMessage } from '../../api/http'
@@ -28,6 +30,10 @@ const groups = computed(() =>
     }))
     .filter((group) => group.rows.length > 0),
 )
+const expanded = computed(() => isSectionOpened('agents'))
+const agentCount = computed(() => groups.value.reduce((count, group) => count + group.rows.length, 0))
+const unseenCount = computed(() => groups.value.reduce((count, group) => count + group.rows.reduce((sum, { agent }) => sum + agent.unseen, 0), 0))
+
 const isCurrent = (agent: Agent) =>
   route.name === 'session' && agent.main_session_id != null && route.params.id === agent.main_session_id
 
@@ -54,28 +60,44 @@ async function open(agent: Agent) {
 
 <template>
   <section v-if="groups.length" data-test="sidebar-agents" aria-labelledby="sidebar-agents-title" class="flex flex-col gap-px">
-    <div class="flex h-[30px] items-center pl-2.5">
-      <h2 id="sidebar-agents-title" data-test="section-title" class="font-mono text-[0.6875rem] font-normal tracking-[0.08em] text-fg-subtle uppercase">Agentes</h2>
-    </div>
-    <p v-if="error" data-test="sidebar-agents-error" role="alert" class="m-0 px-2.5 py-1 text-xs text-diff-del-fg">{{ error }}</p>
-    <template v-for="group in groups" :key="group.project.id">
-      <h3 data-test="sidebar-agent-project" class="m-0 truncate px-2.5 pt-1.5 pb-0.5 text-xs font-medium text-fg-subtle">{{ group.project.name }}</h3>
+    <h2 id="sidebar-agents-title" class="m-0">
       <button
-        v-for="{ agent, state } in group.rows"
-        :key="agent.id"
         type="button"
-        data-test="sidebar-agent-row"
-        :aria-current="isCurrent(agent) ? 'page' : undefined"
-        :class="[rowClass(agent), 'w-full cursor-pointer border-none bg-transparent text-left focus-visible:outline-2 focus-visible:outline-primary']"
-        @click="open(agent)"
+        data-test="sidebar-agents-toggle"
+        :aria-expanded="expanded"
+        aria-controls="sidebar-agents-list"
+        class="flex min-h-8 w-full items-center gap-1.5 rounded-md px-2.5 text-left text-fg-subtle hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+        @click="setSectionOpened('agents', !expanded)"
       >
-        <AgentStateIcon :state="state" :size="12" />
-        <span data-test="sidebar-agent-name" class="min-w-0 truncate" :class="agent.enabled ? 'font-medium' : ''">{{ agent.name }}</span>
-        <span class="grow" />
-        <span v-if="agent.unseen > 0" class="flex shrink-0 items-center text-xs font-semibold text-secondary">
-          <span data-test="sidebar-agent-unseen" aria-hidden="true">{{ agent.unseen }}</span><span class="sr-only">{{ agent.unseen }} {{ agent.unseen === 1 ? 'novidade' : 'novidades' }}</span>
-        </span>
+        <IconChevron :open="expanded" :size="12" />
+        <span data-test="section-title" class="font-mono text-[0.6875rem] font-normal tracking-[0.08em] uppercase">Agentes</span>
+        <span class="text-xs font-normal"><span aria-hidden="true">{{ agentCount }}</span><span class="sr-only">{{ agentCount }} {{ agentCount === 1 ? 'agente' : 'agentes' }}</span></span>
+        <span v-if="unseenCount" class="ml-auto text-xs font-medium text-secondary">{{ unseenCount }} {{ unseenCount === 1 ? 'novidade' : 'novidades' }}</span>
       </button>
-    </template>
+    </h2>
+    <div id="sidebar-agents-list" :hidden="!expanded" class="max-h-[min(28vh,14rem)] overflow-y-auto overscroll-contain">
+      <template v-if="expanded">
+        <p v-if="error" data-test="sidebar-agents-error" role="alert" class="m-0 px-2.5 py-1 text-xs text-diff-del-fg">{{ error }}</p>
+        <template v-for="group in groups" :key="group.project.id">
+          <h3 :title="group.project.name" data-test="sidebar-agent-project" class="m-0 truncate px-2.5 pt-1.5 pb-0.5 text-xs font-medium text-fg-subtle">{{ group.project.name }}</h3>
+          <button
+            v-for="{ agent, state } in group.rows"
+            :key="agent.id"
+            type="button"
+            data-test="sidebar-agent-row"
+            :aria-current="isCurrent(agent) ? 'page' : undefined"
+            :class="[rowClass(agent), 'w-full cursor-pointer border-none bg-transparent text-left focus-visible:outline-2 focus-visible:outline-primary']"
+            @click="open(agent)"
+          >
+            <AgentStateIcon :state="state" :size="12" />
+            <span data-test="sidebar-agent-name" :title="agent.name" class="min-w-0 truncate" :class="agent.enabled ? 'font-medium' : ''">{{ agent.name }}</span>
+            <span class="grow" />
+            <span v-if="agent.unseen > 0" class="flex shrink-0 items-center text-xs font-semibold text-secondary">
+              <span data-test="sidebar-agent-unseen" aria-hidden="true">{{ agent.unseen }}</span><span class="sr-only">{{ agent.unseen }} {{ agent.unseen === 1 ? 'novidade' : 'novidades' }}</span>
+            </span>
+          </button>
+        </template>
+      </template>
+    </div>
   </section>
 </template>

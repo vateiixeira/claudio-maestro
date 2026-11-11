@@ -6,8 +6,7 @@ import ProjectConversations from '../components/project/ProjectConversations.vue
 import OrganizationView from './OrganizationView.vue'
 import SplitDivider from '../components/SplitDivider.vue'
 import ConversationView from './ConversationView.vue'
-import ScmSection from '../components/git/scm/ScmSection.vue'
-import CommitsSection from '../components/git/commits/CommitsSection.vue'
+import GitPanel from '../components/git/GitPanel.vue'
 import { useGitDetailsStore } from '../stores/gitDetails'
 import { errorMessage, openInEditor } from '../api/http'
 import { changedCount, useGitStore } from '../stores/git'
@@ -399,8 +398,7 @@ async function remove(): Promise<void> {
         <ProjectConversations v-show="activeTab === 'conversas'" :project-id="id" :available="project.available" :row-target="rowTarget" :active-id="split ? session ?? null : null" :loading="sessionsLoading" :load-error="sessionsError" @retry="load" @error="actionError = $event" />
       <section v-if="activeTab === 'git'" data-test="repos" class="flex flex-col gap-3">
         <p v-if="gitDetails.isLoaded(id) && repos.length === 0 && !gitDetails.errorFor(id)" class="m-0 text-sm text-fg-muted">sem repositório git</p>
-        <ScmSection v-show="!gitDetails.isLoaded(id) || repos.length > 0 || gitDetails.errorFor(id)" :project-id="id" />
-        <CommitsSection v-if="project?.available" :project-id="id" />
+        <GitPanel :project-id="id" />
         <p v-if="gitDetails.byProject[id]?.limit_reached" data-test="repo-limit" class="m-0 text-xs text-fg-muted">
           Mais de 50 repositórios; só os 50 primeiros são acompanhados.
         </p>

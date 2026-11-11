@@ -42,8 +42,9 @@ test('preparar, commitar e descartar', async ({ page }) => {
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
 
+  await page.getByTestId('git-view-commits').click()
   const commits = page.getByTestId('commits-section').getByTestId('commits-repo').first()
   if (await commits.getByTestId('commits-repo-toggle').getAttribute('aria-expanded') !== 'true') await commits.getByTestId('commits-repo-toggle').click()
-  await commits.getByTestId('apply-history-update').click()
+  if (await commits.getByTestId('apply-history-update').count()) await commits.getByTestId('apply-history-update').click()
   await expect(commits.getByTestId('commit-row').filter({ hasText: 'Somar o frete no carrinho' })).toHaveCount(1)
 })

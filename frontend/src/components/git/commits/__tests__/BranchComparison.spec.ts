@@ -14,6 +14,27 @@ beforeEach(() => localStorage.clear())
 afterEach(() => vi.unstubAllGlobals())
 
 describe('comparação entre branches', () => {
+  it('preserva a comparação oculta e revalida só quando volta com uma revisão nova', async () => {
+    const fetch = vi.fn(async () => jsonResponse(meta))
+    vi.stubGlobal('fetch', fetch)
+    const w = mount(BranchComparison, { props: { ...props, active: true, revision: 0 }, global: { plugins: [createPinia()] } })
+    await w.get('[data-test="comparison-toggle"]').trigger('click')
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await w.setProps({ active: false })
+    await w.setProps({ revision: 1 })
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(w.get('[data-test="comparison-ahead-toggle"]').text()).toContain('31 commits')
+    await w.setProps({ active: true })
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(2)
+    await w.setProps({ active: false })
+    await w.setProps({ active: true })
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
   it('consulta só ao expandir, pagina commits e abre arquivos/diff sob demanda', async () => {
     const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
       const u = new URL(url, 'http://localhost')

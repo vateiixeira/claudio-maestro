@@ -117,7 +117,7 @@ const looseByProject = computed(() => {
 function hasChildren(projectId: number): boolean {
   return (listedGroupsByProject.value.get(projectId) ?? 0) > 0 || (looseByProject.value.get(projectId)?.length ?? 0) > 0
 }
-// "Em andamento": projects with an open conversation. "Outros projetos": the rest, kept in one folded line.
+// "Conversas abertas": projects with an open conversation. "Outros projetos": the rest, kept in one folded line.
 const split = computed(() => splitProjects(projects.projects, sessions.all))
 // The project on screen stays visible even when it has no open conversation and the list is folded.
 const activeIsOther = computed(() => split.value.others.some((p) => p.id === activeProjectId.value))
@@ -223,12 +223,12 @@ const itemClass = sidebarItemClass
       </details>
     </div>
 
-    <div data-test="sidebar-sections" class="relative flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-2.5 pt-3.5 pb-2">
+    <div data-test="sidebar-sections" class="relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2.5 pt-3.5 pb-2">
       <SidebarAgents />
 
       <section aria-labelledby="sidebar-active-title" class="flex flex-col gap-px">
         <div class="flex h-[30px] items-center pr-1 pl-2.5">
-          <h2 id="sidebar-active-title" data-test="section-title" class="grow font-mono text-[0.6875rem] font-normal tracking-[0.08em] text-fg-subtle uppercase">Em andamento</h2>
+          <h2 id="sidebar-active-title" data-test="section-title" class="grow font-mono text-[0.6875rem] font-normal tracking-[0.08em] text-fg-subtle uppercase">Conversas abertas</h2>
           <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-[26px] items-center justify-center rounded-md text-fg-subtle no-underline hover:bg-card hover:text-fg"><IconPlus :size="13" /></RouterLink>
         </div>
         <p v-if="projects.loadError" class="px-2.5 py-2 text-xs text-diff-del-fg" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
@@ -245,10 +245,9 @@ const itemClass = sidebarItemClass
             >
               <span data-test="project-color" class="size-[9px] shrink-0 rounded-[3px]" :class="{ 'opacity-40': !project.available }" :style="{ backgroundColor: project.color }" />
               <span class="flex min-w-0 grow flex-col">
-                <span class="flex min-w-0 items-baseline gap-2">
-                  <span data-test="project-name" class="truncate font-medium" :class="[showsBranch(project) ? 'max-w-[60%] shrink-0' : '', project.available ? 'text-fg' : 'text-fg-subtle']">{{ project.name }}</span>
+                <span data-test="project-name" :title="project.name" class="truncate font-medium" :class="project.available ? 'text-fg' : 'text-fg-subtle'">{{ project.name }}</span>
+                <span v-if="showsBranch(project)" class="flex min-w-0 items-baseline gap-2">
                   <span
-                    v-if="showsBranch(project)"
                     data-test="project-branch"
                     :title="repoLabel(git.reposFor(project.id)[0]!)"
                     class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
@@ -314,20 +313,23 @@ const itemClass = sidebarItemClass
             :aria-current="route.name === 'project' && activeProjectId === project.id ? 'page' : undefined"
           >
             <span data-test="project-color" class="size-[9px] shrink-0 rounded-[3px]" :class="{ 'opacity-40': !project.available }" :style="{ backgroundColor: project.color }" />
-            <span data-test="other-project-name" class="min-w-0 truncate" :class="[showsBranch(project) ? 'max-w-[60%] shrink-0' : '', project.available ? 'text-fg-muted' : 'text-fg-subtle']">{{ project.name }}</span>
-            <span
-              v-if="showsBranch(project)"
-              data-test="other-project-branch"
-              :title="repoLabel(git.reposFor(project.id)[0]!)"
-              class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
-            >{{ repoLabel(git.reposFor(project.id)[0]!) }}</span>
-            <span
-              v-if="behindRepo(project)"
-              data-test="project-behind"
-              :title="behindTitle(behindRepo(project)!, now)"
-              class="inline-flex shrink-0 items-center self-center text-secondary-soft"
-            ><IconArrowDown :size="10" :stroke-width="2.6" /><span class="sr-only">{{ behindSrText(behindRepo(project)!) }}</span></span>
-            <span v-if="!project.available" class="shrink-0 text-xs text-fg-subtle">pasta indisponível</span>
+            <span class="flex min-w-0 grow flex-col">
+              <span data-test="other-project-name" :title="project.name" class="min-w-0 truncate" :class="project.available ? 'text-fg-muted' : 'text-fg-subtle'">{{ project.name }}</span>
+              <span v-if="showsBranch(project)" class="flex min-w-0 items-baseline gap-2">
+                <span
+                  data-test="other-project-branch"
+                  :title="repoLabel(git.reposFor(project.id)[0]!)"
+                  class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
+                >{{ repoLabel(git.reposFor(project.id)[0]!) }}</span>
+                <span
+                  v-if="behindRepo(project)"
+                  data-test="project-behind"
+                  :title="behindTitle(behindRepo(project)!, now)"
+                  class="inline-flex shrink-0 items-center self-center text-secondary-soft"
+                ><IconArrowDown :size="10" :stroke-width="2.6" /><span class="sr-only">{{ behindSrText(behindRepo(project)!) }}</span></span>
+              </span>
+              <span v-if="!project.available" class="text-xs text-fg-subtle">pasta indisponível</span>
+            </span>
           </RouterLink>
         </template>
       </section>

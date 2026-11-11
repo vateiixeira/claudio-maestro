@@ -153,7 +153,7 @@ describe('menu lateral', () => {
     expect(row.find('[data-test="project-behind"]').exists()).toBe(false)
   })
 
-  it('o nome só é limitado a 60% quando a branch aparece ao lado', () => {
+  it('o nome usa a largura disponível mesmo com branch', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'sem-git' }), makeProject({ id: 2, name: 'com-git' })]
     useGitStore(pinia).set(1, [])
     useGitStore(pinia).set(2, [makeGitRepo({ branch: 'develop' })])
@@ -167,8 +167,8 @@ describe('menu lateral', () => {
     expect(plainName.classes()).not.toContain('shrink-0')
     const branchName = withBranch!.find('[data-test="project-name"]')
     expect(withBranch!.find('[data-test="project-branch"]').exists()).toBe(true)
-    expect(branchName.classes()).toContain('max-w-[60%]')
-    expect(branchName.classes()).toContain('shrink-0')
+    expect(branchName.classes()).not.toContain('max-w-[60%]')
+    expect(branchName.attributes('title')).toBe('com-git')
   })
 
   it('não repete as conversas numa lista Abertas: cada uma aparece uma vez, sob o projeto', () => {
@@ -240,7 +240,7 @@ describe('menu lateral', () => {
     }
   })
 
-  it('projeto numa linha só: branch ao lado do nome', () => {
+  it('branch fica abaixo do nome completo do projeto', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
     useGitStore(pinia).set(1, [makeGitRepo({ branch: 'develop' })])
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
@@ -248,7 +248,8 @@ describe('menu lateral', () => {
     const name = project.find('[data-test="project-name"]')
     const branch = project.find('[data-test="project-branch"]')
     expect(branch.text()).toContain('develop')
-    expect(branch.element.parentElement).toBe(name.element.parentElement)
+    expect(branch.element.parentElement).not.toBe(name.element.parentElement)
+    expect(name.attributes('title')).toBe('loja-online')
     expect(branch.classes()).toContain('truncate')
   })
 
@@ -426,7 +427,7 @@ describe('menu lateral em árvore', () => {
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 'x', project_id: 1, group_id: 3, display_state: 'running', title: 'Backend' }),
     ])
-    // an open conversation keeps project 2 in "Em andamento"; projects without one are only links under "Outros projetos"
+    // an open conversation keeps project 2 in "Conversas abertas"; projects without one are only links under "Outros projetos"
     useSessionsStore(pinia).setForProject(2, [makeSession({ session_id: 'y', project_id: 2, group_id: null, title: 'Do web' })])
     const w = mountSidebar()
     expect(w.findAll('[data-test="sidebar-group"]')).toHaveLength(2)
@@ -495,7 +496,7 @@ describe('menu lateral em árvore', () => {
   })
 })
 
-describe('menu lateral: Em andamento e Outros projetos', () => {
+describe('menu lateral: Conversas abertas e Outros projetos', () => {
   const heads = (w: ReturnType<typeof mountSidebar>) => w.findAll('[data-test="section-title"]').map((e) => e.text())
 
   function twoProjects() {
@@ -508,10 +509,10 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
   }
 
-  it('Em andamento tem só os projetos com conversa aberta; os demais ficam recolhidos em uma linha', () => {
+  it('Conversas abertas tem só os projetos com conversa aberta; os demais ficam recolhidos em uma linha', () => {
     twoProjects()
     const w = mountSidebar()
-    expect(heads(w)).toEqual(['Em andamento', 'Outros projetos'])
+    expect(heads(w)).toEqual(['Conversas abertas', 'Outros projetos'])
     expect(w.findAll('[data-test="project"]').map((p) => p.find('[data-test="project-name"]').text())).toEqual(['loja-online'])
     const toggle = w.get('[data-test="others-toggle"]')
     expect(toggle.text()).toContain('2 sem conversa aberta')
@@ -548,7 +549,7 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     expect(mountSidebar().findAll('[data-test="other-project"]')).toHaveLength(2)
   })
 
-  it('o projeto sobe para Em andamento quando ganha conversa e desce quando ela termina', async () => {
+  it('o projeto sobe para Conversas abertas quando ganha conversa e desce quando ela termina', async () => {
     twoProjects()
     setSectionOpened('others', true)
     const w = mountSidebar()
@@ -568,11 +569,11 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
     const w = mountSidebar()
-    expect(heads(w)).toEqual(['Em andamento'])
+    expect(heads(w)).toEqual(['Conversas abertas'])
     expect(w.find('[data-test="others-toggle"]').exists()).toBe(false)
   })
 
-  it('sem nenhuma conversa aberta, diz isso em Em andamento e deixa os projetos recolhidos', () => {
+  it('sem nenhuma conversa aberta, diz isso em Conversas abertas e deixa os projetos recolhidos', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     const w = mountSidebar()
     expect(w.get('[data-test="no-open"]').text()).toBe('Nenhuma conversa aberta')
@@ -636,10 +637,10 @@ describe('menu lateral: Em andamento e Outros projetos', () => {
     expect(after(w.get('[data-test="others-toggle"]').element, w.get('[data-test="lane-review"]').element)).toBe(true)
   })
 
-  it('separa as seções com 22px e sem borda', () => {
+  it('separa as seções com espaçamento compacto e sem borda', () => {
     twoProjects()
     const scroller = mountSidebar().get('[data-test="sidebar-sections"]')
-    expect(scroller.classes()).toContain('gap-[22px]')
+    expect(scroller.classes()).toContain('gap-3')
     expect(scroller.classes().filter((c) => c.startsWith('border'))).toEqual([])
   })
 
@@ -804,7 +805,7 @@ describe('contador de avisos no item Agentes', () => {
 })
 
 describe('seção Agentes no topo', () => {
-  it('fica acima de "Em andamento" e tira as sessões de agente das listas por projeto', () => {
+  it('fica acima de "Conversas abertas" e tira as sessões de agente das listas por projeto', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'Loja' })]
     useProjectsStore(pinia).loaded = true
     useOrgStore(pinia).agents = [makeAgent({ id: 3, name: 'Triagem', project_id: 1, main_session_id: 'main', unseen: 1 })]
@@ -815,12 +816,12 @@ describe('seção Agentes no topo', () => {
     ])
     const w = mountSidebar()
     const titles = w.findAll('[data-test="section-title"]').map((t) => t.text())
-    expect(titles.slice(0, 2)).toEqual(['Agentes', 'Em andamento'])
+    expect(titles.slice(0, 2)).toEqual(['Agentes', 'Conversas abertas'])
     expect(w.findAll('[data-test="project-session"]').map((r) => r.attributes('href'))).toEqual(['/sessions/a'])
     expect(w.find('[data-test="project-waiting"]').exists()).toBe(false)
     // o pedido de ok da execução continua na Inbox e entra no contador do agente
     expect(w.get('[data-test="inbox-count"]').text()).toBe('1')
-    expect(w.get('[data-test="sidebar-agent-unseen"]').text()).toBe('1')
+    expect(w.get('[data-test="sidebar-agents-toggle"]').text()).toContain('1 novidade')
   })
 
   it('as faixas Para revisar e Depois seguem com as sessões de agente marcadas', () => {

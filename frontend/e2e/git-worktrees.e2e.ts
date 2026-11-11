@@ -39,14 +39,17 @@ test('worktrees oculta e externa aparecem com histórico, diff e preparação is
     }
     await page.goto(`/projects/${project.id}`)
     await expect(page.getByTestId('scm-repo')).toHaveCount(3)
+    await page.getByTestId('git-view-commits').click()
     await expect(page.getByTestId('commits-repo')).toHaveCount(3)
     for (const worktree of worktrees) {
+      await page.getByTestId('git-view-commits').click()
       const scm = page.getByTestId('scm-repo').filter({ hasText: worktree.name })
       const history = page.getByTestId('commits-repo').filter({ hasText: worktree.name })
       await expect(scm).toHaveCount(1)
       await expect(history).toHaveCount(1)
       if (await history.getByTestId('commits-repo-toggle').getAttribute('aria-expanded') !== 'true') await history.getByTestId('commits-repo-toggle').click()
       await expect(history.getByTestId('commit-row').first()).toContainText(`Commit exclusivo ${worktree.name}`)
+      await page.getByTestId('git-view-changes').click()
       if (await scm.getByTestId('scm-repo-toggle').getAttribute('aria-expanded') !== 'true') await scm.getByTestId('scm-repo-toggle').click()
       const changes = scm.locator('[data-test="scm-group"][data-group="changes"]')
       const staged = scm.locator('[data-test="scm-group"][data-group="staged"]')

@@ -6,10 +6,12 @@ import { useGitOpsStore } from '../../../stores/gitOps'
 import { useGitDetailsStore } from '../../../stores/gitDetails'
 import type { RepoDetails } from '../../../types/api'
 
-const props = defineProps<{ projectId: number }>()
+const props = defineProps<{ projectId: number; repoPaths?: string[] }>()
+const emit = defineEmits<{ history: [path: string] }>()
 const details = useGitDetailsStore()
 const ops = useGitOpsStore()
 const repos = computed(() => details.reposFor(props.projectId))
+const visibleRepos = computed(() => props.repoPaths ? repos.value.filter((repo) => props.repoPaths!.includes(repo.path)) : repos.value)
 const loaded = computed(() => details.isLoaded(props.projectId))
 const error = computed(() => details.errorFor(props.projectId))
 const refreshing = computed(() => details.isLoading(props.projectId))
@@ -69,7 +71,7 @@ function startOpen(repo: RepoDetails): boolean {
     <template v-else>
       <p v-if="error" role="alert" class="m-0 px-1 text-xs text-diff-del-fg">Não foi possível atualizar: {{ error }}</p>
       <ul class="m-0 flex list-none flex-col gap-2 p-0">
-        <ScmRepo v-for="repo in repos" :key="`${projectId}:${repo.path}`" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" :start-open="startOpen(repo)" />
+        <ScmRepo v-for="repo in visibleRepos" :key="`${projectId}:${repo.path}`" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" :start-open="startOpen(repo)" @history="emit('history', repo.path)" />
       </ul>
     </template>
   </section>

@@ -8,6 +8,7 @@ import { computed, ref, watch } from 'vue'
 import CommitRow from './CommitRow.vue'
 import HistoryRefMenu from './HistoryRefMenu.vue'
 import BranchComparison from './BranchComparison.vue'
+import RepoName from '../RepoName.vue'
 import RepoStateBadges from '../RepoStateBadges.vue'
 import IconChevron from '../../icons/IconChevron.vue'
 import { useRepoExpansion } from '../../../git/repoExpansion'
@@ -18,12 +19,13 @@ import { useGitLogStore } from '../../../stores/gitLog'
 import { useProjectsStore } from '../../../stores/projects'
 import type { RepoDetails } from '../../../types/api'
 
-const props = defineProps<{ projectId: number; repo: RepoDetails; collapseAll: number; startOpen?: boolean }>()
+const props = withDefaults(defineProps<{ projectId: number; repo: RepoDetails; collapseAll: number; startOpen?: boolean; forceOpen?: boolean; active?: boolean }>(), { active: true })
 
 const details = useGitDetailsStore()
 const log = useGitLogStore()
 const projects = useProjectsStore()
 const open = useRepoExpansion(() => props.projectId, () => props.repo.path, 'commits', () => props.startOpen ?? false)
+watch(() => props.forceOpen, (value) => { if (value) open.value = true }, { immediate: true })
 const menuOpen = ref(false)
 const showOutgoing = ref(false)
 const showIncoming = ref(false)
@@ -56,15 +58,15 @@ function ensureHistory(force = false): void {
   else if (force || state.value.error || revisions!.get(revisionKey.value) !== revision) void log.refresh(props.projectId, props.repo.path)
   revisions!.set(revisionKey.value, revision)
 }
-watch(open, (value) => { if (value) ensureHistory() }, { immediate: true })
+watch([open, () => props.active], ([value, active]) => { if (value && active !== false) ensureHistory() }, { immediate: true })
 watch(() => props.collapseAll, () => { open.value = false; menuOpen.value = false })
 watch(() => details.historyRevisionFor(props.projectId, props.repo.path), () => {
-  if (open.value) ensureHistory()
+  if (open.value && props.active !== false) ensureHistory()
 })
 
 // Reopen cached directions without another request; a new snapshot clears their caches.
-watch(() => [state.value?.loading, state.value?.headSha, showOutgoing.value, showIncoming.value], () => {
-  if (!open.value || !state.value || state.value.loading) return
+watch(() => [state.value?.loading, state.value?.headSha, showOutgoing.value, showIncoming.value, props.active], () => {
+  if (props.active === false || !open.value || !state.value || state.value.loading) return
   if (showOutgoing.value && !outgoingState.value) void log.loadDirection(props.projectId, props.repo.path, 'outgoing')
   if (showIncoming.value && !incomingState.value) void log.loadDirection(props.projectId, props.repo.path, 'incoming')
 })
@@ -76,11 +78,11 @@ function pick(refName: string): void {
 </script>
 
 <template>
-  <li data-test="commits-repo" class="flex min-w-0 flex-col rounded-md border border-line odd:bg-panel even:bg-card/40">
+  <li data-test="commits-repo" :data-repo="repo.path" class="flex min-w-0 flex-col rounded-md border border-line odd:bg-panel even:bg-card/40">
     <div class="relative flex min-h-10 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-t-md px-2 py-1.5" :class="open ? 'border-b border-line bg-elevated/60' : 'hover:bg-elevated/60'">
-      <button type="button" data-test="commits-repo-toggle" :aria-expanded="open" class="flex min-w-0 flex-[1_1_9rem] items-center gap-1.5 py-0.5 text-left sm:max-w-[35%] sm:flex-none" @click="toggle">
+      <button type="button" data-test="commits-repo-toggle" :title="name" :aria-expanded="open" class="flex min-w-0 flex-[1_1_9rem] items-center gap-1.5 py-0.5 text-left sm:max-w-[35%] sm:flex-none" @click="toggle">
         <IconChevron :open="open" :size="12" class="text-fg-subtle" />
-        <span class="truncate font-mono text-[0.8125rem] font-semibold text-fg">{{ name }}</span>
+        <RepoName :name="name" />
       </button>
       <button
         type="button"
@@ -135,6 +137,7 @@ function pick(refName: string): void {
           </div>
         </div>
         <BranchComparison
+          :active="active"
           :project-id="projectId" :repo-path="repo.path" :head-ref="state.ref"
           :branch="(state.ref ? state.branch : repo.branch) ?? 'HEAD'"
           :revision="details.historyRevisionFor(projectId, repo.path)"

@@ -188,3 +188,9 @@ describe('o que está acontecendo', () => {
     expect(wrapper.text()).toContain('Segunda')
   })
 })
+
+it('distingue tarefas em andamento de conversas abertas', async () => {
+  vi.stubGlobal('fetch', routes())
+  const { wrapper } = await mountStart()
+  expect(wrapper.get('#active-title').text()).toBe('Tarefas em andamento')
+})

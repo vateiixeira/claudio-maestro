@@ -522,7 +522,10 @@ describe('tela do projeto', () => {
     expect(repo.find('[data-test="scm-branch"]').text()).toBe('main*')
     expect(repo.find('[data-test="scm-file"]').text()).toContain('a.py')
     expect(wrapper.find('[data-test="scm-section"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="commits-section"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="commits-section"]').exists()).toBe(false)
+    await wrapper.get('[data-test="git-view-commits"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="commits-section"]').isVisible()).toBe(true)
   })
 
   it('sem repositório git mostra o estado vazio a partir dos detalhes', async () => {

@@ -10,6 +10,11 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- Git ganha busca por repositório ou branch, filtro de pendências e alternância entre Alterações e Commits, com acesso direto ao histórico de cada repositório. Worktrees mostram nomes curtos e o caminho completo continua disponível.
+- Repositórios sem arquivos alterados deixam de mostrar o campo de commit; avisos de hooks aparecem junto da ação de commit. Rascunhos são preservados.
+- Conversas do projeto separam título, resumo e metadados. A barra lateral recolhe os agentes, mantém seus contadores visíveis e reserva mais espaço às conversas abertas.
+- Projetos ganha busca e atividade das conversas carregadas, com Renomear nas ações secundárias. O estado vazio de Tarefas oferece acesso à organização, e o Início distingue tarefas em andamento de conversas abertas.
+
 - A página do projeto separa Conversas, Git e Organização em abas, abrindo Git por padrão. Conversas ficam numa lista única com busca, filtro por agrupador e estado; a gestão dos agrupadores é inline, e as ações do projeto ficam num menu. O Git carrega detalhes e histórico apenas ao abrir sua aba.
 
 - O diff de um arquivo na lista de alterações abre em um modal amplo, com rolagem própria e fechamento por Escape, preservando a posição da lista e a distinção entre alterações preparadas e não preparadas.

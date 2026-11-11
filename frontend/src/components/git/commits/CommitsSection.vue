@@ -3,9 +3,9 @@ import { computed, ref, watch } from 'vue'
 import CommitsRepo from './CommitsRepo.vue'
 import { useGitDetailsStore } from '../../../stores/gitDetails'
 
-const props = defineProps<{ projectId: number }>()
+const props = withDefaults(defineProps<{ projectId: number; repoPaths?: string[]; focusPath?: string | null; active?: boolean }>(), { active: true })
 const details = useGitDetailsStore()
-const repos = computed(() => details.reposFor(props.projectId).filter((r) => !r.error))
+const repos = computed(() => details.reposFor(props.projectId).filter((r) => !r.error && (!props.repoPaths || props.repoPaths.includes(r.path))))
 const collapseAll = ref(0)
 const countText = computed(() => (repos.value.length === 1 ? '1 repositório' : `${repos.value.length} repositórios`))
 
@@ -33,7 +33,7 @@ watch(
       </button>
     </header>
     <ul class="m-0 flex list-none flex-col gap-2 p-0">
-      <CommitsRepo v-for="repo in repos" :key="`${projectId}:${repo.path}`" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" :start-open="repos.length === 1" />
+      <CommitsRepo v-for="repo in repos" :key="`${projectId}:${repo.path}`" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" :start-open="repos.length === 1" :force-open="repo.path === focusPath" :active="active" />
     </ul>
   </section>
 </template>

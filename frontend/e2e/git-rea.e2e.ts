@@ -57,6 +57,7 @@ test('comparar branches sem checkout: dois sentidos, arquivos, paginação e bas
   page.on('request', request => { if (request.url().includes('/git/comparison')) comparisons.push(request.url()) })
   try {
     await openProject(page, 'Histórico Demo')
+    await page.getByTestId('git-view-commits').click()
     const repo = page.getByTestId('commits-repo').filter({ hasText: 'api' })
     await repo.getByTestId('commits-repo-toggle').click()
     const node = repo.getByTestId('branch-comparison')
@@ -83,6 +84,7 @@ test('comparar branches sem checkout: dois sentidos, arquivos, paginação e bas
     expect(git(path, 'rev-parse', 'HEAD')).toBe(before)
     expect(git(path, 'symbolic-ref', 'HEAD')).toBe('refs/heads/main')
     await page.reload()
+    await page.getByTestId('git-view-commits').click()
     await expect(repo.getByTestId('commits-repo-toggle')).toHaveAttribute('aria-expanded', 'true')
     await expect(node.getByTestId('comparison-toggle')).toContainText(branch)
   } finally { git(path, 'branch', '-D', branch) }
@@ -102,11 +104,13 @@ test('uma carga de detalhes e preparar sem reler histórico; expansão lembrada'
   try {
     await page.clock.install()
     await openProject(page, 'Alterações Demo')
+    await page.getByTestId('git-view-commits').click()
     const commits = page.getByTestId('commits-repo').first()
     await expect(commits.getByTestId('commits-repo-toggle')).toHaveAttribute('aria-expanded', 'true')
     await expect(commits.getByTestId('commit-row').first()).toBeVisible()
     expect(details).toHaveLength(1)
     const initialLogs = logs.length
+    await page.getByTestId('git-view-changes').click()
     const scm = page.getByTestId('scm-repo').first()
     const row = scm.locator(`[data-test="scm-file"][data-path="${file}"]`)
     await row.hover()
@@ -124,9 +128,12 @@ test('uma carga de detalhes e preparar sem reler histórico; expansão lembrada'
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.getByTestId('repos').screenshot({ path: join(output, 'git-changes-focused.png') })
     await test.info().attach('git-panel-requests', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })
+    await page.getByTestId('git-view-commits').click()
     await commits.getByTestId('commits-repo-toggle').click()
+    await page.getByTestId('git-view-changes').click()
     await scm.getByTestId('scm-repo-toggle').click()
     await page.reload()
+    await page.getByTestId('git-view-commits').click()
     await expect(commits.getByTestId('commits-repo-toggle')).toHaveAttribute('aria-expanded', 'false')
     await expect(scm.getByTestId('scm-repo-toggle')).toHaveAttribute('aria-expanded', 'false')
   } finally {
@@ -139,6 +146,7 @@ test('painel Git cabe em telas estreitas e temas, com capturas de referência', 
   const output = test.info().outputPath('git-captures')
   mkdirSync(output, { recursive: true })
   await openProject(page, 'Histórico Demo')
+  await page.getByTestId('git-view-commits').click()
   const api = page.getByTestId('commits-repo').filter({ hasText: 'api' })
   await api.getByTestId('commits-repo-toggle').click()
   await expect(api.getByTestId('commit-row').first()).toBeVisible()
@@ -158,7 +166,7 @@ test('painel Git cabe em telas estreitas e temas, com capturas de referência', 
     const menuBox = (await menu.boundingBox())!
     expect(menuBox.x).toBeGreaterThanOrEqual(0)
     expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(width + 1)
-    await page.getByRole('textbox', { name: 'Procurar branch' }).press('Escape')
+    await page.getByRole('searchbox', { name: 'Procurar branch' }).press('Escape')
     await page.screenshot({ path: join(output, `git-${width}.png`), fullPage: true })
     if (width === 1440) await section.locator('..').screenshot({ path: join(output, 'git-panel-focused.png') })
     metrics.push({ width, rows: await api.getByTestId('commit-row').count(), widthOfSection: box.width })

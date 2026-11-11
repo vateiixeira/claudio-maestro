@@ -22,6 +22,12 @@ const branchName = computed(() => props.repo.branch ?? props.repo.head ?? '')
 
 // On the document, not on the input: Esc closes with the focus anywhere inside the menu.
 function onDocumentKeydown(event: KeyboardEvent): void {
+  // Tab can leave the document when the search is its final focusable field.
+  // In that case focusout has no relatedTarget, but the menu must still close.
+  if (event.key === 'Tab' && event.target instanceof Node && panel.value?.contains(event.target)) {
+    emit('close', false)
+    return
+  }
   if (event.key !== 'Escape') return
   event.preventDefault()
   emit('close')

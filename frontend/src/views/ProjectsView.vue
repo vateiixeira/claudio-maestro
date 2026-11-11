@@ -1,12 +1,35 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import OrgPage from '../components/org/OrgPage.vue'
 import { errorMessage } from '../api/http'
+import { isDiscarded } from '../conversation/marks'
+import { useSessionsStore } from '../stores/sessions'
 import { useProjectsStore } from '../stores/projects'
 import type { Project } from '../types/api'
 
 const projects = useProjectsStore()
+const sessions = useSessionsStore()
+const query = ref('')
+const searchInput = ref<HTMLInputElement | null>(null)
+const actions = ref<number | null>(null)
+const visibleProjects = computed(() => {
+  const term = query.value.trim().toLocaleLowerCase('pt-BR')
+  return projects.regular.filter(p => `${p.name} ${p.path}`.toLocaleLowerCase('pt-BR').includes(term))
+})
+const activity = computed(() => Object.fromEntries(projects.regular.map(project => {
+  const list = sessions.forProject(project.id).filter(session => !isDiscarded(session))
+  const running = list.filter(s => s.display_state === 'running').length
+  const open = list.filter(s => s.display_state !== 'finished').length
+  const latest = Math.max(0, ...list.map(s => s.last_activity_at))
+  return [project.id, { running, open, latest }]
+})))
+function activityDate(timestamp: number) {
+  return new Date(timestamp * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
+function closeActions(event: FocusEvent) {
+  if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) actions.value = null
+}
 const editing = ref<number | null>(null)
 const name = ref('')
 const saving = ref(false)
@@ -18,7 +41,8 @@ let renameTrigger: HTMLElement | null = null
 
 async function startRename(project: Project, trigger: HTMLElement) {
   if (saving.value) return
-  renameTrigger = trigger
+  renameTrigger = trigger.closest('[data-test="project-row"]')?.querySelector<HTMLElement>('[data-test="project-actions"]') ?? trigger
+  actions.value = null
   editing.value = project.id
   name.value = project.name
   error.value = ''
@@ -34,6 +58,7 @@ async function cancelRename() {
   error.value = ''
   await nextTick()
   if (renameTrigger?.isConnected) renameTrigger.focus()
+  else searchInput.value?.focus()
 }
 
 async function saveRename() {
@@ -75,7 +100,7 @@ async function retry() {
     <template #actions>
       <RouterLink to="/projects/new" class="org-button org-primary">Novo projeto</RouterLink>
     </template>
-    <p class="mb-6 max-w-prose text-sm text-fg-muted">Gerencie os nomes cadastrados no Maestro. Renomear um projeto mantém o nome e o caminho da pasta.</p>
+
     <p v-if="notice" role="status" class="mb-4 text-sm text-primary">{{ notice }}</p>
     <p v-if="projects.loadError" role="alert" class="org-error mb-4">
       Não foi possível carregar os projetos. {{ projects.loadError }}
@@ -89,13 +114,25 @@ async function retry() {
       Adicione uma pasta em Novo projeto para começar.
     </div>
     <template v-if="projects.regular.length">
-      <p class="org-muted mb-3">{{ projects.regular.length }} {{ projects.regular.length === 1 ? 'projeto cadastrado' : 'projetos cadastrados' }}</p>
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <label class="org-field min-w-0 grow sm:max-w-sm">
+          <span class="sr-only">Buscar projetos por nome ou caminho</span>
+          <input ref="searchInput" v-model="query" data-test="project-search" type="search" placeholder="Buscar por nome ou caminho" autocomplete="off" />
+        </label>
+        <p class="org-muted m-0">{{ projects.regular.length }} {{ projects.regular.length === 1 ? 'projeto cadastrado' : 'projetos cadastrados' }}</p>
+      </div>
+      <p v-if="!visibleProjects.length" role="status" class="org-empty">Nenhum projeto encontrado. Tente outro nome ou caminho.</p>
       <ul class="m-0 list-none p-0" aria-label="Projetos cadastrados">
-        <li v-for="project in projects.regular" :key="project.id" data-test="project-row" class="flex flex-wrap items-start gap-x-4 gap-y-3 border-t border-line py-5">
+        <li v-for="project in visibleProjects" :key="project.id" data-test="project-row" class="flex flex-wrap items-start gap-x-4 gap-y-3 border-t border-line py-4">
           <span aria-hidden="true" class="mt-1.5 size-2.5 shrink-0 rounded-sm" :style="{ backgroundColor: project.color }" />
           <div class="min-w-0 flex-1 basis-44">
             <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="font-medium break-words text-fg no-underline hover:underline focus-visible:outline-2 focus-visible:outline-primary">{{ project.name }}</RouterLink>
             <p data-test="project-path" class="mt-1 font-mono text-xs break-all text-fg-subtle">{{ project.path }}</p>
+            <p v-if="activity[project.id]?.open || activity[project.id]?.latest" data-test="project-activity" class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-fg-muted">
+              <span v-if="activity[project.id]?.running" class="text-primary">{{ activity[project.id]?.running }} em execução</span>
+              <span v-if="activity[project.id]?.open">{{ activity[project.id]?.open }} {{ activity[project.id]?.open === 1 ? 'conversa aberta' : 'conversas abertas' }}</span>
+              <span v-if="activity[project.id]?.latest">Última atividade: {{ activityDate(activity[project.id]!.latest) }}</span>
+            </p>
             <p v-if="!project.available" class="mt-1 text-xs text-secondary-soft">Pasta indisponível</p>
             <form v-if="editing === project.id" class="mt-4 flex flex-wrap items-end gap-2" :aria-label="`Renomear ${project.name}`" @submit.prevent="saveRename" @keydown.esc.prevent="cancelRename">
               <label class="org-field grow" :for="`project-name-${project.id}`">Nome do projeto
@@ -106,7 +143,12 @@ async function retry() {
               <p v-if="error" id="project-rename-error" role="alert" class="org-error w-full">{{ error }}</p>
             </form>
           </div>
-          <button type="button" data-test="rename-project" class="org-button" :aria-label="`Renomear ${project.name}`" :disabled="saving || editing === project.id" @click="startRename(project, $event.currentTarget as HTMLElement)">Renomear</button>
+          <div class="relative shrink-0" @focusout="closeActions" @keydown.esc.stop.prevent="actions = null; ($event.currentTarget as HTMLElement).querySelector<HTMLButtonElement>('button')?.focus()">
+            <button type="button" data-test="project-actions" class="org-button" :aria-label="`Ações de ${project.name}`" :aria-expanded="actions === project.id" :aria-controls="`project-actions-${project.id}`" :disabled="saving || editing === project.id" @click="actions = actions === project.id ? null : project.id"><span aria-hidden="true">•••</span></button>
+            <div v-if="actions === project.id" :id="`project-actions-${project.id}`" class="absolute right-0 top-full z-10 mt-1 min-w-40 rounded-md border border-line-strong bg-panel p-1 shadow-lg">
+              <button type="button" data-test="rename-project" class="org-button w-full text-left" :aria-label="`Renomear ${project.name}`" @click="startRename(project, $event.currentTarget as HTMLElement)">Renomear</button>
+            </div>
+          </div>
         </li>
       </ul>
     </template>

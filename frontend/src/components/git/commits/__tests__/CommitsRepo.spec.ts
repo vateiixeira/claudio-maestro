@@ -20,6 +20,30 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('repositório da seção Commits', () => {
+  it('mantém expansão, mas só consulta histórico enquanto a visualização está ativa', async () => {
+    const revision = ref(0)
+    vi.spyOn(useGitDetailsStore(), 'historyRevisionFor').mockImplementation(() => revision.value)
+    const fetch = vi.fn(async () => jsonResponse(makeRepoLog({ head_sha: 'a'.repeat(40) })))
+    vi.stubGlobal('fetch', fetch)
+    const wrapper = mount(CommitsRepo, {
+      props: { projectId: 1, repo: makeRepoDetails({ path: API }), collapseAll: 0, startOpen: true, active: false },
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+    expect(fetch).not.toHaveBeenCalled()
+    await wrapper.setProps({ active: true })
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await wrapper.setProps({ active: false })
+    revision.value++
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-test="commits-repo-toggle"]').attributes('aria-expanded')).toBe('true')
+    await wrapper.setProps({ active: true })
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
   it('compara a branch atual quando o histórico segue HEAD e ainda mostra snapshot antigo', async () => {
     const fetch = vi.fn(async (url: string) => url.includes('/comparison?')
       ? jsonResponse({ head_ref: 'refs/heads/feature', base_ref: 'refs/remotes/origin/main', head_sha: 'b'.repeat(40), base_sha: 'a'.repeat(40), merge_base: 'a'.repeat(40), ahead_count: 1, behind_count: 0, unrelated: false, notice: null })

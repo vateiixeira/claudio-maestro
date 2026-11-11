@@ -306,7 +306,8 @@ describe('branches e merge no repositório', () => {
     localStorage.setItem(`maestro.commitDraft:${PATH}`, text)
     localStorage.setItem(`maestro.mergeMessage:${PATH}`, text)
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, branch: 'develop' }))
-    expect((wrapper.find('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBeNull()
     expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBeNull()
     expect(localStorage.getItem(`maestro.mergeMessage:${PATH}`)).toBeNull()
   })
@@ -315,7 +316,8 @@ describe('branches e merge no repositório', () => {
     localStorage.setItem(`maestro.commitDraft:${PATH}`, 'Corrigir o frete')
     localStorage.setItem(`maestro.mergeMessage:${PATH}`, "Merge branch 'feat/agente' into develop")
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, branch: 'develop' }))
-    expect((wrapper.find('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('Corrigir o frete')
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBe('Corrigir o frete')
     expect(localStorage.getItem(`maestro.mergeMessage:${PATH}`)).toBeNull()
   })
 
@@ -334,7 +336,8 @@ describe('branches e merge no repositório', () => {
   it('o merge acabando por fora limpa a mensagem preenchida com o componente de pé', async () => {
     const { wrapper } = mountRepo(merging(['a'], [conflict('a')]))
     await wrapper.setProps({ repo: makeRepoDetails({ path: PATH, branch: 'develop' }) })
-    expect((wrapper.find('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBeNull()
   })
 
   it('segundo clique em mesclar enquanto compara é ignorado e o botão mostra Mesclando…', async () => {
@@ -360,7 +363,7 @@ describe('branches e merge no repositório', () => {
     await flushPromises()
     expect(compares).toBe(1)
     expect(wrapper.find('[role="dialog"]').text()).toContain('Entram 2 commits de feat/agente.')
-    expect(wrapper.find('[data-test="primary-action"]').text()).not.toBe('Mesclando…')
+    expect(wrapper.find('[data-test="primary-action"]').exists()).toBe(false)
   })
 
   it('mesclar com sessão em execução pede confirmação laranja com o nome dela', async () => {

@@ -167,6 +167,7 @@ test('layout de abas cabe em 360, 768 e 1440 px e scratch não mostra Git', asyn
   await page.screenshot({ path: join(output, 'project-organization-1440.png'), fullPage: true })
   const git = await project(request, 'Histórico Demo')
   await page.goto(`/projects/${git.id}?visao=git`)
+  await page.getByTestId('git-view-commits').click()
   await expect(page.getByTestId('commits-section')).toBeVisible()
   await expect(page.getByTestId('commits-repo')).toHaveCount(2)
   for (const theme of ['', 'dracula', 'monokai-pro']) {
@@ -225,12 +226,14 @@ test('onze repositórios continuam distintos em temas e larguras diferentes', as
     }
     await page.goto(`/projects/${data.id}?visao=git`)
     await expect(page.getByTestId('scm-repo')).toHaveCount(11)
+    await page.getByTestId('git-view-commits').click()
     await expect(page.getByTestId('commits-repo')).toHaveCount(11)
     await expect(page.getByTestId('scm-section').getByTestId('running-arc')).toHaveCount(0)
     await expect(page.getByTestId('scm-section').getByTestId('running-session')).toHaveCount(0)
     const api = page.getByTestId('commits-repo').filter({ hasText: 'api' })
     await api.getByTestId('commits-repo-toggle').click()
     await expect(api.getByTestId('commit-row').first()).toBeVisible()
+    await page.getByTestId('git-view-changes').click()
     for (const width of [360, 768, 1440]) {
       await page.setViewportSize({ width, height: 1000 })
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

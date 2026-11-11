@@ -16,9 +16,10 @@ async function openRepo(page: import('@playwright/test').Page) {
 }
 
 async function openCommits(page: import('@playwright/test').Page) {
+  await page.getByTestId('git-view-commits').click()
   const commits = page.getByTestId('commits-section').getByTestId('commits-repo').first()
   if (await commits.getByTestId('commits-repo-toggle').getAttribute('aria-expanded') !== 'true') await commits.getByTestId('commits-repo-toggle').click()
-  await commits.getByTestId('apply-history-update').click()
+  if (await commits.getByTestId('apply-history-update').count()) await commits.getByTestId('apply-history-update').click()
   return commits
 }
 
@@ -113,7 +114,7 @@ test('merge com conflito mostra o bloco e aborta', async ({ page, consoleErrors 
   await banner.getByTestId('merge-abort').click()
   await page.getByRole('dialog').getByTestId('confirm-ok').click()
   await expect(banner).toHaveCount(0)
-  await expect(repo.getByTestId('commit-message')).toHaveValue('')
+  await expect(repo.getByTestId('commit-message')).toHaveCount(0)
   await expect(repo.locator('[data-test="scm-group"][data-group="conflict"]')).toHaveCount(0)
   await expect(repo.getByTestId('branch-chip')).toHaveText('main')
 })
@@ -131,7 +132,7 @@ test('merge com conflito até concluir', async ({ page }) => {
   await expect(repo.getByTestId('commit-message')).toHaveValue("Merge branch 'feat/limpeza'")
   await repo.getByTestId('primary-action').click()
   await expect(repo.getByTestId('merge-banner')).toHaveCount(0)
-  await expect(repo.getByTestId('commit-message')).toHaveValue('')
+  await expect(repo.getByTestId('commit-message')).toHaveCount(0)
   const commits = await openCommits(page)
   await expect(commits.getByTestId('commit-row').first()).toContainText("Merge branch 'feat/limpeza'")
 })

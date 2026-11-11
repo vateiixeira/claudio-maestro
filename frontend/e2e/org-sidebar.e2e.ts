@@ -18,6 +18,7 @@ test('a navegação tem Agentes e não tem mais CTO', async ({ page }) => {
 
 test('a seção Agentes agrupa os agentes por projeto', async ({ page }) => {
   await page.goto('/inicio')
+  await page.getByTestId('sidebar-agents-toggle').click()
   const section = page.getByTestId('sidebar-agents')
   await expect(section.getByTestId('section-title')).toHaveText('Agentes')
   const project = section.getByTestId('sidebar-agent-project').filter({ hasText: 'Loja Demo' })
@@ -38,6 +39,7 @@ test('o contador de avisos de Agentes cai quando o aviso é lido na Inbox', asyn
   await expect(page.getByTestId('nav-agents')).toHaveAccessibleName('Agentes 1 aviso não lido')
   await expect(count.getByText('1', { exact: true })).toBeVisible()
   // Triagem is the one with the unread notice.
+  await page.getByTestId('sidebar-agents-toggle').click()
   await expect(page.getByTestId('sidebar-agent-row').filter({ hasText: 'Triagem' }).getByTestId('sidebar-agent-unseen')).toBeVisible()
 
   await page.goto('/inbox')
