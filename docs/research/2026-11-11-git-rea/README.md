@@ -1,6 +1,8 @@
 # REA: Changes do VS Code e commits do GitLens
 
-Data: 11/11/2026. Entrega: análise e plano, conforme escolha do usuário. Nenhuma mudança no comportamento do Maestro nesta etapa.
+Data: 11/11/2026. Este documento preserva a **análise original, anterior à implementação**. As constatações e limitações abaixo descrevem o checkout analisado, não o estado mais recente do produto.
+
+Após autorização do usuário, as mudanças de diffs, consultas, paginação, comparação e apresentação foram implementadas. Consulte o [plano e seu estado de execução](PLAN.md), a [baseline original](BASELINE.md) e as [medições posteriores das consultas Git](PERFORMANCE.md). Consulte também a [validação no navegador](BROWSER-VALIDATION.md). Os resultados de backend não estabelecem vantagem de desempenho sobre VS Code/GitLens.
 
 ## Conclusão
 
