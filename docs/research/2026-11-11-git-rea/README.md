@@ -4,6 +4,8 @@ Data: 11/11/2026. Este documento preserva a **análise original, anterior à imp
 
 Após autorização do usuário, as mudanças de diffs, consultas, paginação, comparação e apresentação foram implementadas. Consulte o [plano e seu estado de execução](PLAN.md), a [baseline original](BASELINE.md) e as [medições posteriores das consultas Git](PERFORMANCE.md). Consulte também a [validação no navegador](BROWSER-VALIDATION.md). Os resultados de backend não estabelecem vantagem de desempenho sobre VS Code/GitLens.
 
+Atualização: a [investigação da abertura com 11 repositórios](OPENING-LATENCY.md) identifica o servidor desatualizado, a escolha do event loop e a espera em sequência entre as consultas.
+
 ## Conclusão
 
 O Maestro já tem grande parte da estrutura desejada: alterações agrupadas, mensagem de commit, ações por arquivo, histórico expansível, autor/data e contagens de sincronização. O melhor caminho é evoluir esses componentes. Antes do acabamento visual, corrigir os diffs por escopo, compartilhar consultas e separar a invalidação do histórico da invalidação dos arquivos.

@@ -8,7 +8,7 @@ import SplitDivider from '../components/SplitDivider.vue'
 import ConversationView from './ConversationView.vue'
 import ScmSection from '../components/git/scm/ScmSection.vue'
 import CommitsSection from '../components/git/commits/CommitsSection.vue'
-import { useGitStore } from '../stores/git'
+import { useGitDetailsStore } from '../stores/gitDetails'
 import { errorMessage, openInEditor } from '../api/http'
 import { groupByDate } from '../conversationList'
 import { useGroupsStore } from '../stores/groups'
@@ -26,8 +26,8 @@ const props = defineProps<{ id: number; session?: string }>()
 const navigation = inject(AGENTS_NAVIGATION_KEY, undefined)
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
-const git = useGitStore()
-const repos = computed(() => git.reposFor(props.id))
+const gitDetails = useGitDetailsStore()
+const repos = computed(() => gitDetails.reposFor(props.id))
 
 const editorError = ref<string | null>(null)
 async function openEditor(): Promise<void> {
@@ -115,8 +115,6 @@ async function load(): Promise<void> {
   }
   if (!project.value) return
   editorError.value = null
-  // Branches are secondary: a failure leaves the section out.
-  if (!scratch.value) git.load(props.id).catch(() => {})
   try {
     await sessions.loadForProject(props.id)
   } catch (e) {
@@ -325,13 +323,11 @@ async function remove(): Promise<void> {
         {{ editorError }}
       </p>
 
-      <section v-if="!scratch && git.isLoaded(id)" data-test="repos" class="flex flex-col gap-3">
-        <p v-if="repos.length === 0" class="m-0 text-sm text-fg-muted">sem repositório git</p>
-        <template v-else>
-          <ScmSection :project-id="id" />
-          <CommitsSection v-if="project?.available" :project-id="id" />
-        </template>
-        <p v-if="git.limitReached(id)" data-test="repo-limit" class="m-0 text-xs text-fg-muted">
+      <section v-if="!scratch" data-test="repos" class="flex flex-col gap-3">
+        <p v-if="gitDetails.isLoaded(id) && repos.length === 0 && !gitDetails.errorFor(id)" class="m-0 text-sm text-fg-muted">sem repositório git</p>
+        <ScmSection v-show="!gitDetails.isLoaded(id) || repos.length > 0 || gitDetails.errorFor(id)" :project-id="id" />
+        <CommitsSection v-if="project?.available" :project-id="id" />
+        <p v-if="gitDetails.byProject[id]?.limit_reached" data-test="repo-limit" class="m-0 text-xs text-fg-muted">
           Mais de 50 repositórios; só os 50 primeiros são acompanhados.
         </p>
       </section>

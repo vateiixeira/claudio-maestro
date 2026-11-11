@@ -32,6 +32,19 @@ export const useGitStore = defineStore('git', () => {
   const byProject = ref<Record<number, GitRepo[]>>({})
   // Projects with more repositories than the limit (only the first ones are tracked).
   const limited = ref<Record<number, boolean>>({})
+  const versions = new Map<number, number>()
+  const pendingLoads = new Map<number, Promise<GitRepo[]>>()
+
+  function versionFor(projectId: number): number {
+    return versions.get(projectId) ?? 0
+  }
+
+  function invalidateLoad(projectId: number): number {
+    const version = versionFor(projectId) + 1
+    versions.set(projectId, version)
+    pendingLoads.delete(projectId)
+    return version
+  }
 
   // "Verificar agora" per project: running now, and why the last click failed.
   const fetching = ref<Record<number, boolean>>({})
@@ -49,8 +62,13 @@ export const useGitStore = defineStore('git', () => {
     return limited.value[projectId] === true
   }
 
-  /** `limit` is left as it was when not given. */
-  function set(projectId: number, repos: GitRepo[], limit?: boolean): void {
+  /** Reads supply their starting version; events replace the summary immediately.
+   * A read during fetch must not invalidate the fetch's eventual result.
+   * `limit` is left as it was when not given.
+   */
+  function set(projectId: number, repos: GitRepo[], limit?: boolean, expectedVersion?: number): void {
+    if (expectedVersion !== undefined && (expectedVersion !== versionFor(projectId) || isFetching(projectId))) return
+    invalidateLoad(projectId)
     byProject.value[projectId] = repos
     if (typeof limit === 'boolean') limited.value[projectId] = limit
   }
@@ -60,15 +78,23 @@ export const useGitStore = defineStore('git', () => {
     return isScratch(useProjectsStore().byId(projectId))
   }
 
-  async function load(projectId: number): Promise<GitRepo[]> {
+  function load(projectId: number): Promise<GitRepo[]> {
     if (isBuiltIn(projectId)) {
       set(projectId, [], false)
-      return []
+      return Promise.resolve([])
     }
-    const result = await api.getProjectGit(projectId)
-    const repos = Array.isArray(result?.repos) ? result.repos : []
-    set(projectId, repos, result?.limit_reached === true)
-    return repos
+    const existing = pendingLoads.get(projectId)
+    if (existing) return existing
+    const version = versionFor(projectId)
+    const pending = api.getProjectGit(projectId).then(result => {
+      const repos = Array.isArray(result?.repos) ? result.repos : []
+      set(projectId, repos, result?.limit_reached === true, version)
+      return reposFor(projectId)
+    }).finally(() => {
+      if (pendingLoads.get(projectId) === pending) pendingLoads.delete(projectId)
+    })
+    pendingLoads.set(projectId, pending)
+    return pending
   }
 
   function isFetching(projectId: number): boolean {
@@ -83,11 +109,14 @@ export const useGitStore = defineStore('git', () => {
   /** Asks the backend to fetch the project's remotes now and shows the result. A click while one runs is ignored. */
   async function fetchNow(projectId: number): Promise<void> {
     if (isFetching(projectId) || isBuiltIn(projectId)) return
+    const version = invalidateLoad(projectId)
     fetching.value[projectId] = true
     fetchErrors.value[projectId] = null
     try {
       const result = await api.fetchProjectGit(projectId)
-      set(projectId, Array.isArray(result?.repos) ? result.repos : [], result?.limit_reached === true)
+      if (version === versionFor(projectId)) {
+        set(projectId, Array.isArray(result?.repos) ? result.repos : [], result?.limit_reached === true)
+      }
     } catch (e) {
       fetchErrors.value[projectId] = api.errorMessage(e)
     } finally {
@@ -114,5 +143,5 @@ export const useGitStore = defineStore('git', () => {
     )
   }
 
-  return { byProject, reposFor, isLoaded, limitReached, set, load, ensure, applyEvent, isFetching, fetchError, fetchNow }
+  return { byProject, versionFor, reposFor, isLoaded, limitReached, set, load, ensure, applyEvent, isFetching, fetchError, fetchNow }
 })

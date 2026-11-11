@@ -18,6 +18,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Corrigido
 
+- Abrir um projeto começa a carregar as alterações Git sem esperar outra consulta de resumo. Leituras simultâneas do resumo são compartilhadas, e respostas antigas não substituem eventos recentes. O servidor usa explicitamente `asyncio`, reduzindo a latência das consultas com muitos subprocessos Git no ambiente medido.
+
 - Em telas estreitas, a página do projeto usa o menu recolhível já disponível nas demais telas, preservando espaço para alterações e commits. Sincronizar um repositório não recolhe mais sua lista quando ele fica em dia.
 
 - Os diffs de arquivos preparados mostram só o conteúdo que entra no commit; os de alterações mostram o que mudou depois da preparação. Renomeações preparadas preservam a origem e o destino, sem aparecer como arquivos inteiramente novos.

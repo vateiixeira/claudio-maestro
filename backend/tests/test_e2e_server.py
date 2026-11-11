@@ -611,6 +611,27 @@ def test_serve_returns_cleanly_when_a_signal_arrives_while_building(tmp_path, mo
     e2e.serve(6620)  # returns instead of raising
 
 
+def test_serve_uses_the_same_asyncio_loop_as_the_app(tmp_path, monkeypatch):
+    import uvicorn
+
+    apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
+    monkeypatch.setattr(gitinfo, "FETCH_ALLOWED_PROTOCOLS", gitinfo.FETCH_ALLOWED_PROTOCOLS)
+    monkeypatch.setattr(e2e, "build_app", lambda port: "test-app")
+    monkeypatch.setattr(e2e.cli, "port_available", lambda port: True)
+    seen = []
+
+    class Server:
+        def __init__(self, config):
+            self.config = config
+
+        def run(self):
+            seen.append((self.config.loop, self.config.host, self.config.port))
+
+    monkeypatch.setattr(uvicorn, "Server", Server)
+    e2e.serve(6620)
+    assert seen == [("asyncio", "127.0.0.1", 6620)]
+
+
 def test_serve_limits_git_remotes_to_local_folders(tmp_path, monkeypatch):
     apply_env(monkeypatch, e2e.isolated_env({}, tmp_path, 6620))
     monkeypatch.setattr(gitinfo, "FETCH_ALLOWED_PROTOCOLS", gitinfo.FETCH_ALLOWED_PROTOCOLS)  # restored after

@@ -37,6 +37,42 @@ async function mountView() {
 }
 
 describe('tela do projeto', () => {
+  it('abre detalhes sem esperar resumo e compartilha o resultado com a barra lateral', async () => {
+    seed()
+    let release!: (r: Response) => void
+    const fetchMock = routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'GET /api/projects/1/git': () => new Promise<Response>(() => {}),
+      'GET /api/projects/1/git/details': () => new Promise<Response>(resolve => { release = resolve }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="git-loading"]').exists()).toBe(true)
+    expect(fetchMock.mock.calls.filter(c => String(c[0]).endsWith('/git/details'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.some(c => String(c[0]).endsWith('/git'))).toBe(false)
+    release(jsonResponse({ repos: [makeRepoDetails({ branch: 'nova' })], limit_reached: true }))
+    await flushPromises()
+    expect(wrapper.find('[data-test="scm-repo"]').exists()).toBe(true)
+    expect(useGitStore().reposFor(1)[0]!.branch).toBe('nova')
+    expect(useGitStore().limitReached(1)).toBe(true)
+  })
+
+  it('erro inicial dos detalhes oferece nova tentativa sem depender do resumo', async () => {
+    seed()
+    let fail = true
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'GET /api/projects/1/git/details': () => fail ? jsonResponse({ detail: 'Falha ao ler Git.' }, 500) : jsonResponse({ repos: [], limit_reached: false }),
+    }))
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="git-error"]').text()).toContain('Falha ao ler Git.')
+    fail = false
+    await wrapper.get('[data-test="git-retry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('sem repositório git')
+    expect(wrapper.find('[data-test="git-error"]').exists()).toBe(false)
+  })
+
   it('mostra nome, caminho e conversas', async () => {
     seed()
     vi.stubGlobal(
@@ -370,17 +406,17 @@ describe('tela do projeto', () => {
     expect(wrapper.find('[data-test="commits-section"]').exists()).toBe(true)
   })
 
-  it('sem repositório git não monta a visão de detalhes', async () => {
+  it('sem repositório git mostra o estado vazio a partir dos detalhes', async () => {
     seed()
     const fetchMock = routeFetch({
       'GET /api/projects/1/sessions': () => jsonResponse([]),
-      'GET /api/projects/1/git': () => jsonResponse({ repos: [], limit_reached: false }),
+      'GET /api/projects/1/git/details': () => jsonResponse({ repos: [], limit_reached: false }),
     })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = await mountView()
     expect(wrapper.find('[data-test="repos"]').text()).toContain('sem repositório git')
     expect(wrapper.find('[data-test="commits-section"]').exists()).toBe(false)
-    expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/git/details'))).toBe(false)
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/git/details'))).toHaveLength(1)
   })
 })
 

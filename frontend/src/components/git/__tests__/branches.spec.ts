@@ -90,7 +90,9 @@ describe('tela do projeto', () => {
   async function mountProject(id: number, extra: Record<string, (init?: RequestInit) => Response> = {}) {
     vi.stubGlobal('fetch', routeFetch({
       [`GET /api/projects/${id}/sessions`]: () => jsonResponse([]),
-      [`GET /api/projects/${id}/git`]: () => jsonResponse({ repos: useGitStore(pinia).reposFor(id) }),
+      [`GET /api/projects/${id}/git/details`]: () => jsonResponse({
+        repos: useGitStore(pinia).reposFor(id).map(repo => makeRepoDetails(repo)), limit_reached: false,
+      }),
       ...extra,
     }))
     const router = createAppRouter(createMemoryHistory())

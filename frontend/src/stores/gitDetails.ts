@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as api from '../api/http'
+import { useGitStore } from './git'
 import type { ProjectGitDetails, RepoDetails } from '../types/api'
 
 /** Wait for events to settle before rereading: a `git commit` fires several in a row. */
@@ -85,6 +86,8 @@ export const useGitDetailsStore = defineStore('gitDetails', () => {
     const controller = new AbortController()
     controllers.set(projectId, controller)
     loading.value[projectId] = true
+    const git = useGitStore()
+    const summaryVersion = git.versionFor(projectId)
     try {
       const result = await api.getProjectGitDetails(projectId, controller.signal)
       if (generations.get(projectId) !== mine) return
@@ -95,6 +98,9 @@ export const useGitDetailsStore = defineStore('gitDetails', () => {
         repos,
         limit_reached: result?.limit_reached === true,
       }
+      // Details already contain the summary; do not scan the project again for the sidebar.
+      // A newer event or fetch remains authoritative if it arrived during this read.
+      git.set(projectId, repos, result?.limit_reached === true, summaryVersion)
       errors.value[projectId] = null
       revisions.value[projectId] = revisionFor(projectId) + 1
     } catch (e) {

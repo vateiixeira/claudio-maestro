@@ -23,6 +23,29 @@ function git(path: string, ...args: string[]): string {
   return execFileSync('git', ['-C', path, '-c', 'core.hooksPath=/dev/null', ...args], { encoding: 'utf8' }).trim()
 }
 
+test('abrir projeto mostra detalhes enquanto o resumo ainda está pendente', async ({ page, request }) => {
+  const data = await project(request, 'Alterações Demo')
+  let release!: () => void
+  const blocked = new Promise<void>(resolve => { release = resolve })
+  let summaries = 0
+  await page.route(`**/api/projects/${data.id}/git`, async route => {
+    summaries++
+    await blocked
+    await route.fulfill({ json: { repos: [], limit_reached: false } })
+  })
+  const summaryReturned = page.waitForResponse(response => new URL(response.url()).pathname === `/api/projects/${data.id}/git`)
+  try {
+    await openProject(page, 'Alterações Demo')
+    await expect(page.getByTestId('scm-repo').first()).toBeVisible()
+    await expect(page.getByTestId('scm-file').first()).toBeVisible()
+    expect(summaries).toBe(1)
+  } finally {
+    release()
+  }
+  await summaryReturned
+  await expect(page.getByTestId('scm-repo').first()).toBeVisible()
+})
+
 test('comparar branches sem checkout: dois sentidos, arquivos, paginação e base persistida', async ({ page, request }) => {
   const data = await project(request, 'Histórico Demo')
   const path = join(data.path, 'api')
