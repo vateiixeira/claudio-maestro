@@ -96,7 +96,7 @@ describe('tela do projeto', () => {
       ...extra,
     }))
     const router = createAppRouter(createMemoryHistory())
-    await router.push(`/projects/${id}`)
+    await router.push(`/projects/${id}?visao=git`)
     const w = mount(ProjectView, { props: { id }, global: { plugins: [pinia, router] } })
     await flushPromises()
     return w

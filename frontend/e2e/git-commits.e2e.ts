@@ -6,6 +6,7 @@ test('histórico de commits: grupos, abrir commit, carregar mais e escolher bran
   // The project has no conversation, so the sidebar keeps it under "Outros projetos".
   await nav.getByRole('button', { name: /sem conversa aberta/ }).click()
   await nav.getByRole('link', { name: /Histórico Demo/ }).first().click()
+  await page.getByRole('tab', { name: /^Git/ }).click()
   const section = page.getByTestId('commits-section')
   await expect(section).toBeVisible()
   const api = section.getByTestId('commits-repo').filter({ hasText: 'api' })
@@ -43,6 +44,7 @@ test('histórico de commits: copiar hash e mensagem e reutilizar histórico ao r
   const nav = page.getByRole('navigation', { name: 'Navegação' })
   await nav.getByRole('button', { name: /sem conversa aberta/ }).click()
   await nav.getByRole('link', { name: /Histórico Demo/ }).first().click()
+  await page.getByRole('tab', { name: /^Git/ }).click()
   const web = page.getByTestId('commits-section').getByTestId('commits-repo').filter({ hasText: 'web' })
   const toggle = web.getByTestId('commits-repo-toggle')
 

@@ -1,20 +1,18 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import SessionStateIcon from '../components/SessionStateIcon.vue'
-import ConversationRow from '../components/conversation/ConversationRow.vue'
-import ProjectGroups from '../components/groups/ProjectGroups.vue'
+import ProjectConversations from '../components/project/ProjectConversations.vue'
+import OrganizationView from './OrganizationView.vue'
 import SplitDivider from '../components/SplitDivider.vue'
 import ConversationView from './ConversationView.vue'
 import ScmSection from '../components/git/scm/ScmSection.vue'
 import CommitsSection from '../components/git/commits/CommitsSection.vue'
 import { useGitDetailsStore } from '../stores/gitDetails'
 import { errorMessage, openInEditor } from '../api/http'
-import { groupByDate } from '../conversationList'
-import { useGroupsStore } from '../stores/groups'
+import { changedCount, useGitStore } from '../stores/git'
 import { isScratch, useProjectsStore } from '../stores/projects'
 import { useNewConversationStore } from '../stores/newConversation'
-import { isDiscarded } from '../conversation/marks'
 import { useSessionsStore } from '../stores/sessions'
 import { readSplitPercent, writeSplitPercent } from '../projectSplitPref'
 import { AGENTS_NAVIGATION_KEY } from '../agentsNavigation'
@@ -40,6 +38,8 @@ async function openEditor(): Promise<void> {
   }
 }
 const router = useRouter()
+const route = useRoute()
+const git = useGitStore()
 
 // Wide screens split the view in two; narrow ones open a conversation on its own page.
 const wideScreen = useMediaQuery('(min-width: 1200px)')
@@ -53,29 +53,74 @@ watch(
   { immediate: true },
 )
 function rowTarget(sessionId: string) {
-  return wideScreen.value ? { name: 'project', params: { id: props.id }, query: { sessao: sessionId } } : undefined
+  return wideScreen.value ? { name: 'project', params: { id: props.id }, query: { ...route.query, sessao: sessionId } } : undefined
 }
 
 const project = computed(() => projects.byId(props.id))
 // The built-in "Sem projeto" shows only its conversations: no path, git or project actions.
 const scratch = computed(() => isScratch(project.value))
-// The store keeps the order of the last listing, not of later `session.updated` events.
-const projectSessions = computed(() =>
-  [...sessions.forProject(props.id)].filter((s) => !isDiscarded(s)).sort(
-    (a, b) => b.last_activity_at - a.last_activity_at || b.created_at - a.created_at,
-  ),
-)
+const TABS = [
+  { id: 'conversas', label: 'Conversas' },
+  { id: 'git', label: 'Git' },
+  { id: 'organizacao', label: 'Organização' },
+] as const
+type ProjectTab = (typeof TABS)[number]['id']
+const activeTab = computed<ProjectTab>(() => scratch.value ? 'conversas' : TABS.find(tab => tab.id === route.query.visao)?.id ?? 'conversas')
+const tabButtons = ref<HTMLButtonElement[]>([])
+async function selectTab(tab: ProjectTab): Promise<void> {
+  if (activeTab.value === tab) return
+  await router.push({ query: { ...route.query, visao: tab } })
+}
+async function tabKey(event: KeyboardEvent, index: number): Promise<void> {
+  const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+  if (!step && event.key !== 'Home' && event.key !== 'End') return
+  event.preventDefault()
+  const target = event.key === 'Home' ? 0 : event.key === 'End' ? TABS.length - 1 : (index + step + TABS.length) % TABS.length
+  await selectTab(TABS[target]!.id)
+  await nextTick()
+  tabButtons.value[target]?.focus()
+}
+const summaryRepos = computed(() => git.reposFor(props.id))
+const gitSummary = computed(() => {
+  if (!git.isLoaded(props.id)) return 'Git: ver repositórios'
+  if (!summaryRepos.value.length) return 'Git: sem repositório'
+  const changes = summaryRepos.value.reduce((sum, repo) => sum + changedCount(repo), 0)
+  const ahead = summaryRepos.value.reduce((sum, repo) => sum + (repo.ahead ?? 0), 0)
+  const errors = summaryRepos.value.some(repo => repo.error)
+  return `Git: ${changes} ${changes === 1 ? 'alteração' : 'alterações'} · ${ahead} para enviar${errors ? ' · leitura parcial' : ''}`
+})
+watch([() => props.id, project], () => {
+  if (project.value && !scratch.value && project.value.available && activeTab.value !== 'git') git.ensure(props.id)
+}, { immediate: true })
 
-const groups = useGroupsStore()
-const visibleGroupsHere = computed(() => groups.visibleIn(props.id, sessions.all))
-const hasGroups = computed(() => visibleGroupsHere.value.length > 0)
-// A group this project does not show (not loaded, or removed) counts as none.
-const knownGroupIds = computed(() => new Set(visibleGroupsHere.value.map((g) => g.id)))
-const ungrouped = computed(() =>
-  projectSessions.value.filter((s) => s.group_id == null || !knownGroupIds.value.has(s.group_id)),
-)
-const dateGroups = computed(() => groupByDate(ungrouped.value, new Date(), true))
-
+const actionsOpen = ref(false)
+const actionsRoot = ref<HTMLElement | null>(null)
+const actionsButton = ref<HTMLButtonElement | null>(null)
+async function closeActions(): Promise<void> {
+  actionsOpen.value = false
+  await nextTick()
+  actionsButton.value?.focus()
+}
+async function actionsKey(event: KeyboardEvent): Promise<void> {
+  if (event.key === 'Escape') { event.preventDefault(); await closeActions(); return }
+  const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+  if (!keys.includes(event.key)) return
+  event.preventDefault()
+  if (!actionsOpen.value) { actionsOpen.value = true; await nextTick() }
+  const items = [...(actionsRoot.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])]
+  const current = items.indexOf(document.activeElement as HTMLButtonElement)
+  const target = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : current < 0 ? (event.key === 'ArrowUp' ? items.length - 1 : 0) : (current + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
+  items[target]?.focus()
+}
+function actionsBlur(event: FocusEvent): void {
+  if (event.relatedTarget instanceof Node && !actionsRoot.value?.contains(event.relatedTarget)) actionsOpen.value = false
+}
+function outsideActions(event: PointerEvent): void {
+  if (event.target instanceof Node && !actionsRoot.value?.contains(event.target)) actionsOpen.value = false
+}
+onMounted(() => document.addEventListener('pointerdown', outsideActions))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', outsideActions))
+const sessionsLoading = ref(false)
 const sessionsError = ref<string | null>(null)
 const actionError = ref<string | null>(null)
 
@@ -85,10 +130,10 @@ const renameError = ref<string | null>(null)
 const renameInput = ref<HTMLInputElement | null>(null)
 
 const confirmingRemove = ref(false)
-const removeButton = ref<HTMLButtonElement | null>(null)
 const cancelRemoveButton = ref<HTMLButtonElement | null>(null)
 // Opening the confirmation puts focus on the safe choice; closing it gives focus back.
 async function askRemove() {
+  actionsOpen.value = false
   confirmingRemove.value = true
   renaming.value = false
   await nextTick()
@@ -97,11 +142,16 @@ async function askRemove() {
 async function cancelRemove() {
   confirmingRemove.value = false
   await nextTick()
-  removeButton.value?.focus()
+  actionsButton.value?.focus()
 }
 const removing = ref(false)
 
+let loadTicket = 0
+onBeforeUnmount(() => { loadTicket++ })
 async function load(): Promise<void> {
+  const ticket = ++loadTicket
+  const projectId = props.id
+  const current = () => ticket === loadTicket && props.id === projectId
   sessionsError.value = null
   actionError.value = null
   renaming.value = false
@@ -113,12 +163,15 @@ async function load(): Promise<void> {
       return
     }
   }
-  if (!project.value) return
+  if (!current() || !project.value) return
   editorError.value = null
+  sessionsLoading.value = true
   try {
-    await sessions.loadForProject(props.id)
+    await sessions.loadForProject(projectId)
   } catch (e) {
-    sessionsError.value = errorMessage(e)
+    if (current()) sessionsError.value = errorMessage(e)
+  } finally {
+    if (current()) sessionsLoading.value = false
   }
 }
 
@@ -126,6 +179,7 @@ watch(() => props.id, load, { immediate: true })
 
 const syncing = ref(false)
 async function sync(): Promise<void> {
+  actionsOpen.value = false
   if (syncing.value) return
   syncing.value = true
   actionError.value = null
@@ -146,6 +200,7 @@ function newSession(): void {
 }
 
 async function startRename(): Promise<void> {
+  actionsOpen.value = false
   renameValue.value = project.value?.name ?? ''
   renameError.value = null
   confirmingRemove.value = false
@@ -197,9 +252,13 @@ async function remove(): Promise<void> {
     <div
       data-test="project-pane"
       class="flex flex-col gap-6"
-      :class="split ? 'min-w-0 shrink-0 overflow-y-auto px-6 py-6 [&>*]:shrink-0' : 'min-w-0 max-w-5xl px-4 py-8 sm:px-10'"
+      :class="split ? 'min-w-0 shrink-0 overflow-y-auto px-6 py-6 [&>*]:shrink-0' : 'min-w-0 w-full px-4 py-6 sm:px-8'"
       :style="split ? { width: `${splitPercent}%` } : undefined"
     >
+      <nav v-if="!scratch" aria-label="Caminho do projeto" class="flex items-center gap-2 text-sm text-fg-muted">
+        <RouterLink to="/projects" class="rounded hover:text-fg focus-visible:outline-2 focus-visible:outline-primary">Projetos</RouterLink>
+        <span aria-hidden="true">/</span><span class="truncate font-medium text-fg">{{ project.name }}</span>
+      </nav>
       <header class="flex flex-wrap items-start gap-4">
         <button v-if="navigation?.enabled.value" type="button" data-test="project-mobile-menu" class="flex size-9 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg" aria-label="Abrir navegação" :aria-expanded="navigation.open.value" @click="navigation.toggle($event.currentTarget as HTMLElement)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
         <div class="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -235,18 +294,11 @@ async function remove(): Promise<void> {
             <span class="size-3.5 shrink-0 rounded-[4px]" :style="{ backgroundColor: project.color }" />
             <h1 class="m-0 truncate text-[1.75rem] font-semibold tracking-tight">{{ project.name }}</h1>
           </div>
-          <div v-if="!scratch" class="font-mono text-[0.8125rem] break-all text-fg-subtle">{{ project.path }}</div>
+          <div v-if="!scratch" class="text-sm break-all text-fg-subtle">{{ project.path }}</div>
+          <button v-if="!scratch && project.available" type="button" data-test="project-git-summary" class="self-start rounded border-0 bg-transparent p-0 text-left text-sm text-fg-muted underline decoration-line-strong underline-offset-4 hover:text-fg focus-visible:outline-2 focus-visible:outline-primary" @click="selectTab('git')">{{ gitSummary }}</button>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-          <RouterLink
-            v-if="!scratch"
-            :to="`/agentes/${project.id}`"
-            data-test="open-organization"
-            class="flex h-11 items-center rounded-lg border border-line-strong px-4 font-medium text-fg no-underline hover:bg-card"
-          >
-            Organização
-          </RouterLink>
           <button
             v-if="!scratch"
             type="button"
@@ -256,36 +308,14 @@ async function remove(): Promise<void> {
           >
             Abrir no editor
           </button>
-          <button
-            v-if="!scratch"
-            type="button"
-            data-test="rename"
-            class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card"
-            @click="startRename"
-          >
-            Renomear
-          </button>
-          <button
-            v-if="!scratch"
-            type="button"
-            ref="removeButton"
-            data-test="remove"
-            class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card"
-            @click="askRemove"
-          >
-            Remover
-          </button>
-          <button
-            v-if="!scratch"
-            type="button"
-            data-test="sync"
-            title="Reler o histórico do CLI deste projeto"
-            class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card disabled:opacity-40"
-            :disabled="syncing"
-            @click="sync"
-          >
-            {{ syncing ? 'Atualizando…' : 'Atualizar' }}
-          </button>
+          <div v-if="!scratch" ref="actionsRoot" class="relative" @keydown="actionsKey" @focusout="actionsBlur">
+            <button ref="actionsButton" type="button" data-test="project-actions" aria-label="Mais ações do projeto" aria-haspopup="menu" :aria-expanded="actionsOpen" class="flex h-11 w-11 items-center justify-center rounded-lg border border-line-strong text-xl text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="actionsOpen = !actionsOpen"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg></button>
+            <div v-if="actionsOpen" role="menu" aria-label="Ações do projeto" class="absolute right-0 top-12 z-30 flex min-w-44 flex-col rounded-lg border border-line-strong bg-surface p-1 shadow-lg">
+              <button type="button" role="menuitem" data-test="rename" class="rounded px-3 py-2 text-left text-sm hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="startRename">Renomear</button>
+              <button type="button" role="menuitem" data-test="remove" class="rounded px-3 py-2 text-left text-sm hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="askRemove">Remover</button>
+              <button type="button" role="menuitem" data-test="sync" title="Reler o histórico do CLI deste projeto" :disabled="syncing" class="rounded px-3 py-2 text-left text-sm hover:bg-card disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-primary" @click="sync">{{ syncing ? 'Atualizando…' : 'Atualizar' }}</button>
+            </div>
+          </div>
           <button
             type="button"
             data-test="new-session"
@@ -298,7 +328,7 @@ async function remove(): Promise<void> {
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            Nova sessão
+            Nova conversa
           </button>
         </div>
       </header>
@@ -322,15 +352,6 @@ async function remove(): Promise<void> {
       <p v-if="editorError" role="alert" class="rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-4 py-3 text-sm text-diff-del-fg">
         {{ editorError }}
       </p>
-
-      <section v-if="!scratch" data-test="repos" class="flex flex-col gap-3">
-        <p v-if="gitDetails.isLoaded(id) && repos.length === 0 && !gitDetails.errorFor(id)" class="m-0 text-sm text-fg-muted">sem repositório git</p>
-        <ScmSection v-show="!gitDetails.isLoaded(id) || repos.length > 0 || gitDetails.errorFor(id)" :project-id="id" />
-        <CommitsSection v-if="project?.available" :project-id="id" />
-        <p v-if="gitDetails.byProject[id]?.limit_reached" data-test="repo-limit" class="m-0 text-xs text-fg-muted">
-          Mais de 50 repositórios; só os 50 primeiros são acompanhados.
-        </p>
-      </section>
 
       <section
         v-if="confirmingRemove && !scratch"
@@ -369,34 +390,24 @@ async function remove(): Promise<void> {
         </div>
       </section>
 
-      <ProjectGroups
-        :project-id="id"
-        :available="project.available"
-        :row-target="rowTarget"
-        :active-id="split ? session ?? null : null"
-        @error="actionError = $event"
-      />
+      <div v-if="!scratch" role="tablist" aria-label="Áreas do projeto" class="flex min-w-0 gap-2 border-b border-line sm:gap-5">
+        <button v-for="(tab, index) in TABS" :key="tab.id" :ref="el => { if (el) tabButtons[index] = el as HTMLButtonElement }" :id="`project-tab-${tab.id}`" type="button" role="tab" :data-test="`project-tab-${tab.id}`" :aria-selected="activeTab === tab.id" aria-controls="project-tabpanel" :tabindex="activeTab === tab.id ? 0 : -1" class="-mb-px flex h-11 items-center gap-2 border-0 border-b-3 bg-transparent px-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-primary sm:px-4" :class="activeTab === tab.id ? 'border-primary text-fg' : 'border-transparent text-fg-muted hover:text-fg'" @click="selectTab(tab.id)" @keydown="tabKey($event, index)">
+          {{ tab.label }}<span v-if="tab.id === 'git' && git.isLoaded(id)" class="rounded-full bg-card px-2 py-0.5 text-xs">{{ summaryRepos.length }}</span>
+        </button>
+      </div>
+      <div id="project-tabpanel" :role="scratch ? undefined : 'tabpanel'" :aria-labelledby="scratch ? undefined : `project-tab-${activeTab}`" class="min-w-0">
+        <ProjectConversations v-show="activeTab === 'conversas'" :project-id="id" :available="project.available" :row-target="rowTarget" :active-id="split ? session ?? null : null" :loading="sessionsLoading" :load-error="sessionsError" @retry="load" @error="actionError = $event" />
+      <section v-if="activeTab === 'git'" data-test="repos" class="flex flex-col gap-3">
+        <p v-if="gitDetails.isLoaded(id) && repos.length === 0 && !gitDetails.errorFor(id)" class="m-0 text-sm text-fg-muted">sem repositório git</p>
+        <ScmSection v-show="!gitDetails.isLoaded(id) || repos.length > 0 || gitDetails.errorFor(id)" :project-id="id" />
+        <CommitsSection v-if="project?.available" :project-id="id" />
+        <p v-if="gitDetails.byProject[id]?.limit_reached" data-test="repo-limit" class="m-0 text-xs text-fg-muted">
+          Mais de 50 repositórios; só os 50 primeiros são acompanhados.
+        </p>
+      </section>
 
-      <p v-if="sessionsError" role="alert" class="text-sm text-diff-del-fg">{{ sessionsError }}</p>
-      <p v-else-if="projectSessions.length === 0" class="text-sm text-fg-muted">
-        {{ scratch ? 'Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa sem projeto.' : 'Nenhuma conversa ainda. Use "Nova sessão" para começar uma conversa nesta pasta.' }}
-      </p>
-      <template v-else>
-        <h2 v-if="hasGroups && ungrouped.length" id="ungrouped-title" data-test="ungrouped-title" class="m-0 font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase">Sem agrupador</h2>
-        <section v-for="group in dateGroups" :key="group.label" :aria-label="group.label" class="flex flex-col">
-          <div class="flex items-center gap-3 py-2">
-            <span class="h-px grow bg-line" /><span data-test="date-group" class="font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase">{{ group.label }}</span><span class="h-px grow bg-line" />
-          </div>
-          <ConversationRow
-            v-for="s in group.sessions"
-            :key="s.session_id"
-            :session="s"
-            :to="rowTarget(s.session_id)"
-            :active="split && s.session_id === session"
-            @error="actionError = $event"
-          />
-        </section>
-      </template>
+        <OrganizationView v-if="activeTab === 'organizacao'" :project-id="id" embedded :compact="split" />
+      </div>
     </div>
     <template v-if="split && session">
       <SplitDivider v-model="splitPercent" label="Largura da conversa" @change="writeSplitPercent" />

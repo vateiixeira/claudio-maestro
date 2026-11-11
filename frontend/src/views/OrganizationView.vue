@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watchEffect } from 'vue'
+import { computed, inject, ref, watchEffect, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import NewAgentDialog from '../components/org/NewAgentDialog.vue'
 import OrgTabs from '../components/org/OrgTabs.vue'
@@ -13,7 +13,7 @@ import { useProjectsStore } from '../stores/projects'
 import { useMediaQuery } from '../useMediaQuery'
 import type { Agent } from '../types/org'
 
-const props = defineProps<{ projectId?: number }>()
+const props = defineProps<{ projectId?: number; embedded?: boolean; compact?: boolean }>()
 
 // The last project looked at, so `/agentes` goes straight back to it.
 const STORAGE_KEY = 'maestro.org.project'
@@ -22,9 +22,10 @@ const projects = useProjectsStore()
 const org = useOrgStore()
 const route = useRoute()
 const router = useRouter()
-const wide = useMediaQuery('(min-width: 1024px)')
+const wideScreen = useMediaQuery('(min-width: 1024px)')
+const wide = computed(() => wideScreen.value && !props.compact)
 const navigation = inject(AGENTS_NAVIGATION_KEY, undefined)
-const compactNavigation = computed(() => navigation?.enabled.value ?? false)
+const compactNavigation = computed(() => !props.embedded && (navigation?.enabled.value ?? false))
 const navigationOpen = computed(() => navigation?.open.value ?? false)
 
 const project = computed(() => (props.projectId === undefined ? undefined : projects.regular.find((p) => p.id === props.projectId)))
@@ -68,12 +69,17 @@ const selectedAgent = computed(() => {
 const creating = ref(false)
 function created(agent: Agent): void {
   creating.value = false
-  void router.replace({ query: { agente: String(agent.id), aba: 'definicao' } })
+  void router.replace({ query: { ...route.query, agente: String(agent.id), aba: 'definicao' } })
 }
 
 function back(): void {
-  void router.replace({ query: {} })
+  const query = { ...route.query }
+  delete query.agente
+  delete query.aba
+  void router.replace({ query })
 }
+
+watch(() => props.projectId, () => { if (props.embedded && !org.loaded) void org.load() }, { immediate: true })
 
 const opening = ref(false)
 const openError = ref<string | null>(null)
@@ -92,7 +98,7 @@ async function talkToTop(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 min-w-0 flex-col bg-surface">
+  <div class="flex min-h-0 min-w-0 flex-col bg-surface" :class="embedded ? 'min-h-80' : 'h-full'">
     <!-- No project in the address: pick one -->
     <section v-if="projectId === undefined" aria-labelledby="org-pick-title" class="mx-auto flex w-full max-w-[640px] flex-col gap-4 px-6 py-10">
       <button v-if="compactNavigation" type="button" data-test="agents-mobile-menu" class="mobile-menu-button self-start" aria-label="Abrir navegação" :aria-expanded="navigationOpen" @click="navigation?.toggle($event.currentTarget as HTMLElement)">
@@ -121,11 +127,11 @@ async function talkToTop(): Promise<void> {
     </section>
 
     <template v-else>
-      <header class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 lg:px-6">
+      <header class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line py-3" :class="embedded ? 'justify-end' : 'px-4 lg:px-6'">
         <button v-if="compactNavigation" type="button" data-test="agents-mobile-menu" class="mobile-menu-button" aria-label="Abrir navegação" :aria-expanded="navigationOpen" @click="navigation?.toggle($event.currentTarget as HTMLElement)">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
-        <div class="flex min-w-0 grow items-center gap-3">
+        <div v-if="!embedded" class="flex min-w-0 grow items-center gap-3">
           <span class="size-3 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" aria-hidden="true" />
           <h1 class="m-0 truncate text-xl font-semibold tracking-tight">{{ project.name }}</h1>
           <label v-if="projects.regular.length > 1" class="shrink-0 text-xs text-fg-subtle">

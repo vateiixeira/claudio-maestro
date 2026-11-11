@@ -9,6 +9,7 @@ async function openRepo(page: import('@playwright/test').Page) {
   // The project has no conversation, so the sidebar keeps it under "Outros projetos".
   await nav.getByRole('button', { name: /sem conversa aberta/ }).click()
   await nav.getByRole('link', { name: /Merge Demo/ }).first().click()
+  await page.getByRole('tab', { name: /^Git/ }).click()
   const repo = page.getByTestId('scm-repo').first()
   await expect(repo).toBeVisible()
   return repo

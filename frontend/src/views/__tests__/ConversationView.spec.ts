@@ -565,10 +565,10 @@ describe('página da conversa', () => {
   })
 
   describe('embutida na tela do projeto', () => {
-    async function mountEmbedded(handlers = {}, props: Record<string, unknown> = {}) {
+    async function mountEmbedded(handlers = {}, props: Record<string, unknown> = {}, query = '') {
       vi.stubGlobal('fetch', routeFetch({ ...baseFetch, ...handlers }))
       const router = createAppRouter(createMemoryHistory())
-      await router.push('/projects/1?sessao=s1')
+      await router.push('/projects/1?sessao=s1' + query)
       const wrapper = mount(ConversationView, { props: { id: 's1', embedded: true, ...props }, global: { plugins: [pinia, router] } })
       await flushPromises()
       return wrapper
@@ -588,6 +588,11 @@ describe('página da conversa', () => {
       expect(close.attributes('href')).toBe('/projects/1')
       expect(close.attributes('aria-label')).toBe('Fechar conversa')
       expect(close.attributes('title')).toBe('Fechar conversa')
+    })
+
+    it('Fechar preserva a aba do projeto e os filtros da organização', async () => {
+      const wrapper = await mountEmbedded({}, {}, '&visao=organizacao&agente=triagem&aba=execucoes')
+      expect(wrapper.get('[data-test="embedded-close"]').attributes('href')).toBe('/projects/1?visao=organizacao&agente=triagem&aba=execucoes')
     })
 
     it('o painel Detalhes é sempre gaveta, mesmo em tela larga e com a preferência aberta', async () => {

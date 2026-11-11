@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { resolve, join } from 'node:path'
+import { join } from 'node:path'
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
@@ -16,6 +16,7 @@ async function openProject(page: Page, name: string) {
   const nav = page.getByRole('navigation', { name: 'Navegação' })
   await nav.getByRole('button', { name: /sem conversa aberta/ }).click()
   await nav.getByRole('link', { name: new RegExp(name) }).first().click()
+  await page.getByRole('tab', { name: /^Git/ }).click()
   await expect(page.getByTestId('scm-section')).toBeVisible()
 }
 
@@ -117,7 +118,7 @@ test('uma carga de detalhes e preparar sem reler histórico; expansão lembrada'
     expect(details).toHaveLength(1)
     expect(logs).toHaveLength(initialLogs)
     const result = { initialDetailsRequests: details.length, initialLogRequests: initialLogs, stageLogRequests: logs.length - initialLogs, stageToVisibleMs }
-    const output = resolve('..', 'docs/research/2026-11-11-git-rea/screenshots')
+    const output = test.info().outputPath('git-captures')
     mkdirSync(output, { recursive: true })
     writeFileSync(join(output, 'git-panel-requests.json'), JSON.stringify(result, null, 2))
     await page.setViewportSize({ width: 1440, height: 1000 })
@@ -135,7 +136,7 @@ test('uma carga de detalhes e preparar sem reler histórico; expansão lembrada'
 })
 
 test('painel Git cabe em telas estreitas e temas, com capturas de referência', async ({ page }) => {
-  const output = resolve('..', 'docs/research/2026-11-11-git-rea/screenshots')
+  const output = test.info().outputPath('git-captures')
   mkdirSync(output, { recursive: true })
   await openProject(page, 'Histórico Demo')
   const api = page.getByTestId('commits-repo').filter({ hasText: 'api' })

@@ -8,8 +8,7 @@ import { computed, ref, watch } from 'vue'
 import CommitRow from './CommitRow.vue'
 import HistoryRefMenu from './HistoryRefMenu.vue'
 import BranchComparison from './BranchComparison.vue'
-import IconArrowDown from '../../icons/IconArrowDown.vue'
-import IconArrowUp from '../../icons/IconArrowUp.vue'
+import RepoStateBadges from '../RepoStateBadges.vue'
 import IconChevron from '../../icons/IconChevron.vue'
 import { useRepoExpansion } from '../../../git/repoExpansion'
 import { repoLabel, syncCounts } from '../../../git/repoLabel'
@@ -77,9 +76,9 @@ function pick(refName: string): void {
 </script>
 
 <template>
-  <li data-test="commits-repo" class="flex min-w-0 flex-col">
-    <div class="relative flex min-w-0 h-7 items-center gap-1.5 rounded px-1 hover:bg-elevated">
-      <button type="button" data-test="commits-repo-toggle" :aria-expanded="open" class="flex min-w-0 grow items-center gap-1.5 text-left" @click="toggle">
+  <li data-test="commits-repo" class="flex min-w-0 flex-col rounded-md border border-line odd:bg-panel even:bg-card/40">
+    <div class="relative flex min-h-10 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-t-md px-2 py-1.5" :class="open ? 'border-b border-line bg-elevated/60' : 'hover:bg-elevated/60'">
+      <button type="button" data-test="commits-repo-toggle" :aria-expanded="open" class="flex min-w-0 flex-[1_1_9rem] items-center gap-1.5 py-0.5 text-left sm:max-w-[35%] sm:flex-none" @click="toggle">
         <IconChevron :open="open" :size="12" class="text-fg-subtle" />
         <span class="truncate font-mono text-[0.8125rem] font-semibold text-fg">{{ name }}</span>
       </button>
@@ -89,22 +88,10 @@ function pick(refName: string): void {
         aria-haspopup="listbox"
         :aria-expanded="menuOpen"
         title="Escolher a branch do histórico (não troca de branch)"
-        class="h-6 max-w-[35%] shrink truncate rounded px-1.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg"
+        class="h-6 max-w-[45%] shrink truncate rounded border border-line bg-panel px-1.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg sm:max-w-56"
         @click="menuOpen = !menuOpen"
       >{{ state?.branch ?? repo.branch ?? repo.head ?? '' }}</button>
-      <span
-        data-test="sync-counts"
-        class="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs"
-        :role="sync.kind === 'diverged' ? 'img' : undefined"
-        :aria-label="sync.kind === 'diverged' ? `${sync.behind} para baixar, ${sync.ahead} para subir` : undefined"
-      >
-        <span v-if="sync.kind === 'none'" class="text-fg-subtle">sem upstream</span>
-        <span v-else-if="sync.kind === 'synced'" class="text-fg-subtle">em dia</span>
-        <template v-else-if="sync.kind === 'diverged'">
-          <span class="inline-flex items-center" :class="sync.behind > 0 ? 'text-info-soft' : 'text-fg-subtle'"><IconArrowDown :size="12" />{{ sync.behind }}</span>
-          <span class="inline-flex items-center" :class="sync.ahead > 0 ? 'text-fg' : 'text-fg-subtle'"><IconArrowUp :size="12" />{{ sync.ahead }}</span>
-        </template>
-      </span>
+      <RepoStateBadges :sync="sync" :error="!!state?.error" />
       <span v-if="fetched" data-test="fetched-ago" class="max-w-[25%] truncate text-xs text-fg-subtle" :title="fetched">{{ fetched }}</span>
       <HistoryRefMenu
         v-if="menuOpen"
@@ -116,7 +103,7 @@ function pick(refName: string): void {
       />
     </div>
 
-    <div v-if="open" class="flex flex-col pl-5">
+    <div v-if="open" class="flex min-w-0 flex-col px-3 py-2.5">
       <p v-if="state?.error" role="alert" class="m-0 py-1 text-xs text-diff-del-fg">{{ state.error }} <button type="button" data-test="history-retry" class="underline" :disabled="state.loading" @click="ensureHistory(true)">Tentar novamente</button></p>
       <p v-if="!state || (state.loading && state.commits.length === 0)" class="m-0 py-1 text-xs text-fg-muted">Carregando…</p>
       <template v-else>

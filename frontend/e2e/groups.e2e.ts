@@ -41,11 +41,12 @@ async function seedGroup(page: Page) {
   await page.goto('/inbox')
   await openProject(page, A)
   await page.getByTestId('group-new').click()
-  await page.getByTestId('group-new-name').fill(GROUP)
-  await page.getByTestId('group-new-name').press('Enter')
-  await expect(page.getByTestId('group-section').filter({ hasText: GROUP })).toBeVisible()
+  await page.getByTestId('group-name-input').fill(GROUP)
+  await page.getByTestId('group-name-input').press('Enter')
+  await expect(page.getByTestId('conversation-group-filter').getByRole('option', { name: GROUP, exact: true })).toHaveCount(1)
   // The group is empty, yet the screen of its project shows it.
-  await expect(page.getByTestId('group-count')).toHaveText('Nenhuma conversa')
+  await page.getByTestId('conversation-group-filter').selectOption({ label: GROUP })
+  await expect(page.getByTestId('project-conversations').getByTestId('conversation-row')).toHaveCount(0)
 
   // B's conversation picks the group of another project: "Nome · Projeto".
   const fromB = await openConversation(page, B_TITLE)
@@ -72,16 +73,18 @@ test('agrupador criado em um projeto aparece nas telas e na barra lateral dos do
 
   // Screen of A: its own conversation unmarked, B's marked with the project name.
   await openProject(page, A)
-  const onA = page.getByTestId('group-section').filter({ hasText: GROUP })
-  await expect(onA.getByTestId('group-count')).toContainText('2 conversas')
+  await page.getByTestId('conversation-group-filter').selectOption({ label: GROUP })
+  const onA = page.getByTestId('project-conversations')
+  await expect(onA.getByTestId('conversation-row')).toHaveCount(2)
   await expect(onA).toContainText(A_TITLE)
   await expect(onA).toContainText(B_TITLE)
   await expect(onA).toContainText(B)
 
   // Screen of B shows the same group, created elsewhere.
   await openProject(page, B)
-  const onB = page.getByTestId('group-section').filter({ hasText: GROUP })
-  await expect(onB.getByTestId('group-count')).toContainText('2 conversas')
+  await page.getByTestId('conversation-group-filter').selectOption({ label: `${GROUP} · ${A}` })
+  const onB = page.getByTestId('project-conversations')
+  await expect(onB.getByTestId('conversation-row')).toHaveCount(2)
   await expect(onB).toContainText(A_TITLE)
   await expect(onB).toContainText(A)
 })
@@ -120,7 +123,7 @@ test('remover pelo × da barra lateral: foco, Esc, confirmação e conversas sol
   await expect(nav.getByTestId('project-session').filter({ hasText: B_TITLE })).toBeVisible()
   for (const name of [A, B]) {
     await openProject(page, name)
-    await expect(page.getByTestId('group-section')).toHaveCount(0)
+    await expect(page.getByTestId('conversation-group-filter').getByRole('option', { name: GROUP, exact: true })).toHaveCount(0)
   }
 })
 
@@ -161,9 +164,9 @@ test('agrupador sem conversa ativa some da barra lateral, mas continua na tela d
   await openProject(page, A)
   for (const name of [ACTIVE, IDLE]) {
     await page.getByTestId('group-new').click()
-    await page.getByTestId('group-new-name').fill(name)
-    await page.getByTestId('group-new-name').press('Enter')
-    await expect(page.getByTestId('group-section').filter({ hasText: name })).toBeVisible()
+    await page.getByTestId('group-name-input').fill(name)
+    await page.getByTestId('group-name-input').press('Enter')
+    await expect(page.getByTestId('conversation-group-filter').getByRole('option', { name, exact: true })).toHaveCount(1)
   }
   const fromA = await openConversation(page, A_TITLE)
   await fromA.selectOption({ label: ACTIVE })
@@ -180,6 +183,6 @@ test('agrupador sem conversa ativa some da barra lateral, mas continua na tela d
 
   // The project screen still lists both.
   await openProject(page, A)
-  await expect(page.getByTestId('group-section').filter({ hasText: IDLE })).toBeVisible()
-  await expect(page.getByTestId('group-section').filter({ hasText: ACTIVE })).toBeVisible()
+  await expect(page.getByTestId('conversation-group-filter').getByRole('option', { name: IDLE, exact: true })).toHaveCount(1)
+  await expect(page.getByTestId('conversation-group-filter').getByRole('option', { name: ACTIVE, exact: true })).toHaveCount(1)
 })

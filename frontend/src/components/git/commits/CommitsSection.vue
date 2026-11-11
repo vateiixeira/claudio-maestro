@@ -20,9 +20,9 @@ watch(
 </script>
 
 <template>
-  <section v-if="repos.length > 0" data-test="commits-section" aria-labelledby="commits-title" class="flex flex-col">
-    <header class="flex h-7 items-center gap-2 px-1">
-      <h2 id="commits-title" data-test="commits-title" class="m-0 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Commits</h2>
+  <section v-if="repos.length > 0" data-test="commits-section" aria-labelledby="commits-title" class="flex min-w-0 flex-col gap-2">
+    <header class="flex min-h-8 items-center gap-2 px-1">
+      <h2 id="commits-title" data-test="commits-title" class="m-0 font-mono text-[0.6875rem] font-semibold tracking-[0.08em] text-fg-muted uppercase">Commits</h2>
       <span data-test="commits-count" class="text-xs text-fg-subtle">{{ countText }}</span>
       <span class="grow" />
       <button type="button" data-test="commits-refresh" aria-label="Atualizar" title="Reler o estado git" class="flex size-6 items-center justify-center rounded text-fg-muted hover:bg-elevated hover:text-fg" @click="details.load(projectId)">
@@ -32,7 +32,7 @@ watch(
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 20 5-5 5 5" /><path d="m7 4 5 5 5-5" /></svg>
       </button>
     </header>
-    <ul class="m-0 flex list-none flex-col p-0">
+    <ul class="m-0 flex list-none flex-col gap-2 p-0">
       <CommitsRepo v-for="repo in repos" :key="`${projectId}:${repo.path}`" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" :start-open="repos.length === 1" />
     </ul>
   </section>

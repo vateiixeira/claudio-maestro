@@ -45,9 +45,9 @@ function startOpen(repo: RepoDetails): boolean {
 </script>
 
 <template>
-  <section data-test="scm-section" aria-labelledby="scm-title" class="flex flex-col">
-    <header class="flex h-7 items-center gap-2 px-1">
-      <h2 id="scm-title" class="m-0 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Alterações</h2>
+  <section data-test="scm-section" aria-labelledby="scm-title" class="flex min-w-0 flex-col gap-2">
+    <header class="flex min-h-8 items-center gap-2 px-1">
+      <h2 id="scm-title" class="m-0 font-mono text-[0.6875rem] font-semibold tracking-[0.08em] text-fg-muted uppercase">Alterações</h2>
       <span v-if="loaded" data-test="scm-count" class="text-xs text-fg-subtle">{{ countText }}</span>
       <span class="grow" />
       <slot name="header-actions" />
@@ -68,7 +68,7 @@ function startOpen(repo: RepoDetails): boolean {
     </div>
     <template v-else>
       <p v-if="error" role="alert" class="m-0 px-1 text-xs text-diff-del-fg">Não foi possível atualizar: {{ error }}</p>
-      <ul class="m-0 flex list-none flex-col p-0">
+      <ul class="m-0 flex list-none flex-col gap-2 p-0">
         <ScmRepo v-for="repo in repos" :key="`${projectId}:${repo.path}`" :project-id="projectId" :repo="repo" :collapse-all="collapseAll" :start-open="startOpen(repo)" />
       </ul>
     </template>

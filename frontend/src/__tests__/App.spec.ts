@@ -263,7 +263,7 @@ it('no projeto a 360 px mantém navegação recolhida e abre/fecha pelo menu e b
     await flushPromises()
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(toggle.element)
-    expect(wrapper.get('[data-test="project-pane"]').classes()).toEqual(expect.arrayContaining(['px-4', 'sm:px-10']))
+    expect(wrapper.get('[data-test="project-pane"]').classes()).toEqual(expect.arrayContaining(['px-4', 'sm:px-8']))
   } finally {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
   }

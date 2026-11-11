@@ -2,7 +2,7 @@
 import type { RepoFile } from '../../../types/api'
 
 const props = defineProps<{ file: RepoFile; open: boolean; readOnly: boolean; disabled: boolean }>()
-const emit = defineEmits<{ toggle: []; editor: []; discard: []; stage: []; unstage: [] }>()
+const emit = defineEmits<{ toggle: [trigger: HTMLElement]; editor: []; discard: []; stage: []; unstage: [] }>()
 
 const name = () => props.file.path.slice(props.file.path.lastIndexOf('/') + 1)
 const folder = () => (props.file.path.includes('/') ? props.file.path.slice(0, props.file.path.lastIndexOf('/')) : '')
@@ -18,7 +18,7 @@ const iconButton = 'flex size-8 sm:size-6 items-center justify-center rounded te
     class="group flex h-8 min-w-0 sm:h-6 items-center gap-1.5 rounded pr-1 hover:bg-elevated focus-within:bg-elevated"
     :class="{ 'bg-card': open }"
   >
-    <button type="button" data-test="file-open" :aria-expanded="open" :title="file.path" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left" @click="emit('toggle')">
+    <button type="button" data-test="file-open" aria-haspopup="dialog" :title="file.path" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left" @click="emit('toggle', $event.currentTarget as HTMLElement)">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0 text-fg-subtle"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
       <span class="min-w-0 truncate"><span class="text-[0.8125rem] text-fg">{{ name() }}</span><span v-if="folder()" class="ml-2 font-mono text-[0.6875rem] text-fg-subtle">{{ folder() }}</span></span>
     </button>

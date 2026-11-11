@@ -30,7 +30,7 @@ import { worktreeLabel } from '../../worktree'
 // `focused` is the keyboard cursor of a list (same look as `active`, with the actions always shown). The `actions` slot
 // adds buttons before the usual ones; the `status` slot takes the place of the waiting reason.
 const props = withDefaults(
-  defineProps<{ session: Session; variant?: 'inbox' | 'list' | 'compact'; to?: RouteLocationRaw; active?: boolean; focused?: boolean }>(),
+  defineProps<{ session: Session; variant?: 'inbox' | 'list' | 'compact'; to?: RouteLocationRaw; active?: boolean; focused?: boolean; projectContextId?: number }>(),
   { variant: 'list' },
 )
 const target = computed<RouteLocationRaw>(() => props.to ?? { name: 'session', params: { id: props.session.session_id } })
@@ -47,10 +47,11 @@ const finished = computed(() => props.session.display_state === 'finished')
 const reason = computed(() => waitingReason(props.session))
 const wantsYou = computed(() => needsYou(props.session))
 const compact = computed(() => props.variant === 'compact')
+const sameProjectContext = computed(() => props.projectContextId === props.session.project_id)
 // The compact row hides the visible reason, so screen readers still get it.
 const srState = computed(() => {
   const label = displayStateLabel(props.session)
-  return compact.value && reason.value && reason.value !== label ? `${label}: ${reason.value}` : label
+  return (compact.value || props.projectContextId != null) && reason.value && reason.value !== label ? `${label}: ${reason.value}` : label
 })
 // The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it on the link.
 const planTitle = computed(() => (!compact.value && planVisible(props.session) ? planPosition(props.session.plan!) : undefined))
@@ -119,20 +120,20 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     </div>
     <span class="sr-only">{{ srState }}{{ session.unread ? ', com novidade' : '' }}</span>
     <slot name="status">
-      <span v-if="reason && !compact" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs" :class="wantsYou ? 'text-secondary-soft' : 'text-fg-muted'">{{ reason }}</span>
+      <span v-if="reason && !compact" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs" :class="[wantsYou ? 'text-secondary-soft' : 'text-fg-muted', projectContextId != null ? 'hidden xl:inline' : '']">{{ reason }}</span>
     </slot>
     <!-- Fixed widths, kept even when empty, so the columns line up from row to row. The actions float over the right end instead of taking room from them. -->
-    <span data-test="row-project" class="hidden items-center gap-1.5 text-xs text-fg-subtle md:flex" :class="compact ? 'w-28 min-w-0 shrink' : 'w-36 shrink-0'">
+    <span v-if="!sameProjectContext" data-test="row-project" class="items-center gap-1.5 text-xs text-fg-subtle" :class="projectContextId != null ? 'flex w-20 min-w-0 shrink-0 sm:w-28' : ['hidden md:flex', compact ? 'w-28 min-w-0 shrink' : 'w-36 shrink-0']">
       <template v-if="project">
         <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
         <span class="truncate">{{ project.name }}</span>
       </template>
     </span>
-    <span v-if="!compact" data-test="row-branch" class="hidden w-40 shrink-0 lg:flex">
+    <span v-if="!compact && (!sameProjectContext || worktree)" data-test="row-branch" class="hidden w-40 shrink-0 lg:flex">
       <WorktreeLabel v-if="worktree" :text="worktree" muted />
       <BranchLabel v-else-if="repo" :text="repoLabel(repo)" muted />
     </span>
-    <span class="shrink-0 whitespace-nowrap text-right text-xs text-fg-subtle" :class="compact ? 'min-w-12' : 'w-20'">{{ formatActivity(session.last_activity_at) }}</span>
+    <span class="shrink-0 whitespace-nowrap text-right text-xs text-fg-subtle" :class="compact || projectContextId != null ? 'min-w-12' : 'w-20'">{{ formatActivity(session.last_activity_at) }}</span>
     <div
       v-if="variant !== 'compact'"
       data-test="row-actions"

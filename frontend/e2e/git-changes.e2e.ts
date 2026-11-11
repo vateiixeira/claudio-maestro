@@ -6,6 +6,7 @@ async function openProject(page: import('@playwright/test').Page) {
   // The project has no conversation, so the sidebar keeps it under "Outros projetos".
   await nav.getByRole('button', { name: /sem conversa aberta/ }).click()
   await nav.getByRole('link', { name: /Alterações Demo/ }).first().click()
+  await page.getByRole('tab', { name: /^Git/ }).click()
   const repo = page.getByTestId('scm-repo').first()
   await expect(repo).toBeVisible()
   return repo
@@ -37,7 +38,9 @@ test('preparar, commitar e descartar', async ({ page }) => {
   await expect(cupom).toHaveCount(0)
 
   await repo.locator('[data-test="scm-file"][data-path="README.md"] [data-test="file-open"]').click()
-  await expect(repo.locator('[data-test="diff-line"][data-kind="add"]').first()).toBeVisible()
+  await expect(page.getByRole('dialog').locator('[data-test="diff-line"][data-kind="add"]').first()).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
 
   const commits = page.getByTestId('commits-section').getByTestId('commits-repo').first()
   if (await commits.getByTestId('commits-repo-toggle').getAttribute('aria-expanded') !== 'true') await commits.getByTestId('commits-repo-toggle').click()

@@ -30,6 +30,20 @@ function mountRow(session = makeSession(), variant?: 'inbox' | 'list' | 'compact
 }
 
 describe('linha de conversa', () => {
+  it('no contexto do projeto omite metadados redundantes, preservando worktree', () => {
+    const row = mountRow(makeSession(), undefined, { projectContextId: 1 })
+    expect(row.find('[data-test="row-project"]').exists()).toBe(false)
+    expect(row.find('[data-test="row-branch"]').exists()).toBe(false)
+    const worktree = mountRow(makeSession({ worktree_name: 'fix', worktree_path: '/p/fix', git_branch: 'fix' }), undefined, { projectContextId: 1 })
+    expect(worktree.get('[data-test="row-branch"]').text()).toContain('fix')
+  })
+
+  it('conversa de outro projeto mantém sua identificação no contexto local', () => {
+    const row = mountRow(makeSession(), undefined, { projectContextId: 2 })
+    expect(row.get('[data-test="row-project"]').text()).toContain('loja-online')
+    expect(row.get('[data-test="row-branch"]').text()).toContain('develop')
+  })
+
   it('mostra título, projeto, branch e tempo, e abre a conversa', () => {
     const wrapper = mountRow(makeSession({ session_id: 'abc', title: 'Corrigir login' }))
 

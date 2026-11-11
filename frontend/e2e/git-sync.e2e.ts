@@ -11,6 +11,7 @@ async function openProject(page: Page) {
   // The project has no conversation, so the sidebar keeps it under "Outros projetos".
   await nav.getByRole('button', { name: /sem conversa aberta/ }).click()
   await nav.getByRole('link', { name: /Sincronia Demo/ }).first().click()
+  await page.getByRole('tab', { name: /^Git/ }).click()
   await expect(page.getByTestId('scm-repo')).toHaveCount(2)
 }
 

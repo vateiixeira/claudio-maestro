@@ -247,8 +247,8 @@ describe('branches e merge no repositório', () => {
     })
     await wrapper.find('[data-test="scm-file"] [data-test="file-open"]').trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('[data-test="conflict-label"]').map((l) => l.text())).toEqual(['(sua branch)', '(a que entra)'])
-    expect(wrapper.find('[data-marker="ours"]').text()).toContain('develop')
+    expect([...document.querySelectorAll('[data-test="scm-diff-modal"] [data-test="conflict-label"]')].map(l => l.textContent)).toEqual(['(sua branch)', '(a que entra)'])
+    expect(document.querySelector('[data-test="scm-diff-modal"] [data-marker="ours"]')?.textContent).toContain('develop')
   })
 
   it('abortar pede confirmação', async () => {
@@ -406,6 +406,17 @@ describe('branches e merge no repositório', () => {
       expect(router.currentRoute.value.name).toBe('project')
       expect(router.currentRoute.value.params.id).toBe('1')
       expect(router.currentRoute.value.query.sessao).toBe('nova')
+    })
+
+    it('mantém a aba Git e os parâmetros do projeto ao abrir a ajuda ao lado', async () => {
+      wide(true)
+      await router.push('/projects/1?visao=git&filtro=preservado')
+      const { wrapper } = mountRepo(merging(['src/a.vue'], [conflict('src/a.vue')]), {
+        'POST /api/projects/1/sessions': sessionsOk, 'POST /api/sessions/nova/messages': messagesOk,
+      })
+      await wrapper.get('[data-test="ask-claude"]').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.query).toEqual({ visao: 'git', filtro: 'preservado', sessao: 'nova' })
     })
 
     it('erro ao criar a sessão aparece e o clique seguinte tenta de novo', async () => {

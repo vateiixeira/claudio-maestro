@@ -33,6 +33,55 @@ function mountRepo(repo: RepoDetails, handlers: Record<string, () => Response | 
 const bodyOf = (call: unknown[]) => JSON.parse(String((call[1] as RequestInit).body))
 
 describe('repositório na seção Alterações', () => {
+  it('ações de rede mostram texto além dos ícones', () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 2, behind: 1 }))
+    expect(wrapper.get('[data-test="repo-pull"]').text()).toBe('Pull')
+    expect(wrapper.get('[data-test="repo-push"]').text()).toBe('Push')
+  })
+
+  it('sessão na pasta ancestral identifica alcance potencial, não atividade Git em todos os repositórios', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ title: 'Planejar loja', cwd: '/home/vi/dev/loja', display_state: 'running' })])
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
+    const indicator = wrapper.get('[data-test="running-session"]')
+    expect(indicator.text()).toBe('Sessão no projeto')
+    expect(indicator.attributes('title')).toContain('pode acessar este repositório')
+    expect(indicator.attributes('title')).toContain('não confirma')
+    expect(wrapper.find('[data-test="running-arc"]').exists()).toBe(false)
+  })
+
+  it('sessão da worktree identifica o repositório; sem sessão não há indicador', async () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
+    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
+    useSessionsStore(pinia).setForProject(1, [makeSession({ title: 'Worktree ativa', cwd: '/home/vi/dev/loja', worktree_path: PATH, display_state: 'running' })])
+    await flushPromises()
+    expect(wrapper.get('[data-test="running-session"]').text()).toBe('Sessão no repositório')
+    expect(wrapper.get('[data-test="running-session"]').attributes('title')).toContain('worktree')
+  })
+
+  it('sessão parada ou em outra worktree não aparece como atividade no repositório', async () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
+    useSessionsStore(pinia).setForProject(1, [makeSession({ cwd: PATH, display_state: 'waiting' })])
+    await flushPromises()
+    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
+    useSessionsStore(pinia).setForProject(1, [makeSession({ cwd: PATH, worktree_path: `${PATH}/.worktrees/test`, display_state: 'running' })])
+    await flushPromises()
+    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
+  })
+
+  it('barra final do caminho não transforma sessão local em sessão ancestral', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ cwd: `${PATH}/`, display_state: 'running' })])
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
+    expect(wrapper.get('[data-test="running-session"]').text()).toBe('Sessão no repositório')
+  })
+
+  it('mantém o resumo das alterações e sincronização quando recolhido', async () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, changed: { staged: 2, unstaged: 3, untracked: 1 }, upstream: 'origin/main', ahead: 2, behind: 1 }))
+    await wrapper.get('[data-test="scm-repo-toggle"]').trigger('click')
+    expect(wrapper.find('[data-test="scm-body"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="repo-changes"]').text()).toBe('6 alterações')
+    expect(wrapper.get('[data-test="sync-counts"]').text()).toContain('2 para enviar')
+  })
+
   it('agrupa em Preparados e Alterações com a letra de cada arquivo', () => {
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, rel_path: 'api', files: [file('src/a.ts', 'staged'), file('novo.ts', 'untracked', 'A'), file('src/b.ts', 'unstaged', 'D')] }))
     const groups = wrapper.findAll('[data-test="scm-group"]')
@@ -133,11 +182,13 @@ describe('repositório na seção Alterações', () => {
     expect(wrapper.find('[role="dialog"]').text()).toContain('Descartar 2 alterações?')
   })
 
-  it('com sessão em execução no repositório: arco na linha e confirmação nomeando a sessão', async () => {
+  it('com sessão no repositório: indicador contextual e confirmação nomeando a sessão', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ title: 'Chatbot whatsapp', cwd: `${PATH}/src`, display_state: 'running' })])
     const repo = makeRepoDetails({ path: PATH, rel_path: 'api', files: [file('a.ts', 'unstaged')] })
     const { wrapper } = mountRepo(repo)
-    expect(wrapper.find('[data-test="running-arc"]').attributes('title')).toBe('Chatbot whatsapp em execução aqui')
+    expect(wrapper.get('[data-test="running-session"]').text()).toBe('Sessão no repositório')
+    expect(wrapper.get('[data-test="running-session"]').attributes('title')).toContain('Chatbot whatsapp')
+    expect(wrapper.find('[data-test="running-arc"]').exists()).toBe(false)
     await wrapper.find('[data-test="scm-file"] [data-test="file-discard"]').trigger('click')
     const dialog = wrapper.find('[role="dialog"]')
     expect(dialog.text()).toContain('Chatbot whatsapp está em execução em api.')
@@ -181,7 +232,7 @@ describe('repositório na seção Alterações', () => {
     })
     await wrapper.find('[data-test="scm-file"] [data-test="file-open"]').trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('[data-test="diff-line"]').length).toBeGreaterThan(0)
+    expect(document.querySelectorAll('[data-test="scm-diff-modal"] [data-test="diff-line"]').length).toBeGreaterThan(0)
   })
 
   it('o que foi digitado durante o commit não some quando ele dá certo', async () => {

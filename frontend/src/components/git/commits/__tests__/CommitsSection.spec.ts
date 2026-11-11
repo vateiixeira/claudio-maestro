@@ -53,7 +53,8 @@ describe('seção Commits', () => {
     const row = wrapper.find('[data-test="commits-repo"]')
     expect(row.text()).toContain('api')
     expect(row.find('[data-test="sync-counts"]').attributes('aria-label')).toBe('1 para baixar, 2 para subir')
-    expect(row.find('[data-test="sync-counts"]').text()).toBe('12')
+    expect(row.find('[data-test="sync-counts"]').text()).toContain('1 para baixar')
+    expect(row.find('[data-test="sync-counts"]').text()).toContain('2 para enviar')
     expect(row.find('[data-test="fetched-ago"]').text()).toBe('buscado há 2 min')
   })
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import FileDiffView from '../../details/FileDiffView.vue'
+import { computed, ref, shallowRef, watch } from 'vue'
+import ScmDiffModal from './ScmDiffModal.vue'
 import ScmFileRow from './ScmFileRow.vue'
 import IconChevron from '../../icons/IconChevron.vue'
 import type { ChangedFile, ChangesGroup, RepoDetails, RepoFile } from '../../../types/api'
@@ -23,12 +23,17 @@ const emit = defineEmits<{
 }>()
 
 const open = ref(true)
-const expanded = ref<Record<string, boolean>>({})
+const selectedKey = ref<string | null>(null)
+const opener = shallowRef<HTMLElement | null>(null)
+const groupToggle = ref<HTMLButtonElement | null>(null)
 const keyOf = (f: RepoFile) => `${f.status}:${f.path}`
-watch(() => props.files, (files) => {
-  const present = new Set(files.map(keyOf))
-  for (const key of Object.keys(expanded.value)) if (!present.has(key)) delete expanded.value[key]
-})
+const selected = computed(() => props.files.find(file => keyOf(file) === selectedKey.value) ?? null)
+watch(selected, file => { if (!file) selectedKey.value = null })
+watch(() => [props.projectId, props.repo.path], () => { selectedKey.value = null })
+function openDiff(file: RepoFile, trigger: HTMLElement) {
+  opener.value = trigger
+  selectedKey.value = keyOf(file)
+}
 
 const diffGroup = computed<ChangesGroup>(() => ({
   path: props.repo.path, rel_path: props.repo.rel_path, branch: props.repo.branch,
@@ -45,7 +50,7 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
 <template>
   <div data-test="scm-group" :data-group="group" class="flex flex-col">
     <div class="group flex h-6 items-center gap-1.5 rounded pr-1 hover:bg-elevated focus-within:bg-elevated">
-      <button type="button" :aria-expanded="open" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left text-[0.8125rem] font-medium text-fg-muted" @click="open = !open">
+      <button ref="groupToggle" type="button" data-test="scm-group-toggle" :aria-expanded="open" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left text-[0.8125rem] font-medium text-fg-muted" @click="open = !open">
         <IconChevron :open="open" :size="12" class="text-fg-subtle" />
         <span data-test="scm-group-title"><slot name="title">{{ title }}</slot></span>
       </button>
@@ -71,10 +76,10 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
       <li v-for="f in files" :key="keyOf(f)" class="flex flex-col">
         <ScmFileRow
           :file="f"
-          :open="!!expanded[keyOf(f)]"
+          :open="selectedKey === keyOf(f)"
           :read-only="readOnly"
           :disabled="disabled"
-          @toggle="expanded[keyOf(f)] = !expanded[keyOf(f)]"
+          @toggle="openDiff(f, $event)"
           @editor="emit('editor', f)"
           @discard="emit('discard', [f])"
           @stage="emit('stage', [f.path])"
@@ -82,10 +87,9 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
         >
           <template v-if="$slots['file-actions']" #actions><slot name="file-actions" :file="f" /></template>
         </ScmFileRow>
-        <div v-if="expanded[keyOf(f)]" class="my-0.5 rounded-md border border-line bg-bg px-2 py-1">
-          <FileDiffView :project-id="projectId" :group="diffGroup" :file="changedFile(f)" :revision="revision" :conflict-labels="conflictLabels" />
-        </div>
+
       </li>
     </ul>
+    <ScmDiffModal v-if="selected" :project-id="projectId" :group="diffGroup" :file="changedFile(selected)" :revision="revision" :conflict-labels="conflictLabels" :return-focus="opener" :fallback-focus="groupToggle" @close="selectedKey = null" />
   </div>
 </template>

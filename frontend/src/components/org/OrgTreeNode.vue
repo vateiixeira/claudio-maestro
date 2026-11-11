@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import AgentStateIcon from './AgentStateIcon.vue'
 import { agentState } from '../../org'
 import { useSessionsStore } from '../../stores/sessions'
@@ -8,6 +8,7 @@ import type { TreeNode } from '../../stores/org'
 
 const props = defineProps<{ node: TreeNode; selectedId: number | null }>()
 const router = useRouter()
+const route = useRoute()
 const sessions = useSessionsStore()
 
 const agent = computed(() => props.node.agent)
@@ -15,7 +16,9 @@ const state = computed(() => agentState(agent.value, sessions.all))
 const selected = computed(() => props.selectedId === agent.value.id)
 
 function select(): void {
-  void router.replace({ query: { agente: String(agent.value.id) } })
+  const query: LocationQueryRaw = { ...route.query, agente: String(agent.value.id) }
+  delete query.aba
+  void router.replace({ query })
 }
 </script>
 

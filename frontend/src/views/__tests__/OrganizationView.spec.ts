@@ -36,6 +36,34 @@ async function mountAt(path: string) {
 }
 
 describe('OrganizationView', () => {
+  it('embutida preserva a aba do projeto ao selecionar agente e voltar, sem repetir cabeçalho', async () => {
+    useOrgStore().agents = [makeAgent({ id: 1 })]
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/projects/1?visao=organizacao&sessao=abc&aba=rotinas')
+    const wrapper = mount(OrganizationView, { props: { projectId: 1, embedded: true }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.find('[data-test="org-project-select"]').exists()).toBe(false)
+    await wrapper.get('[data-test="org-node-button"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ visao: 'organizacao', sessao: 'abc', agente: '1' })
+    expect(router.currentRoute.value.query.aba).toBeUndefined()
+    await wrapper.get('[data-test="org-back"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ visao: 'organizacao', sessao: 'abc' })
+  })
+
+  it('empilha a árvore quando o projeto divide espaço com uma conversa', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/projects/1?visao=organizacao&sessao=abc')
+    const wrapper = mount(OrganizationView, { props: { projectId: 1, embedded: true, compact: true }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(wrapper.get('[data-test="org-tree"]').element.tagName).toBe('DETAILS')
+    await wrapper.setProps({ compact: false })
+    expect(wrapper.get('[data-test="org-tree"]').element.tagName).toBe('ASIDE')
+  })
+
   it('sem projeto mostra o seletor e lembra o último', async () => {
     const first = await mountAt('/agentes')
     const options = first.wrapper.findAll('[data-test="org-project-option"]')
