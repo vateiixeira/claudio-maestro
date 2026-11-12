@@ -14,6 +14,9 @@ const open = ref(false)
 const input = computed(() => prettyJson(props.item.input))
 const output = computed(() => resultText(props.item.result?.content))
 const imageCount = computed(() => toolImagesOf(props.item).length)
+// Inside a work block the block's own strip already shows the images, so the card does not repeat them.
+const showImages = computed(() => !props.headless && imageCount.value > 0)
+const showOutput = computed(() => !!output.value || !imageCount.value)
 const isError = computed(() => props.item.result?.is_error === true)
 const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
 const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
@@ -47,10 +50,10 @@ const meta = computed(() => (!props.item.result && !props.item.result_missing &&
         <div class="mb-1 text-xs text-fg-subtle">Entrada</div>
         <TruncatedText :text="input" />
       </div>
-      <div v-if="item.result">
+      <div v-if="item.result && (showImages || showOutput)">
         <div class="mb-1 text-xs text-fg-subtle">Resultado</div>
-        <ToolImageStrip class="mb-2" :items="[item]" :session-active="sessionActive" />
-        <div v-if="output || !imageCount" :class="isError ? 'text-diff-del-fg' : ''" :data-test="isError ? 'tool-error' : 'tool-output'">
+        <ToolImageStrip v-if="showImages" class="mb-2" :items="[item]" :session-active="sessionActive" />
+        <div v-if="showOutput" :class="isError ? 'text-diff-del-fg' : ''" :data-test="isError ? 'tool-error' : 'tool-output'">
           <TruncatedText :text="output" />
         </div>
       </div>

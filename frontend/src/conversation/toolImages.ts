@@ -33,6 +33,7 @@ const sessionOf = (key: string) => key.slice(0, key.indexOf('\u0000'))
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
+// `active` also stops the loop once the request was forgotten (`forgetToolImages`), so it does not keep retrying for nobody.
 async function fetchWithRetry(sessionId: string, toolUseId: string, index: number, active: () => boolean): Promise<Blob> {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -57,10 +58,14 @@ export function loadToolImage(sessionId: string, toolUseId: string, index: numbe
   if (cached) return Promise.resolve(cached)
   const pending = inflight.get(key)
   if (pending) return pending
-  const promise: Promise<string> = fetchWithRetry(sessionId, toolUseId, index, active).then((blob) => {
+  // Still the request of record: `forgetToolImages` (or a newer request for the key) takes it out of `inflight`.
+  // Before `inflight.set` below it is still undefined (a synchronous failure), so that counts as alive.
+  let promise: Promise<string> | undefined
+  const alive = () => promise === undefined || inflight.get(key) === promise
+  const current: Promise<string> = fetchWithRetry(sessionId, toolUseId, index, () => active() && alive()).then((blob) => {
     const url = URL.createObjectURL(blob)
     // Forgotten while it loaded (the column closed): do not keep it.
-    if (inflight.get(key) !== promise) {
+    if (inflight.get(key) !== current) {
       URL.revokeObjectURL(url)
       return url
     }
@@ -68,11 +73,12 @@ export function loadToolImage(sessionId: string, toolUseId: string, index: numbe
     urls.set(key, url)
     return url
   }, (error) => {
-    if (inflight.get(key) === promise) inflight.delete(key)
+    if (inflight.get(key) === current) inflight.delete(key)
     throw error
   })
+  promise = current
   inflight.set(key, promise)
-  return promise
+  return current
 }
 
 /** Drops the images of a session, when its column closes. */

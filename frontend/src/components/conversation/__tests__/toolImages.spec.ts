@@ -195,6 +195,21 @@ describe('ImageViewer', () => {
     expect(document.activeElement).toBe(buttons[0])
   })
 
+  it('se as imagens diminuem com o visualizador aberto, limita a posição; vazio, fecha', async () => {
+    const all = entries()
+    const w = track(mount(ImageViewer, { props: { entries: all, start: 2 }, global: { provide }, attachTo: document.body }))
+    await flushPromises()
+    expect(q('image-viewer-counter')!.textContent).toBe('3 de 3')
+    await w.setProps({ entries: all.slice(0, 2) })
+    await flushPromises()
+    expect(q('image-viewer-counter')!.textContent).toBe('2 de 2')
+    expect(q('image-viewer-caption')!.textContent).toBe('Read · tela.png')
+    expect(w.emitted('close')).toBeUndefined()
+    await w.setProps({ entries: [] })
+    await flushPromises()
+    expect(w.emitted('close')).toHaveLength(1)
+  })
+
   it('imagem que falha mostra "Imagem indisponível"', async () => {
     fetchMock.mockRejectedValue(new ApiError(404, null, 'x'))
     open(0)
@@ -230,29 +245,70 @@ describe('onde a faixa aparece', () => {
     expect(w.find('[data-test="tool-image-strip"]').exists()).toBe(false)
   })
 
-  it('WorkBlock aberto não repete a faixa da ação por fora: a linha aberta mostra só a dela', async () => {
+  it('WorkBlock aberto mostra só a faixa do bloco: a linha aberta não repete as imagens, mas mantém o texto', async () => {
     const w = track(mount(WorkBlock, { props: { items: [read, shot], open: true }, global: { provide } }))
     await flushPromises()
-    // The block strip (3 images) is always there; the rows are closed, so no row strip yet.
     expect(w.findAll('[data-test="tool-image-strip"]')).toHaveLength(1)
-    await w.findAll('[data-test="work-row"] [data-test="work-header"]')[0]!.trigger('click')
-    const strips = w.findAll('[data-test="tool-image-strip"]')
-    expect(strips).toHaveLength(2)
-    expect(strips[1]!.findAll('[data-test="tool-image"]')).toHaveLength(2)
+    const headers = w.findAll('[data-test="work-row"] [data-test="work-header"]')
+    await headers[0]!.trigger('click')
+    await headers[1]!.trigger('click')
+    expect(w.findAll('[data-test="tool-image-strip"]')).toHaveLength(1)
+    expect(w.findAll('[data-test="tool-image"]')).toHaveLength(3)
+    expect(w.findAll('[data-test="work-row-body"]')[1]!.text()).toContain('feito')
   })
 
-  it('ReadTool e GenericTool mostram a faixa da própria ação acima do resultado', async () => {
-    const r = track(mount(ReadTool, { props: { item: tool('r2', [{ type: 'text', text: 'linha' }, marker(0)], 'Read', { file_path: '/p/a.png' }), headless: true }, global: { provide } }))
+  it('ReadTool e GenericTool dentro de um WorkBlock (headless) não repetem a faixa; o meta "N imagens" fica', async () => {
+    const only = tool('r1', [marker(0), marker(1)], 'Read', { file_path: '/p/a.png' })
+    const r = track(mount(ReadTool, { props: { item: only, headless: true }, global: { provide } }))
+    await flushPromises()
+    expect(r.find('[data-test="tool-image-strip"]').exists()).toBe(false)
+    expect(r.find('[data-test="output-box"]').exists()).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    const g = track(mount(GenericTool, { props: { item: shot, headless: true }, global: { provide } }))
+    await flushPromises()
+    expect(g.find('[data-test="tool-image-strip"]').exists()).toBe(false)
+    expect(g.text()).toContain('feito')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('o meta "N imagens" da linha continua no WorkBlock', async () => {
+    const w = track(mount(WorkBlock, { props: { items: [tool('m', [marker(0), marker(1)], 'Read', { file_path: '/p/a.png' })], open: true }, global: { provide } }))
+    await flushPromises()
+    expect(w.find('[data-test="work-row"] [data-test="work-header"]').text()).toContain('2 imagens')
+  })
+
+  it('ReadTool e GenericTool fora de um WorkBlock mostram a faixa da própria ação acima do resultado', async () => {
+    const r = track(mount(ReadTool, { props: { item: tool('r2', [{ type: 'text', text: 'linha' }, marker(0)], 'Read', { file_path: '/p/a.png' }) }, global: { provide } }))
+    await r.find('[data-test="work-header"]').trigger('click')
     await flushPromises()
     expect(r.findAll('[data-test="tool-image"]')).toHaveLength(1)
     expect(r.text()).not.toContain('Imagem omitida')
     const html = r.html()
     expect(html.indexOf('tool-image-strip')).toBeLessThan(html.indexOf('output-box'))
 
-    const g = track(mount(GenericTool, { props: { item: shot, headless: true }, global: { provide } }))
+    const g = track(mount(GenericTool, { props: { item: shot }, global: { provide } }))
+    await g.find('[data-test="work-header"]').trigger('click')
     await flushPromises()
     expect(g.findAll('[data-test="tool-image"]')).toHaveLength(1)
     expect(g.text()).toContain('feito')
+  })
+
+  it('a ação de um subagente dentro de um WorkBlock mantém a faixa da própria ação', async () => {
+    const agent: ToolItem = { type: 'tool', id: 'ag', tool_use_id: 'tu-ag', name: 'Agent', input: { description: 'x' }, result: { content: 'ok', is_error: false, details: null }, streaming: false, parent_tool_use_id: null }
+    const child: ToolItem = { ...tool('child', [marker(0)], 'Read', { file_path: '/p/c.png' }), parent_tool_use_id: 'tu-ag' }
+    const childrenOf = (id: string) => (id === 'tu-ag' ? [child] : [])
+    const w = track(mount(WorkBlock, { props: { items: [agent], open: true, childrenOf }, global: { provide } }))
+    await flushPromises()
+    await w.find('[data-test="work-row"] [data-test="work-header"]').trigger('click')
+    await flushPromises()
+    // Not in the block strip (a subagent's action is not the block's own); in the child's own card, once opened.
+    expect(w.find('[data-test="tool-image-strip"]').exists()).toBe(false)
+    const header = w.findAll('[data-test="work-row-body"] [data-test="work-header"]').find((h) => h.text().includes('c.png'))
+    expect(header).toBeTruthy()
+    await header!.trigger('click')
+    await flushPromises()
+    expect(w.findAll('[data-test="tool-image-strip"]')).toHaveLength(1)
   })
 
   it('ação que só devolveu imagem não mostra uma caixa de texto vazia', async () => {

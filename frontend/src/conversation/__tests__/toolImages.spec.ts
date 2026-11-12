@@ -163,4 +163,37 @@ describe('loadToolImage', () => {
     await promise
     expect(revoke).toHaveBeenCalledWith('blob:img-1')
   })
+
+  it('forgetToolImages para o laço de novas tentativas da requisição esquecida', async () => {
+    fetchMock.mockRejectedValue(new ApiError(404, null, 'x'))
+    const settled = loadToolImage('s1', 'tu-a', 0, () => true).catch((e) => e)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    forgetToolImages('s1')
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(await settled).toMatchObject({ status: 404 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('um loadToolImage novo logo depois do forget não divide estado com o laço antigo', async () => {
+    fetchMock.mockRejectedValueOnce(new ApiError(404, null, 'x'))
+    const old = loadToolImage('s1', 'tu-a', 0, () => true).catch((e) => e)
+    await vi.advanceTimersByTimeAsync(0)
+    forgetToolImages('s1')
+    fetchMock.mockReset()
+    fetchMock.mockRejectedValueOnce(new ApiError(404, null, 'x')).mockResolvedValue(new Blob(['x']))
+    const fresh = loadToolImage('s1', 'tu-a', 0, () => true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1000)
+    await expect(fresh).resolves.toBe('blob:img-1')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    // The old loop never fetches again, even after its own delays.
+    await vi.advanceTimersByTimeAsync(10000)
+    await old
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    // The new image stays cached.
+    await expect(loadToolImage('s1', 'tu-a', 0, () => true)).resolves.toBe('blob:img-1')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })

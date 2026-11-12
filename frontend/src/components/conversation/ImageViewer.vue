@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { SESSION_ID_KEY } from '../../stores/changesPanel'
 import { imageCaption, useToolImage, type ToolImageEntry } from '../../conversation/toolImages'
 
@@ -12,6 +12,11 @@ const titleId = useId()
 const panel = ref<HTMLElement | null>(null)
 const closeButton = ref<HTMLButtonElement | null>(null)
 const index = ref(Math.min(Math.max(props.start, 0), Math.max(props.entries.length - 1, 0)))
+// The images may shrink while the viewer is open (the block's actions change): keep the position real, close when none is left.
+watch(() => props.entries.length, (length) => {
+  if (length === 0) emit('close')
+  else if (index.value > length - 1) index.value = length - 1
+})
 const entry = computed(() => props.entries[index.value] ?? null)
 const caption = computed(() => (entry.value ? imageCaption(entry.value.item) : ''))
 const many = computed(() => props.entries.length > 1)

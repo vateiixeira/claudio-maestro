@@ -17,6 +17,9 @@ const viewHref = useMarkdownViewHref(() => str(props.item.input.file_path))
 
 const content = computed(() => resultText(props.item.result?.content))
 const imageCount = computed(() => toolImagesOf(props.item).length)
+// Inside a work block the block's own strip already shows the images, so the card does not repeat them.
+const showImages = computed(() => !props.headless && imageCount.value > 0)
+const showText = computed(() => !!content.value || !imageCount.value)
 const lineCount = computed(() => countLines(content.value))
 const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
 const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
@@ -59,9 +62,9 @@ const meta = computed(() => {
     <div v-if="headless && viewHref" class="flex justify-end px-3 py-1.5">
       <MarkdownViewLink :href="viewHref" />
     </div>
-    <div v-if="(open || headless) && item.result" class="flex flex-col gap-2 border-t border-line px-3 py-2" :class="{ 'text-diff-del-fg': item.result.is_error }">
-      <ToolImageStrip :items="[item]" :session-active="sessionActive" />
-      <TruncatedText v-if="content || !imageCount" :text="content" />
+    <div v-if="(open || headless) && item.result && (showImages || showText)" class="flex flex-col gap-2 border-t border-line px-3 py-2" :class="{ 'text-diff-del-fg': item.result.is_error }">
+      <ToolImageStrip v-if="showImages" :items="[item]" :session-active="sessionActive" />
+      <TruncatedText v-if="showText" :text="content" />
     </div>
   </div>
 </template>
