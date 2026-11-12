@@ -20,5 +20,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Half the cores: the app's services and the sessions run on the same machine.
+    maxWorkers: '50%',
   },
 })
