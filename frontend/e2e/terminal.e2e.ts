@@ -1,5 +1,5 @@
 import type { Page, WebSocketRoute } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, openSeededSession, test } from './fixtures'
 
 // The seeded server refuses the real agent and the terminal is a real shell, so the backend is staged:
 // the snapshot of a seeded conversation carries a reply with a shell block, the terminal socket is one
@@ -70,8 +70,10 @@ async function stageTerminal(page: Page, options: { runReply?: RunReply; remembe
     server.messages.push(route.request().postDataJSON() as { text: string })
     await route.fulfill({ json: { state: 'working', external_activity: false } })
   })
-  await page.goto('/sessions')
-  await page.getByText('Explique a estrutura do projeto').first().click()
+  await openSeededSession(page)
+  // The initial sessions list reveals this header row and shifts the transcript.
+  // Wait for it before hovering the command controls in the staged reply.
+  await expect(page.getByTestId('terminal-button')).toBeVisible()
   const sessionId = page.url().match(/[0-9a-f]{8}-[0-9a-f-]{27}/)?.[0] ?? ''
   return {
     server,
@@ -101,6 +103,7 @@ async function revealPlay(page: Page) {
   const block = page.locator(`[data-item-id="${ASSISTANT_ID}"] .code-block`)
   await expect(block).toBeVisible()
   await block.hover()
+  await expect(block.locator('.code-actions')).toHaveCSS('pointer-events', 'auto')
   return block
 }
 
@@ -219,8 +222,7 @@ test('com a aba Terminal lembrada, abrir a conversa só liga: sem open=1, e o 44
   const t = await stageTerminal(page, { rememberTerminalTab: true })
   t.server.onTerminal = (ws) => ws.close({ code: 4410 })
   // The staging already opened a conversation with the remembered tab; reopen it with the 4410 in place.
-  await page.goto('/sessions')
-  await page.getByText('Explique a estrutura do projeto').first().click()
+  await openSeededSession(page)
   await expect(page.getByTestId('terminal-empty')).toContainText('Nenhum terminal aberto nesta sessão.')
   await expect(page.getByTestId('terminal-ended')).toHaveCount(0)
   expect(t.server.terminalUrls.length).toBeGreaterThan(0)

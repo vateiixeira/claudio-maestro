@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, openSeededSession, test } from './fixtures'
 
 // The seeded conversations have no context reading and the seeded server opens no agent, so the
 // context is staged: the snapshot of a conversation carries `context`, and the breakdown route is
@@ -68,8 +68,7 @@ async function stageContext(page: Page, route?: { json: unknown }) {
 }
 
 async function openConversation(page: Page) {
-  await page.goto('/sessions')
-  await page.getByText('Explique a estrutura do projeto').first().click()
+  await openSeededSession(page)
   await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+/)
 }
 
