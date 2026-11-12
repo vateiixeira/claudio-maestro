@@ -53,6 +53,7 @@ O cenário do E2E vem de `scripts/e2e_server.py::_seed_agents`: no projeto "Loja
 
 ```bash
 uv run pytest                  # backend
+uv run pytest -n auto          # backend em paralelo (metade dos núcleos na sua máquina, todos na CI)
 uv run ruff check              # lint do backend
 pnpm --dir frontend test       # frontend
 pnpm --dir frontend build      # compilação e checagem de tipos

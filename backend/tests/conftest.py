@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,17 @@ from claudio_maestro.app import create_app
 
 APP_ORIGIN = "http://localhost:6600"
 BACKEND_URL = "http://127.0.0.1:6660"
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_auto_num_workers(config: pytest.Config) -> int | None:
+    """`-n auto` uses half the cores on a developer's machine, which is also running the app.
+
+    On the CI, or with `PYTEST_XDIST_AUTO_NUM_WORKERS` set, xdist decides (every core).
+    """
+    if os.environ.get("CI") or os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS"):
+        return None
+    return max(1, (os.process_cpu_count() or 1) // 2)
 
 
 @pytest.fixture

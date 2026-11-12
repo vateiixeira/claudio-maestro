@@ -37,6 +37,7 @@ dev = [
     "pytest>=9.1",
     "httpx>=0.28",
     "ruff>=0.16.9",
+    "pytest-xdist>=3.8.0",
 ]
 
 [build-system]

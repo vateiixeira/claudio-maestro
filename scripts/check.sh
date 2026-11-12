@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 # Ordem importa: 0 e 1 são do backend, 2 e 3 do frontend, 4 é o E2E.
 checks=(
   "uv run ruff check"
-  "uv run pytest -q"
+  "uv run pytest -q -n auto"
   "pnpm --dir frontend test"
   "pnpm --dir frontend build"
   "pnpm --dir frontend e2e"

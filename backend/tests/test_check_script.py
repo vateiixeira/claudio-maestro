@@ -42,7 +42,7 @@ def test_script_is_executable():
     assert os.access(SCRIPT, os.X_OK)
 
 
-BACKEND = ["uv run ruff check", "uv run pytest -q"]
+BACKEND = ["uv run ruff check", "uv run pytest -q -n auto"]
 FRONTEND = ["pnpm --dir frontend test", "pnpm --dir frontend build"]
 E2E = ["pnpm --dir frontend e2e"]
 
