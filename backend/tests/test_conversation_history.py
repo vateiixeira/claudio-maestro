@@ -179,12 +179,32 @@ def test_tool_result_images_are_omitted():
     tools = builder.snapshot()
     assert tools[0]["result"]["content"] == [
         {"type": "text", "text": "ok"},
-        {"type": "image", "omitted": True, "media_type": "image/jpeg"},
+        {"type": "image", "omitted": True, "media_type": "image/jpeg", "index": 0, "size": 750},
     ]
     assert tools[1]["result"]["content"] == [
-        {"type": "image", "omitted": True, "media_type": "image/jpeg"}
+        {"type": "image", "omitted": True, "media_type": "image/jpeg", "index": 0, "size": 750}
     ]
     assert "ZZZ" not in str(tools)
+
+
+def test_omit_images_numbers_each_image_of_a_result_and_is_idempotent():
+    from claudio_maestro.conversation import omit_images
+
+    def image(media_type: str, data: str) -> dict:
+        return {"type": "image", "source": {"type": "base64", "media_type": media_type,
+                                            "data": data}}
+
+    content = [image("image/png", "A" * 8), {"type": "text", "text": "t"},
+               image("image/jpeg", "B" * 4)]
+    once = omit_images(content)
+
+    assert once == [
+        {"type": "image", "omitted": True, "media_type": "image/png", "index": 0, "size": 6},
+        {"type": "text", "text": "t"},
+        {"type": "image", "omitted": True, "media_type": "image/jpeg", "index": 1, "size": 3},
+    ]
+    assert omit_images(once) == once
+    assert omit_images("texto") == "texto"
 
 
 def test_empty_and_redacted_thinking_are_dropped():

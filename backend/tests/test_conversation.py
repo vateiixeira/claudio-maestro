@@ -442,6 +442,28 @@ def test_tool_result_attaches_to_tool_created_without_stream():
                                              "details": None}
 
 
+def test_live_tool_result_images_leave_no_base64_on_the_stream():
+    builder = ConversationBuilder()
+    feed(builder, assistant("msg_9", ToolUseBlock(id="toolu_img", name="Read", input={})))
+    picture = {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                           "data": "QUJD" * 100}}
+
+    events = builder.handle(
+        UserMessage(content=[ToolResultBlock(
+            tool_use_id="toolu_img",
+            content=[{"type": "text", "text": "ok"}, picture, picture],
+            is_error=False,
+        )])
+    )
+
+    assert builder.get("msg_9:0").result["content"] == [
+        {"type": "text", "text": "ok"},
+        {"type": "image", "omitted": True, "media_type": "image/png", "index": 0, "size": 300},
+        {"type": "image", "omitted": True, "media_type": "image/png", "index": 1, "size": 300},
+    ]
+    assert "QUJD" not in json.dumps([e.data for e in events], default=str)
+
+
 # Subagents ---------------------------------------------------------------
 
 

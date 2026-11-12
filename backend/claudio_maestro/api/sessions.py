@@ -4,10 +4,20 @@ import asyncio
 import sqlite3
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
+from fastapi import Path as PathParam
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from claudio_maestro import groups, labels, projects, sessions
+from claudio_maestro import groups, history, labels, projects, sessions
 from claudio_maestro.api.deps import DbDep
 
 router = APIRouter(prefix="/api")
@@ -371,6 +381,41 @@ async def get_session(session_id: str, manager: ManagerDep) -> dict[str, Any]:
     """Snapshot. An old session gets its saved conversation loaded, without a client."""
     _get_session(manager, session_id)
     return await manager.open(session_id)
+
+
+TOOL_IMAGE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'",
+    "Cache-Control": "private, max-age=86400",
+}
+
+
+@router.get("/sessions/{session_id}/tool-results/{tool_use_id}/images/{index}")
+async def get_tool_result_image(
+    session_id: str,
+    tool_use_id: Annotated[str, PathParam(pattern=r"^[A-Za-z0-9_-]{1,128}$")],
+    index: Annotated[int, PathParam(ge=0, le=99)],
+    manager: ManagerDep,
+) -> Response:
+    """A picture of a tool result, read from the session's saved conversation. The stream
+    carries only a marker (`omit_images`); the screen asks for the bytes when it shows them.
+    Neither `tool_use_id` nor `index` becomes a path: they only select a block inside the file."""
+    session = _get_session(manager, session_id)
+    path = await asyncio.to_thread(
+        history.sdk_session_file, session_id, session.record.history_directory
+    )
+    if path is None:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada.")
+    try:
+        found = await asyncio.to_thread(history.read_tool_result_image, path, tool_use_id, index)
+    except history.ToolImageTypeNotAllowed as exc:
+        raise HTTPException(status_code=415, detail="Tipo de imagem não suportado.") from exc
+    except history.ToolImageTooLarge as exc:
+        raise HTTPException(status_code=413, detail="A imagem passa de 20 MB.") from exc
+    if found is None:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada.")
+    data, media_type = found
+    return Response(content=data, media_type=media_type, headers=TOOL_IMAGE_HEADERS)
 
 
 @router.get("/sessions/{session_id}/context")

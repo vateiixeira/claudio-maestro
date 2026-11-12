@@ -11,6 +11,8 @@ seen); the conversations themselves stay in `~/.claude/projects`.
 """
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import os
@@ -503,6 +505,143 @@ def read_subagent_models(session_file: Path) -> dict[str, str]:
         except Exception:  # noqa: BLE001  (RecursionError, bad bytes...: never drop the history)
             logger.warning("Não foi possível ler o subagente %s", folder / name, exc_info=True)
     return models
+
+
+# Pictures of tool results, read on demand (`read_tool_result_image`).
+TOOL_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+TOOL_IMAGE_MAX_BYTES = 20 * 1024 * 1024  # decoded
+# The longest line a lookup parses; longer ones are skipped unread. The CLI writes the base64 of a
+# picture twice in the same line (`message.content` and `toolUseResult`), so room for two copies of
+# the largest picture plus a margin for the rest of the entry. Memory per request, at the worst: the
+# line (~56 MB), its parsed copy (~56 MB), the base64 string it picks (~27 MB) and the decoded bytes
+# (20 MB), around 160-250 MB for a moment. Two pictures that big in one line do not fit: they get 404.
+TOOL_IMAGE_LINE_MARGIN_BYTES = 64 * 1024
+# What one lookup may read from the subagent files, altogether.
+TOOL_IMAGE_SUBAGENT_BUDGET = 256 * 1024 * 1024
+
+
+class ToolImageError(Exception):
+    """The picture exists but cannot be served."""
+
+
+class ToolImageTypeNotAllowed(ToolImageError):
+    """Its media type is not one of TOOL_IMAGE_TYPES (SVG, for one, can carry script)."""
+
+
+class ToolImageTooLarge(ToolImageError):
+    """It is over TOOL_IMAGE_MAX_BYTES once decoded."""
+
+
+def _bounded_lines(file: Any, spent: list[int]) -> Iterable[bytes]:
+    """Complete lines of a binary file; one over the limit described above is skipped.
+    `spent[0]` accumulates the bytes read."""
+    limit = 2 * (TOOL_IMAGE_MAX_BYTES * 4 // 3 + 4) + TOOL_IMAGE_LINE_MARGIN_BYTES
+    while True:
+        chunk = file.readline(limit + 1)
+        if not chunk:
+            return
+        spent[0] += len(chunk)
+        if len(chunk) > limit and not chunk.endswith(b"\n"):
+            while True:  # drop the rest of the line
+                rest = file.readline(limit)
+                spent[0] += len(rest)
+                if not rest or rest.endswith(b"\n"):
+                    break
+            continue
+        yield chunk
+
+
+def _image_of_line(line: bytes, tool_use_id: str, index: int) -> tuple[bytes, str] | None:
+    """The `index`-th image block of the tool_result `tool_use_id` in this line, decoded."""
+    if tool_use_id.encode() not in line:
+        return None
+    try:
+        entry = json.loads(line.decode("utf-8", errors="replace"))
+    except (ValueError, RecursionError):
+        return None
+    blocks, _ = _tool_result_blocks(entry)
+    for block in blocks:
+        if block["tool_use_id"] != tool_use_id or not isinstance(block.get("content"), list):
+            continue
+        images = [b for b in block["content"] if isinstance(b, dict) and b.get("type") == "image"]
+        if index >= len(images):
+            continue
+        source = images[index].get("source")
+        if not isinstance(source, dict) or source.get("type") != "base64":
+            return None
+        media_type, data = source.get("media_type"), source.get("data")
+        if not isinstance(data, str):
+            return None
+        if media_type not in TOOL_IMAGE_TYPES:
+            raise ToolImageTypeNotAllowed(str(media_type))
+        if len(data) * 3 // 4 > TOOL_IMAGE_MAX_BYTES + 2:
+            raise ToolImageTooLarge(media_type)
+        try:
+            raw = base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError):
+            return None
+        if len(raw) > TOOL_IMAGE_MAX_BYTES:
+            raise ToolImageTooLarge(media_type)
+        return raw, media_type
+    return None
+
+
+def _image_in_file(
+    fd: int, tool_use_id: str, index: int, spent: list[int], budget: int | None
+) -> tuple[bytes, str] | None:
+    with os.fdopen(fd, "rb") as file:
+        for line in _bounded_lines(file, spent):
+            found = _image_of_line(line, tool_use_id, index)
+            if found is not None:
+                return found
+            if budget is not None and spent[0] > budget:
+                return None
+    return None
+
+
+def read_tool_result_image(
+    session_file: Path, tool_use_id: str, index: int
+) -> tuple[bytes, str] | None:
+    """(bytes, media type) of the `index`-th image of the tool result `tool_use_id`, read from
+    the session's `.jsonl` or, failing that, from `<session>/subagents/agent-*.jsonl`. None when
+    nothing is found or the data is not valid base64. Raises ToolImageTypeNotAllowed or
+    ToolImageTooLarge for a picture that exists but must not be served. `tool_use_id` is only
+    compared with what the files say; it never becomes a path. Every file is opened with
+    `_open_regular` (no symlinks, regular files only); the subagent folder holds at most
+    SUBAGENT_FILES_MAX of them."""
+    spent = [0]
+    fd = _open_regular(session_file)
+    if fd is None:
+        return None
+    try:
+        found = _image_in_file(fd, tool_use_id, index, spent, None)
+    except OSError:
+        return None
+    if found is not None:
+        return found
+    session_dir = session_file.parent / session_file.stem
+    folder = session_dir / "subagents"
+    if not _is_real_dir(session_dir) or not _is_real_dir(folder):
+        return None
+    try:
+        with os.scandir(folder) as it:
+            names = sorted(
+                entry.name for entry in it
+                if entry.name.startswith("agent-") and entry.name.endswith(".jsonl")
+            )[:SUBAGENT_FILES_MAX]
+    except OSError:
+        return None
+    spent = [0]
+    for name in names:
+        fd = _open_regular(folder / name)
+        if fd is None:
+            continue
+        found = _image_in_file(fd, tool_use_id, index, spent, TOOL_IMAGE_SUBAGENT_BUDGET)
+        if found is not None:
+            return found
+        if spent[0] > TOOL_IMAGE_SUBAGENT_BUDGET:
+            return None
+    return None
 
 
 def read_transcript_file(path: Path, *, with_subagents: bool = False) -> Transcript:

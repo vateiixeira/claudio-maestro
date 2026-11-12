@@ -357,7 +357,9 @@ def test_read_tool_results_file_omits_images_and_caps_while_reading(tmp_path: Pa
     content = read_tool_results_file(path)["t1"]["content"]
 
     assert "AAAA" not in json.dumps(content)
-    assert content[0].get("omitted") is True
+    assert content[0] == {
+        "type": "image", "omitted": True, "media_type": "image/png", "index": 0, "size": 3,
+    }
     assert len(content[1]["text"]) <= CONTENT_LIMIT + 100
 
 

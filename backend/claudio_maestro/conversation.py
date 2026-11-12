@@ -970,7 +970,8 @@ class ConversationBuilder:
                 )
             ]
         tool.result = {
-            "content": cap_content(block.content),
+            # No base64 on the stream: the screen fetches the picture when it needs it.
+            "content": cap_content(omit_images(block.content)),
             "is_error": block.is_error,
             "details": slim_details(tool.name, details),
         }
@@ -1439,14 +1440,28 @@ def _media_marker(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def omit_images(content: Any) -> Any:
-    """Tool result content with image blocks replaced by a marker without the base64."""
+    """Tool result content with image blocks replaced by a marker without the base64.
+
+    The marker carries the media type, the decoded size and `index`, the position among the
+    image blocks of this result: the screen asks `/tool-results/<id>/images/<index>` for the
+    picture. A block that is already a marker is kept as it is (idempotent).
+    """
     if not isinstance(content, list):
         return content
     result = []
+    index = 0
     for block in content:
         if isinstance(block, dict) and block.get("type") == "image":
-            source = block.get("source") if isinstance(block.get("source"), dict) else {}
-            block = {"type": "image", "omitted": True, "media_type": source.get("media_type")}
+            if block.get("omitted") is not True:
+                source = block.get("source") if isinstance(block.get("source"), dict) else {}
+                block = {
+                    "type": "image",
+                    "omitted": True,
+                    "media_type": source.get("media_type"),
+                    "index": index,
+                    "size": _base64_size(source.get("data")),
+                }
+            index += 1
         result.append(block)
     return result
 
