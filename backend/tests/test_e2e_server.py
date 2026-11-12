@@ -145,7 +145,9 @@ def test_seed_registers_the_scenario_projects(tmp_path, monkeypatch):
 
     with closing(db.connect(load_settings().db_path)) as conn:
         registered = projects.list_projects(conn)
-    assert [p.name for p in registered] == [p["name"] for p in (*e2e.SCENARIO, *e2e.GIT_SCENARIO)]
+    assert [p.name for p in registered] == [
+        p["name"] for p in (*e2e.SCENARIO, *e2e.GIT_SCENARIO, e2e.IMAGES_PROJECT)
+    ]
     assert all(Path(p.path).is_dir() for p in registered)
     assert all(Path(p.path).is_relative_to(tmp_path) for p in registered)
 
@@ -423,6 +425,49 @@ def test_seed_writes_the_subagents_of_the_scenario_next_to_the_session(tmp_path,
         path.resolve().is_relative_to(tmp_path.resolve())
         for path in projects_dir.rglob("*")
     )
+
+
+def test_seed_writes_the_image_conversation_with_four_pictures_in_two_tool_results(
+    tmp_path, monkeypatch
+):
+    home = _seeded(tmp_path, monkeypatch)
+    project_dir = home / "projetos" / e2e.IMAGES_PROJECT["slug"]
+
+    [found] = list_sessions(directory=str(project_dir))
+    assert found.session_id == e2e.IMAGES_SESSION_ID
+    assert found.first_prompt == e2e.IMAGES_TITLE
+    session = REAL_FILE_LOOKUPS["sdk_session_file"](e2e.IMAGES_SESSION_ID, str(project_dir))
+    assert session is not None and session.resolve().is_relative_to(tmp_path.resolve())
+
+    transcript = history.read_transcript_file(session)
+    read = transcript.tool_results[e2e.IMAGES_READ_ID]
+    shot = transcript.tool_results[e2e.IMAGES_SHOT_ID]
+    # The stream carries markers, in order, without the base64.
+    assert [b["index"] for b in read["content"]] == [0, 1, 2]
+    assert all(b["type"] == "image" and b["omitted"] is True for b in read["content"])
+    assert [b["type"] for b in shot["content"]] == ["text", "image"]
+    assert shot["content"][1]["index"] == 0
+
+    pictures = [
+        history.read_tool_result_image(session, tool_use_id, index)
+        for tool_use_id, count in ((e2e.IMAGES_READ_ID, 3), (e2e.IMAGES_SHOT_ID, 1))
+        for index in range(count)
+    ]
+    assert all(p is not None and p[1] == "image/png" for p in pictures)
+    assert all(p[0].startswith(b"\x89PNG\r\n\x1a\n") for p in pictures)
+    assert len({p[0] for p in pictures}) == 4
+    assert history.read_tool_result_image(session, e2e.IMAGES_READ_ID, 3) is None
+
+    calls = [
+        (block["id"], block["name"])
+        for line in session.read_text(encoding="utf-8").splitlines()
+        for block in (json.loads(line).get("message", {}).get("content") or [])
+        if isinstance(block, dict) and block.get("type") == "tool_use"
+    ]
+    assert calls == [
+        (e2e.IMAGES_READ_ID, "Read"),
+        (e2e.IMAGES_SHOT_ID, "mcp__playwright__browser_take_screenshot"),
+    ]
 
 
 def test_seed_refuses_paths_outside_root(tmp_path, monkeypatch):

@@ -11,14 +11,17 @@ escolhe uma porta de 6620 a 6659 por worktree e a passa por essa variável. Nada
 """
 
 import asyncio
+import base64
 import json
 import os
 import re
 import shutil
 import signal
+import struct
 import sys
 import tempfile
 import uuid
+import zlib
 from collections.abc import Mapping
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
@@ -163,6 +166,20 @@ URGENT_COMMENTS = {
 
 class E2EError(Exception):
     """A problem explained to the user (in Portuguese)."""
+
+
+# The conversation with pictures in tool results that frontend/e2e/tool-images.e2e.ts expects, in a
+# project of its own that no other spec changes (seeded by `_seed_images`). The `Read` result holds
+# three pictures, the MCP screenshot one (after a text block). The spec finds the conversation by
+# `IMAGES_TITLE` (the first prompt) and the results by the ids of their tool calls.
+IMAGES_PROJECT = {"name": "Imagens Demo", "slug": "imagens-demo", "color": "#db61a2"}
+IMAGES_TITLE = "Conversa com imagens"
+IMAGES_SESSION_ID = "e2e00000-0000-4000-8000-000000000001"
+IMAGES_READ_ID = "toolu_e2e_img_read"
+IMAGES_SHOT_ID = "toolu_e2e_img_shot"
+IMAGES_SHOT_TOOL = "mcp__playwright__browser_take_screenshot"
+IMAGES_SHOT_TEXT = "Captura da página salva."
+IMAGES_REPLY = "Li a tela e capturei a página: são quatro imagens no total."
 
 
 def check_same_checkout() -> None:
@@ -370,6 +387,133 @@ def _write_conversation(
         )
         parent = answer_id
     session_file.write_text(
+        "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _png(width: int, height: int, color: tuple[int, int, int]) -> bytes:
+    """A solid-colour PNG (8-bit RGB), built with the standard library only."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    row = b"\x00" + bytes(color) * width
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(row * height))
+        + chunk(b"IEND", b"")
+    )
+
+
+def _image_block(png: bytes) -> dict:
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64", "media_type": "image/png",
+            "data": base64.b64encode(png).decode("ascii"),
+        },
+    }
+
+
+def _write_image_conversation(folder: Path, project_dir: Path, started: datetime) -> None:
+    """The conversation of `IMAGES_TITLE`, in the format the CLI writes: one line per tool call
+    and one per result. The `Read` of `tela.png` returns three pictures (and, as the CLI does,
+    repeats the first one in `toolUseResult.file.base64`); the MCP screenshot returns a text block
+    and one picture."""
+    folder.mkdir(parents=True, exist_ok=True)
+    base = {"isSidechain": False, "sessionId": IMAGES_SESSION_ID, "cwd": str(project_dir)}
+    pictures = [_png(32, 24, color) for color in ((220, 50, 47), (38, 139, 210), (133, 153, 0))]
+    screenshot = _png(32, 24, (181, 137, 0))
+    shot_content = [{"type": "text", "text": IMAGES_SHOT_TEXT}, _image_block(screenshot)]
+    steps = [
+        ("user", {"role": "user", "content": IMAGES_TITLE}, None),
+        (
+            "assistant",
+            {
+                "id": "msg_e2e_img_read", "role": "assistant", "model": "claude-haiku",
+                "content": [
+                    {
+                        "type": "tool_use", "id": IMAGES_READ_ID, "name": "Read",
+                        "input": {"file_path": str(project_dir / "tela.png")},
+                    }
+                ],
+            },
+            None,
+        ),
+        (
+            "user",
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result", "tool_use_id": IMAGES_READ_ID,
+                        "content": [_image_block(png) for png in pictures],
+                    }
+                ],
+            },
+            {
+                "type": "image",
+                "file": {
+                    "base64": base64.b64encode(pictures[0]).decode("ascii"),
+                    "type": "image/png", "originalSize": len(pictures[0]),
+                    "dimensions": {
+                        "originalWidth": 32, "originalHeight": 24,
+                        "displayWidth": 32, "displayHeight": 24,
+                    },
+                },
+            },
+        ),
+        (
+            "assistant",
+            {
+                "id": "msg_e2e_img_shot", "role": "assistant", "model": "claude-haiku",
+                "content": [
+                    {
+                        "type": "tool_use", "id": IMAGES_SHOT_ID, "name": IMAGES_SHOT_TOOL,
+                        "input": {"type": "png", "fullPage": True},
+                    }
+                ],
+            },
+            None,
+        ),
+        (
+            "user",
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result", "tool_use_id": IMAGES_SHOT_ID,
+                        "content": shot_content,
+                    }
+                ],
+            },
+            shot_content,
+        ),
+        (
+            "assistant",
+            {
+                "id": "msg_e2e_img_reply", "role": "assistant", "model": "claude-haiku",
+                "content": [{"type": "text", "text": IMAGES_REPLY}],
+            },
+            None,
+        ),
+    ]
+    lines = []
+    parent = None
+    for number, (kind, message, details) in enumerate(steps):
+        entry_id = str(uuid.uuid4())
+        entry = {
+            **base, "parentUuid": parent, "type": kind, "uuid": entry_id,
+            "timestamp": _stamp(started + timedelta(seconds=2 * number)), "message": message,
+        }
+        if details is not None:
+            entry["toolUseResult"] = details
+        lines.append(entry)
+        parent = entry_id
+    (folder / f"{IMAGES_SESSION_ID}.jsonl").write_text(
         "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
         encoding="utf-8",
     )
@@ -623,9 +767,24 @@ def _seed_tasks(conn, project_id: int, stamp: int, *, triagem: int, reviewer: in
     )
 
 
+def _seed_images(settings, conn, now: datetime) -> None:
+    """The project "Imagens Demo" with the conversation of `IMAGES_TITLE` (see `IMAGES_PROJECT`).
+    Old enough to stay out of the top of the lists of recent conversations."""
+    project_dir = settings.home_dir / "projetos" / IMAGES_PROJECT["slug"]
+    project_dir.mkdir(parents=True, exist_ok=True)
+    project = projects.create_project(
+        conn, name=IMAGES_PROJECT["name"], path=str(project_dir), color=IMAGES_PROJECT["color"],
+        home=settings.home_dir, data_dir=settings.data_dir,
+    )
+    _write_image_conversation(
+        _history_folder(settings.claude_projects_dir, Path(project.path)), Path(project.path),
+        now - timedelta(hours=4),
+    )
+
+
 def seed(root: Path) -> None:
-    """Create the database, the projects and the conversations of `SCENARIO`, and the git
-    projects of `GIT_SCENARIO`.
+    """Create the database, the projects and the conversations of `SCENARIO`, the git
+    projects of `GIT_SCENARIO` and the project of `IMAGES_PROJECT`.
 
     Reads the environment (see `isolated_env`) and refuses to write anything when a folder
     it would use is not inside `root`.
@@ -660,6 +819,7 @@ def seed(root: Path) -> None:
                     started, conversation.get("subagents"), conversation.get("filler_turns", 0),
                 )
         seed_git(root, settings.home_dir, conn, settings.data_dir)
+        _seed_images(settings, conn, now)
         _seed_agents(settings, conn, now)
 
 
