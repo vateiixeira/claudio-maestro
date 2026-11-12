@@ -132,7 +132,13 @@ def test_auth_scope_restores_even_on_error_without_mutating_env(
 
 
 def test_long_unicode_path_roundtrips(home, data_dir):
-    folder = home.joinpath(*["😀" * 45 for _ in range(17)])
+    component = "😀" * 45
+    # macOS limits the entire path to 1024 bytes, including pytest's temporary
+    # directory. Exercise a long Unicode path that the filesystem can create.
+    path_budget = os.pathconf(home, "PC_PATH_MAX") - len(os.fsencode(home)) - 64
+    depth = min(17, path_budget // (len(os.fsencode(component)) + 1))
+    assert depth > 0
+    folder = home.joinpath(*[component for _ in range(depth)])
     folder.mkdir(parents=True)
     save_selection(data_dir, str(folder), home)
     assert read_selection(data_dir, home) == folder

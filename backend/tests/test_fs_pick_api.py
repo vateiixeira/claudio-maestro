@@ -221,10 +221,12 @@ async def test_full_app_detects_disconnect_after_empty_body(
     from claudio_maestro.api import fs as fs_api
 
     monkeypatch.setattr(fs_api, "DISCONNECT_POLL", 0.02)
+    started = asyncio.Event()
     cancelled = asyncio.Event()
 
     async def hanging(initial: Path) -> str | None:
         try:
+            started.set()
             await asyncio.sleep(3600)
         except asyncio.CancelledError:
             cancelled.set()
@@ -255,10 +257,17 @@ async def test_full_app_detects_disconnect_after_empty_body(
 
     async with app.router.lifespan_context(app):
         request = asyncio.create_task(app(scope, receive, send))
-        await asyncio.sleep(0.15)
-        assert not cancelled.is_set()
-        assert app.state.pick_lock.locked()
-        await incoming.put({"type": "http.disconnect"})
-        await asyncio.wait_for(cancelled.wait(), 5)
-        await asyncio.wait_for(request, 5)
-        assert not app.state.pick_lock.locked()
+        try:
+            # Wait for the picker itself, rather than assuming app startup and
+            # middleware dispatch complete within a fixed delay on every runner.
+            await asyncio.wait_for(started.wait(), 5)
+            assert not cancelled.is_set()
+            assert app.state.pick_lock.locked()
+            await incoming.put({"type": "http.disconnect"})
+            await asyncio.wait_for(cancelled.wait(), 5)
+            await asyncio.wait_for(request, 5)
+            assert not app.state.pick_lock.locked()
+        finally:
+            if not request.done():
+                request.cancel()
+            await asyncio.gather(request, return_exceptions=True)
