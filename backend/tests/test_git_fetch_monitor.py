@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from git_helpers import make_repo
+from git_helpers import git, make_repo
 from test_git_api import (  # noqa: F401 (fixtures)
     add_project,
     factory,
@@ -303,3 +303,45 @@ def test_monitor_lists_skip_the_scratch_project(
             p["id"] for p in api.get("/api/projects").json() if p["kind"] == "scratch"
         )
         assert scratch_id not in monitor._last
+
+
+def test_fetch_includes_hidden_and_external_worktrees(factory, spawn, home, data_dir, fake):
+    app = started(factory, spawn, home, data_dir, fake, git_fetch_interval_seconds=0)
+    root = make_repo(home / "proj")
+    hidden = root / ".worktrees" / "hidden"
+    external = home / "external"
+    git(root, "worktree", "add", "-q", "-b", "hidden", str(hidden))
+    git(root, "worktree", "add", "-q", "-b", "external", str(external))
+    with TestClient(app, base_url=BACKEND_URL, headers=HEADERS) as api:
+        project = add_project(api, root)
+        monitor = app.state.git_monitor
+        api.portal.call(monitor.fetch_project, project["id"])
+        assert set(fake.calls) == {root, hidden, external}
+        repos = monitor._last[project["id"]][0]
+        assert {r["path"] for r in repos} == {str(root), str(hidden), str(external)}
+
+
+@pytest.mark.parametrize('change', ['valid', 'broken-pointer', 'subfolder'])
+def test_cached_external_fetch_rechecks_worktree_proof(
+    factory, spawn, home, data_dir, fake, change,
+):
+    from functools import partial
+
+    app = started(factory, spawn, home, data_dir, fake, git_fetch_interval_seconds=0)
+    root = make_repo(home / 'proj')
+    external = home / 'external'
+    git(root, 'worktree', 'add', '-q', '-b', 'external', str(external))
+    with TestClient(app, base_url=BACKEND_URL, headers=HEADERS) as api:
+        project = add_project(api, root)
+        monitor = app.state.git_monitor
+        api.portal.call(monitor.refresh_project, project['id'])
+        if change == 'broken-pointer':
+            (external / '.git').write_text('gitdir: /missing/admin\n')
+        elif change == 'subfolder':
+            child = external / 'child'
+            child.mkdir()
+            for repo in monitor._last[project['id']][0]:
+                if repo['path'] == str(external):
+                    repo['path'] = str(child)
+        api.portal.call(partial(monitor.fetch_project, project['id'], interval=300))
+        assert set(fake.calls) == ({root, external} if change == 'valid' else {root})

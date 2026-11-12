@@ -23,7 +23,7 @@ test('a decisão pendente aparece no Início e na Inbox e some depois de respond
   await expect(card.getByTestId('decision-submit')).toBeDisabled()
 
   // What is under way: the tasks in progress, in review and blocked, by shape and word.
-  const active = main.getByRole('region', { name: 'Em andamento' })
+  const active = main.getByRole('region', { name: 'Tarefas em andamento' })
   await expect(active.getByTestId('start-task').filter({ hasText: 'Separar chamados urgentes' })).toContainText('Em andamento')
   await expect(active.getByTestId('start-task').filter({ hasText: 'Revisar resposta padrão' })).toContainText('Em revisão')
   await expect(active.getByTestId('start-task').filter({ hasText: 'Atualizar a base de respostas' })).toContainText('Bloqueada')

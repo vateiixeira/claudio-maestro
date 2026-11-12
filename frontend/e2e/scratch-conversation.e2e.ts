@@ -18,7 +18,7 @@ test('conversa sem projeto: criar, achar na barra lateral, tela reduzida e detal
   await page.goto('/inbox')
   await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
   const sidebar = page.getByRole('navigation', { name: 'Navegação' })
-  // Without any conversation it sits among the other projects, not in "Em andamento".
+  // Without any conversation it sits among the other projects, not in "Conversas abertas".
   await expect(sidebar.getByTestId('project').filter({ hasText: SCRATCH })).toHaveCount(0)
   const othersToggle = sidebar.getByTestId('others-toggle')
   if ((await othersToggle.getAttribute('aria-expanded')) !== 'true') await othersToggle.click()
@@ -40,8 +40,8 @@ test('conversa sem projeto: criar, achar na barra lateral, tela reduzida e detal
   await expect(page.getByTestId('user-message')).toHaveText(PROMPT)
   await expect(page.getByTestId('turn-entry').getByText('Resposta de teste: ' + PROMPT)).toBeVisible()
 
-  // In the sidebar: "Em andamento", and last in the section.
-  const active = sidebar.getByRole('region', { name: 'Em andamento' })
+  // In the sidebar: "Conversas abertas", and last in the section.
+  const active = sidebar.getByRole('region', { name: 'Conversas abertas' })
   const names = active.getByTestId('project-name')
   await expect(names.last()).toHaveText(SCRATCH)
   await expect(active.getByTestId('project-session').filter({ hasText: PROMPT })).toHaveCount(1)

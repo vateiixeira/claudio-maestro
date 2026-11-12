@@ -27,6 +27,7 @@ async function openProject(page: Page) {
   const nav = page.getByRole('navigation', { name: 'Navegação' })
   await nav.getByRole('button', { name: /sem conversa aberta/ }).click()
   await nav.getByRole('link', { name: /Alterações Demo/ }).first().click()
+  await page.getByRole('tab', { name: /^Git/ }).click()
   const repo = page.getByTestId('scm-repo').first()
   await expect(repo).toBeVisible()
   return repo

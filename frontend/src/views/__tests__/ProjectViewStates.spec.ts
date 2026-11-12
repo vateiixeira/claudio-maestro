@@ -28,7 +28,7 @@ const rowOf = (wrapper: ReturnType<typeof mount>, title: string) =>
   wrapper.findAll('[data-test="conversation-row"]').find((r) => r.text().includes(title))!
 
 describe('tela do projeto com a linha de conversa', () => {
-  it('mostra todas as conversas na mesma lista, sem blocos por estado, e reabre pela linha', async () => {
+  it('filtra conversas abertas por padrão e permite reabrir ao escolher Todas', async () => {
     const patches: unknown[] = []
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/projects/1/sessions': () => jsonResponse([
@@ -42,9 +42,11 @@ describe('tela do projeto com a linha de conversa', () => {
       },
     }))
     const wrapper = await mountProject()
+    expect(rowOf(wrapper, 'Acabou')).toBeUndefined()
+    await wrapper.get('[data-test="filter-all"]').trigger('click')
 
-    expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Rodando', 'Esperando', 'Acabou'])
-    expect(wrapper.find('[data-test="block-running"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Rodando', 'Acabou', 'Esperando'])
+    expect(wrapper.get('[data-section="running"]').text()).toContain('Rodando')
     expect(wrapper.find('#finalizadas').exists()).toBe(false)
 
     await rowOf(wrapper, 'Acabou').find('[data-test="row-reopen"]').trigger('click')
@@ -64,6 +66,8 @@ describe('tela do projeto com a linha de conversa', () => {
       ]),
     }))
     const wrapper = await mountProject()
+    expect(rowOf(wrapper, 'Acabou')).toBeUndefined()
+    await wrapper.get('[data-test="filter-all"]').trigger('click')
 
     expect(wrapper.findAll('[data-test="row-finish"]')).toHaveLength(3)
     expect(wrapper.findAll('[data-test="row-reopen"]')).toHaveLength(1)
@@ -80,6 +84,8 @@ describe('tela do projeto com a linha de conversa', () => {
       'PATCH /api/sessions/f': () => jsonResponse({ detail: 'Não foi possível reabrir.' }, 500),
     }))
     const wrapper = await mountProject()
+    expect(rowOf(wrapper, 'Acabou')).toBeUndefined()
+    await wrapper.get('[data-test="filter-all"]').trigger('click')
 
     await rowOf(wrapper, 'Acabou').find('[data-test="row-reopen"]').trigger('click')
     await flushPromises()

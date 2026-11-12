@@ -21,6 +21,18 @@ afterEach(() => {
 })
 
 describe('store de detalhes do git', () => {
+  it('detalhes atrasados não substituem o resumo de um evento posterior', async () => {
+    let release!: (r: Response) => void
+    vi.stubGlobal('fetch', routeFetch({ [URL]: () => new Promise<Response>(resolve => { release = resolve }) }))
+    const details = useGitDetailsStore()
+    const git = useGitStore()
+    const pending = details.load(1)
+    git.applyEvent({ type: 'project.git', data: { project_id: 1, repos: [makeGitRepo({ branch: 'nova' })] } } as never)
+    release(jsonResponse({ repos: [makeRepoDetails({ branch: 'antiga' })] }))
+    await pending
+    expect(git.reposFor(1)[0]!.branch).toBe('nova')
+  })
+
   it('carrega e guarda os detalhes do projeto', async () => {
     vi.stubGlobal('fetch', routeFetch({
       [URL]: () => jsonResponse({ repos: [makeRepoDetails({ branch: 'dev' })], limit_reached: true }),

@@ -8,8 +8,8 @@ import BranchMenu from './BranchMenu.vue'
 import CreateBranchDialog from './CreateBranchDialog.vue'
 import MergeBanner from './MergeBanner.vue'
 import ScmRepoMenu from './ScmRepoMenu.vue'
-import IconArrowDown from '../../icons/IconArrowDown.vue'
-import IconArrowUp from '../../icons/IconArrowUp.vue'
+import RepoName from '../RepoName.vue'
+import RepoStateBadges from '../RepoStateBadges.vue'
 import IconChevron from '../../icons/IconChevron.vue'
 import IconClose from '../../icons/IconClose.vue'
 import { compareBranch, errorMessage, openInEditor, sendMessage } from '../../../api/http'
@@ -18,6 +18,7 @@ import { conflictPrompt } from '../../../git/conflictPrompt'
 import { clearDraft, readDraft, readMergeMessage, writeDraft, writeMergeMessage } from '../../../git/commitDraft'
 import { runningLine, type Confirmation } from '../../../git/confirmation'
 import { primaryAction, type PrimaryKind } from '../../../git/primaryAction'
+import { useRepoExpansion } from '../../../git/repoExpansion'
 import { repoLabel, syncCounts } from '../../../git/repoLabel'
 import { runningSessionIn } from '../../../git/runningSession'
 import { useGitDetailsStore } from '../../../stores/gitDetails'
@@ -29,14 +30,14 @@ import type { BranchRef, GitOpAnswer, GitOpKind, RepoDetails, RepoFile } from '.
 
 const props = defineProps<{ projectId: number; repo: RepoDetails; collapseAll: number; startOpen: boolean }>()
 
+const emit = defineEmits<{ history: [] }>()
 const details = useGitDetailsStore()
 const ops = useGitOpsStore()
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 
-const open = ref(props.startOpen)
+const open = useRepoExpansion(() => props.projectId, () => props.repo.path, 'scm', () => props.startOpen)
 watch(() => props.collapseAll, () => { open.value = false })
-watch(() => props.startOpen, (value) => { if (value) open.value = true })
 
 const name = computed(() => repoLabel(props.repo, projects.byId(props.projectId)?.name))
 const state = computed(() => props.repo.state ?? null)
@@ -50,7 +51,7 @@ const busy = computed(() => (busyKind.value ? busyLabel(busyKind.value, props.re
 const error = computed(() => ops.errorFor(props.repo.path))
 const showOutput = ref(false)
 watch(error, () => { showOutput.value = false })
-const revision = computed(() => details.revisionFor(props.projectId))
+const revision = computed(() => details.revisionFor(props.projectId, props.repo.path))
 const branchName = computed(() => (props.repo.detached ? (props.repo.head ?? '') : (props.repo.branch ?? '')))
 const dirty = computed(() => props.repo.files.length > 0)
 
@@ -248,8 +249,10 @@ async function askClaude(): Promise<void> {
     askSessionId ??= (await sessions.create(props.projectId)).session_id
     const id = askSessionId
     await sendMessage(id, conflictPrompt(props.repo, name.value))
+    const current = router.currentRoute.value
+    const projectQuery = current.name === 'project' && String(current.params.id) === String(props.projectId) ? current.query : {}
     await router.push(wideScreen.value
-      ? { name: 'project', params: { id: String(props.projectId) }, query: { sessao: id } }
+      ? { name: 'project', params: { id: String(props.projectId) }, query: { ...projectQuery, visao: 'git', sessao: id } }
       : { name: 'session', params: { id } })
   } catch (e) {
     claudeError.value = errorMessage(e)
@@ -386,19 +389,20 @@ const commitTitle = computed(() => {
   return action.value.disabled ? (action.value.reason ?? 'Commitar') : 'Commitar'
 })
 
-const iconButton = 'flex size-6 items-center justify-center rounded text-fg-muted hover:bg-card hover:text-fg disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent'
+const iconButton = 'flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent'
+const networkButton = 'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-line-strong bg-panel px-2 text-xs font-medium text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50 disabled:hover:bg-panel'
 
 // For the tasks that fill this component further (branch menu, merge, conflicts, sync).
 defineExpose({ ask, act, handlers })
 </script>
 
 <template>
-  <li data-test="scm-repo" :data-repo="repo.path" class="relative flex flex-col">
-    <div class="flex h-7 items-center gap-1.5 rounded pr-1 hover:bg-elevated">
-      <button type="button" data-test="scm-repo-toggle" :aria-expanded="open" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left" @click="open = !open">
+  <li data-test="scm-repo" :data-repo="repo.path" class="relative flex min-w-0 flex-col rounded-md border border-line odd:bg-panel even:bg-card/40">
+    <div class="flex min-h-10 flex-wrap items-center gap-x-2 gap-y-1 rounded-t-md px-2 py-1.5" :class="open ? 'border-b border-line bg-elevated/60' : 'hover:bg-elevated/60'">
+      <button type="button" data-test="scm-repo-toggle" :title="name" :aria-expanded="open" class="flex min-w-0 flex-[1_1_9rem] items-center gap-1.5 py-0.5 text-left sm:max-w-[35%] sm:flex-none" @click="open = !open">
         <IconChevron :open="open" :size="12" class="text-fg-subtle" />
-        <span class="truncate font-mono text-[0.8125rem] font-semibold text-fg">{{ name }}</span>
-        <svg v-if="running" data-test="running-arc" :title="`${running.title} em execução aqui`" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" class="shrink-0 text-primary motion-safe:animate-spin" role="img" :aria-label="`${running.title} em execução aqui`"><title>{{ running.title }} em execução aqui</title><path d="M21 12a9 9 0 1 1-6.22-8.56" /></svg>
+        <RepoName :name="name" />
+
         <span v-if="readOnly" data-test="read-only-tag" class="ml-1 text-xs text-fg-subtle">só leitura</span>
       </button>
       <slot name="branch" :branch="branchName" :dirty="dirty">
@@ -408,26 +412,13 @@ defineExpose({ ask, act, handlers })
           data-test="branch-chip"
           :disabled="!!readOnly || !!busyKind || preparingMerge || merging"
           :title="branchTitle"
-          class="max-w-48 truncate rounded px-1.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg disabled:hover:bg-transparent"
+          class="max-w-[45%] truncate rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg disabled:hover:bg-transparent sm:max-w-56"
           @click="menu = 'switch'"
         ><span data-test="scm-branch" :title="repo.detached ? 'HEAD solto' : undefined">{{ branchName }}{{ dirty ? '*' : '' }}</span></button>
         <span v-if="merging" data-test="merging-tag" class="flex shrink-0 items-center gap-1 text-xs text-secondary"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>merge em andamento</span>
       </slot>
-      <span
-        data-test="sync-counts"
-        class="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs"
-        :role="sync.kind === 'diverged' ? 'img' : undefined"
-        :aria-label="sync.kind === 'diverged' ? `${sync.behind} para baixar, ${sync.ahead} para subir` : undefined"
-        :title="syncTitle"
-      >
-        <span v-if="sync.kind === 'none'" class="text-fg-subtle">sem upstream</span>
-        <span v-else-if="sync.kind === 'synced'" class="text-fg-subtle">em dia</span>
-        <template v-else-if="sync.kind === 'diverged'">
-          <span class="inline-flex items-center" :class="sync.behind > 0 ? 'text-info-soft' : 'text-fg-subtle'"><IconArrowDown :size="12" />{{ sync.behind }}</span>
-          <span class="inline-flex items-center" :class="sync.ahead > 0 ? 'text-fg' : 'text-fg-subtle'"><IconArrowUp :size="12" />{{ sync.ahead }}</span>
-        </template>
-      </span>
-      <template v-if="!repo.error">
+      <RepoStateBadges :sync="sync" :changes="repo.changed.staged + repo.changed.unstaged + repo.changed.untracked" :error="!!repo.error || !!error" :title="syncTitle" />
+      <div v-if="!repo.error" class="ml-auto flex shrink-0 items-center gap-0.5 lg:ml-2">
         <button
           type="button"
           data-test="repo-merge"
@@ -449,28 +440,29 @@ defineExpose({ ask, act, handlers })
         <button
           type="button"
           data-test="repo-pull"
-          :class="iconButton"
+          :class="networkButton"
           :disabled="!!busyKind || !canPull"
-          aria-label="Baixar"
+          aria-label="Pull"
           :title="pullTitle"
           @click="bringIn('pull')"
-        ><IconArrowDown :size="14" /></button>
+        ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" /></svg>Pull</button>
         <button
           type="button"
           data-test="repo-push"
-          :class="iconButton"
+          :class="networkButton"
           :disabled="!!busyKind || !canPush"
-          aria-label="Enviar"
+          aria-label="Push"
           :title="pushTitle"
           @click="pushNow"
-        ><IconArrowUp :size="14" /></button>
+        ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4" /></svg>Push</button>
         <button type="button" data-test="repo-refresh" :class="iconButton" :disabled="!!busyKind" aria-label="Atualizar" title="Reler o estado git" @click="details.load(projectId)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
         </button>
+        <button type="button" data-test="repo-history" class="inline-flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Ver commits de ${name}`" @click="emit('history')">Commits</button>
         <button ref="moreButton" type="button" data-test="repo-more" :class="iconButton" aria-haspopup="menu" :aria-expanded="moreOpen" aria-label="Mais ações" title="Mais ações" @click="moreOpen = !moreOpen">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
         </button>
-      </template>
+      </div>
     </div>
 
     <BranchMenu
@@ -488,7 +480,7 @@ defineExpose({ ask, act, handlers })
     <ScmRepoMenu v-if="moreOpen" :merging="merging && !readOnly" :can-fetch="hasUpstream && !busyKind" @close="(restore) => closeMore(restore !== false)" @fetch="fetchNow" @copy="copyPath" @abort="abortFromMenu" />
 
     <!-- Outside the body: the error of a fetch must show with the repository collapsed too. -->
-    <div v-if="error" data-test="scm-error-area" class="flex flex-col gap-1.5 pt-1 pl-5">
+    <div v-if="error" data-test="scm-error-area" class="flex flex-col gap-1.5 px-3 py-2">
       <div data-test="scm-error" role="alert" class="flex items-start gap-1.5 text-xs leading-normal text-diff-del-fg">
         <span class="min-w-0 grow">{{ error.message }}
           <button v-if="error.output" type="button" data-test="show-output" class="border-0 bg-transparent p-0 text-xs text-fg-muted underline" @click="showOutput = !showOutput">{{ showOutput ? 'Esconder saída do git' : 'Ver saída do git' }}</button>
@@ -498,15 +490,17 @@ defineExpose({ ask, act, handlers })
       <pre v-if="showOutput" data-test="scm-error-output" class="m-0 max-h-48 overflow-auto rounded-md border border-line bg-bg p-2 font-mono text-[0.6875rem] whitespace-pre-wrap text-fg-muted">{{ error.output }}</pre>
     </div>
 
-    <p v-if="repo.error" data-test="scm-repo-error" role="alert" class="m-0 pl-5 text-xs text-diff-del-fg">{{ repo.error }}</p>
-    <div v-else-if="open" data-test="scm-body" class="flex flex-col gap-1.5 pt-1 pb-2 pl-5">
+    <p v-if="repo.error" data-test="scm-repo-error" role="alert" class="m-0 px-3 py-2 text-xs text-diff-del-fg">{{ repo.error }}</p>
+    <div v-else-if="open" data-test="scm-body" class="flex min-w-0 flex-col gap-2 px-3 py-2.5">
       <p v-if="readOnly" data-test="read-only-note" class="m-0 text-xs leading-normal text-fg-subtle">{{ readOnly }}</p>
       <template v-else>
         <slot name="merge-banner">
           <MergeBanner v-if="merging" :repo="repo" :busy="!!busyKind" :asking="asking" @ask="askClaude" @abort="abortMerge" />
           <p v-if="claudeError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ claudeError }}</p>
         </slot>
+        <div v-if="dirty || merging || busy || action.kind !== 'commit'" class="flex w-full max-w-xl flex-col gap-1.5">
         <input
+          v-if="dirty || merging"
           v-model="message"
           type="text"
           data-test="commit-message"
@@ -516,9 +510,11 @@ defineExpose({ ask, act, handlers })
           @keydown="onMessageKeydown"
         >
         <ScmPrimaryButton :action="action" :busy="busy" :available="!!handlers[action.kind]" @run="runPrimary" />
-        <p v-if="state?.has_hooks" data-test="hooks-note" class="m-0 text-xs text-fg-subtle">Este repositório tem hooks. O commit feito pelo app não os executa.</p>
-        <p v-if="state?.gpgsign" data-test="gpg-note" class="m-0 text-xs text-fg-subtle">Seu git pede commits assinados. O commit feito pelo app sai sem assinatura.</p>
+        </div>
+        <p v-if="(dirty || merging) && state?.has_hooks" data-test="hooks-note" class="m-0 text-xs text-fg-subtle">Este repositório tem hooks. O commit feito pelo app não os executa.</p>
+        <p v-if="(dirty || merging) && state?.gpgsign" data-test="gpg-note" class="m-0 text-xs text-fg-subtle">Seu git pede commits assinados. O commit feito pelo app sai sem assinatura.</p>
       </template>
+      <p v-if="!dirty && !merging && !readOnly && action.kind === 'commit'" class="m-0 text-xs text-fg-subtle">Nenhuma alteração local.</p>
       <p v-if="editorError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ editorError }}</p>
       <slot name="groups" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :discard="discard" :editor="editor">
         <ScmFileGroup v-if="conflictFiles.length" :project-id="projectId" :repo="repo" group="conflict" title="Em conflito" :files="conflictFiles" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :conflict-labels="conflictLabels" @editor="editor">

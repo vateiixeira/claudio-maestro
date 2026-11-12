@@ -36,11 +36,18 @@ function onKeydown(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="absolute right-0 z-20 mt-1 flex w-80 flex-col gap-0.5 rounded-xl border border-line-strong bg-card p-1.5 shadow-lg" @keydown="onKeydown">
+  <div class="absolute right-0 z-20 mt-1 flex w-80 max-w-[calc(100vw-3rem)] flex-col gap-0.5 rounded-xl border border-line-strong bg-card p-1.5 shadow-lg" @keydown="onKeydown">
     <input
       ref="input"
       v-model="query"
-      type="text"
+      type="search"
+      name="git-branch-search"
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck="false"
+      data-bwignore="true"
+      data-1p-ignore="true"
+      data-lpignore="true"
       aria-label="Procurar branch"
       placeholder="Procurar branch"
       class="h-[30px] w-full rounded-md border border-line-strong bg-panel px-2.5 text-[0.8125rem] text-fg placeholder:text-fg-subtle focus:outline-none"

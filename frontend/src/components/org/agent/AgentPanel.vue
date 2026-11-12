@@ -67,7 +67,10 @@ async function onKey(event: KeyboardEvent, index: number): Promise<void> {
 
 /** After deleting: back to the tree. */
 function deleted(): void {
-  void router.replace({ query: {} })
+  const query = { ...route.query }
+  delete query.agente
+  delete query.aba
+  void router.replace({ query })
 }
 </script>
 

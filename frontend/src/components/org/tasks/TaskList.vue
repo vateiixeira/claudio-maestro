@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import TaskRow from './TaskRow.vue'
 import { TASK_STATUS_LABELS } from '../../../org'
 import { errorMessage } from '../../../api/http'
@@ -63,6 +63,7 @@ function apply(next: Filters): void {
 // The responsible chosen for one project means nothing in another.
 watch(() => props.projectId, () => { if (!props.syncQuery) local.assignee = null })
 
+const emptyProject = ref('')
 const effectiveProject = computed(() => props.projectId ?? filters.value.project)
 
 function toggleStatus(status: TaskStatus): void {
@@ -156,7 +157,25 @@ const projectName = (task: Task) => (props.projectId === undefined ? projects.by
       <button type="button" data-test="tasks-retry" :class="BTN_SMALL" @click="load">Tentar de novo</button>
     </div>
     <p v-else-if="!loaded" role="status" class="m-0 text-sm text-fg-subtle">Carregando tarefas…</p>
-    <p v-else-if="items.length === 0" data-test="tasks-empty" class="m-0 py-6 text-sm text-fg-muted">Nenhuma tarefa. Crie uma ou peça ao CTO.</p>
+    <div v-else-if="items.length === 0" data-test="tasks-empty" class="flex flex-col items-start gap-3 py-6 text-sm text-fg-muted">
+      <p class="m-0">Nenhuma tarefa nos filtros selecionados.</p>
+      <template v-if="projectId === undefined">
+        <RouterLink v-if="effectiveProject !== null" data-test="tasks-open-organization" :to="{ name: 'project', params: { id: effectiveProject }, query: { visao: 'organizacao' } }" :class="BTN_SMALL" class="no-underline">Abrir organização do projeto</RouterLink>
+        <template v-else>
+          <p class="m-0">Escolha um projeto para criar uma tarefa ou conversar com o CTO.</p>
+          <label v-if="projects.regular.length" class="flex flex-wrap items-center gap-2 text-xs">
+            Projeto
+            <select v-model="emptyProject" :class="FIELD" aria-label="Projeto para abrir organização">
+              <option value="">Escolher projeto</option>
+              <option v-for="project in projects.regular" :key="project.id" :value="project.id">{{ project.name }}</option>
+            </select>
+          </label>
+          <RouterLink v-if="emptyProject && projects.regular.some(project => project.id === Number(emptyProject))" data-test="tasks-open-organization" :to="{ name: 'project', params: { id: emptyProject }, query: { visao: 'organizacao' } }" :class="BTN_SMALL" class="no-underline">Abrir organização do projeto</RouterLink>
+          <RouterLink v-if="!projects.regular.length" to="/projects/new" :class="BTN_SMALL" class="no-underline">Novo projeto</RouterLink>
+        </template>
+      </template>
+      <p v-else class="m-0">Crie uma tarefa em Nova tarefa ou peça ao CTO.</p>
+    </div>
     <ul v-else aria-label="Tarefas" class="m-0 flex flex-col p-0">
       <TaskRow v-for="task in items" :key="task.id" :task="task" :project-name="projectName(task)" />
     </ul>

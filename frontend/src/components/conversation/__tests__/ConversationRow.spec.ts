@@ -30,6 +30,30 @@ function mountRow(session = makeSession(), variant?: 'inbox' | 'list' | 'compact
 }
 
 describe('linha de conversa', () => {
+  it('no projeto separa resumo e metadados do título sem limitar sua largura à metade', () => {
+    const row = mountRow(makeSession({ title: 'Ajustar abertura da agenda', digest_short: 'Conferir disponibilidade', worktree_name: 'agenda', worktree_path: '/p/agenda', git_branch: 'perf/agenda', closure_verdict: 'incomplete' }), undefined, { projectContextId: 1 })
+    expect(row.get('[data-test="row-link"]').classes()).not.toContain('max-w-[55%]')
+    const details = row.get('[data-test="row-details"]')
+    expect(details.get('[data-test="row-digest"]').text()).toBe('Conferir disponibilidade')
+    expect(details.get('[data-test="row-branch"]').text()).toContain('agenda')
+    expect(details.get('[data-test="closure-badge"]').text()).toBe('Entrega incompleta')
+    expect(details.find('[data-test="row-link"]').exists()).toBe(false)
+  })
+
+  it('no contexto do projeto omite metadados redundantes, preservando worktree', () => {
+    const row = mountRow(makeSession(), undefined, { projectContextId: 1 })
+    expect(row.find('[data-test="row-project"]').exists()).toBe(false)
+    expect(row.find('[data-test="row-branch"]').exists()).toBe(false)
+    const worktree = mountRow(makeSession({ worktree_name: 'fix', worktree_path: '/p/fix', git_branch: 'fix' }), undefined, { projectContextId: 1 })
+    expect(worktree.get('[data-test="row-branch"]').text()).toContain('fix')
+  })
+
+  it('conversa de outro projeto mantém sua identificação no contexto local', () => {
+    const row = mountRow(makeSession(), undefined, { projectContextId: 2 })
+    expect(row.get('[data-test="row-project"]').text()).toContain('loja-online')
+    expect(row.get('[data-test="row-branch"]').text()).toContain('develop')
+  })
+
   it('mostra título, projeto, branch e tempo, e abre a conversa', () => {
     const wrapper = mountRow(makeSession({ session_id: 'abc', title: 'Corrigir login' }))
 

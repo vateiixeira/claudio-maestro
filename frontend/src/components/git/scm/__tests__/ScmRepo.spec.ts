@@ -33,6 +33,50 @@ function mountRepo(repo: RepoDetails, handlers: Record<string, () => Response | 
 const bodyOf = (call: unknown[]) => JSON.parse(String((call[1] as RequestInit).body))
 
 describe('repositório na seção Alterações', () => {
+  it('oculta o formulário e os avisos sem alterações, preservando o rascunho', async () => {
+    localStorage.setItem(`maestro.commitDraft:${PATH}`, 'Meu rascunho')
+    const repo = makeRepoDetails({ path: PATH, ahead: 2, state: makeRepoState({ has_hooks: true, gpgsign: true }) })
+    const { wrapper } = mountRepo(repo)
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="hooks-note"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="gpg-note"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="primary-action"]').text()).toContain('Enviar')
+    await wrapper.setProps({ repo: { ...repo, files: [file('a.ts', 'unstaged')] } })
+    expect((wrapper.get('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('Meu rascunho')
+  })
+
+  it('destaca o nome da worktree mantendo o caminho completo acessível', () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, rel_path: 'angular-body/.worktrees/perf-abertura-agenda' }))
+    expect(wrapper.get('[data-test="repo-short-name"]').text()).toBe('perf-abertura-agenda')
+    expect(wrapper.get('[data-test="repo-parent-name"]').text()).toBe('angular-body/.worktrees')
+    expect(wrapper.get('[data-test="scm-repo-toggle"]').attributes('title')).toContain('angular-body/.worktrees/perf-abertura-agenda')
+  })
+
+  it('ações de rede mostram texto além dos ícones', () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 2, behind: 1 }))
+    expect(wrapper.get('[data-test="repo-pull"]').text()).toBe('Pull')
+    expect(wrapper.get('[data-test="repo-push"]').text()).toBe('Push')
+  })
+
+  it.each([
+    { cwd: '/home/vi/dev/loja' },
+    { cwd: PATH },
+    { cwd: '/home/vi/dev/loja', worktree_path: PATH },
+  ])('não mostra indicador de sessão na lista Git: %j', (location) => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ ...location, display_state: 'running' })])
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
+    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="running-arc"]').exists()).toBe(false)
+  })
+
+  it('mantém o resumo das alterações e sincronização quando recolhido', async () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, changed: { staged: 2, unstaged: 3, untracked: 1 }, upstream: 'origin/main', ahead: 2, behind: 1 }))
+    await wrapper.get('[data-test="scm-repo-toggle"]').trigger('click')
+    expect(wrapper.find('[data-test="scm-body"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="repo-changes"]').text()).toBe('6 alterações')
+    expect(wrapper.get('[data-test="sync-counts"]').text()).toContain('2 para enviar')
+  })
+
   it('agrupa em Preparados e Alterações com a letra de cada arquivo', () => {
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, rel_path: 'api', files: [file('src/a.ts', 'staged'), file('novo.ts', 'untracked', 'A'), file('src/b.ts', 'unstaged', 'D')] }))
     const groups = wrapper.findAll('[data-test="scm-group"]')
@@ -72,7 +116,7 @@ describe('repositório na seção Alterações', () => {
     expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBe('Ajustar o frete')
     await input.trigger('keydown', { key: 'Enter', ctrlKey: true })
     await flushPromises()
-    expect(bodyOf(fetchMock.mock.calls[0])).toEqual({ repo: PATH, message: 'Ajustar o frete' })
+    expect(bodyOf(fetchMock.mock.calls[0])).toMatchObject({ repo: PATH, message: 'Ajustar o frete' })
     expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBeNull()
     expect((input.element as HTMLInputElement).value).toBe('')
   })
@@ -123,7 +167,7 @@ describe('repositório na seção Alterações', () => {
     await wrapper.find('[data-test="scm-file"] [data-test="file-discard"]').trigger('click')
     await wrapper.find('[data-test="confirm-ok"]').trigger('click')
     await flushPromises()
-    expect(bodyOf(fetchMock.mock.calls[0])).toEqual({ repo: PATH, paths: ['novo.ts'] })
+    expect(bodyOf(fetchMock.mock.calls[0])).toMatchObject({ repo: PATH, paths: ['novo.ts'] })
   })
 
   it('descartar o grupo mostra a contagem', async () => {
@@ -133,11 +177,12 @@ describe('repositório na seção Alterações', () => {
     expect(wrapper.find('[role="dialog"]').text()).toContain('Descartar 2 alterações?')
   })
 
-  it('com sessão em execução no repositório: arco na linha e confirmação nomeando a sessão', async () => {
+  it('com sessão no repositório: confirmação continua nomeando a sessão', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ title: 'Chatbot whatsapp', cwd: `${PATH}/src`, display_state: 'running' })])
     const repo = makeRepoDetails({ path: PATH, rel_path: 'api', files: [file('a.ts', 'unstaged')] })
     const { wrapper } = mountRepo(repo)
-    expect(wrapper.find('[data-test="running-arc"]').attributes('title')).toBe('Chatbot whatsapp em execução aqui')
+    expect(wrapper.find('[data-test="running-session"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="running-arc"]').exists()).toBe(false)
     await wrapper.find('[data-test="scm-file"] [data-test="file-discard"]').trigger('click')
     const dialog = wrapper.find('[role="dialog"]')
     expect(dialog.text()).toContain('Chatbot whatsapp está em execução em api.')
@@ -177,11 +222,11 @@ describe('repositório na seção Alterações', () => {
   it('abre o diff do arquivo ao clicar na linha', async () => {
     const repo = makeRepoDetails({ path: PATH, rel_path: 'api', files: [file('a.ts', 'unstaged')] })
     const { wrapper } = mountRepo(repo, {
-      [`GET /api/projects/1/diff?${new URLSearchParams({ repo: 'api', file: 'a.ts' })}`]: () => jsonResponse({ diff: '@@ -1 +1 @@\n-a\n+b\n', truncated: false }),
+      [`GET /api/projects/1/diff?${new URLSearchParams({ repo: 'api', file: 'a.ts', scope: 'unstaged' })}`]: () => jsonResponse({ diff: '@@ -1 +1 @@\n-a\n+b\n', truncated: false }),
     })
     await wrapper.find('[data-test="scm-file"] [data-test="file-open"]').trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('[data-test="diff-line"]').length).toBeGreaterThan(0)
+    expect(document.querySelectorAll('[data-test="scm-diff-modal"] [data-test="diff-line"]').length).toBeGreaterThan(0)
   })
 
   it('o que foi digitado durante o commit não some quando ele dá certo', async () => {

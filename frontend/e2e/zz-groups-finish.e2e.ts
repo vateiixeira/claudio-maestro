@@ -21,10 +21,11 @@ const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Navegaçã
 test('finalizar a última conversa ativa de um agrupador o tira da barra lateral', async ({ page }) => {
   await page.goto('/inbox')
   await sidebar(page).getByTestId('project').filter({ hasText: A }).click()
+  await page.getByTestId('project-tab-conversas').click()
   await page.getByTestId('group-new').click()
-  await page.getByTestId('group-new-name').fill(GROUP)
-  await page.getByTestId('group-new-name').press('Enter')
-  await expect(page.getByTestId('group-section').filter({ hasText: GROUP })).toBeVisible()
+  await page.getByTestId('group-name-input').fill(GROUP)
+  await page.getByTestId('group-name-input').press('Enter')
+  await expect(page.getByTestId('conversation-group-filter').getByRole('option', { name: GROUP, exact: true })).toHaveCount(1)
 
   await page.goto('/sessions')
   await page.getByTestId('row-link').filter({ hasText: A_TITLE }).first().click()
@@ -47,5 +48,6 @@ test('finalizar a última conversa ativa de um agrupador o tira da barra lateral
 
   // The project screen keeps listing the group.
   await nav.getByTestId('project').filter({ hasText: A }).click()
-  await expect(page.getByTestId('group-section').filter({ hasText: GROUP })).toBeVisible()
+  await page.getByTestId('project-tab-conversas').click()
+  await expect(page.getByTestId('conversation-group-filter').getByRole('option', { name: GROUP, exact: true })).toHaveCount(1)
 })

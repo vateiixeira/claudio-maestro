@@ -1,0 +1,308 @@
+{
+  "asyncio": [
+    {
+      "query": "git",
+      "ms": 55.62,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 211.34,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 100.47,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 60.8,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 203.95,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 91.85,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 61.03,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 215.11,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 91.66,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 52.93,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 217.7,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 106.94,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 52.93,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 208.73,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 87.95,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 56.28,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 242.15,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 88.18,
+      "errors": 0,
+      "repos": 11
+    }
+  ],
+  "uvloop": [
+    {
+      "query": "git",
+      "ms": 190.56,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 908.99,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 371.62,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 189.84,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 918.86,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 381.05,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 186.83,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 942.43,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 393.56,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 192.03,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 988.38,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 440.36,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 251.95,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 957.26,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 405.95,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "git",
+      "ms": 204.48,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_cold",
+      "ms": 1217.85,
+      "errors": 0,
+      "repos": 11
+    },
+    {
+      "query": "details_warm",
+      "ms": 571.33,
+      "errors": 0,
+      "repos": 11
+    }
+  ],
+  "http_after": [
+    {
+      "iteration": 0,
+      "query": "git",
+      "ms": 70.75,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 0,
+      "query": "git/details",
+      "ms": 197.62,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 1,
+      "query": "git",
+      "ms": 55.62,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 1,
+      "query": "git/details",
+      "ms": 94.86,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 2,
+      "query": "git",
+      "ms": 58.03,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 2,
+      "query": "git/details",
+      "ms": 99.53,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 3,
+      "query": "git",
+      "ms": 60.85,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 3,
+      "query": "git/details",
+      "ms": 108.06,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 4,
+      "query": "git",
+      "ms": 55.54,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 4,
+      "query": "git/details",
+      "ms": 95.87,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 5,
+      "query": "git",
+      "ms": 52.41,
+      "repos": 11,
+      "errors": 0
+    },
+    {
+      "iteration": 5,
+      "query": "git/details",
+      "ms": 103.25,
+      "repos": 11,
+      "errors": 0
+    }
+  ]
+}

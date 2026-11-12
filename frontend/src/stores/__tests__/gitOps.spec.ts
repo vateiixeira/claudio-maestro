@@ -19,7 +19,9 @@ describe('gitOps', () => {
     const result = await ops.run(1, REPO, 'commit', { message: 'Oi' })
     expect(result?.repo.branch).toBe('nova')
     expect(details.reposFor(1)[0].branch).toBe('nova')
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ repo: REPO, message: 'Oi' })
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      repo: REPO, message: 'Oi', mutation_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    })
     expect(ops.busyFor(REPO)).toBeNull()
   })
 

@@ -14,9 +14,11 @@ pnpm --dir frontend install
 No desenvolvimento rodam dois processos, os dois com recarga automática:
 
 ```bash
-uv run uvicorn claudio_maestro.app:app --reload --reload-dir backend --host 127.0.0.1 --port 6660   # backend
+uv run uvicorn claudio_maestro.app:app --loop asyncio --reload --reload-dir backend --host 127.0.0.1 --port 6660   # backend
 pnpm --dir frontend dev                                                                             # frontend
 ```
+
+Use `--loop asyncio` também ao iniciar o uvicorn diretamente: é o loop usado pelo app e pelo E2E. Nas medições de consultas Git com vários subprocessos nesta máquina, ele teve menor latência que a seleção automática de `uvloop`; o resultado não representa uma comparação geral entre os dois loops.
 
 Acesse **http://localhost:6600**. O Vite repassa `/api` e `/ws` para o backend. Para mudar as portas, use `MAESTRO_PORT` e `MAESTRO_DEV_PORT` (e o mesmo valor no `--port` do uvicorn).
 
@@ -27,7 +29,7 @@ Para não misturar com os seus dados de uso, aponte `MAESTRO_DATA_DIR` para outr
 Para conferir uma mudança de frontend sem mexer no app que você está usando, suba um segundo Vite a partir da worktree, apontando para o mesmo backend. Ligue `MAESTRO_PREVIEW_PORT` no backend (ele passa a aceitar essa porta como do próprio app) e rode o Vite da worktree nela:
 
 ```bash
-MAESTRO_PREVIEW_PORT=6610 uv run uvicorn claudio_maestro.app:app --host 127.0.0.1 --port 6660   # backend, uma vez
+MAESTRO_PREVIEW_PORT=6610 uv run uvicorn claudio_maestro.app:app --loop asyncio --host 127.0.0.1 --port 6660   # backend, uma vez
 MAESTRO_DEV_PORT=6610 pnpm --dir <worktree>/frontend dev                                        # preview da worktree
 ```
 

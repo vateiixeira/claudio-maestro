@@ -36,6 +36,7 @@ test('o ícone do agente na barra lateral volta a ocioso quando o turno de uma s
   })
 
   await page.goto('/inicio')
+  await page.getByTestId('sidebar-agents-toggle').click()
   const row = page.getByTestId('sidebar-agent-row').filter({ hasText: 'Triagem' })
   await expect(row.getByTestId('agent-state')).toHaveAttribute('data-state', 'busy')
   await expect.poll(() => sessionIds.size).toBeGreaterThan(0)

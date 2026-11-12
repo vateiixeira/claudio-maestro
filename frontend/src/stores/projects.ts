@@ -4,6 +4,7 @@ import * as api from '../api/http'
 import type { Project, ProjectCreate } from '../types/api'
 import { useGroupsStore } from './groups'
 import { useSessionsStore } from './sessions'
+import { useGitLogStore } from './gitLog'
 
 /** The built-in "Sem projeto" (conversations outside any project folder). */
 export function isScratch(project: Project | undefined): boolean {
@@ -65,6 +66,7 @@ export const useProjectsStore = defineStore('projects', () => {
     projects.value = projects.value.filter((p) => p.id !== id)
     useSessionsStore().forgetProject(id)
     useGroupsStore().forgetProject(id)
+    useGitLogStore().forgetProject(id)
   }
 
   return { projects, regular, scratch, loaded, loadError, byId, load, create, rename, remove }

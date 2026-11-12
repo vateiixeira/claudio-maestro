@@ -55,7 +55,12 @@ const posts = (fetchMock: ReturnType<typeof routeFetch>) =>
     .filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST')
     .map((c) => {
       const body = (c[1] as RequestInit).body
-      return [String(c[0]).split('/git/').pop(), body ? JSON.parse(String(body)) : null]
+      const parsed = body ? JSON.parse(String(body)) : null
+      if (parsed && String(c[0]).includes('/git/')) {
+        expect(parsed.mutation_id).toMatch(/^[0-9a-f-]{36}$/)
+        delete parsed.mutation_id
+      }
+      return [String(c[0]).split('/git/').pop(), parsed]
     })
 
 describe('branches e merge no repositório', () => {
@@ -238,12 +243,12 @@ describe('branches e merge no repositório', () => {
   it('diff do arquivo em conflito nomeia as branches', async () => {
     const repo = merging(['src/a.vue'], [conflict('src/a.vue')])
     const { wrapper } = mountRepo(repo, {
-      [`GET /api/projects/1/diff?${new URLSearchParams({ repo: 'api', file: 'src/a.vue' })}`]: () => jsonResponse({ diff: '@@ -1 +1,5 @@\n+<<<<<<< HEAD\n+nosso\n+=======\n+deles\n+>>>>>>> feat/agente\n', truncated: false }),
+      [`GET /api/projects/1/diff?${new URLSearchParams({ repo: 'api', file: 'src/a.vue', scope: 'combined' })}`]: () => jsonResponse({ diff: '@@ -1 +1,5 @@\n+<<<<<<< HEAD\n+nosso\n+=======\n+deles\n+>>>>>>> feat/agente\n', truncated: false }),
     })
     await wrapper.find('[data-test="scm-file"] [data-test="file-open"]').trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('[data-test="conflict-label"]').map((l) => l.text())).toEqual(['(sua branch)', '(a que entra)'])
-    expect(wrapper.find('[data-marker="ours"]').text()).toContain('develop')
+    expect([...document.querySelectorAll('[data-test="scm-diff-modal"] [data-test="conflict-label"]')].map(l => l.textContent)).toEqual(['(sua branch)', '(a que entra)'])
+    expect(document.querySelector('[data-test="scm-diff-modal"] [data-marker="ours"]')?.textContent).toContain('develop')
   })
 
   it('abortar pede confirmação', async () => {
@@ -301,7 +306,8 @@ describe('branches e merge no repositório', () => {
     localStorage.setItem(`maestro.commitDraft:${PATH}`, text)
     localStorage.setItem(`maestro.mergeMessage:${PATH}`, text)
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, branch: 'develop' }))
-    expect((wrapper.find('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBeNull()
     expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBeNull()
     expect(localStorage.getItem(`maestro.mergeMessage:${PATH}`)).toBeNull()
   })
@@ -310,7 +316,8 @@ describe('branches e merge no repositório', () => {
     localStorage.setItem(`maestro.commitDraft:${PATH}`, 'Corrigir o frete')
     localStorage.setItem(`maestro.mergeMessage:${PATH}`, "Merge branch 'feat/agente' into develop")
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, branch: 'develop' }))
-    expect((wrapper.find('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('Corrigir o frete')
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBe('Corrigir o frete')
     expect(localStorage.getItem(`maestro.mergeMessage:${PATH}`)).toBeNull()
   })
 
@@ -329,7 +336,8 @@ describe('branches e merge no repositório', () => {
   it('o merge acabando por fora limpa a mensagem preenchida com o componente de pé', async () => {
     const { wrapper } = mountRepo(merging(['a'], [conflict('a')]))
     await wrapper.setProps({ repo: makeRepoDetails({ path: PATH, branch: 'develop' }) })
-    expect((wrapper.find('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBeNull()
   })
 
   it('segundo clique em mesclar enquanto compara é ignorado e o botão mostra Mesclando…', async () => {
@@ -355,7 +363,7 @@ describe('branches e merge no repositório', () => {
     await flushPromises()
     expect(compares).toBe(1)
     expect(wrapper.find('[role="dialog"]').text()).toContain('Entram 2 commits de feat/agente.')
-    expect(wrapper.find('[data-test="primary-action"]').text()).not.toBe('Mesclando…')
+    expect(wrapper.find('[data-test="primary-action"]').exists()).toBe(false)
   })
 
   it('mesclar com sessão em execução pede confirmação laranja com o nome dela', async () => {
@@ -401,6 +409,17 @@ describe('branches e merge no repositório', () => {
       expect(router.currentRoute.value.name).toBe('project')
       expect(router.currentRoute.value.params.id).toBe('1')
       expect(router.currentRoute.value.query.sessao).toBe('nova')
+    })
+
+    it('mantém a aba Git e os parâmetros do projeto ao abrir a ajuda ao lado', async () => {
+      wide(true)
+      await router.push('/projects/1?visao=git&filtro=preservado')
+      const { wrapper } = mountRepo(merging(['src/a.vue'], [conflict('src/a.vue')]), {
+        'POST /api/projects/1/sessions': sessionsOk, 'POST /api/sessions/nova/messages': messagesOk,
+      })
+      await wrapper.get('[data-test="ask-claude"]').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.query).toEqual({ visao: 'git', filtro: 'preservado', sessao: 'nova' })
     })
 
     it('erro ao criar a sessão aparece e o clique seguinte tenta de novo', async () => {

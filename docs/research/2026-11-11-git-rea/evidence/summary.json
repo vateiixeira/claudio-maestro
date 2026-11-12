@@ -1,0 +1,205 @@
+[
+  {
+    "file": "gitlens-timeout.json.gz",
+    "json_sha256": "a7aad1d7801ec4f5b430de0a37d58020bc3049b4a8b9f82cec48ffbe8d0a8dee",
+    "exit_status": 1,
+    "error": "provider_timeout",
+    "evidence_id": "ev_937fb47d99b5d862d4332e8d3e4947c3830d296e80b2d57ef3f5cd46c5e2b419",
+    "subject": {
+      "name": "eamodio.gitlens-19.5.0",
+      "digest": {
+        "sha256": "7de005bf17900c4906feb7f768faa2df9bfc978622bec059ecbf4b9241bc5a24"
+      },
+      "local_path": "/home/vi/.vscode/extensions/eamodio.gitlens-19.5.0",
+      "format": "directory",
+      "architecture": null
+    },
+    "parameters": {
+      "format": "auto",
+      "integrity_policy": "fail",
+      "max_semantic_nodes": 10000,
+      "max_semantic_unknowns": 10000,
+      "source_paths": [
+        "package.json",
+        "dist/gitlens.js"
+      ],
+      "analysis_timeout_ms": 45000
+    },
+    "statistics": {
+      "relevant_files": 51,
+      "nested_asar_containers": 0,
+      "text_bytes_read": 4251876,
+      "invalid_utf8_files": 0,
+      "parsed_javascript_files": 1,
+      "skipped_javascript_files": 0,
+      "visited_ast_nodes": 828733,
+      "findings": 2787,
+      "modules": 375,
+      "parse_failures": 0
+    },
+    "source_selection": {
+      "requested_paths": [
+        "package.json",
+        "dist/gitlens.js"
+      ],
+      "unselected_files": 49
+    },
+    "graph_coverage": {
+      "status": "partial",
+      "truncated": false,
+      "omitted_count": null,
+      "limits": [
+        {
+          "name": "javascript_analysis_worker_timeout_ms",
+          "value": 45000,
+          "unit": "milliseconds"
+        }
+      ]
+    },
+    "semantic_coverage_status": "partial",
+    "semantic_truncated": true,
+    "limitations": [
+      "Caller-selected source analysis leaves 49 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+      "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+      "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+      "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+      "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+      "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+      "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code.",
+      "dist/gitlens.js: Analysis operation timed out after 45000ms: analyze_javascript_application"
+    ]
+  },
+  {
+    "file": "gitlens.json.gz",
+    "json_sha256": "9935e734c0c01a606063e937fe733ce698ff89678210139ff80a360efc2f82c3",
+    "exit_status": 0,
+    "error": null,
+    "evidence_id": "ev_78d7e1680ac64c611236d528744649544f58a2c5967c4cdb5c85ce9c6cbfd71f",
+    "subject": {
+      "name": "eamodio.gitlens-19.5.0",
+      "digest": {
+        "sha256": "7de005bf17900c4906feb7f768faa2df9bfc978622bec059ecbf4b9241bc5a24"
+      },
+      "local_path": "/home/vi/.vscode/extensions/eamodio.gitlens-19.5.0",
+      "format": "directory",
+      "architecture": null
+    },
+    "parameters": {
+      "format": "auto",
+      "integrity_policy": "fail",
+      "max_semantic_nodes": 3000,
+      "max_semantic_unknowns": 3000,
+      "source_paths": [
+        "package.json",
+        "dist/gitlens.js"
+      ],
+      "analysis_timeout_ms": 120000
+    },
+    "statistics": {
+      "relevant_files": 51,
+      "nested_asar_containers": 0,
+      "text_bytes_read": 4251876,
+      "invalid_utf8_files": 0,
+      "parsed_javascript_files": 1,
+      "skipped_javascript_files": 0,
+      "visited_ast_nodes": 828733,
+      "findings": 2813,
+      "modules": 375,
+      "parse_failures": 0
+    },
+    "source_selection": {
+      "requested_paths": [
+        "package.json",
+        "dist/gitlens.js"
+      ],
+      "unselected_files": 49
+    },
+    "graph_coverage": {
+      "status": "partial",
+      "truncated": false,
+      "omitted_count": null,
+      "limits": [
+        {
+          "name": "javascript_semantic_primitive_candidates",
+          "value": 256,
+          "unit": "items"
+        }
+      ]
+    },
+    "semantic_coverage_status": "partial",
+    "semantic_truncated": true,
+    "limitations": [
+      "Caller-selected source analysis leaves 49 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+      "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+      "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+      "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+      "Primitive candidate budget exceeded (maximum 256 alternatives).",
+      "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+      "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+      "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+    ]
+  },
+  {
+    "file": "vscode-git.json.gz",
+    "json_sha256": "e24d5e015a509abd93b549627af56a01da5929de85a7133c94ad614b0c5cca73",
+    "exit_status": 0,
+    "error": null,
+    "evidence_id": "ev_3dfba63e878471f42bcb0adc294e3cb4a3e645fb949e470b8f422d873b6ef1e3",
+    "subject": {
+      "name": "git",
+      "digest": {
+        "sha256": "452c5c74430e1a9fd5c91bc898a0c6d670017348660e5aca056f1f4a0540943c"
+      },
+      "local_path": "/usr/share/code/resources/app/extensions/git",
+      "format": "directory",
+      "architecture": null
+    },
+    "parameters": {
+      "format": "auto",
+      "integrity_policy": "fail",
+      "max_semantic_nodes": 10000,
+      "max_semantic_unknowns": 10000,
+      "source_paths": [
+        "package.json",
+        "dist/main.js"
+      ],
+      "analysis_timeout_ms": 45000
+    },
+    "statistics": {
+      "relevant_files": 13,
+      "nested_asar_containers": 0,
+      "text_bytes_read": 858868,
+      "invalid_utf8_files": 0,
+      "parsed_javascript_files": 1,
+      "skipped_javascript_files": 0,
+      "visited_ast_nodes": 201445,
+      "findings": 205,
+      "modules": 0,
+      "parse_failures": 0
+    },
+    "source_selection": {
+      "requested_paths": [
+        "package.json",
+        "dist/main.js"
+      ],
+      "unselected_files": 11
+    },
+    "graph_coverage": {
+      "status": "partial",
+      "truncated": false,
+      "omitted_count": null,
+      "limits": []
+    },
+    "semantic_coverage_status": "partial",
+    "semantic_truncated": true,
+    "limitations": [
+      "Caller-selected source analysis leaves 11 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+      "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+      "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+      "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+      "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+      "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+      "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+    ]
+  }
+]

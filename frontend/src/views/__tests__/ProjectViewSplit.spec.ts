@@ -110,9 +110,9 @@ describe('conversa aberta ao lado na tela do projeto', () => {
     }))
     const wrapper = await mountView(true, 'a')
 
-    const grouped = wrapper.get('[data-test="group-section"]')
+    const grouped = wrapper.get('[data-test="conversation-row"]')
     expect(grouped.get('[data-test="row-link"]').attributes('href')).toBe('/projects/1?sessao=a')
-    expect(grouped.get('[data-test="conversation-row"]').attributes('data-active')).toBe('true')
+    expect(grouped.attributes('data-active')).toBe('true')
   })
 
   it('em tela larga sem sessão as linhas já apontam para ?sessao=', async () => {

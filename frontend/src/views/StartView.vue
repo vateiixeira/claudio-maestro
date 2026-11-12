@@ -179,7 +179,7 @@ const SECTION_TITLE = 'm-0 text-[0.9375rem] font-medium'
         <div class="grid min-w-0 gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
           <section aria-labelledby="active-title" class="flex min-w-0 flex-col">
             <div class="mb-2 flex items-baseline justify-between gap-3">
-              <h2 id="active-title" :class="SECTION_TITLE">Em andamento</h2>
+              <h2 id="active-title" :class="SECTION_TITLE">Tarefas em andamento</h2>
               <RouterLink class="text-xs text-info-soft hover:underline focus-visible:outline-2 focus-visible:outline-primary" to="/tarefas">Ver todas</RouterLink>
             </div>
             <StartTaskRow v-for="task in active" :key="task.id" :task="task" />

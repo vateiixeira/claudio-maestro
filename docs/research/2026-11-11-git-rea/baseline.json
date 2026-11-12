@@ -1,0 +1,3176 @@
+{
+  "schema": 1,
+  "python": "3.13.12",
+  "platform": "Linux-7.0.0-42-generic-x86_64-desconhecido-with-glibc2.43",
+  "cpu": "desconhecido",
+  "cpu_count": 16,
+  "git_version": "git version 2.53.0",
+  "repetitions_per_mode": 30,
+  "gitinfo_sha256": "452a4637328ee1c1dc8f2298564d1c94eb14128475be1abce7b3317af1819b4c",
+  "limitations": [
+    "cold_app limpa apenas cache de política; cache do SO não é limpo",
+    "mede funções backend, não HTTP/DOM/latência visual",
+    "run_git_calls não conta subprocessos internos auxiliares do wrapper",
+    "sem rede, SDK ou comparação de runtime com VS Code"
+  ],
+  "observations": {
+    "combined_diff_contains_staged_and_unstaged": true,
+    "git_staged_and_unstaged_differ": true,
+    "outgoing_count": 1101,
+    "incoming_count": 101,
+    "incoming_returned": 100,
+    "known_local_commits_wrongly_marked_pushed": 101,
+    "files_returned": 200,
+    "files_truncated": true
+  },
+  "scenarios": {
+    "small_details": {
+      "summary": {
+        "cold_app": {
+          "median_ms": 51.40134850080358,
+          "p95_ms": 75.48642400070094,
+          "run_git_calls": [
+            13
+          ],
+          "median_json_bytes": 996.0
+        },
+        "warm": {
+          "median_ms": 25.885682996886317,
+          "p95_ms": 29.4550429971423,
+          "run_git_calls": [
+            7
+          ],
+          "median_json_bytes": 996.0
+        }
+      },
+      "samples": [
+        {
+          "mode": "cold_app",
+          "ms": 52.78515099780634,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 48.83602699555922,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 47.61674600013066,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 47.80784399190452,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 47.71856700244825,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 58.95282501296606,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 56.72320599842351,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 53.172576997894794,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 70.22192000295036,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 79.17318800173234,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 75.48642400070094,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 52.85058400477283,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 49.73782299202867,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 46.01873799401801,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 47.509295007330365,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 47.59492599987425,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 49.43329299567267,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 49.73367499769665,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 47.32387900003232,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 49.12790200614836,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 64.56761500157882,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 62.41689299349673,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 52.042693001567386,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 59.1183340002317,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 63.787075006985106,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 57.20361499697901,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 48.70635399129242,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 49.91360200801864,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 50.76000400003977,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "cold_app",
+          "ms": 52.72745300317183,
+          "run_git_calls": 13,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 4,
+            "log": 1,
+            "config": 5
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 26.548026988166384,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 24.802902989904396,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 26.111250001122244,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 26.107131998287514,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 26.098064990947023,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 26.174397993599996,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.71614999033045,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.726660998770967,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.37184600078035,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.433813003473915,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.914370999089442,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 29.4550429971423,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 31.707335001556203,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 26.255138000124134,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.15135399880819,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.20716800063383,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.683329993626103,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 26.62573200359475,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 24.662039999384433,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.13981300580781,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.03096900181845,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.373690004926175,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.026781993801706,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 26.331230998039246,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 26.584264007396996,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.967831010348164,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.85699499468319,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 25.16991000447888,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 27.451476009446196,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        },
+        {
+          "mode": "warm",
+          "ms": 27.51182900101412,
+          "run_git_calls": 7,
+          "commands": {
+            "status": 1,
+            "diff": 2,
+            "rev-parse": 3,
+            "log": 1
+          },
+          "json_bytes": 996
+        }
+      ]
+    },
+    "large_details": {
+      "summary": {
+        "cold_app": {
+          "median_ms": 79.94979600334773,
+          "p95_ms": 88.85525500227232,
+          "run_git_calls": [
+            12
+          ],
+          "median_json_bytes": 21070.0
+        },
+        "warm": {
+          "median_ms": 66.68158400862012,
+          "p95_ms": 74.48046299396083,
+          "run_git_calls": [
+            6
+          ],
+          "median_json_bytes": 21070.0
+        }
+      },
+      "samples": [
+        {
+          "mode": "cold_app",
+          "ms": 79.65274600428529,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 79.83688000240363,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 79.81187300174497,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 79.0543369948864,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 80.32181599992327,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 79.64455999899656,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 79.691136998008,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 79.82856400485616,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 81.09486299508717,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 76.16358999803197,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 78.65189400035888,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 80.06271200429182,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 87.13675099716056,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 77.24512300046626,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 78.83574700099416,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 80.20753299933858,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 79.1859330056468,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 86.4784290024545,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 81.93781899171881,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 79.5533689961303,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 78.0551479983842,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 78.56372899550479,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 81.26002199423965,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 81.03272601147182,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 89.02638500148896,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 84.862999006873,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 83.89760299178306,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 81.16422200691886,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 83.55990200652741,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "cold_app",
+          "ms": 88.85525500227232,
+          "run_git_calls": 12,
+          "commands": {
+            "status": 1,
+            "rev-parse": 4,
+            "log": 1,
+            "rev-list": 1,
+            "config": 5
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 66.73780400888063,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 63.88153300213162,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 68.96069100184832,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 67.31059501180425,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 71.25361800717656,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 76.21367399406154,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 73.57580099778716,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 68.84046600316651,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 71.91912300186232,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 68.70444098603912,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 70.07413300743792,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 62.93137600005139,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 67.69184800214134,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 64.91384300170466,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 70.10641400120221,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 63.38017499365378,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 68.70545299898367,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 72.27992799016647,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 61.05786199623253,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 74.48046299396083,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 60.022044999641366,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 60.638246999587864,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 66.62536400835961,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 63.54735700006131,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 59.15047500457149,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 57.67993499466684,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 62.53373199433554,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 59.505619006813504,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 60.48136299068574,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        },
+        {
+          "mode": "warm",
+          "ms": 62.795721998554654,
+          "run_git_calls": 6,
+          "commands": {
+            "status": 1,
+            "rev-parse": 3,
+            "log": 1,
+            "rev-list": 1
+          },
+          "json_bytes": 21070
+        }
+      ]
+    },
+    "large_log_first": {
+      "summary": {
+        "cold_app": {
+          "median_ms": 102.82123199431226,
+          "p95_ms": 110.95457201008685,
+          "run_git_calls": [
+            9
+          ],
+          "median_json_bytes": 37325.0
+        },
+        "warm": {
+          "median_ms": 105.76614899764536,
+          "p95_ms": 114.29884500103071,
+          "run_git_calls": [
+            9
+          ],
+          "median_json_bytes": 37325.0
+        }
+      },
+      "samples": [
+        {
+          "mode": "cold_app",
+          "ms": 102.96239599119872,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 110.95457201008685,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 110.29095000412781,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 110.48182800004724,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 106.60298400034662,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 103.83590999117587,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 96.30696999374777,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 100.62052600551397,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 100.17758799949661,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 100.91886398731731,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 102.33755699300673,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 106.89452900260221,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 102.6800679974258,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 101.11966999829747,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 97.9658119904343,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 102.43688299669884,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 102.12929699628148,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 98.47556499880739,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 104.20282499399036,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 99.54411300714128,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 105.48110600211658,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 103.81002099893522,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 100.70092699606903,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 103.28617099730764,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 103.27095299726352,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 106.72691599756945,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 95.8357990020886,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 99.38902300200425,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 114.52896599075757,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "cold_app",
+          "ms": 106.82281499612145,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 100.33155599376187,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 111.39957400155254,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 104.55824100063182,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 107.509369001491,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 104.8682799882954,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 102.04381799849216,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 103.00144900975283,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 105.63908200128935,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 109.18828900321387,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 105.25408199464437,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 107.8550150123192,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 115.45790299715009,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 104.89525999582838,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 112.37877600069623,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 108.2959600025788,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 102.32753898890223,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 106.9606119999662,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 107.24628699244931,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 106.41658598615322,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 105.89321599400137,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 106.96470001130365,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 104.06259300361853,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 103.04957900370937,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 114.29884500103071,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 105.06486799567938,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 100.49526199873071,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 112.79266900965013,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 98.99411399965174,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 107.14590900170151,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        },
+        {
+          "mode": "warm",
+          "ms": 100.52950700628571,
+          "run_git_calls": 9,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 2,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 37325
+        }
+      ]
+    },
+    "large_log_page_1000": {
+      "summary": {
+        "cold_app": {
+          "median_ms": 95.15540100255748,
+          "p95_ms": 99.82053100247867,
+          "run_git_calls": [
+            8
+          ],
+          "median_json_bytes": 28900.0
+        },
+        "warm": {
+          "median_ms": 96.05115150043275,
+          "p95_ms": 100.18579299503472,
+          "run_git_calls": [
+            8
+          ],
+          "median_json_bytes": 28900.0
+        }
+      },
+      "samples": [
+        {
+          "mode": "cold_app",
+          "ms": 93.50482899753843,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 95.0726410083007,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 96.89814499870408,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 98.94028400594834,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 95.02650499052834,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 92.86619498743676,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 92.90129100554623,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 89.02923000277951,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 95.23816099681426,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 99.2160900059389,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 92.7829889988061,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 96.89919798984192,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 94.81763499206863,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 93.46077700320166,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 96.38156999426428,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 96.79440098989289,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 96.78296001220588,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 99.69851200003177,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 100.60444699774962,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 88.92490500875283,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 93.7841829872923,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 93.83696000440978,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 98.26648500165902,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 99.75579900492448,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 99.11586200178135,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 94.8931760067353,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 93.3302530029323,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 94.37386499485001,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 97.68312399683055,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "cold_app",
+          "ms": 99.82053100247867,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 100.26691600796767,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 99.19251599058043,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 99.55249000631738,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 96.46160900592804,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 99.60524800408166,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 94.33450100186747,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 95.03417000814807,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 95.01814999384806,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 96.13173200341407,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 97.81070200551767,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 98.18944000289775,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 95.14836299058516,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 94.53075801138766,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 95.97057099745143,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 100.18579299503472,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 97.09517400187906,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 93.95415001199581,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 93.64081399689894,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 98.63138700893614,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 94.96555100486148,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 98.9543909963686,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 97.93534499476664,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 95.07841199229006,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 95.47780899447389,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 96.45973499573302,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 92.99262199783698,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 94.74460799538065,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 93.82049999840092,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 97.8126560075907,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        },
+        {
+          "mode": "warm",
+          "ms": 94.91200100455899,
+          "run_git_calls": 8,
+          "commands": {
+            "symbolic-ref": 1,
+            "rev-parse": 2,
+            "log": 1,
+            "for-each-ref": 1,
+            "rev-list": 3
+          },
+          "json_bytes": 28900
+        }
+      ]
+    }
+  }
+}

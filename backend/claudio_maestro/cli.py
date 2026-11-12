@@ -110,6 +110,9 @@ def serve_app(dist: Path, port: int, ports: tuple[int, ...]) -> bool:
     flag = RestartFlag()
     config = uvicorn.Config(
         create_app(frontend_dir=dist, ports=ports, restart=flag.request), host=HOST, port=port,
+        # Keep subprocess-heavy Git queries on the loop measured for this app,
+        # regardless of whether the optional uvloop dependency is installed.
+        loop="asyncio",
         # A request left hanging (an open event stream, say) must not stop the restart.
         timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
     )

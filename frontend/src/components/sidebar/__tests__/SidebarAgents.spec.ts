@@ -3,6 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import SidebarAgents from '../SidebarAgents.vue'
+import { collapsed, setSectionOpened } from '../../../sidebarCollapse'
 import { createAppRouter } from '../../../router'
 import { useOrgStore } from '../../../stores/org'
 import { useProjectsStore } from '../../../stores/projects'
@@ -12,13 +13,16 @@ enableAutoUnmount(afterEach)
 let pinia: Pinia
 
 beforeEach(() => {
+  collapsed.value = { project: [], group: [], section: [] }
+  localStorage.clear()
   pinia = createPinia()
   setActivePinia(pinia)
   useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'Loja' }), makeProject({ id: 2, name: 'API' })]
 })
 afterEach(() => vi.unstubAllGlobals())
 
-async function mountAgents(path = '/inbox') {
+async function mountAgents(path = '/inbox', expanded = true) {
+  if (expanded) setSectionOpened('agents', true)
   const router = createAppRouter(createMemoryHistory())
   await router.push(path)
   await router.isReady()
@@ -28,6 +32,25 @@ async function mountAgents(path = '/inbox') {
 }
 
 describe('seção Agentes da barra lateral', () => {
+  it('começa recolhida, preserva novidades e lembra a expansão sem abrir conversas', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 1, unseen: 3 }), makeAgent({ id: 2, slug: 'dev', unseen: 2 })]
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const { wrapper } = await mountAgents('/inbox', false)
+    const toggle = wrapper.get('[data-test="sidebar-agents-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(toggle.text()).toContain('2 agentes')
+    expect(toggle.text()).toContain('5 novidades')
+    expect(wrapper.find('[data-test="sidebar-agent-row"]').exists()).toBe(false)
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.findAll('[data-test="sidebar-agent-row"]')).toHaveLength(2)
+    expect(JSON.parse(localStorage.getItem('maestro:sidebar-collapsed')!).section).toContain('+agents')
+    expect(fetch).not.toHaveBeenCalled()
+    await toggle.trigger('click')
+    expect(wrapper.find('[data-test="sidebar-agent-row"]').exists()).toBe(false)
+  })
+
   it('agrupa por projeto e abre a conversa principal', async () => {
     useOrgStore(pinia).agents = [
       makeAgent({ id: 1, name: 'CTO da loja', project_id: 1, unseen: 2 }),

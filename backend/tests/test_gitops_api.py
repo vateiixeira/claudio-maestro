@@ -147,6 +147,46 @@ def test_action_publishes_project_git(api, home, git_home, monkeypatch):
     assert (project["id"], True) in calls
 
 
+def test_action_echoes_mutation_id_and_scopes_event(api, home, git_home):
+    project, root = project_with_repo(api, home)
+    monitor = api.app.state.git_monitor
+    api.portal.call(monitor.refresh_project, project["id"])
+    events = []
+    api.app.state.hub.publish = events.append
+    mutation_id = "00000000-0000-4000-8000-000000000001"
+    (root / "README.md").write_text("mudou\n")
+    response = post(api, project, "stage", repo=str(root), paths=["README.md"], mutation_id=mutation_id)
+    assert response.status_code == 200
+    assert response.json()["mutation_id"] == mutation_id
+    event = next(e["data"] for e in events if e["type"] == "project.git")
+    assert event["mutation_id"] == mutation_id
+    assert event["mutation_repo"] == str(root)
+    assert event["changed_repos"] == [str(root)]
+
+
+def test_mutation_id_is_bounded_and_validated(api, home, git_home):
+    project, root = project_with_repo(api, home)
+    for value in ("x" * 1000, "../a", "", "not-a-uuid"):
+        response = post(api, project, "stage", repo=str(root), paths=["README.md"], mutation_id=value)
+        assert response.status_code == 422
+
+
+def test_action_event_keeps_external_changes_in_other_repositories(api, home, git_home):
+    project, root = project_with_repo(api, home)
+    other = make_repo(root / "other")
+    monitor = api.app.state.git_monitor
+    api.portal.call(monitor.refresh_project, project["id"])
+    events = []
+    api.app.state.hub.publish = events.append
+    (other / "README.md").write_text("externo\n")
+    (root / "README.md").write_text("local\n")
+    response = post(api, project, "stage", repo=str(root), paths=["README.md"],
+                    mutation_id="00000000-0000-4000-8000-000000000002")
+    assert response.status_code == 200
+    event = next(e["data"] for e in events if e["type"] == "project.git")
+    assert set(event["changed_repos"]) == {str(root), str(other)}
+
+
 def test_write_route_needs_the_app_origin(api, home, git_home):
     project, root = project_with_repo(api, home)
     response = api.post(
@@ -273,3 +313,15 @@ def test_push_rejection_is_409_with_output(api, home, git_home, tmp_path, local_
     detail = response.json()["detail"]
     assert detail["code"] == "git" and detail["message"].startswith("O envio não foi feito")
     assert "[rejected]" in detail["output"]
+
+
+def test_external_worktree_stage_keeps_discovery_identity(api, home, git_home, tmp_path):
+    project, root = project_with_repo(api, home)
+    wt = tmp_path / 'external'
+    git(root, 'worktree', 'add', '-q', '-b', 'external', str(wt))
+    (wt / 'README.md').write_text('worktree change\n')
+    response = post(api, project, 'stage', repo=str(wt), paths=['README.md'])
+    assert response.status_code == 200, response.text
+    assert response.json()['repo']['rel_path'] == str(wt)
+    assert response.json()['repo']['path'] == str(wt)
+    assert git(root, 'diff', '--cached', '--name-only') == ''

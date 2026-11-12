@@ -307,6 +307,8 @@ export interface GitRepo {
   branch: string | null
   detached: boolean
   head: string | null
+  /** Digest of local and remote refs; absent on older backends. */
+  refs_signature?: string | null
   changed: { staged: number; unstaged: number; untracked: number }
   /** Tracked remote branch ("origin/main"); null when the branch has none. */
   upstream: string | null
@@ -383,6 +385,13 @@ export interface LogCommit {
   pushed: boolean | null
 }
 
+export type LogDirection = 'all' | 'incoming' | 'outgoing'
+
+export interface LogQuery {
+  direction?: LogDirection
+  snapshot?: { head: string; upstream: string | null }
+}
+
 export interface RepoLog {
   /** Full ref shown ("refs/heads/main"); null for a detached HEAD. */
   ref: string | null
@@ -390,10 +399,14 @@ export interface RepoLog {
   branch: string | null
   upstream: string | null
   upstream_sha: string | null
+  head_sha: string | null
+  direction: LogDirection
+  next_skip: number | null
   commits: LogCommit[]
   has_more: boolean
   /** Upstream commits the branch lacks (first page only, up to 100). */
   incoming: LogCommit[]
+  incoming_has_more: boolean
   incoming_count: number | null
   outgoing_count: number | null
 }
@@ -428,6 +441,30 @@ export interface BranchList {
   remote: BranchRef[]
 }
 
+export type ComparisonDirection = 'ahead' | 'behind'
+export interface BranchComparison {
+  head_ref: string | null
+  base_ref: string
+  head_sha: string
+  base_sha: string
+  merge_base: string | null
+  ahead_count: number
+  behind_count: number
+  unrelated: boolean
+  notice: string | null
+}
+export interface ComparisonCommits {
+  commits: LogCommit[]
+  has_more: boolean
+  next_skip: number | null
+}
+export interface ComparisonFiles {
+  files: CommitFile[]
+  files_truncated: boolean
+  base_sha: string
+  target_sha: string
+}
+
 export interface RepoDetails extends GitRepo {
   files: RepoFile[]
   files_truncated: boolean
@@ -444,6 +481,7 @@ export type GitOpKind =
 
 /** Answer of a Git action: the repository as it is now. */
 export interface GitOpAnswer {
+  mutation_id?: string
   repo: RepoDetails
   /** Merge, pull and sync: the merge stopped with conflicts. */
   conflicts?: boolean
@@ -456,12 +494,16 @@ export interface ProjectGitDetails {
   limit_reached: boolean
 }
 
+export type DiffScope = 'combined' | 'staged' | 'unstaged'
+
 export interface ChangedFile {
   path: string
   rel_path: string
   added: number | null
   removed: number | null
   uncommitted: boolean
+  /** Omitted for session changes, which compare the complete working copy to HEAD. */
+  diff_scope?: DiffScope
 }
 
 /** Files changed in a session, per repository. The group without a repository has nulls. */

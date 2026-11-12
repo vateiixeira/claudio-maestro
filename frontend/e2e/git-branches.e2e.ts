@@ -9,20 +9,25 @@ async function openRepo(page: import('@playwright/test').Page) {
   // The project has no conversation, so the sidebar keeps it under "Outros projetos".
   await nav.getByRole('button', { name: /sem conversa aberta/ }).click()
   await nav.getByRole('link', { name: /Merge Demo/ }).first().click()
+  await page.getByRole('tab', { name: /^Git/ }).click()
   const repo = page.getByTestId('scm-repo').first()
   await expect(repo).toBeVisible()
   return repo
 }
 
 async function openCommits(page: import('@playwright/test').Page) {
+  await page.getByTestId('git-view-commits').click()
   const commits = page.getByTestId('commits-section').getByTestId('commits-repo').first()
-  if (await commits.getByTestId('commit-row').count() === 0) await commits.getByTestId('commits-repo-toggle').click()
+  if (await commits.getByTestId('commits-repo-toggle').getAttribute('aria-expanded') !== 'true') await commits.getByTestId('commits-repo-toggle').click()
+  if (await commits.getByTestId('apply-history-update').count()) await commits.getByTestId('apply-history-update').click()
   return commits
 }
 
 test('criar branch, trocar e mesclar sem conflito', async ({ page }) => {
   const repo = await openRepo(page)
   await repo.getByTestId('branch-chip').click()
+  await expect(page.getByTestId('branch-search')).toHaveAttribute('type', 'search')
+  await expect(page.getByTestId('branch-search')).toHaveAttribute('autocomplete', 'off')
   await page.getByTestId('branch-search').fill('fix frete')
   await expect(page.getByTestId('branch-create')).toBeVisible()
   await page.getByTestId('branch-create').click()
@@ -41,6 +46,7 @@ test('criar branch, trocar e mesclar sem conflito', async ({ page }) => {
   await expect(repo.getByTestId('branch-chip')).toHaveText('main')
 
   await repo.getByTestId('repo-merge').click()
+  await expect(page.getByTestId('branch-search')).toHaveAttribute('type', 'search')
   await page.locator('[data-test="branch-item"][data-name="feat/docs"]').click()
   await expect(page.getByRole('dialog')).toContainText('Entra 1 commit de feat/docs.')
   await page.getByRole('dialog').getByTestId('confirm-ok').click()
@@ -62,8 +68,10 @@ test('merge com conflito mostra o bloco e aborta', async ({ page, consoleErrors 
   await expect(conflict.getByTestId('file-stage')).toHaveCount(0)
   await expect(conflict.getByTestId('file-discard')).toHaveCount(0)
   await conflict.locator('[data-test="file-open"]').click()
-  await expect(repo.locator('[data-marker="ours"]')).toContainText('main (sua branch)')
-  await expect(repo.locator('[data-marker="theirs"]')).toContainText('feat/cupom (a que entra)')
+  await expect(page.getByRole('dialog').locator('[data-marker="ours"]')).toContainText('main (sua branch)')
+  await expect(page.getByRole('dialog').locator('[data-marker="theirs"]')).toContainText('feat/cupom (a que entra)')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
   // While the merge is open the disabled icons say why.
   await expect(repo.getByTestId('repo-commit')).toHaveAttribute('title', 'Conclua o merge com Concluir merge')
   await expect(repo.getByTestId('repo-merge')).toHaveAttribute('title', 'Já há um merge em andamento')
@@ -106,7 +114,7 @@ test('merge com conflito mostra o bloco e aborta', async ({ page, consoleErrors 
   await banner.getByTestId('merge-abort').click()
   await page.getByRole('dialog').getByTestId('confirm-ok').click()
   await expect(banner).toHaveCount(0)
-  await expect(repo.getByTestId('commit-message')).toHaveValue('')
+  await expect(repo.getByTestId('commit-message')).toHaveCount(0)
   await expect(repo.locator('[data-test="scm-group"][data-group="conflict"]')).toHaveCount(0)
   await expect(repo.getByTestId('branch-chip')).toHaveText('main')
 })
@@ -124,7 +132,7 @@ test('merge com conflito até concluir', async ({ page }) => {
   await expect(repo.getByTestId('commit-message')).toHaveValue("Merge branch 'feat/limpeza'")
   await repo.getByTestId('primary-action').click()
   await expect(repo.getByTestId('merge-banner')).toHaveCount(0)
-  await expect(repo.getByTestId('commit-message')).toHaveValue('')
+  await expect(repo.getByTestId('commit-message')).toHaveCount(0)
   const commits = await openCommits(page)
   await expect(commits.getByTestId('commit-row').first()).toContainText("Merge branch 'feat/limpeza'")
 })

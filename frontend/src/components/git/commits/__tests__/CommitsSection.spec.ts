@@ -12,6 +12,7 @@ const API = '/home/vi/dev/loja/api'
 let pinia: Pinia
 
 beforeEach(() => {
+  localStorage.clear()
   pinia = createPinia()
   setActivePinia(pinia)
   useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja' })]
@@ -25,25 +26,35 @@ async function mountWith(log: ReturnType<typeof makeRepoLog>, extra: Record<stri
   const fetchMock = routeFetch({
     [DETAILS]: () => jsonResponse({ repos: [repo], limit_reached: false }),
     [logUrl(1, API)]: () => jsonResponse(log),
+    [`${logUrl(1, API)}&direction=incoming`]: () => jsonResponse({ ...log, commits: log.incoming }),
+    [`${logUrl(1, API)}&direction=outgoing`]: () => jsonResponse({ ...log, commits: log.commits.filter((c) => c.pushed === false) }),
     ...extra,
   })
   vi.stubGlobal('fetch', fetchMock)
   const wrapper = mount(CommitsSection, { props: { projectId: 1 }, global: { plugins: [pinia] } })
   await flushPromises()
-  await wrapper.find('[data-test="commits-repo-toggle"]').trigger('click')
-  await flushPromises()
   return { wrapper, fetchMock }
 }
 
 describe('seção Commits', () => {
+  it('abre o único repositório e conserva recolher todos após remontar', async () => {
+    const { wrapper } = await mountWith(makeRepoLog({ commits: [makeLogCommit()] }))
+    expect(wrapper.get('[data-test="commits-repo-toggle"]').attributes('aria-expanded')).toBe('true')
+    await wrapper.get('[data-test="commits-collapse-all"]').trigger('click')
+    wrapper.unmount()
+    const next = await mountWith(makeRepoLog())
+    expect(next.wrapper.get('[data-test="commits-repo-toggle"]').attributes('aria-expanded')).toBe('false')
+  })
+
   it('mostra o cabeçalho com a contagem de repositórios e a linha do repositório', async () => {
-    const { wrapper } = await mountWith(makeRepoLog())
+    const { wrapper } = await mountWith(makeRepoLog({ outgoing_count: 2, incoming_count: 1 }))
     expect(wrapper.find('[data-test="commits-title"]').text()).toContain('Commits')
     expect(wrapper.find('[data-test="commits-count"]').text()).toBe('1 repositório')
     const row = wrapper.find('[data-test="commits-repo"]')
     expect(row.text()).toContain('api')
     expect(row.find('[data-test="sync-counts"]').attributes('aria-label')).toBe('1 para baixar, 2 para subir')
-    expect(row.find('[data-test="sync-counts"]').text()).toBe('12')
+    expect(row.find('[data-test="sync-counts"]').text()).toContain('1 para baixar')
+    expect(row.find('[data-test="sync-counts"]').text()).toContain('2 para enviar')
     expect(row.find('[data-test="fetched-ago"]').text()).toBe('buscado há 2 min')
   })
 
@@ -67,6 +78,7 @@ describe('seção Commits', () => {
     expect(rows[0].text()).toContain('Você')
     expect(rows[2].find('[data-test="upstream-tag"]').text()).toBe('origin')
     await wrapper.find('[data-test="group-incoming"] button').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-test="incoming-list"]').text()).toContain('do remoto')
   })
 
@@ -79,6 +91,7 @@ describe('seção Commits', () => {
     })
     const { wrapper } = await mountWith(log)
     await wrapper.find('[data-test="group-incoming"] button').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-test="incoming-list"] [data-test="upstream-tag"]').text()).toBe('origin')
   })
 

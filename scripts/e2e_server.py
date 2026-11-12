@@ -804,7 +804,7 @@ def serve(port: int) -> None:
         if not cli.port_available(port):
             raise E2EError(f"A porta {port} já está em uso. Escolha outra em MAESTRO_E2E_PORT.")
         config = uvicorn.Config(
-            build_app(port), host=cli.HOST, port=port,
+            build_app(port), host=cli.HOST, port=port, loop="asyncio",
             timeout_graceful_shutdown=cli.GRACEFUL_SHUTDOWN_SECONDS,
         )
         print(f"Servidor de E2E em http://localhost:{port}", flush=True)

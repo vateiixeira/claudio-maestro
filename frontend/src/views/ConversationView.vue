@@ -80,6 +80,11 @@ const awayStats = computed(() => (awayShown.value && awayItems.value ? awayCount
 const wideScreen = useMediaQuery('(min-width: 1200px)')
 const sidePanel = computed(() => wideScreen.value && !props.embedded)
 const closeProjectId = computed(() => props.projectId ?? project.value?.id)
+const closeQuery = computed(() => {
+  if (route.name !== 'project' || String(route.params.id) !== String(closeProjectId.value)) return {}
+  const { sessao: _session, ...query } = route.query
+  return query
+})
 const sideOpen = ref(readDetailsOpen())
 const drawerOpen = ref(false)
 const detailsOpen = computed(() => (sidePanel.value ? sideOpen.value : drawerOpen.value))
@@ -188,7 +193,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
         </RouterLink>
         <RouterLink
           v-if="closeProjectId != null"
-          :to="{ name: 'project', params: { id: closeProjectId } }"
+          :to="{ name: 'project', params: { id: closeProjectId }, query: closeQuery }"
           data-test="embedded-close"
           aria-label="Fechar conversa"
           title="Fechar conversa"

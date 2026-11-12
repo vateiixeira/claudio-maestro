@@ -1,6 +1,10 @@
 import type {
   ActivityDay,
   BranchList,
+  BranchComparison,
+  ComparisonDirection,
+  ComparisonCommits,
+  ComparisonFiles,
   ClaudeCliInfo,
   ClaudeCliUpdateResult,
   CommandInfo,
@@ -18,6 +22,7 @@ import type {
   ChangesGroup,
   DisplayState,
   FileDiff,
+  DiffScope,
   FoundRepos,
   GitOpAnswer,
   GitOpKind,
@@ -28,6 +33,7 @@ import type {
   MarkdownFile,
   PlanState,
   RepoLog,
+  LogQuery,
   SearchResult,
   Project,
   ProjectCreate,
@@ -418,18 +424,27 @@ export function gitOp(projectId: number, kind: GitOpKind, body: Record<string, u
   return request('POST', `/api/projects/${projectId}/git/${kind}`, body)
 }
 
-/** Current diff of a file against the last commit. `file` is relative to the repository. */
-export function getFileDiff(projectId: number, repo: string, file: string, signal?: AbortSignal): Promise<FileDiff> {
-  return request('GET', `/api/projects/${projectId}/diff?${new URLSearchParams({ repo, file })}`, undefined, signal)
+/** `file` is relative to the repository; omitted scope keeps the combined diff against HEAD. */
+export function getFileDiff(projectId: number, repo: string, file: string, signal?: AbortSignal, scope?: DiffScope): Promise<FileDiff> {
+  const query = new URLSearchParams({ repo, file })
+  if (scope) query.set('scope', scope)
+  return request('GET', `/api/projects/${projectId}/diff?${query}`, undefined, signal)
 }
 
 /** History of a branch (null: HEAD), `limit` commits after `skip`. */
 export function getRepoLog(
   projectId: number, repo: string, ref: string | null = null, skip = 0, limit?: number, signal?: AbortSignal,
+  options?: LogQuery,
 ): Promise<RepoLog> {
   const query = new URLSearchParams({ repo, skip: String(skip) })
   if (ref) query.set('ref', ref)
   if (limit !== undefined) query.set('limit', String(limit))
+  query.set('include_incoming', 'false')
+  if (options?.direction && options.direction !== 'all') query.set('direction', options.direction)
+  if (options?.snapshot) {
+    query.set('snapshot_head', options.snapshot.head)
+    query.set('snapshot_upstream', options.snapshot.upstream ?? '-')
+  }
   return request('GET', `/api/projects/${projectId}/git/log?${query}`, undefined, signal)
 }
 
@@ -444,6 +459,33 @@ export function getCommitDiff(projectId: number, repo: string, sha: string, file
 
 export function getBranches(projectId: number, repo: string): Promise<BranchList> {
   return request('GET', `/api/projects/${projectId}/git/branches?${new URLSearchParams({ repo })}`)
+}
+
+export function getBranchComparison(projectId: number, repo: string, base: string, ref: string | null, signal?: AbortSignal): Promise<BranchComparison> {
+  const query = new URLSearchParams({ repo, base })
+  if (ref) query.set('ref', ref)
+  return request('GET', `/api/projects/${projectId}/git/comparison?${query}`, undefined, signal)
+}
+
+function comparisonQuery(repo: string, head: string, base: string, direction: ComparisonDirection): URLSearchParams {
+  return new URLSearchParams({ repo, head_sha: head, base_sha: base, direction })
+}
+
+export function getComparisonCommits(projectId: number, repo: string, head: string, base: string, direction: ComparisonDirection, skip = 0, signal?: AbortSignal): Promise<ComparisonCommits> {
+  const query = comparisonQuery(repo, head, base, direction)
+  query.set('skip', String(skip))
+  query.set('limit', '30')
+  return request('GET', `/api/projects/${projectId}/git/comparison/commits?${query}`, undefined, signal)
+}
+
+export function getComparisonFiles(projectId: number, repo: string, head: string, base: string, direction: ComparisonDirection, signal?: AbortSignal): Promise<ComparisonFiles> {
+  return request('GET', `/api/projects/${projectId}/git/comparison/files?${comparisonQuery(repo, head, base, direction)}`, undefined, signal)
+}
+
+export function getComparisonDiff(projectId: number, repo: string, head: string, base: string, direction: ComparisonDirection, file: string, signal?: AbortSignal): Promise<FileDiff> {
+  const query = comparisonQuery(repo, head, base, direction)
+  query.set('file', file)
+  return request('GET', `/api/projects/${projectId}/git/comparison/diff?${query}`, undefined, signal)
 }
 
 /** Commits of `ref` that HEAD does not have. */

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,10 @@ class GitMonitor:
                 return None
         return Path(project.path) if project.available else None
 
-    async def refresh_project(self, project_id: int, force: bool = False) -> None:
+    async def refresh_project(
+        self, project_id: int, force: bool = False, *,
+        mutation_id: str | None = None, mutation_repo: str | None = None,
+    ) -> None:
         """Read the project's repositories and publish them if anything changed.
 
         With `force` it publishes even when the summary is the same: the end of a
@@ -53,12 +57,32 @@ class GitMonitor:
                 return
             found, limit_reached = await gitinfo.project_repos_scan(path)
             repos = [repo.to_dict() for repo in found]
-            if not force and self._last.get(project_id) == (repos, limit_reached):
+            unknown_refs = {
+                repo["path"] for repo in repos
+                if "refs_signature" in repo and repo["refs_signature"] is None
+            }
+            if not force and not unknown_refs and self._last.get(project_id) == (repos, limit_reached):
                 return
+            previous = self._last.get(project_id)
+            before = {repo["path"]: repo for repo in previous[0]} if previous else {}
+            after = {repo["path"]: repo for repo in repos}
+            changed = {path for path in before.keys() | after.keys() if before.get(path) != after.get(path)}
+            changed.update(unknown_refs)
+            if mutation_repo is not None:
+                changed.add(mutation_repo)
+            data: dict[str, Any] = {
+                "project_id": project_id, "repos": repos, "limit_reached": limit_reached,
+                # A generic force also covers content edits with unchanged file counts.
+                "changed_repos": None if (
+                    (force and mutation_repo is None)
+                    or (previous is not None and previous[1] != limit_reached)
+                ) else sorted(changed),
+            }
+            if mutation_id is not None and mutation_repo is not None:
+                data.update(mutation_id=mutation_id, mutation_repo=mutation_repo)
             self._last[project_id] = (repos, limit_reached)
             self._hub.publish(
-                {"session_id": None, "seq": 0, "type": "project.git",
-                 "data": {"project_id": project_id, "repos": repos, "limit_reached": limit_reached}}
+                {"session_id": None, "seq": 0, "type": "project.git", "data": data}
             )
 
     async def fetch_project(
@@ -83,8 +107,23 @@ class GitMonitor:
             # The periodic pass reuses the repositories of the last refresh (at most
             # `git_refresh_interval_seconds` old) instead of walking the folders every tick.
             repos = [Path(repo["path"]) for repo in last[0]]
+            # Cached membership cannot authorize an external path after its linked
+            # worktree pointers change. Recheck proof without walking the project.
+            real_root, real_repos = await asyncio.to_thread(
+                lambda: (Path(os.path.realpath(path)),
+                         [Path(os.path.realpath(repo)) for repo in repos])
+            )
+
+            async def authorized(repo: Path) -> bool:
+                if repo.is_relative_to(real_root):
+                    return True
+                found = await gitinfo.project_worktree(repo, [real_root])
+                return found is not None and found.path == repo
+
+            allowed = await asyncio.gather(*(authorized(repo) for repo in real_repos))
+            repos = [repo for repo, valid in zip(real_repos, allowed, strict=True) if valid]
         else:
-            repos, _ = await asyncio.to_thread(gitinfo.discover_scan, path)
+            repos, _ = await gitinfo.discover_project_scan(path)
         if interval is not None:
             repos = [repo for repo in repos if fetch_registry.due(repo, interval)]
         if not repos:

@@ -84,7 +84,7 @@ describe('TaskList', () => {
   it('vazio orienta', async () => {
     stubTasks(() => [])
     const { wrapper } = await mountList()
-    expect(wrapper.get('[data-test="tasks-empty"]').text()).toBe('Nenhuma tarefa. Crie uma ou peça ao CTO.')
+    expect(wrapper.get('[data-test="tasks-empty"]').text()).toContain('Nenhuma tarefa nos filtros selecionados.')
     expect(wrapper.find('[data-test="task-row"]').exists()).toBe(false)
   })
 

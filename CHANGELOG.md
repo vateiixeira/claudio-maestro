@@ -4,6 +4,41 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- Comparação entre branches na seção Commits: base escolhida por repositório, commits exclusivos de cada lado, arquivos e diffs desde o ancestral comum, sem trocar a branch de trabalho.
+
+### Alterado
+
+- Git ganha busca por repositório ou branch, filtro de pendências e alternância entre Alterações e Commits, com acesso direto ao histórico de cada repositório. Worktrees mostram nomes curtos e o caminho completo continua disponível.
+- Repositórios sem arquivos alterados deixam de mostrar o campo de commit; avisos de hooks aparecem junto da ação de commit. Rascunhos são preservados.
+- Conversas do projeto separam título, resumo e metadados. A barra lateral recolhe os agentes, mantém seus contadores visíveis e reserva mais espaço às conversas abertas.
+- Projetos ganha busca e atividade das conversas carregadas, com Renomear nas ações secundárias. O estado vazio de Tarefas oferece acesso à organização, e o Início distingue tarefas em andamento de conversas abertas.
+
+- A página do projeto separa Conversas, Git e Organização em abas, abrindo Git por padrão. Conversas ficam numa lista única com busca, filtro por agrupador e estado; a gestão dos agrupadores é inline, e as ações do projeto ficam num menu. O Git carrega detalhes e histórico apenas ao abrir sua aba.
+
+- O diff de um arquivo na lista de alterações abre em um modal amplo, com rolagem própria e fechamento por Escape, preservando a posição da lista e a distinção entre alterações preparadas e não preparadas.
+- Repositórios Git usam fundos alternados, separadores e cabeçalhos destacados, com indicadores de alterações e sincronização em texto e ícones. Pull e Push têm botões com rótulos; a lista não exibe indicadores de sessão em execução.
+- O único repositório abre automaticamente nas seções de alterações e commits. A escolha de expandir ou recolher fica salva por projeto, repositório e seção; reabrir um histórico já carregado só consulta o Git se houve mudança enquanto estava fechado.
+- As listas Git mantêm linhas compactas no desktop, ações disponíveis por teclado e toque e espaço reservado para elas. Metadados e nomes longos são limitados para preservar a leitura em painéis estreitos.
+
+- As seções de alterações e commits compartilham a leitura inicial do projeto. Preparar ou despreparar arquivos não recarrega mais o histórico; as atualizações ficam no repositório afetado e mudanças externas continuam sendo reconciliadas.
+- O histórico mantém as páginas já abertas quando chegam novos commits e avisa quando há uma atualização para aplicar. As listas de commits para subir e baixar têm paginação própria e só são consultadas ao abrir; o painel de alterações deixa de buscar o histórico que não está sendo mostrado.
+
+### Corrigido
+
+- Os seletores de branches usam campos de pesquisa sem autocomplete e com indicação para gerenciadores de senhas ignorarem o campo, evitando sugestões de credenciais ao trocar, mesclar ou consultar uma branch.
+
+- O painel Git descobre worktrees vinculadas aos repositórios do projeto, inclusive em pastas ocultas ou externas, sem depender da sessão que as criou. Alterações e Commits usam a mesma lista; a identidade da worktree é preservada após preparar ou despreparar arquivos.
+
+- Abrir a aba Git começa a carregar as alterações sem esperar outra consulta de resumo. Leituras simultâneas do resumo são compartilhadas, e respostas antigas não substituem eventos recentes. O servidor usa explicitamente `asyncio`, reduzindo a latência das consultas com muitos subprocessos Git no ambiente medido.
+
+- Em telas estreitas, a página do projeto usa o menu recolhível já disponível nas demais telas, preservando espaço para alterações e commits. Sincronizar um repositório não recolhe mais sua lista quando ele fica em dia.
+
+- Os diffs de arquivos preparados mostram só o conteúdo que entra no commit; os de alterações mostram o que mudou depois da preparação. Renomeações preparadas preservam a origem e o destino, sem aparecer como arquivos inteiramente novos.
+- Ao trocar rapidamente de arquivo no histórico de commits, respostas atrasadas não substituem mais o diff selecionado nem mostram erros do arquivo anterior.
+- Históricos com mais de mil commits locais não marcam mais commits ainda não enviados como enviados. Carregar novas páginas mantém a versão e os nomes das branches que estão sendo consultadas, mesmo depois de um checkout.
+
 ## [0.11.0] - 2026-11-11
 
 Agora é possível trocar somente a autenticação de API sem separar conversas e dados. O Início mostra a configuração em uso e dá acesso à troca; modais preservam o conteúdo ao clicar fora e os controles indicam melhor as ações clicáveis.

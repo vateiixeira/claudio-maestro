@@ -228,3 +228,90 @@ async def test_project_worktree_cache_never_trusts_a_changed_back_pointer(tmp_pa
     clone = tmp_path / "clone"
     shutil.copytree(wt, clone, symlinks=True)
     assert await gitinfo.project_worktree(clone / "README.md", [repo]) is None
+
+
+@pytest.mark.anyio
+async def test_discovery_includes_hidden_external_and_deduplicates_visible(tmp_path):
+    repo = make_repo(tmp_path / 'project')
+    hidden = add_worktree(repo, repo / '.worktrees' / 'hidden', 'hidden')
+    external = add_worktree(repo, tmp_path / 'external with spaces', 'external')
+    visible = add_worktree(repo, repo / 'visible', 'visible')
+    paths, limited = await gitinfo.discover_project_scan(repo)
+    assert paths[0] == repo
+    assert set(paths) == {repo, hidden, external, visible}
+    assert len(paths) == 4 and not limited
+    details, _ = await gitinfo.project_details_scan(repo, include_commits=False)
+    assert {r['path']: r['rel_path'] for r in details} == {
+        str(repo): '.', str(hidden): '.worktrees/hidden',
+        str(external): str(external), str(visible): 'visible',
+    }
+    statuses, _ = await gitinfo.project_repos_scan(repo)
+    assert {r.path for r in statuses} == {str(p) for p in paths}
+
+
+@pytest.mark.anyio
+async def test_discovery_rejects_missing_forged_and_subfolder_entries(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path / 'project')
+    valid = add_worktree(repo, tmp_path / 'valid')
+    forged = tmp_path / 'forged'
+    shutil.copytree(valid, forged)
+    entries = [repo, valid / 'subfolder', forged, tmp_path / 'missing']
+    calls = []
+
+    async def listing(directory, *args, **kwargs):
+        calls.append(directory)
+        return 0, ''.join(f'worktree {p}\n\n' for p in entries), ''
+
+    monkeypatch.setattr(gitinfo, 'run_git', listing)
+    assert await gitinfo.discover_project_scan(repo) == ([repo], False)
+    assert calls == [repo]
+
+
+@pytest.mark.anyio
+async def test_discovery_worktree_project_does_not_authorize_siblings(tmp_path):
+    repo = make_repo(tmp_path / 'unregistered')
+    project = add_worktree(repo, tmp_path / 'project')
+    add_worktree(repo, tmp_path / 'sibling', 'sibling')
+    assert await gitinfo.discover_project_scan(project) == ([project], False)
+
+
+@pytest.mark.anyio
+async def test_discovery_keeps_main_and_bounds_extra_worktrees(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path / 'project')
+    for i in range(4):
+        add_worktree(repo, tmp_path / f'wt{i}', f'branch{i}')
+    monkeypatch.setattr(gitinfo, 'REPO_MAX_COUNT', 2)
+    paths, limited = await gitinfo.discover_project_scan(repo)
+    assert paths[0] == repo and len(paths) == 3 and limited
+
+
+@pytest.mark.anyio
+async def test_discovery_listing_failure_preserves_physical_repos(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path / 'project')
+
+    add_worktree(repo, tmp_path / 'external')
+    calls = []
+
+    async def failing(directory, *args, **kwargs):
+        calls.append(directory)
+        raise gitinfo.GitError('timeout')
+
+    monkeypatch.setattr(gitinfo, 'run_git', failing)
+    assert await gitinfo.discover_project_scan(repo) == ([repo], False)
+    assert calls == [repo]
+
+
+@pytest.mark.anyio
+async def test_discovery_rejects_worktree_listed_by_wrong_main(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    first = make_repo(project / "first")
+    second = make_repo(project / "second")
+    add_worktree(first, tmp_path / "first-wt")
+    other = add_worktree(second, tmp_path / "second-wt")
+
+    async def listing(directory, *args, **kwargs):
+        return 0, f"worktree {other}\n\n" if directory == first else "", ""
+
+    monkeypatch.setattr(gitinfo, "run_git", listing)
+    paths, _ = await gitinfo.discover_project_scan(project)
+    assert set(paths) == {first, second}

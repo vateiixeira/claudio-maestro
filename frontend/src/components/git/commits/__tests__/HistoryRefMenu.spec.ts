@@ -14,6 +14,7 @@ describe('menu da branch do histórico', () => {
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(HistoryRefMenu, { props: { projectId: 1, repoPath: '/r', current: 'refs/heads/main' } })
     await flushPromises()
+    expect(wrapper.get('input').attributes()).toMatchObject({ type: 'search', autocomplete: 'off', 'data-bwignore': 'true', 'data-1p-ignore': 'true' })
     expect(wrapper.findAll('[role="option"]').map((o) => o.text())).toEqual(['main', 'feat/relatorios', 'origin/main'])
     await wrapper.find('input').setValue('rel')
     expect(wrapper.findAll('[role="option"]').map((o) => o.text())).toEqual(['feat/relatorios'])

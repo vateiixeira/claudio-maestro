@@ -4,13 +4,31 @@ import { createPinia, setActivePinia } from 'pinia'
 import { branchText, dirBranchText, repoLabel, useGitStore } from '../git'
 import { useGitDetailsStore } from '../gitDetails'
 import { useProjectsStore } from '../projects'
-import { jsonResponse, makeGitRepo, makeProject, routeFetch } from '../../test/factories'
+import { jsonResponse, makeGitRepo, makeProject, makeRepoDetails, routeFetch } from '../../test/factories'
 import { diffFromUnified } from '../../conversation/diff'
 
 beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => vi.unstubAllGlobals())
 
 describe('store git, verificar agora', () => {
+  it('leitura iniciada durante fetch não invalida o resultado mais recente do fetch', async () => {
+    let summary!: (r: Response) => void
+    let fetched!: (r: Response) => void
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/git': () => new Promise<Response>(resolve => { summary = resolve }),
+      'POST /api/projects/1/git/fetch': () => new Promise<Response>(resolve => { fetched = resolve }),
+    }))
+    const git = useGitStore()
+    git.set(1, [makeGitRepo({ branch: 'antes' })])
+    const mutation = git.fetchNow(1)
+    const read = git.load(1)
+    summary(jsonResponse({ repos: [makeGitRepo({ branch: 'durante' })] }))
+    await read
+    fetched(jsonResponse({ repos: [makeGitRepo({ branch: 'depois' })] }))
+    await mutation
+    expect(git.reposFor(1)[0]!.branch).toBe('depois')
+  })
+
   it('chama o POST, atualiza os repositórios e o aviso de limite', async () => {
     const fetchMock = routeFetch({
       'POST /api/projects/1/git/fetch': () => jsonResponse({ repos: [makeGitRepo({ behind: 2, fetched_at: 1_700_000_000 })], limit_reached: true }),
@@ -57,6 +75,69 @@ describe('store git, verificar agora', () => {
 })
 
 describe('store git', () => {
+  it('compartilha cargas pendentes entre load e ensure e permite reler depois', async () => {
+    let release!: (r: Response) => void
+    const fetchMock = vi.fn(() => new Promise<Response>(resolve => { release = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    const git = useGitStore()
+    const first = git.load(1)
+    git.ensure(1)
+    const second = git.load(1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    release(jsonResponse({ repos: [makeGitRepo()] }))
+    await Promise.all([first, second])
+    const refresh = git.load(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    release(jsonResponse({ repos: [] }))
+    await refresh
+    expect(git.reposFor(1)).toEqual([])
+  })
+
+  it.each(['set', 'event', 'details', 'fetch'] as const)('resumo antigo não substitui a atualização por %s', async source => {
+    let release!: (r: Response) => void
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/git': () => new Promise<Response>(resolve => { release = resolve }),
+      'GET /api/projects/1/git/details': () => jsonResponse({ repos: [makeRepoDetails({ branch: 'nova' })], limit_reached: true }),
+      'POST /api/projects/1/git/fetch': () => jsonResponse({ repos: [makeGitRepo({ branch: 'nova' })], limit_reached: true }),
+    }))
+    const git = useGitStore()
+    const old = git.load(1)
+    if (source === 'set') git.set(1, [makeGitRepo({ branch: 'nova' })], true)
+    if (source === 'event') git.applyEvent({ type: 'project.git', data: { project_id: 1, repos: [makeGitRepo({ branch: 'nova' })], limit_reached: true } } as never)
+    if (source === 'details') await useGitDetailsStore().load(1)
+    if (source === 'fetch') await git.fetchNow(1)
+    release(jsonResponse({ repos: [makeGitRepo({ branch: 'velha' })], limit_reached: false }))
+    expect((await old)[0]!.branch).toBe('nova')
+    expect(git.reposFor(1)[0]!.branch).toBe('nova')
+    expect(git.limitReached(1)).toBe(true)
+  })
+
+  it('finalizar a carga ultrapassada não libera a nova carga em andamento', async () => {
+    const releases: Array<(r: Response) => void> = []
+    const fetchMock = vi.fn(() => new Promise<Response>(resolve => releases.push(resolve)))
+    vi.stubGlobal('fetch', fetchMock)
+    const git = useGitStore()
+    const old = git.load(1)
+    git.set(1, [makeGitRepo({ branch: 'evento' })])
+    const current = git.load(1)
+    releases[0]!(jsonResponse({ repos: [makeGitRepo({ branch: 'antiga' })] }))
+    await old
+    const shared = git.load(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    releases[1]!(jsonResponse({ repos: [makeGitRepo({ branch: 'atual' })] }))
+    await Promise.all([current, shared])
+    expect(git.reposFor(1)[0]!.branch).toBe('atual')
+  })
+
+  it('falha de carga compartilhada libera uma nova tentativa', async () => {
+    const fetchMock = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(jsonResponse({ repos: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const git = useGitStore()
+    await expect(git.load(1)).rejects.toThrow('Não foi possível falar com o servidor.')
+    await git.load(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('carrega os repositórios do projeto', async () => {
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/projects/1/git': () => jsonResponse({ repos: [makeGitRepo({ branch: 'main' })] }),

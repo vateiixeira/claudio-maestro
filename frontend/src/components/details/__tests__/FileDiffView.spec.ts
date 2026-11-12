@@ -21,6 +21,20 @@ function mountView(props: { group?: ChangesGroup; file?: ChangedFile; revision?:
 }
 
 describe('diff de um arquivo', () => {
+  it('trocar o escopo do mesmo arquivo recarrega e descarta a resposta anterior', async () => {
+    const calls: Array<{ url: string; resolve: (r: Response) => void }> = []
+    vi.stubGlobal('fetch', vi.fn((url: string) => new Promise<Response>((resolve) => calls.push({ url, resolve }))))
+    const w = mountView({ file: file('a.py', { diff_scope: 'staged' }) })
+    await w.setProps({ file: file('a.py', { diff_scope: 'unstaged' }) })
+    expect(calls.map((c) => c.url)).toEqual([`${DIFF_URL}&scope=staged`, `${DIFF_URL}&scope=unstaged`])
+    calls[1]!.resolve(jsonResponse({ diff: '@@ -1 +1 @@\n-a\n+trabalho\n', truncated: false }))
+    await flushPromises()
+    calls[0]!.resolve(jsonResponse({ diff: '@@ -1 +1 @@\n-a\n+preparado\n', truncated: false }))
+    await flushPromises()
+    expect(w.text()).toContain('trabalho')
+    expect(w.text()).not.toContain('preparado')
+  })
+
   it('404 sem detail diz que o arquivo não existe mais', async () => {
     vi.stubGlobal('fetch', routeFetch({ [`GET ${DIFF_URL}`]: () => new Response(null, { status: 404 }) }))
     const w = mountView()

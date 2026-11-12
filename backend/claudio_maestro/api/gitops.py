@@ -65,10 +65,19 @@ async def git_log(
     project_id: int, repo: str, conn: DbDep, ref: str | None = None,
     skip: int = Query(0, ge=0, le=gitinfo.MAX_LOG_SKIP),
     limit: int = Query(gitinfo.LOG_PAGE, ge=1, le=gitinfo.MAX_LOG_LIMIT),
+    snapshot_head: str | None = Query(None, pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"),
+    snapshot_upstream: str | None = Query(None, pattern=r"^(?:-|[0-9a-f]{40}|[0-9a-f]{64})$"),
+    direction: gitinfo.LogDirection = "all",
+    include_incoming: bool = True,
 ) -> dict[str, Any]:
+    if (snapshot_head is None) != (snapshot_upstream is None):
+        raise HTTPException(status_code=422, detail="Informe os dois hashes do histórico.")
     _, path = await project_repo(conn, project_id, repo)
     try:
-        return await gitinfo.repo_log(path, ref, skip=skip, limit=limit)
+        return await gitinfo.repo_log(
+            path, ref, skip=skip, limit=limit, snapshot_head=snapshot_head,
+            snapshot_upstream=snapshot_upstream, direction=direction, include_incoming=include_incoming,
+        )
     except gitinfo.GitError as exc:
         raise _git_failure(exc) from exc
 
@@ -120,6 +129,9 @@ async def git_compare(project_id: int, repo: str, ref: str, conn: DbDep) -> dict
 class RepoBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     repo: Path4096
+    mutation_id: Annotated[
+        str, Field(min_length=36, max_length=36, pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+    ] | None = None
 
 
 class PathsBody(RepoBody):
@@ -158,12 +170,21 @@ def _paths(repo_path: Path, raw: list[str]) -> list[str]:
 
 
 async def _repo_answer(
-    request: Request, project_id: int, root: Path, repo_path: Path, **extra: Any
+    request: Request, project_id: int, root: Path, repo_path: Path,
+    mutation_id: str | None = None, **extra: Any
 ) -> dict[str, Any]:
     """Publish `project.git` and answer with the repository as /git/details shows it."""
-    await request.app.state.git_monitor.refresh_project(project_id, force=True)
-    base = root if repo_path.is_relative_to(root) else None
-    return {"repo": await gitinfo.repo_details(repo_path, base), **extra}
+    monitor = request.app.state.git_monitor
+    if mutation_id is None:
+        await monitor.refresh_project(project_id, force=True)
+    else:
+        await monitor.refresh_project(
+            project_id, force=True, mutation_id=mutation_id, mutation_repo=str(repo_path)
+        )
+    answer = {"repo": await gitinfo.repo_details(repo_path, root, include_commits=False), **extra}
+    if mutation_id is not None:
+        answer["mutation_id"] = mutation_id
+    return answer
 
 
 async def _run(
@@ -186,7 +207,7 @@ async def git_stage(project_id: int, body: PathsBody, request: Request, conn: Db
     root, path = await project_repo(conn, project_id, body.repo)
     paths = _paths(path, body.paths)
     await _run(request, project_id, root, path, lambda: gitops.stage(path, paths))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 @router.post("/projects/{project_id}/git/unstage")
@@ -194,7 +215,7 @@ async def git_unstage(project_id: int, body: PathsBody, request: Request, conn: 
     root, path = await project_repo(conn, project_id, body.repo)
     paths = _paths(path, body.paths)
     await _run(request, project_id, root, path, lambda: gitops.unstage(path, paths))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 @router.post("/projects/{project_id}/git/discard")
@@ -202,14 +223,14 @@ async def git_discard(project_id: int, body: PathsBody, request: Request, conn: 
     root, path = await project_repo(conn, project_id, body.repo)
     paths = _paths(path, body.paths)
     await _run(request, project_id, root, path, lambda: gitops.discard(path, paths))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 @router.post("/projects/{project_id}/git/commit")
 async def git_commit_action(project_id: int, body: CommitBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     await _run(request, project_id, root, path, lambda: gitops.commit(path, body.message))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 class RefBody(RepoBody):
@@ -224,35 +245,35 @@ class BranchBody(RepoBody):
 async def git_switch(project_id: int, body: RefBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     await _run(request, project_id, root, path, lambda: gitops.switch(path, body.ref))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 @router.post("/projects/{project_id}/git/branch")
 async def git_branch(project_id: int, body: BranchBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     await _run(request, project_id, root, path, lambda: gitops.create_branch(path, body.name))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 @router.post("/projects/{project_id}/git/merge")
 async def git_merge(project_id: int, body: RefBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     result = await _run(request, project_id, root, path, lambda: gitops.merge(path, body.ref))
-    return await _repo_answer(request, project_id, root, path, conflicts=result.conflicts)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id, conflicts=result.conflicts)
 
 
 @router.post("/projects/{project_id}/git/merge-abort")
 async def git_merge_abort(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     await _run(request, project_id, root, path, lambda: gitops.merge_abort(path))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 @router.post("/projects/{project_id}/git/merge-continue")
 async def git_merge_continue(project_id: int, body: CommitBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     await _run(request, project_id, root, path, lambda: gitops.merge_continue(path, body.message))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 @router.post("/projects/{project_id}/git/resolve")
@@ -260,39 +281,39 @@ async def git_resolve(project_id: int, body: PathsBody, request: Request, conn: 
     root, path = await project_repo(conn, project_id, body.repo)
     paths = _paths(path, body.paths)
     await _run(request, project_id, root, path, lambda: gitops.mark_resolved(path, paths))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 @router.post("/projects/{project_id}/git/pull")
 async def git_pull(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     result = await _run(request, project_id, root, path, lambda: gitops.pull(path))
-    return await _repo_answer(request, project_id, root, path, conflicts=result.conflicts)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id, conflicts=result.conflicts)
 
 
 @router.post("/projects/{project_id}/git/push")
 async def git_push(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     await _run(request, project_id, root, path, lambda: gitops.push(path))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
 
 
 @router.post("/projects/{project_id}/git/sync")
 async def git_sync(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     result = await _run(request, project_id, root, path, lambda: gitops.sync(path))
-    return await _repo_answer(request, project_id, root, path, conflicts=result.conflicts)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id, conflicts=result.conflicts)
 
 
 @router.post("/projects/{project_id}/git/publish")
 async def git_publish(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     remote = await _run(request, project_id, root, path, lambda: gitops.publish(path))
-    return await _repo_answer(request, project_id, root, path, remote=remote)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id, remote=remote)
 
 
 @router.post("/projects/{project_id}/git/fetch-repo")
 async def git_fetch_repo(project_id: int, body: RepoBody, request: Request, conn: DbDep) -> dict[str, Any]:
     root, path = await project_repo(conn, project_id, body.repo)
     await _run(request, project_id, root, path, lambda: gitops.fetch_repo(path))
-    return await _repo_answer(request, project_id, root, path)
+    return await _repo_answer(request, project_id, root, path, mutation_id=body.mutation_id)
