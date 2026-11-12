@@ -7,6 +7,7 @@ import { workCaption, workRow, workStatus } from '../../conversation/work'
 import { useSecondClock } from '../../secondClock'
 import type { ConversationItem, ToolItem } from '../../types/conversation'
 import ConversationBlock from './ConversationBlock.vue'
+import ToolImageStrip from './ToolImageStrip.vue'
 import Collapse from '../Collapse.vue'
 import IconChevron from '../icons/IconChevron.vue'
 import WorkHeader from './WorkHeader.vue'
@@ -86,6 +87,8 @@ watch(focus, (target) => {
       >{{ summary }}</span>
       <IconChevron :open="open" :size="12" class="text-fg-subtle duration-(--motion-enter) ease-(--ease-maestro)" />
     </button>
+    <!-- The images of the block's own actions (not a subagent's), in view with the block closed. -->
+    <ToolImageStrip :items="items" :session-active="sessionActive" class="mt-1" />
     <Collapse :open="open">
       <div class="mt-1 flex flex-col overflow-hidden rounded-lg border border-line bg-panel">
         <div v-for="(row, index) in rows" :key="row.item.id" data-test="work-row" :class="index > 0 ? 'border-t border-line' : ''">

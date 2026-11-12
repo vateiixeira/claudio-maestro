@@ -3,7 +3,9 @@ import { computed, ref } from 'vue'
 import { useMarkdownViewHref } from '../../conversation/markdownView'
 import { countLines, resultText, str } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
+import { toolImagesOf } from '../../conversation/toolImages'
 import MarkdownViewLink from './MarkdownViewLink.vue'
+import ToolImageStrip from './ToolImageStrip.vue'
 import TruncatedText from './TruncatedText.vue'
 import WorkHeader from './WorkHeader.vue'
 
@@ -14,6 +16,7 @@ const open = ref(false)
 const viewHref = useMarkdownViewHref(() => str(props.item.input.file_path))
 
 const content = computed(() => resultText(props.item.result?.content))
+const imageCount = computed(() => toolImagesOf(props.item).length)
 const lineCount = computed(() => countLines(content.value))
 const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
 const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
@@ -22,6 +25,7 @@ const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
   return props.item.result ? 'ok' : 'idle'
 })
 const meta = computed(() => {
+  if (status.value === 'ok' && !content.value && imageCount.value) return `${imageCount.value} ${imageCount.value === 1 ? 'imagem' : 'imagens'}`
   if (status.value === 'ok') return `${lineCount.value} ${lineCount.value === 1 ? 'linha' : 'linhas'}`
   return !props.item.result && !props.item.result_missing && !running.value ? 'sem resultado' : undefined
 })
@@ -55,8 +59,9 @@ const meta = computed(() => {
     <div v-if="headless && viewHref" class="flex justify-end px-3 py-1.5">
       <MarkdownViewLink :href="viewHref" />
     </div>
-    <div v-if="(open || headless) && item.result" class="border-t border-line px-3 py-2" :class="{ 'text-diff-del-fg': item.result.is_error }">
-      <TruncatedText :text="content" />
+    <div v-if="(open || headless) && item.result" class="flex flex-col gap-2 border-t border-line px-3 py-2" :class="{ 'text-diff-del-fg': item.result.is_error }">
+      <ToolImageStrip :items="[item]" :session-active="sessionActive" />
+      <TruncatedText v-if="content || !imageCount" :text="content" />
     </div>
   </div>
 </template>

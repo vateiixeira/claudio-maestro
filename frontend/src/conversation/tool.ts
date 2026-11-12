@@ -1,3 +1,23 @@
+// Images a tool returned arrive as a marker (`omitted: true`, `index`); toolImages.ts loads the bytes.
+export const RENDERABLE_IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+
+export interface ToolImageRef {
+  /** Position among the images of that result. */
+  index: number
+  mediaType: string
+  size: number | null
+}
+
+/** The marker as a renderable image, or null (an old marker without `index`, or a type the backend refuses). */
+export function toolImageRef(block: unknown): ToolImageRef | null {
+  if (!block || typeof block !== 'object') return null
+  const b = block as Record<string, unknown>
+  if (b.type !== 'image' || b.omitted !== true) return null
+  if (typeof b.index !== 'number' || !Number.isInteger(b.index) || b.index < 0) return null
+  if (typeof b.media_type !== 'string' || !RENDERABLE_IMAGE_TYPES.has(b.media_type)) return null
+  return { index: b.index, mediaType: b.media_type, size: typeof b.size === 'number' ? b.size : null }
+}
+
 /** Text of a tool result `content`: a string, or a list of blocks with `text`. */
 export function resultText(content: unknown): string {
   if (content == null) return ''
@@ -6,9 +26,13 @@ export function resultText(content: unknown): string {
     return content
       .map((block) => {
         if (block && typeof block === 'object' && 'text' in block) return String(block.text)
-        if (block && typeof block === 'object' && block.type === 'image' && block.omitted) return '[Imagem omitida]'
+        if (block && typeof block === 'object' && block.type === 'image' && block.omitted) {
+          // A renderable image shows in the strip of thumbnails: no text for it.
+          return toolImageRef(block) ? null : '[Imagem omitida]'
+        }
         return JSON.stringify(block, null, 2)
       })
+      .filter((text): text is string => text !== null)
       .join('\n')
   }
   return JSON.stringify(content, null, 2)

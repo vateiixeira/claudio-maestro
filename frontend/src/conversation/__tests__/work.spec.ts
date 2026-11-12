@@ -210,3 +210,13 @@ describe('workRow de escrita feita por subagente', () => {
     expect(workRow(tool('r', 'Read', { file_path: '/p/a.py' }), false, undefined, 'reviewer').tag).toBeUndefined()
   })
 })
+
+describe('workRow: leitura de imagem', () => {
+  it('uma leitura que só devolveu imagens diz quantas, não "0 linhas"', () => {
+    const marker = (index: number) => ({ type: 'image', omitted: true, media_type: 'image/png', index, size: 1 })
+    const read = (content: unknown) => tool('a', 'Read', { file_path: '/p/a.png' }, { result: { content, is_error: false, details: null } })
+    expect(workRow(read([marker(0)]), false).meta).toBe('1 imagem')
+    expect(workRow(read([marker(0), marker(1)]), false).meta).toBe('2 imagens')
+    expect(workRow(read([{ type: 'text', text: 'a\nb' }, marker(0)]), false).meta).toBe('2 linhas')
+  })
+})

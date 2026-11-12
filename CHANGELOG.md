@@ -8,6 +8,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - Comparação entre branches na seção Commits: base escolhida por repositório, commits exclusivos de cada lado, arquivos e diffs desde o ancestral comum, sem trocar a branch de trabalho.
 - A conversa ganhou a aba Git no painel lateral, ao lado do Terminal, com o mesmo painel do projeto. Numa conversa de worktree ela abre filtrada nessa worktree, com "Ver todos" para os demais repositórios; "Sem projeto" não tem a aba.
+- Imagens devolvidas pelas ferramentas (como prints e PNGs lidos) aparecem no chat como miniaturas, visíveis mesmo com o bloco de ações recolhido, com um visualizador para passar entre elas.
 
 ### Alterado
 
@@ -27,6 +28,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - O histórico mantém as páginas já abertas quando chegam novos commits e avisa quando há uma atualização para aplicar. As listas de commits para subir e baixar têm paginação própria e só são consultadas ao abrir; o painel de alterações deixa de buscar o histórico que não está sendo mostrado.
 
 ### Corrigido
+
+- O resultado de uma ferramenta que devolve imagem deixa de mostrar o texto cru da imagem enquanto a conversa está ao vivo.
 
 - Os seletores de branches usam campos de pesquisa sem autocomplete e com indicação para gerenciadores de senhas ignorarem o campo, evitando sugestões de credenciais ao trocar, mesclar ou consultar uma branch.
 

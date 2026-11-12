@@ -4,6 +4,7 @@ import * as api from '../api/http'
 import type { ContextUsage, Session, SessionOptions, SessionState } from '../types/api'
 import { deriveTasks } from '../conversation/tasks'
 import { claimLocalImages, forgetSessionImages } from '../conversation/localImages'
+import { forgetToolImages } from '../conversation/toolImages'
 import type {
   ConversationItem,
   PermissionPrompt,
@@ -323,6 +324,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
   function forget(sessionId: string): void {
     forgetSessionImages(sessionId)
+    forgetToolImages(sessionId)
     clearExternalTimer(sessionId)
     delete bySession.value[sessionId]
     buffers.delete(sessionId)

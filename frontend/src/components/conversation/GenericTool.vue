@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { prettyJson, resultText, toolLabel } from '../../conversation/tool'
 import type { ToolItem } from '../../types/conversation'
+import { toolImagesOf } from '../../conversation/toolImages'
+import ToolImageStrip from './ToolImageStrip.vue'
 import TruncatedText from './TruncatedText.vue'
 import WorkHeader from './WorkHeader.vue'
 
@@ -11,6 +13,7 @@ const open = ref(false)
 
 const input = computed(() => prettyJson(props.item.input))
 const output = computed(() => resultText(props.item.result?.content))
+const imageCount = computed(() => toolImagesOf(props.item).length)
 const isError = computed(() => props.item.result?.is_error === true)
 const running = computed(() => props.item.streaming || (!props.item.result && !props.item.result_missing && props.sessionActive))
 const status = computed<'ok' | 'running' | 'error' | 'idle'>(() => {
@@ -46,7 +49,8 @@ const meta = computed(() => (!props.item.result && !props.item.result_missing &&
       </div>
       <div v-if="item.result">
         <div class="mb-1 text-xs text-fg-subtle">Resultado</div>
-        <div :class="isError ? 'text-diff-del-fg' : ''" :data-test="isError ? 'tool-error' : 'tool-output'">
+        <ToolImageStrip class="mb-2" :items="[item]" :session-active="sessionActive" />
+        <div v-if="output || !imageCount" :class="isError ? 'text-diff-del-fg' : ''" :data-test="isError ? 'tool-error' : 'tool-output'">
           <TruncatedText :text="output" />
         </div>
       </div>

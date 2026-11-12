@@ -285,3 +285,31 @@ describe('cliente da organização de agentes', () => {
     expect(error).not.toBeInstanceOf(api.DefinitionInvalidError)
   })
 })
+
+describe('fetchToolImage', () => {
+  it('busca os bytes com X-Maestro e devolve um Blob', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'image/png' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const blob = await api.fetchToolImage('s 1', 'toolu_a-b', 2)
+
+    expect(blob).toBeInstanceOf(Blob)
+    expect(blob.type).toBe('image/png')
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe('/api/sessions/s%201/tool-results/toolu_a-b/images/2')
+    expect((init?.headers as Record<string, string>)['X-Maestro']).toBe('1')
+  })
+
+  it('erro vira ApiError com o status (404 e 415)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: 'Imagem não encontrada.' }, 404)))
+    await expect(api.fetchToolImage('s', 't', 0)).rejects.toMatchObject({ status: 404, message: 'Imagem não encontrada.' })
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 415 })))
+    await expect(api.fetchToolImage('s', 't', 0)).rejects.toMatchObject({ status: 415 })
+  })
+
+  it('falha de rede vira ApiError de status 0', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('x') }))
+    await expect(api.fetchToolImage('s', 't', 0)).rejects.toBeInstanceOf(ApiError)
+  })
+})

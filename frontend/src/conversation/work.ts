@@ -2,6 +2,7 @@ import type { ToolItem } from '../types/conversation'
 import { backgroundState } from './background'
 import { diffCounts, toolDiff } from './diff'
 import { agentStatus } from './subagents'
+import { toolImagesOf } from './toolImages'
 import { askedModel, countLines, resultText, str, toolLabel } from './tool'
 import { AGENT_TOOLS, EDIT_TOOLS, SEARCH_TOOLS, toolRunning, type NodeKind } from './turns'
 
@@ -87,7 +88,11 @@ export function workRow(item: ToolItem, sessionActive: boolean, waiting?: Readon
   let meta: string | undefined
   if (kind === 'read') {
     row.desc = str(input.file_path)
-    if (status === 'ok') meta = plural(countLines(resultText(item.result?.content)), 'linha', 'linhas')
+    if (status === 'ok') {
+      const text = resultText(item.result?.content)
+      const images = toolImagesOf(item).length
+      meta = !text && images ? plural(images, 'imagem', 'imagens') : plural(countLines(text), 'linha', 'linhas')
+    }
   } else if (kind === 'search') {
     row.tag = item.name
     const subject = str(input.pattern) || str(input.query) || str(input.url)

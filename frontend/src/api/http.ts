@@ -183,6 +183,22 @@ export async function request<T>(method: Method, url: string, body?: unknown, si
   return (text ? JSON.parse(text) : undefined) as T
 }
 
+/** Bytes of an image a tool returned (a `Read` of a PNG, a screenshot). `fetch`, not `<img src>`: the route needs `X-Maestro`. */
+export async function fetchToolImage(sessionId: string, toolUseId: string, index: number): Promise<Blob> {
+  const url = `/api/sessions/${encodeURIComponent(sessionId)}/tool-results/${encodeURIComponent(toolUseId)}/images/${index}`
+  let response: Response
+  try {
+    response = await fetch(url, { method: 'GET', headers: { 'X-Maestro': '1' } })
+  } catch {
+    throw new ApiError(0, null, 'Não foi possível falar com o servidor.')
+  }
+  if (!response.ok) {
+    const { text, data, body } = await readDetail(response)
+    throw new ApiError(response.status, text, `O servidor respondeu com erro ${response.status}.`, data, body)
+  }
+  return response.blob()
+}
+
 // Health
 
 export function getHealth(): Promise<{ status: string }> {
