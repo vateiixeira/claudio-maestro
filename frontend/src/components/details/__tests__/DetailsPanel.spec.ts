@@ -15,7 +15,7 @@ import { useGitStore } from '../../../stores/git'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 import { useTerminalStore } from '../../../stores/terminal'
-import { jsonResponse, makeEvent, makeGitRepo, makeProject, makeSession, makeSnapshot, routeFetch } from '../../../test/factories'
+import { jsonResponse, makeEvent, makeGitRepo, makeRepoDetails, makeProject, makeSession, makeSnapshot, routeFetch } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
 let pinia: Pinia
@@ -394,7 +394,7 @@ describe('painel Detalhes', () => {
     it('mostra a lista de abas com Detalhes selecionada por padrão', async () => {
       const wrapper = await mountPanel()
 
-      expect(wrapper.get('[role="tablist"]').findAll('[role="tab"]')).toHaveLength(2)
+      expect(wrapper.get('[role="tablist"]').findAll('[role="tab"]')).toHaveLength(3)
       const details = wrapper.get('[data-test="details-tab-details"]')
       const terminal = wrapper.get('[data-test="details-tab-terminal"]')
       expect(details.text()).toBe('Detalhes')
@@ -493,6 +493,182 @@ describe('painel Detalhes', () => {
       expect(wrapper.emitted('update:tab')).toBeUndefined()
       expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(false)
       expect(wrapper.find('[data-test="details-diff"]').text()).toContain('/x/b.py')
+    })
+  })
+
+  describe('aba Git', () => {
+    const REPOS = [
+      makeRepoDetails({ path: '/home/vi/dev/loja-online', rel_path: '.', branch: 'main' }),
+      makeRepoDetails({ path: '/home/vi/dev/loja-online/.claude/worktrees/ajuste', rel_path: '.claude/worktrees/ajuste', branch: 'fix/ajuste' }),
+    ]
+    const details = (limit = false, repos = REPOS) => ({ 'GET /api/projects/1/git/details': () => jsonResponse({ repos, limit_reached: limit }) })
+    const repoPaths = (wrapper: Awaited<ReturnType<typeof mountPanel>>) => wrapper.findAll('[data-test="scm-repo"]').map((r) => r.attributes('data-repo'))
+    function inWorktree() {
+      useSessionsStore(pinia).setForProject(1, [makeSession({
+        session_id: 's1', worktree_name: 'ajuste', worktree_path: '/home/vi/dev/loja-online/.claude/worktrees/ajuste',
+      })])
+    }
+
+    it('fica depois do Terminal e mostra o mesmo painel do projeto, com todos os repositórios', async () => {
+      const wrapper = await mountPanel(details())
+      const tabs = wrapper.get('[role="tablist"]').findAll('[role="tab"]')
+      expect(tabs.map((t) => t.text())).toEqual(['Detalhes', 'Terminal', 'Git'])
+
+      await wrapper.get('[data-test="details-tab-git"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('update:tab')).toEqual([['git']])
+      expect(wrapper.get('[data-test="details-tab-git"]').attributes('aria-selected')).toBe('true')
+      expect(wrapper.find('[data-test="details-properties"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="terminal-pane"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="git-panel"]').exists()).toBe(true)
+      expect(repoPaths(wrapper)).toHaveLength(2)
+      expect(wrapper.find('[data-test="git-focus"]').exists()).toBe(false)
+    })
+
+    it('o painel aponta para a aba Git e as setas percorrem as três abas', async () => {
+      const wrapper = await mountPanel(details(), { tab: 'git' })
+      await flushPromises()
+      const panel = wrapper.get('[role="tabpanel"]')
+      expect(panel.attributes('aria-labelledby')).toBe('details-tab-git')
+      expect(wrapper.get('#details-tab-git').attributes('aria-controls')).toBe(panel.attributes('id'))
+      expect(wrapper.get('[data-test="details-tab-git"]').attributes('tabindex')).toBe('0')
+      expect(wrapper.get('[data-test="details-tab-details"]').attributes('tabindex')).toBe('-1')
+
+      await wrapper.get('[data-test="details-tab-git"]').trigger('keydown', { key: 'ArrowRight' })
+      expect(wrapper.emitted('update:tab')).toEqual([['details']])
+      await wrapper.setProps({ tab: 'terminal' })
+      await wrapper.get('[data-test="details-tab-terminal"]').trigger('keydown', { key: 'ArrowRight' })
+      expect(wrapper.emitted('update:tab')?.[1]).toEqual(['git'])
+    })
+
+    it('os painéis de Detalhes e Terminal seguem apontando para a própria aba', async () => {
+      const wrapper = await mountPanel(details())
+      expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBe('details-tab-details')
+      await wrapper.setProps({ tab: 'terminal' })
+      expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBe('details-tab-terminal')
+    })
+
+    it('numa conversa de worktree abre filtrada nela, com Ver todos', async () => {
+      inWorktree()
+      const wrapper = await mountPanel(details(), { tab: 'git' })
+      await flushPromises()
+      expect(repoPaths(wrapper)).toEqual(['/home/vi/dev/loja-online/.claude/worktrees/ajuste'])
+      expect(wrapper.find('[data-test="git-focus"]').exists()).toBe(true)
+
+      await wrapper.get('[data-test="git-focus-all"]').trigger('click')
+      expect(repoPaths(wrapper)).toHaveLength(2)
+    })
+
+    it('ao trocar de conversa a aba volta a focar a worktree da nova', async () => {
+      inWorktree()
+      const wrapper = await mountPanel(details(), { tab: 'git' })
+      await flushPromises()
+      await wrapper.get('[data-test="git-focus-all"]').trigger('click')
+      expect(repoPaths(wrapper)).toHaveLength(2)
+
+      useSessionsStore(pinia).setForProject(1, [
+        makeSession({ session_id: 's1', worktree_name: 'ajuste', worktree_path: '/home/vi/dev/loja-online/.claude/worktrees/ajuste' }),
+        makeSession({ session_id: 's2' }),
+      ])
+      await wrapper.setProps({ sessionId: 's2' })
+      await flushPromises()
+      expect(repoPaths(wrapper)).toHaveLength(2)
+      expect(wrapper.find('[data-test="git-focus"]').exists()).toBe(false)
+    })
+
+    it('avisa quando o projeto não tem repositório e quando passa do limite de 50', async () => {
+      const empty = await mountPanel(details(false, []), { tab: 'git' })
+      await flushPromises()
+      expect(empty.text()).toContain('sem repositório git')
+      expect(empty.find('[data-test="repo-limit"]').exists()).toBe(false)
+      empty.unmount()
+
+      const limited = await mountPanel(details(true), { tab: 'git' })
+      await flushPromises()
+      expect(limited.get('[data-test="repo-limit"]').text()).toContain('50')
+    })
+
+    it('abre e fecha o acompanhamento do projeto ao montar e desmontar a aba', async () => {
+      const wrapper = await mountPanel(details(), { tab: 'git' })
+      await flushPromises()
+      const store = (await import('../../../stores/gitDetails')).useGitDetailsStore(pinia)
+      const close = vi.spyOn(store, 'close')
+      await wrapper.setProps({ tab: 'details' })
+      expect(close).toHaveBeenCalledWith(1)
+    })
+
+    it('numa conversa de Sem projeto a aba não aparece, nem se for a lembrada', async () => {
+      useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'Sem projeto', kind: 'scratch' })]
+      const wrapper = await mountPanel(details(), { tab: 'git' })
+      await flushPromises()
+      expect(wrapper.find('[data-test="details-tab-git"]').exists()).toBe(false)
+      expect(wrapper.findAll('[role="tab"]')).toHaveLength(2)
+      expect(wrapper.get('[data-test="details-tab-details"]').attributes('aria-selected')).toBe('true')
+      expect(wrapper.find('[data-test="git-panel"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="details-properties"]').exists()).toBe(true)
+      expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBe('details-tab-details')
+    })
+
+    it('o diff de Detalhes não aparece na aba Git e volta com Detalhes', async () => {
+      const wrapper = await mountPanel({
+        ...details(),
+        'GET /api/projects/1/diff?repo=.&file=a.py': () => jsonResponse({ diff: '', truncated: false }),
+      })
+      await wrapper.find('[data-test="changed-file"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="diff-back"]').exists()).toBe(true)
+
+      await wrapper.setProps({ tab: 'git' })
+      await flushPromises()
+      expect(wrapper.find('[data-test="diff-back"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="details-diff"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="git-panel"]').exists()).toBe(true)
+
+      await wrapper.setProps({ tab: 'details' })
+      expect(wrapper.find('[data-test="details-diff"]').exists()).toBe(true)
+    })
+
+    it('uma edição pedida pela conversa leva o painel de Git de volta a Detalhes', async () => {
+      const wrapper = await mountPanel(details(), { tab: 'git' })
+      await flushPromises()
+      useChangesPanelStore(pinia).open('s1', {
+        type: 'tool', id: 't1', tool_use_id: 't1', name: 'Edit',
+        input: { file_path: '/x/b.py', old_string: 'a', new_string: 'b' }, result: null,
+      } as never)
+      await flushPromises()
+      expect(wrapper.emitted('update:tab')).toBeUndefined()
+      expect(wrapper.find('[data-test="git-panel"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="details-diff"]').text()).toContain('/x/b.py')
+    })
+
+    it('na aba Git o painel pode ser alargado, e voltar à largura normal ao sair da aba', async () => {
+      const wrapper = await mountPanel(details(), { tab: 'git' })
+      await flushPromises()
+      const expand = wrapper.get('[data-test="git-expand"]')
+      expect(expand.attributes('aria-pressed')).toBe('false')
+      await expand.trigger('click')
+      expect(wrapper.get('[data-test="details-panel"]').attributes('data-wide')).toBe('true')
+      expect(wrapper.get('[data-test="git-expand"]').attributes('aria-pressed')).toBe('true')
+
+      await wrapper.get('[data-test="details-tab-details"]').trigger('click')
+      expect(wrapper.get('[data-test="details-panel"]').attributes('data-wide')).toBe('false')
+      await wrapper.get('[data-test="details-tab-git"]').trigger('click')
+      expect(wrapper.get('[data-test="details-panel"]').attributes('data-wide')).toBe('false')
+    })
+
+    it('no modo drawer a aba Git não oferece alargar (a gaveta já ocupa a largura)', async () => {
+      const wrapper = await mountPanel(details(), { tab: 'git', drawer: true })
+      await flushPromises()
+      expect(wrapper.find('[data-test="git-expand"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="git-panel"]').exists()).toBe(true)
+    })
+
+    it('não deixa o conteúdo estourar na horizontal', async () => {
+      const wrapper = await mountPanel(details(), { tab: 'git' })
+      await flushPromises()
+      const body = wrapper.get('[data-test="details-body"]')
+      expect(body.classes()).toContain('overflow-y-auto')
+      expect(body.classes()).toContain('overflow-x-hidden')
     })
   })
 

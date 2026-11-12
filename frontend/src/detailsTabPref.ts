@@ -1,11 +1,12 @@
 const KEY = 'maestro:details-tab'
 
-export type DetailsTab = 'details' | 'terminal'
+export type DetailsTab = 'details' | 'terminal' | 'git'
 
 /** The tab the details panel starts on (default: Detalhes). */
 export function readDetailsTab(): DetailsTab {
   try {
-    return localStorage.getItem(KEY) === 'terminal' ? 'terminal' : 'details'
+    const stored = localStorage.getItem(KEY)
+    return stored === 'terminal' || stored === 'git' ? stored : 'details'
   } catch {
     return 'details'
   }

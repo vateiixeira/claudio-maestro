@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, h, nextTick, onBeforeUnmount, onMounted
 import { RouterLink } from 'vue-router'
 import ContextBreakdown from '../context/ContextBreakdown.vue'
 import BranchLabel from '../git/BranchLabel.vue'
+import GitPanel from '../git/GitPanel.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import DiffLines from '../conversation/DiffLines.vue'
@@ -30,6 +31,7 @@ import { displayStateLabel } from '../../sessionState'
 import { useChangesPanelStore } from '../../stores/changesPanel'
 import { useConversationStore } from '../../stores/conversation'
 import { useGitStore } from '../../stores/git'
+import { useGitDetailsStore } from '../../stores/gitDetails'
 import { isScratch, useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useTerminalStore } from '../../stores/terminal'
@@ -49,15 +51,18 @@ const TerminalPane = defineAsyncComponent({
   delay: 150,
 })
 
-const TABS: Array<{ id: DetailsTab; label: string }> = [
+const ALL_TABS: Array<{ id: DetailsTab; label: string }> = [
   { id: 'details', label: 'Detalhes' },
   { id: 'terminal', label: 'Terminal' },
+  { id: 'git', label: 'Git' },
 ]
 const current = ref<DetailsTab>(props.tab)
 watch(() => props.tab, (tab) => { current.value = tab })
 const terminal = useTerminalStore()
 function selectTab(tab: DetailsTab) {
   if (current.value === tab) return
+  // The wide layout belongs to what was open (a diff, the Git tab); the next tab starts at the normal width.
+  wide.value = false
   // Choosing the Terminal tab is a gesture: the pane that appears may start the shell.
   if (tab === 'terminal') terminal.requestOpen(props.sessionId)
   current.value = tab
@@ -67,7 +72,7 @@ function onTabKey(event: KeyboardEvent, index: number) {
   const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
   if (!step) return
   event.preventDefault()
-  const next = TABS[(index + step + TABS.length) % TABS.length]!
+  const next = tabs.value[(index + step + tabs.value.length) % tabs.value.length]!
   selectTab(next.id)
   const list = (event.currentTarget as HTMLElement | null)?.parentElement
   void nextTick(() => list?.querySelector<HTMLElement>(`[data-test="details-tab-${next.id}"]`)?.focus())
@@ -79,6 +84,8 @@ const projects = useProjectsStore()
 const git = useGitStore()
 const panel = useChangesPanelStore()
 
+const gitDetails = useGitDetailsStore()
+
 const session = computed(() => sessions.find(props.sessionId))
 const conv = computed(() => conversations.get(props.sessionId))
 const projectId = computed(() => session.value?.project_id ?? conv.value?.projectId ?? null)
@@ -86,6 +93,12 @@ const project = computed(() => (projectId.value != null ? projects.byId(projectI
 // "Sem projeto" has no git repository and no plans folder: its Branch row and plan section stay out.
 const scratch = computed(() => isScratch(project.value))
 const repos = computed(() => (projectId.value != null ? git.reposFor(projectId.value) : []))
+// "Sem projeto" has no repository: no Git tab, and a remembered Git tab falls back to Detalhes.
+const tabs = computed(() => (scratch.value ? ALL_TABS.filter((item) => item.id !== 'git') : ALL_TABS))
+const shown = computed<DetailsTab>(() => (current.value === 'git' && scratch.value ? 'details' : current.value))
+const projectRepos = computed(() => (projectId.value != null ? gitDetails.reposFor(projectId.value) : []))
+// A conversation in a worktree starts the Git tab on that worktree's repository.
+const focusPath = computed(() => (session.value?.worktree_name ? session.value.worktree_path ?? null : null))
 const context = computed(() => session.value?.context ?? conv.value?.context ?? null)
 const turns = computed(() => (conv.value?.items ?? []).filter((i) => i.type === 'user' && !('parent_tool_use_id' in i && i.parent_tool_use_id)).length)
 const stateText = computed(() => {
@@ -100,9 +113,11 @@ const changes = useSessionChanges(() => props.sessionId)
 const selectedFile = ref<{ group: ChangesGroup; file: ChangedFile } | null>(null)
 const editOpen = computed(() => panel.sessionId === props.sessionId && panel.edit != null)
 // The diff belongs to the Detalhes tab: on Terminal it stays hidden, and comes back with the tab.
-const showingDiff = computed(() => current.value === 'details' && (editOpen.value || selectedFile.value != null))
+const showingDiff = computed(() => shown.value === 'details' && (editOpen.value || selectedFile.value != null))
 const wide = ref(false)
-const isWide = computed(() => wide.value && showingDiff.value)
+// The drawer already takes the width it can: widening only makes sense in the side panel.
+const gitWidenable = computed(() => shown.value === 'git' && !props.drawer)
+const isWide = computed(() => wide.value && (showingDiff.value || gitWidenable.value))
 const editLines = computed(() => {
   const item = panel.edit
   return item ? toolDiff(item.name, item.input, item.result?.details ?? null) : []
@@ -212,21 +227,30 @@ function resetWidth() {
       </template>
       <div v-else role="tablist" aria-label="Painel da conversa" class="flex grow items-center gap-1">
         <button
-          v-for="(item, index) in TABS"
+          v-for="(item, index) in tabs"
           :id="`details-tab-${item.id}`"
           :key="item.id"
           type="button"
           role="tab"
           :data-test="`details-tab-${item.id}`"
-          :aria-selected="current === item.id"
+          :aria-selected="shown === item.id"
           aria-controls="details-tabpanel"
-          :tabindex="current === item.id ? 0 : -1"
+          :tabindex="shown === item.id ? 0 : -1"
           class="h-8 rounded-md px-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-primary"
-          :class="current === item.id ? 'text-fg' : 'font-medium text-fg-muted hover:bg-card hover:text-fg'"
+          :class="shown === item.id ? 'text-fg' : 'font-medium text-fg-muted hover:bg-card hover:text-fg'"
           @click="selectTab(item.id)"
           @keydown="onTabKey($event, index)"
         >{{ item.label }}</button>
       </div>
+      <button
+        v-if="gitWidenable"
+        type="button"
+        data-test="git-expand"
+        :aria-label="wide ? 'Voltar à largura normal' : 'Alargar o painel'"
+        :aria-pressed="wide"
+        class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg"
+        @click="wide = !wide"
+      ><IconExpand :size="14" /></button>
       <button
         v-if="drawer"
         type="button"
@@ -237,7 +261,7 @@ function resetWidth() {
     </header>
 
     <div
-      v-if="current === 'terminal'"
+      v-if="shown === 'terminal'"
       id="details-tabpanel"
       data-test="details-body"
       role="tabpanel"
@@ -245,6 +269,22 @@ function resetWidth() {
       class="relative flex min-h-0 grow flex-col overflow-hidden"
     >
       <TerminalPane :key="sessionId" :session-id="sessionId" />
+    </div>
+    <div
+      v-else-if="shown === 'git'"
+      id="details-tabpanel"
+      data-test="details-body"
+      role="tabpanel"
+      aria-labelledby="details-tab-git"
+      class="relative flex min-h-0 min-w-0 grow flex-col gap-3 overflow-x-hidden overflow-y-auto p-4"
+    >
+      <template v-if="projectId != null">
+        <p v-if="gitDetails.isLoaded(projectId) && projectRepos.length === 0 && !gitDetails.errorFor(projectId)" class="m-0 text-sm text-fg-muted">sem repositório git</p>
+        <GitPanel :key="sessionId" :project-id="projectId" :focus-path="focusPath" />
+        <p v-if="gitDetails.byProject[projectId]?.limit_reached" data-test="repo-limit" class="m-0 text-xs text-fg-muted">
+          Mais de 50 repositórios; só os 50 primeiros são acompanhados.
+        </p>
+      </template>
     </div>
     <div
       v-else

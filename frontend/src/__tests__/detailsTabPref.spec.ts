@@ -19,6 +19,12 @@ describe('aba do painel de detalhes', () => {
     expect(readDetailsTab()).toBe('details')
   })
 
+  it('lembra a aba Git', () => {
+    writeDetailsTab('git')
+    expect(localStorage.getItem('maestro:details-tab')).toBe('git')
+    expect(readDetailsTab()).toBe('git')
+  })
+
   it('ignora um valor desconhecido', () => {
     localStorage.setItem('maestro:details-tab', 'outra')
     expect(readDetailsTab()).toBe('details')

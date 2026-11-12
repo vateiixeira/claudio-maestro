@@ -6,7 +6,7 @@ import { useGitOpsStore } from '../../../stores/gitOps'
 import { useGitDetailsStore } from '../../../stores/gitDetails'
 import type { RepoDetails } from '../../../types/api'
 
-const props = defineProps<{ projectId: number; repoPaths?: string[] }>()
+const props = defineProps<{ projectId: number; repoPaths?: string[]; openAll?: boolean }>()
 const emit = defineEmits<{ history: [path: string] }>()
 const details = useGitDetailsStore()
 const ops = useGitOpsStore()
@@ -41,7 +41,7 @@ watch(
 
 // With several repositories, the clean ones in sync start as just their row.
 function startOpen(repo: RepoDetails): boolean {
-  if (repos.value.length === 1 || repo.error) return true
+  if (props.openAll || repos.value.length === 1 || repo.error) return true
   return repo.files.length > 0 || repo.state?.merging === true || syncCounts(repo).kind === 'diverged'
 }
 </script>

@@ -66,6 +66,20 @@ describe('seção Alterações', () => {
     expect(wrapper.find('[data-repo="/p/api"] [data-test="scm-body"]').exists()).toBe(true)
   })
 
+  it('com openAll, os repositórios limpos também começam abertos; sem ele, só os com pendência', async () => {
+    const repos = [makeRepoDetails({ path: '/p/api', rel_path: 'api' }), makeRepoDetails({ path: '/p/web', rel_path: 'web' })]
+    vi.stubGlobal('fetch', routeFetch({ [DETAILS]: () => jsonResponse({ repos, limit_reached: false }) }))
+    const opened = mount(ScmSection, { props: { projectId: 1, openAll: true }, global: { plugins: [pinia] } })
+    await flushPromises()
+    expect(opened.findAll('[data-test="scm-repo-toggle"]').map((t) => t.attributes('aria-expanded'))).toEqual(['true', 'true'])
+    opened.unmount()
+
+    localStorage.clear()
+    const normal = mount(ScmSection, { props: { projectId: 1 }, global: { plugins: [pinia] } })
+    await flushPromises()
+    expect(normal.findAll('[data-test="scm-repo-toggle"]').map((t) => t.attributes('aria-expanded'))).toEqual(['false', 'false'])
+  })
+
   it('erro de um repositório aparece só nele', async () => {
     const wrapper = await mountWith([makeRepoDetails({ path: '/p/x', rel_path: 'x', error: 'Repositório corrompido' })])
     expect(wrapper.find('[data-test="scm-repo-error"]').text()).toBe('Repositório corrompido')

@@ -7,6 +7,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 ### Adicionado
 
 - Comparação entre branches na seção Commits: base escolhida por repositório, commits exclusivos de cada lado, arquivos e diffs desde o ancestral comum, sem trocar a branch de trabalho.
+- A conversa ganhou a aba Git no painel lateral, ao lado do Terminal, com o mesmo painel do projeto. Numa conversa de worktree ela abre filtrada nessa worktree, com "Ver todos" para os demais repositórios; "Sem projeto" não tem a aba.
 
 ### Alterado
 
