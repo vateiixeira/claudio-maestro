@@ -77,8 +77,8 @@ const lineClass = computed(() =>
         </svg>
       </span>
     </span>
-    <span v-if="hasLabels" data-test="row-labels" class="col-start-2 flex min-w-0 overflow-hidden whitespace-nowrap">
-      <LabelBadges :ids="session.label_ids" compact :max="3" />
+    <span v-if="hasLabels" data-test="row-labels" class="col-start-2 flex min-w-0">
+      <LabelBadges :ids="session.label_ids" compact wrap />
     </span>
     <!-- Teleported to the body, so the row keeps a single root and the attributes its parents pass. -->
     <MarkPopover v-if="menuAt" :session="session" :x="menuAt.x" :y="menuAt.y" @close="menuAt = null" />

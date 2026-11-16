@@ -109,16 +109,18 @@ describe('busca no menu lateral', () => {
     expect(second!.find('[data-test="label-badges"]').exists()).toBe(false)
   })
 
-  it('mostra até 3 etiquetas e "+N" na linha própria', async () => {
-    useLabelsStore(pinia).labels = [1, 2, 3, 4].map((id) => makeLabel({ id, slug: `et${id}` }))
+  it('mostra todas as etiquetas, com o nome inteiro, na linha própria', async () => {
+    useLabelsStore(pinia).labels = [1, 2, 3, 4].map((id) => makeLabel({ id, slug: id === 1 ? 'subir-e-acompanhar-deploy' : `et${id}` }))
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([makeSession({ session_id: 'a', label_ids: [1, 2, 3, 4] })])))
     const w = mountSidebar()
     await type(w, 'x')
     await vi.advanceTimersByTimeAsync(300)
     await flushPromises()
     const labels = w.get('[data-test="search-labels"]')
-    expect(labels.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['et1', 'et2', 'et3'])
-    expect(labels.get('[data-test="label-more"]').text()).toBe('+1')
+    expect(labels.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['subir-e-acompanhar-deploy', 'et2', 'et3', 'et4'])
+    expect(labels.find('[data-test="label-more"]').exists()).toBe(false)
+    expect(labels.classes()).not.toContain('overflow-hidden')
+    expect(labels.get('[data-test="label-badge"]').classes()).not.toContain('truncate')
   })
 
   it('descarta respostas antigas', async () => {

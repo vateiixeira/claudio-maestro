@@ -197,12 +197,14 @@ describe('clique direito', () => {
 })
 
 describe('etiquetas na linha do menu', () => {
-  it('mostra até 3 etiquetas e "+N" numa segunda linha, abaixo do título', async () => {
-    useLabelsStore(pinia).labels = [1, 2, 3, 4].map((id) => makeLabel({ id, slug: `et${id}` }))
+  it('mostra todas as etiquetas, com o nome inteiro, numa segunda linha abaixo do título', async () => {
+    useLabelsStore(pinia).labels = [1, 2, 3, 4].map((id) => makeLabel({ id, slug: id === 1 ? 'subir-e-acompanhar-deploy' : `et${id}` }))
     const row = await mountRow({ label_ids: [1, 2, 3, 4] })
     const labels = row.get('[data-test="row-labels"]')
-    expect(labels.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['et1', 'et2', 'et3'])
-    expect(labels.get('[data-test="label-more"]').text()).toBe('+1')
+    expect(labels.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['subir-e-acompanhar-deploy', 'et2', 'et3', 'et4'])
+    expect(labels.find('[data-test="label-more"]').exists()).toBe(false)
+    expect(labels.get('[data-test="label-badges"]').classes()).toContain('flex-wrap')
+    expect(labels.get('[data-test="label-badge"]').classes()).not.toContain('truncate')
     // Not on the title line, and after it.
     expect(row.get('[data-test="row-title"]').element.closest('[data-test="row-labels"]')).toBeNull()
     expect(labels.find('[data-test="row-title"]').exists()).toBe(false)
@@ -240,8 +242,9 @@ describe('etiquetas na linha do menu', () => {
       expect(line.element.parentElement).toBe(row.get('a').element)
       expect(labels.element.parentElement).toBe(row.get('a').element)
       expect(labels.classes()).toContain('col-start-2')
-      expect(labels.classes()).toContain('overflow-hidden')
-      expect(labels.classes()).toContain('whitespace-nowrap')
+      // The labels wrap instead of being clipped.
+      expect(labels.classes()).not.toContain('overflow-hidden')
+      expect(labels.classes()).not.toContain('whitespace-nowrap')
       expect(row.get('a').classes()).toContain(nested ? 'gap-x-2' : 'gap-x-2.5')
       expect(row.get('[data-test="row-title"]').element.closest('[data-test="row-line"]')).not.toBeNull()
     }

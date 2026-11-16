@@ -61,4 +61,25 @@ describe('badges de etiquetas', () => {
     expect(classes).toEqual(expect.arrayContaining(['min-w-0', 'shrink', 'overflow-hidden']))
     expect(classes).not.toContain('shrink-0')
   })
+
+  it('o modo "wrap" mostra o nome inteiro e quebra a linha em vez de cortar', () => {
+    useLabelsStore().labels.push(makeLabel({ id: 5, slug: 'subir-e-acompanhar-deploy-em-producao', color: '#000000' }))
+    const w = mountBadges({ ids: [5, 1, 2, 3, 4], compact: true, wrap: true })
+    const container = w.get('[data-test="label-badges"]').classes()
+    expect(container).toContain('flex-wrap')
+    expect(container).not.toContain('overflow-hidden')
+    const badges = w.findAll('[data-test="label-badge"]')
+    // Every label shows, none summed up as "+N".
+    expect(badges.map((b) => b.text())).toEqual(['subir-e-acompanhar-deploy-em-producao', 'urgente', 'revisao', 'backend', 'infra'])
+    expect(w.find('[data-test="label-more"]').exists()).toBe(false)
+    const long = badges[0].classes()
+    expect(long).not.toContain('truncate')
+    expect(long).not.toContain('max-w-20')
+    expect(long).toContain('max-w-full')
+  })
+
+  it('sem "wrap" o badge compacto continua cortado', () => {
+    const badge = mountBadges({ ids: [1], compact: true }).get('[data-test="label-badge"]').classes()
+    expect(badge).toEqual(expect.arrayContaining(['truncate', 'max-w-20']))
+  })
 })

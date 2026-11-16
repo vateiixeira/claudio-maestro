@@ -3,7 +3,8 @@ import { computed } from 'vue'
 import { labelStyle } from '../../labelColor'
 import type { Label } from '../../types/api'
 
-const props = defineProps<{ label: Label; compact?: boolean }>()
+// `wrap` drops the width cap: the whole name shows, breaking inside the badge only when it is wider than the line.
+const props = defineProps<{ label: Label; compact?: boolean; wrap?: boolean }>()
 const style = computed(() => labelStyle(props.label.color))
 </script>
 
@@ -13,7 +14,10 @@ const style = computed(() => labelStyle(props.label.color))
     :data-slug="label.slug"
     :title="label.slug"
     :style="style"
-    class="inline-block shrink-0 truncate rounded-full px-2 font-mono leading-[1.125rem]"
-    :class="compact ? 'max-w-20 text-[0.625rem]' : 'max-w-40 text-[0.6875rem]'"
+    class="inline-block shrink-0 px-2 font-mono leading-[1.125rem]"
+    :class="[
+      compact ? 'text-[0.625rem]' : 'text-[0.6875rem]',
+      wrap ? 'max-w-full rounded-[0.5625rem] [overflow-wrap:anywhere]' : ['truncate rounded-full', compact ? 'max-w-20' : 'max-w-40'],
+    ]"
   >{{ label.slug }}</span>
 </template>

@@ -5,21 +5,27 @@ import type { Label } from '../../types/api'
 import LabelBadge from './LabelBadge.vue'
 
 // `max` defaults to 3 (1 when `compact`); the rest is summed up as "+N".
-const props = defineProps<{ ids?: number[] | null; compact?: boolean; max?: number }>()
+// `wrap` shows every label with its whole name, breaking onto new lines instead of clipping.
+const props = defineProps<{ ids?: number[] | null; compact?: boolean; max?: number; wrap?: boolean }>()
 const store = useLabelsStore()
 
 // Ids the store does not know (a label removed in another tab) show nothing.
 const known = computed<Label[]>(() =>
   (props.ids ?? []).map((id) => store.byId(id)).filter((label): label is Label => label !== undefined),
 )
-const limit = computed(() => props.max ?? (props.compact ? 1 : 3))
+const limit = computed(() => (props.wrap ? Infinity : (props.max ?? (props.compact ? 1 : 3))))
 const shown = computed(() => known.value.slice(0, limit.value))
 const hidden = computed(() => known.value.slice(limit.value))
 </script>
 
 <template>
-  <span v-if="known.length" data-test="label-badges" class="flex min-w-0 shrink items-center gap-1 overflow-hidden">
-    <LabelBadge v-for="label in shown" :key="label.id" :label="label" :compact="compact" />
+  <span
+    v-if="known.length"
+    data-test="label-badges"
+    class="flex min-w-0 shrink items-center gap-1"
+    :class="wrap ? 'flex-wrap' : 'overflow-hidden'"
+  >
+    <LabelBadge v-for="label in shown" :key="label.id" :label="label" :compact="compact" :wrap="wrap" />
     <span
       v-if="hidden.length"
       data-test="label-more"

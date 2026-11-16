@@ -135,8 +135,8 @@ onBeforeUnmount(() => {
         @click="open(session)"
       >
         <span class="w-full min-w-0 truncate text-[0.8125rem] font-medium">{{ session.title }}</span>
-        <span v-if="hasLabels(session)" data-test="search-labels" class="flex w-full min-w-0 overflow-hidden whitespace-nowrap">
-          <LabelBadges :ids="session.label_ids" compact :max="3" />
+        <span v-if="hasLabels(session)" data-test="search-labels" class="flex w-full min-w-0">
+          <LabelBadges :ids="session.label_ids" compact wrap />
         </span>
         <span class="flex w-full items-center gap-1.5 text-xs text-fg-muted">
           <span

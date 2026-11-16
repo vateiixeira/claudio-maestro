@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Alterado
+
+- No menu lateral (e na busca dele), as etiquetas das conversas aparecem todas e com o nome inteiro, quebrando a linha quando não cabem, em vez de cortar o texto ou resumir em "+N".
+
 ## [0.12.0] - 2026-11-12
 
 As imagens devolvidas pelas ferramentas aparecem no chat, com visualizador, e a conversa ganha a aba Git. O Git do projeto foi reorganizado em abas, com busca, comparação entre branches e carregamento mais rápido.

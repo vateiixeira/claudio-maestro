@@ -325,8 +325,8 @@ test('no menu lateral e na busca, as etiquetas ficam numa linha abaixo do títul
     await row.getByTestId('label-new-save').click()
     await expect(badge(row, slug)).toBeVisible()
   }
-  await expect(side.getByTestId('row-labels').getByTestId('label-badge')).toHaveCount(3)
-  await expect(side.getByTestId('row-labels').getByTestId('label-more')).toHaveText('+1')
+  await expect(side.getByTestId('row-labels').getByTestId('label-badge')).toHaveCount(4)
+  await expect(side.getByTestId('row-labels').getByTestId('label-more')).toHaveCount(0)
   // Badges are not on the title line.
   await expect(side.getByTestId('row-line').getByTestId('label-badge')).toHaveCount(0)
 
@@ -343,7 +343,7 @@ test('no menu lateral e na busca, as etiquetas ficam numa linha abaixo do títul
   const result = page.getByTestId('search-result').filter({ hasText: TITLE })
   await expect(result).toHaveCount(1)
   const found = result.getByTestId('search-labels')
-  await expect(found.getByTestId('label-badge')).toHaveCount(3)
+  await expect(found.getByTestId('label-badge')).toHaveCount(4)
   const resultBox = (await result.boundingBox())!
   const foundBox = (await found.boundingBox())!
   expect(foundBox.x + foundBox.width).toBeLessThanOrEqual(resultBox.x + resultBox.width + 1)
@@ -373,7 +373,7 @@ test('conversa aninhada: sem tag mantém a altura, com tag ganha segunda linha a
   expect(plain.height, 'linha sem tag mantém ~28px').toBeLessThanOrEqual(29)
   await expect(nested(SECOND_TITLE).getByTestId('row-labels')).toHaveCount(0)
 
-  for (const [title, count] of [[TITLE, 1], ['Investigue o módulo de pagamentos', 3]] as const) {
+  for (const [title, count] of [[TITLE, 1], ['Investigue o módulo de pagamentos', 4]] as const) {
     const row = nested(title)
     const labels = row.getByTestId('row-labels')
     await expect(labels.getByTestId('label-badge')).toHaveCount(count)
@@ -390,7 +390,7 @@ test('conversa aninhada: sem tag mantém a altura, com tag ganha segunda linha a
     await expect(row.getByTestId('row-age')).toBeVisible()
     expect(second.x + second.width).toBeLessThanOrEqual(box.x + box.width + 1)
   }
-  await expect(nested('Investigue').getByTestId('label-more')).toHaveText('+1')
+  await expect(nested('Investigue').getByTestId('label-more')).toHaveCount(0)
 })
 
 test('conversa avulsa (lane "Para revisar") com tags: segunda linha alinhada e menu de contexto abre e fecha', async ({ page, baseURL }) => {
@@ -422,18 +422,21 @@ test('conversa avulsa (lane "Para revisar") com tags: segunda linha alinhada e m
   }
 })
 
-test('tag com slug longo trunca no próprio limite e a segunda linha não estoura a barra', async ({ page, baseURL }) => {
-  const long = 'longo-longo-longo-longo-longo-xx'
+test('tag com slug longo aparece inteira, quebrando a linha sem estourar a barra', async ({ page, baseURL }) => {
+  const long = 'subir-e-acompanhar-deploy-em-pro'
   await labelAll(page, baseURL!, [long, 'b'], TITLE)
   await page.goto('/inbox')
   const row = page.getByTestId('project-session').filter({ hasText: TITLE })
   await expect(row.getByTestId('row-labels').getByTestId('label-badge')).toHaveCount(2)
+  const badge = row.locator(`[data-test="label-badge"][data-slug="${long}"]`)
+  await expect(badge).toHaveText(long)
+  expect(await badge.evaluate((el) => el.scrollWidth <= el.clientWidth), 'nome inteiro, sem corte').toBe(true)
   const box = (await row.boundingBox())!
-  const labels = (await row.getByTestId('row-labels').boundingBox())!
-  expect(labels.x + labels.width).toBeLessThanOrEqual(box.x + box.width + 1)
-  expect(labels.height, 'a linha de tags não quebra').toBeLessThanOrEqual(20)
-  const first = (await badgeBox(row, long))!
-  expect(first.width, 'a tag longa respeita o próprio limite').toBeLessThan(120)
+  for (const slug of [long, 'b']) {
+    const b = (await badgeBox(row, slug))!
+    expect(b.x + b.width, `${slug} dentro da barra`).toBeLessThanOrEqual(box.x + box.width + 1)
+    expect(b.y + b.height, `${slug} dentro da linha`).toBeLessThan(box.y + box.height)
+  }
 })
 
 async function badgeBox(scope: Locator, slug: string) {
