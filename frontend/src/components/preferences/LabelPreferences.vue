@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { errorMessage } from '../../api/http'
-import { LABEL_PALETTE, labelStyle } from '../../labelColor'
+import { DEFAULT_LABEL_COLOR, LABEL_PALETTE, labelStyle } from '../../labelColor'
 import { useLabelsStore } from '../../stores/labels'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import { useLabelUsage } from '../labels/useLabelUsage'
@@ -30,7 +30,7 @@ const paletteFor = ref<number | null>(null)
 const inputs = new Map<number, HTMLInputElement>()
 
 const createSlug = ref('')
-const createColor = ref(LABEL_PALETTE[4] ?? '#78dce8')
+const createColor = ref(LABEL_PALETTE[4] ?? DEFAULT_LABEL_COLOR)
 const createError = ref('')
 const creating = ref(false)
 
