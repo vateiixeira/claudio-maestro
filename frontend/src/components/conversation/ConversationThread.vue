@@ -722,7 +722,6 @@ function resolvePrompt(promptId: string) {
             class="m-0 rounded-md border border-line bg-card px-3 py-1.5 text-center text-xs text-fg-muted"
           >A mensagem buscada não está no trecho carregado da conversa.</p>
           <p v-if="loadError" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg">{{ loadError }}</p>
-          <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
           <p v-if="runTaskId != null" data-test="task-run-note" class="m-0 text-xs text-fg-muted">Execução de {{ runAgent?.name ?? 'um agente' }} na <RouterLink class="text-info-soft hover:underline focus-visible:outline-2 focus-visible:outline-primary" :to="`/tarefas/${runTaskId}`">tarefa #{{ runTaskId }}</RouterLink>. O resultado e os próximos passos ficam na tarefa.</p>
           <div v-if="replyRun" data-test="reply-target" class="flex items-center gap-2 rounded-md border border-secondary/40 bg-secondary-tint py-1 pr-1 pl-3 text-xs text-fg">
             <span class="min-w-0 grow truncate">Respondendo à {{ replyRun.source === 'routine' ? 'rotina' : 'execução' }} das {{ replyTime }}</span>
@@ -738,6 +737,7 @@ function resolvePrompt(promptId: string) {
             </button>
           </div>
           <MessageComposer ref="composer" :key="composerSession" :session-id="composerSession" :state="composerState" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
+            <template #top><SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" /></template>
             <template #controls><SessionControls :session-id="composerSession" /></template>
           </MessageComposer>
         </div>

@@ -200,3 +200,77 @@ it('composer compacto do CTO mantém campo/envio e oferece controles por disclos
   expect(wrapper.get('[data-test="composer-options"]').classes()).toContain('mobile-expanded')
   expect(wrapper.get('[data-test="composer-options"]').text()).toContain('Modelo e permissões')
 })
+
+describe('moldura única do compositor', () => {
+  const inside = (outer: Element, inner: Element) => outer !== inner && outer.contains(inner)
+  const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+
+  it('o conteúdo do slot top, o campo e a barra de ferramentas ficam dentro da moldura, nessa ordem', () => {
+    const w = mount(MessageComposer, {
+      props: { sessionId: 's1', state: 'idle' },
+      slots: { top: '<div data-test="top-slot">faixa</div>', controls: '<button data-test="ctl">Modelo</button>' },
+      attachTo: document.body,
+    })
+    const frame = w.get('[data-test="composer-frame"]').element
+    const top = w.get('[data-test="top-slot"]').element
+    const ta = w.get('textarea').element
+    const toolbar = w.get('[data-test="composer-toolbar"]').element
+    expect(inside(frame, top)).toBe(true)
+    expect(inside(frame, ta)).toBe(true)
+    expect(inside(frame, toolbar)).toBe(true)
+    expect(before(top, ta)).toBe(true)
+    expect(before(ta, toolbar)).toBe(true)
+    w.unmount()
+  })
+
+  it('a moldura não corta a lista de / e @: sem overflow escondido, e a borda e o foco são dela', () => {
+    const w = mount(MessageComposer, { props: { sessionId: 's1', state: 'idle' } })
+    const frame = w.get('[data-test="composer-frame"]')
+    expect(frame.classes()).not.toContain('overflow-hidden')
+    expect(frame.classes()).toContain('border')
+    expect(frame.classes()).toContain('focus-within:border-fg-muted')
+    expect(w.get('textarea').classes()).not.toContain('border')
+  })
+
+  it('Enviar, Interromper e Ditar ficam na barra, depois das opções', () => {
+    const w = mount(MessageComposer, { props: { sessionId: 's1', state: 'running' }, slots: { controls: '<button>Modelo</button>' }, attachTo: document.body })
+    const toolbar = w.get('[data-test="composer-toolbar"]').element
+    const options = w.get('[data-test="composer-options"]').element
+    expect(inside(toolbar, options)).toBe(true)
+    const buttons = ['send', 'interrupt'].map((name) => w.get(`[data-test="${name}"]`).element)
+    for (const button of buttons) {
+      expect(inside(toolbar, button)).toBe(true)
+      expect(inside(options, button)).toBe(false)
+      expect(before(options, button)).toBe(true)
+    }
+    const dictate = w.find('[data-test="dictate"]')
+    if (dictate.exists()) {
+      expect(inside(toolbar, dictate.element)).toBe(true)
+      expect(before(options, dictate.element)).toBe(true)
+    }
+    w.unmount()
+  })
+
+  it('a dica de teclas fica abaixo da moldura, fora dela, mantendo a classe do modo compacto', () => {
+    const w = mount(MessageComposer, { props: { sessionId: 's1', state: 'idle' }, attachTo: document.body })
+    const frame = w.get('[data-test="composer-frame"]').element
+    const hint = w.get('[data-test="composer-hint"]')
+    expect(hint.text()).toBe('Enter envia · Ctrl+Enter quebra linha')
+    expect(hint.classes()).toContain('composer-keyboard-hint')
+    expect(inside(frame, hint.element)).toBe(false)
+    expect(before(frame, hint.element)).toBe(true)
+    expect(w.get('[data-test="composer-options"]').text()).not.toContain('Enter envia')
+    w.unmount()
+  })
+
+  it('os anexos ficam fora da moldura, antes dela', async () => {
+    const { w } = setup()
+    useTerminalStore().attach('s1', 'ls\nfoo')
+    await flushPromises()
+    const frame = w.get('[data-test="composer-frame"]').element
+    const snippet = w.get('[data-test="terminal-attachment"]').element
+    expect(inside(frame, snippet)).toBe(false)
+    expect(before(snippet, frame)).toBe(true)
+    w.unmount()
+  })
+})

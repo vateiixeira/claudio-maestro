@@ -268,15 +268,19 @@ async function interrupt() {
         </button>
       </div>
     </div>
-    <div class="flex items-end gap-2">
+    <div
+      data-test="composer-frame"
+      class="rounded-2xl border border-line-strong bg-panel focus-within:border-fg-muted"
+    >
+      <slot name="top" />
       <label :for="`msg-${sessionId}`" class="sr-only">Mensagem para a sessão</label>
-      <div class="relative min-w-0 grow rounded-xl bg-elevated">
+      <div class="relative min-w-0">
         <MentionMirror
           :text="text"
           :mentions="suggestions.mentions.value"
           :hint="suggestions.argumentHint.value"
           :scroll-top="scrollTop"
-          class="rounded-xl border border-transparent px-3.5 py-[14px] font-sans text-sm leading-normal"
+          class="px-3.5 py-[14px] font-sans text-sm leading-normal"
         />
         <textarea
           :id="`msg-${sessionId}`"
@@ -289,7 +293,7 @@ async function interrupt() {
           :aria-expanded="suggestions.isOpen.value"
           :aria-controls="suggestions.menuId"
           :aria-activedescendant="suggestions.isOpen.value && suggestions.items.value.length ? suggestions.optionId(suggestions.active.value) : undefined"
-          class="relative block min-h-[51px] w-full resize-none overflow-hidden rounded-xl border border-line-strong bg-transparent px-3.5 py-[14px] font-sans text-sm leading-normal text-fg outline-none focus:border-fg-muted"
+          class="relative block min-h-[49px] w-full resize-none overflow-hidden border-none bg-transparent px-3.5 py-[14px] font-sans text-sm leading-normal text-fg outline-none"
           @input="onInput"
           @scroll="onScroll"
           @keydown="onKeydown"
@@ -313,50 +317,55 @@ async function interrupt() {
           @hover="(i) => (suggestions.active.value = i)"
         />
       </div>
-      <button
-        v-if="dictation.supported"
-        type="button"
-        data-test="dictate"
-        :aria-label="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
-        :aria-pressed="dictation.recording.value"
-        :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
-        class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border"
-        :class="dictation.recording.value ? 'border-secondary/60 bg-secondary-tint text-secondary' : 'border-line-strong bg-transparent text-fg-muted hover:text-fg'"
-        @click="dictation.toggle"
+      <div
+        data-test="composer-toolbar"
+        class="flex flex-wrap items-center gap-1 px-2 pt-1.5 pb-2 [&_[aria-haspopup=menu]]:h-8 [&_[aria-haspopup=menu]:not(.bg-secondary-tint)]:border-transparent [&_[aria-haspopup=menu]:not(.bg-secondary-tint):hover]:bg-elevated"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
-      </button>
-      <button
-        v-if="busy"
-        type="button"
-        data-test="interrupt"
-        class="flex h-11 cursor-pointer items-center gap-2 rounded-lg border border-line-strong bg-elevated px-3.5 text-sm font-medium text-fg disabled:opacity-60"
-        :disabled="interrupting"
-        @click="interrupt"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
-        Interromper
-      </button>
-      <button
-        type="button"
-        data-test="send"
-        class="h-11 cursor-pointer rounded-lg border-none bg-primary px-4 text-sm font-semibold text-primary-fg disabled:cursor-default disabled:bg-elevated disabled:text-fg-subtle"
-        :disabled="!canSend"
-        :title="blockedReason || undefined"
-        :aria-describedby="blockedReason ? `blocked-${sessionId}` : undefined"
-        @click="send"
-      >
-        Enviar
-      </button>
+        <button v-if="compactOnMobile" type="button" data-test="composer-options-toggle" class="composer-options-toggle" :aria-expanded="mobileOptionsOpen" :aria-controls="`composer-options-${sessionId}`" @click="mobileOptionsOpen = !mobileOptionsOpen">{{ mobileOptionsOpen ? 'Fechar opções da conversa' : 'Opções da conversa' }}</button>
+        <div :id="`composer-options-${sessionId}`" data-test="composer-options" class="composer-options flex min-w-0 grow flex-wrap items-center gap-0.5" :class="{ 'mobile-expanded': mobileOptionsOpen }">
+          <slot name="controls" />
+        </div>
+        <button
+          v-if="dictation.supported"
+          type="button"
+          data-test="dictate"
+          :aria-label="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+          :aria-pressed="dictation.recording.value"
+          :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+          class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-[0.625rem] border-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          :class="dictation.recording.value ? 'bg-secondary-tint text-secondary' : 'bg-transparent text-fg-muted hover:bg-elevated hover:text-fg'"
+          @click="dictation.toggle"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+        </button>
+        <button
+          v-if="busy"
+          type="button"
+          data-test="interrupt"
+          class="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-[0.625rem] border border-line-strong bg-transparent px-3.5 text-sm font-medium text-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+          :disabled="interrupting"
+          @click="interrupt"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
+          Interromper
+        </button>
+        <button
+          type="button"
+          data-test="send"
+          class="h-9 shrink-0 cursor-pointer rounded-[0.625rem] border-none bg-primary px-4 text-sm font-semibold text-primary-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:bg-elevated disabled:text-fg-subtle"
+          :disabled="!canSend"
+          :title="blockedReason || undefined"
+          :aria-describedby="blockedReason ? `blocked-${sessionId}` : undefined"
+          @click="send"
+        >
+          Enviar
+        </button>
+      </div>
     </div>
-      <span v-if="dictation.recording.value" data-test="recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
-        <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
-      </span>
-    <button v-if="compactOnMobile" type="button" data-test="composer-options-toggle" class="composer-options-toggle" :aria-expanded="mobileOptionsOpen" :aria-controls="`composer-options-${sessionId}`" @click="mobileOptionsOpen = !mobileOptionsOpen">{{ mobileOptionsOpen ? 'Fechar opções da conversa' : 'Opções da conversa' }}</button>
-    <div :id="`composer-options-${sessionId}`" data-test="composer-options" class="composer-options flex flex-wrap items-center gap-2" :class="{ 'mobile-expanded': mobileOptionsOpen }">
-      <slot name="controls" />
-      <span class="composer-keyboard-hint ml-auto font-mono text-xs text-fg-subtle">Enter envia · Ctrl+Enter quebra linha</span>
-    </div>
+    <span v-if="dictation.recording.value" data-test="recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
+      <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
+    </span>
+    <div data-test="composer-hint" class="composer-keyboard-hint text-right font-mono text-xs text-fg-subtle">Enter envia · Ctrl+Enter quebra linha</div>
   </div>
 </template>
 
@@ -366,7 +375,7 @@ async function interrupt() {
 .compact-mobile-composer .composer-options-toggle{display:block;align-self:flex-start;min-height:28px;padding:2px 0;border:0;background:transparent;color:var(--color-fg-muted);font:inherit;font-size:0.75rem;cursor:pointer}
 .compact-mobile-composer .composer-options-toggle:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
 .compact-mobile-composer .composer-options:not(.mobile-expanded){display:none}
-.compact-mobile-composer .composer-options.mobile-expanded{max-height:96px;overflow-y:auto}
+.compact-mobile-composer .composer-options.mobile-expanded{flex-basis:100%;max-height:96px;overflow-y:auto}
 .compact-mobile-composer .composer-keyboard-hint{display:none}
 }
 </style>

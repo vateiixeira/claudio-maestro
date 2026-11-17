@@ -139,8 +139,8 @@ describe('summarizeSubagents', () => {
       user('u'), agent('a', 'running'), agent('b', 'running'), agent('c', 'running'),
       agent('d', 'completed'), agent('e', 'completed'), agent('f', 'failed'), agent('g', 'stopped'),
     ]
-    expect(summarizeSubagents(deriveSubagents(items, true))).toBe('3 rodando, 2 concluídos, 1 com erro, 1 parado')
-    expect(summarizeSubagents(deriveSubagents([user('u'), agent('a', 'running'), agent('d', 'completed')], true))).toBe('1 rodando, 1 concluído')
+    expect(summarizeSubagents(deriveSubagents(items, true))).toBe('3 rodando · 2 concluídos · 1 com erro · 1 parado')
+    expect(summarizeSubagents(deriveSubagents([user('u'), agent('a', 'running'), agent('d', 'completed')], true))).toBe('1 rodando · 1 concluído')
   })
 })
 
@@ -188,7 +188,7 @@ describe('comandos Bash em background na lista', () => {
   })
 
   it('o resumo conta comandos e subagentes juntos', () => {
-    expect(summarizeSubagents(deriveSubagents([user('u'), agent('a', 'running'), bg('b', 'running'), bg('c', 'completed')], true))).toBe('2 rodando, 1 concluído')
+    expect(summarizeSubagents(deriveSubagents([user('u'), agent('a', 'running'), bg('b', 'running'), bg('c', 'completed')], true))).toBe('2 rodando · 1 concluído')
   })
 })
 

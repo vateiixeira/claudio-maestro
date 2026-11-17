@@ -115,7 +115,7 @@ function confirmBypass() {
 </script>
 
 <template>
-  <div v-if="options" class="flex flex-wrap items-center gap-2">
+  <div v-if="options" class="flex min-w-0 grow flex-wrap items-center gap-2">
     <RemoteControlChip
       :state="remoteState"
       :url="options.remote_control_url"
@@ -154,7 +154,7 @@ function confirmBypass() {
       :disabled="saving || isAgentSession"
       @select="selectMode"
     />
-    <ContextIndicator v-if="context" :session-id="sessionId" :context="context" />
+    <ContextIndicator v-if="context" :session-id="sessionId" :context="context" class="ml-auto" />
     <span v-if="options.effort_pending" data-test="effort-pending" class="text-xs text-fg-subtle">vale a partir do próximo turno</span>
     <p v-if="error" role="alert" class="m-0 w-full text-sm text-diff-del-fg">{{ error }}</p>
 

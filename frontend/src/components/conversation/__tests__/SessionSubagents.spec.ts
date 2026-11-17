@@ -71,6 +71,16 @@ describe('faixa de subagentes na conversa', () => {
     expect(strip.element.compareDocumentPosition(composer.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('a faixa fica dentro da moldura do compositor, antes do campo, e a moldura continua sem ela quando nada roda', async () => {
+    const running = await mountWith({ state: 'running', items: [user('u1'), agent('a', 'running')] })
+    const frame = running.get('[data-test="composer-frame"]').element
+    expect(frame.contains(running.get('[data-test="subagent-strip"]').element)).toBe(true)
+    expect(frame.contains(running.get('textarea').element)).toBe(true)
+    const idle = await mountWith({ state: 'idle', items: [user('u1'), agent('a', 'completed')] })
+    expect(idle.find('[data-test="composer-frame"]').exists()).toBe(true)
+    expect(idle.find('[data-test="subagent-strip"]').exists()).toBe(false)
+  })
+
   it('com a sessão ociosa e um subagente em segundo plano, "Parar subagente" chama a rota da sessão', async () => {
     const fetchMock = routeFetch({
       'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ seq: 1, state: 'idle', items: [user('u1'), agent('bg', 'running'), user('u2')] as never })),

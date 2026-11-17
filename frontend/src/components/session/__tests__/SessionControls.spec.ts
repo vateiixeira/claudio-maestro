@@ -385,6 +385,14 @@ describe('uso do contexto', () => {
     expect(el.classes()).not.toContain('text-secondary')
   })
 
+  it('o indicador fica à direita da barra e a raiz ocupa a largura que sobra', async () => {
+    setup({ context: { used_tokens: 84_000, max_tokens: 200_000, percent: 21 } })
+    const w = await mountControls()
+    expect(w.classes()).toEqual(expect.arrayContaining(['min-w-0', 'grow']))
+    const root = contextText(w).element.parentElement!
+    expect(root.classList.contains('ml-auto')).toBe(true)
+  })
+
   it('destaca com text-secondary a partir de 80%', async () => {
     setup({ context: { used_tokens: 170_000, max_tokens: 200_000, percent: 84 } })
     const el = contextText(await mountControls())

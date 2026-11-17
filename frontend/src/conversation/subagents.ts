@@ -195,13 +195,13 @@ const COUNT_WORDS: Record<SubagentStatus, [string, string]> = {
   stopped: ['parado', 'parados'],
 }
 
-/** "3 rodando, 1 concluído": counts by state, in a fixed order. */
+/** "3 rodando · 1 concluído": counts by state, in a fixed order. */
 export function summarizeSubagents(entries: SubagentEntry[]): string {
   return (['running', 'completed', 'failed', 'stopped'] as const)
     .map((status) => [status, entries.filter((e) => e.status === status).length] as const)
     .filter(([, count]) => count > 0)
     .map(([status, count]) => `${count} ${COUNT_WORDS[status][count === 1 ? 0 : 1]}`)
-    .join(', ')
+    .join(' · ')
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`

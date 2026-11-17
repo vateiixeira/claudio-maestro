@@ -8,7 +8,7 @@ import type { SubagentStatus } from '../../types/conversation'
 import IconChevron from '../icons/IconChevron.vue'
 import ModelChip from './ModelChip.vue'
 
-// Strip above the message field while a subagent or background command runs. Above this many, only a summary.
+// Strip at the top of the composer's frame while a subagent or background command runs. Above this many, only a summary.
 const LIST_LIMIT = 3
 
 const props = defineProps<{ sessionId: string; entries: SubagentEntry[] }>()
@@ -33,8 +33,10 @@ const collapsible = computed(() => props.entries.length > LIST_LIMIT)
 const expanded = ref(false)
 const showList = computed(() => !collapsible.value || expanded.value)
 const summary = computed(() => summarizeSubagents(props.entries))
-const runningCount = computed(() => props.entries.filter((e) => e.status === 'running').length)
-const running = computed(() => runningCount.value > 0)
+const running = computed(() => props.entries.some((e) => e.status === 'running'))
+// The bar names the latest of those running, with its clock.
+const current = computed(() => [...props.entries].reverse().find((e) => e.status === 'running') ?? null)
+const currentClock = computed(() => (current.value ? clockOf(current.value) : null))
 // What "Parar" stops, named after what is running.
 const stopLabel = computed(() => {
   const live = props.entries.filter((e) => e.status === 'running')
@@ -68,22 +70,41 @@ async function stopAll() {
     data-test="subagent-strip"
     role="region"
     :aria-label="regionLabel"
-    class="overflow-hidden rounded-lg border border-line bg-panel"
   >
-    <button
-      v-if="collapsible"
-      type="button"
-      data-test="subagent-summary"
-      class="flex min-h-9 w-full cursor-pointer items-center gap-2 border-none bg-transparent px-3 text-left text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
-      :aria-expanded="expanded"
-      @click="expanded = !expanded"
-    >
-      <svg v-if="running" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" class="shrink-0 animate-spin text-secondary" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" stroke-linecap="round" /></svg>
+    <div data-test="subagent-bar" class="flex min-h-11 flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line py-1 pr-2 pl-3.5">
+      <svg v-if="running" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" class="shrink-0 animate-spin text-secondary" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" stroke-linecap="round" /></svg>
       <span class="cap shrink-0 text-fg-subtle">{{ regionLabel }}</span>
-      <span class="min-w-0 grow truncate text-xs text-fg">{{ summary }}</span>
-      <IconChevron :open="expanded" :size="12" class="text-fg-subtle" />
-    </button>
-    <ul v-if="showList" class="m-0 flex max-h-40 list-none flex-col overflow-y-auto p-0" :class="collapsible ? 'border-t border-line' : ''">
+      <span data-test="subagent-counts" class="shrink-0 text-[0.8125rem] text-fg">{{ summary }}</span>
+      <span v-if="current" data-test="subagent-current" class="ml-auto flex min-w-0 items-center gap-2">
+        <span class="min-w-0 truncate text-xs text-fg-muted">{{ current.description }}</span>
+        <span v-if="currentClock" class="shrink-0 font-mono text-[0.6875rem] tabular-nums" :class="currentClock.stale ? 'text-secondary-soft' : 'text-fg-subtle'">{{ currentClock.text }}</span>
+      </span>
+      <span v-else class="grow" />
+      <button
+        v-if="running"
+        type="button"
+        data-test="subagent-stop"
+        class="flex min-h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-elevated px-2.5 text-xs font-medium text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
+        :disabled="stopping"
+        @click="stopAll"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
+        {{ stopLabel }}
+      </button>
+      <button
+        v-if="collapsible"
+        type="button"
+        data-test="subagent-summary"
+        class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        :aria-label="expanded ? 'Recolher a lista de subagentes' : 'Ver todos os subagentes'"
+        :aria-expanded="expanded"
+        @click="expanded = !expanded"
+      >
+        <IconChevron :open="expanded" :size="14" />
+      </button>
+    </div>
+    <p v-if="stopError" data-test="subagent-stop-error" role="alert" class="m-0 border-b border-line px-3.5 py-1.5 text-xs text-diff-del-fg">{{ stopError }}</p>
+    <ul v-if="showList" class="m-0 flex max-h-40 list-none flex-col overflow-y-auto border-b border-line p-0">
       <li v-for="(entry, index) in entries" :key="entry.id" :class="index > 0 ? 'border-t border-line' : ''">
         <button
           type="button"
@@ -115,21 +136,5 @@ async function stopAll() {
         </button>
       </li>
     </ul>
-    <div
-      v-if="running"
-      class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-3 py-1.5"
-    >
-      <button
-        type="button"
-        data-test="subagent-stop"
-        class="flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-elevated px-2.5 text-xs font-medium text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
-        :disabled="stopping"
-        @click="stopAll"
-      >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
-        {{ stopLabel }}
-      </button>
-      <p v-if="stopError" data-test="subagent-stop-error" role="alert" class="m-0 min-w-0 text-xs text-diff-del-fg">{{ stopError }}</p>
-    </div>
   </div>
 </template>
