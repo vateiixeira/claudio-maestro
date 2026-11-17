@@ -60,6 +60,18 @@ const calls = (fetchMock: ReturnType<typeof routeFetch>, key: string) =>
 const buttonByText = (wrapper: ReturnType<typeof mount>, text: string) =>
   wrapper.findAll('button').find((b) => b.text().includes(text))
 
+
+// The "more" menu of the panel form is teleported to <body>: its items are read from there.
+const moreButton = (wrapper: ReturnType<typeof mount>) => wrapper.find('[data-test="plan-more"]')
+const moreItem = (id: string) => document.body.querySelector<HTMLElement>(`[data-test="more-menu-item"][data-id="${id}"]`)
+const moreIds = () => Array.from(document.body.querySelectorAll<HTMLElement>('[data-test="more-menu-item"]')).map((e) => e.dataset.id)
+async function pick(wrapper: ReturnType<typeof mount>, id: string) {
+  await moreButton(wrapper).trigger('click')
+  await flushPromises()
+  moreItem(id)!.click()
+  await flushPromises()
+}
+
 describe('propriedade Plano', () => {
   it('sem vínculo mostra Nenhum e o botão de escolher', async () => {
     const { wrapper } = await mountProperty({ 'GET /api/sessions/s1/plan': () => jsonResponse(none) })
@@ -77,30 +89,165 @@ describe('propriedade Plano', () => {
     expect(wrapper.find('[data-test="prop-plan"]').exists()).toBe(true)
   })
 
-  it('sem o resumo (o painel já mostra o plano), mantém Trocar plano… e Desligar e esconde o nome e a posição', async () => {
-    const { wrapper } = await mountProperty({ 'GET /api/sessions/s1/plan': () => jsonResponse(state()) }, { summary: false })
+  it('sem o resumo (o painel já mostra o plano), os botões viram o menu Mais ações do plano e o nome e a posição ficam de fora', async () => {
+    const { wrapper } = await mountProperty({ 'GET /api/sessions/s1/plan': () => jsonResponse(state()) }, { summary: false, attachTo: document.body })
 
     const value = wrapper.find('[data-test="prop-plan"]').text()
     expect(value).not.toContain('Carrinho de compras')
     expect(value).not.toContain('4 de 12')
-    expect(buttonByText(wrapper, 'Trocar plano…')).toBeTruthy()
-    expect(buttonByText(wrapper, 'Desligar')).toBeTruthy()
+    expect(buttonByText(wrapper, 'Trocar plano…')).toBeUndefined()
+    expect(buttonByText(wrapper, 'Desligar')).toBeUndefined()
+    expect(moreButton(wrapper).attributes('aria-label')).toBe('Mais ações do plano: trocar ou desligar')
+    await moreButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(moreIds()).toEqual(['switch', 'unlink'])
+    expect(moreItem('switch')!.textContent).toBe('Trocar plano…')
+    expect(moreItem('unlink')!.textContent).toBe('Desligar')
   })
 
-  it('sem o resumo, a lista de planos abre e vincula o escolhido', async () => {
+  it('sem o resumo e sem vínculo, o item é Escolher plano… e não há Desligar', async () => {
+    const { wrapper } = await mountProperty({ 'GET /api/sessions/s1/plan': () => jsonResponse(none) }, { summary: false, attachTo: document.body })
+
+    await moreButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(moreIds()).toEqual(['switch'])
+    expect(moreItem('switch')!.textContent).toBe('Escolher plano…')
+  })
+
+  it('sem o resumo, com o vínculo desligado aparece Ligar automaticamente e ele chama PUT com auto', async () => {
+    const { wrapper, fetchMock } = await mountProperty({
+      'GET /api/sessions/s1/plan': () => jsonResponse(off),
+      'PUT /api/sessions/s1/plan': () => jsonResponse(state()),
+    }, { summary: false, attachTo: document.body })
+
+    await moreButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(moreIds()).toEqual(['switch', 'auto'])
+    expect(moreItem('auto')!.textContent).toBe('Ligar automaticamente')
+    moreItem('auto')!.click()
+    await flushPromises()
+    expect(JSON.parse(calls(fetchMock, 'PUT /api/sessions/s1/plan')[0]![1]!.body as string)).toEqual({ auto: true })
+  })
+
+  it('sem o resumo, Desligar do menu chama DELETE', async () => {
+    const { wrapper, fetchMock } = await mountProperty({
+      'GET /api/sessions/s1/plan': () => jsonResponse(state()),
+      'DELETE /api/sessions/s1/plan': () => jsonResponse(off),
+    }, { summary: false, attachTo: document.body })
+
+    await pick(wrapper, 'unlink')
+
+    expect(calls(fetchMock, 'DELETE /api/sessions/s1/plan')).toHaveLength(1)
+  })
+
+  it('sem o resumo, Trocar plano… busca os planos e abre a lista; o escolhido vincula', async () => {
     const { wrapper, fetchMock } = await mountProperty({
       'GET /api/sessions/s1/plan': () => jsonResponse(state()),
       'GET /api/projects/1/plans': () => jsonResponse(plans),
       'PUT /api/sessions/s1/plan': () => jsonResponse(state({ path: plans[1]!.path })),
-    }, { summary: false })
+    }, { summary: false, attachTo: document.body })
 
-    await buttonByText(wrapper, 'Trocar plano…')!.trigger('click')
-    await flushPromises()
+    await pick(wrapper, 'switch')
+
+    expect(calls(fetchMock, 'GET /api/projects/1/plans')).toHaveLength(1)
+    expect(wrapper.find('[role="menu"][aria-label="Planos do projeto"]').exists()).toBe(true)
+    expect(document.activeElement).toBe(wrapper.findAll('[role="menuitem"]')[0]!.element)
     await wrapper.findAll('[role="menuitem"]')[1]!.trigger('click')
     await flushPromises()
 
     expect(calls(fetchMock, 'PUT /api/sessions/s1/plan')).toHaveLength(1)
     expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+  })
+
+  it('sem o resumo, o Esc na lista de planos fecha só a lista, devolve o foco ao menu e não chega à gaveta', async () => {
+    const { wrapper } = await mountProperty({
+      'GET /api/sessions/s1/plan': () => jsonResponse(state()),
+      'GET /api/projects/1/plans': () => jsonResponse(plans),
+    }, { summary: false, attachTo: document.body })
+    const outer = vi.fn()
+    window.addEventListener('keydown', outer)
+
+    await pick(wrapper, 'switch')
+    const items = wrapper.findAll('[role="menuitem"]')
+    await items[0]!.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(items[1]!.element)
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    items[1]!.element.dispatchEvent(escape)
+    await flushPromises()
+
+    expect(escape.defaultPrevented).toBe(true)
+    expect(outer.mock.calls.every(([event]) => (event as KeyboardEvent).defaultPrevented)).toBe(true)
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(moreButton(wrapper).element)
+    window.removeEventListener('keydown', outer)
+  })
+
+  it('sem o resumo, com a lista vazia o Esc no botão fecha o aviso sem chegar à gaveta', async () => {
+    const { wrapper } = await mountProperty({
+      'GET /api/sessions/s1/plan': () => jsonResponse(none),
+      'GET /api/projects/1/plans': () => jsonResponse([]),
+    }, { summary: false, attachTo: document.body })
+    const outer = vi.fn()
+    window.addEventListener('keydown', outer)
+
+    await pick(wrapper, 'switch')
+    expect(wrapper.find('[role="status"]').exists()).toBe(true)
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    moreButton(wrapper).element.dispatchEvent(escape)
+    await flushPromises()
+
+    expect(escape.defaultPrevented).toBe(true)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(outer.mock.calls.every(([event]) => (event as KeyboardEvent).defaultPrevented)).toBe(true)
+    window.removeEventListener('keydown', outer)
+  })
+
+  it('sem o resumo, a resposta antiga da lista de planos não reabre a lista depois de a conversa mudar', async () => {
+    let release!: (response: Response) => void
+    const slow = new Promise<Response>((resolve) => { release = resolve })
+    const { wrapper } = await mountProperty({
+      'GET /api/sessions/s1/plan': () => jsonResponse(state()),
+      'GET /api/sessions/s2/plan': () => jsonResponse(none),
+      'GET /api/projects/1/plans': () => slow,
+    }, { summary: false, attachTo: document.body })
+
+    await moreButton(wrapper).trigger('click')
+    await flushPromises()
+    moreItem('switch')!.click()
+    await flushPromises()
+    await wrapper.setProps({ sessionId: 's2' })
+    await flushPromises()
+    release(jsonResponse(plans))
+    await flushPromises()
+
+    expect(wrapper.find('[role="menu"][aria-label="Planos do projeto"]').exists()).toBe(false)
+  })
+
+  it('sem o resumo, pedir a lista duas vezes mostra a resposta da última', async () => {
+    const resolvers: Array<(response: Response) => void> = []
+    const { wrapper } = await mountProperty({
+      'GET /api/sessions/s1/plan': () => jsonResponse(state()),
+      'GET /api/projects/1/plans': () => new Promise<Response>((resolve) => { resolvers.push(resolve) }),
+    }, { summary: false, attachTo: document.body })
+
+    await moreButton(wrapper).trigger('click')
+    await flushPromises()
+    moreItem('switch')!.click()
+    await flushPromises()
+    await moreButton(wrapper).trigger('click')
+    await flushPromises()
+    moreItem('switch')!.click()
+    await flushPromises()
+    expect(resolvers).toHaveLength(2)
+
+    resolvers[1]!(jsonResponse([plans[1]!]))
+    await flushPromises()
+    resolvers[0]!(jsonResponse(plans))
+    await flushPromises()
+
+    const items = wrapper.findAll('[role="menuitem"]')
+    expect(items).toHaveLength(1)
+    expect(items[0]!.text()).toContain('Pagamentos')
   })
 
   it('com plano mostra o nome e a posição', async () => {

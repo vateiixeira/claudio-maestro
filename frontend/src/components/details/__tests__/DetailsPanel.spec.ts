@@ -142,7 +142,7 @@ describe('painel Detalhes', () => {
     expect(groups[1].findAll('dt').map((dt) => dt.text()).slice(0, 4)).toEqual(['Projeto', 'Branch', 'Worktree', 'Contexto'])
   })
 
-  it('mostra a seção Plano compacta quando a sessão tem plano visível, com Abrir plano, Trocar plano… e Desligar no rodapé', async () => {
+  it('mostra a seção Plano com a posição no título e o menu Mais ações do plano no rodapé, ao lado de Abrir plano', async () => {
     const plan = { path: '/p/plan.md', title: 'Plano X', total: 8, done: 3, current: { number: 4, title: 'Quarta' } }
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'running', plan })])
     const wrapper = await mountPanel({
@@ -154,16 +154,37 @@ describe('painel Detalhes', () => {
     const section = wrapper.find('[data-test="details-plan"]')
     expect(section.exists()).toBe(true)
     expect(section.find('h3').text()).toBe('Plano')
-    expect(section.find('[data-test="plan-strip"]').text()).toContain('4 de 8')
-    expect(section.find('[data-test="plan-done-toggle"]').text()).toContain('1 concluída')
-    expect(section.findAll('[data-test="plan-task"]').map((t) => t.attributes('data-status'))).toEqual(['current', 'queued'])
+    expect(section.find('[data-test="plan-position"]').text()).toBe('4 de 8')
+    expect(section.find('[data-test="plan-name"]').text()).toBe('Plano X')
+    expect(section.find('[data-test="plan-strip"]').text()).not.toContain('4 de 8')
+    expect(section.findAll('[data-test="plan-task"]').map((t) => t.attributes('data-status'))).toEqual(['done', 'current', 'queued'])
     const footer = section.find('[data-test="plan-footer"]')
-    const labels = footer.findAll('button').map((b) => b.text())
-    expect(labels).toEqual(expect.arrayContaining(['Abrir plano', 'Trocar plano…', 'Desligar']))
+    expect(footer.find('[data-test="plan-open"]').text()).toBe('Abrir plano')
+    expect(footer.find('[data-test="plan-more"]').attributes('aria-label')).toBe('Mais ações do plano: trocar ou desligar')
+    expect(footer.findAll('button').map((b) => b.text())).not.toContain('Desligar')
     expect(wrapper.findAll('[data-test="prop-plan"]')).toHaveLength(1)
     expect(footer.find('[data-test="prop-plan"]').text()).not.toContain('Plano X')
-    const order = wrapper.findAll('[data-test="details-properties"], [data-test="details-plan"], [data-test="details-changes"]').map((e) => e.attributes('data-test'))
-    expect(order).toEqual(['details-properties', 'details-plan', 'details-changes'])
+  })
+
+  it('a posição do plano acrescenta "· parado" quando nada roda a conversa e sai sem plano visível', async () => {
+    const plan = { path: '/p/plan.md', title: 'Plano X', total: 8, done: 3, current: { number: 4, title: 'Quarta' } }
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'waiting', state: 'idle', cli_running: false, plan })])
+    const stopped = await mountPanel()
+    expect(stopped.find('[data-test="plan-position"]').text()).toBe('4 de 8 · parado')
+
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', plan: null })])
+    const none = await mountPanel()
+    expect(none.find('[data-test="plan-position"]').exists()).toBe(false)
+  })
+
+  it('a ordem do painel é Plano, Resumo, Propriedades e Alterações', async () => {
+    const plan = { path: '/p/plan.md', title: 'Plano X', total: 8, done: 3, current: { number: 4, title: 'Quarta' } }
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'running', plan })])
+    const wrapper = await mountPanel()
+
+    const body = wrapper.get('[data-test="details-body"]').element
+    const order = Array.from(body.children).map((e) => e.getAttribute('data-test')).filter(Boolean)
+    expect(order).toEqual(['details-plan', 'details-digest', 'details-properties', 'details-changes'])
   })
 
   // Content marked sr-only (position: absolute) inside the scrolling body must stay inside it;

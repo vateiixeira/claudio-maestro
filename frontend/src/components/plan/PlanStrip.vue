@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { errorMessage, getSessionPlan, openInEditor } from '../../api/http'
 import { markdownViewHref } from '../../conversation/markdown'
 import type { PlanTask, Session } from '../../types/api'
-import { planPosition, planStopped, planVisible } from './planText'
+import { planPosition, planProgressText, planStopped, planVisible } from './planText'
 import Collapse from '../Collapse.vue'
 import MarkdownViewLink from '../conversation/MarkdownViewLink.vue'
 import PlanTaskRow from './PlanTaskRow.vue'
@@ -92,7 +92,20 @@ const compactRows = computed(() => {
   if (at < 0) return plan.value?.current ? [{ task: { ...plan.value.current, done: false }, index: -1 }] : []
   return tasks.value.map((task, index) => ({ task, index })).slice(at, at + 1 + NEXT_SHOWN)
 })
-const positionText = computed(() => (plan.value?.current ? `${plan.value.current.number} de ${plan.value.total}` : 'Concluído'))
+// Up to three finished tasks stay in view; more than that fold behind "N concluídas".
+const DONE_SHOWN = 3
+const foldDone = computed(() => doneCount.value > DONE_SHOWN)
+const panelRows = computed(() => (foldDone.value ? compactRows.value : [...doneRows.value, ...compactRows.value]))
+
+// One segment per task up to this many; above it the plain continuous bar reads better.
+const SEGMENTS_MAX = 20
+// The segments come from the summary (always at hand), not from the task list that loads later.
+const segments = computed<Array<'done' | 'current' | 'queued'>>(() => {
+  const p = plan.value
+  if (!p || p.total > SEGMENTS_MAX) return []
+  return Array.from({ length: p.total }, (_, i) => (i < p.done ? 'done' : i === p.done && p.current ? 'current' : 'queued'))
+})
+const progressText = computed(() => (plan.value ? planProgressText(plan.value) : ''))
 
 async function openPlan() {
   if (!plan.value) return
@@ -113,7 +126,11 @@ async function openPlan() {
     class="flex w-full flex-col gap-1.5"
     :class="inPanel ? '' : 'mx-auto max-w-(--chat-width) px-4 pb-3'"
   >
-    <div class="flex items-center gap-2">
+    <div v-if="inPanel" class="flex items-start gap-2">
+      <p data-test="plan-name" class="m-0 min-w-0 grow text-base leading-snug font-semibold text-fg">{{ plan.title }}</p>
+      <MarkdownViewLink v-if="viewHref" :href="viewHref" />
+    </div>
+    <div v-else class="flex items-center gap-2">
       <button
         type="button"
         data-test="plan-toggle"
@@ -122,19 +139,12 @@ async function openPlan() {
         @click="toggle"
       >
         <IconChevron :open="open" :size="12" class="self-center text-fg-subtle duration-(--motion-enter) ease-(--ease-maestro)" />
-        <template v-if="inPanel">
-          <span class="min-w-0 truncate font-medium text-fg">{{ plan.title }}</span>
-          <span class="shrink-0 font-mono text-xs text-fg-muted">{{ positionText }}</span>
-        </template>
-        <template v-else>
-          <span class="max-w-[35%] shrink-0 truncate text-xs text-fg-subtle">{{ plan.title }}</span>
-          <span class="min-w-0 truncate text-fg">{{ planPosition(plan) }}</span>
-        </template>
+        <span class="max-w-[35%] shrink-0 truncate text-xs text-fg-subtle">{{ plan.title }}</span>
+        <span class="min-w-0 truncate text-fg">{{ planPosition(plan) }}</span>
         <span v-if="stopped" class="shrink-0 text-xs text-fg-subtle">· parado</span>
       </button>
       <MarkdownViewLink v-if="viewHref" :href="viewHref" />
       <button
-        v-if="!inPanel"
         type="button"
         data-test="plan-open"
         class="h-7 shrink-0 rounded-md border border-line-strong px-2.5 text-xs text-fg-muted hover:bg-card hover:text-fg"
@@ -142,6 +152,41 @@ async function openPlan() {
       >Abrir plano</button>
     </div>
     <div
+      v-if="inPanel"
+      data-test="plan-progress"
+      role="progressbar"
+      aria-label="Progresso do plano"
+      aria-valuemin="0"
+      :aria-valuenow="plan.done"
+      :aria-valuemax="plan.total"
+      :aria-valuetext="progressText"
+      class="w-full"
+      :class="segments.length ? 'flex gap-1' : 'h-1.5 overflow-hidden rounded-full bg-elevated'"
+    >
+      <template v-if="segments.length">
+        <span
+          v-for="(status, i) in segments"
+          :key="i"
+          data-test="plan-segment"
+          :data-status="status"
+          class="h-1.5 min-w-0 flex-1 rounded-full"
+          :class="{
+            'bg-primary': status === 'done' && !stopped,
+            'bg-fg-muted': status === 'done' && stopped,
+            'bg-[color-mix(in_srgb,var(--color-primary)_45%,var(--color-elevated))]': status === 'current',
+            'bg-elevated': status === 'queued',
+          }"
+        />
+      </template>
+      <div
+        v-else
+        class="h-full rounded-full transition-[width]"
+        :class="stopped ? 'bg-fg-muted' : 'bg-primary'"
+        :style="{ width: plan.total > 0 ? `${Math.min(100, (plan.done / plan.total) * 100)}%` : '0%' }"
+      />
+    </div>
+    <div
+      v-else
       role="progressbar"
       aria-label="Progresso do plano"
       aria-valuemin="0"
@@ -156,7 +201,7 @@ async function openPlan() {
       />
     </div>
     <button
-      v-if="inPanel && open && doneCount > 0"
+      v-if="inPanel && foldDone"
       type="button"
       data-test="plan-done-toggle"
       :aria-expanded="doneOpen"
@@ -167,13 +212,13 @@ async function openPlan() {
       {{ doneCount }} {{ doneCount === 1 ? 'concluída' : 'concluídas' }}
       <IconChevron :open="doneOpen" :size="10" class="text-fg-subtle duration-(--motion-enter) ease-(--ease-maestro)" />
     </button>
-    <Collapse v-if="inPanel && open" :open="doneOpen && doneRows.length > 0">
-      <ol class="m-0 flex list-none flex-col gap-1 p-0 pt-0.5">
+    <Collapse v-if="inPanel && foldDone" :open="doneOpen && doneRows.length > 0">
+      <ol class="relative m-0 flex list-none flex-col gap-1 p-0 pt-0.5">
         <PlanTaskRow v-for="row in doneRows" :key="row.index" :task="row.task" :status="statusOf(row.task, row.index)" />
       </ol>
     </Collapse>
-    <ol v-if="open && inPanel && compactRows.length" ref="list" class="relative m-0 flex list-none flex-col gap-1 p-0 pt-0.5">
-      <PlanTaskRow v-for="row in compactRows" :key="row.index" :task="row.task" :status="statusOf(row.task, row.index)" />
+    <ol v-if="open && inPanel && panelRows.length" ref="list" class="relative m-0 flex list-none flex-col gap-1 p-0 pt-0.5">
+      <PlanTaskRow v-for="row in panelRows" :key="row.index" :task="row.task" :status="statusOf(row.task, row.index)" :running="!stopped" />
     </ol>
     <p v-if="inPanel && open && laterCount > 0" data-test="plan-later" class="m-0 text-xs text-fg-subtle">+{{ laterCount }} depois</p>
     <ol v-if="open && !inPanel && tasks.length" ref="list" class="relative m-0 flex max-h-56 list-none flex-col gap-0.5 overflow-y-auto p-0 pt-1">

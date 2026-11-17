@@ -19,3 +19,20 @@ export function planVisible(session: Pick<Session, 'plan' | 'finished' | 'displa
 export function planStopped(session: Pick<Session, 'display_state' | 'cli_running'>): boolean {
   return session.display_state !== 'running' && !session.cli_running
 }
+
+/** "3 de 5": the current task over the total, or "Concluído" when the plan has no task left. */
+export function planCount(plan: PlanSummary): string {
+  return plan.current ? `${plan.current.number} de ${plan.total}` : 'Concluído'
+}
+
+/** Spoken form of the progress: "2 concluídas, 1 em andamento, 2 pendentes" (parts at zero are left out). */
+export function planProgressText(plan: PlanSummary): string {
+  const done = Math.max(0, plan.done)
+  const running = plan.current ? 1 : 0
+  const pending = Math.max(0, plan.total - done - running)
+  const parts: string[] = []
+  if (done || (!running && !pending)) parts.push(`${done} ${done === 1 ? 'concluída' : 'concluídas'}`)
+  if (running) parts.push('1 em andamento')
+  if (pending) parts.push(`${pending} ${pending === 1 ? 'pendente' : 'pendentes'}`)
+  return parts.join(', ')
+}

@@ -4,7 +4,7 @@ import IconCheck from '../icons/IconCheck.vue'
 import IconCircle from '../icons/IconCircle.vue'
 
 // One task of the panel form of the plan: the current one stands out in a box, the others stay a plain line.
-defineProps<{ task: PlanTask; status: 'done' | 'current' | 'queued' }>()
+withDefaults(defineProps<{ task: PlanTask; status: 'done' | 'current' | 'queued'; running?: boolean }>(), { running: false })
 const SR: Record<'done' | 'current' | 'queued', string> = { done: '(concluída)', current: '(atual)', queued: '(na fila)' }
 </script>
 
@@ -21,7 +21,10 @@ const SR: Record<'done' | 'current' | 'queued', string> = { done: '(concluída)'
     }"
   >
     <template v-if="status === 'current'">
-      <span aria-hidden="true" class="cap text-primary-soft">AGORA</span>
+      <span class="flex items-center gap-2" aria-hidden="true">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" class="shrink-0 text-primary" :class="running ? 'animate-spin motion-reduce:animate-none' : ''"><path d="M12 3a9 9 0 1 1-9 9" /></svg>
+        <span class="cap text-primary-soft">Agora</span>
+      </span>
       <span class="flex items-baseline gap-2">
         <span class="shrink-0 font-mono text-xs text-fg-muted">{{ task.number }}.</span>
         <span class="min-w-0 font-medium">{{ task.title }}</span>

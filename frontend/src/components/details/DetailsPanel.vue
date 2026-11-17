@@ -11,7 +11,7 @@ import GroupProperty from '../groups/GroupProperty.vue'
 import LabelProperty from '../labels/LabelProperty.vue'
 import PlanProperty from '../plan/PlanProperty.vue'
 import PlanStrip from '../plan/PlanStrip.vue'
-import { planVisible } from '../plan/planText'
+import { planCount, planStopped, planVisible } from '../plan/planText'
 import BranchList from './BranchList.vue'
 import ChangesList from './ChangesList.vue'
 import DigestSection from './DigestSection.vue'
@@ -304,6 +304,17 @@ function resetWidth() {
         </section>
       </template>
       <template v-else>
+        <section v-if="session && projectId != null && !scratch" data-test="details-plan" aria-labelledby="plan-title" class="flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <h3 id="plan-title" class="m-0 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Plano</h3>
+            <span v-if="session.plan && planVisible(session)" data-test="plan-position" class="ml-auto font-mono text-xs text-fg-muted">{{ planCount(session.plan) }}<template v-if="planStopped(session)"> · parado</template></span>
+          </div>
+          <PlanStrip v-if="planVisible(session)" :key="sessionId" :session="session" variant="panel">
+            <template #actions><PlanProperty :session-id="sessionId" :project-id="projectId" :summary="false" /></template>
+          </PlanStrip>
+          <PlanProperty v-else :session-id="sessionId" :project-id="projectId" />
+        </section>
+        <DigestSection :session-id="sessionId" />
         <section data-test="details-properties" aria-labelledby="props-title" class="flex flex-col gap-2.5">
           <h3 id="props-title" class="m-0 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Propriedades</h3>
           <div class="overflow-hidden rounded-lg border border-line bg-panel">
@@ -355,14 +366,6 @@ function resetWidth() {
             </dl>
           </div>
         </section>
-        <section v-if="session && projectId != null && !scratch" data-test="details-plan" aria-labelledby="plan-title" class="flex flex-col gap-2">
-          <h3 id="plan-title" class="m-0 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">Plano</h3>
-          <PlanStrip v-if="planVisible(session)" :key="sessionId" :session="session" variant="panel">
-            <template #actions><PlanProperty :session-id="sessionId" :project-id="projectId" :summary="false" /></template>
-          </PlanStrip>
-          <PlanProperty v-else :session-id="sessionId" :project-id="projectId" />
-        </section>
-        <DigestSection :session-id="sessionId" />
         <section data-test="details-changes" aria-labelledby="changes-title" class="flex flex-col gap-2">
           <h3 id="changes-title" class="m-0 flex items-center gap-2 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">
             Alterações

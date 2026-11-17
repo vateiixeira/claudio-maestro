@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { errorMessage, getSessionPlan, linkSessionPlan, listProjectPlans, unlinkSessionPlan } from '../../api/http'
 import { useSessionsStore } from '../../stores/sessions'
 import type { PlanState, ProjectPlan } from '../../types/api'
+import MoreMenu, { type MoreMenuItem } from '../ui/MoreMenu.vue'
 
 // `summary` off: the panel already shows the plan, so only the buttons (and their menu) stay.
 const props = withDefaults(defineProps<{ sessionId: string; projectId: number; summary?: boolean }>(), { summary: true })
@@ -24,6 +25,8 @@ const planKey = computed(() => JSON.stringify(sessions.find(props.sessionId)?.pl
 
 // Only the newest state wins: an older response arriving late is dropped.
 let ticket = 0
+// Same rule for the list of plans: only the newest request may open it, and a dismissed one never does.
+let listTicket = 0
 
 async function load() {
   const mine = ++ticket
@@ -42,6 +45,8 @@ async function load() {
 watch(() => props.sessionId, () => {
   state.value = null
   error.value = null
+  loadingPlans.value = false
+  listTicket++
   hideMenu(false)
 })
 watch(() => `${props.sessionId}\n${planKey.value}`, () => { void load() }, { immediate: true })
@@ -74,25 +79,35 @@ const items = () => Array.from(menu.value?.querySelectorAll<HTMLElement>('[role=
 
 async function showMenu() {
   error.value = null
+  const mine = ++listTicket
+  const id = props.sessionId
+  const projectId = props.projectId
   loadingPlans.value = true
+  let fetched: ProjectPlan[]
   try {
-    plans.value = await listProjectPlans(props.projectId)
+    fetched = await listProjectPlans(projectId)
   } catch (e) {
+    if (mine !== listTicket || id !== props.sessionId) return
+    loadingPlans.value = false
     error.value = errorMessage(e)
     return
-  } finally {
-    loadingPlans.value = false
   }
+  if (mine !== listTicket || id !== props.sessionId || projectId !== props.projectId) return
+  loadingPlans.value = false
+  plans.value = fetched
   menuOpen.value = true
   document.addEventListener('pointerdown', onOutside)
   await nextTick()
   items()[0]?.focus()
 }
 
+// The button that opened the list: the plain one of the summary form, or the "more" menu's button.
+const triggerEl = () => trigger.value ?? root.value?.querySelector<HTMLElement>('[data-test="plan-more"]') ?? null
+
 function hideMenu(returnFocus = true) {
   menuOpen.value = false
   document.removeEventListener('pointerdown', onOutside)
-  if (returnFocus) trigger.value?.focus()
+  if (returnFocus) triggerEl()?.focus()
 }
 
 function onOutside(event: Event) {
@@ -153,6 +168,17 @@ function shortPath(path: string): string {
 function pathParts(path: string): string[] {
   return shortPath(path).split(/(?<=\/)/)
 }
+const moreItems = computed<MoreMenuItem[]>(() => {
+  const list: MoreMenuItem[] = [{ id: 'switch', label: hasLink.value ? 'Trocar plano…' : 'Escolher plano…', title: 'Escolher outro plano da pasta docs/superpowers/plans/', disabled: busy.value }]
+  if (hasLink.value) list.push({ id: 'unlink', label: 'Desligar', title: 'Parar de acompanhar um plano nesta conversa', disabled: busy.value })
+  if (isOff.value) list.push({ id: 'auto', label: 'Ligar automaticamente', title: 'Voltar a acompanhar o plano que a conversa estiver seguindo', disabled: busy.value })
+  return list
+})
+function onMore(id: string) {
+  if (id === 'switch') void showMenu()
+  else if (id === 'unlink') void unlink()
+  else if (id === 'auto') void linkAuto()
+}
 const unavailableParts = computed(() => (state.value?.path ? pathParts(state.value.path) : []))
 </script>
 
@@ -171,7 +197,14 @@ const unavailableParts = computed(() => (state.value?.path ? pathParts(state.val
     </template>
     <span v-else class="text-fg-muted">{{ state ? 'Nenhum' : '…' }}</span>
 
-    <div v-if="state" class="flex flex-wrap gap-1.5" :class="summary ? '' : 'items-start'">
+    <MoreMenu
+      v-if="state && !summary"
+      data-test="plan-more"
+      label="Mais ações do plano: trocar ou desligar"
+      :items="moreItems"
+      @select="onMore"
+    />
+    <div v-else-if="state" class="flex flex-wrap gap-1.5">
       <button
         ref="trigger"
         type="button"
