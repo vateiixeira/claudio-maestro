@@ -82,7 +82,7 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     class="group relative rounded-md hover:bg-card focus-within:bg-card"
     :class="[
       'grid min-h-[3.375rem] grid-cols-[0.875rem_minmax(0,1fr)_auto] gap-x-4 gap-y-1 px-2.5 py-2',
-      projectLayout ? 'items-start py-3 md:grid-cols-[0.875rem_minmax(0,1fr)_15.5rem_4.25rem]' : 'items-center md:grid-cols-[0.875rem_minmax(0,1fr)_11rem_10.5rem_4.25rem]',
+      projectLayout ? 'items-start py-3 xl:grid-cols-[0.875rem_minmax(0,1fr)_15.5rem_4.25rem]' : 'items-center xl:grid-cols-[0.875rem_minmax(0,1fr)_11rem_10.5rem_4.25rem]',
       active || focused ? 'bg-card shadow-[inset_2px_0_0_var(--color-primary)]' : '',
     ]"
   >
@@ -119,8 +119,8 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     <span class="sr-only">{{ srState }}{{ session.unread ? ', com novidade' : '' }}</span>
     <div
       data-test="row-situation"
-      class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 max-md:col-span-2 max-md:col-start-2 max-md:row-start-2 max-md:empty:hidden"
-      :class="projectLayout ? 'self-start pt-0.5 md:justify-end' : ''"
+      class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 max-xl:col-span-2 max-xl:col-start-2 max-xl:row-start-2 max-xl:empty:hidden"
+      :class="projectLayout ? 'self-start pt-0.5 xl:justify-end' : ''"
     >
       <PlanSegments v-if="planShown && session.plan" :plan="session.plan" :stopped="planStopped(session)" />
       <span v-if="session.plan_done" data-test="row-plan-done" class="shrink-0 rounded-full border border-primary/40 px-1.5 font-mono text-[0.6875rem] text-primary-soft">Plano concluído</span>
@@ -133,11 +133,11 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     <span
       v-if="!projectLayout"
       data-test="row-project"
-      class="hidden min-w-0 md:flex"
+      class="hidden min-w-0 xl:flex"
     ><ProjectTag :project-id="session.project_id" :branch="branchText" /></span>
     <span
       data-test="row-activity"
-      class="whitespace-nowrap text-right text-xs text-fg-subtle max-md:col-start-3 max-md:row-start-1"
+      class="whitespace-nowrap text-right text-xs text-fg-subtle max-xl:col-start-3 max-xl:row-start-1"
       :class="projectLayout ? 'pt-0.5' : ''"
     >{{ formatActivity(session.last_activity_at) }}</span>
     <div

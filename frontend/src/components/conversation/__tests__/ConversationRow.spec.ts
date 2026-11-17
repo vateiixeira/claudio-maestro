@@ -231,7 +231,7 @@ describe('linha de conversa', () => {
   })
 
   describe('grade de colunas', () => {
-    const cols = 'md:grid-cols-[0.875rem_minmax(0,1fr)_11rem_10.5rem_4.25rem]'
+    const cols = 'xl:grid-cols-[0.875rem_minmax(0,1fr)_11rem_10.5rem_4.25rem]'
     const childTests = (row: ReturnType<typeof mountRow>) =>
       Array.from(row.get('[data-test="conversation-row"]').element.children).map((c) => c.getAttribute('data-test'))
 
@@ -245,11 +245,11 @@ describe('linha de conversa', () => {
       expect(root.element.children[0]!.getAttribute('data-shape')).not.toBeNull()
     })
 
-    it('abaixo de md a situação desce para baixo da conversa e o projeto some', () => {
+    it('abaixo de xl a situação desce para baixo da conversa e o projeto some', () => {
       const row = mountRow(makeSession())
       expect(row.get('[data-test="conversation-row"]').classes()).toContain('grid-cols-[0.875rem_minmax(0,1fr)_auto]')
       expect(row.get('[data-test="row-project"]').classes()).toContain('hidden')
-      expect(row.get('[data-test="row-situation"]').classes()).toEqual(expect.arrayContaining(['max-md:row-start-2', 'max-md:col-start-2']))
+      expect(row.get('[data-test="row-situation"]').classes()).toEqual(expect.arrayContaining(['max-xl:row-start-2', 'max-xl:col-start-2']))
     })
 
     it('row-details vem depois do link e leva resumo, agente, agrupador e etiquetas', () => {
@@ -293,7 +293,7 @@ describe('linha de conversa', () => {
       const root = row.get('[data-test="conversation-row"]')
       expect(root.classes()).toContain('grid')
       expect(row.find('[data-test="row-project"]').exists()).toBe(false)
-      expect(row.get('[data-test="row-situation"]').classes()).toContain('md:justify-end')
+      expect(row.get('[data-test="row-situation"]').classes()).toContain('xl:justify-end')
       expect(row.get('[data-test="row-link"]').classes()).toContain('font-medium')
     })
   })

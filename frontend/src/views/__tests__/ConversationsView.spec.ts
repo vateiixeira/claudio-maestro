@@ -442,7 +442,7 @@ describe('Conversas: colunas e cabeçalho', () => {
     // Below md only the group name stays.
     const rest = headers[0]!.findAll('span').filter((s) => ['Situação', 'Projeto', 'Atividade'].includes(s.text()))
     expect(rest).toHaveLength(3)
-    for (const col of rest) expect(col.classes()).toContain('max-md:hidden')
+    for (const col of rest) expect(col.classes()).toContain('max-xl:hidden')
   })
 
   it('"Nova conversa" mostra o atalho C e o título não é mais mono maiúsculo', async () => {

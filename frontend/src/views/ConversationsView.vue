@@ -160,13 +160,13 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
         <!-- Same grid as ConversationRow, so the captions sit over their columns. Below md only the group name stays. -->
         <div
           data-test="conversations-columns"
-          class="grid h-7 grid-cols-1 items-center gap-x-4 border-b border-line-strong px-2.5 font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase md:grid-cols-[0.875rem_minmax(0,1fr)_11rem_10.5rem_4.25rem]"
+          class="grid h-7 grid-cols-1 items-center gap-x-4 border-b border-line-strong px-2.5 font-mono text-[0.6875rem] tracking-[0.08em] text-fg-subtle uppercase xl:grid-cols-[0.875rem_minmax(0,1fr)_11rem_10.5rem_4.25rem]"
         >
-          <span class="max-md:hidden" />
+          <span class="max-xl:hidden" />
           <span data-test="date-group">{{ group.label }}</span>
-          <span class="max-md:hidden">Situação</span>
-          <span class="max-md:hidden">Projeto</span>
-          <span class="text-right max-md:hidden">Atividade</span>
+          <span class="max-xl:hidden">Situação</span>
+          <span class="max-xl:hidden">Projeto</span>
+          <span class="text-right max-xl:hidden">Atividade</span>
         </div>
         <ConversationRow v-for="s in group.sessions" :key="s.session_id" :session="s" @error="error = $event">
           <template v-if="!isDiscarded(s)" #actions>
