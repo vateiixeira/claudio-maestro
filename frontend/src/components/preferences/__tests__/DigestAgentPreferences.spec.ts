@@ -56,7 +56,7 @@ describe('aba do agente de resumos', () => {
   it('mostra a configuração salva e o estado', async () => {
     stub()
     const w = await mountTab()
-    expect((w.find('#digest-enabled').element as HTMLInputElement).checked).toBe(false)
+    expect(w.find('#digest-enabled').attributes('aria-checked')).toBe('false')
     expect((w.find('#digest-model').element as HTMLSelectElement).value).toBe('sonnet')
     expect((w.find('#digest-effort').element as HTMLSelectElement).value).toBe('medium')
     expect((w.find('#digest-interval').element as HTMLInputElement).value).toBe('10')
@@ -66,7 +66,7 @@ describe('aba do agente de resumos', () => {
   it('salva o formulário inteiro', async () => {
     stub()
     const w = await mountTab()
-    await w.find('#digest-enabled').setValue(true)
+    await w.find('#digest-enabled').trigger('click')
     await w.find('#digest-model').setValue('haiku')
     await w.find('#digest-instructions').setValue('Cite a tarefa.')
     await w.find('#digest-window').setValue('7')
@@ -80,13 +80,59 @@ describe('aba do agente de resumos', () => {
     stub()
     const w = await mountTab()
     const toggle = w.get('#digest-closure-auto')
-    expect((toggle.element as HTMLInputElement).checked).toBe(true)
+    expect(toggle.attributes('role')).toBe('switch')
+    expect(toggle.attributes('aria-checked')).toBe('true')
     expect(w.text()).toContain('Verificar entrega automaticamente')
     expect(w.text()).toContain('Desligada, a verificação só roda pelo Resumir agora.')
-    await toggle.setValue(false)
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-checked')).toBe('false')
     await w.find('form').trigger('submit')
     await flushPromises()
     expect(puts).toEqual([{ ...CONFIG, closure_auto: false }])
+  })
+
+  it('as chaves de ligado e de verificação são switches que alternam o formulário', async () => {
+    stub()
+    const w = await mountTab()
+    for (const id of ['#digest-enabled', '#digest-closure-auto']) {
+      const sw = w.get(id)
+      expect(sw.attributes('role')).toBe('switch')
+      expect(sw.attributes('aria-label')).toBeTruthy()
+      const before = sw.attributes('aria-checked')
+      await sw.trigger('click')
+      expect(sw.attributes('aria-checked')).toBe(before === 'true' ? 'false' : 'true')
+    }
+  })
+
+  it('escreve as quatro regras como frases com o campo no meio', async () => {
+    stub()
+    const w = await mountTab()
+    const rules = w.findAll('[data-test="digest-rule"]')
+    expect(rules).toHaveLength(4)
+    const expected: [string, string][] = [
+      ['#digest-interval', 'Passa a cada … minutos.'],
+      ['#digest-min', 'Relê uma conversa quando ela tem pelo menos … mensagens novas e o turno terminou,'],
+      ['#digest-open-turn', 'ou quando o turno está aberto há mais de … minutos.'],
+      ['#digest-window', 'Ignora conversas finalizadas ou paradas há mais de … dias.'],
+    ]
+    expected.forEach(([id, text], i) => {
+      const field = rules[i].get(id)
+      expect(field.attributes('aria-label')).toBeTruthy()
+      const clone = rules[i].element.cloneNode(true) as HTMLElement
+      clone.querySelectorAll('input').forEach((el) => el.replaceWith('…'))
+      expect(clone.textContent?.replace(/\s+/g, ' ').trim()).toBe(text)
+    })
+  })
+
+  it('mostra o estado e Rodar agora antes das regras, e o aviso da assinatura', async () => {
+    stub()
+    const w = await mountTab()
+    const html = w.html()
+    const pos = (marker: string) => html.indexOf(marker)
+    expect(pos('data-test="digest-status"')).toBeGreaterThan(-1)
+    expect(pos('data-test="digest-status"')).toBeLessThan(pos('data-test="digest-rule"'))
+    expect(pos('data-test="digest-run"')).toBeLessThan(pos('data-test="digest-rule"'))
+    expect(w.text()).toContain('Cada leitura usa a sua assinatura.')
   })
 
   it('valida no navegador sem chamar o servidor', async () => {

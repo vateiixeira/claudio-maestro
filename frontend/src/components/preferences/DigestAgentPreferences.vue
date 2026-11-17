@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { errorMessage, getDigestConfig, listDigestRuns, putDigestConfig, runDigest } from '../../api/http'
 import { MAX_INSTRUCTIONS, digestConfigProblem, digestStatusText, type DigestForm } from '../../digestConfig'
 import { formatActivity } from '../../format'
+import ToggleSwitch from '../ui/ToggleSwitch.vue'
 import { ALL_EFFORTS, EFFORT_LABELS } from '../../sessionOptions'
 import { useDigestStore } from '../../stores/digest'
 import { useModelsStore } from '../../stores/models'
@@ -133,7 +134,9 @@ async function runNow() {
 onMounted(load)
 
 const label = 'font-mono text-xs tracking-[0.08em] text-fg-subtle uppercase'
-const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text-sm text-fg outline-none focus:border-fg-muted disabled:opacity-40'
+const rule = 'flex min-h-[38px] flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-fg-muted'
+const num = 'h-[30px] w-16 rounded-lg border border-line-strong bg-elevated px-2 text-center font-mono text-sm text-fg outline-none focus:border-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-40'
+const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text-sm text-fg outline-none focus:border-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-40'
 </script>
 
 <template>
@@ -142,45 +145,81 @@ const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text
       <p role="alert" class="m-0 w-full rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-3.5 py-2.5 text-sm text-diff-del-fg">
         Não foi possível ler a configuração do agente. {{ loadError }}
       </p>
-      <button type="button" class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card" @click="load">Tentar de novo</button>
+      <button type="button" class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="load">Tentar de novo</button>
     </div>
 
     <form class="flex flex-col" aria-label="Agente de resumos" :aria-busy="loading" @submit.prevent="save">
       <div class="flex flex-col gap-6 px-7 py-6">
-        <p class="m-0 text-sm text-fg-muted">
-          Lê as conversas em andamento de tempos em tempos e mantém um resumo em fases de cada uma, visível em Detalhes e na lista de conversas. Só lê: não executa comandos nem altera arquivos. Cada leitura usa a sua assinatura.
-        </p>
-
-        <div class="flex items-center justify-between gap-4">
-          <label for="digest-enabled" class="flex items-center gap-3 text-sm font-medium text-fg">
-            <input id="digest-enabled" v-model="form.enabled" type="checkbox" role="switch" :disabled="!ready" class="size-5 accent-[var(--color-primary)]" />
-            Ligado
-          </label>
-          <span data-test="digest-status" role="status" class="text-sm text-fg-muted">{{ statusText }}</span>
-        </div>
-
         <div class="flex flex-col gap-1.5">
-          <label for="digest-closure-auto" class="flex items-center gap-3 text-sm font-medium text-fg">
-            <input id="digest-closure-auto" v-model="form.closure_auto" type="checkbox" role="switch" :disabled="!ready" class="size-5 accent-[var(--color-primary)]" />
-            Verificar entrega automaticamente
-          </label>
-          <p class="m-0 text-xs text-fg-muted">Confere se a conversa pode ser fechada alguns minutos depois de o turno terminar. Desligada, a verificação só roda pelo Resumir agora.</p>
+          <div class="flex flex-wrap items-center gap-x-3.5 gap-y-2">
+            <ToggleSwitch id="digest-enabled" v-model="form.enabled" label="Agente de resumos ligado" :disabled="!ready" />
+            <div class="min-w-48 flex-1">
+              <div class="text-base font-semibold text-fg">Agente de resumos</div>
+              <p class="m-0 text-xs text-fg-muted">
+                Lê as conversas em andamento de tempos em tempos e mantém um resumo em fases de cada uma, visível em Detalhes e na lista de conversas. Só lê: não executa comandos nem altera arquivos.
+              </p>
+            </div>
+            <span data-test="digest-status" role="status" class="font-mono text-xs text-fg-muted">{{ statusText }}</span>
+            <button
+              type="button"
+              data-test="digest-run"
+              class="h-9 rounded-lg border border-line-strong px-3.5 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="!ready || running || starting"
+              @click="runNow"
+            >Rodar agora</button>
+          </div>
+          <p class="m-0 text-xs text-secondary sm:pl-[48px]">Cada leitura usa a sua assinatura.</p>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div class="flex flex-col gap-2">
-            <label for="digest-model" :class="label">Modelo</label>
-            <select id="digest-model" v-model="form.model" :disabled="!ready" :class="input">
-              <option v-for="m in modelOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
-            </select>
+        <section class="flex flex-col" aria-labelledby="digest-does-title">
+          <h2 id="digest-does-title" :class="[label, 'm-0 flex h-7 items-center border-b border-line-strong']">O que ele faz</h2>
+          <div class="flex items-center gap-4 border-b border-line py-3">
+            <div class="flex-1">
+              <div class="text-sm font-medium text-fg">Verificar entrega automaticamente</div>
+              <p class="m-0 text-xs text-fg-muted">Confere se a conversa pode ser fechada alguns minutos depois de o turno terminar. Desligada, a verificação só roda pelo Resumir agora.</p>
+            </div>
+            <ToggleSwitch id="digest-closure-auto" v-model="form.closure_auto" label="Verificar entrega automaticamente" :disabled="!ready" />
           </div>
-          <div class="flex flex-col gap-2">
-            <label for="digest-effort" :class="label">Raciocínio</label>
-            <select id="digest-effort" v-model="form.effort" :disabled="!ready" :class="input">
-              <option v-for="e in ALL_EFFORTS" :key="e" :value="e">{{ EFFORT_LABELS[e] }}</option>
-            </select>
+          <div class="grid grid-cols-1 gap-4 pt-3 sm:grid-cols-2">
+            <div class="flex flex-col gap-2">
+              <label for="digest-model" :class="label">Modelo</label>
+              <select id="digest-model" v-model="form.model" :disabled="!ready" :class="input">
+                <option v-for="m in modelOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-2">
+              <label for="digest-effort" :class="label">Raciocínio</label>
+              <select id="digest-effort" v-model="form.effort" :disabled="!ready" :class="input">
+                <option v-for="e in ALL_EFFORTS" :key="e" :value="e">{{ EFFORT_LABELS[e] }}</option>
+              </select>
+              <p class="m-0 text-xs text-fg-muted">Quanto mais leve, menos da assinatura cada leitura gasta.</p>
+            </div>
           </div>
-        </div>
+        </section>
+
+        <section class="flex flex-col" aria-labelledby="digest-when-title">
+          <h2 id="digest-when-title" :class="[label, 'm-0 flex h-7 items-center border-b border-line-strong']">Quando ele lê</h2>
+          <div data-test="digest-rule" :class="rule">
+            Passa a cada
+            <input id="digest-interval" v-model="form.interval_minutes" aria-label="Intervalo em minutos" type="number" inputmode="numeric" min="2" max="240" step="1" :disabled="!ready" :class="num" />
+            minutos.
+          </div>
+          <div data-test="digest-rule" :class="rule">
+            Relê uma conversa quando ela tem pelo menos
+            <input id="digest-min" v-model="form.min_new_messages" aria-label="Mínimo de mensagens novas" type="number" inputmode="numeric" min="1" max="500" step="1" :disabled="!ready" :class="num" />
+            mensagens novas e o turno terminou,
+          </div>
+          <div data-test="digest-rule" :class="rule">
+            ou quando o turno está aberto há mais de
+            <input id="digest-open-turn" v-model="form.open_turn_minutes" aria-label="Teto com turno aberto, em minutos" type="number" inputmode="numeric" min="5" max="480" step="1" :disabled="!ready" :class="num" />
+            minutos.
+          </div>
+          <div data-test="digest-rule" :class="rule">
+            Ignora conversas finalizadas ou paradas há mais de
+            <input id="digest-window" v-model="form.window_days" aria-label="Janela em dias" type="number" inputmode="numeric" min="1" max="30" step="1" :disabled="!ready" :class="num" />
+            dias.
+          </div>
+        </section>
 
         <div class="flex flex-col gap-2">
           <label for="digest-instructions" :class="label">Instruções extras</label>
@@ -191,35 +230,13 @@ const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text
             :maxlength="MAX_INSTRUCTIONS"
             :disabled="!ready"
             aria-describedby="digest-instructions-help"
-            class="rounded-lg border border-line-strong bg-elevated px-3.5 py-2.5 text-sm text-fg outline-none focus:border-fg-muted disabled:opacity-40"
+            class="rounded-lg border border-line-strong bg-elevated px-3.5 py-2.5 text-sm text-fg outline-none focus:border-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-40"
           />
           <p id="digest-instructions-help" class="m-0 flex justify-between text-xs text-fg-muted">
             <span>Somadas às regras fixas do agente. Ex.: "cite sempre o número da tarefa".</span>
             <span>{{ form.extra_instructions.length }}/{{ MAX_INSTRUCTIONS }}</span>
           </p>
         </div>
-
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div class="flex flex-col gap-2">
-            <label for="digest-interval" :class="label">Intervalo (min)</label>
-            <input id="digest-interval" v-model="form.interval_minutes" type="number" inputmode="numeric" min="2" max="240" step="1" :disabled="!ready" :class="input" />
-          </div>
-          <div class="flex flex-col gap-2">
-            <label for="digest-min" :class="label">Mínimo de mensagens</label>
-            <input id="digest-min" v-model="form.min_new_messages" type="number" inputmode="numeric" min="1" max="500" step="1" :disabled="!ready" :class="input" />
-          </div>
-          <div class="flex flex-col gap-2">
-            <label for="digest-open-turn" :class="label">Teto com turno aberto (min)</label>
-            <input id="digest-open-turn" v-model="form.open_turn_minutes" type="number" inputmode="numeric" min="5" max="480" step="1" :disabled="!ready" :class="input" />
-          </div>
-          <div class="flex flex-col gap-2">
-            <label for="digest-window" :class="label">Janela (dias)</label>
-            <input id="digest-window" v-model="form.window_days" type="number" inputmode="numeric" min="1" max="30" step="1" :disabled="!ready" :class="input" />
-          </div>
-        </div>
-        <p class="m-0 text-xs text-fg-muted">
-          Uma conversa é lida de novo quando tem pelo menos o mínimo de mensagens novas e o turno terminou, ou quando o turno está aberto há mais que o teto. Conversas finalizadas ou paradas há mais dias que a janela não são lidas.
-        </p>
       </div>
 
       <p v-if="error" role="alert" class="mx-7 mb-4 rounded-lg border border-diff-del-fg/40 bg-diff-del-bg px-3.5 py-2.5 text-sm text-diff-del-fg">{{ error }}</p>
@@ -227,16 +244,9 @@ const input = 'h-11 rounded-lg border border-line-strong bg-elevated px-3.5 text
       <footer class="flex items-center justify-end gap-3 border-t border-line px-7 pt-4 pb-5">
         <p v-if="saved" data-test="digest-saved" role="status" class="m-0 text-sm text-primary-soft">Configuração salva</p>
         <button
-          type="button"
-          data-test="digest-run"
-          class="h-11 rounded-lg border border-line-strong px-4 font-medium text-fg hover:bg-card disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="!ready || running || starting"
-          @click="runNow"
-        >Rodar agora</button>
-        <button
           type="submit"
           data-test="digest-save"
-          class="h-11 rounded-lg bg-primary px-[18px] font-semibold text-primary-fg hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-40"
+          class="h-11 rounded-lg bg-primary px-[18px] font-semibold text-primary-fg hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
           :disabled="!ready || saving"
         >{{ saving ? 'Salvando…' : 'Salvar' }}</button>
       </footer>
