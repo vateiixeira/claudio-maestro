@@ -15,6 +15,7 @@ import { setPendingDraft } from '../conversation/pendingDrafts'
 import { groupOptionLabel, selectorGroups } from '../groupList'
 import { clearDraft, loadDraft, loadLastProject, saveDraft, saveLastProject, type ConversationDraft } from '../newConversationDraft'
 import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, ALL_MODES } from '../sessionOptions'
+import { repoLabel, useGitStore } from '../stores/git'
 import { useGroupsStore } from '../stores/groups'
 import { useModelsStore } from '../stores/models'
 import { useNewConversationStore } from '../stores/newConversation'
@@ -29,6 +30,7 @@ const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const models = useModelsStore()
 const groups = useGroupsStore()
+const git = useGitStore()
 const router = useRouter()
 void models.ensure()
 
@@ -49,6 +51,12 @@ getAppState()
 
 const available = computed(() => projects.projects.filter((p) => p.available))
 const draft = ref<ConversationDraft>(loadDraft())
+// Branch of the chosen project, read where the Painel reads it. Without a repository nothing is shown.
+watch(() => draft.value.projectId, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
+const branch = computed(() => {
+  const repo = draft.value.projectId == null ? undefined : git.reposFor(draft.value.projectId)[0]
+  return repo ? repoLabel(repo) : null
+})
 const images = ref<DraftImage[]>([])
 const error = ref<string | null>(null)
 const submitting = ref(false)
@@ -407,13 +415,13 @@ function onKeydown(event: KeyboardEvent) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="nc-heading"
-      class="flex max-h-full w-full flex-col rounded-xl border border-line-strong bg-panel shadow-2xl"
+      class="flex max-h-full w-full flex-col rounded-2xl border border-line-strong bg-panel shadow-2xl"
       :class="fullscreen ? 'h-full max-w-none' : 'max-w-2xl'"
     >
-      <header class="flex items-center gap-2 border-b border-line px-5 py-3">
-        <h2 id="nc-heading" class="m-0 grow text-base font-semibold">Nova conversa</h2>
-        <button type="button" :aria-label="fullscreen ? 'Sair da tela cheia' : 'Tela cheia'" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card" @click="fullscreen = !fullscreen"><IconExpand :size="14" /></button>
-        <button type="button" data-test="nc-close" aria-label="Fechar" :disabled="submitting" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card disabled:opacity-40" @click="close"><IconClose :size="14" /></button>
+      <header class="flex items-center gap-2 px-5 pt-4 pb-2">
+        <h2 id="nc-heading" class="m-0 grow text-lg font-semibold">Nova conversa</h2>
+        <button type="button" :aria-label="fullscreen ? 'Sair da tela cheia' : 'Tela cheia'" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="fullscreen = !fullscreen"><IconExpand :size="14" /></button>
+        <button type="button" data-test="nc-close" aria-label="Fechar" :disabled="submitting" class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40" @click="close"><IconClose :size="14" /></button>
       </header>
 
       <div v-if="available.length === 0" data-test="nc-no-projects" class="flex flex-col gap-3 px-5 py-6">
@@ -422,63 +430,95 @@ function onKeydown(event: KeyboardEvent) {
       </div>
       <template v-else>
         <div ref="scrollBody" class="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-5 py-4">
-          <label class="flex items-center gap-2 text-sm text-fg-muted">
-            em
-            <select v-model.number="draft.projectId" data-test="nc-project" :disabled="createdId !== null" @change="draft.groupId = null" :title="createdId !== null ? 'A conversa já foi criada neste projeto.' : undefined" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg">
-              <option v-for="p in available" :key="p.id" :value="p.id">{{ p.name }}</option>
-            </select>
-          </label>
-          <label v-if="projectGroups.length" class="flex items-center gap-2 text-sm text-fg-muted">
-            agrupador
-            <select v-model="draft.groupId" data-test="nc-group" aria-label="Agrupador" :disabled="createdId !== null" class="h-9 rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg">
-              <option :value="null">Nenhum</option>
-              <option v-for="g in projectGroups" :key="g.id" :value="g.id">{{ groupOptionLabel(g, draft.projectId!, projects.projects) }}</option>
-            </select>
-          </label>
-          <input v-model="draft.title" data-test="nc-title" placeholder="Título (opcional)" aria-label="Título (opcional)" maxlength="200" class="h-10 rounded-md border border-line-strong bg-elevated px-3 text-base font-semibold text-fg outline-none focus:border-fg-muted" />
-          <div class="relative flex min-h-40 grow flex-col rounded-md bg-elevated">
-            <MentionMirror
-              :text="draft.prompt"
-              :mentions="suggestions.mentions.value"
-              :hint="suggestions.argumentHint.value"
-              :scroll-top="promptScrollTop"
-              class="rounded-md border border-transparent px-3 py-2 text-sm leading-relaxed"
-            />
-            <textarea
-              ref="promptEl"
-              v-model="draft.prompt"
-              data-test="nc-prompt"
-              aria-label="Prompt"
-              placeholder="O que você quer fazer? (Ctrl+V cola imagens)"
-              role="combobox"
-              aria-autocomplete="list"
-              :aria-expanded="suggestions.isOpen.value"
-              :aria-controls="suggestions.menuId"
-              :aria-activedescendant="suggestions.isOpen.value && suggestions.items.value.length ? suggestions.optionId(suggestions.active.value) : undefined"
-              class="relative min-h-40 grow resize-none rounded-md border border-line-strong bg-transparent px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-fg-muted"
-              @input="onPromptInput"
-              @scroll="onPromptScroll"
-              @keydown="onPromptKey"
-              @keyup="suggestions.refresh()"
-              @click="suggestions.refresh()"
-              @select="onPromptSelect"
-              @blur="suggestions.onBlur()"
-              @focus="suggestions.onFocus()"
-              @paste="onPaste"
-            />
-            <SuggestionMenu
-              v-if="suggestions.isOpen.value && suggestions.kind.value"
-              :id="suggestions.menuId"
-              :items="suggestions.items.value"
-              :active="suggestions.active.value"
-              :status="suggestions.status.value"
-              :error="suggestions.error.value"
-              :kind="suggestions.kind.value"
-              :option-id="suggestions.optionId"
-              :placement="menuPlacement"
-              @choose="(i) => suggestions.choose(i, 'click')"
-              @hover="(i) => (suggestions.active.value = i)"
-            />
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-2">
+            <label class="flex items-center gap-2 text-sm text-fg-muted">
+              Em
+              <select v-model.number="draft.projectId" data-test="nc-project" :disabled="createdId !== null" @change="draft.groupId = null" :title="createdId !== null ? 'A conversa já foi criada neste projeto.' : undefined" class="h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60">
+                <option v-for="p in available" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </label>
+            <span v-if="branch" data-test="nc-branch" :title="`Branch: ${branch}`" class="max-w-48 truncate font-mono text-xs text-fg-subtle">{{ branch }}</span>
+            <span class="grow" />
+            <label v-if="projectGroups.length" class="flex items-center gap-2 text-sm text-fg-muted">
+              <select v-model="draft.groupId" data-test="nc-group" aria-label="Agrupador" :disabled="createdId !== null" class="h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60">
+                <option :value="null">Nenhum</option>
+                <option v-for="g in projectGroups" :key="g.id" :value="g.id">{{ groupOptionLabel(g, draft.projectId!, projects.projects) }}</option>
+              </select>
+            </label>
+          </div>
+          <div data-test="nc-frame" class="flex min-h-48 grow flex-col rounded-2xl border border-line-strong bg-card focus-within:border-fg-muted focus-within:ring-1 focus-within:ring-fg-muted">
+            <div class="relative flex min-h-32 grow flex-col">
+              <MentionMirror
+                :text="draft.prompt"
+                :mentions="suggestions.mentions.value"
+                :hint="suggestions.argumentHint.value"
+                :scroll-top="promptScrollTop"
+                class="border border-transparent px-4 pt-4 pb-2 text-base leading-relaxed"
+              />
+              <textarea
+                ref="promptEl"
+                v-model="draft.prompt"
+                data-test="nc-prompt"
+                aria-label="Prompt"
+                placeholder="O que você quer fazer? (Ctrl+V cola imagens)"
+                role="combobox"
+                aria-autocomplete="list"
+                :aria-expanded="suggestions.isOpen.value"
+                :aria-controls="suggestions.menuId"
+                :aria-activedescendant="suggestions.isOpen.value && suggestions.items.value.length ? suggestions.optionId(suggestions.active.value) : undefined"
+                class="relative min-h-32 grow resize-none rounded-t-2xl border border-transparent bg-transparent px-4 pt-4 pb-2 text-base leading-relaxed text-fg outline-none placeholder:text-fg-subtle"
+                @input="onPromptInput"
+                @scroll="onPromptScroll"
+                @keydown="onPromptKey"
+                @keyup="suggestions.refresh()"
+                @click="suggestions.refresh()"
+                @select="onPromptSelect"
+                @blur="suggestions.onBlur()"
+                @focus="suggestions.onFocus()"
+                @paste="onPaste"
+              />
+              <SuggestionMenu
+                v-if="suggestions.isOpen.value && suggestions.kind.value"
+                :id="suggestions.menuId"
+                :items="suggestions.items.value"
+                :active="suggestions.active.value"
+                :status="suggestions.status.value"
+                :error="suggestions.error.value"
+                :kind="suggestions.kind.value"
+                :option-id="suggestions.optionId"
+                :placement="menuPlacement"
+                @choose="(i) => suggestions.choose(i, 'click')"
+                @hover="(i) => (suggestions.active.value = i)"
+              />
+            </div>
+            <div
+              data-test="nc-toolbar"
+              class="flex flex-wrap items-center gap-0.5 px-2 pt-1.5 pb-2 [&_[aria-haspopup=menu]]:h-8 [&_[aria-haspopup=menu]:not(.bg-secondary-tint)]:border-transparent [&_[aria-haspopup=menu]:not(.bg-secondary-tint):hover]:bg-elevated"
+            >
+              <input ref="fileInput" type="file" data-test="nc-file-input" :accept="IMAGE_TYPES.join(',')" multiple tabindex="-1" class="hidden" @change="onPick" />
+              <button type="button" data-test="nc-attach" aria-label="Anexar imagem" title="Anexar imagem" class="flex size-8 cursor-pointer items-center justify-center rounded-lg border-none bg-transparent text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary" @click="fileInput?.click()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l9-9a3.3 3.3 0 0 1 4.7 4.7l-9 9a1.7 1.7 0 0 1-2.4-2.4l8.3-8.3" /></svg>
+              </button>
+              <button
+                v-if="dictation.supported"
+                type="button"
+                data-test="nc-dictate"
+                :aria-label="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+                :aria-pressed="dictation.recording.value"
+                :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+                class="flex size-8 cursor-pointer items-center justify-center rounded-lg border-none focus-visible:outline-2 focus-visible:outline-primary"
+                :class="dictation.recording.value ? 'bg-secondary-tint text-secondary' : 'bg-transparent text-fg-muted hover:bg-elevated hover:text-fg'"
+                @click="dictation.toggle"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+              </button>
+              <span class="mx-1.5 h-4 w-px bg-line-strong" aria-hidden="true" />
+              <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)">
+                <template #footer><ClaudeCliFooter /></template>
+              </OptionMenu>
+              <OptionMenu name="Raciocínio" :text="effortText" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
+              <OptionMenu name="Modo" :text="modeText" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" :highlight="(draft.permissionMode ?? prefMode) === 'bypassPermissions'" @select="selectMode" />
+            </div>
           </div>
           <div v-if="images.length" class="flex flex-wrap gap-2">
             <div v-for="image in images" :key="image.id" data-test="attachment-draft" class="flex items-center gap-2.5 rounded-lg border border-line-strong bg-card p-1.5">
@@ -493,42 +533,22 @@ function onKeydown(event: KeyboardEvent) {
             </div>
           </div>
           <p v-if="images.length" data-test="nc-images-note" class="m-0 text-xs text-fg-muted">As imagens não ficam guardadas no rascunho: se você fechar o modal, elas se perdem.</p>
-          <div class="flex flex-wrap items-center gap-2">
-            <input ref="fileInput" type="file" data-test="nc-file-input" :accept="IMAGE_TYPES.join(',')" multiple tabindex="-1" class="hidden" @change="onPick" />
-            <button type="button" data-test="nc-attach" aria-label="Anexar imagem" title="Anexar imagem" class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-transparent px-2.5 text-sm text-fg-muted hover:text-fg" @click="fileInput?.click()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l9-9a3.3 3.3 0 0 1 4.7 4.7l-9 9a1.7 1.7 0 0 1-2.4-2.4l8.3-8.3" /></svg>
-              Imagem
-            </button>
-            <button
-              v-if="dictation.supported"
-              type="button"
-              data-test="nc-dictate"
-              :aria-label="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
-              :aria-pressed="dictation.recording.value"
-              :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
-              class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-sm"
-              :class="dictation.recording.value ? 'border-secondary/60 bg-secondary-tint text-secondary' : 'border-line-strong bg-transparent text-fg-muted hover:text-fg'"
-              @click="dictation.toggle"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
-              Ditar
-            </button>
-            <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)">
-              <template #footer><ClaudeCliFooter /></template>
-            </OptionMenu>
-            <OptionMenu name="Raciocínio" :text="effortText" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
-            <OptionMenu name="Modo" :text="modeText" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" :highlight="(draft.permissionMode ?? prefMode) === 'bypassPermissions'" @select="selectMode" />
-          </div>
           <span v-if="dictation.recording.value" data-test="nc-recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
             <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
           </span>
           <p v-else-if="dictation.error.value" role="alert" class="m-0 text-sm text-diff-del-fg">{{ dictation.error.value }}</p>
+          <div class="flex items-center gap-2.5">
+            <label for="nc-title" class="text-xs text-fg-muted">Título</label>
+            <input id="nc-title" v-model="draft.title" data-test="nc-title" placeholder="Opcional" aria-label="Título (opcional)" maxlength="200" class="h-9 min-w-0 grow rounded-md border border-line-strong bg-transparent px-3 text-sm text-fg outline-none placeholder:text-fg-subtle focus:border-fg-muted focus-visible:ring-1 focus-visible:ring-fg-muted" />
+          </div>
           <p v-if="error" data-test="nc-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
         </div>
-        <footer class="flex items-center gap-3 border-t border-line px-5 py-3">
-          <button type="button" data-test="nc-discard" :disabled="submitting" class="h-10 rounded-md px-3 text-sm text-fg-muted hover:text-fg disabled:opacity-40" @click="discard">Descartar rascunho</button>
+        <footer class="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-5 py-3">
+          <span class="text-xs text-fg-subtle">O rascunho fica guardado ao fechar.</span>
+          <button type="button" data-test="nc-discard" aria-label="Descartar rascunho" :disabled="submitting" class="h-9 rounded-md px-1 text-xs text-fg-muted underline underline-offset-4 hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40" @click="discard">Descartar</button>
           <span class="grow" />
-          <button type="button" data-test="nc-submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-fg hover:bg-primary-soft disabled:opacity-40" :disabled="!canSubmit" @click="submit">{{ submitting ? 'Iniciando…' : 'Iniciar conversa' }}</button>
+          <span data-test="nc-hint" class="font-mono text-xs text-fg-subtle">Enter envia · Ctrl+Enter quebra linha</span>
+          <button type="button" data-test="nc-submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-fg hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-40" :disabled="!canSubmit" @click="submit">{{ submitting ? 'Iniciando…' : 'Iniciar conversa' }}</button>
         </footer>
       </template>
     </div>

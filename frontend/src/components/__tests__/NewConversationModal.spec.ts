@@ -10,8 +10,10 @@ import { takePendingDraft } from '../../conversation/pendingDrafts'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useGroupsStore } from '../../stores/groups'
 import { useProjectsStore } from '../../stores/projects'
+import { useGitStore } from '../../stores/git'
+import { FakeRecognition } from '../../test/fakeRecognition'
 import { loadDraft } from '../../newConversationDraft'
-import { jsonResponse, makeGroup, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { jsonResponse, makeGitRepo, makeGroup, makeProject, makeSession, routeFetch } from '../../test/factories'
 import { settleReads, trackFileReads } from '../../test/fileReader'
 
 enableAutoUnmount(afterEach)
@@ -720,5 +722,73 @@ describe('modal de nova conversa: agrupador', () => {
     expect(loadDraft().groupId).toBe(3)
     localStorage.clear()
     expect(loadDraft().groupId).toBeNull()
+  })
+})
+
+describe('layout da nova conversa', () => {
+  it('o pedido vem antes do título no DOM', async () => {
+    const { wrapper } = await openModal(2)
+    const prompt = wrapper.find('[data-test="nc-prompt"]').element
+    const title = wrapper.find('[data-test="nc-title"]').element
+    expect(prompt.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('imagem e ditado ficam na barra dentro da moldura do pedido', async () => {
+    const { wrapper } = await openModal(2)
+    const toolbar = wrapper.find('[data-test="nc-toolbar"]')
+    expect(toolbar.exists()).toBe(true)
+    expect(toolbar.find('[data-test="nc-attach"]').exists()).toBe(true)
+    const frame = wrapper.find('[data-test="nc-prompt"]').element.closest('[data-test="nc-frame"]')
+    expect(frame).not.toBeNull()
+    expect(frame!.contains(toolbar.element)).toBe(true)
+  })
+
+  it('o ditado, quando o navegador suporta, também fica na barra', async () => {
+    vi.stubGlobal('SpeechRecognition', FakeRecognition)
+    const { wrapper } = await openModal(2)
+    const dictate = wrapper.find('[data-test="nc-dictate"]')
+    expect(dictate.exists()).toBe(true)
+    expect(wrapper.find('[data-test="nc-toolbar"]').element.contains(dictate.element)).toBe(true)
+  })
+
+  it('mostra o branch do projeto escolhido e o troca com o projeto', async () => {
+    const git = useGitStore(pinia)
+    git.set(1, [makeGitRepo({ branch: 'develop' })])
+    git.set(2, [makeGitRepo({ branch: 'feat/x' })])
+    const { wrapper } = await openModal(2)
+    expect(wrapper.find('[data-test="nc-branch"]').text()).toBe('feat/x')
+    await wrapper.find('[data-test="nc-project"]').setValue('1')
+    expect(wrapper.find('[data-test="nc-branch"]').text()).toBe('develop')
+  })
+
+  it('não mostra o branch quando o projeto não tem repositório', async () => {
+    const git = useGitStore(pinia)
+    git.set(2, [])
+    const { wrapper } = await openModal(2)
+    expect(wrapper.find('[data-test="nc-branch"]').exists()).toBe(false)
+  })
+
+  it('a dica do atalho diz o que o teclado faz', async () => {
+    const { wrapper } = await openModal(2)
+    expect(wrapper.find('[data-test="nc-hint"]').text()).toBe('Enter envia · Ctrl+Enter quebra linha')
+  })
+
+  it('o foco abre no pedido', async () => {
+    const { wrapper } = await openModal(2)
+    expect(document.activeElement).toBe(wrapper.find('[data-test="nc-prompt"]').element)
+  })
+
+  it('a barra não apaga a borda de destaque do modo sem perguntas', async () => {
+    // The saved default is "Sem perguntas": the Modo button is highlighted as a warning.
+    const { wrapper } = await openModal(2, { 'GET /api/state': () => jsonResponse({ preferences: { new_session_mode: 'bypassPermissions' } }) })
+    const toolbar = wrapper.find('[data-test="nc-toolbar"]')
+    const mode = toolbar.find('button[aria-label="Modo"]').element
+    const model = toolbar.find('button[aria-label="Modelo"]').element
+    expect(mode.className).toContain('border-secondary/60')
+    // The toolbar strips the border through a descendant variant: it must leave the highlighted button out.
+    const selector = '[aria-haspopup=menu]:not(.bg-secondary-tint)'
+    expect(toolbar.classes().some((c) => c.includes(`[&_${selector}]:border-transparent`))).toBe(true)
+    expect(mode.matches(selector)).toBe(false)
+    expect(model.matches(selector)).toBe(true)
   })
 })
