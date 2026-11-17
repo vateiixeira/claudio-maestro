@@ -8,7 +8,7 @@ import { useLabelsStore } from '../../stores/labels'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useOrgStore } from '../../stores/org'
-import { jsonResponse, makeLabel, makeDecision, makeNotice, makeProject, makeSession, routeFetch } from '../../test/factories'
+import { jsonResponse, makeAgent, makeLabel, makeDecision, makeNotice, makeProject, makeSession, routeFetch } from '../../test/factories'
 
 vi.mock('../../stores/realtime', () => ({ loadEverything: vi.fn(() => Promise.resolve()) }))
 import { loadEverything } from '../../stores/realtime'
@@ -25,6 +25,7 @@ beforeEach(() => {
   projects.projects = [makeProject({ id: 1, name: 'a' }), makeProject({ id: 2, name: 'b', path: '/b' })]
   projects.loaded = true
   useSessionsStore(pinia).loaded = true
+  useOrgStore(pinia).loaded = true
   useSessionsStore(pinia).setForProject(1, [
     makeSession({ session_id: 'w1', title: 'Espera 1', display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question', last_activity_at: now }),
     makeSession({ session_id: 'r1', title: 'Roda 1', display_state: 'running', unread: true, last_activity_at: now }),
@@ -498,20 +499,184 @@ describe('etiquetas na Caixa de entrada', () => {
   })
 })
 
-describe('Inbox: avisos dos agentes', () => {
-  it('a seção fica acima das abas e só aparece com avisos não lidos', async () => {
-    const without = await mountInbox()
-    expect(without.wrapper.find('[data-test="agent-notices"]').exists()).toBe(false)
+describe('Inbox: vistas Novidades e Conversas', () => {
+  const withAgent = () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 1, name: 'Triagem', project_id: 1 })]
+  }
+  const threeNotices = () => {
+    useOrgStore(pinia).notices = [
+      makeNotice({ id: 1, text: 'Tratei 2 erros.' }),
+      makeNotice({ id: 2, text: 'Dois filmes novos.' }),
+      makeNotice({ id: 3, text: 'Já lida.', read_at: 5 }),
+      makeNotice({ id: 4, text: 'Fila travada.', kind: 'alert' }),
+    ]
+  }
+  const press = async (key: string) => {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    await flushPromises()
+  }
 
-    useOrgStore(pinia).notices = [makeNotice({ id: 1, text: 'Tratei 2 erros.' })]
+  it('sem ?aba= e com um agente cadastrado, abre nas Novidades', async () => {
+    withAgent()
+    threeNotices()
     const { wrapper } = await mountInbox()
-    const section = wrapper.get('[data-test="agent-notices"]')
-    expect(section.text()).toContain('Tratei 2 erros.')
-    const tabs = wrapper.get('[role="tablist"]').element
-    expect(section.element.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.find('[data-test="notice-feed"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="inbox-view-novidades"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-test="inbox-view-conversas"]').attributes('aria-current')).toBeUndefined()
+    expect(wrapper.find('[data-test="inbox-tab"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="inbox-search"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="mark-all-read"]').exists()).toBe(false)
+  })
+
+  it('sem ?aba=, espera os agentes carregarem antes de escolher a vista', async () => {
+    useOrgStore(pinia).loaded = false
+    const { wrapper } = await mountInbox()
+    expect(wrapper.find('[data-test="load-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="inbox-view-novidades"]').exists()).toBe(false)
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="notice-feed"]').exists()).toBe(false)
+    await press('j')
+    useOrgStore(pinia).agents = [makeAgent({ id: 1, project_id: 1 })]
+    useOrgStore(pinia).notices = [makeNotice({ id: 1 })]
+    useOrgStore(pinia).loaded = true
+    await flushPromises()
+    expect(wrapper.find('[data-test="load-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="notice-feed"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="agent-notice"]').attributes('data-selected')).toBe('false')
+  })
+
+  it('sem ?aba= e sem agentes, depois de carregar, abre em Conversas', async () => {
+    useOrgStore(pinia).loaded = false
+    const { wrapper } = await mountInbox()
+    useOrgStore(pinia).loaded = true
+    await flushPromises()
+    expect(wrapper.find('[data-test="load-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+  })
+
+  it('com ?aba= a vista não espera os agentes', async () => {
+    useOrgStore(pinia).loaded = false
+    const { wrapper } = await mountInbox('/inbox?aba=pede-voce')
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="inbox-view-conversas"]').exists()).toBe(true)
+  })
+
+  it('com agente e sem avisos, as Novidades mostram o estado vazio', async () => {
+    withAgent()
+    const { wrapper } = await mountInbox()
+    expect(wrapper.get('[data-test="notices-empty"]').text()).toBe('Nenhuma novidade dos agentes.')
+  })
+
+  it('sem agentes abre em Conversas, na aba Aguardando você', async () => {
+    const { wrapper } = await mountInbox()
+    expect(wrapper.find('[data-test="notice-feed"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="inbox-view-conversas"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.findAll('[data-test="inbox-tab"]')[0]!.attributes('aria-selected')).toBe('true')
+    expect(titles(wrapper)).toEqual(['Espera 1', 'Espera 2'])
+  })
+
+  it('?aba=todas abre a lista de conversas mesmo com agentes e avisos', async () => {
+    withAgent()
+    threeNotices()
+    const { wrapper } = await mountInbox('/inbox?aba=todas')
+    expect(wrapper.find('[data-test="notice-feed"]').exists()).toBe(false)
+    expect(titles(wrapper)).toEqual(['Espera 1', 'Roda 1', 'Espera 2'])
+    expect(wrapper.get('[data-test="inbox-view-conversas"]').attributes('aria-current')).toBe('page')
+  })
+
+  it('?aba=novidades abre as Novidades mesmo sem agentes', async () => {
+    const { wrapper } = await mountInbox('/inbox?aba=novidades')
+    expect(wrapper.find('[data-test="notices-empty"]').exists()).toBe(true)
+  })
+
+  it('os dois links ficam numa navegação e apontam para as vistas', async () => {
+    withAgent()
+    const { wrapper } = await mountInbox()
+    const nav = wrapper.get('nav[aria-label="Seções da Inbox"]')
+    expect(nav.find('[data-test="inbox-view-novidades"]').exists()).toBe(true)
+    expect(nav.get('[data-test="inbox-view-conversas"]').attributes('href')).toBe('/inbox?aba=pede-voce')
+    expect(nav.get('[data-test="inbox-view-novidades"]').attributes('href')).toBe('/inbox?aba=novidades')
+  })
+
+  it('o link Conversas mostra quantas conversas esperam você, pela regra do menu', async () => {
+    const { wrapper } = await mountInbox()
+    expect(wrapper.get('[data-test="inbox-view-conversas"]').text()).toBe('Conversas2')
+    useSessionsStore(pinia).setForProject(1, [])
+    useSessionsStore(pinia).setForProject(2, [])
+    await flushPromises()
+    expect(wrapper.get('[data-test="inbox-view-conversas"]').text()).toBe('Conversas')
+  })
+
+  it('trocar de vista pelos links', async () => {
+    withAgent()
+    threeNotices()
+    const { wrapper, router } = await mountInbox()
+    await wrapper.get('[data-test="inbox-view-conversas"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.aba).toBe('pede-voce')
+    expect(wrapper.find('[data-test="notice-feed"]').exists()).toBe(false)
+    expect(titles(wrapper)).toEqual(['Espera 1', 'Espera 2'])
+    await wrapper.get('[data-test="inbox-view-novidades"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="notice-feed"]').exists()).toBe(true)
+  })
+
+  it('o contador de não lidos aparece só nas Novidades', async () => {
+    withAgent()
+    threeNotices()
+    const { wrapper } = await mountInbox()
+    expect(wrapper.get('[data-test="inbox-unread"]').text()).toBe('3 novidades')
+    useOrgStore(pinia).notices = [makeNotice({ id: 1 })]
+    await flushPromises()
+    expect(wrapper.get('[data-test="inbox-unread"]').text()).toBe('1 novidade')
+    useOrgStore(pinia).notices = [makeNotice({ id: 1, read_at: 5 })]
+    await flushPromises()
+    expect(wrapper.get('[data-test="inbox-unread"]').text()).toBe('Tudo lido')
+    const conversas = await mountInbox('/inbox?aba=pede-voce')
+    expect(conversas.wrapper.find('[data-test="inbox-unread"]').exists()).toBe(false)
+  })
+
+  it('o j e o k das Novidades não agem na vista Conversas', async () => {
+    withAgent()
+    threeNotices()
+    const { wrapper } = await mountInbox('/inbox?aba=pede-voce')
+    await press('j')
+    expect(wrapper.find('[data-test="agent-notice"]').exists()).toBe(false)
+    expect(wrapper.find('[role="option"][data-focused="true"]').exists()).toBe(true)
+    await press('e')
+    expect(useOrgStore(pinia).unreadCount).toBe(3)
+  })
+
+  it('o j e o k da vista Conversas não agem nas Novidades', async () => {
+    withAgent()
+    threeNotices()
+    const { wrapper } = await mountInbox()
+    await press('j')
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="agent-notice"]')[0]!.attributes('data-selected')).toBe('true')
+    expect(wrapper.find('[data-test="inbox-keys"]').exists()).toBe(false)
+  })
+
+  it('com o foco num campo, o j das Novidades não age', async () => {
+    withAgent()
+    threeNotices()
+    const { wrapper } = await mountInbox()
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="agent-notice"]').every((n) => n.attributes('data-selected') === 'false')).toBe(true)
+    input.remove()
+  })
+
+  it('o aviso lido aparece nas Novidades junto com os não lidos', async () => {
+    withAgent()
+    threeNotices()
+    const { wrapper } = await mountInbox()
+    expect(wrapper.findAll('[data-test="agent-notice"]')).toHaveLength(4)
+    expect(wrapper.find('[data-test="agent-notices"]').exists()).toBe(false)
   })
 })
-
 
 describe('Inbox: decisões', () => {
   const decisions = () => [

@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import AgentNotices from '../components/inbox/AgentNotices.vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import ConversationRow from '../components/conversation/ConversationRow.vue'
 import FirstSteps from '../components/FirstSteps.vue'
 import InboxTriageRow from '../components/inbox/InboxTriageRow.vue'
+import NoticeFeed from '../components/inbox/NoticeFeed.vue'
 import LoadStatus from '../components/LoadStatus.vue'
 import { errorMessage, markSessionsSeen } from '../api/http'
+import { isDiscarded } from '../conversation/marks'
+import { needsYou } from '../conversation/needsYou'
 import { isBareShortcut } from '../keyboardShortcutGuard'
 import { useLoadState } from '../loadState'
 import { INBOX_TABS, groupByDate, inInbox, isInboxTab, type InboxTab } from '../conversationList'
@@ -24,7 +26,24 @@ const git = useGitStore()
 const org = useOrgStore()
 const loadState = useLoadState()
 
-const tab = computed<InboxTab>(() => (isInboxTab(route.query.aba) ? route.query.aba : 'pede-voce'))
+// Two views: "Novidades" (what the agents left) and "Conversas" (the tabs). Without `?aba=` it opens on Novidades
+// once there is an agent, and on the conversations waiting for you before that.
+type InboxView = 'novidades' | InboxTab
+const view = computed<InboxView>(() => {
+  const aba = route.query.aba
+  if (aba === 'novidades') return 'novidades'
+  if (isInboxTab(aba)) return aba
+  return org.agents.length > 0 ? 'novidades' : 'pede-voce'
+})
+// Without `?aba=` the view depends on there being agents, so nothing is decided until they have loaded.
+const deciding = computed(() => !org.loaded && !(route.query.aba === 'novidades' || isInboxTab(route.query.aba)))
+const novidades = computed(() => view.value === 'novidades')
+const tab = computed<InboxTab>(() => (view.value === 'novidades' ? 'pede-voce' : view.value))
+// Same rule as the count in the menu.
+const waitingCount = computed(() => sessions.all.filter((s) => s.display_state === 'waiting' && needsYou(s) && !isDiscarded(s)).length)
+const unreadNotices = computed(() => org.unreadCount)
+const novidadesText = computed(() => (unreadNotices.value === 0 ? 'Tudo lido' : `${unreadNotices.value} ${unreadNotices.value === 1 ? 'novidade' : 'novidades'}`))
+const viewLink = 'inline-flex h-9 items-center gap-2 border-b-2 px-3 text-sm no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
 function selectTab(id: InboxTab) {
   void router.replace({ query: { ...route.query, aba: id } })
 }
@@ -56,7 +75,7 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
 
 // Keyboard triage of "Aguardando você": a listbox with a cursor (`focusedId`) that j/k and the arrows move.
 // Nothing is under the cursor until the first move, so a stray `a` never answers a row nobody looked at.
-const triage = computed(() => tab.value === 'pede-voce')
+const triage = computed(() => view.value === 'pede-voce' && !deciding.value)
 const flat = computed(() => groups.value.flatMap((g) => g.sessions))
 const focusedId = ref<string | null>(null)
 const listEl = ref<HTMLElement | null>(null)
@@ -151,7 +170,7 @@ function onKey(event: KeyboardEvent) {
 }
 onMounted(() => document.addEventListener('keydown', onKey))
 onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
-watch(tab, () => { focusedId.value = null })
+watch(view, () => { focusedId.value = null })
 
 async function markAll() {
   const ids = visible.value.filter((s) => s.unread).map((s) => s.session_id)
@@ -170,10 +189,26 @@ async function markAll() {
 
 <template>
   <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-6 py-6">
-    <h1 class="m-0 font-mono text-sm tracking-[0.08em] text-fg uppercase">Inbox</h1>
+    <div class="flex items-center gap-3.5">
+      <h1 class="m-0 font-mono text-sm tracking-[0.08em] text-fg uppercase">Inbox</h1>
+      <span v-if="novidades && !deciding" data-test="inbox-unread" class="font-mono text-xs text-secondary-soft tabular-nums">{{ novidadesText }}</span>
+    </div>
     <FirstSteps v-if="projects.loaded && !projects.loadError && projects.regular.length === 0" />
     <template v-else>
-      <AgentNotices />
+      <p v-if="deciding" data-test="load-loading" class="m-0 py-10 text-center text-fg-muted">Carregando…</p>
+      <template v-else>
+      <nav aria-label="Seções da Inbox" class="flex gap-1">
+        <RouterLink v-slot="{ href, navigate }" custom :to="{ name: 'inbox', query: { aba: 'novidades' } }">
+          <a data-test="inbox-view-novidades" :href="href" :aria-current="novidades ? 'page' : undefined" :class="[viewLink, novidades ? 'border-fg text-fg' : 'border-transparent text-fg-muted hover:text-fg']" @click="navigate">Novidades</a>
+        </RouterLink>
+        <RouterLink v-slot="{ href, navigate }" custom :to="{ name: 'inbox', query: { aba: 'pede-voce' } }">
+          <a data-test="inbox-view-conversas" :href="href" :aria-current="novidades ? undefined : 'page'" :class="[viewLink, novidades ? 'border-transparent text-fg-muted hover:text-fg' : 'border-fg text-fg']" @click="navigate">
+            Conversas<span v-if="waitingCount > 0" class="font-mono text-[0.71875rem] text-fg-subtle tabular-nums">{{ waitingCount }}</span>
+          </a>
+        </RouterLink>
+      </nav>
+      <NoticeFeed v-if="novidades" />
+      <template v-else>
       <div class="flex flex-wrap items-center gap-3">
         <div role="tablist" aria-label="Filtro da Inbox" class="flex gap-1">
           <button
@@ -239,6 +274,8 @@ async function markAll() {
           <span><kbd :class="kbdClass">a</kbd> permitir uma vez</span>
           <span><kbd :class="kbdClass">d</kbd> negar</span>
         </p>
+      </template>
+      </template>
       </template>
     </template>
     <p data-test="inbox-announce" role="status" class="sr-only">{{ announcement }}</p>
