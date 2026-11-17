@@ -174,6 +174,7 @@ def test_seed_creates_the_triagem_agent_with_routine_runs_and_notices(tmp_path, 
         routines = store.list_routines(conn, agent_id=triagem.id)
         schedules = store.list_schedules(conn, routines[0].id)
         runs = [r for r in store.list_runs(conn, triagem.id) if r.task_id is None]
+        items = sorted(store.list_items(conn, triagem.id), key=lambda i: i.key)
         notices = store.list_notices(conn)
         announcements = store.pending_announcements(conn, triagem.id)
     assert len(announcements) == 1
@@ -181,8 +182,16 @@ def test_seed_creates_the_triagem_agent_with_routine_runs_and_notices(tmp_path, 
     assert [r.name for r in routines] == ["Triagem"]
     assert routines[0].create_task is True
     assert [(s.days, s.time) for s in schedules] == [("12345", "03:00")]
-    assert sorted(r.outcome for r in runs) == ["concluded", "failed"]
+    assert sorted(r.outcome for r in runs) == ["concluded", "failed", "missed"]
     assert {r.source for r in runs} == {"routine"}
+    concluded = next(r for r in runs if r.outcome == "concluded")
+    assert concluded.summary == e2e.TRIAGEM_RUN_SUMMARY
+    missed = next(r for r in runs if r.outcome == "missed")
+    assert missed.reason == e2e.TRIAGEM_MISSED_REASON
+    assert missed.routine_id == routines[0].id
+    assert missed.started_at == missed.ended_at
+    assert [(i.key, i.status, i.link, i.note) for i in items] == sorted(e2e.TRIAGEM_REGISTRY)
+    assert len({i.updated_at for i in items}) == 3
     failed = next(r for r in runs if r.outcome == "failed")
     assert failed.reason == e2e.TRIAGEM_FAILURE_REASON
     assert all(r.ended_at is not None for r in runs)

@@ -131,6 +131,14 @@ TRIAGEM_PROJECT = "Loja Demo"
 TRIAGEM_FAILURE_REASON = "O token do repositório expirou."
 TRIAGEM_ALERT_TEXT = "A Triagem falhou nas últimas execuções."
 TRIAGEM_SUMMARY_TEXT = "Triagem concluída: 3 itens novos."
+TRIAGEM_RUN_SUMMARY = "Triagem concluída: 3 chamados novos, 1 urgente."
+TRIAGEM_MISSED_REASON = "O horário passou e o Maestro não disparou o agente."
+# The registry of the Triagem: (key, status, link, note).
+TRIAGEM_REGISTRY = [
+    ("chamado:1042", "aguardando", None, "Cliente pede estorno em dobro; espera a resposta do financeiro."),
+    ("chamado:1043", "pr-aberto", "https://github.com/exemplo/loja-demo/pull/12", "Corrigido o arredondamento do frete."),
+    ("chamado:1038", "descartado", None, "Duplicado do chamado:1042."),
+]
 TRIAGEM_SKILL = """---
 name: Triagem
 description: Separa os chamados novos por urgência e responde os simples.
@@ -702,10 +710,23 @@ def _seed_agents(settings, conn, now: datetime) -> None:
     org_store.replace_schedules(conn, routine.id, [("12345", "03:00")], stamp)
     for hours_ago, outcome, reason in ((26, "concluded", None), (2, "failed", TRIAGEM_FAILURE_REASON)):
         started = stamp - hours_ago * 3600
-        org_store.insert_run(
+        run = org_store.insert_run(
             conn, agent_id=agent.id, source="routine", routine_id=routine.id,
             started_at=started, scheduled_for=started, outcome=outcome, reason=reason,
             ended_at=started + 120,
+        )
+        if outcome == "concluded":
+            org_store.update_run(conn, run.id, summary=TRIAGEM_RUN_SUMMARY)
+    # A scheduled time the Maestro never fired: started and ended at the same instant.
+    missed_at = stamp - 50 * 3600
+    org_store.insert_run(
+        conn, agent_id=agent.id, source="routine", routine_id=routine.id, started_at=missed_at,
+        scheduled_for=missed_at - 600, outcome="missed", reason=TRIAGEM_MISSED_REASON,
+        ended_at=missed_at,
+    )
+    for (key, status, link, note), hours_ago in zip(TRIAGEM_REGISTRY, (3, 2, 26), strict=True):
+        org_store.upsert_item(
+            conn, agent.id, key=key, status=status, link=link, note=note, now=stamp - hours_ago * 3600
         )
     org_store.add_notice(
         conn, agent_id=agent.id, run_id=None, kind="alert", text=TRIAGEM_ALERT_TEXT,
