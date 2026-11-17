@@ -38,8 +38,8 @@ const SWATCH_TOKENS = ['bg', 'elevated', 'primary', 'secondary', 'info', 'diff-d
           class="sr-only"
           @change="setTheme(item.id)"
         />
-        <span class="flex items-center gap-2">
-          <span data-test="theme-name" class="min-w-0 grow truncate text-sm font-medium">{{ item.label }}</span>
+        <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span data-test="theme-name" class="max-w-full text-sm font-medium [overflow-wrap:anywhere]">{{ item.label }}</span>
           <span
             v-if="theme === item.id"
             data-test="theme-active"

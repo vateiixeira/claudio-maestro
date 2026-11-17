@@ -286,18 +286,17 @@ function onKeydown(event: KeyboardEvent) {
               data-test="label-new-save"
               :data-active="active === options.length ? 'true' : undefined"
               :aria-disabled="busy ? 'true' : undefined"
-              class="flex shrink-0 cursor-pointer items-center gap-2.5 rounded-t-lg bg-elevated px-2.5 py-2.5"
+              class="flex shrink-0 cursor-pointer flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-t-lg bg-elevated px-2.5 py-2.5"
               @click="createAndApply"
             >
               <IconPlus :size="14" class="shrink-0 text-primary" />
-              <span class="text-sm">Criar etiqueta</span>
-              <LabelBadge :label="{ id: 0, slug: query.trim(), color, created_at: 0 }" />
-              <span class="flex-1" />
-              <kbd class="rounded-[5px] border border-line-strong px-1.5 font-mono text-[0.6875rem] text-fg-muted">Enter</kbd>
+              <span class="text-sm whitespace-nowrap">Criar etiqueta</span>
+              <LabelBadge :label="{ id: 0, slug: query.trim(), color, created_at: 0 }" wrap />
+              <kbd class="ml-auto shrink-0 rounded-[5px] border border-line-strong px-1.5 font-mono text-[0.6875rem] text-fg-muted">Enter</kbd>
             </div>
           </template>
         </div>
-        <div v-if="canCreate" class="flex items-center gap-2.5 rounded-b-lg bg-elevated px-2.5 pt-0 pb-2.5 pl-9">
+        <div v-if="canCreate" class="flex flex-col items-start gap-1.5 rounded-b-lg bg-elevated px-2.5 pt-0 pb-2.5">
           <span class="text-xs text-fg-muted">Cor</span>
           <LabelPalette v-model="color" data-test="label-new-color" />
         </div>

@@ -143,17 +143,37 @@ describe('modal de nova conversa: comandos e menções', () => {
       'GET /api/projects/2/commands': () => jsonResponse([{ name: 'commit', description: '', argument_hint: '' }]),
     })
     await typeSlash(wrapper, '/co')
-    expect(wrapper.get('[role="listbox"]').classes()).toContain('top-full')
+    const list = wrapper.get('[role="listbox"]')
+    expect(list.attributes('data-placement')).toBe('below')
+    // Fixed over the viewport: the scrollable body of the modal cannot clip it.
+    expect(list.classes()).toContain('fixed')
   })
 
-  it('com 288 px ou mais acima do campo no corpo rolável, o menu abre acima', async () => {
+  it('sem espaço abaixo do campo (o rodapé do modal), a lista abre acima e cabe no espaço', async () => {
     const { wrapper } = await openModal(2, {
       'GET /api/projects/2/commands': () => jsonResponse([{ name: 'commit', description: '', argument_hint: '' }]),
     })
-    const ta = wrapper.get('[data-test="nc-prompt"]')
-    vi.spyOn(ta.element, 'getBoundingClientRect').mockReturnValue({ top: 400 } as DOMRect)
+    const field = wrapper.get('[data-test="nc-prompt"]').element.parentElement!
+    vi.spyOn(field, 'getBoundingClientRect').mockReturnValue({ top: 500, bottom: 740, left: 40, width: 600 } as DOMRect)
     await typeSlash(wrapper, '/co')
-    expect(wrapper.get('[role="listbox"]').classes()).toContain('bottom-full')
+    const list = wrapper.get('[role="listbox"]')
+    expect(list.attributes('data-placement')).toBe('above')
+    expect(list.attributes('style')).toContain('left: 40px')
+    expect(list.attributes('style')).toContain('width: 600px')
+    expect(list.attributes('style')).toContain(`bottom: ${window.innerHeight - 500 + 4}px`)
+  })
+
+  it('com espaço abaixo para a lista inteira, o menu abre abaixo do campo, com a altura limitada', async () => {
+    const { wrapper } = await openModal(2, {
+      'GET /api/projects/2/commands': () => jsonResponse([{ name: 'commit', description: '', argument_hint: '' }]),
+    })
+    const field = wrapper.get('[data-test="nc-prompt"]').element.parentElement!
+    vi.spyOn(field, 'getBoundingClientRect').mockReturnValue({ top: 100, bottom: 200, left: 0, width: 500 } as DOMRect)
+    await typeSlash(wrapper, '/co')
+    const list = wrapper.get('[role="listbox"]')
+    expect(list.attributes('data-placement')).toBe('below')
+    expect(list.attributes('style')).toContain('top: 204px')
+    expect(list.attributes('style')).toContain('max-height: 288px')
   })
 
   it('a camada espelhada mostra a dica de argumentos do comando escolhido', async () => {

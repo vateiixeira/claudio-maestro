@@ -228,6 +228,7 @@ it('separa "Ativos hoje" e "Parados", cada grupo pela atividade mais recente', a
   sessions.setForProject(3, [makeSession({ session_id: 'c', display_state: 'finished', finished: true, last_activity_at: secondsAgo(60) })])
   sessions.setForProject(4, [makeSession({ session_id: 'd', display_state: 'waiting', finished: false, last_activity_at: secondsAgo(5 * 86400) })])
   sessions.setForProject(5, [makeSession({ session_id: 'e', display_state: 'finished', finished: true, last_activity_at: secondsAgo(2 * 86400) })])
+  sessions.loaded = true
   const w = await mountView()
   const groups = w.findAll('[data-test="project-group"]')
   expect(groups.map(g => g.attributes('data-group'))).toEqual(['active', 'idle'])
@@ -249,6 +250,7 @@ it('enquanto um projeto é renomeado, a ordem e o grupo das linhas ficam congela
   sessions.setForProject(1, [makeSession({ session_id: 'a', display_state: 'finished', finished: true, last_activity_at: secondsAgo(60) })])
   sessions.setForProject(2, [makeSession({ session_id: 'b', display_state: 'finished', finished: true, last_activity_at: secondsAgo(1800) })])
   sessions.setForProject(3, [makeSession({ session_id: 'c', display_state: 'finished', finished: true, last_activity_at: secondsAgo(40 * 86400) })])
+  sessions.loaded = true
   const w = await mountView()
   const layout = () => w.findAll('[data-test="project-group"]').map(g => [g.attributes('data-group'), g.findAll('[data-test="project-row"] a').map(a => a.text())])
   expect(layout()).toEqual([['active', ['alfa', 'beta']], ['idle', ['gama']]])
@@ -267,8 +269,26 @@ it('enquanto um projeto é renomeado, a ordem e o grupo das linhas ficam congela
   expect(layout()).toEqual([['active', ['gama', 'alfa']], ['idle', ['beta']]])
 })
 
+it('enquanto as conversas não carregaram, é uma lista só, sem grupos nem "Parados"; depois separa', async () => {
+  useFixedNow()
+  const store = useProjectsStore()
+  store.loaded = true
+  store.projects = [makeProject({ id: 1, name: 'alfa' }), makeProject({ id: 2, name: 'beta' })]
+  const w = await mountView()
+  expect(w.findAll('[data-test="project-group"]').map(g => g.attributes('data-group'))).toEqual(['all'])
+  expect(w.findAll('[data-test="group-header"]')).toHaveLength(0)
+  expect(w.text()).not.toContain('Parados')
+  expect(w.findAll('[data-test="project-row"]')).toHaveLength(2)
+  const sessions = useSessionsStore()
+  sessions.setForProject(2, [makeSession({ session_id: 'b', display_state: 'finished', finished: true, last_activity_at: secondsAgo(60) })])
+  sessions.loaded = true
+  await flushPromises()
+  expect(w.findAll('[data-test="project-group"]').map(g => g.attributes('data-group'))).toEqual(['active', 'idle'])
+})
+
 it('omite o grupo que ficou vazio', async () => {
   useProjectsStore().projects = [makeProject()]
+  useSessionsStore().loaded = true
   const w = await mountView()
   expect(w.findAll('[data-test="project-group"]').map(g => g.attributes('data-group'))).toEqual(['idle'])
 })

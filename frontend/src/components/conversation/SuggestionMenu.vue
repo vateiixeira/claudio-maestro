@@ -3,6 +3,8 @@ import { computed, watch } from 'vue'
 import type { SuggestionItem, SuggestionStatus } from '../../conversation/useComposerSuggestions'
 import type { TriggerKind } from '../../conversation/suggestions'
 
+export type SuggestionAnchor = { left: number; width: number; maxHeight: number; top?: number; bottom?: number }
+
 const props = withDefaults(
   defineProps<{
     id: string
@@ -13,10 +15,21 @@ const props = withDefaults(
     kind: TriggerKind
     optionId: (index: number) => string
     placement?: 'above' | 'below'
+    /** Viewport box (px) to draw the list in `fixed`, out of reach of a clipping ancestor. */
+    anchor?: SuggestionAnchor | null
   }>(),
-  { placement: 'above' },
+  { placement: 'above', anchor: null },
 )
 const emit = defineEmits<{ choose: [index: number]; hover: [index: number] }>()
+
+const anchorStyle = computed(() => {
+  const a = props.anchor
+  if (!a) return undefined
+  const style: Record<string, string> = { left: `${a.left}px`, width: `${a.width}px`, maxHeight: `${a.maxHeight}px` }
+  if (a.top !== undefined) style.top = `${a.top}px`
+  if (a.bottom !== undefined) style.bottom = `${a.bottom}px`
+  return style
+})
 
 // Shown as a single disabled option when the list has nothing to offer.
 const stateText = computed(() => {
@@ -40,8 +53,10 @@ watch(
     :id="id"
     role="listbox"
     aria-label="Sugestões"
-    class="absolute left-0 right-0 z-20 max-h-72 overflow-y-auto rounded-lg border border-line-strong bg-panel p-1 shadow-lg"
-    :class="placement === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'"
+    :data-placement="placement"
+    class="z-20 max-h-72 overflow-y-auto rounded-lg border border-line-strong bg-panel p-1 shadow-lg"
+    :class="[anchor ? 'fixed' : 'absolute right-0 left-0', anchor ? '' : placement === 'above' ? 'bottom-full mb-1' : 'top-full mt-1']"
+    :style="anchorStyle"
     @mousedown.prevent
   >
     <li

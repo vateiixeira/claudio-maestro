@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import MentionMirror from './conversation/MentionMirror.vue'
-import SuggestionMenu from './conversation/SuggestionMenu.vue'
+import SuggestionMenu, { type SuggestionAnchor } from './conversation/SuggestionMenu.vue'
 import BypassConfirmDialog from './session/BypassConfirmDialog.vue'
 import ClaudeCliFooter from './session/ClaudeCliFooter.vue'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
@@ -71,7 +71,6 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const fullscreen = ref(false)
 const promptEl = ref<HTMLTextAreaElement | null>(null)
 const dialogEl = ref<HTMLElement | null>(null)
-const scrollBody = ref<HTMLElement | null>(null)
 // Where focus was before the modal opened; it goes back there when the modal closes.
 const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
 const lastProject = loadLastProject()
@@ -225,15 +224,33 @@ const promptScrollTop = ref(0)
 function onPromptScroll() {
   promptScrollTop.value = promptEl.value?.scrollTop ?? 0
 }
-// The menu opens above the field when the scrollable body has room for its full height (max-h-72 = 288 px), else below.
+// The list is drawn `fixed` over the viewport, because the scrollable body (and the modal) would clip it.
+// It opens below the field when that fits its full height (max-h-72 = 288 px), else on the side with more room.
 const MENU_HEIGHT = 288
+const MENU_GAP = 4
+const MENU_MARGIN = 8
 const menuPlacement = ref<'above' | 'below'>('below')
+const menuAnchor = ref<SuggestionAnchor | null>(null)
+function placeMenu() {
+  const field = promptEl.value?.parentElement ?? promptEl.value
+  if (!field) return
+  const rect = field.getBoundingClientRect()
+  const below = window.innerHeight - rect.bottom - MENU_GAP - MENU_MARGIN
+  const above = rect.top - MENU_GAP - MENU_MARGIN
+  const placement = below >= MENU_HEIGHT || below >= above ? 'below' : 'above'
+  menuPlacement.value = placement
+  const maxHeight = Math.max(96, Math.min(MENU_HEIGHT, placement === 'below' ? below : above))
+  menuAnchor.value = {
+    left: rect.left,
+    width: rect.width,
+    maxHeight,
+    ...(placement === 'below' ? { top: rect.bottom + MENU_GAP } : { bottom: window.innerHeight - rect.top + MENU_GAP }),
+  }
+}
 watch(
   () => suggestions.isOpen.value,
   (open) => {
-    if (!open || !promptEl.value || !scrollBody.value) return
-    const room = promptEl.value.getBoundingClientRect().top - scrollBody.value.getBoundingClientRect().top
-    menuPlacement.value = room >= MENU_HEIGHT ? 'above' : 'below'
+    if (open) placeMenu()
   },
   { flush: 'sync' },
 )
@@ -429,7 +446,7 @@ function onKeydown(event: KeyboardEvent) {
         <RouterLink to="/projects/new" class="text-info-soft" @click="close">Cadastrar projeto</RouterLink>
       </div>
       <template v-else>
-        <div ref="scrollBody" class="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-5 py-4">
+        <div class="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-5 py-4" @scroll="suggestions.isOpen.value && placeMenu()">
           <div class="flex flex-wrap items-center gap-x-2 gap-y-2">
             <label class="flex items-center gap-2 text-sm text-fg-muted">
               Em
@@ -487,6 +504,7 @@ function onKeydown(event: KeyboardEvent) {
                 :kind="suggestions.kind.value"
                 :option-id="suggestions.optionId"
                 :placement="menuPlacement"
+                :anchor="menuAnchor"
                 @choose="(i) => suggestions.choose(i, 'click')"
                 @hover="(i) => (suggestions.active.value = i)"
               />

@@ -36,7 +36,10 @@ const noActivity = { running: 0, open: 0, latest: 0 }
 const activityOf = (project: Project) => activity.value[project.id] ?? noActivity
 
 // Newest activity first inside each group; "active today" also counts open conversations.
+// Until the conversations arrive every project would read "no activity" and sit in "Parados", then jump
+// up: so the groups wait for them and the list is a single one meanwhile.
 const liveGroups = computed(() => {
+  if (!sessions.loaded) return [{ key: 'all', title: 'Projetos', projects: [...visibleProjects.value] }]
   const byRecent = [...visibleProjects.value].sort((a, b) => activityOf(b).latest - activityOf(a).latest)
   const active = byRecent.filter(p => isActiveToday(activityOf(p).latest, activityOf(p).open, now.value))
   const idle = byRecent.filter(p => !active.includes(p))
@@ -52,7 +55,8 @@ const frozen = ref<Map<number, { key: string; index: number }> | null>(null)
 const groups = computed(() => {
   const live = liveGroups.value
   const places = frozen.value
-  if (!places) return live.filter(group => group.projects.length)
+  // A freeze taken in another mode (one list before the conversations loaded) no longer applies.
+  if (!places || ![...places.values()].some(place => live.some(group => group.key === place.key))) return live.filter(group => group.projects.length)
   return live.map(group => ({
     ...group,
     projects: live
@@ -191,7 +195,7 @@ async function retry() {
       </div>
       <p v-if="!visibleProjects.length" role="status" class="org-empty">Nenhum projeto encontrado. Tente outro nome ou caminho.</p>
       <div v-else class="overflow-x-auto">
-        <div role="table" aria-label="Projetos cadastrados" class="min-w-[760px]">
+        <div role="table" aria-label="Projetos cadastrados" class="min-w-[940px]">
           <div role="row" :class="[ROW, 'h-7 border-b border-line-strong font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase']">
             <span aria-hidden="true" />
             <span role="columnheader">Projeto</span>
@@ -202,13 +206,13 @@ async function retry() {
             <span role="columnheader" class="sr-only">Ações</span>
           </div>
           <div v-for="group in groups" :key="group.key" role="rowgroup" data-test="project-group" :data-group="group.key" class="mt-2.5 first:mt-1">
-            <div role="row"><div role="cell"><GroupHeader :title="group.title" :count="group.projects.length" /></div></div>
+            <div v-if="group.key !== 'all'" role="row"><div role="cell"><GroupHeader :title="group.title" :count="group.projects.length" /></div></div>
             <div v-for="project in group.projects" :key="project.id" role="row" data-test="project-row" :data-project-id="project.id" :class="[ROW, 'min-h-11 border-b border-line py-1 text-[0.8125rem] text-fg-muted hover:bg-panel']">
               <span aria-hidden="true" class="size-2 shrink-0 rounded-sm" :style="{ backgroundColor: project.color }" />
               <div role="cell" class="min-w-0">
                 <div class="flex min-w-0 items-baseline gap-2.5">
-                  <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="truncate text-[0.90625rem] font-semibold text-fg no-underline hover:underline focus-visible:outline-2 focus-visible:outline-primary">{{ project.name }}</RouterLink>
-                  <span data-test="project-path" :title="project.path" class="truncate font-mono text-[0.71875rem] text-fg-subtle">{{ shortPath(project.path) }}</span>
+                  <RouterLink :to="{ name: 'project', params: { id: project.id } }" class="max-w-full shrink-0 truncate text-[0.90625rem] font-semibold text-fg no-underline hover:underline focus-visible:outline-2 focus-visible:outline-primary">{{ project.name }}</RouterLink>
+                  <span data-test="project-path" :title="project.path" class="min-w-0 truncate font-mono text-[0.71875rem] text-fg-subtle">{{ shortPath(project.path) }}</span>
                 </div>
                 <p v-if="!project.available" class="m-0 text-xs text-secondary-soft">Pasta indisponível</p>
                 <form v-if="editing === project.id" class="my-2 flex flex-wrap items-end gap-2" :aria-label="`Renomear ${project.name}`" @submit.prevent="saveRename" @keydown.esc.prevent="cancelRename">
