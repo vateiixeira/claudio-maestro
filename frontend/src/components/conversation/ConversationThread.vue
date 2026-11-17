@@ -4,13 +4,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref,
 import { SESSION_ID_KEY, useChangesPanelStore } from '../../stores/changesPanel'
 import { ApiError, errorMessage, markSessionSeen } from '../../api/http'
 import { useEventSocket } from '../../api/socket'
-import ConversationBlock from './ConversationBlock.vue'
 import MessageComposer from './MessageComposer.vue'
-import PermissionCard from './PermissionCard.vue'
-import PlanCard from './PlanCard.vue'
-import QuestionCard from './QuestionCard.vue'
-import RailNode from './RailNode.vue'
-import { railAlign } from '../../conversation/railAlign'
+import PromptCards from './PromptCards.vue'
+import TurnEntries from './TurnEntries.vue'
 import SubagentStrip from './SubagentStrip.vue'
 import TurnLiveLine from './TurnLiveLine.vue'
 import TurnTasks from './TurnTasks.vue'
@@ -21,12 +17,11 @@ import { useOrgStore } from '../../stores/org'
 import { useRunTask } from './useRunTask'
 import { findLastMessage, MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { buildItemTree, deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
-import { buildTurns, nodeKind, summaryText, turnSummary } from '../../conversation/turns'
-import { groupNodeKind, workStatus } from '../../conversation/work'
+import { buildTurns, summaryText, turnSummary } from '../../conversation/turns'
+import { workStatus } from '../../conversation/work'
 import { liveActivity, showTurnTasks, turnTaskStates } from '../../conversation/liveTurn'
 import { COLLAPSE_OPENING_KEY } from '../../conversation/collapseActivity'
-import { entryKey, isNearEnd, promptKey, turnKeys } from '../../conversation/liveItems'
-import WorkBlock from './WorkBlock.vue'
+import { isNearEnd, turnKeys } from '../../conversation/liveItems'
 import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
@@ -322,6 +317,9 @@ function blockOpen(entry: { id: string; items: ToolItem[] }): boolean {
   return groupChoice.get(entry.id)
     ?? entry.items.some((item) => workStatus(item, sessionActive.value) === 'error')
 }
+function toggleBlock(entry: { id: string; items: ToolItem[] }) {
+  groupChoice.set(entry.id, !blockOpen(entry))
+}
 
 // Duration and cost of the last turn, shown in its end line; its error is shown apart, in red.
 const resultParts = computed(() => {
@@ -548,37 +546,19 @@ function resolvePrompt(promptId: string) {
               class="flex scroll-mt-11 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
             >
               <UserMessage v-if="turn.user" :item="turn.user" :class="{ 'animate-enter': isLive(turn.user.id) }" />
-              <div v-if="turn.entries.length" class="relative flex flex-col gap-[18px]">
-                <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
-                <div v-for="entry in turn.entries" :key="entryKey(entry)" data-test="turn-entry" class="relative flex items-start gap-3" :class="{ 'animate-enter': isLive(entryKey(entry)) }">
-                  <template v-if="entry.kind === 'group'">
-                    <RailNode :kind="groupNodeKind(entry.items, sessionActive, waitingIds)" align="group" :live="isLive(entryKey(entry))" />
-                    <WorkBlock
-                      class="min-w-0 grow"
-                      :items="entry.items"
-                      :open="blockOpen(entry)"
-                      :session-active="sessionActive"
-                      :waiting-ids="waitingIds"
-                      :children-of="tree.childrenOf"
-                      :origin-of="tree.originOf"
-                      :task-list="taskList"
-                      @toggle="groupChoice.set(entry.id, !blockOpen(entry))"
-                    />
-                  </template>
-                  <template v-else>
-                    <RailNode :kind="nodeKind(entry.item, sessionActive, waitingIds)" :align="railAlign(entry.item)" :live="isLive(entryKey(entry))" />
-                    <div class="flex min-w-0 grow flex-col">
-                      <ConversationBlock
-                        :item="entry.item"
-                        :session-active="sessionActive"
-                        :children-of="tree.childrenOf"
-                        :task-list="taskList"
-                        @reveal="onReveal"
-                      />
-                    </div>
-                  </template>
-                </div>
-              </div>
+              <TurnEntries
+                v-if="turn.entries.length"
+                :entries="turn.entries"
+                :session-active="sessionActive"
+                :waiting-ids="waitingIds"
+                :children-of="tree.childrenOf"
+                :origin-of="tree.originOf"
+                :task-list="taskList"
+                :is-live="isLive"
+                :is-open="blockOpen"
+                @toggle="toggleBlock"
+                @reveal="onReveal"
+              />
               <div v-if="!done" data-test="turn-progress" class="flex flex-col gap-2.5">
                 <TurnTasks v-if="showTasks" :tasks="tasks" />
                 <TurnLiveLine :activity="liveText" :started-at="conv.runningSince" :tokens="conv.turnTokens" />
@@ -610,38 +590,7 @@ function resolvePrompt(promptId: string) {
           </template>
           <PendingAnnouncements :session-id="id" />
           <MainRuns v-if="mainAgent" :key="mainAgent.id" :agent-id="mainAgent.id" :main-session-id="id" />
-          <template v-for="prompt in conv.prompts" :key="prompt.prompt_id">
-            <QuestionCard
-              data-prompt-card
-              tabindex="-1"
-              class="focus-visible:outline-2 focus-visible:outline-primary"
-              v-if="prompt.kind === 'question'"
-              :session-id="conv.sessionId"
-              :prompt="prompt"
-              :live="isLive(promptKey(prompt.prompt_id))"
-              @resolved="resolvePrompt(prompt.prompt_id)"
-            />
-            <PlanCard
-              data-prompt-card
-              tabindex="-1"
-              class="focus-visible:outline-2 focus-visible:outline-primary"
-              v-else-if="prompt.kind === 'plan'"
-              :session-id="conv.sessionId"
-              :prompt="prompt"
-              :live="isLive(promptKey(prompt.prompt_id))"
-              @resolved="resolvePrompt(prompt.prompt_id)"
-            />
-            <PermissionCard
-              data-prompt-card
-              tabindex="-1"
-              class="focus-visible:outline-2 focus-visible:outline-primary"
-              v-else
-              :session-id="conv.sessionId"
-              :prompt="prompt"
-              :live="isLive(promptKey(prompt.prompt_id))"
-              @resolved="resolvePrompt(prompt.prompt_id)"
-            />
-          </template>
+          <PromptCards :session-id="conv.sessionId" :prompts="conv.prompts" :is-live="isLive" @resolved="resolvePrompt" />
         </div>
       </div>
       <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-150" leave-to-class="opacity-0">
