@@ -192,6 +192,7 @@ export function makeRun(overrides: Partial<import('../types/org').Run> = {}): im
     task_id: null,
     commented: false,
     rewoken: false,
+    summary: null,
     ...overrides,
   }
 }

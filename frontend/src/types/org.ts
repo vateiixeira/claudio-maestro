@@ -40,6 +40,8 @@ export interface Run {
   commented: boolean
   /** The run was woken once more because it ended without commenting. */
   rewoken: boolean
+  /** What the run did, in the agent's own words; null when it did not say. */
+  summary: string | null
 }
 
 /** What `GET /api/agents` returns for each agent. */
