@@ -65,6 +65,23 @@ describe('passo a passo da execução', () => {
     expect(w.find('[data-prompt-card]').exists()).toBe(true)
   })
 
+  it('leaves the requests out when asked to', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      [URL]: () => jsonResponse(snapshot({
+        state: 'awaiting_decision',
+        items: [user('u1'), tool('b1', 'Bash')],
+        prompts: [{ prompt_id: 'p1', tool_use_id: 'tu-b1', tool_name: 'Bash', input: { command: 'ls' }, can_always: true }],
+      })),
+    }))
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/')
+    const w = mount(RunSteps, { props: { sessionId: 'run1', prompts: false }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="run-steps"]').exists()).toBe(true)
+    expect(w.find('[data-test="run-turn"]').exists()).toBe(true)
+    expect(w.find('[data-prompt-card]').exists()).toBe(false)
+  })
+
   it('forgets the session on unmount only when it loaded it', async () => {
     const first = await mountSteps()
     const store = useConversationStore(pinia)

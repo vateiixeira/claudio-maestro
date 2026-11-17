@@ -15,8 +15,9 @@ import type { ToolItem } from '../../types/conversation'
 /**
  * The steps of one run: the turns of another session (messages, actions and pending requests) drawn
  * inside a conversation. No turn bar and no message field: it only shows what the session did.
+ * `prompts` false leaves the pending requests out, for a parent that already shows them.
  */
-const props = defineProps<{ sessionId: string }>()
+const props = withDefaults(defineProps<{ sessionId: string; prompts?: boolean }>(), { prompts: true })
 
 const conversations = useConversationStore()
 const { conv, loading, error, reload } = useSessionConversation(toRef(props, 'sessionId'))
@@ -60,7 +61,7 @@ const notLive = () => false
           @toggle="toggleBlock"
         />
       </div>
-      <PromptCards :session-id="conv.sessionId" :prompts="conv.prompts" :is-live="notLive" @resolved="conversations.resolvePrompt(conv.sessionId, $event)" />
+      <PromptCards v-if="prompts" :session-id="conv.sessionId" :prompts="conv.prompts" :is-live="notLive" @resolved="conversations.resolvePrompt(conv.sessionId, $event)" />
     </template>
     <p v-if="error" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg">{{ error }}</p>
     <div v-if="error" class="flex flex-wrap gap-2">

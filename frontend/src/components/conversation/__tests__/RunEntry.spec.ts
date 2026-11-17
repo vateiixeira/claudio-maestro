@@ -148,6 +148,21 @@ describe('entrada de uma execução', () => {
     expect(w.find('[data-test="run-entry-live"]').text()).toContain('esperando você')
   })
 
+  it('shows a pending request only once with the steps open', async () => {
+    store.bySession.run1 = {
+      ...emptyConversation('run1'),
+      state: 'awaiting_decision',
+      items: [{ type: 'tool', id: 'b1', tool_use_id: 'tu-b1', name: 'Bash', input: { command: 'ls' }, result: null, streaming: true, parent_tool_use_id: null } as never],
+      prompts: [{ prompt_id: 'p1', tool_use_id: 'tu-b1', tool_name: 'Bash', input: { command: 'ls' }, can_always: true } as never],
+    }
+    load.mockImplementation(async (id: string) => store.bySession[id]!)
+    const { w } = await mountEntry(makeRun({ outcome: 'waiting', session_id: 'run1' }))
+    await w.find('[data-test="run-entry-steps-toggle"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="run-steps"]').exists()).toBe(true)
+    expect(w.find('[data-test="run-entry"]').findAll('[data-prompt-card]')).toHaveLength(1)
+  })
+
   it('swaps the live line for the result when the run ends', async () => {
     const { w } = await mountEntry(makeRun({ outcome: 'running', session_id: 'run1' }))
     await w.setProps({ run: makeRun({ outcome: 'concluded', session_id: 'run1', ended_at: 1_790_000_060, summary: 'Pronto.' }) })

@@ -135,6 +135,6 @@ const control = 'cursor-pointer rounded border-none bg-transparent p-0 text-xs t
       <RouterLink data-test="run-entry-open" :to="{ name: 'session', params: { id: run.session_id } }" :class="control">Abrir sozinha</RouterLink>
       <span v-if="cancelError" role="alert" class="text-xs text-diff-del-fg">{{ cancelError }}</span>
     </div>
-    <RunSteps v-if="stepsOpen && run.session_id" :session-id="run.session_id" />
+    <RunSteps v-if="stepsOpen && run.session_id" :session-id="run.session_id" :prompts="!inFlight" />
   </section>
 </template>
