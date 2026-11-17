@@ -15,11 +15,19 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 const item = (overrides: Partial<RegistryItem> = {}): RegistryItem => ({
-  key: 'erro-123', status: 'tratado', link: 'https://exemplo.com/1', note: 'Corrigido', created_at: 1_790_000_000, updated_at: 1_790_000_000, ...overrides,
+  key: 'chamado:1042', status: 'aguardando', link: null, note: null, created_at: 1_790_000_000, updated_at: 1_790_000_000, ...overrides,
 })
 
+const PR = 'https://github.com/exemplo/loja-demo/pull/12'
+const sample = (): RegistryItem[] => [
+  item({ key: 'chamado:1042', status: 'aguardando', updated_at: 1_790_000_300 }),
+  item({ key: 'chamado:1043', status: 'pr-aberto', link: PR, note: 'Corrigido o arredondamento do frete.', updated_at: 1_790_000_400 }),
+  item({ key: 'chamado:1038', status: 'descartado', updated_at: 1_790_000_100 }),
+  item({ key: 'chamado:1039', status: 'descartado', updated_at: 1_790_000_200 }),
+]
+
 async function mountRegistry(handlers: Parameters<typeof routeFetch>[0] = {}) {
-  const fetch = routeFetch({ 'GET /api/agents/1/registry': () => jsonResponse([item(), item({ key: 'erro-9', link: 'javascript:alert(1)' })]), ...handlers })
+  const fetch = routeFetch({ 'GET /api/agents/1/registry': () => jsonResponse(sample()), ...handlers })
   vi.stubGlobal('fetch', fetch)
   const wrapper = mount(AgentRegistry, { props: { agentId: 1 }, global: { plugins: [pinia] } })
   await flushPromises()
@@ -27,14 +35,90 @@ async function mountRegistry(handlers: Parameters<typeof routeFetch>[0] = {}) {
 }
 
 describe('AgentRegistry', () => {
-  it('lista os itens e só liga links http', async () => {
+  it('lista os itens do mais recente ao mais antigo', async () => {
     const { wrapper } = await mountRegistry()
-    const rows = wrapper.findAll('[data-test="item-row"]')
-    expect(rows).toHaveLength(2)
-    expect(rows[0]!.text()).toContain('erro-123')
-    expect(rows[0]!.get('a').attributes('href')).toBe('https://exemplo.com/1')
-    expect(rows[1]!.find('a').exists()).toBe(false)
-    expect(rows[1]!.text()).toContain('javascript:alert(1)')
+    expect(wrapper.findAll('[data-test="item-key"]').map((k) => k.text())).toEqual(['chamado:1043', 'chamado:1042', 'chamado:1039', 'chamado:1038'])
+  })
+
+  it('mostra um chip por situação, do mais frequente ao menos, e começa em Todos', async () => {
+    const { wrapper } = await mountRegistry()
+    const chips = wrapper.findAll('[data-test="registry-chip"]')
+    expect(chips.map((c) => c.text())).toEqual(['Todos4', 'Descartado2', 'Aguardando1', 'PR aberto1'])
+    expect(chips[0]!.attributes('data-status')).toBe('')
+    expect(chips[0]!.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-test="registry-filter"]').exists()).toBe(true)
+  })
+
+  it('filtra pela situação e volta a Todos ao clicar de novo', async () => {
+    const { wrapper } = await mountRegistry()
+    const chip = () => wrapper.findAll('[data-test="registry-chip"]')[1]!
+    await chip().trigger('click')
+    expect(wrapper.findAll('[data-test="item-row"]')).toHaveLength(2)
+    expect(chip().attributes('aria-pressed')).toBe('true')
+    await chip().trigger('click')
+    expect(wrapper.findAll('[data-test="item-row"]')).toHaveLength(4)
+    expect(wrapper.findAll('[data-test="registry-chip"]')[0]!.attributes('aria-pressed')).toBe('true')
+  })
+
+  it('busca na chave e na nota, sem diferenciar maiúsculas', async () => {
+    const { wrapper } = await mountRegistry()
+    const search = wrapper.get('[data-test="registry-search"]')
+    await search.setValue('FRETE')
+    expect(wrapper.findAll('[data-test="item-key"]').map((k) => k.text())).toEqual(['chamado:1043'])
+    await search.setValue('1042')
+    expect(wrapper.findAll('[data-test="item-key"]').map((k) => k.text())).toEqual(['chamado:1042'])
+    await search.setValue('nada disso')
+    expect(wrapper.findAll('[data-test="item-row"]')).toHaveLength(0)
+    expect(wrapper.get('[data-test="registry-no-match"]').text()).toBe('Nenhum item com esse filtro.')
+  })
+
+  it('desenha a situação com o tom e o texto certos', async () => {
+    const { wrapper } = await mountRegistry()
+    const byKey = (key: string) => wrapper.findAll('[data-test="item-row"]').find((r) => r.get('[data-test="item-key"]').text() === key)!.get('[data-test="item-status"]')
+    expect(byKey('chamado:1042').attributes('data-tone')).toBe('waiting')
+    expect(byKey('chamado:1042').text()).toBe('Aguardando')
+    expect(byKey('chamado:1043').attributes('data-tone')).toBe('info')
+    expect(byKey('chamado:1043').text()).toBe('PR aberto')
+    expect(byKey('chamado:1038').attributes('data-tone')).toBe('muted')
+    expect(byKey('chamado:1038').text()).toBe('Descartado')
+  })
+
+  it('liga o link http com rel seguro e o texto resumido', async () => {
+    const { wrapper } = await mountRegistry()
+    const link = wrapper.get('[data-test="item-link"]')
+    expect(link.element.tagName).toBe('A')
+    expect(link.attributes('href')).toBe(PR)
+    expect(link.text()).toBe('loja-demo · PR #12')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noopener noreferrer')
+  })
+
+  it('mostra como texto, sem <a>, o link que não é http', async () => {
+    const { wrapper } = await mountRegistry({ 'GET /api/agents/1/registry': () => jsonResponse([item({ key: 'x:1', link: 'javascript:alert(1)' }), item({ key: 'x:2', link: '/home/x/arquivo' })]) })
+    expect(wrapper.find('a').exists()).toBe(false)
+    const links = wrapper.findAll('[data-test="item-link"]')
+    expect(links.map((l) => l.element.tagName)).toEqual(['SPAN', 'SPAN'])
+    expect(links.map((l) => l.text()).sort()).toEqual(['/home/x/arquivo', 'javascript:alert(1)'])
+  })
+
+  it('guarda a chave e a nota inteiras no title', async () => {
+    const { wrapper } = await mountRegistry()
+    const row = wrapper.findAll('[data-test="item-row"]')[0]!
+    expect(row.get('[data-test="item-key"]').attributes('title')).toBe('chamado:1043')
+    expect(row.get('[data-test="item-note"]').attributes('title')).toBe('Corrigido o arredondamento do frete.')
+    expect(row.get('[data-test="item-date"]').text()).not.toBe('')
+  })
+
+  it('remove o item, que some junto com o chip da situação', async () => {
+    const { wrapper, fetch } = await mountRegistry({ 'DELETE /api/agents/1/registry?key=chamado%3A1042': () => jsonResponse(undefined, 204) })
+    const remove = wrapper.findAll('[data-test="item-row"]').find((r) => r.text().includes('chamado:1042'))!.get('[data-test="item-remove"]')
+    expect(remove.attributes('aria-label')).toBe('Remover chamado:1042 do registro')
+    await remove.trigger('click')
+    await flushPromises()
+    expect(fetch.mock.calls.some(([u, init]) => u === '/api/agents/1/registry?key=chamado%3A1042' && init?.method === 'DELETE')).toBe(true)
+    expect(wrapper.findAll('[data-test="item-row"]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-test="registry-chip"]').map((c) => c.text())).not.toContain('Aguardando1')
+    expect(wrapper.findAll('[data-test="registry-chip"]')).toHaveLength(3)
   })
 
   it('sem itens diz que não há nada registrado', async () => {
@@ -54,7 +138,7 @@ describe('AgentRegistry', () => {
   })
 
   it('mostra o erro ao remover', async () => {
-    const { wrapper } = await mountRegistry({ 'DELETE /api/agents/1/registry?key=erro-123': () => jsonResponse({ detail: 'Item não encontrado.' }, 404) })
+    const { wrapper } = await mountRegistry({ 'DELETE /api/agents/1/registry?key=chamado%3A1043': () => jsonResponse({ detail: 'Item não encontrado.' }, 404) })
     await wrapper.findAll('[data-test="item-remove"]')[0]!.trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="items-error"]').attributes('role')).toBe('alert')
