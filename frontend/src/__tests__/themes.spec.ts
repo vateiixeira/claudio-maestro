@@ -96,9 +96,10 @@ describe.each(NEW_IDS)('contraste de %s', (id) => {
 
   it('texto secundário, sinais e links passam de 4,5:1 nas superfícies', () => {
     for (const s of SURFACES) {
-      for (const fg of ['fg-muted', 'fg-subtle', 'primary', 'secondary', 'info-soft']) atLeast(fg, s, 4.5)
+      for (const fg of ['fg-muted', 'fg-subtle', 'primary', 'secondary', 'secondary-soft', 'info-soft']) atLeast(fg, s, 4.5)
     }
     atLeast('fg-muted', 'elevated', 4.5)
+    for (const fg of ['secondary-soft', 'info-soft']) atLeast(fg, 'elevated', 4.5)
   })
 
   it('código em linha, botões e diffs passam de 4,5:1', () => {
