@@ -5,6 +5,7 @@ import ClosureBadge from '../ClosureBadge.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
 import LabelBadges from '../labels/LabelBadges.vue'
 import MarkIcon from '../MarkIcon.vue'
+import SessionActivity from '../conversation/SessionActivity.vue'
 import MarkPopover from '../marks/MarkPopover.vue'
 import { contextPoint } from '../marks/menuPoint'
 import { isQuietSession, sidebarItemClass, sidebarNestedItemClass } from './itemClass'
@@ -25,23 +26,23 @@ const worktree = computed(() => worktreeLabel(props.session))
 const active = computed(() => route.name === 'session' && route.params.id === props.session.session_id)
 const prominent = computed(() => props.session.display_state === 'running' || (props.session.display_state === 'waiting' && !isQuietSession(props.session)))
 const now = useMinuteClock()
-const age = computed(() => (props.session.display_state === 'waiting' ? formatElapsedShort(props.session.last_activity_at, now.value) : null))
+const age = computed(() => formatElapsedShort(props.session.last_activity_at, now.value))
 const markTitle = computed(() => markChipText(props.session, new Date(now.value)) ?? undefined)
 const until = computed(() =>
   props.session.mark === 'on_hold' && props.session.mark_until ? untilShort(props.session.mark_until, new Date(now.value)) : null,
 )
 const menuAt = ref<{ x: number; y: number } | null>(null)
-// Labels the store knows; a conversation with none keeps the single-line row.
+// Labels the store knows; without them (and without activity) the row is just its title line.
 const hasLabels = computed(() => (props.session.label_ids ?? []).some((id) => labels.byId(id) !== undefined))
 const rowClass = computed(() =>
-  props.nested
-    ? sidebarNestedItemClass(active.value, prominent.value, hasLabels.value)
-    : sidebarItemClass(active.value, hasLabels.value),
+  props.nested ? sidebarNestedItemClass(active.value, prominent.value, true) : sidebarItemClass(active.value, true),
 )
-// The title line inside the two-column grid keeps the gap the single-line row has; without labels it vanishes into the row.
-const lineClass = computed(() =>
-  hasLabels.value ? ['flex min-w-0 items-center', props.nested ? 'gap-2' : 'gap-2.5'] : 'contents',
-)
+// What is new gets the strong color and a medium weight; the rest takes the dimmer color of the row.
+const titleClass = computed(() => [
+  'min-w-0 grow truncate',
+  props.nested ? 'text-[0.78125rem]' : 'text-[0.8125rem]',
+  props.session.unread ? 'font-medium text-fg' : '',
+])
 </script>
 
 <template>
@@ -51,11 +52,10 @@ const lineClass = computed(() =>
     :aria-current="active ? 'page' : undefined"
     @contextmenu.prevent="menuAt = contextPoint($event)"
   >
-    <DisplayStateIcon :display="session.display_state" :size="nested ? 10 : 11" :quiet="isQuietSession(session)" />
-    <span data-test="row-line" :class="lineClass">
-      <span data-test="row-title" :class="['min-w-0 grow truncate', nested ? 'text-[0.78125rem]' : 'text-[0.8125rem]']">{{ session.title }}</span>
+    <span class="flex h-5 items-center"><DisplayStateIcon :display="session.display_state" :size="nested ? 10 : 11" :quiet="isQuietSession(session)" /></span>
+    <span data-test="row-line" :class="['flex min-h-5 min-w-0 items-center', nested ? 'gap-2' : 'gap-2.5']">
+      <span data-test="row-title" :class="titleClass">{{ session.title }}</span>
       <span
-        v-if="age"
         data-test="row-age"
         :title="`Última interação ${formatActivity(session.last_activity_at)}`"
         class="shrink-0 font-mono text-[0.6875rem] text-fg-subtle tabular-nums"
@@ -77,6 +77,7 @@ const lineClass = computed(() =>
         </svg>
       </span>
     </span>
+    <SessionActivity data-test="row-activity" :session="session" class="col-start-2" />
     <span v-if="hasLabels" data-test="row-labels" class="col-start-2 flex min-w-0">
       <LabelBadges :ids="session.label_ids" compact wrap />
     </span>

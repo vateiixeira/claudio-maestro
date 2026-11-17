@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { projectTree, splitProjects } from '../sidebarTree'
+import { filteredProjectTree, projectTree, splitProjects } from '../sidebarTree'
 import { makeGroup, makeProject, makeSession } from '../test/factories'
 
 describe('árvore do menu', () => {
@@ -115,5 +115,25 @@ describe('sessões de agente fora da árvore', () => {
     const { active, others } = splitProjects(projects, sessions)
     expect(active.map((p) => p.id)).toEqual([2])
     expect(others.map((p) => p.id)).toEqual([1])
+  })
+})
+
+describe('árvore do menu com filtro', () => {
+  const groups = [makeGroup({ id: 1, name: 'A' }), makeGroup({ id: 2, name: 'B' })]
+  const sessions = [
+    makeSession({ session_id: 'a1', group_id: 1, display_state: 'running', last_activity_at: 20 }),
+    makeSession({ session_id: 'a2', group_id: 1, display_state: 'waiting', unread: true, last_activity_at: 10 }),
+    makeSession({ session_id: 'b1', group_id: 2, display_state: 'waiting', unread: false }),
+  ]
+
+  it('sem filtro é a árvore inteira', () => {
+    expect(filteredProjectTree(groups, sessions, null)).toEqual(projectTree(groups, sessions))
+  })
+
+  it('deixa só as conversas que batem e tira o agrupador sem nenhuma', () => {
+    const tree = filteredProjectTree(groups, sessions, 'running')
+    expect(tree.map((g) => g.group.id)).toEqual([1])
+    expect(tree[0]!.sessions.map((s) => s.session_id)).toEqual(['a1'])
+    expect(filteredProjectTree(groups, sessions, 'waiting')[0]!.sessions.map((s) => s.session_id)).toEqual(['a2'])
   })
 })

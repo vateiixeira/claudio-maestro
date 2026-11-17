@@ -46,9 +46,20 @@ describe('linha de conversa do menu', () => {
     expect(none.find('[data-test="closure-dot"]').exists()).toBe(false)
   })
 
-  it('em execução não mostra o tempo', async () => {
-    const row = await mountRow({ display_state: 'running' })
-    expect(row.find('[data-test="row-age"]').exists()).toBe(false)
+  it('em execução também mostra o tempo, "agora" quando acabou de mexer', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-02T12:00:00Z'))
+    clockNow.value = Date.now()
+    const row = await mountRow({ display_state: 'running', last_activity_at: Math.floor(Date.now() / 1000) - 5 })
+    expect(row.get('[data-test="row-age"]').text()).toBe('agora')
+  })
+
+  it('mostra o tempo em toda conversa, mesmo a que nada pede', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-02T12:00:00Z'))
+    clockNow.value = Date.now()
+    const row = await mountRow({ display_state: 'finished', last_activity_at: Math.floor(Date.now() / 1000) - 2 * 3600 })
+    expect(row.get('[data-test="row-age"]').text()).toBe('2 h')
   })
 
   it('o tempo avança sozinho com o relógio', async () => {
@@ -223,10 +234,11 @@ describe('etiquetas na linha do menu', () => {
     }
   })
 
-  it('a linha sem etiquetas mantém as classes de antes (sem padding extra)', async () => {
+  it('a linha sem etiquetas nem atividade também usa a grade, com o ícone alinhado ao título', async () => {
     const row = await mountRow({ label_ids: [] })
-    expect(row.get('a').classes()).toContain('items-center')
-    expect(row.get('a').classes()).not.toContain('py-1')
+    expect(row.get('a').classes()).toContain('grid-cols-[auto_minmax(0,1fr)]')
+    expect(row.get('a').classes()).toContain('items-start')
+    expect(row.get('[data-test="row-line"]').element.parentElement).toBe(row.get('a').element)
   })
 
   it('alinha a segunda linha com o título nos dois tamanhos', async () => {
@@ -248,5 +260,47 @@ describe('etiquetas na linha do menu', () => {
       expect(row.get('a').classes()).toContain(nested ? 'gap-x-2' : 'gap-x-2.5')
       expect(row.get('[data-test="row-title"]').element.closest('[data-test="row-line"]')).not.toBeNull()
     }
+  })
+})
+
+describe('linha de atividade e título', () => {
+  it('conversa que pede um plano mostra o motivo em laranja, abaixo do título', async () => {
+    const row = await mountRow({ display_state: 'waiting', unread: true, pending_kind: 'plan' })
+    const activity = row.get('[data-test="row-activity"]')
+    expect(activity.attributes('data-kind')).toBe('waiting')
+    expect(activity.text()).toBe('Plano para aprovar')
+    expect(activity.classes()).toContain('col-start-2')
+    const html = row.html()
+    expect(html.indexOf('data-test="row-title"')).toBeLessThan(html.indexOf('data-test="row-activity"'))
+  })
+
+  it('conversa que roda um plano mostra os segmentos e a tarefa', async () => {
+    const row = await mountRow({
+      display_state: 'running',
+      plan: { path: 'p.md', title: 'Plano', total: 5, done: 2, current: { number: 3, title: 'Segunda tarefa' } },
+    })
+    const activity = row.get('[data-test="row-activity"]')
+    expect(activity.attributes('data-kind')).toBe('plan')
+    expect(activity.text()).toContain('Segunda tarefa')
+    expect(activity.find('[data-test="plan-segments"]').exists()).toBe(true)
+  })
+
+  it('espera comum sem resumo não tem linha de atividade', async () => {
+    const row = await mountRow({ display_state: 'waiting', unread: false, digest_short: null })
+    expect(row.find('[data-test="row-activity"]').exists()).toBe(false)
+  })
+
+  it('não lida: título em fg e peso médio; lida: sem os dois', async () => {
+    const unread = await mountRow({ display_state: 'waiting', unread: true })
+    expect(unread.get('[data-test="row-title"]').classes()).toContain('text-fg')
+    expect(unread.get('[data-test="row-title"]').classes()).toContain('font-medium')
+    const read = await mountRow({ display_state: 'waiting', unread: false })
+    expect(read.get('[data-test="row-title"]').classes()).not.toContain('text-fg')
+    expect(read.get('[data-test="row-title"]').classes()).not.toContain('font-medium')
+  })
+
+  it('o título não lido vence a cor apagada da linha aninhada', async () => {
+    const row = await mountRow({ display_state: 'waiting', unread: true }, '/inbox', { nested: true })
+    expect(row.get('[data-test="row-title"]').classes()).toContain('text-fg')
   })
 })

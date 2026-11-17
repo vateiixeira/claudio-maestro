@@ -6,6 +6,7 @@ import { createMemoryHistory } from 'vue-router'
 import SidebarGroups from '../SidebarGroups.vue'
 import { createAppRouter } from '../../../router'
 import { clockNow } from '../../../minuteClock'
+import { sidebarFilter } from '../../../sidebarFilter'
 import { isCollapsed, setCollapsed } from '../../../sidebarCollapse'
 import { useGroupsStore } from '../../../stores/groups'
 import { useProjectsStore } from '../../../stores/projects'
@@ -19,6 +20,7 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   localStorage.clear()
+  sidebarFilter.value = null
   setCollapsed('group', 1, false)
   setCollapsed('group', 2, false)
   useGroupsStore(pinia).groups = [makeGroup({ id: 1, name: 'Checkout' }), makeGroup({ id: 2, name: 'Parado' })]
@@ -114,7 +116,7 @@ describe('agrupadores no menu', () => {
     }
   })
 
-  it('em "Sua vez" mostra o tempo desde a última interação; em execução não', async () => {
+  it('mostra o tempo desde a última interação em toda conversa, inclusive a que roda', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-02T12:00:00Z'))
     clockNow.value = Date.now()
@@ -127,7 +129,33 @@ describe('agrupadores no menu', () => {
     const [waiting, running] = wrapper.findAll('[data-test="sidebar-session"]')
     expect(waiting!.find('[data-test="row-age"]').text()).toBe('3 min')
     expect(waiting!.find('[data-test="row-age"]').attributes('title')).toContain('Última interação')
-    expect(running!.find('[data-test="row-age"]').exists()).toBe(false)
+    expect(running!.find('[data-test="row-age"]').text()).toBe('3 min')
+  })
+
+  it('cada conversa é uma linha completa: atividade e etiquetas como no restante do menu', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'p1', group_id: 1, title: 'Plano', display_state: 'waiting', unread: true, pending_kind: 'plan' }),
+    ])
+    const wrapper = await mountGroups()
+    const row = wrapper.get('[data-test="sidebar-session"]')
+    expect(row.get('[data-test="row-title"]').text()).toBe('Plano')
+    expect(row.get('[data-test="row-activity"]').text()).toBe('Plano para aprovar')
+    expect(row.get('[data-test="row-title"]').classes()).toContain('font-medium')
+  })
+
+  it('o filtro do menu deixa só as conversas que batem e tira o agrupador sem nenhuma', async () => {
+    const wrapper = await mountGroups()
+    expect(wrapper.findAll('[data-test="sidebar-session"]')).toHaveLength(2)
+    sidebarFilter.value = 'running'
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="sidebar-session"]').map((r) => r.get('[data-test="row-title"]').text())).toEqual(['Frete'])
+    expect(wrapper.find('[data-test="group-waiting"]').exists()).toBe(false)
+    sidebarFilter.value = 'unread'
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="sidebar-session"]').map((r) => r.get('[data-test="row-title"]').text())).toEqual(['Carrinho'])
+    useSessionsStore(pinia).find('a1')!.unread = false
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="sidebar-group"]')).toHaveLength(0)
   })
 
   it('mostra o agrupador criado em outro projeto com as conversas de todos, marcando as de fora', async () => {
@@ -139,7 +167,8 @@ describe('agrupadores no menu', () => {
     const w = await mountGroups()
     expect(w.findAll('[data-test="sidebar-group"]')).toHaveLength(1)
     expect(w.findAll('[data-test="sidebar-session"]')).toHaveLength(2)
-    const foreign = w.findAll('[data-test="group-session-project"]')
+    expect(w.find('[data-test="group-session-project"]').exists()).toBe(false)
+    const foreign = w.findAll('[data-test="row-project"]')
     expect(foreign).toHaveLength(1)
     expect(foreign[0]!.text()).toBe('web')
   })

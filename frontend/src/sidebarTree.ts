@@ -1,5 +1,6 @@
 import { needsYou } from './conversation/needsYou'
 import { isActive, sessionsOf, sortGroups } from './groupList'
+import { matchesSidebarFilter, type SidebarFilter } from './sidebarFilter'
 import type { Project, Session, SessionGroup } from './types/api'
 
 export interface ActiveGroup {
@@ -19,6 +20,13 @@ export function projectTree(groups: SessionGroup[], sessions: Session[]): Active
     if (open.length > 0) active.push({ group, sessions: open, waiting: open.filter((s) => s.display_state === 'waiting' && needsYou(s)).length })
   }
   return active
+}
+
+/** `projectTree` with the sidebar filter applied: only the conversations that match, and no group left without one. */
+export function filteredProjectTree(groups: SessionGroup[], sessions: Session[], filter: SidebarFilter | null): ActiveGroup[] {
+  return projectTree(groups, sessions)
+    .map((item) => ({ ...item, sessions: item.sessions.filter((s) => matchesSidebarFilter(s, filter)) }))
+    .filter((item) => item.sessions.length > 0)
 }
 
 /**

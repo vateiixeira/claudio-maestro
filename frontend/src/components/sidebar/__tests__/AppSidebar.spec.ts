@@ -22,6 +22,7 @@ import { useClaudeCliStore } from '../../../stores/claudeCli'
 import { useUpdatesStore } from '../../../stores/updates'
 import { useUsageStore } from '../../../stores/usage'
 import { setCollapsed, setSectionCollapsed, setSectionOpened } from '../../../sidebarCollapse'
+import { sidebarFilter } from '../../../sidebarFilter'
 import { sidebarWidth } from '../../../sidebarWidthPref'
 import { makeGitRepo, makeAgent, makeGroup, makeNotice, makeProject, makeSession } from '../../../test/factories'
 
@@ -35,6 +36,7 @@ beforeEach(() => {
   setSectionCollapsed('review', false)
   setSectionOpened('later', false)
   sidebarWidth.value = 288
+  sidebarFilter.value = null
   socketStatus.current = ref<ConnectionStatus>('connected')
 })
 
@@ -62,6 +64,7 @@ describe('menu lateral', () => {
     expect(wrapper.find('[data-test="nav-projects"]').attributes('href')).toBe('/projects')
     expect(wrapper.find('[data-test="nav-projects"]').element.closest('details')).toBeNull()
     expect(wrapper.find('[data-test="nav-dashboard"]').attributes('href')).toBe('/dashboard')
+    expect(wrapper.find('[data-test="nav-dashboard"]').text()).toBe('Painel')
     expect(wrapper.find('[data-test="nav-inbox"]').attributes('href')).toBe('/inbox')
     expect(wrapper.find('[data-test="nav-conversations"]').attributes('href')).toBe('/sessions')
     expect(wrapper.find('[data-test="nav-deliveries"]').attributes('href')).toBe('/entregas')
@@ -240,7 +243,7 @@ describe('menu lateral', () => {
     }
   })
 
-  it('branch fica abaixo do nome completo do projeto', () => {
+  it('branch fica ao lado do nome do projeto, na mesma linha, e trunca primeiro', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'loja-online' })]
     useGitStore(pinia).set(1, [makeGitRepo({ branch: 'develop' })])
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', project_id: 1 })])
@@ -248,9 +251,10 @@ describe('menu lateral', () => {
     const name = project.find('[data-test="project-name"]')
     const branch = project.find('[data-test="project-branch"]')
     expect(branch.text()).toContain('develop')
-    expect(branch.element.parentElement).not.toBe(name.element.parentElement)
+    expect(branch.element.parentElement).toBe(name.element.parentElement)
     expect(name.attributes('title')).toBe('loja-online')
     expect(branch.classes()).toContain('truncate')
+    expect(name.classes()).toContain('truncate')
   })
 
   it('mostra o círculo de execução no projeto que tem conversa rodando', () => {
@@ -261,6 +265,7 @@ describe('menu lateral', () => {
     const [running, idle] = mountSidebar().findAll('[data-test="project"]')
     expect(running!.find('[data-test="project-running"]').exists()).toBe(true)
     expect(running!.find('[data-test="project-running"]').text()).toContain('em execução')
+    expect(running!.find('[data-test="project-running-count"]').text()).toBe('1')
     expect(idle!.find('[data-test="project-running"]').exists()).toBe(false)
   })
 
@@ -839,4 +844,201 @@ it('início, tarefas e agentes são entradas principais do menu', () => {
   expect(wrapper.get('[data-test="nav-tasks"]').attributes('href')).toBe('/tarefas')
   expect(wrapper.get('[data-test="nav-agents"]').attributes('href')).toBe('/agentes')
   expect(wrapper.find('[href="/sessions/manual-one"]').exists()).toBe(true)
+})
+
+describe('menu lateral: filtros e contagens', () => {
+  beforeEach(() => {
+    for (const id of [1, 2, 3]) setCollapsed('project', id, false)
+    for (const id of [1, 2]) setCollapsed('group', id, false)
+  })
+
+  // 2 rodando, 1 aguardando você, 3 não lidas (a aguardando e duas marcadas, que não pedem você)
+  function seed() {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'alfa' }), makeProject({ id: 2, name: 'beta' }), makeProject({ id: 3, name: 'gama' })]
+    const sessions = useSessionsStore(pinia)
+    sessions.setForProject(1, [
+      makeSession({ session_id: 'r1', project_id: 1, title: 'Roda um', display_state: 'running', last_activity_at: 40 }),
+      makeSession({ session_id: 'r2', project_id: 1, title: 'Roda dois', display_state: 'running', last_activity_at: 30 }),
+      makeSession({ session_id: 'q1', project_id: 1, title: 'Quieta', display_state: 'waiting', unread: false, last_activity_at: 20 }),
+    ])
+    sessions.setForProject(2, [makeSession({ session_id: 'w1', project_id: 2, title: 'Pede você', display_state: 'waiting', unread: true })])
+    sessions.setForProject(3, [
+      makeSession({ session_id: 'm1', project_id: 3, title: 'Marcada um', display_state: 'waiting', unread: true, mark: 'review' }),
+      makeSession({ session_id: 'm2', project_id: 3, title: 'Marcada dois', display_state: 'waiting', unread: true, mark: 'review' }),
+    ])
+  }
+  const chips = (w: ReturnType<typeof mountSidebar>) => w.findAll('[data-test="sidebar-filter"]')
+  const chip = (w: ReturnType<typeof mountSidebar>, f: string) => w.get(`[data-test="sidebar-filter"][data-filter="${f}"]`)
+  const titles = (w: ReturnType<typeof mountSidebar>) => w.findAll('[data-test="project-session"]').map((r) => r.get('[data-test="row-title"]').text())
+  const projectNames = (w: ReturnType<typeof mountSidebar>) => w.findAll('[data-test="project-name"]').map((n) => n.text())
+
+  it('mostra um chip por filtro, com a contagem, acima dos projetos', () => {
+    seed()
+    const w = mountSidebar()
+    expect(chips(w).map((c) => c.text())).toEqual(['2 rodando', '1 aguardando você', '3 não lidas'])
+    expect(chips(w).every((c) => c.attributes('aria-pressed') === 'false')).toBe(true)
+    const box = w.get('[data-test="sidebar-filters"]').element
+    expect(Boolean(box.compareDocumentPosition(w.get('[data-test="project"]').element) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+  })
+
+  it('o chip de contagem zero não aparece, e sem nenhum o contêiner some', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'r', display_state: 'running' })])
+    const w = mountSidebar()
+    expect(chips(w).map((c) => c.text())).toEqual(['1 rodando'])
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'q', display_state: 'waiting', unread: false })])
+    return nextTick().then(() => {
+      expect(w.find('[data-test="sidebar-filters"]').exists()).toBe(false)
+      expect(chips(w)).toHaveLength(0)
+    })
+  })
+
+  it('as contagens deixam de fora sessões de agente, descartadas e terminadas', () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', display_state: 'running' }),
+      makeSession({ session_id: 'ag', display_state: 'running', agent_id: 3 }),
+      makeSession({ session_id: 'd', display_state: 'running', mark: 'discarded' }),
+      makeSession({ session_id: 'f', display_state: 'finished', unread: true }),
+    ])
+    const w = mountSidebar()
+    expect(chips(w).map((c) => c.text())).toEqual(['1 rodando'])
+  })
+
+  it('ligar "aguardando você" mostra só as que esperam e esconde os projetos sem nenhuma', async () => {
+    seed()
+    const w = mountSidebar()
+    await chip(w, 'waiting').trigger('click')
+    expect(chip(w, 'waiting').attributes('aria-pressed')).toBe('true')
+    expect(titles(w)).toEqual(['Pede você'])
+    expect(projectNames(w)).toEqual(['beta'])
+    await chip(w, 'waiting').trigger('click')
+    expect(chip(w, 'waiting').attributes('aria-pressed')).toBe('false')
+    expect(titles(w)).toHaveLength(6)
+    expect(projectNames(w)).toEqual(['alfa', 'beta', 'gama'])
+  })
+
+  it('ligar outro filtro desliga o anterior', async () => {
+    seed()
+    const w = mountSidebar()
+    await chip(w, 'waiting').trigger('click')
+    await chip(w, 'running').trigger('click')
+    expect(chip(w, 'running').attributes('aria-pressed')).toBe('true')
+    expect(chip(w, 'waiting').attributes('aria-pressed')).toBe('false')
+    expect(titles(w)).toEqual(['Roda um', 'Roda dois'])
+    expect(sidebarFilter.value).toBe('running')
+  })
+
+  it('o filtro de não lidas conta também as marcadas', async () => {
+    seed()
+    const w = mountSidebar()
+    await chip(w, 'unread').trigger('click')
+    expect(titles(w).sort()).toEqual(['Marcada dois', 'Marcada um', 'Pede você'])
+  })
+
+  it('quando a contagem do filtro ligado cai a zero, o filtro desliga e a lista volta inteira', async () => {
+    seed()
+    const w = mountSidebar()
+    await chip(w, 'waiting').trigger('click')
+    expect(titles(w)).toEqual(['Pede você'])
+    const answered = useSessionsStore(pinia).find('w1')!
+    answered.display_state = 'running'
+    answered.unread = false
+    await flushPromises()
+    expect(sidebarFilter.value).toBeNull()
+    expect(w.find('[data-test="sidebar-filter"][data-filter="waiting"]').exists()).toBe(false)
+    expect(projectNames(w)).toEqual(['alfa', 'beta', 'gama'])
+    expect(titles(w)).toHaveLength(6)
+  })
+
+  it('a lista não fica vazia nem por um instante quando a contagem cai a zero', async () => {
+    seed()
+    const w = mountSidebar()
+    await chip(w, 'waiting').trigger('click')
+    const answered = useSessionsStore(pinia).find('w1')!
+    answered.display_state = 'running'
+    answered.unread = false
+    // one render, before any watcher cleanup could matter: the list is already whole
+    await nextTick()
+    expect(projectNames(w)).toEqual(['alfa', 'beta', 'gama'])
+  })
+
+  it('o projeto da tela atual continua na lista, sem conversas, quando nenhuma bate', async () => {
+    seed()
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/projects/1')
+    const w = mount(AppSidebar, { global: { plugins: [pinia, router] } })
+    await chip(w, 'waiting').trigger('click')
+    expect(projectNames(w)).toEqual(['alfa', 'beta'])
+    expect(w.get('[data-test="project"][href="/projects/1"]').attributes('aria-current')).toBe('page')
+    expect(titles(w)).toEqual(['Pede você'])
+    expect(w.findAll('[data-test="project-toggle"]')).toHaveLength(1)
+  })
+
+  it('a conversa de agrupador que não bate some; o agrupador sem nenhuma que bate também', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'alfa' })]
+    useGroupsStore(pinia).groups = [makeGroup({ id: 1, project_id: 1, name: 'Mistura' }), makeGroup({ id: 2, project_id: 1, name: 'Só roda' })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'g1', group_id: 1, title: 'Roda no grupo', display_state: 'running' }),
+      makeSession({ session_id: 'g2', group_id: 1, title: 'Quieta no grupo', display_state: 'waiting', unread: false }),
+      makeSession({ session_id: 'g3', group_id: 2, title: 'Outra roda', display_state: 'running' }),
+      makeSession({ session_id: 'w', group_id: null, title: 'Solta aguarda', display_state: 'waiting', unread: true }),
+    ])
+    const w = mountSidebar()
+    await chip(w, 'waiting').trigger('click')
+    expect(w.findAll('[data-test="sidebar-group"]')).toHaveLength(0)
+    expect(titles(w)).toEqual(['Solta aguarda'])
+    await chip(w, 'running').trigger('click')
+    expect(w.findAll('[data-test="sidebar-group"]')).toHaveLength(2)
+    const mixed = w.findAll('[data-test="sidebar-group"]')[0]!
+    expect(mixed.findAll('[data-test="sidebar-session"]').map((r) => r.get('[data-test="row-title"]').text())).not.toContain('Quieta no grupo')
+    expect(w.text()).not.toContain('Quieta no grupo')
+    expect(w.text()).not.toContain('Solta aguarda')
+  })
+
+  it('o projeto fica quando só o agrupador dele tem conversa que bate', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'alfa' }), makeProject({ id: 2, name: 'beta' })]
+    useGroupsStore(pinia).groups = [makeGroup({ id: 1, project_id: 1, name: 'Grupo' })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'g1', project_id: 1, group_id: 1, title: 'No grupo', display_state: 'running' })])
+    useSessionsStore(pinia).setForProject(2, [makeSession({ session_id: 'b1', project_id: 2, title: 'Quieta', display_state: 'waiting', unread: false })])
+    const w = mountSidebar()
+    await chip(w, 'running').trigger('click')
+    expect(projectNames(w)).toEqual(['alfa'])
+    expect(w.findAll('[data-test="sidebar-session"]')).toHaveLength(1)
+  })
+
+  it('com o filtro ligado, Outros projetos e as faixas não mudam', async () => {
+    seed()
+    useProjectsStore(pinia).projects.push(makeProject({ id: 9, name: 'parado' }))
+    const w = mountSidebar()
+    await chip(w, 'running').trigger('click')
+    expect(w.get('[data-test="others-toggle"]').text()).toContain('1 sem conversa aberta')
+    expect(w.findAll('[data-test="lane-review-row"]')).toHaveLength(2)
+  })
+
+  it('o filtro vale entre montagens (fica em memória), mas não é guardado', async () => {
+    seed()
+    const w = mountSidebar()
+    await chip(w, 'running').trigger('click')
+    expect(localStorage.getItem('maestro:sidebar-filter')).toBeNull()
+    w.unmount()
+    expect(titles(mountSidebar())).toEqual(['Roda um', 'Roda dois'])
+  })
+
+  it('o projeto mostra o selo laranja das que esperam você e o verde das que rodam, com o número', () => {
+    seed()
+    const [alfa, beta] = mountSidebar().findAll('[data-test="project"]')
+    expect(alfa!.get('[data-test="project-running-count"]').text()).toBe('2')
+    expect(alfa!.find('[data-test="project-waiting"]').exists()).toBe(false)
+    expect(beta!.get('[data-test="project-waiting"]').text()).toContain('1')
+    expect(beta!.find('[data-test="project-running"]').exists()).toBe(false)
+  })
+
+  it('a seta de recolher segue no fim da linha do projeto com o filtro ligado', async () => {
+    seed()
+    const w = mountSidebar()
+    await chip(w, 'running').trigger('click')
+    const link = w.get('[data-test="project"]').element
+    expect(link.parentElement!.lastElementChild).toBe(w.get('[data-test="project-toggle"]').element)
+  })
 })

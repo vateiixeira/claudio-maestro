@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
-import { isQuietSession } from './itemClass'
+import SidebarSessionRow from './SidebarSessionRow.vue'
 import { isDiscarded } from '../../conversation/marks'
-import { formatActivity, formatElapsedShort } from '../../format'
-import { useMinuteClock } from '../../minuteClock'
+import { needsYou } from '../../conversation/needsYou'
 import { isCollapsed, setCollapsed } from '../../sidebarCollapse'
-import { projectTree } from '../../sidebarTree'
+import { sidebarFilter } from '../../sidebarFilter'
+import { filteredProjectTree } from '../../sidebarTree'
 import { sessionsOf } from '../../groupList'
 import { useGroupsStore } from '../../stores/groups'
-import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import type { SessionGroup } from '../../types/api'
 import GroupRemoveConfirm from '../groups/GroupRemoveConfirm.vue'
@@ -21,14 +19,17 @@ import IconGroup from '../icons/IconGroup.vue'
 const props = defineProps<{ projectId: number }>()
 const groups = useGroupsStore()
 const sessions = useSessionsStore()
-const route = useRoute()
-const now = useMinuteClock()
-
-const projects = useProjectsStore()
 
 // A group created in another project can hold conversations from several: the tree lists all of them.
-const tree = computed(() => projectTree(groups.visibleIn(props.projectId, sessions.all), sessions.all))
-const projectName = (id: number) => projects.byId(id)?.name ?? ''
+// With the sidebar filter on, only the ones that match; a group with none is left out.
+const tree = computed(() => {
+  const filter = sidebarFilter.value
+  return filteredProjectTree(groups.visibleIn(props.projectId, sessions.all), sessions.all, filter).map((item) => ({
+    ...item,
+    // The badge counts what the group shows.
+    waiting: item.sessions.filter((s) => s.display_state === 'waiting' && needsYou(s)).length,
+  }))
+})
 const membersOf = (group: SessionGroup) => sessionsOf(group.id, sessions.all.filter((s) => !isDiscarded(s)))
 
 const confirmingId = ref<number | null>(null)
@@ -46,7 +47,6 @@ async function cancelRemove(groupId: number) {
 const removeClass =
   'flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-0 hover:bg-elevated hover:text-fg ' +
   'focus-visible:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100'
-const isCurrent = (id: string) => route.name === 'session' && route.params.id === id
 const rowClass = 'flex min-h-[30px] items-center gap-2 rounded-lg px-2 no-underline hover:bg-card'
 </script>
 
@@ -81,24 +81,15 @@ const rowClass = 'flex min-h-[30px] items-center gap-2 rounded-lg px-2 no-underl
       </div>
       <GroupRemoveConfirm v-if="confirmingId === item.group.id" class="mx-1 my-1" :group="item.group" :sessions="membersOf(item.group)" @cancel="cancelRemove(item.group.id)" @error="removeError = $event" @removed="confirmingId = null" />
       <template v-if="!isCollapsed('group', item.group.id)">
-        <RouterLink
+        <SidebarSessionRow
           v-for="s in item.sessions"
           :key="s.session_id"
           data-test="sidebar-session"
-          :to="{ name: 'session', params: { id: s.session_id } }"
-          :aria-current="isCurrent(s.session_id) ? 'page' : undefined"
-          :class="[rowClass, 'pl-7', isCurrent(s.session_id) ? 'bg-card text-fg' : 'text-fg-muted hover:text-fg']"
-        >
-          <DisplayStateIcon :display="s.display_state" :size="11" :quiet="isQuietSession(s)" />
-          <span class="min-w-0 grow truncate text-[0.8125rem]">{{ s.title }}</span>
-          <span v-if="s.project_id !== projectId" data-test="group-session-project" class="max-w-20 shrink-0 truncate text-[0.6875rem] text-fg-subtle">{{ projectName(s.project_id) }}</span>
-          <span
-            v-if="s.display_state === 'waiting'"
-            data-test="row-age"
-            :title="`Última interação ${formatActivity(s.last_activity_at)}`"
-            class="shrink-0 font-mono text-[0.6875rem] text-fg-subtle tabular-nums"
-          >{{ formatElapsedShort(s.last_activity_at, now) }}</span>
-        </RouterLink>
+          class="ml-5"
+          :session="s"
+          :hide-project="s.project_id === projectId"
+          nested
+        />
       </template>
     </div>
   </div>

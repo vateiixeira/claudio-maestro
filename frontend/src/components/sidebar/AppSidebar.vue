@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BrandMark from '../BrandMark.vue'
 import ConnectionIndicator from '../ConnectionIndicator.vue'
 import DisplayStateIcon from '../DisplayStateIcon.vue'
+import FilterChip from '../ui/FilterChip.vue'
 import SessionSearch from './SessionSearch.vue'
 import SidebarAgents from './SidebarAgents.vue'
 import SidebarGroups from './SidebarGroups.vue'
@@ -15,13 +16,15 @@ import ClaudeUpdateNotice from '../updates/ClaudeUpdateNotice.vue'
 import UpdatedNotice from '../updates/UpdatedNotice.vue'
 import { looseOpenSessions } from './openList'
 import { sidebarItemClass } from './itemClass'
+import { isActive } from '../../groupList'
 import { isDiscarded } from '../../conversation/marks'
 import { needsYou } from '../../conversation/needsYou'
 import { useEventSocket } from '../../api/socket'
 import { isCollapsed, isSectionOpened, setCollapsed, setSectionOpened } from '../../sidebarCollapse'
 import { behindCount, behindSrText, behindTitle } from '../../gitSync'
 import { useMinuteClock } from '../../minuteClock'
-import { projectTree, splitProjects } from '../../sidebarTree'
+import { matchesSidebarFilter, sidebarFilter, sidebarFilterLabel, type SidebarFilter } from '../../sidebarFilter'
+import { filteredProjectTree, splitProjects } from '../../sidebarTree'
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_KEY_STEP, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, clampSidebarWidth, sidebarWidth, writeSidebarWidth } from '../../sidebarWidthPref'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
@@ -90,27 +93,49 @@ const isOrdinary = (s: Session) => s.agent_id == null
 function waitingIn(projectId: number): number {
   return sessions.forProject(projectId).filter((s) => isOrdinary(s) && isWaitingOnYou(s)).length
 }
-function runningIn(projectId: number): boolean {
-  return sessions.forProject(projectId).some((s) => isOrdinary(s) && s.display_state === 'running' && !isDiscarded(s))
+function runningIn(projectId: number): number {
+  return sessions.forProject(projectId).filter((s) => isOrdinary(s) && s.display_state === 'running' && !isDiscarded(s)).length
 }
+
+// The chips above the projects: what the sidebar lists (open, not an agent's, not discarded) that each filter keeps.
+const FILTERS: SidebarFilter[] = ['running', 'waiting', 'unread']
+const filterCounts = computed<Record<SidebarFilter, number>>(() => {
+  const counts = { running: 0, waiting: 0, unread: 0 }
+  for (const s of sessions.all) {
+    if (!isOrdinary(s) || !isActive(s)) continue
+    for (const f of FILTERS) if (matchesSidebarFilter(s, f)) counts[f]++
+  }
+  return counts
+})
+const shownFilters = computed(() => FILTERS.filter((f) => filterCounts.value[f] > 0))
+function toggleFilter(filter: SidebarFilter) {
+  sidebarFilter.value = sidebarFilter.value === filter ? null : filter
+}
+// Nothing left for the filter on (the conversation was answered): it turns itself off and the list comes back whole.
+// The watcher runs before the render of the same update, so the list is never drawn empty.
+watch(filterCounts, (counts) => {
+  if (sidebarFilter.value && counts[sidebarFilter.value] === 0) sidebarFilter.value = null
+})
 // Groups under each project: those created in it and those holding one of its conversations.
 const groupsByProject = computed(() => {
   const map = new Map<number, SessionGroup[]>()
   for (const p of projects.projects) map.set(p.id, groups.visibleIn(p.id, sessions.all))
   return map
 })
-// The ones the sidebar actually lists: a group without an open conversation is hidden, so it does not count as a child.
+// The ones the sidebar actually lists: a group without a listed conversation (open and matching the filter) is hidden,
+// so it does not count as a child.
 const listedGroupsByProject = computed(() => {
   const map = new Map<number, number>()
-  for (const [id, list] of groupsByProject.value) map.set(id, projectTree(list, sessions.all).length)
+  for (const [id, list] of groupsByProject.value) map.set(id, filteredProjectTree(list, sessions.all, sidebarFilter.value).length)
   return map
 })
-// Open conversations of each project outside its groups, the ones waiting for you first; grouped ones show under their group.
-// Built once per change so the template reads it instead of recomputing per project.
+// Open conversations of each project outside its groups that match the filter, the ones waiting for you first;
+// grouped ones show under their group. Built once per change so the template reads it instead of recomputing per project.
 const looseByProject = computed(() => {
   const map = new Map<number, Session[]>()
   for (const p of projects.projects) {
-    map.set(p.id, looseOpenSessions(sessions.all, p.id, new Set((groupsByProject.value.get(p.id) ?? []).map((g) => g.id))))
+    const loose = looseOpenSessions(sessions.all, p.id, new Set((groupsByProject.value.get(p.id) ?? []).map((g) => g.id)))
+    map.set(p.id, loose.filter((s) => matchesSidebarFilter(s, sidebarFilter.value)))
   }
   return map
 })
@@ -119,6 +144,10 @@ function hasChildren(projectId: number): boolean {
 }
 // "Conversas abertas": projects with an open conversation. "Outros projetos": the rest, kept in one folded line.
 const split = computed(() => splitProjects(projects.projects, sessions.all))
+// With a filter on, the projects with no conversation that matches leave the list; the one on screen stays, so you can tell where you are.
+const listedActive = computed(() =>
+  sidebarFilter.value === null ? split.value.active : split.value.active.filter((p) => p.id === activeProjectId.value || hasChildren(p.id)),
+)
 // The project on screen stays visible even when it has no open conversation and the list is folded.
 const activeIsOther = computed(() => split.value.others.some((p) => p.id === activeProjectId.value))
 const othersOpen = computed(() => isSectionOpened('others') || activeIsOther.value)
@@ -212,7 +241,7 @@ const itemClass = sidebarItemClass
         </span>
       </RouterLink>
       <RouterLink to="/dashboard" data-test="nav-dashboard" :class="itemClass(route.name === 'dashboard')" :aria-current="route.name === 'dashboard' ? 'page' : undefined">
-        <IconDashboard /><span class="grow">Dashboard</span>
+        <IconDashboard /><span class="grow">Painel</span>
       </RouterLink>
       <RouterLink to="/sessions" data-test="nav-conversations" :class="itemClass(route.name === 'sessions')" :aria-current="route.name === 'sessions' ? 'page' : undefined">
         <IconChat /><span class="grow">Conversas</span>
@@ -231,10 +260,26 @@ const itemClass = sidebarItemClass
           <h2 id="sidebar-active-title" data-test="section-title" class="grow font-mono text-[0.6875rem] font-normal tracking-[0.08em] text-fg-subtle uppercase">Conversas abertas</h2>
           <RouterLink to="/projects/new" data-test="new-project" aria-label="Novo projeto" class="flex size-[26px] items-center justify-center rounded-md text-fg-subtle no-underline hover:bg-card hover:text-fg"><IconPlus :size="13" /></RouterLink>
         </div>
+        <div v-if="shownFilters.length" data-test="sidebar-filters" role="group" aria-label="Filtrar conversas abertas" class="flex flex-wrap gap-1.5 pt-1 pr-1 pb-2.5 pl-1">
+          <FilterChip
+            v-for="f in shownFilters"
+            :key="f"
+            data-test="sidebar-filter"
+            :data-filter="f"
+            :label="sidebarFilterLabel(f, filterCounts[f])"
+            :pressed="sidebarFilter === f"
+            @toggle="toggleFilter(f)"
+          >
+            <template #icon>
+              <span v-if="f === 'unread'" class="size-[7px] shrink-0 rounded-full bg-fg" aria-hidden="true" />
+              <DisplayStateIcon v-else :display="f" :size="12" />
+            </template>
+          </FilterChip>
+        </div>
         <p v-if="projects.loadError" class="px-2.5 py-2 text-xs text-diff-del-fg" role="alert">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
         <p v-else-if="projects.loaded && projects.regular.length === 0" class="px-2.5 py-2 text-xs text-fg-muted">Nenhum projeto ainda.</p>
         <p v-else-if="projects.projects.length > 0 && split.active.length === 0" data-test="no-open" class="px-2.5 py-1 text-xs text-fg-subtle">Nenhuma conversa aberta</p>
-        <template v-for="(project, index) in split.active" :key="project.id">
+        <template v-for="(project, index) in listedActive" :key="project.id">
           <div class="flex items-center" :class="{ 'mt-1.5': index > 0 }">
             <RouterLink
               data-test="project"
@@ -245,9 +290,10 @@ const itemClass = sidebarItemClass
             >
               <span data-test="project-color" class="size-[9px] shrink-0 rounded-[3px]" :class="{ 'opacity-40': !project.available }" :style="{ backgroundColor: project.color }" />
               <span class="flex min-w-0 grow flex-col">
-                <span data-test="project-name" :title="project.name" class="truncate font-medium" :class="project.available ? 'text-fg' : 'text-fg-subtle'">{{ project.name }}</span>
-                <span v-if="showsBranch(project)" class="flex min-w-0 items-baseline gap-2">
+                <span class="flex min-w-0 items-baseline gap-2">
+                  <span data-test="project-name" :title="project.name" class="min-w-0 shrink-[0.2] truncate font-medium" :class="project.available ? 'text-fg' : 'text-fg-subtle'">{{ project.name }}</span>
                   <span
+                    v-if="showsBranch(project)"
                     data-test="project-branch"
                     :title="repoLabel(git.reposFor(project.id)[0]!)"
                     class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle"
@@ -262,8 +308,8 @@ const itemClass = sidebarItemClass
                 <span v-if="!project.available" class="text-xs text-fg-subtle">pasta indisponível</span>
                 <span v-if="git.limitReached(project.id)" data-test="repo-limit" class="text-xs text-fg-muted">Só os 50 primeiros repositórios</span>
               </span>
-              <span v-if="runningIn(project.id)" data-test="project-running" class="flex shrink-0 items-center">
-                <DisplayStateIcon display="running" :size="11" /><span class="sr-only">em execução</span>
+              <span v-if="runningIn(project.id)" data-test="project-running" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-primary-soft">
+                <DisplayStateIcon display="running" :size="11" /><span data-test="project-running-count">{{ runningIn(project.id) }}</span><span class="sr-only"> em execução</span>
               </span>
               <span v-if="waitingIn(project.id)" data-test="project-waiting" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-secondary">
                 <DisplayStateIcon display="waiting" :size="11" />{{ waitingIn(project.id) }}<span class="sr-only"> aguardando você</span>
