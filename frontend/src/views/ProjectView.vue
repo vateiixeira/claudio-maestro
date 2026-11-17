@@ -10,7 +10,8 @@ import GitPanel from '../components/git/GitPanel.vue'
 import MoreMenu, { type MoreMenuItem } from '../components/ui/MoreMenu.vue'
 import { useGitDetailsStore } from '../stores/gitDetails'
 import { errorMessage, openInEditor } from '../api/http'
-import { changedCount, useGitStore } from '../stores/git'
+import { useGitStore } from '../stores/git'
+import { pendingCount } from '../git/pending'
 import { isScratch, useProjectsStore } from '../stores/projects'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useSessionsStore } from '../stores/sessions'
@@ -85,13 +86,13 @@ async function tabKey(event: KeyboardEvent, index: number): Promise<void> {
 const summaryRepos = computed(() => git.reposFor(props.id))
 // "N em aberto": this project's conversations that are neither finished nor discarded.
 const openConversations = computed(() => sessions.all.filter(session => session.project_id === props.id && session.display_state !== 'finished' && !isDiscarded(session)).length)
-// "N com pendências": repositories with changed files or commits to push. No count until git has loaded.
-const pendingRepos = computed(() => git.isLoaded(props.id) ? summaryRepos.value.filter(repo => changedCount(repo) > 0 || (repo.ahead ?? 0) > 0).length : 0)
-const tabCount = computed<Record<ProjectTab, string | null>>(() => ({
+// "N com pendências": repositories that ask for attention (see git/pending). No count until git has loaded.
+const pendingRepos = computed(() => git.isLoaded(props.id) ? pendingCount(summaryRepos.value) : 0)
+const tabCount = computed<Record<Exclude<ProjectTab, 'git'>, string | null>>(() => ({
   conversas: `${openConversations.value} em aberto`,
-  git: pendingRepos.value ? `${pendingRepos.value} com ${pendingRepos.value === 1 ? 'pendência' : 'pendências'}` : null,
   organizacao: null,
 }))
+const gitTabCount = computed(() => pendingRepos.value ? `${pendingRepos.value} com pendências` : null)
 watch([() => props.id, project], () => {
   if (project.value && !scratch.value && project.value.available && activeTab.value !== 'git') git.ensure(props.id)
 }, { immediate: true })
@@ -377,7 +378,7 @@ async function remove(): Promise<void> {
 
       <div v-if="!scratch" role="tablist" aria-label="Áreas do projeto" class="flex min-w-0 gap-1 overflow-x-auto border-b border-line">
         <button v-for="(tab, index) in TABS" :key="tab.id" :ref="el => { if (el) tabButtons[index] = el as HTMLButtonElement }" :id="`project-tab-${tab.id}`" type="button" role="tab" :data-test="`project-tab-${tab.id}`" :aria-selected="activeTab === tab.id" aria-controls="project-tabpanel" :tabindex="activeTab === tab.id ? 0 : -1" class="-mb-px flex h-11 shrink-0 items-center gap-2 border-0 border-b-2 bg-transparent px-3 text-[0.90625rem] font-medium whitespace-nowrap focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary" :class="activeTab === tab.id ? 'border-primary text-fg' : 'border-transparent text-fg-muted hover:text-fg'" @click="selectTab(tab.id)" @keydown="tabKey($event, index)">
-          {{ tab.label }}<span v-if="tabCount[tab.id]" data-test="project-tab-count" class="font-mono text-[0.71875rem] tabular-nums" :class="tab.id === 'git' ? 'text-secondary-soft' : 'text-fg-subtle'">{{ tabCount[tab.id] }}</span>
+          {{ tab.label }}<span v-if="tab.id === 'git' && gitTabCount" data-test="project-tab-git-count" class="font-mono text-[0.71875rem] tabular-nums text-secondary-soft">{{ gitTabCount }}</span><span v-else-if="tab.id !== 'git' && tabCount[tab.id]" data-test="project-tab-count" class="font-mono text-[0.71875rem] tabular-nums text-fg-subtle">{{ tabCount[tab.id] }}</span>
         </button>
       </div>
       <div id="project-tabpanel" :role="scratch ? undefined : 'tabpanel'" :aria-labelledby="scratch ? undefined : `project-tab-${activeTab}`" class="min-w-0">

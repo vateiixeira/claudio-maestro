@@ -155,19 +155,42 @@ describe('tela do projeto', () => {
     ])
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
     const wrapper = await mountView()
-    const count = wrapper.get('[data-test="project-tab-git"] [data-test="project-tab-count"]')
+    const count = wrapper.get('[data-test="project-tab-git"] [data-test="project-tab-git-count"]')
     expect(count.text()).toBe('2 com pendências')
     expect(count.classes()).toContain('text-secondary-soft')
+    expect(wrapper.find('[data-test="project-tab-git"] [data-test="project-tab-count"]').exists()).toBe(false)
+  })
+
+  it('fora da aba Git, carrega o resumo do Git para mostrar a contagem na aba', async () => {
+    await router.replace('/projects/1?visao=conversas')
+    seed()
+    const fetchMock = routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([]),
+      'GET /api/projects/1/git': () => jsonResponse({ repos: [makeGitRepo({ ahead: 10 })], limit_reached: false }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = await mountView()
+    await flushPromises()
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/projects/1/git'))).toHaveLength(1)
+    expect(wrapper.get('[data-test="project-tab-git-count"]').text()).toBe('1 com pendências')
+  })
+
+  it('a aba Git conta um repositório pendente, inclusive só atrás do remoto', async () => {
+    seed()
+    useGitStore().set(1, [makeGitRepo({ rel_path: 'a', behind: 3 }), makeGitRepo({ rel_path: 'b' })])
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="project-tab-git-count"]').text()).toBe('1 com pendências')
   })
 
   it('a aba Git não tem contagem sem pendências nem com o git ainda sem carregar', async () => {
     seed()
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
     const wrapper = await mountView()
-    expect(wrapper.find('[data-test="project-tab-git"] [data-test="project-tab-count"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="project-tab-git"] [data-test="project-tab-git-count"]').exists()).toBe(false)
     useGitStore().set(1, [makeGitRepo()])
     await flushPromises()
-    expect(wrapper.find('[data-test="project-tab-git"] [data-test="project-tab-count"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="project-tab-git"] [data-test="project-tab-git-count"]').exists()).toBe(false)
   })
 
   it('o menu de ações abre o MoreMenu com Renomear, Remover e Atualizar', async () => {
@@ -640,7 +663,7 @@ describe('tela do projeto embutido "Sem projeto"', () => {
     expect(wrapper.find('h1').text()).toBe('Sem projeto')
     expect(wrapper.find('[data-test="new-session"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-test="conversation-row"]')).toHaveLength(1)
-    for (const t of ['rename', 'remove', 'open-editor', 'open-organization', 'sync', 'repos', 'project-actions', 'project-path', 'project-tab-count']) {
+    for (const t of ['rename', 'remove', 'open-editor', 'open-organization', 'sync', 'repos', 'project-actions', 'project-path', 'project-tab-count', 'project-tab-git-count']) {
       expect(wrapper.find(`[data-test="${t}"]`).exists(), t).toBe(false)
     }
     expect(wrapper.text()).not.toContain('/home/vi/.local/share/claudio-maestro/scratch')
