@@ -102,6 +102,44 @@ describe('seletor de tema', () => {
   })
 })
 
+describe('amostras de cor de cada tema', () => {
+  const TOKENS = ['bg', 'elevated', 'primary', 'secondary', 'info', 'diff-del-fg']
+
+  it('cada cartão tem seis amostras, nesta ordem de tokens', () => {
+    const w = mountPicker()
+    for (const o of options(w)) {
+      expect(o.findAll('[data-test="theme-swatch"]').map((s) => s.attributes('data-token'))).toEqual(TOKENS)
+    }
+  })
+
+  it('cada amostra usa a cor do token, resolvida pelo data-theme do cartão', () => {
+    const w = mountPicker()
+    for (const o of options(w)) {
+      for (const s of o.findAll('[data-test="theme-swatch"]')) {
+        expect(s.attributes('style')).toContain(`var(--color-${s.attributes('data-token')})`)
+      }
+    }
+  })
+
+  it('as amostras são decorativas, escondidas dos leitores de tela', () => {
+    const w = mountPicker()
+    const row = option(w, 'Dracula').find('[data-test="theme-swatch"]').element.parentElement!
+    expect(row.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('não mostra mais a linha de código de exemplo', () => {
+    const w = mountPicker()
+    for (const o of options(w)) expect(o.text()).not.toContain("const theme = 'ok'")
+    expect(w.text()).not.toContain("'ok'")
+  })
+
+  it('a grade tem quatro colunas em tela larga', () => {
+    const w = mountPicker()
+    const grid = options(w)[0].element.parentElement!
+    expect(grid.className).toContain('lg:grid-cols-4')
+  })
+})
+
 describe('prévia da sessão no seletor', () => {
   it('começa mostrando o tema ativo, com a legenda', () => {
     const w = mountPicker()
