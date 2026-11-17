@@ -79,7 +79,7 @@ describe('AgentPanel', () => {
   it('a query aba escolhe a seção e vence o erro de definição', async () => {
     const { wrapper } = await mountPanel('/agentes/1?agente=2&aba=memoria', { definition_error: 'ruim' })
     expect(selected(wrapper)).toEqual(['agent-tab-memoria'])
-    expect(wrapper.find('[data-test="memory-text"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="memory-view"]').text()).toBe('Lembrar do X.')
   })
 
   it('aba desconhecida cai no padrão', async () => {
@@ -115,6 +115,7 @@ describe('AgentPanel', () => {
     await wrapper.get('[data-test="agent-tab-memoria"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="definition-text"]').exists()).toBe(false)
+    await wrapper.get('[data-test="memory-edit"]').trigger('click')
     await wrapper.get('[data-test="memory-text"]').setValue('meu rascunho da memória')
     await wrapper.get('[data-test="agent-tab-definicao"]').trigger('click')
     await flushPromises()
