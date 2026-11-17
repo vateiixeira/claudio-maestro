@@ -173,7 +173,7 @@ describe('branches e merge no repositório', () => {
     expect(wrapper.find('[data-test="merging-tag"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-test="scm-group-title"]').map((t) => t.text())).toEqual(['Em conflito', 'Prontos para o merge'])
     expect(wrapper.find('[data-test="primary-action"]').text()).toBe('Concluir merge (falta resolver 2)')
-    expect((wrapper.find('[data-test="commit-message"]').element as HTMLInputElement).value).toBe("Merge branch 'feat/agente' into develop")
+    expect((wrapper.find('[data-test="commit-message"]').element as HTMLTextAreaElement).value).toBe("Merge branch 'feat/agente' into develop")
     expect(wrapper.find('[data-test="commit-message"]').attributes('placeholder')).toBe('Mensagem do commit do merge')
   })
 
@@ -328,13 +328,13 @@ describe('branches e merge no repositório', () => {
 
   it('ao começar o merge guarda a mensagem preenchida; um rascunho da pessoa não é sobrescrito', () => {
     const { wrapper } = mountRepo(merging(['a'], [conflict('a')]))
-    expect((wrapper.find('[data-test="commit-message"]').element as HTMLInputElement).value).toBe("Merge branch 'feat/agente' into develop")
+    expect((wrapper.find('[data-test="commit-message"]').element as HTMLTextAreaElement).value).toBe("Merge branch 'feat/agente' into develop")
     expect(localStorage.getItem(`maestro.mergeMessage:${PATH}`)).toBe("Merge branch 'feat/agente' into develop")
     wrapper.unmount()
     localStorage.clear()
     localStorage.setItem(`maestro.commitDraft:${PATH}`, 'Meu texto')
     const again = mountRepo(merging(['a'], [conflict('a')]))
-    expect((again.wrapper.find('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('Meu texto')
+    expect((again.wrapper.find('[data-test="commit-message"]').element as HTMLTextAreaElement).value).toBe('Meu texto')
     expect(localStorage.getItem(`maestro.mergeMessage:${PATH}`)).toBeNull()
   })
 

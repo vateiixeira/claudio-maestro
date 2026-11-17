@@ -5,7 +5,7 @@ import ScmRepo from '../ScmRepo.vue'
 import { useGitDetailsStore } from '../../../../stores/gitDetails'
 import { useProjectsStore } from '../../../../stores/projects'
 import { useSessionsStore } from '../../../../stores/sessions'
-import { jsonResponse, makeProject, makeRepoDetails, makeRepoState, makeSession, routeFetch } from '../../../../test/factories'
+import { jsonResponse, makeProject, makeRepoCommit, makeRepoDetails, makeRepoState, makeSession, routeFetch } from '../../../../test/factories'
 import type { RepoDetails, RepoFile } from '../../../../types/api'
 
 enableAutoUnmount(afterEach)
@@ -42,7 +42,7 @@ describe('repositório na seção Alterações', () => {
     expect(wrapper.find('[data-test="gpg-note"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="primary-action"]').text()).toContain('Enviar')
     await wrapper.setProps({ repo: { ...repo, files: [file('a.ts', 'unstaged')] } })
-    expect((wrapper.get('[data-test="commit-message"]').element as HTMLInputElement).value).toBe('Meu rascunho')
+    expect((wrapper.get('[data-test="commit-message"]').element as HTMLTextAreaElement).value).toBe('Meu rascunho')
   })
 
   it('destaca o nome da worktree mantendo o caminho completo acessível', () => {
@@ -108,7 +108,7 @@ describe('repositório na seção Alterações', () => {
     const repo = makeRepoDetails({ path: PATH, files: [file('a.ts', 'staged')] })
     const { wrapper, fetchMock } = mountRepo(repo, { 'POST /api/projects/1/git/commit': () => jsonResponse({ repo: makeRepoDetails({ path: PATH }) }) })
     const input = wrapper.find('[data-test="commit-message"]')
-    expect(input.attributes('placeholder')).toBe('Mensagem (Ctrl+Enter commita em main)')
+    expect(input.attributes('placeholder')).toBe('Mensagem do commit')
     const button = wrapper.find('[data-test="primary-action"]')
     expect(button.text()).toBe('Commitar 1 preparado')
     expect(button.attributes('disabled')).toBeDefined()
@@ -118,7 +118,7 @@ describe('repositório na seção Alterações', () => {
     await flushPromises()
     expect(bodyOf(fetchMock.mock.calls[0])).toMatchObject({ repo: PATH, message: 'Ajustar o frete' })
     expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBeNull()
-    expect((input.element as HTMLInputElement).value).toBe('')
+    expect((input.element as HTMLTextAreaElement).value).toBe('')
   })
 
   it('mostra o estado ocupado no botão largo e desliga os ícones', async () => {
@@ -240,7 +240,7 @@ describe('repositório na seção Alterações', () => {
     await input.setValue('Segunda mensagem')
     release()
     await flushPromises()
-    expect((input.element as HTMLInputElement).value).toBe('Segunda mensagem')
+    expect((input.element as HTMLTextAreaElement).value).toBe('Segunda mensagem')
     expect(localStorage.getItem(`maestro.commitDraft:${PATH}`)).toBe('Segunda mensagem')
   })
 
@@ -469,5 +469,157 @@ describe('menu de mais ações', () => {
     await wrapper.get('[data-test="repo-more"]').trigger('click')
     expect(wrapper.get('[data-test="menu-refresh"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-test="menu-merge-reason"]').text()).toBe('Baixando 2 commits…')
+  })
+})
+
+describe('caixa de commit', () => {
+  const dirtyRepo = (overrides: Partial<RepoDetails> = {}) => makeRepoDetails({ path: '/p/loja', rel_path: 'loja', files: [file('a.ts', 'unstaged'), file('b.ts', 'unstaged')], ...overrides })
+
+  it('o campo é um textarea com o texto de apoio e o nome acessível', () => {
+    const { wrapper } = mountRepo(dirtyRepo())
+    const field = wrapper.get('[data-test="commit-message"]')
+    expect(field.element.tagName).toBe('TEXTAREA')
+    expect(field.attributes('placeholder')).toBe('Mensagem do commit')
+    expect(field.attributes('aria-label')).toBe('Mensagem do commit em loja')
+  })
+
+  it('a legenda diz em que branch o commit sai, e Merge durante um merge', () => {
+    const { wrapper } = mountRepo(dirtyRepo())
+    expect(wrapper.get('[data-test="commit-caption"]').text()).toBe('Commit em main')
+    const merging = mountRepo(dirtyRepo({ state: makeRepoState({ merging: true, merge_branch: 'feat/x', merge_message: 'Merge x' }) }))
+    expect(merging.wrapper.get('[data-test="commit-caption"]').text()).toBe('Merge em main')
+    expect(merging.wrapper.get('[data-test="commit-message"]').attributes('placeholder')).toBe('Mensagem do commit do merge')
+  })
+
+  it('a dica mostra Ctrl e Enter ao commitar e some quando a ação é enviar', () => {
+    const { wrapper } = mountRepo(dirtyRepo())
+    expect(wrapper.findAll('[data-test="commit-hint"] kbd').map((k) => k.text())).toEqual(['Ctrl', 'Enter'])
+    const push = mountRepo(makeRepoDetails({ path: '/p/loja', upstream: 'origin/main', ahead: 1 }))
+    expect(push.wrapper.get('[data-test="primary-action"]').text()).toContain('Enviar')
+    expect(push.wrapper.find('[data-test="commit-hint"]').exists()).toBe(false)
+  })
+
+  it('Enter sozinho quebra a linha e não commita', async () => {
+    const { wrapper, fetchMock } = mountRepo(dirtyRepo(), { 'POST /api/projects/1/git/commit': () => jsonResponse({ repo: makeRepoDetails({ path: '/p/loja' }) }) })
+    const field = wrapper.get('[data-test="commit-message"]')
+    await field.setValue('Ajustar o frete')
+    const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, bubbles: true })
+    field.element.dispatchEvent(event)
+    await flushPromises()
+    expect(event.defaultPrevented).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('Ctrl+Enter commita e limpa o rascunho', async () => {
+    const { wrapper, fetchMock } = mountRepo(dirtyRepo(), { 'POST /api/projects/1/git/commit': () => jsonResponse({ repo: makeRepoDetails({ path: '/p/loja' }) }) })
+    const field = wrapper.get('[data-test="commit-message"]')
+    await field.setValue('Ajustar o frete\n\nCom detalhes')
+    await field.trigger('keydown', { key: 'Enter', ctrlKey: true })
+    await flushPromises()
+    expect(bodyOf(fetchMock.mock.calls[0])).toMatchObject({ message: 'Ajustar o frete\n\nCom detalhes' })
+    expect(localStorage.getItem('maestro.commitDraft:/p/loja')).toBeNull()
+  })
+
+  it('Cmd+Enter também commita, e a composição de IME não commita', async () => {
+    const { wrapper, fetchMock } = mountRepo(dirtyRepo(), { 'POST /api/projects/1/git/commit': () => jsonResponse({ repo: makeRepoDetails({ path: '/p/loja' }) }) })
+    const field = wrapper.get('[data-test="commit-message"]')
+    await field.setValue('x')
+    await field.trigger('keydown', { key: 'Enter', metaKey: true, isComposing: true })
+    expect(fetchMock).not.toHaveBeenCalled()
+    await field.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('lê o rascunho ao abrir e grava o que se digita na mesma chave', async () => {
+    localStorage.setItem('maestro.commitDraft:/p/loja', 'Ajustar o frete')
+    const { wrapper } = mountRepo(dirtyRepo())
+    const field = wrapper.get('[data-test="commit-message"]')
+    expect((field.element as HTMLTextAreaElement).value).toBe('Ajustar o frete')
+    await field.setValue('Ajustar o frete\ne o prazo')
+    expect(localStorage.getItem('maestro.commitDraft:/p/loja')).toBe('Ajustar o frete\ne o prazo')
+  })
+
+  it('o botão é verde com mensagem e apagado sem ela, e conta os arquivos', async () => {
+    const { wrapper } = mountRepo(dirtyRepo())
+    const button = wrapper.get('[data-test="primary-action"]')
+    expect(button.text()).toBe('Commitar 2 arquivos')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.classes()).not.toContain('bg-primary')
+    await wrapper.get('[data-test="commit-message"]').setValue('Ajustar o frete')
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(button.classes()).toContain('bg-primary')
+  })
+
+  it('a caixa vem antes dos grupos de arquivos no DOM', () => {
+    const { wrapper } = mountRepo(dirtyRepo())
+    const box = wrapper.get('[data-test="scm-commit-box"]').element
+    const group = wrapper.get('[data-test="scm-group"]').element
+    expect(box.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('o corpo é um contêiner e as colunas dependem da largura dele, não da janela', () => {
+    const { wrapper } = mountRepo(dirtyRepo())
+    expect(wrapper.get('[data-test="scm-body"]').html()).toContain('@3xl:grid-cols-')
+    expect(wrapper.get('[data-test="scm-body"]').html()).not.toMatch(/(?:^|[\s"])(?:md|lg|xl):/)
+  })
+
+  it('sem alterações a caixa só traz o botão, ou o aviso de que não há nada', () => {
+    const none = mountRepo(makeRepoDetails({ path: '/p/loja' }))
+    expect(none.wrapper.get('[data-test="scm-commit-box"]').text()).toContain('Nenhuma alteração local.')
+    expect(none.wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    expect(none.wrapper.find('[data-test="commit-caption"]').exists()).toBe(false)
+    const pull = mountRepo(makeRepoDetails({ path: '/p/loja', upstream: 'origin/main', behind: 1 }))
+    expect(pull.wrapper.get('[data-test="scm-commit-box"] [data-test="primary-action"]').text()).toContain('Baixar')
+  })
+})
+
+describe('Para enviar', () => {
+  const unpushed = (n: number) => Array.from({ length: n }, (_, i) => makeRepoCommit({ hash: `a${i}00000`.slice(0, 7), subject: `Mudança ${i}`, pushed: false }))
+  const base = { path: '/p/loja', upstream: 'origin/main' }
+
+  it('lista os commits que o Push leva, com o total', () => {
+    const commits = [...unpushed(2), makeRepoCommit({ hash: 'f000000', subject: 'Já no remoto', pushed: true })]
+    const { wrapper } = mountRepo(makeRepoDetails({ ...base, ahead: 2, commits }))
+    const section = wrapper.get('[data-test="scm-outgoing"]')
+    expect(section.text()).toContain('Para enviar')
+    expect(section.text()).toContain('o que o Push leva para o remoto')
+    expect(wrapper.get('[data-test="scm-outgoing-count"]').text()).toBe('2')
+    const rows = wrapper.findAll('[data-test="scm-outgoing-commit"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).toContain('a000000')
+    expect(rows[0].text()).toContain('Mudança 0')
+    expect(rows[1].text()).toContain('Mudança 1')
+    expect(wrapper.find('[data-test="scm-outgoing-more"]').exists()).toBe(false)
+  })
+
+  it('com mais commits do que a lista, mostra quantos faltam e abre o histórico', async () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ ...base, ahead: 12, commits: unpushed(10) }))
+    expect(wrapper.get('[data-test="scm-outgoing-count"]').text()).toBe('12')
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(10)
+    const more = wrapper.get('[data-test="scm-outgoing-more"]')
+    expect(more.text()).toBe('e mais 2 no histórico')
+    await more.trigger('click')
+    expect(wrapper.emitted('history')).toHaveLength(1)
+  })
+
+  it('não aparece sem nada a enviar, sem upstream ou com o HEAD solto', () => {
+    expect(mountRepo(makeRepoDetails({ ...base, ahead: 0, commits: unpushed(2) })).wrapper.find('[data-test="scm-outgoing"]').exists()).toBe(false)
+    expect(mountRepo(makeRepoDetails({ path: '/p/loja', upstream: null, ahead: 3, commits: unpushed(3) })).wrapper.find('[data-test="scm-outgoing"]').exists()).toBe(false)
+    expect(mountRepo(makeRepoDetails({ ...base, upstream: null, detached: true, branch: null, head: 'abc1234', ahead: 2, commits: unpushed(2) })).wrapper.find('[data-test="scm-outgoing"]').exists()).toBe(false)
+  })
+
+  it('commits com pushed nulo não quebram: o total vem do ahead', () => {
+    const commits = Array.from({ length: 3 }, (_, i) => makeRepoCommit({ subject: `C${i}`, pushed: null }))
+    const { wrapper } = mountRepo(makeRepoDetails({ ...base, ahead: 3, commits }))
+    expect(wrapper.get('[data-test="scm-outgoing-count"]').text()).toBe('3')
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(0)
+    expect(wrapper.get('[data-test="scm-outgoing-more"]').text()).toBe('e mais 3 no histórico')
+  })
+
+  it('fica junto dos arquivos, depois dos grupos', () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ ...base, ahead: 1, commits: unpushed(1), files: [file('a.ts', 'unstaged')] }))
+    const group = wrapper.get('[data-test="scm-group"]').element
+    expect(group.compareDocumentPosition(wrapper.get('[data-test="scm-outgoing"]').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

@@ -240,6 +240,16 @@ async function finishMerge(): Promise<void> {
   }
 }
 
+/** What the Push takes along: the commits ahead of the remote that the details list. */
+const outgoing = computed(() => {
+  const ahead = props.repo.ahead ?? 0
+  if (readOnly.value || props.repo.detached || props.repo.upstream == null || ahead <= 0) return null
+  const commits = props.repo.commits.filter((c) => c.pushed === false)
+  return { total: ahead, commits, more: Math.max(0, ahead - commits.length) }
+})
+// The left column has something to show: files, the commits to send, or the truncation note.
+const hasLeft = computed(() => props.repo.files.length > 0 || outgoing.value !== null || props.repo.files_truncated || !!editorError.value)
+
 const asking = ref(false)
 const claudeError = ref<string | null>(null)
 // The session made for this merge: a failed send is retried in it, not in a new one.
@@ -528,51 +538,79 @@ defineExpose({ ask, act, handlers })
     </div>
 
     <p v-if="repo.error" data-test="scm-repo-error" role="alert" class="m-0 px-3 py-2 text-xs text-diff-del-fg">{{ repo.error }}</p>
-    <div v-else-if="open" data-test="scm-body" class="flex min-w-0 flex-col gap-2 px-3 py-2.5">
+    <div v-else-if="open" data-test="scm-body" class="@container flex min-w-0 flex-col gap-2 px-3 py-2.5">
       <p v-if="readOnly" data-test="read-only-note" class="m-0 text-xs leading-normal text-fg-subtle">{{ readOnly }}</p>
       <template v-else>
         <slot name="merge-banner">
           <MergeBanner v-if="merging" :repo="repo" :busy="!!busyKind" :asking="asking" @ask="askClaude" @abort="abortMerge" />
           <p v-if="claudeError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ claudeError }}</p>
         </slot>
-        <div v-if="dirty || merging || busy || action.kind !== 'commit'" class="flex w-full max-w-xl flex-col gap-1.5">
-        <input
-          v-if="dirty || merging"
-          v-model="message"
-          type="text"
-          data-test="commit-message"
-          :aria-label="`Mensagem do commit em ${name}`"
-          :placeholder="merging ? 'Mensagem do commit do merge' : `Mensagem (Ctrl+Enter commita em ${branchName})`"
-          class="h-[26px] w-full rounded-md border border-line-strong bg-surface px-2 text-[0.8125rem] text-fg placeholder:text-fg-subtle focus:border-fg-muted focus:outline-none"
-          @keydown="onMessageKeydown"
-        >
-        <ScmPrimaryButton :action="action" :busy="busy" :available="!!handlers[action.kind]" @run="runPrimary" />
-        </div>
-        <p v-if="(dirty || merging) && state?.has_hooks" data-test="hooks-note" class="m-0 text-xs text-fg-subtle">Este repositório tem hooks. O commit feito pelo app não os executa.</p>
-        <p v-if="(dirty || merging) && state?.gpgsign" data-test="gpg-note" class="m-0 text-xs text-fg-subtle">Seu git pede commits assinados. O commit feito pelo app sai sem assinatura.</p>
       </template>
-      <p v-if="!dirty && !merging && !readOnly && action.kind === 'commit'" class="m-0 text-xs text-fg-subtle">Nenhuma alteração local.</p>
-      <p v-if="editorError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ editorError }}</p>
-      <slot name="groups" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :discard="discard" :editor="editor">
-        <ScmFileGroup v-if="conflictFiles.length" :project-id="projectId" :repo="repo" group="conflict" title="Em conflito" :files="conflictFiles" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :conflict-labels="conflictLabels" @editor="editor">
-          <template #group-actions />
-          <template v-if="!merging" #note>
-            <p data-test="conflict-outside-note" class="m-0 pl-5 text-xs leading-normal text-fg-subtle">Há conflitos fora de um merge. Resolva pelo terminal.</p>
+      <!-- The commit box comes first in the DOM (and in the tab order) and sits on the right when the container is wide. -->
+      <div class="grid min-w-0 grid-cols-1 gap-x-6 gap-y-3" :class="readOnly ? '' : hasLeft ? '@3xl:grid-cols-[minmax(0,1fr)_21rem] @3xl:items-start' : '@3xl:max-w-[21rem]'">
+        <div v-if="!readOnly" data-test="scm-commit-box" class="flex min-w-0 flex-col gap-2" :class="hasLeft ? '@3xl:col-start-2 @3xl:row-start-1' : ''">
+          <template v-if="dirty || merging">
+            <p data-test="commit-caption" class="m-0 text-xs font-semibold uppercase tracking-wide text-fg-muted">{{ merging ? 'Merge' : 'Commit' }} em {{ branchName }}</p>
+            <textarea
+              v-model="message"
+              data-test="commit-message"
+              :aria-label="`Mensagem do commit em ${name}`"
+              :placeholder="merging ? 'Mensagem do commit do merge' : 'Mensagem do commit'"
+              class="block h-[6.5rem] w-full resize-none rounded-[0.625rem] border border-line-strong bg-elevated px-3.5 py-3 text-sm text-fg placeholder:text-fg-muted focus:border-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              @keydown="onMessageKeydown"
+            />
           </template>
-          <template #file-actions="{ file }">
-            <button v-if="merging" type="button" data-test="file-resolve" class="flex size-[22px] items-center justify-center rounded text-fg-muted hover:bg-card hover:text-fg disabled:opacity-50" :disabled="!!busyKind" aria-label="Marcar como resolvido" title="Marcar como resolvido" @click="act('resolve', { paths: [file.path] })">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
-            </button>
-          </template>
-        </ScmFileGroup>
-        <!-- During a merge, what is staged is the merge itself: unstaging or discarding it would undo the resolution. -->
-        <ScmFileGroup v-if="staged.length" :project-id="projectId" :repo="repo" :group="merging ? 'ready' : 'staged'" :title="merging ? 'Prontos para o merge' : 'Preparados'" :files="staged" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" @stage="(p) => act('stage', { paths: p })" @unstage="(p) => act('unstage', { paths: p })" @discard="discard" @editor="editor">
-          <template v-if="merging" #group-actions />
-          <template v-if="merging" #file-actions />
-        </ScmFileGroup>
-        <ScmFileGroup v-if="changes.length" :project-id="projectId" :repo="repo" group="changes" title="Alterações" :files="changes" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" @stage="(p) => act('stage', { paths: p })" @unstage="(p) => act('unstage', { paths: p })" @discard="discard" @editor="editor" />
-      </slot>
-      <p v-if="repo.files_truncated" class="m-0 text-xs text-fg-muted">Há mais arquivos alterados do que a lista mostra.</p>
+          <div v-if="dirty || merging || busy || action.kind !== 'commit'" class="flex items-center gap-2">
+            <span v-if="action.kind === 'commit' || action.kind === 'merge-continue'" data-test="commit-hint" class="flex items-center gap-1.5" title="Ctrl+Enter envia o commit">
+              <kbd class="rounded-[0.3125rem] border border-line-strong px-1.5 py-px font-mono text-[0.6875rem] text-fg-muted">Ctrl</kbd>
+              <kbd class="rounded-[0.3125rem] border border-line-strong px-1.5 py-px font-mono text-[0.6875rem] text-fg-muted">Enter</kbd>
+            </span>
+            <span class="flex-1" />
+            <ScmPrimaryButton :action="action" :busy="busy" :available="!!handlers[action.kind]" @run="runPrimary" />
+          </div>
+          <p v-else data-test="no-changes" class="m-0 text-xs text-fg-subtle">Nenhuma alteração local.</p>
+          <p v-if="(dirty || merging) && state?.has_hooks" data-test="hooks-note" class="m-0 text-xs text-fg-subtle">Este repositório tem hooks. O commit feito pelo app não os executa.</p>
+          <p v-if="(dirty || merging) && state?.gpgsign" data-test="gpg-note" class="m-0 text-xs text-fg-subtle">Seu git pede commits assinados. O commit feito pelo app sai sem assinatura.</p>
+        </div>
+        <div v-if="hasLeft" class="flex min-w-0 flex-col gap-2 @3xl:col-start-1 @3xl:row-start-1">
+          <p v-if="editorError" role="alert" class="m-0 text-xs text-diff-del-fg">{{ editorError }}</p>
+          <slot name="groups" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :discard="discard" :editor="editor">
+            <ScmFileGroup v-if="conflictFiles.length" :project-id="projectId" :repo="repo" group="conflict" title="Em conflito" :files="conflictFiles" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" :conflict-labels="conflictLabels" @editor="editor">
+              <template #group-actions />
+              <template v-if="!merging" #note>
+                <p data-test="conflict-outside-note" class="m-0 pl-5 text-xs leading-normal text-fg-subtle">Há conflitos fora de um merge. Resolva pelo terminal.</p>
+              </template>
+              <template #file-actions="{ file }">
+                <button v-if="merging" type="button" data-test="file-resolve" class="flex size-[22px] items-center justify-center rounded text-fg-muted hover:bg-card hover:text-fg disabled:opacity-50" :disabled="!!busyKind" aria-label="Marcar como resolvido" title="Marcar como resolvido" @click="act('resolve', { paths: [file.path] })">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+                </button>
+              </template>
+            </ScmFileGroup>
+            <!-- During a merge, what is staged is the merge itself: unstaging or discarding it would undo the resolution. -->
+            <ScmFileGroup v-if="staged.length" :project-id="projectId" :repo="repo" :group="merging ? 'ready' : 'staged'" :title="merging ? 'Prontos para o merge' : 'Preparados'" :files="staged" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" @stage="(p) => act('stage', { paths: p })" @unstage="(p) => act('unstage', { paths: p })" @discard="discard" @editor="editor">
+              <template v-if="merging" #group-actions />
+              <template v-if="merging" #file-actions />
+            </ScmFileGroup>
+            <ScmFileGroup v-if="changes.length" :project-id="projectId" :repo="repo" group="changes" title="Alterações" :files="changes" :revision="revision" :read-only="!!readOnly" :disabled="!!busyKind" @stage="(p) => act('stage', { paths: p })" @unstage="(p) => act('unstage', { paths: p })" @discard="discard" @editor="editor" />
+          </slot>
+          <section v-if="outgoing" data-test="scm-outgoing" class="mt-2 flex flex-col">
+            <div class="flex h-6 items-center gap-1.5 pl-1 pr-1">
+              <h3 class="m-0 text-xs font-semibold uppercase tracking-wide text-fg-muted">Para enviar</h3>
+              <span data-test="scm-outgoing-count" class="min-w-[18px] rounded-full bg-card px-1.5 text-center font-mono text-[0.6875rem] text-fg-muted">{{ outgoing.total }}</span>
+              <span class="flex-1" />
+              <span class="truncate text-xs text-fg-muted">o que o Push leva para o remoto</span>
+            </div>
+            <ul class="m-0 flex list-none flex-col p-0">
+              <li v-for="c in outgoing.commits" :key="c.full_hash" data-test="scm-outgoing-commit" class="flex h-7 min-w-0 items-center gap-2 pl-1 pr-1 text-[0.8125rem] text-fg" :title="c.subject">
+                <span class="w-[3.625rem] shrink-0 font-mono text-xs tabular-nums text-fg-muted">{{ c.hash }}</span>
+                <span class="truncate">{{ c.subject }}</span>
+              </li>
+            </ul>
+            <button v-if="outgoing.more > 0" type="button" data-test="scm-outgoing-more" class="mt-0.5 self-start rounded px-1 py-0.5 text-xs text-fg-muted underline hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="emit('history')">e mais {{ outgoing.more }} no histórico</button>
+          </section>
+          <p v-if="repo.files_truncated" class="m-0 text-xs text-fg-muted">Há mais arquivos alterados do que a lista mostra.</p>
+        </div>
+      </div>
     </div>
     <ScmConfirm v-if="pending" :confirmation="pending.value" @confirm="answer(true)" @cancel="answer(false)" />
     <CreateBranchDialog
