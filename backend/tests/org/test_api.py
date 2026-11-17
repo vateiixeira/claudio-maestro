@@ -1030,6 +1030,7 @@ def test_runs_list_and_cancel(api, agent, project):
         )
     listed = api.get(f"/api/agents/{agent['id']}/runs").json()
     assert [r["id"] for r in listed] == [run.id, done.id]
+    assert all("summary" in r for r in listed)
     assert api.get(f"/api/agents/{agent['id']}").json()["last_run"]["id"] == run.id
 
     cancelled = api.post(f"/api/agents/{agent['id']}/runs/{run.id}/cancel")

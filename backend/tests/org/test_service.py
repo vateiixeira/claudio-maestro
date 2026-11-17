@@ -731,6 +731,27 @@ async def test_conclude_records_summary_announcement_and_finishes_session(world)
     assert world.published("agent.announcement")[-1]["id"] == announcement.id
 
 
+async def test_conclude_keeps_the_summary_as_written_on_the_run(world):
+    agent = world.add_agent()
+    run = await world.started(agent)
+    text = "Rotina de hoje.\n\n- ecommerce: 3 issues\n- pay: nenhuma"
+
+    await world.service.conclude(run.session_id, text)
+
+    assert world.run_of(run.session_id).summary == text
+    assert world.published("agent.run")[-1]["summary"] == text
+
+
+async def test_conclude_twice_keeps_the_last_summary(world):
+    agent = world.add_agent()
+    run = await world.started(agent)
+
+    await world.service.conclude(run.session_id, "primeiro")
+    await world.service.conclude(run.session_id, "segundo")
+
+    assert world.run_of(run.session_id).summary == "segundo"
+
+
 async def test_conclude_in_the_middle_of_the_turn_does_not_wait_for_it(world):
     agent = world.add_agent()
     run, pause = await paused_run(world, agent)

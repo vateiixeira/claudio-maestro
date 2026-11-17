@@ -1422,6 +1422,16 @@ MIGRATIONS.append([
     "CREATE UNIQUE INDEX projects_one_scratch ON projects(kind) WHERE kind = 'scratch'",
 ])
 
+# The full summary the agent gave to `concluir`, kept on the run (old runs: taken from the announcement).
+MIGRATIONS.append([
+    "ALTER TABLE runs ADD COLUMN summary TEXT",
+    "UPDATE runs SET summary = ("
+    " SELECT CASE WHEN instr(a.text, ' concluída: ') > 0"
+    " THEN substr(a.text, instr(a.text, ' concluída: ') + 12) ELSE a.text END"
+    " FROM announcements a WHERE a.run_id = runs.id ORDER BY a.id DESC LIMIT 1"
+    ") WHERE outcome = 'concluded'",
+])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

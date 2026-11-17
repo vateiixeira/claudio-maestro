@@ -1169,6 +1169,41 @@ def test_migration_34_drops_work_tables(tmp_path: Path):
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
+def test_runs_summary_is_backfilled_from_the_announcement(tmp_path: Path):
+    with open_db(tmp_path / "summary.db") as conn:
+        migrate_to(conn, db.SCHEMA_VERSION - 1)
+        assert "summary" not in {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+        conn.execute(
+            "INSERT INTO projects (id, name, path, color, position, created_at)"
+            " VALUES (1, 'p', '/p', '#fff', 0, 0)"
+        )
+        conn.execute(
+            "INSERT INTO agents (id, slug, name, project_id, created_at, updated_at)"
+            " VALUES (1, 'a', 'A', 1, 0, 0)"
+        )
+        for run_id, outcome in ((1, "concluded"), (2, "concluded"), (3, "concluded"), (4, "failed")):
+            conn.execute(
+                "INSERT INTO runs (id, agent_id, source, started_at, outcome)"
+                " VALUES (?, 1, 'manual', 0, ?)",
+                (run_id, outcome),
+            )
+        for run_id, text in (
+            (1, "Execução das 18:40 concluída: Tratei 3 erros."),
+            (2, "texto sem rótulo"),
+            (4, "Execução das 07:40 falhou: Tempo esgotado."),
+        ):
+            conn.execute(
+                "INSERT INTO announcements (agent_id, run_id, text, created_at)"
+                " VALUES (1, ?, ?, 0)",
+                (run_id, text),
+            )
+
+        db.migrate(conn)
+
+        rows = {r["id"]: r["summary"] for r in conn.execute("SELECT id, summary FROM runs")}
+        assert rows == {1: "Tratei 3 erros.", 2: "texto sem rótulo", 3: None, 4: None}
+
+
 def test_migration_34_can_run_twice(tmp_path: Path):
     with open_db(tmp_path / "old.db") as conn:
         _build_v32_with_work(conn)

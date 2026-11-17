@@ -169,6 +169,21 @@ async def test_assignment_wakeup_opens_task_session_in_project_folder(board):
     assert len(task_runs(board, task.id)) == 1  # it commented: nothing wakes it again
 
 
+async def test_conclude_on_a_task_run_keeps_the_summary_without_an_announcement(board):
+    agent = board.add_agent()
+    pauses = scripted_pauses(board, 0)
+    task = await new_task(board, agent)
+    run = await first_run(board, agent, pauses[0], task.id)
+
+    await board.service.conclude(run.session_id, "Resumo da tarefa.")
+
+    assert task_runs(board, task.id)[0].summary == "Resumo da tarefa."
+    assert board.published("agent.run")[-1]["summary"] == "Resumo da tarefa."
+    assert board.announcements(agent) == []
+    pauses[0].release.set()
+    await wait_until(lambda: outcome_of(board, run.id) == "concluded")
+
+
 async def test_second_wakeup_reuses_task_session(board):
     agent = board.add_agent()
     pauses = scripted_pauses(board, 0, 1)

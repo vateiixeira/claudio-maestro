@@ -164,6 +164,7 @@ class Run:
     task_id: int | None
     commented: bool  # the run left a comment on its task
     rewoken: bool  # the run was woken once more because it ended without commenting
+    summary: str | None  # what the agent gave to `concluir`, as written
 
 
 @dataclass(frozen=True)
@@ -790,7 +791,7 @@ def pending_wakeups(conn: sqlite3.Connection, agent_id: int | None = None) -> li
 
 _RUN_COLUMNS = (
     "id, agent_id, session_id, source, routine_id, scheduled_for, started_at, ended_at,"
-    " outcome, reason, task_id, commented, rewoken"
+    " outcome, reason, task_id, commented, rewoken, summary"
 )
 
 
@@ -850,11 +851,16 @@ def update_run(
     outcome: Outcome | _Unset = UNSET,
     reason: str | None | _Unset = UNSET,
     ended_at: int | None | _Unset = UNSET,
+    summary: str | None | _Unset = UNSET,
 ) -> Run:
-    """Change only the fields passed (`None` clears `session_id`, `reason` and `ended_at`)."""
+    """Change only the fields passed (`None` clears `session_id`, `reason`, `ended_at` and
+    `summary`)."""
     values = _changes(
-        ("session_id", "outcome", "reason", "ended_at"),
-        {"session_id": session_id, "outcome": outcome, "reason": reason, "ended_at": ended_at},
+        ("session_id", "outcome", "reason", "ended_at", "summary"),
+        {
+            "session_id": session_id, "outcome": outcome, "reason": reason,
+            "ended_at": ended_at, "summary": summary,
+        },
     )
     if values:
         assignments = ", ".join(f"{key} = ?" for key in values)

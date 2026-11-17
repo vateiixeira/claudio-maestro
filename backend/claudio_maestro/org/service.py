@@ -2373,6 +2373,11 @@ class OrgService:
             return
         with closing(db.connect(self._db_path)) as conn:
             run = store.run_for_session(conn, session_id)
+            if run is not None:
+                with db.transaction(conn):
+                    run = store.update_run(conn, run.id, summary=summary)
+        if run is not None:
+            self._publish_run(run)
         self._add_notice(agent.id, run.id if run else None, "summary", summary)
         if run is not None and run.task_id is not None:
             return  # a task run ends with its turn (`_watch_task_turn`), and its comment is the report
