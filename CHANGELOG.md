@@ -22,6 +22,14 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - A aba Execução mostra modo, conexão e versão numa lista, e o comando de instalação ganhou o botão "Copiar".
 - A conversa principal de um agente mostra cada execução como mensagem dele, com o resultado completo e o passo a passo abrindo no lugar.
 - No menu lateral (e na busca dele), as etiquetas das conversas aparecem todas e com o nome inteiro, quebrando a linha quando não cabem, em vez de cortar o texto ou resumir em "+N".
+- O menu lateral ganhou os filtros "rodando", "aguardando você" e "não lidas" acima dos projetos. Cada conversa mostra o tempo desde a última atividade e uma linha com o que está fazendo, inclusive dentro dos agrupadores. O item "Dashboard" passou a se chamar "Painel".
+- O Início mostra, em três colunas, o que está com você (novidades dos agentes, decisões e conversas na sua vez), o que está em andamento e o que foi entregue hoje. O objetivo sugere os projetos mais recentes e envia com Ctrl+Enter (⌘+Enter no Mac). A lista de tarefas da organização saiu do Início e continua em "Ver tarefas".
+- A Inbox ganhou a vista Novidades, com os avisos dos agentes agrupados por dia, filtro por agente, leitura no lugar e navegação por j/k. Com agentes cadastrados, a Inbox abre em Novidades; o número laranja ao lado dela no menu leva direto às conversas que aguardam você. A lista de conversas virou a vista Conversas, e o cartão de avisos do topo saiu.
+- O Painel mostra o uso da semana e o plano, os números numa faixa, as conversas ativas em linhas com Permitir/Negar, as finalizadas hoje e os projetos com mais arquivos alterados. O gráfico de atividade e a lista de conversas recentes saíram.
+- A tela Conversas ganhou chips de estado ("Em execução", "Sua vez", "Não lidas", "Finalizadas"), com os demais estados em "Mais filtros", e uma tabela com colunas de situação, projeto e atividade.
+- Entregas virou uma linha do tempo única, com chips por projeto, "Copiar esta entrega" em cada uma e "Copiar o dia" respeitando o projeto escolhido. As colunas por projeto saíram.
+- O projeto mostra o caminho ao lado do nome, abas com contagem ("N em aberto", "N com pendências"), filtros em chips e as conversas em "Em execução", "Sua vez" e "Recentes".
+- As linhas de conversa das listas mostram o plano em segmentos, o selo de fechamento e o projeto com a branch em colunas. A bolinha azul de não lida saiu: na Inbox e em Conversas, a conversa não lida aparece com o título em destaque.
 
 ### Corrigido
 
