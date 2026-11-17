@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import AgentDefinition from '../AgentDefinition.vue'
-import type { DefinitionDraft } from '../helpers'
+import { DEFINITION_FIELDS, type DefinitionDraft } from '../helpers'
 import { useOrgStore } from '../../../../stores/org'
 import { jsonResponse, makeAgent, routeFetch } from '../../../../test/factories'
 
@@ -56,11 +56,97 @@ describe('AgentDefinition', () => {
     expect(wrapper.get('[data-test="definition-save"]').attributes('disabled')).toBeDefined()
   })
 
-  it('a ajuda fixa lista os 10 campos do cabeçalho', async () => {
+  it('a ajuda fixa é só a frase do cabeçalho', async () => {
     const { wrapper } = await mountEditor()
-    const keys = wrapper.findAll('[data-test="definition-help"] li').map((li) => li.get('code').text())
-    expect(keys).toEqual(['name', 'description', 'model', 'effort', 'permissionMode', 'disallowedTools', 'skills', 'addDirs', 'worktree', 'maxRunMinutes'])
-    expect(wrapper.get('[data-test="definition-help"]').text()).toContain('bypassPermissions')
+    const help = wrapper.get('[data-test="definition-help"]')
+    expect(help.text()).toBe('Cabeçalho entre as duas linhas ---; o resto é o prompt do agente.')
+    expect(help.findAll('li')).toHaveLength(0)
+  })
+
+  describe('como o agente roda', () => {
+    const HEADER_FILE = '---\nname: Triagem\ndescription: Separa os chamados\nmodel: opus\neffort: high\naddDirs: [/x/angular, /x/pay]\n---\n# Corpo'
+    const mountHeader = () => mountEditor({ 'GET /api/agents/1/definition': () => jsonResponse({ text: HEADER_FILE, hash: 'h1' }) })
+    const field = (w: Awaited<ReturnType<typeof mountEditor>>['wrapper'], key: string) => w.get(`[data-test="definition-field"][data-key="${key}"]`)
+
+    it('lista os dez campos em um dl, na ordem do cabeçalho', async () => {
+      const { wrapper } = await mountHeader()
+      const list = wrapper.get('[data-test="definition-fields"]')
+      expect(list.element.tagName).toBe('DL')
+      expect(wrapper.findAll('[data-test="definition-field"]').map((f) => f.attributes('data-key'))).toEqual(DEFINITION_FIELDS.map((f) => f.key))
+    })
+
+    it('mostra o valor do arquivo ou o padrão', async () => {
+      const { wrapper } = await mountHeader()
+      const value = (key: string) => field(wrapper, key).get('[data-test="definition-field-value"]')
+      expect(value('model').text()).toBe('opus')
+      expect(value('model').attributes('data-default')).toBeUndefined()
+      expect(value('addDirs').text()).toBe('2 pastas: angular, pay')
+      expect(value('permissionMode').text()).toBe('padrão: bypassPermissions')
+      expect(value('worktree').text()).toBe('padrão: false')
+      expect(value('maxRunMinutes').text()).toBe('padrão: 120')
+      expect(value('skills').text()).toBe('nenhuma')
+      expect(value('disallowedTools').text()).toBe('nenhuma')
+      for (const key of ['permissionMode', 'worktree', 'maxRunMinutes', 'skills', 'disallowedTools']) expect(value(key).attributes('data-default')).toBe('true')
+    })
+
+    it('cada campo traz a ajuda no title e no texto acessível', async () => {
+      const { wrapper } = await mountHeader()
+      for (const def of DEFINITION_FIELDS) {
+        const item = field(wrapper, def.key)
+        expect(item.get('dt').attributes('title')).toBe(def.help)
+        expect(item.text()).toContain(def.help)
+      }
+    })
+
+    it('digitar no editor não muda os valores mostrados', async () => {
+      const { wrapper } = await mountHeader()
+      await area(wrapper).setValue('---\nname: X\nmodel: haiku\n---\n')
+      expect(field(wrapper, 'model').get('[data-test="definition-field-value"]').text()).toBe('opus')
+    })
+
+    it('com erro na definição, não mostra os campos e avisa que o agente não roda assim', async () => {
+      useOrgStore(pinia).agents = [makeAgent({ id: 1, definition_error: 'O campo `effort` precisa ser um de: low, medium.' })]
+      const { wrapper } = await mountHeader()
+      expect(wrapper.find('[data-test="definition-fields"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="definition-field"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="definition-fields-error"]').text()).toBe('O cabeçalho tem erro; o agente não roda com estes valores até ser corrigido.')
+    })
+
+    it('sem erro, não mostra a nota de erro', async () => {
+      const { wrapper } = await mountHeader()
+      expect(wrapper.find('[data-test="definition-fields-error"]').exists()).toBe(false)
+    })
+
+    it('arquivo sem cabeçalho não mostra os campos', async () => {
+      const { wrapper } = await mountEditor({ 'GET /api/agents/1/definition': () => jsonResponse({ text: 'só texto', hash: 'h1' }) })
+      expect(wrapper.find('[data-test="definition-fields"]').exists()).toBe(false)
+    })
+  })
+
+  describe('situação', () => {
+    it('sem erro e sem rascunho: cabeçalho válido', async () => {
+      const { wrapper } = await mountEditor()
+      expect(wrapper.get('[data-test="definition-status"]').text()).toBe('Cabeçalho válido · sem alterações')
+    })
+
+    it('sem o agente na store, não afirma que o cabeçalho é válido', async () => {
+      useOrgStore(pinia).agents = []
+      const { wrapper } = await mountEditor({ 'GET /api/agents': () => jsonResponse([]) })
+      expect(wrapper.find('[data-test="definition-status"]').exists()).toBe(false)
+    })
+
+    it('depois de digitar: alterações não salvas', async () => {
+      const { wrapper } = await mountEditor()
+      await area(wrapper).setValue('mudou')
+      expect(wrapper.get('[data-test="definition-status"]').text()).toBe('Alterações não salvas')
+    })
+
+    it('com erro na definição, a situação não aparece', async () => {
+      useOrgStore(pinia).agents = [makeAgent({ id: 1, definition_error: 'Falta o campo name.' })]
+      const { wrapper } = await mountEditor()
+      expect(wrapper.find('[data-test="definition-status"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="definition-current-error"]').exists()).toBe(true)
+    })
   })
 
   it('salvar envia o texto com o hash e recarrega os agentes', async () => {
