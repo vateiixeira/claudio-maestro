@@ -19,6 +19,15 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
 })
 
+describe('cabeçalho e lista do grupo', () => {
+  it('título em caixa alta, contagem de caminhos distintos e lista sem recuo', () => {
+    const w = show()
+    expect(w.get('[data-test="scm-group-title"]').classes()).toContain('uppercase')
+    expect(w.get('[data-test="scm-group-count"]').text()).toBe('1')
+    expect(w.get('ul').classes()).not.toContain('pl-4')
+  })
+})
+
 describe('diff em modal no grupo de arquivos', () => {
   it.each([['staged', 'staged', 'Preparado'], ['unstaged', 'unstaged', 'Alterações'], ['untracked', 'unstaged', 'Alterações'], ['conflict', 'combined', 'Conflito']] as const)('abre %s no escopo correto fora da lista', async (status, scope, label) => {
     const w = show(status)

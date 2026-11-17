@@ -50,9 +50,9 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
 <template>
   <div data-test="scm-group" :data-group="group" class="flex flex-col">
     <div class="group flex h-6 items-center gap-1.5 rounded pr-1 hover:bg-elevated focus-within:bg-elevated">
-      <button ref="groupToggle" type="button" data-test="scm-group-toggle" :aria-expanded="open" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left text-[0.8125rem] font-medium text-fg-muted" @click="open = !open">
+      <button ref="groupToggle" type="button" data-test="scm-group-toggle" :aria-expanded="open" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted" @click="open = !open">
         <IconChevron :open="open" :size="12" class="text-fg-subtle" />
-        <span data-test="scm-group-title"><slot name="title">{{ title }}</slot></span>
+        <span data-test="scm-group-title" class="uppercase"><slot name="title">{{ title }}</slot></span>
       </button>
       <span v-if="!readOnly" class="flex shrink-0 items-center w-0 overflow-hidden opacity-0 group-hover:w-auto group-hover:opacity-100 group-focus-within:w-auto group-focus-within:opacity-100">
         <!-- A provided slot may render nothing (no actions at all); only an absent one gets the defaults. -->
@@ -72,7 +72,7 @@ const iconButton = 'flex size-[22px] items-center justify-center rounded text-fg
       <span data-test="scm-group-count" class="min-w-[18px] rounded-full bg-card px-1.5 text-center font-mono text-[0.6875rem] text-fg-muted">{{ paths.length }}</span>
     </div>
     <slot v-if="open" name="note" />
-    <ul v-if="open" class="m-0 flex list-none flex-col p-0 pl-4">
+    <ul v-if="open" class="m-0 flex list-none flex-col p-0">
       <li v-for="f in files" :key="keyOf(f)" class="flex flex-col">
         <ScmFileRow
           :file="f"

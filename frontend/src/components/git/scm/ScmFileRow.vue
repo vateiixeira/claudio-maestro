@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fileStatusText } from '../../../git/fileStatus'
 import type { RepoFile } from '../../../types/api'
 
 const props = defineProps<{ file: RepoFile; open: boolean; readOnly: boolean; disabled: boolean }>()
@@ -8,6 +9,10 @@ const name = () => props.file.path.slice(props.file.path.lastIndexOf('/') + 1)
 const folder = () => (props.file.path.includes('/') ? props.file.path.slice(0, props.file.path.lastIndexOf('/')) : '')
 const letter = () => (props.file.status === 'conflict' ? '!' : (props.file.kind ?? 'M'))
 const LETTER_CLASS: Record<string, string> = { M: 'text-fg-muted', A: 'text-diff-add-fg', D: 'text-diff-del-fg', R: 'text-info-soft', '!': 'text-secondary' }
+const STATUS_CLASS: Record<string, string> = {
+  novo: 'text-diff-add-fg', apagado: 'text-diff-del-fg', renomeado: 'text-info-soft', 'em conflito': 'text-secondary',
+  modificado: 'text-fg-subtle group-hover:text-fg-muted group-focus-within:text-fg-muted',
+}
 const iconButton = 'flex size-8 sm:size-6 items-center justify-center rounded text-fg-muted hover:bg-card hover:text-fg disabled:opacity-50'
 </script>
 
@@ -15,12 +20,13 @@ const iconButton = 'flex size-8 sm:size-6 items-center justify-center rounded te
   <div
     data-test="scm-file"
     :data-path="file.path"
-    class="group flex h-8 min-w-0 sm:h-6 items-center gap-1.5 rounded pr-1 hover:bg-elevated focus-within:bg-elevated"
+    class="group flex h-8 min-w-0 sm:h-7 items-center gap-2 rounded pr-1 hover:bg-elevated focus-within:bg-elevated"
     :class="{ 'bg-card': open }"
   >
-    <button type="button" data-test="file-open" aria-haspopup="dialog" :title="file.path" class="flex min-w-0 grow items-center gap-1.5 pl-1 text-left" @click="emit('toggle', $event.currentTarget as HTMLElement)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0 text-fg-subtle"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-      <span class="min-w-0 truncate"><span class="text-[0.8125rem] text-fg">{{ name() }}</span><span v-if="folder()" class="ml-2 font-mono text-[0.6875rem] text-fg-subtle">{{ folder() }}</span></span>
+    <span data-test="file-letter" class="w-3 shrink-0 ml-1 text-center font-mono text-xs font-semibold" :class="LETTER_CLASS[letter()]" :title="file.status === 'conflict' ? 'Em conflito' : undefined">{{ letter() }}</span>
+    <button type="button" data-test="file-open" aria-haspopup="dialog" :title="file.path" class="flex min-w-0 grow items-center gap-2 pl-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="emit('toggle', $event.currentTarget as HTMLElement)">
+      <span class="shrink-0 whitespace-nowrap text-[0.8125rem] text-fg">{{ name() }}</span>
+      <span v-if="folder()" class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle">{{ folder() }}</span>
     </button>
     <span class="flex shrink-0 items-center opacity-100 sm:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
       <button type="button" data-test="file-editor" :class="iconButton" aria-label="Abrir no editor" title="Abrir no editor" @click="emit('editor')">
@@ -41,6 +47,6 @@ const iconButton = 'flex size-8 sm:size-6 items-center justify-center rounded te
         </template>
       </template>
     </span>
-    <span data-test="file-letter" class="w-3 shrink-0 text-center font-mono text-xs font-semibold" :class="LETTER_CLASS[letter()]" :title="file.status === 'conflict' ? 'Em conflito' : undefined">{{ letter() }}</span>
+    <span data-test="file-status" class="w-20 shrink-0 pr-1 text-right text-xs" :class="STATUS_CLASS[fileStatusText(file)]">{{ fileStatusText(file) }}</span>
   </div>
 </template>
