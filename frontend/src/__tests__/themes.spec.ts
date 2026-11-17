@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { LABEL_TINT, mixHex } from '../labelColor'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const srcDir = resolve(here, '..')
@@ -122,6 +123,14 @@ describe.each(NEW_IDS)('contraste de %s', (id) => {
   })
 })
 
+describe.each(IDS)('etiqueta tingida em %s', (id) => {
+  it('o texto em fg passa de 4,5:1 sobre a etiqueta mais clara possível (branco a 24% sobre elevated)', () => {
+    const t = themes.get(id)!
+    const bg = mixHex('#ffffff', t.get('elevated')!, LABEL_TINT)
+    expect(contrast(channels(t.get('fg')!), channels(bg))).toBeGreaterThanOrEqual(4.5)
+  })
+})
+
 describe('nenhuma cor fixa escapa do tema', () => {
   it('style.css só tem cor literal dentro do @theme', () => {
     const rest = style.replace(/@theme\s*\{[^}]*\}/, '').replace(/\/\*[\s\S]*?\*\//g, '')
@@ -130,7 +139,7 @@ describe('nenhuma cor fixa escapa do tema', () => {
 
   it('nenhum componente ou módulo usa hex ou rgb() literal', () => {
     // NewProjectView.vue: cores de projeto escolhidas pelo usuário. theme.ts: amostras dos cartões de tema.
-    // labelColor.ts: cores de etiqueta escolhidas pelo usuário (texto preto/branco e cinza de reserva).
+    // labelColor.ts: cores de etiqueta escolhidas pelo usuário (paleta fixa e cinza de reserva).
     const allowed = ['NewProjectView.vue', 'theme.ts', 'labelColor.ts']
     const files = (readdirSync(srcDir, { recursive: true }) as string[]).filter(
       (f) =>

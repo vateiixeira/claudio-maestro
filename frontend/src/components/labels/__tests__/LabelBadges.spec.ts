@@ -21,11 +21,13 @@ beforeEach(() => {
 const mountBadges = (props: Record<string, unknown>) => mount(LabelBadges, { props, global: { plugins: [pinia] } })
 
 describe('badges de etiquetas', () => {
-  it('mostra o slug de cada etiqueta, com a cor e o texto legível', () => {
+  it('mostra o slug de cada etiqueta, com fundo tingido, ponto de cor e texto legível', () => {
     const w = mountBadges({ ids: [1, 2] })
     const badges = w.findAll('[data-test="label-badge"]')
     expect(badges.map((b) => b.text())).toEqual(['urgente', 'revisao'])
-    expect(badges[0].attributes('style')).toContain('background-color: rgb(239, 68, 68)')
+    expect(badges[0].attributes('style')).toContain('color-mix(in srgb, #ef4444 24%, var(--color-elevated))')
+    expect(badges[0].attributes('style')).toContain('--label-dot: #ef4444')
+    expect(badges[0].find('[data-test="label-dot"]').exists()).toBe(true)
     expect(badges[1].attributes('data-slug')).toBe('revisao')
     expect(badges[0].attributes('title')).toBe('urgente')
   })

@@ -11,25 +11,29 @@ function normalize(hex: string): string | null {
   return null
 }
 
-function luminance(hex: string): number {
-  const channel = (start: number) => {
-    const c = parseInt(hex.slice(start, start + 2), 16) / 255
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+/** Share of the label color in the badge background, over the surface. */
+export const LABEL_TINT = 24
+
+/** The fixed colors offered for a new label, in the order they show. */
+export const LABEL_PALETTE: readonly string[] = ['#ff6188', '#fc9867', '#ffd866', '#a9dc76', '#78dce8', '#ab9df2', '#9e9d9d']
+
+/** `percent` of `color` over `base`, both `#rrggbb` (sRGB, like CSS `color-mix`). */
+export function mixHex(color: string, base: string, percent: number): string {
+  const amount = percent / 100
+  const channel = (hex: string, start: number) => parseInt(hex.slice(start, start + 2), 16)
+  const mixed = [1, 3, 5].map((start) => {
+    const value = Math.round(channel(color, start) * amount + channel(base, start) * (1 - amount))
+    return value.toString(16).padStart(2, '0')
+  })
+  return `#${mixed.join('')}`
+}
+
+/** Tinted fill with the label's color; the dot carries the full color. The text stays in the theme's `fg`. */
+export function labelStyle(hex: string): { backgroundColor: string; color: string; '--label-dot': string } {
+  const color = normalize(hex) ?? FALLBACK
+  return {
+    backgroundColor: `color-mix(in srgb, ${color} ${LABEL_TINT}%, var(--color-elevated))`,
+    color: 'var(--color-fg)',
+    '--label-dot': color,
   }
-  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
-}
-
-/** Black or white, whichever reads better on `hex` (WCAG contrast ratio). */
-export function contrastText(hex: string): '#000000' | '#ffffff' {
-  const color = normalize(hex) ?? FALLBACK
-  const l = luminance(color)
-  const withWhite = 1.05 / (l + 0.05)
-  const withBlack = (l + 0.05) / 0.05
-  return withWhite >= withBlack ? '#ffffff' : '#000000'
-}
-
-/** Solid fill in the label's color: the contrast holds in every theme. */
-export function labelStyle(hex: string): { backgroundColor: string; color: string } {
-  const color = normalize(hex) ?? FALLBACK
-  return { backgroundColor: color, color: contrastText(color) }
 }
