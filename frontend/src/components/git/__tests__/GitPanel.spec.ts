@@ -32,6 +32,48 @@ it('filtra por nome e pendências, mantendo erros visíveis e opção de limpar'
   expect(wrapper.findAll('[data-test="scm-repo"]')).toHaveLength(3)
 })
 
+it('o filtro de pendências é um chip que liga e desliga, sem o botão Todos', async () => {
+  const wrapper = await setup()
+  expect(wrapper.find('[data-test="git-all-filter"]').exists()).toBe(false)
+  const chip = wrapper.get('[data-test="git-pending-filter"]')
+  expect(chip.text()).toBe('Só com pendências')
+  expect(chip.attributes('aria-pressed')).toBe('false')
+  await chip.trigger('click')
+  expect(chip.attributes('aria-pressed')).toBe('true')
+  expect(wrapper.findAll('[data-test="scm-repo"]').map((r) => r.attributes('data-repo'))).toEqual(['/p/api', '/p/error'])
+  await chip.trigger('click')
+  expect(chip.attributes('aria-pressed')).toBe('false')
+  expect(wrapper.findAll('[data-test="scm-repo"]')).toHaveLength(3)
+})
+
+it('a contagem mostra quantos repositórios batem, de forma anunciável', async () => {
+  const wrapper = await setup()
+  const count = wrapper.get('[data-test="git-match-count"]')
+  expect(count.text()).toBe('3 de 3')
+  expect(count.attributes('aria-live')).toBe('polite')
+  await wrapper.get('[data-test="git-repo-search"]').setValue('web')
+  expect(count.text()).toBe('1 de 3')
+})
+
+it('a busca fica dentro de um label com a lupa e mantém nome acessível e placeholder', async () => {
+  const wrapper = await setup()
+  const input = wrapper.get('[data-test="git-repo-search"]')
+  expect(input.attributes('aria-label')).toBe('Buscar repositórios ou branches')
+  expect(input.attributes('placeholder')).toBe('Buscar repositório ou branch')
+  const label = input.element.closest('label')
+  expect(label).not.toBeNull()
+  expect(label?.querySelector('svg')).not.toBeNull()
+})
+
+it('Limpar filtros desliga o chip e limpa a busca', async () => {
+  const wrapper = await setup()
+  await wrapper.get('[data-test="git-pending-filter"]').trigger('click')
+  await wrapper.get('[data-test="git-repo-search"]').setValue('zzz')
+  await wrapper.get('[data-test="git-clear-filters"]').trigger('click')
+  expect(wrapper.get('[data-test="git-pending-filter"]').attributes('aria-pressed')).toBe('false')
+  expect((wrapper.get('[data-test="git-repo-search"]').element as HTMLInputElement).value).toBe('')
+})
+
 it('abre diretamente o histórico do repositório, sem repetir a lista de alterações', async () => {
   const wrapper = await setup()
   await wrapper.get('[data-repo="/p/api"] [data-test="repo-history"]').trigger('click')

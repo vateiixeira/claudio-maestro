@@ -4,7 +4,9 @@ import ScmSection from './scm/ScmSection.vue'
 import CommitsSection from './commits/CommitsSection.vue'
 import { useGitDetailsStore } from '../../stores/gitDetails'
 import { useProjectsStore } from '../../stores/projects'
+import FilterChip from '../ui/FilterChip.vue'
 import { repoLabel } from '../../git/repoLabel'
+import { isPending } from '../../git/pending'
 
 // `focusPath`: a folder (a worktree) whose repositories the panel starts on; "Ver todos" widens it to the project.
 const props = defineProps<{ projectId: number; focusPath?: string | null }>()
@@ -29,8 +31,7 @@ const repos = computed(() => (focusing.value ? focused.value : allRepos.value))
 const matching = computed(() => {
   const text = query.value.trim().toLocaleLowerCase()
   return repos.value.filter((repo) => {
-    const pending = repo.error || repo.files.length || repo.changed.staged + repo.changed.unstaged + repo.changed.untracked > 0 || repo.state?.merging || (repo.ahead ?? 0) > 0 || (repo.behind ?? 0) > 0
-    return (!pendingOnly.value || pending) && (!text || [repoLabel(repo, projects.byId(props.projectId)?.name), repo.path, repo.branch ?? ''].some((value) => value.toLocaleLowerCase().includes(text)))
+    return (!pendingOnly.value || isPending(repo)) && (!text || [repoLabel(repo, projects.byId(props.projectId)?.name), repo.path, repo.branch ?? ''].some((value) => value.toLocaleLowerCase().includes(text)))
   })
 })
 const historyAvailable = computed(() => matching.value.some((repo) => !repo.error))
@@ -66,18 +67,19 @@ watch(() => props.projectId, () => {
 </script>
 
 <template>
-  <div data-test="git-panel" class="flex min-w-0 flex-col gap-3">
+  <div data-test="git-panel" class="@container flex min-w-0 flex-col gap-3">
     <div class="flex flex-wrap items-center gap-2">
       <div role="group" aria-label="Visualização do Git" class="inline-flex rounded-md border border-line p-0.5">
-        <button type="button" data-test="git-view-changes" :aria-pressed="view === 'changes'" class="rounded px-3 py-1.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-primary" :class="view === 'changes' ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg'" @click="view = 'changes'">Alterações</button>
-        <button type="button" data-test="git-view-commits" :aria-pressed="view === 'commits'" class="rounded px-3 py-1.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-primary" :class="view === 'commits' ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg'" @click="view = 'commits'; historyPath = null">Commits</button>
+        <button type="button" data-test="git-view-changes" :aria-pressed="view === 'changes'" class="rounded px-3 py-1.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" :class="view === 'changes' ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg'" @click="view = 'changes'">Alterações</button>
+        <button type="button" data-test="git-view-commits" :aria-pressed="view === 'commits'" class="rounded px-3 py-1.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" :class="view === 'commits' ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg'" @click="view = 'commits'; historyPath = null">Commits</button>
       </div>
-      <input v-model="query" type="search" name="git-repository-search" autocomplete="off" data-test="git-repo-search" aria-label="Buscar repositórios ou branches" placeholder="Buscar repositório ou branch" class="h-8 min-w-40 flex-1 rounded-md border border-line-strong bg-panel px-2.5 text-xs text-fg placeholder:text-fg-subtle focus-visible:outline-2 focus-visible:outline-primary sm:max-w-xs">
-      <div role="group" aria-label="Filtrar repositórios" class="inline-flex items-center gap-1">
-        <button type="button" data-test="git-all-filter" :aria-pressed="!pendingOnly" class="rounded px-2 py-1.5 text-xs focus-visible:outline-2 focus-visible:outline-primary" :class="!pendingOnly ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg'" @click="pendingOnly = false">Todos</button>
-        <button type="button" data-test="git-pending-filter" :aria-pressed="pendingOnly" class="rounded px-2 py-1.5 text-xs focus-visible:outline-2 focus-visible:outline-primary" :class="pendingOnly ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg'" @click="pendingOnly = true">Com pendências</button>
-      </div>
-      <span v-if="details.isLoaded(projectId)" class="text-xs text-fg-subtle" aria-live="polite">{{ matching.length }} de {{ repos.length }}</span>
+      <span class="flex-1" />
+      <span v-if="details.isLoaded(projectId)" data-test="git-match-count" class="font-mono text-xs text-fg-muted tabular-nums" aria-live="polite">{{ matching.length }} de {{ repos.length }}</span>
+      <label class="flex h-8 min-w-40 flex-[1_1_12rem] items-center gap-2 rounded-lg border border-line-strong px-2.5 text-fg-muted focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary @3xl:w-60 @3xl:flex-none">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+        <input v-model="query" type="search" name="git-repository-search" autocomplete="off" data-test="git-repo-search" aria-label="Buscar repositórios ou branches" placeholder="Buscar repositório ou branch" class="min-w-0 flex-1 border-0 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-fg-muted">
+      </label>
+      <FilterChip data-test="git-pending-filter" label="Só com pendências" :pressed="pendingOnly" @toggle="pendingOnly = !pendingOnly" />
     </div>
     <div v-if="focusing" data-test="git-focus" class="flex flex-wrap items-center gap-2 text-xs">
       <span class="min-w-0 text-fg-muted">Só a worktree da conversa</span>
