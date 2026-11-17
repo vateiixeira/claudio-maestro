@@ -20,9 +20,9 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-async function mountWith(repos: RepoDetails[]) {
-  vi.stubGlobal('fetch', routeFetch({ [DETAILS]: () => jsonResponse({ repos, limit_reached: false }) }))
-  const wrapper = mount(ScmSection, { props: { projectId: 1 }, global: { plugins: [pinia] } })
+async function mountWith(repos: RepoDetails[], extra: Record<string, () => Response | Promise<Response>> = {}) {
+  vi.stubGlobal('fetch', routeFetch({ [DETAILS]: () => jsonResponse({ repos, limit_reached: false }), ...extra }))
+  const wrapper = mount(ScmSection, { props: { projectId: 1 }, global: { plugins: [pinia] }, attachTo: document.body })
   await flushPromises()
   return wrapper
 }
@@ -108,6 +108,47 @@ describe('seção Alterações', () => {
       expect(wrapper.findAll('[data-test="scm-summary-part"]').map((p) => p.text())).toEqual(['Tudo em dia'])
     })
 
+    describe('sem dado, nada de "Tudo em dia"', () => {
+      it('a releitura que falhou depois de carregado', async () => {
+        let fail = false
+        vi.stubGlobal('fetch', routeFetch({ [DETAILS]: () => (fail ? jsonResponse({ detail: 'O git falhou.' }, 500) : jsonResponse({ repos: [clean('/p/a'), clean('/p/b')], limit_reached: false })) }))
+        const wrapper = mount(ScmSection, { props: { projectId: 1 }, global: { plugins: [pinia] } })
+        await flushPromises()
+        expect(wrapper.get('[data-test="scm-summary"]').text()).toBe('Tudo em dia')
+        fail = true
+        await wrapper.get('[data-test="scm-refresh"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Não foi possível atualizar')
+        expect(wrapper.find('[data-test="scm-summary"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Tudo em dia')
+      })
+
+      it('a busca sem resultado', async () => {
+        vi.stubGlobal('fetch', routeFetch({ [DETAILS]: () => jsonResponse({ repos: [clean('/p/a'), clean('/p/b')], limit_reached: false }) }))
+        const wrapper = mount(ScmSection, { props: { projectId: 1, repoPaths: ['/p/nenhum'] }, global: { plugins: [pinia] } })
+        await flushPromises()
+        expect(wrapper.find('[data-test="scm-summary"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Tudo em dia')
+      })
+
+      it('o projeto sem repositórios', async () => {
+        const wrapper = await mountWith([])
+        expect(wrapper.find('[data-test="scm-summary"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Tudo em dia')
+      })
+
+      it('um merge sem alteração restante: pendente, sem outra parte, nada aparece', async () => {
+        const wrapper = await mountWith([clean('/p/a', { state: makeRepoState({ merging: true }) }), clean('/p/b')])
+        expect(wrapper.find('[data-test="scm-summary"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Tudo em dia')
+      })
+
+      it('com um merge e outras partes, só as partes aparecem', async () => {
+        const wrapper = await mountWith([clean('/p/a', { state: makeRepoState({ merging: true }) }), clean('/p/b', { ahead: 2 })])
+        expect(wrapper.findAll('[data-test="scm-summary-part"]').map((p) => p.attributes('data-part'))).toEqual(['ahead'])
+      })
+    })
+
     it('botões com texto', async () => {
       const wrapper = await mountWith([clean('/p/a')])
       expect(wrapper.get('[data-test="scm-fetch-all"]').text()).toBe('Buscar em todos')
@@ -164,6 +205,29 @@ describe('seção Alterações', () => {
       expect(wrapper.findAll('[data-test="scm-repo-group"]').map((g) => g.attributes('data-group'))).toEqual(['pending'])
       await wrapper.setProps({ repoPaths: ['/p/a', '/p/b'] })
       expect(wrapper.find('[data-test="scm-repo-group"]').exists()).toBe(false)
+    })
+  })
+
+  describe('foco depois de Push e Pull', () => {
+    const toggle = (path: string) => document.querySelector(`[data-repo="${path}"] [data-test="scm-repo-toggle"]`)
+
+    it.each([
+      ['repo-push', 'push', { ahead: 2 }],
+      ['repo-pull', 'pull', { behind: 2 }],
+    ])('%s com três repositórios: a linha muda de grupo e o foco vai para o nome do mesmo repositório', async (test, kind, state) => {
+      const wrapper = await mountWith([clean('/p/api', { upstream: 'origin/main', ...state }), dirty('/p/b'), clean('/p/c')], {
+        [`POST /api/projects/1/git/${kind}`]: () => jsonResponse({ repo: clean('/p/api', { upstream: 'origin/main', ahead: 0, behind: 0 }), conflicts: false }),
+      })
+      expect(wrapper.get('[data-group="pending"]').find('[data-repo="/p/api"]').exists()).toBe(true)
+      const before = toggle('/p/api')
+      const button = wrapper.get(`[data-repo="/p/api"] [data-test="${test}"]`)
+      ;(button.element as HTMLElement).focus()
+      expect(document.activeElement).toBe(button.element)
+      await button.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-group="clear"]').find('[data-repo="/p/api"]').exists()).toBe(true)
+      expect(toggle('/p/api')).not.toBe(before)
+      expect(document.activeElement).toBe(toggle('/p/api'))
     })
   })
 

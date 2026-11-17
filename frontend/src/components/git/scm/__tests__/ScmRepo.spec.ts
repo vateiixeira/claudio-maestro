@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h, nextTick } from 'vue'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import ScmRepo from '../ScmRepo.vue'
 import { useGitDetailsStore } from '../../../../stores/gitDetails'
 import { useProjectsStore } from '../../../../stores/projects'
 import { useSessionsStore } from '../../../../stores/sessions'
-import { jsonResponse, makeProject, makeRepoCommit, makeRepoDetails, makeRepoState, makeSession, routeFetch } from '../../../../test/factories'
-import type { RepoDetails, RepoFile } from '../../../../types/api'
+import { jsonResponse, makeLogCommit, makeProject, makeRepoDetails, makeRepoLog, makeRepoState, makeSession, routeFetch } from '../../../../test/factories'
+import { useGitLogStore } from '../../../../stores/gitLog'
+import type { LogCommit, RepoDetails, RepoFile } from '../../../../types/api'
 
 enableAutoUnmount(afterEach)
 const PATH = '/home/vi/dev/loja/api'
@@ -575,51 +577,363 @@ describe('caixa de commit', () => {
 })
 
 describe('Para enviar', () => {
-  const unpushed = (n: number) => Array.from({ length: n }, (_, i) => makeRepoCommit({ hash: `a${i}00000`.slice(0, 7), subject: `Mudança ${i}`, pushed: false }))
+  const HEAD = 'abc1234abc1234abc1234abc1234abc1234abc12'
+  const UPSTREAM = 'def5678def5678def5678def5678def5678def56'
+  const outgoingCommits = (n: number, from = 0): LogCommit[] => Array.from({ length: n }, (_, i) => makeLogCommit({
+    full_hash: `${(from + i).toString(16).padStart(2, '0')}${'0'.repeat(38)}`, subject: `Mudança ${from + i}`, pushed: false,
+  }))
   const base = { path: '/p/loja', upstream: 'origin/main' }
 
-  it('lista os commits que o Push leva, com o total', () => {
-    const commits = [...unpushed(2), makeRepoCommit({ hash: 'f000000', subject: 'Já no remoto', pushed: true })]
-    const { wrapper } = mountRepo(makeRepoDetails({ ...base, ahead: 2, commits }))
+  /** The details endpoint sends no commits (`include_commits=False`): the list comes from the history API. */
+  function logFetch(options: { outgoing?: () => Response | Promise<Response>; head?: () => string } = {}) {
+    return vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method && init.method !== 'GET') return jsonResponse({ detail: 'Sem resposta falsa' }, 599)
+      const query = new URL(url, 'http://localhost').searchParams
+      const head = options.head?.() ?? HEAD
+      if (query.get('direction') === 'outgoing') return options.outgoing ? options.outgoing() : jsonResponse(makeRepoLog({ direction: 'outgoing', head_sha: head, upstream_sha: UPSTREAM, commits: [], outgoing_count: 0 }))
+      return jsonResponse(makeRepoLog({ head_sha: head, upstream_sha: UPSTREAM, commits: [], outgoing_count: 0 }))
+    })
+  }
+  function mountOutgoing(repo: RepoDetails, fetchMock = logFetch(), startOpen = true) {
+    useGitDetailsStore(pinia).byProject[1] = { repos: [repo], limit_reached: false }
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ScmRepo, { props: { projectId: 1, repo, collapseAll: 0, startOpen }, global: { plugins: [pinia] }, attachTo: document.body })
+    return { wrapper, fetchMock }
+  }
+  const outgoingCalls = (fetchMock: ReturnType<typeof logFetch>) => fetchMock.mock.calls.filter((c) => String(c[0]).includes('direction=outgoing'))
+  const respondWith = (commits: LogCommit[], total: number) => () => jsonResponse(makeRepoLog({ direction: 'outgoing', head_sha: HEAD, upstream_sha: UPSTREAM, commits, outgoing_count: total }))
+
+  it('lista os commits que o Push leva, vindos do histórico, com o total', async () => {
+    const { wrapper, fetchMock } = mountOutgoing(makeRepoDetails({ ...base, ahead: 2 }), logFetch({ outgoing: respondWith(outgoingCommits(2), 2) }))
+    await flushPromises()
     const section = wrapper.get('[data-test="scm-outgoing"]')
     expect(section.text()).toContain('Para enviar')
     expect(section.text()).toContain('o que o Push leva para o remoto')
     expect(wrapper.get('[data-test="scm-outgoing-count"]').text()).toBe('2')
     const rows = wrapper.findAll('[data-test="scm-outgoing-commit"]')
     expect(rows).toHaveLength(2)
-    expect(rows[0].text()).toContain('a000000')
+    expect(rows[0].text()).toContain('0000000')
     expect(rows[0].text()).toContain('Mudança 0')
     expect(rows[1].text()).toContain('Mudança 1')
     expect(wrapper.find('[data-test="scm-outgoing-more"]').exists()).toBe(false)
+    expect(outgoingCalls(fetchMock)).toHaveLength(1)
   })
 
-  it('com mais commits do que a lista, mostra quantos faltam e abre o histórico', async () => {
-    const { wrapper } = mountRepo(makeRepoDetails({ ...base, ahead: 12, commits: unpushed(10) }))
-    expect(wrapper.get('[data-test="scm-outgoing-count"]').text()).toBe('12')
+  it('não usa os commits do endpoint de detalhes', async () => {
+    const stale = [{ hash: 'f000000', full_hash: 'f'.repeat(40), subject: 'Do detalhe', author: 'x', date: '2026-09-30T12:00:00-03:00', pushed: false }]
+    const { wrapper } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1, commits: stale }), logFetch({ outgoing: respondWith(outgoingCommits(1), 1) }))
+    await flushPromises()
+    expect(wrapper.get('[data-test="scm-outgoing"]').text()).not.toContain('Do detalhe')
+    expect(wrapper.get('[data-test="scm-outgoing-commit"]').text()).toContain('Mudança 0')
+  })
+
+  it('mostra no máximo 10 commits e diz quantos faltam, abrindo o histórico', async () => {
+    const { wrapper } = mountOutgoing(makeRepoDetails({ ...base, ahead: 42 }), logFetch({ outgoing: respondWith(outgoingCommits(30), 42) }))
+    await flushPromises()
+    expect(wrapper.get('[data-test="scm-outgoing-count"]').text()).toBe('42')
     expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(10)
     const more = wrapper.get('[data-test="scm-outgoing-more"]')
-    expect(more.text()).toBe('e mais 2 no histórico')
+    expect(more.text()).toBe('e mais 32 no histórico')
     await more.trigger('click')
     expect(wrapper.emitted('history')).toHaveLength(1)
   })
 
-  it('não aparece sem nada a enviar, sem upstream ou com o HEAD solto', () => {
-    expect(mountRepo(makeRepoDetails({ ...base, ahead: 0, commits: unpushed(2) })).wrapper.find('[data-test="scm-outgoing"]').exists()).toBe(false)
-    expect(mountRepo(makeRepoDetails({ path: '/p/loja', upstream: null, ahead: 3, commits: unpushed(3) })).wrapper.find('[data-test="scm-outgoing"]').exists()).toBe(false)
-    expect(mountRepo(makeRepoDetails({ ...base, upstream: null, detached: true, branch: null, head: 'abc1234', ahead: 2, commits: unpushed(2) })).wrapper.find('[data-test="scm-outgoing"]').exists()).toBe(false)
+  it('não carrega nem aparece sem nada a enviar, sem upstream, com o HEAD solto ou só leitura', async () => {
+    const cases: RepoDetails[] = [
+      makeRepoDetails({ ...base, ahead: 0 }),
+      makeRepoDetails({ path: '/p/loja', upstream: null, ahead: 3 }),
+      makeRepoDetails({ ...base, upstream: null, detached: true, branch: null, head: 'abc1234', ahead: 2 }),
+      makeRepoDetails({ ...base, ahead: 2, state: makeRepoState({ read_only: 'Repositório em modo só leitura.' }) }),
+    ]
+    for (const repo of cases) {
+      const { wrapper, fetchMock } = mountOutgoing(repo)
+      await flushPromises()
+      expect(wrapper.find('[data-test="scm-outgoing"]').exists()).toBe(false)
+      expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('/git/log'))).toHaveLength(0)
+      wrapper.unmount()
+    }
   })
 
-  it('commits com pushed nulo não quebram: o total vem do ahead', () => {
-    const commits = Array.from({ length: 3 }, (_, i) => makeRepoCommit({ subject: `C${i}`, pushed: null }))
-    const { wrapper } = mountRepo(makeRepoDetails({ ...base, ahead: 3, commits }))
+  it('com o corpo fechado não pede nada, e abre carregando', async () => {
+    const { wrapper, fetchMock } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1 }), logFetch({ outgoing: respondWith(outgoingCommits(1), 1) }), false)
+    await flushPromises()
+    expect(fetchMock).not.toHaveBeenCalled()
+    await wrapper.get('[data-test="scm-repo-toggle"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(1)
+  })
+
+  it('mostra Carregando… enquanto a lista não chegou', async () => {
+    let release: (r: Response) => void = () => {}
+    const { wrapper } = mountOutgoing(makeRepoDetails({ ...base, ahead: 3 }), logFetch({ outgoing: () => new Promise<Response>((resolve) => { release = resolve }) }))
+    await flushPromises()
+    const loading = wrapper.get('[data-test="scm-outgoing-loading"]')
+    expect(loading.text()).toBe('Carregando…')
+    expect(loading.classes()).toContain('text-fg-muted')
     expect(wrapper.get('[data-test="scm-outgoing-count"]').text()).toBe('3')
-    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(0)
-    expect(wrapper.get('[data-test="scm-outgoing-more"]').text()).toBe('e mais 3 no histórico')
+    release(respondWith(outgoingCommits(3), 3)())
+    await flushPromises()
+    expect(wrapper.find('[data-test="scm-outgoing-loading"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(3)
   })
 
-  it('fica junto dos arquivos, depois dos grupos', () => {
-    const { wrapper } = mountRepo(makeRepoDetails({ ...base, ahead: 1, commits: unpushed(1), files: [file('a.ts', 'unstaged')] }))
+  it('com falha mostra o erro e Tentar novamente carrega de novo', async () => {
+    let fail = true
+    const { wrapper, fetchMock } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1 }), logFetch({
+      outgoing: () => (fail ? jsonResponse({ detail: 'Não foi possível consultar o Git.' }, 502) : respondWith(outgoingCommits(1), 1)()),
+    }))
+    await flushPromises()
+    const error = wrapper.get('[data-test="scm-outgoing-error"]')
+    expect(error.text()).toContain('Não foi possível consultar o Git.')
+    expect(error.classes()).toContain('text-diff-del-fg')
+    fail = false
+    await wrapper.get('[data-test="scm-outgoing-retry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="scm-outgoing-error"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(1)
+    expect(outgoingCalls(fetchMock)).toHaveLength(2)
+  })
+
+  it('depois de um commit (HEAD e ahead mudam) descarta a lista e carrega de novo', async () => {
+    let head = HEAD
+    let answer = respondWith(outgoingCommits(1), 1)
+    const { wrapper, fetchMock } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1 }), logFetch({ head: () => head, outgoing: () => answer() }))
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(1)
+    head = 'e'.repeat(40)
+    answer = () => jsonResponse(makeRepoLog({ direction: 'outgoing', head_sha: head, upstream_sha: UPSTREAM, commits: outgoingCommits(2), outgoing_count: 2 }))
+    await wrapper.setProps({ repo: makeRepoDetails({ ...base, ahead: 2, head_sha: head }) })
+    await flushPromises()
+    expect(wrapper.get('[data-test="scm-outgoing-count"]').text()).toBe('2')
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(2)
+    expect(outgoingCalls(fetchMock)).toHaveLength(2)
+  })
+
+  it('depois de um push a seção some, e um commit novo carrega só o que falta enviar', async () => {
+    let head = HEAD
+    const { wrapper, fetchMock } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1 }), logFetch({ head: () => head, outgoing: () => jsonResponse(makeRepoLog({ direction: 'outgoing', head_sha: head, upstream_sha: UPSTREAM, commits: outgoingCommits(1, 7), outgoing_count: 1 })) }))
+    await flushPromises()
+    await wrapper.setProps({ repo: makeRepoDetails({ ...base, ahead: 0 }) })
+    await flushPromises()
+    expect(wrapper.find('[data-test="scm-outgoing"]').exists()).toBe(false)
+    head = 'e'.repeat(40)
+    await wrapper.setProps({ repo: makeRepoDetails({ ...base, ahead: 1, head_sha: head }) })
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(1)
+    expect(outgoingCalls(fetchMock)).toHaveLength(2)
+    expect(useGitLogStore(pinia).logFor(1, '/p/loja', 'outgoing')).toBeNull()
+  })
+
+  it('lê o HEAD direto da API: sem ref, sem snapshot e com limite de 10', async () => {
+    const { fetchMock } = mountOutgoing(makeRepoDetails({ ...base, ahead: 2 }), logFetch({ outgoing: respondWith(outgoingCommits(2), 2) }))
+    await flushPromises()
+    const params = new URL(String(outgoingCalls(fetchMock)[0][0]), 'http://localhost').searchParams
+    expect(params.get('direction')).toBe('outgoing')
+    expect(params.get('limit')).toBe('10')
+    expect(params.has('ref')).toBe(false)
+    expect(params.has('snapshot_head')).toBe(false)
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('/git/log'))).toHaveLength(1)
+  })
+
+  it('a branch escolhida na aba Commits não muda o que o Para enviar mostra, e a loja não é tocada', async () => {
+    const store = useGitLogStore(pinia)
+    store.logs['1:/p/loja:all'] = { ref: 'refs/heads/outra', branch: 'outra', upstream: null, headSha: 'f'.repeat(40), upstreamSha: null, commits: outgoingCommits(60, 100), incoming: [], incomingCount: 0, outgoingCount: 0, nextSkip: 30, hasMore: true, loading: false, error: null, updateAvailable: false }
+    const before = JSON.stringify(store.logs)
+    const { wrapper, fetchMock } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1 }), logFetch({ outgoing: respondWith(outgoingCommits(1), 1) }))
+    await flushPromises()
+    expect(wrapper.get('[data-test="scm-outgoing-commit"]').text()).toContain('Mudança 0')
+    expect(new URL(String(outgoingCalls(fetchMock)[0][0]), 'http://localhost').searchParams.has('ref')).toBe(false)
+    expect(JSON.stringify(store.logs)).toBe(before)
+  })
+
+  it('uma mudança de HEAD não altera o estado da loja do histórico', async () => {
+    const store = useGitLogStore(pinia)
+    const reading = { ref: null, branch: 'main', upstream: 'origin/main', headSha: HEAD, upstreamSha: UPSTREAM, commits: outgoingCommits(60, 100), incoming: [], incomingCount: 0, outgoingCount: 1, nextSkip: 60, hasMore: true, loading: false, error: null, updateAvailable: false }
+    store.logs['1:/p/loja:all'] = reading
+    const snapshot = JSON.stringify(store.logs)
+    const { wrapper } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1 }), logFetch({ outgoing: respondWith(outgoingCommits(1), 1) }))
+    await flushPromises()
+    await wrapper.setProps({ repo: makeRepoDetails({ ...base, ahead: 2, head_sha: 'e'.repeat(40) }) })
+    await flushPromises()
+    expect(JSON.stringify(store.logs)).toBe(snapshot)
+    expect(store.logFor(1, '/p/loja')!.commits).toHaveLength(60)
+    expect(Object.keys(store.logs)).toEqual(['1:/p/loja:all'])
+  })
+
+  it('uma resposta antiga que chega depois da nova é ignorada', async () => {
+    const pending: Array<(r: Response) => void> = []
+    const { wrapper } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1 }), logFetch({ outgoing: () => new Promise<Response>((resolve) => { pending.push(resolve) }) }))
+    await flushPromises()
+    await wrapper.setProps({ repo: makeRepoDetails({ ...base, ahead: 2, head_sha: 'e'.repeat(40) }) })
+    await flushPromises()
+    expect(pending).toHaveLength(2)
+    pending[1](respondWith(outgoingCommits(2, 50), 2)())
+    await flushPromises()
+    pending[0](respondWith(outgoingCommits(1, 9), 1)())
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]').map((r) => r.text())).toEqual([expect.stringContaining('Mudança 50'), expect.stringContaining('Mudança 51')])
+  })
+
+  it('cancela a leitura anterior ao reler e ao desmontar', async () => {
+    const signals: AbortSignal[] = []
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      signals.push(init!.signal!)
+      return new Promise<Response>(() => {})
+    })
+    const { wrapper } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1 }), fetchMock as unknown as ReturnType<typeof logFetch>)
+    await flushPromises()
+    await wrapper.setProps({ repo: makeRepoDetails({ ...base, ahead: 2, head_sha: 'e'.repeat(40) }) })
+    await flushPromises()
+    expect(signals).toHaveLength(2)
+    expect(signals[0].aborted).toBe(true)
+    expect(signals[1].aborted).toBe(false)
+    wrapper.unmount()
+    expect(signals[1].aborted).toBe(true)
+  })
+
+  it('fechar o corpo cancela a leitura e abrir lê de novo', async () => {
+    const { wrapper, fetchMock } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1 }), logFetch({ outgoing: respondWith(outgoingCommits(1), 1) }))
+    await flushPromises()
+    await wrapper.get('[data-test="scm-repo-toggle"]').trigger('click')
+    expect(wrapper.find('[data-test="scm-outgoing"]').exists()).toBe(false)
+    await wrapper.get('[data-test="scm-repo-toggle"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="scm-outgoing-commit"]')).toHaveLength(1)
+    expect(outgoingCalls(fetchMock)).toHaveLength(2)
+  })
+
+  it('fica junto dos arquivos, depois dos grupos', async () => {
+    const { wrapper } = mountOutgoing(makeRepoDetails({ ...base, ahead: 1, files: [file('a.ts', 'unstaged')] }), logFetch({ outgoing: respondWith(outgoingCommits(1), 1) }))
+    await flushPromises()
     const group = wrapper.get('[data-test="scm-group"]').element
     expect(group.compareDocumentPosition(wrapper.get('[data-test="scm-outgoing"]').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+describe('foco depois de Push e Pull pela linha fechada', () => {
+  /** The repository comes from the store, as in the app: the answer of the action re-renders the row. */
+  function mountFromStore(repo: RepoDetails, handlers: Record<string, () => Response | Promise<Response>>) {
+    useGitDetailsStore(pinia).byProject[1] = { repos: [repo], limit_reached: false }
+    vi.stubGlobal('fetch', routeFetch(handlers))
+    const details = useGitDetailsStore(pinia)
+    const Harness = defineComponent({ render: () => h(ScmRepo, { projectId: 1, repo: details.reposFor(1)[0], collapseAll: 0, startOpen: false }) })
+    return mount(Harness, { global: { plugins: [pinia] }, attachTo: document.body })
+  }
+  const toggleOf = (path: string) => [...document.querySelectorAll<HTMLElement>('[data-test="scm-repo"]')].find((el) => el.dataset.repo === path)?.querySelector('[data-test="scm-repo-toggle"]')
+
+  it.each([
+    ['repo-push', { upstream: 'origin/main', ahead: 2, behind: 0 }, 'push'],
+    ['repo-pull', { upstream: 'origin/main', ahead: 0, behind: 2 }, 'pull'],
+  ])('%s: o botão some e o foco vai para o nome do repositório', async (test, state, kind) => {
+    const repo = makeRepoDetails({ path: PATH, ...state })
+    const wrapper = mountFromStore(repo, { [`POST /api/projects/1/git/${kind}`]: () => jsonResponse({ repo: makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 0, behind: 0 }), conflicts: false }) })
+    const button = wrapper.get(`[data-test="${test}"]`)
+    ;(button.element as HTMLElement).focus()
+    expect(document.activeElement).toBe(button.element)
+    await button.trigger('click')
+    await flushPromises()
+    expect(wrapper.find(`[data-test="${test}"]`).exists()).toBe(false)
+    expect(document.activeElement).toBe(toggleOf(PATH))
+    expect(document.activeElement).toBe(wrapper.get('[data-test="scm-repo-toggle"]').element)
+  })
+
+  it('não rouba o foco de quem estava em outro lugar', async () => {
+    const repo = makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 2, behind: 0 })
+    const wrapper = mountFromStore(repo, { 'POST /api/projects/1/git/push': () => jsonResponse({ repo: makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 0, behind: 0 }) }) })
+    const other = document.createElement('input')
+    document.body.appendChild(other)
+    other.focus()
+    await wrapper.get('[data-test="repo-push"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(other)
+    other.remove()
+  })
+
+  it('com a falha o botão fica e o foco não é movido', async () => {
+    const repo = makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 2, behind: 0 })
+    const wrapper = mountFromStore(repo, { 'POST /api/projects/1/git/push': () => jsonResponse({ detail: { code: 'git', message: 'Recusado.', output: '' } }, 409) })
+    const button = wrapper.get('[data-test="repo-push"]')
+    ;(button.element as HTMLElement).focus()
+    await button.trigger('click')
+    await flushPromises()
+    await nextTick()
+    expect(document.activeElement).toBe(wrapper.get('[data-test="repo-push"]').element)
+  })
+})
+
+describe('cabeçalho aberto', () => {
+  it('usa card, onde os textos de cor passam de 4,5:1 nos oito temas', () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
+    const header = wrapper.get('[data-test="scm-repo-toggle"]').element.parentElement!
+    expect(header.className).toContain('bg-card')
+    expect(header.className).not.toContain('bg-elevated')
+  })
+
+  it('Pull, Push e Mais ações têm um hover que se vê sobre o cabeçalho (elevated, mais claro que card)', () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 1, behind: 1 }))
+    for (const test of ['repo-pull', 'repo-push', 'repo-more']) {
+      const classes = wrapper.get(`[data-test="${test}"]`).classes()
+      expect(classes, test).toContain('hover:bg-elevated')
+      expect(classes, test).not.toContain('hover:bg-card')
+    }
+    expect(wrapper.get('[data-test="repo-push"]').classes()).toContain('hover:border-fg-muted')
+  })
+})
+
+describe('dica do atalho de commit', () => {
+  const dirty = (overrides: Partial<RepoDetails> = {}) => makeRepoDetails({ path: '/p/loja', rel_path: 'loja', files: [file('a.ts', 'unstaged')], ...overrides })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('o título diz "faz o commit" e o campo aponta a dica e o atalho', () => {
+    const { wrapper } = mountRepo(dirty())
+    const hint = wrapper.get('[data-test="commit-hint"]')
+    expect(hint.attributes('title')).toBe('Ctrl+Enter faz o commit')
+    expect(hint.attributes('id')).toBeTruthy()
+    const field = wrapper.get('[data-test="commit-message"]')
+    expect(field.attributes('aria-describedby')).toBe(hint.attributes('id'))
+    expect(field.attributes('aria-keyshortcuts')).toBe('Control+Enter')
+  })
+
+  it('no Mac a dica mostra Cmd como texto e o atalho é Meta+Enter', () => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    const { wrapper } = mountRepo(dirty())
+    expect(wrapper.findAll('[data-test="commit-hint"] kbd').map((k) => k.text())).toEqual(['Cmd', 'Enter'])
+    expect(wrapper.get('[data-test="commit-hint"]').attributes('title')).toBe('Cmd+Enter faz o commit')
+    expect(wrapper.get('[data-test="commit-message"]').attributes('aria-keyshortcuts')).toBe('Meta+Enter')
+  })
+
+  it('só aparece com o campo de mensagem: repositório limpo ocupado não mostra a dica', async () => {
+    const repo = makeRepoDetails({ path: '/p/loja', upstream: 'origin/main', ahead: 0, behind: 0 })
+    useGitDetailsStore(pinia).byProject[1] = { repos: [repo], limit_reached: false }
+    vi.stubGlobal('fetch', routeFetch({ 'POST /api/projects/1/git/fetch-repo': () => new Promise<Response>(() => {}) }))
+    const wrapper = mount(ScmRepo, { props: { projectId: 1, repo, collapseAll: 0, startOpen: true }, global: { plugins: [pinia] }, attachTo: document.body })
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(false)
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    await wrapper.get('[data-test="menu-fetch"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="commit-hint"]').exists()).toBe(false)
+  })
+
+  it('durante um merge a dica aparece junto do campo', () => {
+    const { wrapper } = mountRepo(dirty({ files: [], state: makeRepoState({ merging: true, merge_branch: 'feat/x', merge_message: 'Merge x' }) }))
+    expect(wrapper.find('[data-test="commit-message"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="commit-hint"]').exists()).toBe(true)
+  })
+})
+
+describe('motivo do Mesclar desligado', () => {
+  it('o item do menu é ligado ao motivo por aria-describedby', async () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, head: null, branch: 'main', upstream: null, ahead: null, behind: null }))
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    const reason = wrapper.get('[data-test="menu-merge-reason"]')
+    expect(reason.attributes('id')).toBeTruthy()
+    expect(wrapper.get('[data-test="menu-merge"]').attributes('aria-describedby')).toBe(reason.attributes('id'))
+  })
+
+  it('sem motivo não há aria-describedby', async () => {
+    const { wrapper } = mountRepo(makeRepoDetails({ path: PATH }))
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    expect(wrapper.find('[data-test="menu-merge-reason"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="menu-merge"]').attributes('aria-describedby')).toBeUndefined()
   })
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ScmFileGroup from './ScmFileGroup.vue'
 import ScmPrimaryButton from './ScmPrimaryButton.vue'
@@ -12,7 +12,7 @@ import RepoName from '../RepoName.vue'
 import RepoStateBadges from '../RepoStateBadges.vue'
 import IconChevron from '../../icons/IconChevron.vue'
 import IconClose from '../../icons/IconClose.vue'
-import { compareBranch, errorMessage, openInEditor, sendMessage } from '../../../api/http'
+import { compareBranch, errorMessage, getRepoLog, openInEditor, sendMessage } from '../../../api/http'
 import { busyLabel } from '../../../git/busyLabel'
 import { conflictPrompt } from '../../../git/conflictPrompt'
 import { clearDraft, readDraft, readMergeMessage, writeDraft, writeMergeMessage } from '../../../git/commitDraft'
@@ -26,8 +26,9 @@ import { useGitDetailsStore } from '../../../stores/gitDetails'
 import { useGitOpsStore } from '../../../stores/gitOps'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
+import { isMacPlatform } from '../../../platform'
 import { useMediaQuery } from '../../../useMediaQuery'
-import type { BranchRef, GitOpAnswer, GitOpKind, RepoDetails, RepoFile } from '../../../types/api'
+import type { BranchRef, GitOpAnswer, GitOpKind, LogCommit, RepoDetails, RepoFile } from '../../../types/api'
 
 const props = withDefaults(defineProps<{
   projectId: number
@@ -66,6 +67,11 @@ const dirty = computed(() => props.repo.files.length > 0)
 const message = ref(readDraft(props.repo.path))
 watch(message, (text) => writeDraft(props.repo.path, text))
 const action = computed(() => primaryAction(props.repo, message.value))
+const mac = isMacPlatform()
+const hintId = useId()
+const modifierName = mac ? 'Cmd' : 'Ctrl'
+// The hint belongs to the message field: without it (a clean repository) there is nothing to commit by keyboard.
+const showHint = computed(() => (dirty.value || merging.value) && (action.value.kind === 'commit' || action.value.kind === 'merge-continue'))
 
 const staged = computed(() => props.repo.files.filter((f) => f.status === 'staged'))
 // Files in conflict never go through the plain stage and discard: `git add` would mark them as
@@ -240,12 +246,65 @@ async function finishMerge(): Promise<void> {
   }
 }
 
-/** What the Push takes along: the commits ahead of the remote that the details list. */
+/** How many of the commits the Push takes along are listed; the rest is in the history. */
+const OUTGOING_SHOWN = 10
+// Whether this repository has commits to send that the list should show: the body is open, a
+// branch with an upstream, and not read-only.
+const outgoingWanted = computed(() => open.value && !props.repo.error && !readOnly.value && !props.repo.detached && props.repo.upstream != null && (props.repo.ahead ?? 0) > 0)
+const headSha = computed(() => props.repo.head_sha ?? props.repo.head ?? null)
+
+// The details endpoint sends no commits, so the list is read here from the history API, apart from
+// the shared history store: that one belongs to the Commits tab (its chosen branch, its snapshot,
+// the pages the person loaded). Without `ref` and snapshot the backend lists what HEAD has ahead.
+const outgoingList = ref<{ commits: LogCommit[]; error: string | null; loading: boolean }>({ commits: [], error: null, loading: false })
+let outgoingAbort: AbortController | null = null
+let outgoingRun = 0
+function stopOutgoing(): void {
+  outgoingAbort?.abort()
+  outgoingAbort = null
+  outgoingRun++
+}
+function loadOutgoing(): void {
+  stopOutgoing()
+  const controller = new AbortController()
+  outgoingAbort = controller
+  const run = outgoingRun
+  outgoingList.value = { commits: [], error: null, loading: true }
+  getRepoLog(props.projectId, props.repo.path, null, 0, OUTGOING_SHOWN, controller.signal, { direction: 'outgoing' }).then(
+    (page) => {
+      // An answer that left before a newer request is older than it, whatever the order it arrives in.
+      if (run !== outgoingRun) return
+      outgoingList.value = { commits: page.commits.slice(0, OUTGOING_SHOWN), error: null, loading: false }
+    },
+    (e) => {
+      if (run !== outgoingRun) return
+      outgoingList.value = { commits: [], error: errorMessage(e), loading: false }
+    },
+  )
+}
+// Read again when HEAD or the count changes (a commit, push or pull happened); not at all closed.
+watch([outgoingWanted, headSha, () => props.repo.ahead ?? 0], ([wanted]) => {
+  if (!wanted) {
+    stopOutgoing()
+    outgoingList.value = { commits: [], error: null, loading: false }
+    return
+  }
+  loadOutgoing()
+}, { immediate: true })
+onBeforeUnmount(stopOutgoing)
+
 const outgoing = computed(() => {
   const ahead = props.repo.ahead ?? 0
   if (readOnly.value || props.repo.detached || props.repo.upstream == null || ahead <= 0) return null
-  const commits = props.repo.commits.filter((c) => c.pushed === false)
-  return { total: ahead, commits, more: Math.max(0, ahead - commits.length) }
+  const state = outgoingList.value
+  const commits = state.commits.slice(0, OUTGOING_SHOWN)
+  return {
+    total: ahead,
+    commits,
+    more: Math.max(0, ahead - commits.length),
+    error: state.error,
+    loading: state.loading,
+  }
 })
 // The left column has something to show: files, the commits to send, or the truncation note.
 const hasLeft = computed(() => props.repo.files.length > 0 || outgoing.value !== null || props.repo.files_truncated || !!editorError.value)
@@ -320,9 +379,34 @@ const pushLabel = computed(() => (aheadCount.value > 0 ? `Push ${commitsLabel(ah
 const quietRow = computed(() => props.quiet && !open.value)
 const syncTitle = computed(() => (sync.value.kind === 'diverged' ? `${sync.value.behind} para baixar, ${sync.value.ahead} para subir` : undefined))
 
+const rootEl = ref<HTMLElement | null>(null)
+/** Whether the focus is on this row's button (a button the row takes away when its job is done). */
+function focusIsOn(test: string): boolean {
+  const el = rootEl.value?.querySelector(`[data-test="${test}"]`)
+  return !!el && el === document.activeElement
+}
+const focusLost = () => !document.activeElement || document.activeElement === document.body
+const toggleOfRepo = () => [...document.querySelectorAll<HTMLElement>('[data-test="scm-repo"]')]
+  .find((el) => el.dataset.repo === props.repo.path)?.querySelector<HTMLElement>('[data-test="scm-repo-toggle"]') ?? null
+/**
+ * The Pull or Push that worked leaves the row, and with it the focus. The row may be mounted again
+ * in the other group of the list, so the repository's name is looked up by path, not by ref.
+ */
+async function focusToggleAfter(hadFocus: boolean): Promise<void> {
+  if (!hadFocus) return
+  for (let tries = 0; tries < 2; tries++) {
+    await nextTick()
+    const toggle = toggleOfRepo()
+    if (!toggle) continue
+    if (focusLost()) toggle.focus()
+    return
+  }
+}
+
 /** Pull and sync change the files: a running session is asked about first. */
 async function bringIn(kind: 'pull' | 'sync'): Promise<void> {
   if (busyKind.value) return
+  const hadFocus = focusIsOn('repo-pull')
   if (running.value) {
     const ok = await ask({
       title: kind === 'pull' ? 'Baixar agora?' : 'Sincronizar agora?',
@@ -333,10 +417,13 @@ async function bringIn(kind: 'pull' | 'sync'): Promise<void> {
   }
   const done = await act(kind)
   if (done?.conflicts) open.value = true
+  if (done) await focusToggleAfter(hadFocus)
 }
 
 async function pushNow(): Promise<void> {
-  if (!busyKind.value) await act('push')
+  if (busyKind.value) return
+  const hadFocus = focusIsOn('repo-push')
+  if (await act('push')) await focusToggleAfter(hadFocus)
 }
 
 async function publishNow(): Promise<void> {
@@ -428,8 +515,8 @@ const mergeReason = computed(() => {
 
 const networkIdle = 'border-line-strong text-fg-muted'
 const networkActive = 'border-fg-muted text-fg'
-const iconButton = 'flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent'
-const networkButton = 'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border bg-panel px-2 text-xs font-medium hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50 disabled:hover:bg-panel'
+const iconButton = 'flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent'
+const networkButton = 'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border bg-panel px-2 text-xs font-medium hover:border-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50 disabled:hover:bg-panel'
 
 // For the tasks that fill this component further (branch menu, merge, conflicts, sync).
 defineExpose({ ask, act, handlers })
@@ -437,6 +524,7 @@ defineExpose({ ask, act, handlers })
 
 <template>
   <li
+    ref="rootEl"
     data-test="scm-repo"
     :data-repo="repo.path"
     :data-open="String(open)"
@@ -446,7 +534,7 @@ defineExpose({ ask, act, handlers })
   >
     <div
       class="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5"
-      :class="[REPO_ROW_GRID, quietRow ? 'min-h-9 @3xl:min-h-[2.375rem]' : 'min-h-10 @3xl:min-h-[2.875rem]', open ? 'rounded-t-xl border-b border-line bg-elevated/60' : 'rounded-md hover:bg-panel']"
+      :class="[REPO_ROW_GRID, quietRow ? 'min-h-9 @3xl:min-h-[2.375rem]' : 'min-h-10 @3xl:min-h-[2.875rem]', open ? 'rounded-t-xl border-b border-line bg-card' : 'rounded-md hover:bg-panel']"
     >
       <button type="button" data-test="scm-repo-toggle" :title="name" :aria-expanded="open" class="flex min-w-0 flex-[1_1_9rem] items-center gap-1.5 rounded py-0.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary @xl:max-w-[35%] @xl:flex-none @3xl:col-span-2 @3xl:max-w-none @3xl:gap-3.5" @click="open = !open">
         <span class="flex w-3.5 shrink-0 justify-center"><IconChevron :open="open" :size="12" class="text-fg-subtle" /></span>
@@ -462,7 +550,7 @@ defineExpose({ ask, act, handlers })
             data-test="branch-chip"
             :disabled="!!readOnly || !!busyKind || preparingMerge || merging"
             :title="branchTitle"
-            class="min-w-0 truncate rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:hover:bg-transparent"
+            class="min-w-0 truncate rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-xs text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:hover:bg-transparent"
             @click="menu = 'switch'"
           ><span data-test="scm-branch" :title="repo.detached ? 'HEAD solto' : undefined">{{ branchName }}</span></button>
           <span v-if="merging" data-test="merging-tag" class="flex shrink-0 items-center gap-1 text-xs text-secondary"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>merge em andamento</span>
@@ -556,14 +644,17 @@ defineExpose({ ask, act, handlers })
               data-test="commit-message"
               :aria-label="`Mensagem do commit em ${name}`"
               :placeholder="merging ? 'Mensagem do commit do merge' : 'Mensagem do commit'"
+              :aria-keyshortcuts="mac ? 'Meta+Enter' : 'Control+Enter'"
+              :aria-describedby="showHint ? hintId : undefined"
               class="block h-[6.5rem] w-full resize-none rounded-[0.625rem] border border-line-strong bg-elevated px-3.5 py-3 text-sm text-fg placeholder:text-fg-muted focus:border-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               @keydown="onMessageKeydown"
             />
           </template>
           <div v-if="dirty || merging || busy || action.kind !== 'commit'" class="flex items-center gap-2">
-            <span v-if="action.kind === 'commit' || action.kind === 'merge-continue'" data-test="commit-hint" class="flex items-center gap-1.5" title="Ctrl+Enter envia o commit">
-              <kbd class="rounded-[0.3125rem] border border-line-strong px-1.5 py-px font-mono text-[0.6875rem] text-fg-muted">Ctrl</kbd>
+            <span v-if="showHint" :id="hintId" data-test="commit-hint" class="flex items-center gap-1.5" :title="`${modifierName}+Enter faz o commit`">
+              <kbd class="rounded-[0.3125rem] border border-line-strong px-1.5 py-px font-mono text-[0.6875rem] text-fg-muted">{{ modifierName }}</kbd>
               <kbd class="rounded-[0.3125rem] border border-line-strong px-1.5 py-px font-mono text-[0.6875rem] text-fg-muted">Enter</kbd>
+              <span class="sr-only">faz o commit</span>
             </span>
             <span class="flex-1" />
             <ScmPrimaryButton :action="action" :busy="busy" :available="!!handlers[action.kind]" @run="runPrimary" />
@@ -600,13 +691,19 @@ defineExpose({ ask, act, handlers })
               <span class="flex-1" />
               <span class="truncate text-xs text-fg-muted">o que o Push leva para o remoto</span>
             </div>
-            <ul class="m-0 flex list-none flex-col p-0">
-              <li v-for="c in outgoing.commits" :key="c.full_hash" data-test="scm-outgoing-commit" class="flex h-7 min-w-0 items-center gap-2 pl-1 pr-1 text-[0.8125rem] text-fg" :title="c.subject">
-                <span class="w-[3.625rem] shrink-0 font-mono text-xs tabular-nums text-fg-muted">{{ c.hash }}</span>
-                <span class="truncate">{{ c.subject }}</span>
-              </li>
-            </ul>
-            <button v-if="outgoing.more > 0" type="button" data-test="scm-outgoing-more" class="mt-0.5 self-start rounded px-1 py-0.5 text-xs text-fg-muted underline hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="emit('history')">e mais {{ outgoing.more }} no histórico</button>
+            <p v-if="outgoing.loading" data-test="scm-outgoing-loading" class="m-0 h-7 px-1 text-xs leading-7 text-fg-muted">Carregando…</p>
+            <p v-else-if="outgoing.error" data-test="scm-outgoing-error" role="alert" class="m-0 px-1 py-1 text-xs leading-normal text-diff-del-fg">{{ outgoing.error }}
+              <button type="button" data-test="scm-outgoing-retry" class="rounded underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="loadOutgoing">Tentar novamente</button>
+            </p>
+            <template v-else>
+              <ul class="m-0 flex list-none flex-col p-0">
+                <li v-for="c in outgoing.commits" :key="c.full_hash" data-test="scm-outgoing-commit" class="flex h-7 min-w-0 items-center gap-2 pl-1 pr-1 text-[0.8125rem] text-fg" :title="c.subject">
+                  <span class="w-[3.625rem] shrink-0 font-mono text-xs tabular-nums text-fg-muted">{{ c.hash }}</span>
+                  <span class="truncate">{{ c.subject }}</span>
+                </li>
+              </ul>
+              <button v-if="outgoing.more > 0" type="button" data-test="scm-outgoing-more" class="mt-0.5 self-start rounded px-1 py-0.5 text-xs text-fg-muted underline hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="emit('history')">e mais {{ outgoing.more }} no histórico</button>
+            </template>
           </section>
           <p v-if="repo.files_truncated" class="m-0 text-xs text-fg-muted">Há mais arquivos alterados do que a lista mostra.</p>
         </div>

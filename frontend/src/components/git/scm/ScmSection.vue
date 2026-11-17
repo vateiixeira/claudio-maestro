@@ -8,7 +8,7 @@ import { computed, ref, watch } from 'vue'
 import ScmRepo from './ScmRepo.vue'
 import GroupHeader from '../../ui/GroupHeader.vue'
 import { syncCounts } from '../../../git/repoLabel'
-import { isPending } from '../../../git/pending'
+import { isPending, pendingCount } from '../../../git/pending'
 import { REPO_ROW_GRID } from '../../../git/repoRowGrid'
 import { gitTotals, summaryParts } from '../../../git/summary'
 import { useGitOpsStore } from '../../../stores/gitOps'
@@ -25,7 +25,13 @@ const loaded = computed(() => details.isLoaded(props.projectId))
 const error = computed(() => details.errorFor(props.projectId))
 const refreshing = computed(() => details.isLoading(props.projectId))
 const collapseAll = ref(0)
-const parts = computed(() => summaryParts(gitTotals(visibleRepos.value)))
+// "Tudo em dia" is a claim that needs data and nothing pending: a merge with no files left is
+// pending and has no other part, so then the line says nothing.
+const parts = computed(() => {
+  if (!loaded.value || error.value || visibleRepos.value.length === 0) return []
+  const all = summaryParts(gitTotals(visibleRepos.value))
+  return all.filter((part) => part.part !== 'clear' || pendingCount(visibleRepos.value) === 0)
+})
 const partClass: Record<string, string> = {
   ahead: 'font-semibold text-secondary-soft',
   behind: 'text-info-soft',
@@ -90,7 +96,7 @@ function startOpen(repo: RepoDetails): boolean {
   <section data-test="scm-section" aria-labelledby="scm-title" class="flex min-w-0 flex-col gap-2">
     <header class="flex min-h-10 flex-wrap items-center gap-x-3.5 gap-y-1 px-1">
       <h2 id="scm-title" class="sr-only">Alterações</h2>
-      <p v-if="loaded" data-test="scm-summary" class="m-0 flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[0.8125rem] text-fg-muted">
+      <p v-if="parts.length > 0" data-test="scm-summary" class="m-0 flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[0.8125rem] text-fg-muted">
         <span v-for="part in parts" :key="part.part" data-test="scm-summary-part" :data-part="part.part" :class="partClass[part.part]">{{ part.text }}</span>
       </p>
       <span class="grow" />

@@ -20,13 +20,13 @@ const iconButton = 'flex size-8 sm:size-6 items-center justify-center rounded te
   <div
     data-test="scm-file"
     :data-path="file.path"
-    class="group flex h-8 min-w-0 sm:h-7 items-center gap-2 rounded pr-1 hover:bg-elevated focus-within:bg-elevated"
-    :class="{ 'bg-card': open }"
+    class="group flex h-8 min-w-0 sm:h-7 items-center gap-2 rounded pr-1 hover:bg-card focus-within:bg-card"
+    :class="{ 'bg-card ring-1 ring-inset ring-line-strong': open }"
   >
     <span data-test="file-letter" class="w-3 shrink-0 ml-1 text-center font-mono text-xs font-semibold" :class="LETTER_CLASS[letter()]" :title="file.status === 'conflict' ? 'Em conflito' : undefined">{{ letter() }}</span>
     <button type="button" data-test="file-open" aria-haspopup="dialog" :title="file.path" class="flex min-w-0 grow items-center gap-2 pl-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="emit('toggle', $event.currentTarget as HTMLElement)">
-      <span class="shrink-0 whitespace-nowrap text-[0.8125rem] text-fg">{{ name() }}</span>
-      <span v-if="folder()" class="min-w-0 truncate font-mono text-[0.6875rem] text-fg-subtle">{{ folder() }}</span>
+      <span class="min-w-0 truncate text-[0.8125rem] text-fg">{{ name() }}</span>
+      <span v-if="folder()" class="min-w-0 shrink-[3] truncate font-mono text-[0.6875rem] text-fg-subtle">{{ folder() }}</span>
     </button>
     <span class="flex shrink-0 items-center opacity-100 sm:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
       <button type="button" data-test="file-editor" :class="iconButton" aria-label="Abrir no editor" title="Abrir no editor" @click="emit('editor')">
