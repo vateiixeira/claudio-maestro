@@ -85,7 +85,7 @@ function nextText(agent: Agent): string {
   return at ? slotLabel(at, now.value) : 'sob demanda'
 }
 
-const COLUMNS = 'grid grid-cols-[minmax(0,1fr)_6.5rem_7.5rem] items-center gap-x-5 md:grid-cols-[minmax(0,1fr)_9.375rem_7.5rem_9.375rem]'
+const COLUMNS = 'grid grid-cols-[minmax(0,1fr)_4rem_5.5rem] items-center gap-x-3 sm:grid-cols-[minmax(0,1fr)_6.5rem_7.5rem] sm:gap-x-5 md:grid-cols-[minmax(0,1fr)_9.375rem_7.5rem_9.375rem]'
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
 </script>
 
@@ -130,8 +130,8 @@ const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visi
               :class="[COLUMNS, 'min-h-[46px] border-t border-line text-[0.84375rem] text-fg no-underline hover:bg-card', FOCUS]"
             >
               <span class="flex min-w-0 items-baseline gap-2.5" :style="{ paddingLeft: `${line.depth}rem` }">
-                <span class="shrink-0 font-medium">{{ line.agent.name }}</span>
-                <span v-if="line.agent.description" class="min-w-0 truncate text-fg-muted">{{ line.agent.description }}</span>
+                <span class="min-w-0 truncate font-medium sm:shrink-0">{{ line.agent.name }}</span>
+                <span v-if="line.agent.description" class="hidden min-w-0 truncate text-fg-muted sm:inline">{{ line.agent.description }}</span>
               </span>
               <span class="hidden md:block">
                 <RunHistory v-if="hasHistory(line.agent)" :runs="org.runsOf(line.agent.id)" />

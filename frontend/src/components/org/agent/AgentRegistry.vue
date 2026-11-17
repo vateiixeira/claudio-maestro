@@ -99,8 +99,8 @@ watch(() => org.byId(props.agentId)?.last_run?.outcome, () => { void load() })
       </div>
       <p class="m-0 max-w-prose text-xs text-fg-subtle">Um item por coisa tratada, para o agente não refazer o que já fez.</p>
       <p v-if="visible.length === 0" data-test="registry-no-match" class="m-0 text-sm text-fg-muted">Nenhum item com esse filtro.</p>
-      <div v-else>
-        <div aria-hidden="true" class="hidden h-7 items-center gap-x-4 border-b border-line-strong px-2 font-mono text-[0.6875rem] tracking-[0.06em] text-fg-subtle uppercase md:grid md:grid-cols-[14.5rem_6rem_minmax(0,1fr)_8.25rem_5.75rem_1.375rem]">
+      <div v-else class="@container">
+        <div aria-hidden="true" class="hidden h-7 items-center gap-x-4 border-b border-line-strong px-2 font-mono text-[0.6875rem] tracking-[0.06em] text-fg-subtle uppercase @4xl:grid @4xl:grid-cols-[14.5rem_6rem_minmax(0,1fr)_8.25rem_5.75rem_1.375rem]">
           <span>Chave</span><span>Situação</span><span>Nota</span><span>Link</span><span class="text-right">Data</span><span />
         </div>
         <ul class="m-0 flex list-none flex-col p-0">
@@ -108,21 +108,21 @@ watch(() => org.byId(props.agentId)?.last_run?.outcome, () => { void load() })
             v-for="item in visible"
             :key="item.key"
             data-test="item-row"
-            class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-x-4 gap-y-1 border-b border-line px-2 py-2.5 hover:bg-surface md:grid-cols-[14.5rem_6rem_minmax(0,1fr)_8.25rem_5.75rem_1.375rem]"
+            class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-x-4 gap-y-1 border-b border-line px-2 py-2.5 hover:bg-surface @4xl:grid-cols-[14.5rem_6rem_minmax(0,1fr)_8.25rem_5.75rem_1.375rem]"
           >
             <span data-test="item-key" :title="item.key" class="min-w-0 truncate font-mono text-xs leading-5 text-fg">{{ item.key }}</span>
             <span><span data-test="item-status" :data-tone="registryTone(item.status)" class="inline-block rounded-full px-2 text-xs leading-5 whitespace-nowrap" :class="TONE_CLASS[registryTone(item.status)]">{{ statusLabel(item.status) }}</span></span>
-            <span data-test="item-note" :title="item.note ?? undefined" class="col-span-3 line-clamp-2 min-w-0 text-[0.84375rem] leading-5 break-words text-fg-muted empty:hidden md:col-span-1 md:empty:block">{{ item.note }}</span>
-            <span class="min-w-0 truncate text-xs leading-5 md:text-[0.8125rem]">
+            <span data-test="item-note" :title="item.note ?? undefined" class="col-span-3 line-clamp-2 min-w-0 text-[0.84375rem] leading-5 break-words text-fg-muted empty:hidden @4xl:col-span-1 @4xl:empty:block">{{ item.note }}</span>
+            <span class="min-w-0 truncate text-xs leading-5 @4xl:text-[0.8125rem]">
               <a v-if="safeLink(item.link)" data-test="item-link" :href="safeLink(item.link)!" :title="item.link ?? undefined" target="_blank" rel="noopener noreferrer" class="rounded text-info-soft hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">{{ linkLabel(item.link!) }}</a>
               <span v-else-if="item.link" data-test="item-link" :title="item.link" class="text-fg-muted">{{ item.link }}</span>
             </span>
-            <span data-test="item-date" class="col-span-2 text-right font-mono text-xs leading-5 whitespace-nowrap text-fg-subtle md:col-span-1">{{ formatRunDate(item.updated_at) }}</span>
+            <span data-test="item-date" class="col-span-2 text-right font-mono text-xs leading-5 whitespace-nowrap text-fg-subtle @4xl:col-span-1">{{ formatRunDate(item.updated_at) }}</span>
             <button
               type="button"
               data-test="item-remove"
               :aria-label="`Remover ${item.key} do registro`"
-              class="col-start-3 row-start-1 flex h-5 w-[1.375rem] cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-fg-subtle hover:text-diff-del-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary md:col-start-auto md:row-start-auto"
+              class="col-start-3 row-start-1 flex h-5 w-[1.375rem] cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-fg-subtle hover:text-diff-del-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary @4xl:col-start-auto @4xl:row-start-auto"
               @click="remove(item.key)"
             >
               <IconClose :size="12" />
