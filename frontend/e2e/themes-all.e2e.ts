@@ -23,7 +23,7 @@ for (const theme of THEMES) {
 
     // A navegação dentro do app mantém o tema.
     await openNavigationGroup(page, 'Mais ferramentas')
-    await page.getByRole('link', { name: 'Dashboard' }).click()
+    await page.getByRole('navigation', { name: 'Navegação' }).getByTestId('nav-dashboard').click()
     await expect(page).toHaveURL(/\/dashboard/)
     await expect(page.locator('body')).toHaveCSS('background-color', theme.background)
   })

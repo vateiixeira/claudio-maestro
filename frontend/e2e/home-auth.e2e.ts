@@ -38,5 +38,9 @@ test('Início identifica API pela origem ativa, inclusive com pasta igual à pad
   await page.goto('/inicio')
   const status = page.getByTestId('home-auth')
   await expect(status.getByTestId('auth-active')).toContainText('API · pasta alternativa')
+  // The folder shows with "~" for the home, and the full path stays in the tooltip.
+  const folder = status.getByTestId('auth-active').locator('span[title]')
+  await expect(folder).toHaveText('~/.claude')
+  await expect(folder).toHaveAttribute('title', '/home/test/.claude')
   await expect(status.getByTestId('auth-pending')).toContainText('Após reiniciar: Padrão do Claude')
 })

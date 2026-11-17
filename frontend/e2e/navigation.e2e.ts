@@ -10,7 +10,7 @@ test('a raiz leva ao Início e a navegação lateral abre cada tela', async ({ p
   await openNavigationGroup(page, 'Mais ferramentas')
   await nav.getByTestId('nav-dashboard').click()
   await expect(page).toHaveURL(/\/dashboard$/)
-  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Painel', level: 1 })).toBeVisible()
 
   await nav.getByTestId('nav-conversations').click()
   await expect(page).toHaveURL(/\/sessions$/)

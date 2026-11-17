@@ -162,9 +162,8 @@ test('as etiquetas aparecem na Caixa de entrada, no Painel e na busca', async ({
   const row = await labelsRow(page)
   await createLabel(row, 'achei-me', GREEN)
 
-  await page.goto('/inbox')
+  await page.goto('/inbox?aba=todas')
   await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
-  await page.getByRole('tab', { name: 'Todas' }).or(page.getByRole('button', { name: 'Todas' })).first().click()
   await expect(badge(page.getByTestId('conversation-row').filter({ hasText: TITLE }), 'achei-me')).toBeVisible()
 
   // Dashboard: the seeded conversations are not running, so the scenario has no NowCard to check.

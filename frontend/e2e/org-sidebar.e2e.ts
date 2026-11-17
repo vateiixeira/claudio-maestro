@@ -42,10 +42,16 @@ test('o contador de avisos de Agentes cai quando o aviso é lido na Inbox', asyn
   await page.getByTestId('sidebar-agents-toggle').click()
   await expect(page.getByTestId('sidebar-agent-row').filter({ hasText: 'Triagem' }).getByTestId('sidebar-agent-unseen')).toBeVisible()
 
-  await page.goto('/inbox')
+  await page.goto('/inbox?aba=novidades')
   const notice = page.getByTestId('agent-notice').filter({ hasText: 'A Triagem falhou nas últimas execuções.' })
   await expect(notice).toBeVisible()
+  await expect(notice).toHaveAttribute('data-unread', 'true')
+  // The actions show once the notice is selected.
+  await expect(notice.getByTestId('agent-notice-read')).toHaveCount(0)
+  await notice.getByTestId('agent-notice-select').click()
   await notice.getByTestId('agent-notice-read').click()
-  await expect(page.getByTestId('agent-notice')).toHaveCount(0)
+  // A read notice stays in the list, only no longer marked as unread.
+  await expect(notice).toHaveAttribute('data-unread', 'false')
+  await expect(notice).toBeVisible()
   await expect(page.getByTestId('agents-count')).toHaveCount(0)
 })

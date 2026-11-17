@@ -129,16 +129,18 @@ test('selecionar agente e seção mantém a organização dentro do projeto', as
   await expect(tab(page, 'Organização')).toHaveAttribute('aria-selected', 'true')
 })
 
+const menuItem = (page: Page, id: string) => page.locator(`[data-test="more-menu-item"][data-id="${id}"]`)
+
 test('ações secundárias ficam no menu e cancelar remoção mantém o projeto', async ({ page, request }) => {
   const data = await project(request, 'Loja Demo')
   await page.goto(`/projects/${data.id}?visao=conversas`)
   const menu = page.getByTestId('project-actions')
   await menu.click()
-  await page.getByTestId('rename').click()
+  await menuItem(page, 'rename').click()
   await expect(page.getByRole('textbox', { name: 'Nome do projeto' })).toBeFocused()
   await page.getByRole('textbox', { name: 'Nome do projeto' }).press('Escape')
   await menu.click()
-  await page.getByTestId('remove').click()
+  await menuItem(page, 'remove').click()
   await expect(page.getByTestId('confirm-remove-cancel')).toBeFocused()
   await page.getByTestId('confirm-remove-cancel').click()
   await expect(page.getByRole('heading', { name: 'Loja Demo', exact: true, level: 1 })).toBeVisible()
