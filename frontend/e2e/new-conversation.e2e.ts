@@ -181,3 +181,64 @@ test('uma falha tardia do primeiro envio preserva o próximo rascunho ao voltar 
     if (folder) await rm(folder, { recursive: true, force: true })
   }
 })
+
+test('a barra da nova conversa: foco no pedido, branch, dica de teclado, Ctrl+Enter e Descartar', async ({ page }) => {
+  await page.goto('/inbox')
+  await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
+  await page.getByTestId('nav-new').click()
+  const modal = page.getByTestId('new-conversation-modal')
+  const prompt = modal.getByTestId('nc-prompt')
+  await expect(prompt).toBeFocused()
+  await expect(modal.getByTestId('nc-hint')).toHaveText('Enter envia · Ctrl+Enter quebra linha')
+  await expect(modal.getByRole('button', { name: 'Descartar rascunho' })).toHaveText('Descartar')
+
+  // The branch shows for a project with a repository, and goes away for one without.
+  await modal.getByTestId('nc-project').selectOption({ label: 'Ramos Demo' })
+  await expect(modal.getByTestId('nc-branch')).toHaveText('api · main')
+  await modal.getByTestId('nc-project').selectOption({ label: 'Loja Demo' })
+  await expect(modal.getByTestId('nc-branch')).toHaveCount(0)
+
+  // The frame holds the prompt and the toolbar together; the toolbar menus have no border until used.
+  const frame = modal.getByTestId('nc-frame')
+  await expect(frame.getByTestId('nc-toolbar')).toBeVisible()
+  await expect(frame.getByTestId('nc-prompt')).toBeVisible()
+  const modelButton = frame.getByTestId('nc-toolbar').getByRole('button', { name: /^Modelo/ })
+  await expect(modelButton).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+
+  // Ctrl+Enter breaks the line and does not send; the modal stays open.
+  await prompt.fill('primeira')
+  await prompt.press('Control+Enter')
+  await expect(prompt).toHaveValue('primeira\n')
+  await expect(modal).toBeVisible()
+
+  // Closing with × keeps the draft; Descartar throws it away.
+  await modal.getByTestId('nc-close').click()
+  await expect(modal).toHaveCount(0)
+  await page.getByTestId('nav-new').click()
+  await expect(modal.getByTestId('nc-prompt')).toHaveValue('primeira\n')
+  await modal.getByTestId('nc-discard').click()
+  await expect(modal).toHaveCount(0)
+  await page.getByTestId('nav-new').click()
+  await expect(modal.getByTestId('nc-prompt')).toHaveValue('')
+})
+
+test('o menu de modo destaca "Sem perguntas" depois da confirmação', async ({ page }) => {
+  await page.goto('/inbox')
+  await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
+  await page.getByTestId('nav-new').click()
+  const modal = page.getByTestId('new-conversation-modal')
+  const mode = modal.getByTestId('nc-toolbar').getByRole('button', { name: /^Modo/ })
+  await mode.click()
+  await page.getByRole('menuitemradio', { name: 'Sem perguntas' }).click()
+  // Choosing it opens the confirmation first; nothing changes until it is accepted.
+  await page.getByTestId('bypass-confirm').waitFor()
+  await page.getByTestId('bypass-cancel').click()
+  await expect(mode).not.toHaveClass(/bg-secondary-tint/)
+  await mode.click()
+  await page.getByRole('menuitemradio', { name: 'Sem perguntas' }).click()
+  await page.getByTestId('bypass-confirm').click()
+  await expect(mode).toContainText('Sem perguntas')
+  await expect(mode).toHaveClass(/bg-secondary-tint/)
+  // The highlighted button keeps its border (the other menus have none).
+  await expect(mode).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+})

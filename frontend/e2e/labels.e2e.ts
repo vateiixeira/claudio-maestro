@@ -4,6 +4,13 @@ import { expect, test } from './fixtures'
 // The texts below are the SCENARIO of scripts/e2e_server.py. Labels are global and the database
 // lives through the whole run, so every test deletes the labels it made (afterEach).
 const TITLE = 'Explique a estrutura do projeto'
+// Colors of the palette (LABEL_PALETTE in src/labelColor.ts) and the dot color each one gives.
+const PINK = '#ff6188'
+const PINK_RGB = 'rgb(255, 97, 136)'
+const YELLOW = '#ffd866'
+const GREEN = '#a9dc76'
+const CYAN = '#78dce8'
+const VIOLET = '#ab9df2'
 
 test.afterEach(async ({ page, baseURL }) => {
   const headers = { 'X-Maestro': '1', Origin: baseURL! }
@@ -33,55 +40,71 @@ async function openEditor(row: Locator) {
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 }
 
+/** Types the name in the combobox, picks a swatch of the palette and creates the label (it is applied at once). */
 async function createLabel(row: Locator, slug: string, color: string) {
   await openEditor(row)
-  await row.getByTestId('label-new-color').fill(color)
-  await row.getByTestId('label-new-slug').fill(slug)
+  await row.getByTestId('label-search').fill(slug)
+  await row.getByTestId('label-new-color').locator(`[data-color="${color}"]`).click()
   await row.getByTestId('label-new-save').click()
+  await expect(chip(row, slug.toLowerCase())).toBeVisible()
 }
+
+/** A chip of the field: how an applied label shows while the editor is open. */
+const chip = (scope: Locator | Page, slug: string) => scope.locator(`[data-test="label-chip"][data-slug="${slug}"]`)
+const option = (scope: Locator | Page, slug: string) => scope.locator(`[data-test="label-option"][data-slug="${slug}"]`)
 
 const badge = (scope: Locator | Page, slug: string) =>
   scope.locator(`[data-test="label-badge"][data-slug="${slug}"]`)
 
-test('criar, aplicar, repetir slug, desmarcar, editar e apagar etiquetas', async ({ page, consoleErrors }) => {
+test('criar, aplicar, desmarcar, editar e apagar etiquetas', async ({ page }) => {
   await openConversation(page)
   const row = await labelsRow(page)
   await expect(row).toContainText('Nenhuma')
   await expect(row.getByTestId('label-toggle')).toHaveText('Editar')
 
   // 1. Create "Urgente": the slug is normalized and the label is applied at once.
-  await createLabel(row, 'Urgente', '#ef4444')
-  await expect(badge(row, 'urgente')).toHaveText('urgente')
-  await expect(row).not.toContainText('Nenhuma')
-  await expect(badge(page.getByTestId('header-strip'), 'urgente')).toBeVisible()
+  await createLabel(row, 'Urgente', PINK)
+  await expect(chip(row, 'urgente')).toContainText('urgente')
+  const strip = page.getByTestId('header-strip')
+  await expect(badge(strip, 'urgente')).toBeVisible()
   await expect(badge(page.getByRole('navigation', { name: 'Navegação' }).locator('..'), 'urgente').first()).toBeVisible()
-  await expect(badge(page.getByTestId('header-strip'), 'urgente')).toHaveCSS('background-color', 'rgb(239, 68, 68)')
+  // The badge carries the label's color in its dot (the fill is only a tint of it).
+  await expect(badge(strip, 'urgente').getByTestId('label-dot')).toHaveCSS('background-color', PINK_RGB)
+  // The name is taken: typing it again offers no "Criar etiqueta", only the existing option.
+  await row.getByTestId('label-search').fill('urgente')
+  await expect(option(row, 'urgente')).toHaveCount(1)
+  await expect(row.getByTestId('label-new-save')).toHaveCount(0)
+  await row.getByTestId('label-search').fill('')
 
-  // 2. A repeated slug shows the server error and creates nothing.
-  await row.getByTestId('label-new-slug').fill('urgente')
+  // 2. A second label, with a color outside the palette ("Outra…"): both stay applied.
+  await row.getByTestId('label-search').fill('backend')
+  // The native picker is hidden behind "Outra…": set its value the way the browser does when a color is chosen.
+  await row.getByTestId('label-new-color').locator('input[type="color"]').evaluate((el: HTMLInputElement) => {
+    el.value = '#1d4ed8'
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await expect(row.getByTestId('palette-custom')).toHaveAttribute('aria-pressed', 'true')
   await row.getByTestId('label-new-save').click()
-  await expect(row.getByTestId('label-error')).toHaveText('Já existe uma etiqueta com esse slug.')
-  // The browser logs the 409 of the expected refusal; it is not an app error.
-  expect(consoleErrors.splice(0).filter((m) => !m.includes('409'))).toEqual([])
-  await expect(row.getByTestId('label-option')).toHaveCount(1)
-
-  // 3. A second label, applied to the same conversation: both show; unchecking one drops only it.
-  await row.getByTestId('label-new-slug').fill('backend')
-  await row.getByTestId('label-new-color').fill('#1d4ed8')
-  await row.getByTestId('label-new-save').click()
-  await expect(row.getByTestId('label-error')).toHaveCount(0)
+  await expect(chip(row, 'backend')).toBeVisible()
+  await expect(badge(strip, 'backend').getByTestId('label-dot')).toHaveCSS('background-color', 'rgb(29, 78, 216)')
   await expect(row.getByTestId('label-option')).toHaveCount(2)
-  await expect(badge(row, 'urgente')).toBeVisible()
-  await expect(badge(row, 'backend')).toBeVisible()
-  const urgenteBox = row.locator('[data-test="label-option"][data-slug="urgente"] input')
-  await expect(urgenteBox).toBeChecked()
-  await urgenteBox.uncheck()
-  await expect(badge(row.getByTestId('label-badges'), 'urgente')).toHaveCount(0)
-  await expect(badge(row.getByTestId('label-badges'), 'backend')).toBeVisible()
-  await expect(badge(page.getByTestId('header-strip'), 'urgente')).toHaveCount(0)
-  await expect(badge(page.getByTestId('header-strip'), 'backend')).toBeVisible()
-  await urgenteBox.check()
-  await expect(badge(page.getByTestId('header-strip'), 'urgente')).toBeVisible()
+  await expect(row.getByTestId('label-error')).toHaveCount(0)
+
+  // 3. Unmarking one in the list drops only it, in the field and in the header; marking brings it back.
+  await option(row, 'urgente').click()
+  await expect(option(row, 'urgente')).toHaveAttribute('aria-selected', 'false')
+  await expect(chip(row, 'urgente')).toHaveCount(0)
+  await expect(chip(row, 'backend')).toBeVisible()
+  await expect(badge(strip, 'urgente')).toHaveCount(0)
+  await expect(badge(strip, 'backend')).toBeVisible()
+  await option(row, 'urgente').click()
+  await expect(option(row, 'urgente')).toHaveAttribute('aria-selected', 'true')
+  await expect(badge(strip, 'urgente')).toBeVisible()
+  // The chip's "x" also takes it off.
+  await chip(row, 'urgente').getByTestId('label-chip-remove').click()
+  await expect(chip(row, 'urgente')).toHaveCount(0)
+  await option(row, 'urgente').click()
+  await expect(chip(row, 'urgente')).toBeVisible()
 
   // The conversations list shows both on the conversation's row, and reloading keeps them.
   await page.goto('/sessions')
@@ -93,20 +116,23 @@ test('criar, aplicar, repetir slug, desmarcar, editar e apagar etiquetas', async
   // The other conversations got none.
   await expect(page.getByTestId('conversation-row').filter({ hasText: 'Liste as tarefas pendentes' }).getByTestId('label-badge')).toHaveCount(0)
 
-  // 4. Recolor and rename in Preferences; the badges follow, and survive a reload.
+  // 4. Recolor and rename in Preferences: both save by themselves (no save button), and the badges follow.
   await page.goto('/preferencias?aba=etiquetas')
   await expect(page.getByTestId('tab-labels')).toHaveAttribute('aria-selected', 'true')
   const prefRow = page.getByTestId('label-row').and(page.locator('[data-slug="urgente"]'))
   await expect(prefRow).toHaveCount(1)
-  await prefRow.getByTestId('label-edit-color').fill('#facc15')
+  await expect(page.getByTestId('label-save')).toHaveCount(0)
+  await prefRow.getByTestId('label-edit-color').click()
+  await prefRow.getByTestId('palette-color').and(page.locator(`[data-color="${YELLOW}"]`)).click()
+  await expect(prefRow.getByTestId('label-edit-color')).toHaveCSS('background-color', 'rgb(255, 216, 102)')
   await prefRow.getByTestId('label-edit-slug').fill('critico')
-  await prefRow.getByTestId('label-save').click()
+  await prefRow.getByTestId('label-edit-slug').press('Enter')
   await expect(page.locator('[data-test="label-row"][data-slug="critico"]')).toHaveCount(1)
   await expect(page.locator('[data-test="label-row"][data-slug="urgente"]')).toHaveCount(0)
 
   await page.goto('/sessions')
   const renamed = badge(page.getByTestId('conversation-row').filter({ hasText: TITLE }), 'critico')
-  await expect(renamed).toHaveCSS('background-color', 'rgb(250, 204, 21)')
+  await expect(renamed.getByTestId('label-dot')).toHaveCSS('background-color', 'rgb(255, 216, 102)')
   await expect(badge(page, 'urgente')).toHaveCount(0)
   await page.reload()
   await expect(renamed).toBeVisible()
@@ -134,8 +160,7 @@ test('criar, aplicar, repetir slug, desmarcar, editar e apagar etiquetas', async
 test('as etiquetas aparecem na Caixa de entrada, no Painel e na busca', async ({ page }) => {
   await openConversation(page)
   const row = await labelsRow(page)
-  await createLabel(row, 'achei-me', '#16a34a')
-  await expect(badge(row, 'achei-me')).toBeVisible()
+  await createLabel(row, 'achei-me', GREEN)
 
   await page.goto('/inbox')
   await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
@@ -155,13 +180,9 @@ test('slug de 32 caracteres e várias etiquetas não estouram a linha, em tela l
   await openConversation(page)
   const row = await labelsRow(page)
   const longSlug = 'a'.repeat(31) + 'z'
-  await createLabel(row, longSlug, '#facc15')
-  await expect(badge(row, longSlug)).toBeVisible()
-  for (const [slug, color] of [['dois', '#1d4ed8'], ['tres', '#16a34a'], ['quatro', '#ef4444'], ['cinco', '#a855f7']]) {
-    await row.getByTestId('label-new-slug').fill(slug)
-    await row.getByTestId('label-new-color').fill(color)
-    await row.getByTestId('label-new-save').click()
-    await expect(badge(row, slug)).toBeVisible()
+  await createLabel(row, longSlug, YELLOW)
+  for (const [slug, color] of [['dois', CYAN], ['tres', GREEN], ['quatro', PINK], ['cinco', VIOLET]]) {
+    await createLabel(row, slug, color)
   }
   await expect(row.getByTestId('label-error')).toHaveCount(0)
 
@@ -216,11 +237,15 @@ async function openConversationNoReset(page: Page) {
   await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+/)
 }
 
-test('o texto do badge tem contraste legível com cor clara e escura, nos temas', async ({ page }) => {
-  // WCAG relative luminance contrast of the badge's text over its own fill.
+test('o texto do selo tem contraste legível sobre o fundo tingido, com cor clara e escura, nos oito temas', async ({ page, baseURL }) => {
+  // WCAG relative luminance contrast of the badge's text over its own fill. The fill is a color-mix(),
+  // which Chrome reports as color(srgb r g b) with channels from 0 to 1.
   const ratio = (badgeLocator: Locator) =>
     badgeLocator.evaluate((el) => {
-      const parse = (s: string) => (s.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
+      const parse = (s: string) => {
+        const numbers = (s.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
+        return s.startsWith('color(') ? numbers.map((n) => n * 255) : numbers
+      }
       const lum = ([r, g, b]: number[]) => {
         const f = (v: number) => {
           const c = v / 255
@@ -234,26 +259,30 @@ test('o texto do badge tem contraste legível com cor clara e escura, nos temas'
       return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
     })
 
-  await openConversation(page)
-  const row = await labelsRow(page)
-  await createLabel(row, 'clara', '#facc15')
-  await expect(badge(row, 'clara')).toBeVisible()
-  await row.getByTestId('label-new-slug').fill('escura')
-  await row.getByTestId('label-new-color').fill('#1d4ed8')
-  await row.getByTestId('label-new-save').click()
-  await expect(badge(row, 'escura')).toBeVisible()
-
-  for (const theme of ['Maestro', 'Dracula', 'Monokai Ristretto']) {
-    await page.goto('/preferencias')
-    await page.locator('[data-test="theme-option"]', { hasText: theme }).click()
-    await page.goto('/sessions')
-    const listRow = page.getByTestId('conversation-row').filter({ hasText: TITLE })
-    for (const slug of ['clara', 'escura']) {
-      expect(await ratio(badge(listRow, slug)), `${slug} em ${theme}`).toBeGreaterThanOrEqual(4.5)
-    }
+  const headers = { 'X-Maestro': '1', Origin: baseURL! }
+  const ids: number[] = []
+  for (const [slug, color] of [['clara', YELLOW], ['escura', '#1d4ed8'], ['rosa', PINK]]) {
+    const made = await page.request.post('/api/labels', { headers, data: { slug, color } })
+    ids.push(((await made.json()) as { id: number }).id)
   }
-  await page.goto('/preferencias')
-  await page.locator('[data-test="theme-option"]', { hasText: 'Maestro' }).click()
+  const sessions = (await (await page.request.get('/api/sessions', { headers })).json()) as { session_id: string; title: string }[]
+  const target = sessions.find((s) => s.title === TITLE)!
+  await page.request.put(`/api/sessions/${target.session_id}/labels`, { headers, data: { label_ids: ids } })
+
+  try {
+    for (const theme of ['Maestro', 'Dracula', 'Monokai Pro', 'Monokai Machine', 'Monokai Octagon', 'Monokai Ristretto', 'Monokai Spectrum', 'Monokai Classic']) {
+      await page.goto('/preferencias')
+      await page.locator('[data-test="theme-option"]', { hasText: theme }).click()
+      await page.goto('/sessions')
+      const listRow = page.getByTestId('conversation-row').filter({ hasText: TITLE })
+      for (const slug of ['clara', 'escura', 'rosa']) {
+        expect(await ratio(badge(listRow, slug)), `${slug} em ${theme}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  } finally {
+    await page.goto('/preferencias')
+    await page.locator('[data-test="theme-option"]', { hasText: 'Maestro' }).click()
+  }
 })
 
 test('teclado e acessibilidade do seletor de etiquetas', async ({ page }) => {
@@ -269,61 +298,84 @@ test('teclado e acessibilidade do seletor de etiquetas', async ({ page }) => {
   const controls = await toggle.getAttribute('aria-controls')
   await expect(page.locator(`[id="${controls}"]`)).toBeVisible()
 
-  // Tab leaves the button and lands on the form fields, which have accessible names.
-  await expect(row.getByLabel('Slug da nova etiqueta')).toBeVisible()
-  await expect(row.getByLabel('Cor da nova etiqueta')).toBeVisible()
-  await row.getByLabel('Slug da nova etiqueta').fill('teclado')
+  // Opening puts the focus in the combobox, which has an accessible name and owns the list.
+  const search = row.getByRole('combobox', { name: 'Procurar ou criar etiqueta' })
+  await expect(search).toBeFocused()
+  await expect(row.getByRole('listbox', { name: 'Etiquetas' })).toBeAttached()
+  await page.keyboard.type('teclado')
+  await expect(row.getByTestId('label-new-save')).toBeVisible()
+  // Enter with nothing highlighted creates the label and applies it.
   await page.keyboard.press('Enter')
-  const option = row.locator('[data-test="label-option"][data-slug="teclado"] input')
-  await expect(option).toBeChecked()
+  await expect(chip(row, 'teclado')).toBeVisible()
+  await expect(badge(page.getByTestId('header-strip'), 'teclado')).toBeVisible()
+  await expect(search).toHaveValue('')
 
-  // The checkbox is reachable and toggles with the space bar.
-  await option.focus()
-  await expect(option).toBeFocused()
-  await page.keyboard.press('Space')
-  await expect(option).not.toBeChecked()
+  // The arrows highlight a row (aria-activedescendant) and Enter marks or unmarks it.
+  await page.keyboard.press('ArrowDown')
+  const opt = option(row, 'teclado')
+  await expect(opt).toHaveAttribute('data-active', 'true')
+  await expect(search).toHaveAttribute('aria-activedescendant', (await opt.getAttribute('id'))!)
+  await page.keyboard.press('Enter')
+  await expect(opt).toHaveAttribute('aria-selected', 'false')
+  await expect(chip(row, 'teclado')).toHaveCount(0)
   await expect(badge(page.getByTestId('header-strip'), 'teclado')).toHaveCount(0)
-  await option.check()
+  await page.keyboard.press('Enter')
+  await expect(opt).toHaveAttribute('aria-selected', 'true')
   await expect(badge(page.getByTestId('header-strip'), 'teclado')).toBeVisible()
 
-  // Escape-free close with the button.
-  await toggle.focus()
-  await page.keyboard.press('Enter')
+  // Escape closes the panel and gives the focus back to the button.
+  await page.keyboard.press('Escape')
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(toggle).toBeFocused()
   await expect(row.getByTestId('label-option')).toHaveCount(0)
 })
 
 // The controls stay enabled while a request runs (`aria-busy` on the row instead), so the browser
-// does not drop the keyboard focus and the next Space still works.
-test('o foco continua na caixa depois de marcar com o teclado', async ({ page }) => {
+// does not drop the keyboard focus and the next Enter still works.
+test('o foco continua no campo depois de marcar com o teclado', async ({ page }) => {
   await openConversation(page)
   const row = await labelsRow(page)
-  await createLabel(row, 'foco', '#16a34a')
-  const option = row.locator('[data-test="label-option"][data-slug="foco"] input')
-  await expect(option).toBeChecked()
-  await option.focus()
-  await page.keyboard.press('Space')
-  await expect(option).not.toBeChecked()
+  await createLabel(row, 'foco', GREEN)
+  const search = row.getByTestId('label-search')
+  await search.focus()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(chip(row, 'foco')).toHaveCount(0)
   await expect(row).not.toHaveAttribute('aria-busy', 'true')
-  await expect(option).toBeFocused()
-  await page.keyboard.press('Space')
-  await expect(option).toBeChecked()
+  await expect(search).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(chip(row, 'foco')).toBeVisible()
   await expect(row).not.toHaveAttribute('aria-busy', 'true')
-  await expect(option).toBeFocused()
+  await expect(search).toBeFocused()
+})
+
+test('a paleta do seletor aparece só ao criar, e filtrar mostra o trecho achado e a contagem de uso', async ({ page }) => {
+  await openConversation(page)
+  const row = await labelsRow(page)
+  await createLabel(row, 'backend', CYAN)
+  await createLabel(row, 'frontend', GREEN)
+  const search = row.getByTestId('label-search')
+  // Nothing typed: no palette. A name that matches nothing: the create row and the palette.
+  await expect(row.getByTestId('label-new-color')).toHaveCount(0)
+  await search.fill('zzz')
+  await expect(row.getByTestId('label-option')).toHaveCount(0)
+  await expect(row.getByTestId('label-new-color').getByTestId('palette-color')).toHaveCount(7)
+  await expect(row.getByTestId('palette-custom')).toHaveText('Outra…')
+  // A partial name filters the list and highlights what matched; the count says how many conversations use it.
+  await search.fill('end')
+  await expect(row.getByTestId('label-option')).toHaveCount(2)
+  await expect(option(row, 'backend').locator('mark')).toHaveText('end')
+  await expect(option(row, 'backend').getByTestId('label-count')).toHaveText('1 conversa')
 })
 
 test('no menu lateral e na busca, as etiquetas ficam numa linha abaixo do título, alinhadas a ele', async ({ page }) => {
   await openConversation(page)
   const row = await labelsRow(page)
-  await createLabel(row, 'primeira', '#1d4ed8')
-  await expect(badge(row, 'primeira')).toBeVisible()
+  await createLabel(row, 'primeira', CYAN)
   const side = page.locator('a', { has: page.getByTestId('row-title') }).filter({ hasText: TITLE }).first()
   await expect(side.getByTestId('row-labels')).toBeVisible()
-  for (const [slug, color] of [['segunda', '#16a34a'], ['terceira', '#ef4444'], ['quarta', '#a855f7']]) {
-    await row.getByTestId('label-new-slug').fill(slug)
-    await row.getByTestId('label-new-color').fill(color)
-    await row.getByTestId('label-new-save').click()
-    await expect(badge(row, slug)).toBeVisible()
+  for (const [slug, color] of [['segunda', GREEN], ['terceira', PINK], ['quarta', VIOLET]]) {
+    await createLabel(row, slug, color)
   }
   await expect(side.getByTestId('row-labels').getByTestId('label-badge')).toHaveCount(4)
   await expect(side.getByTestId('row-labels').getByTestId('label-more')).toHaveCount(0)
