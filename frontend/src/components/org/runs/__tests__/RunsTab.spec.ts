@@ -47,7 +47,16 @@ async function mountTab(handlers: Parameters<typeof routeFetch>[0] = {}) {
 
 const ids = (w: ReturnType<typeof mount>) => w.findAll('[data-test="run-row"]').map((r) => r.attributes('data-run-id'))
 
+const at = (day: number, hour: number, minute: number) => new Date(2026, 10, day, hour, minute).getTime() / 1000
+const days = (w: ReturnType<typeof mount>) => w.findAll('[data-test="run-day"]').map((d) => d.attributes('data-day'))
+
 describe('RunsTab', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 10, 17, 10, 40))
+  })
+  afterEach(() => vi.useRealTimers())
+
   it('mantém o data-test raiz e a prop da casca', async () => {
     const { w } = await mountTab()
     expect(w.attributes('data-test')).toBe('runs-tab')
@@ -110,5 +119,66 @@ describe('RunsTab', () => {
     useOrgStore(pinia).applyEvent('agent.run', makeRun({ id: 9, agent_id: 1, started_at: t + 900, outcome: 'running' }))
     await flushPromises()
     expect(ids(w)[0]).toBe('9')
+  })
+
+  it('agrupa por dia, do mais novo ao mais antigo', async () => {
+    const mixed = [
+      makeRun({ id: 1, agent_id: 1, started_at: at(13, 18, 40), ended_at: at(13, 18, 41), outcome: 'concluded' }),
+      makeRun({ id: 2, agent_id: 1, started_at: at(17, 8, 0), ended_at: at(17, 8, 1), outcome: 'concluded' }),
+    ]
+    const { w } = await mountTab({ 'GET /api/agents/1/runs?limit=50': () => jsonResponse(mixed), 'GET /api/agents/2/runs?limit=50': () => jsonResponse([]) })
+    expect(days(w)).toEqual(['2026-11-17', '2026-11-13'])
+    expect(w.findAll('[data-test="run-day-label"]').map((l) => l.text())).toEqual(['Hoje', '13 nov · sexta'])
+    expect(w.findAll('[data-test="run-day"]')[1]!.findAll('[data-test="run-row"]')).toHaveLength(1)
+  })
+
+  it('perdidas do mesmo minuto viram uma linha', async () => {
+    const t = at(10, 9, 4)
+    const missed = [
+      makeRun({ id: 1, agent_id: 1, started_at: t, ended_at: t, outcome: 'missed' }),
+      makeRun({ id: 2, agent_id: 2, started_at: t + 10, ended_at: t + 10, outcome: 'missed' }),
+    ]
+    const { w } = await mountTab({ 'GET /api/agents/1/runs?limit=50': () => jsonResponse([missed[0]]), 'GET /api/agents/2/runs?limit=50': () => jsonResponse([missed[1]]) })
+    expect(w.findAll('[data-test="run-row"]')).toHaveLength(1)
+    expect(w.get('[data-test="run-row"]').attributes('data-group-size')).toBe('2')
+    expect(w.get('[data-test="run-headline"]').text()).toBe('2 perdidas: CTO e Dev')
+  })
+
+  it('o filtro Problemas mostra a contagem e esconde as concluídas', async () => {
+    const mixed = [
+      makeRun({ id: 1, agent_id: 1, started_at: at(16, 8, 0), ended_at: at(16, 8, 1), outcome: 'concluded' }),
+      makeRun({ id: 2, agent_id: 1, started_at: at(16, 9, 0), ended_at: at(16, 9, 1), outcome: 'failed' }),
+      makeRun({ id: 3, agent_id: 1, started_at: at(16, 10, 0), ended_at: at(16, 10, 0), outcome: 'missed' }),
+      makeRun({ id: 4, agent_id: 1, started_at: at(16, 11, 0), ended_at: at(16, 11, 0), outcome: 'missed' }),
+    ]
+    const { w } = await mountTab({ 'GET /api/agents/1/runs?limit=50': () => jsonResponse(mixed), 'GET /api/agents/2/runs?limit=50': () => jsonResponse([]) })
+    const chip = w.get('[data-test="runs-filter-problems"]')
+    expect(chip.get('[data-test="filter-chip-count"]').text()).toBe('3')
+    expect(ids(w)).toEqual(['4', '3', '2', '1'])
+    await chip.trigger('click')
+    expect(chip.attributes('aria-pressed')).toBe('true')
+    expect(ids(w)).toEqual(['4', '3', '2'])
+  })
+
+  it('avisa dos agentes desligados e some quando todos estão ligados', async () => {
+    const { w } = await mountTab()
+    expect(w.find('[data-test="runs-off"]').exists()).toBe(false)
+    useOrgStore(pinia).agents = [
+      makeAgent({ id: 1, slug: 'cto', name: 'CTO' }),
+      makeAgent({ id: 2, slug: 'dev', name: 'Triagem', reports_to: 1, enabled: false }),
+    ]
+    await flushPromises()
+    expect(w.get('[data-test="runs-off"]').text()).toBe('Triagem está desligado: nada dele roda até você ligar.')
+  })
+
+  it('traz o resumo das execuções carregadas', async () => {
+    const { w } = await mountTab()
+    expect(w.get('[data-test="runs-summary"]').text()).toMatch(/^.*: 2 concluídas, 1 com falha\.$/)
+  })
+
+  it('uma execução rodando, sem relato, convive com as outras', async () => {
+    const { w } = await mountTab()
+    expect(w.get('[data-run-id="4"] [data-test="run-headline"]').text()).toBe('Rodando')
+    expect(w.find('[data-run-id="4"] [data-test="run-duration-bar"]').exists()).toBe(false)
   })
 })
