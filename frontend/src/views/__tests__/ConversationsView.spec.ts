@@ -32,6 +32,8 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
+const chip = (wrapper: { find: (sel: string) => any }, state: string) => wrapper.find(`[data-test="conversations-chip"][data-state="${state}"]`)
+
 async function mountList(path = '/sessions') {
   const router = createAppRouter(createMemoryHistory())
   await router.push(path)
@@ -59,10 +61,10 @@ describe('Conversas', () => {
     const { wrapper, router } = await mountList('/sessions?estado=finalizadas')
 
     expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Feita'])
-    await wrapper.find('[data-test="conversations-state"]').setValue('todas')
+    await chip(wrapper, 'todas').trigger('click')
     await wrapper.find('[data-test="conversations-project"]').setValue('1')
     await flushPromises()
-    expect(router.currentRoute.value.query).toMatchObject({ estado: 'todas', projeto: '1' })
+    expect(router.currentRoute.value.query).toEqual({ projeto: '1' })
     expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Aberta'])
   })
 
@@ -300,5 +302,141 @@ describe('Conversas: Descartar ao lado de Finalizar', () => {
     const { wrapper } = await mountList('/sessions?estado=descartadas')
     expect(wrapper.findAll('[data-test="row-link"]')).toHaveLength(1)
     expect(wrapper.find('[data-test="row-discard"]').exists()).toBe(false)
+  })
+})
+
+describe('Conversas: chips de estado', () => {
+  const chips = (w: Awaited<ReturnType<typeof mountList>>['wrapper']) => w.findAll('[data-test="conversations-chip"]')
+  const titles = (w: Awaited<ReturnType<typeof mountList>>['wrapper']) => w.findAll('[data-test="row-link"]').map((r) => r.text())
+
+  beforeEach(() => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'run', title: 'Rodando', display_state: 'running', last_activity_at: now }),
+      makeSession({ session_id: 'run2', title: 'Rodando também', display_state: 'running', unread: true, last_activity_at: now - 1 }),
+      makeSession({ session_id: 'turn', title: 'Sua vez aqui', display_state: 'waiting', state: 'idle', last_activity_at: now - 2 }),
+      makeSession({ session_id: 'hold', title: 'Parada', display_state: 'waiting', state: 'idle', mark: 'on_hold', last_activity_at: now - 3 }),
+      makeSession({ session_id: 'fin', title: 'Feita', display_state: 'finished', unread: true, last_activity_at: now - 4 }),
+      makeSession({ session_id: 'disc', title: 'Jogada fora', display_state: 'running', mark: 'discarded', last_activity_at: now - 5 }),
+    ])
+    useSessionsStore(pinia).setForProject(2, [
+      makeSession({ session_id: 'other', project_id: 2, title: 'Do outro', display_state: 'running', last_activity_at: now - 6 }),
+    ])
+  })
+
+  it('são cinco, na ordem, com contagem nos três primeiros que contam', async () => {
+    const { wrapper } = await mountList()
+    expect(chips(wrapper).map((c) => c.attributes('data-state'))).toEqual(['todas', 'em-execucao', 'sua-vez', 'nao-lidas', 'finalizadas'])
+    const text = (state: string) => chip(wrapper, state).text()
+    expect(text('todas')).toBe('Todas')
+    expect(text('em-execucao')).toBe('Em execução3')
+    expect(text('sua-vez')).toBe('Sua vez1')
+    expect(text('nao-lidas')).toBe('Não lidas1')
+    expect(text('finalizadas')).toBe('Finalizadas')
+    expect(chip(wrapper, 'finalizadas').find('[data-test="filter-chip-count"]').exists()).toBe(false)
+  })
+
+  it('clicar num chip guarda o estado na URL e filtra; Todas tira o estado', async () => {
+    const { wrapper, router } = await mountList()
+    await chip(wrapper, 'em-execucao').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.estado).toBe('em-execucao')
+    expect(titles(wrapper)).toEqual(['Rodando', 'Rodando também', 'Do outro'])
+    expect(chip(wrapper, 'em-execucao').attributes('aria-pressed')).toBe('true')
+    expect(chip(wrapper, 'todas').attributes('aria-pressed')).toBe('false')
+    await chip(wrapper, 'todas').trigger('click')
+    await flushPromises()
+    expect('estado' in router.currentRoute.value.query).toBe(false)
+    expect(chip(wrapper, 'todas').attributes('aria-pressed')).toBe('true')
+  })
+
+  it.each([
+    ['sua-vez', ['Sua vez aqui']],
+    ['nao-lidas', ['Rodando também']],
+    ['finalizadas', ['Feita']],
+  ])('?estado=%s lista só as conversas desse estado', async (estado, expected) => {
+    const { wrapper } = await mountList(`/sessions?estado=${estado}&projeto=1`)
+    expect(titles(wrapper)).toEqual(expected)
+    expect(chip(wrapper, estado).attributes('aria-pressed')).toBe('true')
+  })
+
+  it('as contagens respeitam o projeto e o agrupador, não a busca nem o estado', async () => {
+    const { wrapper } = await mountList('/sessions?projeto=1&busca=zzz&estado=finalizadas')
+    expect(chip(wrapper, 'em-execucao').text()).toBe('Em execução2')
+    expect(chip(wrapper, 'sua-vez').text()).toBe('Sua vez1')
+    expect(chip(wrapper, 'nao-lidas').text()).toBe('Não lidas1')
+  })
+
+  it('as contagens respeitam o agrupador', async () => {
+    useGroupsStore(pinia).groups = [makeGroup({ id: 1, name: 'A' })]
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', group_id: 1, display_state: 'running', last_activity_at: now }),
+      makeSession({ session_id: 'b', group_id: null, display_state: 'running', last_activity_at: now - 1 }),
+    ])
+    const { wrapper } = await mountList('/sessions?projeto=1&agrupador=1')
+    expect(chip(wrapper, 'em-execucao').text()).toBe('Em execução1')
+  })
+})
+
+describe('Conversas: Mais filtros', () => {
+  const select = (w: Awaited<ReturnType<typeof mountList>>['wrapper']) => w.find('[data-test="conversations-state"]')
+
+  it('tem "Mais filtros" e os estados que não são chips', async () => {
+    const { wrapper } = await mountList()
+    expect(select(wrapper).findAll('option').map((o) => o.text())).toEqual(['Mais filtros', 'Ativas', 'Em espera', 'Bloqueadas', 'Para revisar', 'Prioridade', 'Descartadas'])
+    expect((select(wrapper).element as HTMLSelectElement).value).toBe('')
+  })
+
+  it('com um chip ligado continua em "Mais filtros"', async () => {
+    const { wrapper } = await mountList('/sessions?estado=sua-vez')
+    expect((select(wrapper).element as HTMLSelectElement).value).toBe('')
+  })
+
+  it('o endereço antigo ?estado=para-revisar continua filtrando e aparece no select', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', title: 'Rev', mark: 'review', last_activity_at: now }),
+      makeSession({ session_id: 'b', title: 'Nada', last_activity_at: now - 1 }),
+    ])
+    const { wrapper } = await mountList('/sessions?estado=para-revisar')
+    expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Rev'])
+    expect((select(wrapper).element as HTMLSelectElement).value).toBe('para-revisar')
+    expect(select(wrapper).findAll('option').find((o) => (o.element as HTMLOptionElement).selected)?.text()).toBe('Para revisar')
+    expect(wrapper.findAll('[data-test="conversations-chip"][aria-pressed="true"]')).toHaveLength(0)
+  })
+
+  it('voltar para "Mais filtros" tira o estado da URL', async () => {
+    const { wrapper, router } = await mountList('/sessions?estado=ativas')
+    await select(wrapper).setValue('')
+    await flushPromises()
+    expect('estado' in router.currentRoute.value.query).toBe(false)
+  })
+})
+
+describe('Conversas: colunas e cabeçalho', () => {
+  it('cada grupo de data tem o cabeçalho de colunas, com a data na primeira', async () => {
+    useSessionsStore(pinia).setForProject(1, [
+      makeSession({ session_id: 'a', title: 'Hoje', last_activity_at: now }),
+      makeSession({ session_id: 'c', title: 'Velha', last_activity_at: now - 30 * 86400 }),
+    ])
+    const { wrapper } = await mountList()
+    const headers = wrapper.findAll('[data-test="conversations-columns"]')
+    expect(headers).toHaveLength(2)
+    expect(headers[0]!.text()).toBe('HojeSituaçãoProjetoAtividade')
+    expect(headers[0]!.find('[data-test="date-group"]').text()).toBe('Hoje')
+    expect(headers[1]!.find('[data-test="date-group"]').text()).toBe('Antes')
+    // Below md only the group name stays.
+    const rest = headers[0]!.findAll('span').filter((s) => ['Situação', 'Projeto', 'Atividade'].includes(s.text()))
+    expect(rest).toHaveLength(3)
+    for (const col of rest) expect(col.classes()).toContain('max-md:hidden')
+  })
+
+  it('"Nova conversa" mostra o atalho C e o título não é mais mono maiúsculo', async () => {
+    const { wrapper } = await mountList()
+    const kbd = wrapper.find('[data-test="conversations-new"] kbd')
+    expect(kbd.exists()).toBe(true)
+    expect(kbd.text()).toBe('C')
+    const h1 = wrapper.find('h1')
+    expect(h1.text()).toBe('Conversas')
+    expect(h1.classes()).not.toContain('font-mono')
+    expect(h1.classes()).not.toContain('uppercase')
   })
 })

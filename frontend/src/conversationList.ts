@@ -46,6 +46,27 @@ export function inInbox(session: Session, tab: InboxTab): boolean {
   return waiting || running || unread
 }
 
+export type ConversationsState =
+  | 'todas' | 'em-execucao' | 'sua-vez' | 'nao-lidas' | 'finalizadas'
+  | 'ativas' | 'em-espera' | 'bloqueadas' | 'para-revisar' | 'prioridade' | 'descartadas'
+
+/** Whether a session shows in a state of the Conversas screen. Discarded ones only show in `descartadas`. */
+export function matchesConversationsState(session: Session, state: ConversationsState): boolean {
+  if (state === 'descartadas') return isDiscarded(session)
+  if (isDiscarded(session)) return false
+  const finished = session.display_state === 'finished'
+  if (state === 'em-execucao') return session.display_state === 'running'
+  if (state === 'sua-vez') return session.display_state === 'waiting' && markLane(session) === 'now'
+  if (state === 'nao-lidas') return session.unread && !finished
+  if (state === 'finalizadas') return finished
+  if (state === 'ativas') return !finished
+  if (state === 'em-espera') return session.mark === 'on_hold'
+  if (state === 'bloqueadas') return session.mark === 'blocked'
+  if (state === 'para-revisar') return session.mark === 'review'
+  if (state === 'prioridade') return Boolean(session.priority)
+  return true
+}
+
 export type DateLabel = 'Hoje' | 'Ontem' | 'Esta semana' | 'Antes'
 
 function dayStart(year: number, month: number, day: number): number {

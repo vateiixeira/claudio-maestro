@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dateLabel, groupByDate, inInbox, INBOX_TABS, isInboxTab, waitingReason } from '../conversationList'
+import { dateLabel, groupByDate, inInbox, INBOX_TABS, isInboxTab, matchesConversationsState, waitingReason, type ConversationsState } from '../conversationList'
 import { makeSession } from '../test/factories'
 
 const at = (y: number, m: number, d: number, hh = 12, mm = 0) => new Date(y, m - 1, d, hh, mm).getTime() / 1000
@@ -121,5 +121,54 @@ describe('sessões descartadas', () => {
   it('não entram em nenhuma aba da Inbox, nem em Todas', () => {
     const s = makeSession({ mark: 'discarded', display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'tool', unread: true })
     for (const tab of INBOX_TABS) expect(inInbox(s, tab.id)).toBe(false)
+  })
+})
+
+describe('estados da tela Conversas', () => {
+  const running = makeSession({ session_id: 'r', display_state: 'running' })
+  const yourTurn = makeSession({ session_id: 'y', display_state: 'waiting', state: 'idle' })
+  const askedLater = makeSession({ session_id: 'l', display_state: 'waiting', state: 'idle', mark: 'on_hold' })
+  const unreadOpen = makeSession({ session_id: 'u', display_state: 'running', unread: true })
+  const unreadFinished = makeSession({ session_id: 'uf', display_state: 'finished', unread: true })
+  const finished = makeSession({ session_id: 'f', display_state: 'finished' })
+  const onHold = makeSession({ session_id: 'h', display_state: 'running', mark: 'on_hold' })
+  const blocked = makeSession({ session_id: 'b', display_state: 'running', mark: 'blocked' })
+  const review = makeSession({ session_id: 'v', display_state: 'running', mark: 'review' })
+  const priority = makeSession({ session_id: 'p', display_state: 'running', priority: true })
+  const discarded = makeSession({ session_id: 'd', display_state: 'running', mark: 'discarded', priority: true, unread: true })
+  const all = [running, yourTurn, askedLater, unreadOpen, unreadFinished, finished, onHold, blocked, review, priority, discarded]
+  const ids = (state: ConversationsState) => all.filter((s) => matchesConversationsState(s, state)).map((s) => s.session_id)
+
+  it('todas mostra tudo menos as descartadas', () => {
+    expect(ids('todas')).toEqual(['r', 'y', 'l', 'u', 'uf', 'f', 'h', 'b', 'v', 'p'])
+  })
+
+  it('em-execucao são as que estão rodando', () => {
+    expect(ids('em-execucao')).toEqual(['r', 'u', 'h', 'b', 'v', 'p'])
+  })
+
+  it('sua-vez são as que esperam você e não estão marcadas para depois', () => {
+    expect(ids('sua-vez')).toEqual(['y'])
+  })
+
+  it('nao-lidas ignora as finalizadas', () => {
+    expect(ids('nao-lidas')).toEqual(['u'])
+  })
+
+  it('finalizadas e ativas se separam pelo estado', () => {
+    expect(ids('finalizadas')).toEqual(['uf', 'f'])
+    expect(ids('ativas')).toEqual(['r', 'y', 'l', 'u', 'h', 'b', 'v', 'p'])
+  })
+
+  it('as marcações e a prioridade filtram pelo que carregam', () => {
+    expect(ids('em-espera')).toEqual(['l', 'h'])
+    expect(ids('bloqueadas')).toEqual(['b'])
+    expect(ids('para-revisar')).toEqual(['v'])
+    expect(ids('prioridade')).toEqual(['p'])
+  })
+
+  it('a descartada só aparece em descartadas', () => {
+    expect(ids('descartadas')).toEqual(['d'])
+    expect(all.filter((s) => s !== discarded).some((s) => matchesConversationsState(s, 'descartadas'))).toBe(false)
   })
 })
