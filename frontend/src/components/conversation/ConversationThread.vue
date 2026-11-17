@@ -18,10 +18,10 @@ import { buildAgentTimeline, IN_FLIGHT } from '../../conversation/agentTimeline'
 import { useRunTask } from './useRunTask'
 import { findLastMessage, MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { buildItemTree, deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
-import { buildTurns, summaryText, turnSummary } from '../../conversation/turns'
+import { buildTurns, summaryText, turnSummary, type Turn } from '../../conversation/turns'
 import { waitingIdsOf } from '../../conversation/waiting'
-import { workStatus } from '../../conversation/work'
-import { liveActivity, showTurnTasks, turnTaskStates } from '../../conversation/liveTurn'
+import { hasUnrecoveredFailure } from '../../conversation/work'
+import { liveActivity, liveDetail, showTurnTasks, turnTaskStates } from '../../conversation/liveTurn'
 import { COLLAPSE_OPENING_KEY } from '../../conversation/collapseActivity'
 import { isNearEnd, turnKeys } from '../../conversation/liveItems'
 import SessionControls from '../session/SessionControls.vue'
@@ -213,6 +213,12 @@ const backgroundRunning = computed(() =>
   deriveSubagents(conv.value?.items ?? [], sessionActive.value).filter((entry) => entry.status === 'running'),
 )
 const waitingLabel = computed(() => waitingText(backgroundRunning.value))
+// The numbers at the right of a turn's separator: what the turn did, or "em andamento" while it runs.
+function turnStats(turn: Turn, done: boolean): string {
+  const summary = turnSummary(turn, tree.value.childrenOf)
+  if (done) return summary.actions ? summaryText(summary) : ''
+  return summary.actions ? `em andamento · ${summaryText(summary)}` : 'em andamento'
+}
 const turns = computed(() => {
   const list = buildTurns(rows.value)
   const taskStates = turnTaskStates(list)
@@ -223,11 +229,12 @@ const turns = computed(() => {
     const done = !last || !running
     // Over for the main turn, but not for the background work it started.
     const waiting = done && last && backgroundRunning.value.length > 0
-    let summary = done && !waiting ? summaryText(turnSummary(turn, tree.value.childrenOf)) : ''
-    if (done && !waiting && last && resultParts.value.length) summary = [summary, ...resultParts.value].join(' · ')
+    const stats = turnStats(turn, done)
+    // Duration and cost belong to the last turn only: the result is the session's last one.
+    const summary = done && !waiting && last && resultParts.value.length ? resultParts.value.join(' · ') : ''
     const tasks = taskStates[index]!
     return {
-      turn, done, last, waiting, summary, failed: done && !waiting && last && resultFailed.value,
+      turn, done, last, waiting, summary, stats, failed: done && !waiting && last && resultFailed.value,
       tasks: tasks.tasks, showTasks: showTurnTasks(tasks, done),
     }
   })
@@ -274,6 +281,12 @@ const liveText = computed(() => {
   const last = turns.value[turns.value.length - 1]
   if (!last || last.done) return ''
   return liveActivity(last.turn, sessionActive.value, waitingIds.value, (conv.value?.prompts.length ?? 0) > 0)
+})
+// The command under the live line, when the action that runs has a description.
+const liveCommand = computed(() => {
+  const last = turns.value[turns.value.length - 1]
+  if (!last || last.done) return ''
+  return liveDetail(last.turn, sessionActive.value, waitingIds.value)
 })
 // What was already there when the conversation opened (or was switched to) is history and appears
 // at once; whatever shows up afterwards arrived live and enters with a motion. Rows that only
@@ -393,10 +406,10 @@ async function applyFind() {
 // Open/closed chosen by the user per work block (by id); unset follows `blockOpen`.
 const groupChoice = reactive(new Map<string, boolean>())
 // By default a block is folded into its header line, running turn or not (the orange line says what runs).
-// Only a failure opens it automatically; a single action stays as quiet as a group.
+// Only a failure nobody tried again opens it automatically; a single action stays as quiet as a group.
 function blockOpen(entry: { id: string; items: ToolItem[] }): boolean {
   return groupChoice.get(entry.id)
-    ?? entry.items.some((item) => workStatus(item, sessionActive.value) === 'error')
+    ?? hasUnrecoveredFailure(entry.items, sessionActive.value, waitingIds.value)
 }
 function toggleBlock(entry: { id: string; items: ToolItem[] }) {
   groupChoice.set(entry.id, !blockOpen(entry))
@@ -615,16 +628,17 @@ function resolvePrompt(promptId: string) {
           <p v-if="rows.length === 0 && !mainAgent" class="m-0 py-8 text-center text-sm text-fg-muted">
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
-          <template v-for="({ turn, done, last, waiting, summary, failed, tasks, showTasks }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
+          <template v-for="({ turn, done, last, waiting, summary, stats, failed, tasks, showTasks }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
             <RunEntry v-for="run in runSlots.get(index)" :key="`run-${run.id}`" :run="run" :routine-name="routineName(run)" />
-            <div v-if="index > 0" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-11 focus-visible:outline-2 focus-visible:outline-primary items-center gap-2.5">
-              <span class="cap text-fg-subtle">Turno {{ turn.number }}</span>
+            <div v-if="turn.user" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-11 items-center gap-3 focus-visible:outline-2 focus-visible:outline-primary">
+              <span data-test="turn-number" class="cap text-fg-subtle">Turno {{ turn.number }}</span>
               <span aria-hidden="true" class="h-px grow bg-line" />
+              <span v-if="stats" data-test="turn-stats" class="shrink-0 font-mono text-xs text-fg-subtle">{{ stats }}</span>
             </div>
             <div
               data-test="turn"
-              :data-turn-anchor="index === 0 ? '' : undefined"
-              :tabindex="index === 0 ? -1 : undefined"
+              :data-turn-anchor="turn.user ? undefined : ''"
+              :tabindex="turn.user ? undefined : -1"
               class="flex scroll-mt-11 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
             >
               <UserMessage v-if="turn.user" :item="turn.user" :class="{ 'animate-enter': isLive(turn.user.id) }" />
@@ -643,7 +657,7 @@ function resolvePrompt(promptId: string) {
               />
               <div v-if="!done" data-test="turn-progress" class="flex flex-col gap-2.5">
                 <TurnTasks v-if="showTasks" :tasks="tasks" />
-                <TurnLiveLine :activity="liveText" :started-at="conv.runningSince" :tokens="conv.turnTokens" />
+                <TurnLiveLine :activity="liveText" :started-at="conv.runningSince" :tokens="conv.turnTokens" :detail="liveCommand" />
               </div>
               <TurnTasks v-else-if="showTasks" :tasks="tasks" muted />
               <div v-if="done" data-test="turn-end" class="flex flex-wrap items-center gap-y-0.5 text-xs text-fg-subtle">

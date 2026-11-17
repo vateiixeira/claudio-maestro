@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildTurns } from '../turns'
-import { liveActivity, showTurnTasks, tokensLabel, turnTaskStates } from '../liveTurn'
+import { liveActivity, liveDetail, showTurnTasks, tokensLabel, turnTaskStates } from '../liveTurn'
 import type { ConversationItem, ToolItem } from '../../types/conversation'
 
 const user = (id: string): ConversationItem => ({ type: 'user', id, text: id })
@@ -104,6 +104,41 @@ describe('liveActivity', () => {
     const turn = lastTurn(running('b', 'Bash', { command: 'ls' }), text('a', true))
     expect(liveActivity(turn, true, new Set(['tu-b']), true)).toBe('esperando você')
     expect(liveActivity(lastTurn(), true, none, true)).toBe('esperando você')
+  })
+})
+
+describe('liveDetail', () => {
+  const lastTurn = (...items: ConversationItem[]) => buildTurns([user('u'), ...items]).at(-1)!
+  const none = new Set<string>()
+
+  it('o comando do Bash que roda e tem descrição, sem o "cd pasta &&"', () => {
+    const turn = lastTurn(running('b', 'Bash', { description: 'Rodar os testes', command: 'cd /a && pnpm test' }))
+    expect(liveDetail(turn, true, none)).toBe('pnpm test')
+  })
+
+  it('só a primeira linha do comando', () => {
+    const turn = lastTurn(running('b', 'Bash', { description: 'Gerar', command: "python3 - <<'EOF'\nprint(1)\nEOF" }))
+    expect(liveDetail(turn, true, none)).toBe("python3 - <<'EOF'")
+  })
+
+  it('Bash rodando sem descrição não tem detalhe: o comando já é a atividade', () => {
+    expect(liveDetail(lastTurn(running('b', 'Bash', { command: 'pnpm test' })), true, none)).toBe('')
+  })
+
+  it('nada rodando não tem detalhe', () => {
+    expect(liveDetail(lastTurn(), true, none)).toBe('')
+    expect(liveDetail(lastTurn(tool('b', 'Bash', { description: 'x', command: 'ls' })), true, none)).toBe('')
+    expect(liveDetail(lastTurn(text('a', true)), true, none)).toBe('')
+  })
+
+  it('o detalhe é da ação que a atividade mostra: outra ação rodando depois dele o esconde', () => {
+    const turn = lastTurn(running('b', 'Bash', { description: 'Rodar', command: 'ls' }), running('r', 'Read', { file_path: '/p/a.py' }))
+    expect(liveDetail(turn, true, none)).toBe('')
+  })
+
+  it('esperando você não tem detalhe', () => {
+    const turn = lastTurn(running('b', 'Bash', { description: 'Rodar', command: 'ls' }))
+    expect(liveDetail(turn, true, new Set(['tu-b']))).toBe('')
   })
 })
 

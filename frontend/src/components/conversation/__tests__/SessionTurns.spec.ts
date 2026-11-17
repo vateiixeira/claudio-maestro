@@ -48,7 +48,7 @@ async function mountWith(snapshot: Record<string, unknown>) {
 }
 
 describe('chat em turnos', () => {
-  it('rótulo VOCÊ, separador a partir do segundo turno e resumo dos turnos terminados', async () => {
+  it('rótulo VOCÊ, um separador por turno com mensagem e o resumo dos turnos terminados', async () => {
     const w = await mountWith({
       state: 'running',
       items: [user('u1', 'primeiro'), tool('e1', 'Edit'), tool('r1', 'Read'), text('a'), user('u2', 'segundo'), text('b')],
@@ -57,12 +57,50 @@ describe('chat em turnos', () => {
     expect(turns).toHaveLength(2)
     expect(w.findAll('[data-test="user-message-card"]')[0]!.text()).toContain('Você')
     const seps = w.findAll('[data-test="turn-separator"]')
-    expect(seps).toHaveLength(1)
-    expect(seps[0]!.text()).toBe('Turno 2')
+    expect(seps).toHaveLength(2)
+    expect(seps.map((s) => s.find('[data-test="turn-number"]').text())).toEqual(['Turno 1', 'Turno 2'])
+    expect(seps.every((s) => s.attributes('data-turn-anchor') !== undefined)).toBe(true)
+    // The separator is the anchor, so the turn itself is not one.
+    expect(turns.every((t) => t.attributes('data-turn-anchor') === undefined)).toBe(true)
+    expect(w.findAll('[data-turn-anchor]')).toHaveLength(2)
     const ends = w.findAll('[data-test="turn-end"]')
     expect(ends).toHaveLength(1)
     expect(ends[0]!.text()).toContain('Concluído')
-    expect(ends[0]!.text()).toContain('2 ações · 1 arquivo alterado')
+    expect(ends[0]!.text()).not.toContain('ações')
+    expect(seps[0]!.find('[data-test="turn-stats"]').text()).toBe('2 ações · 1 arquivo alterado')
+  })
+
+  it('turno sem mensagem não tem separador, e o próprio turno é a âncora', async () => {
+    const w = await mountWith({ state: 'idle', items: [text('a'), user('u2', 'segundo'), text('b')] })
+    const turns = w.findAll('[data-test="turn"]')
+    expect(turns).toHaveLength(2)
+    expect(w.findAll('[data-test="turn-separator"]')).toHaveLength(1)
+    expect(turns[0]!.attributes('data-turn-anchor')).toBeDefined()
+    expect(turns[1]!.attributes('data-turn-anchor')).toBeUndefined()
+    expect(w.findAll('[data-turn-anchor]')).toHaveLength(2)
+  })
+
+  it('o separador do turno em andamento diz "em andamento" com as ações e os arquivos', async () => {
+    const items: Record<string, unknown>[] = [user('u1')]
+    for (let i = 0; i < 15; i++) items.push(tool(`r${i}`, 'Read'))
+    items.push(tool('e1', 'Edit'), tool('b1', 'Bash', { result: null }))
+    const w = await mountWith({ state: 'running', items })
+    expect(w.find('[data-test="turn-stats"]').text()).toBe('em andamento · 17 ações · 1 arquivo alterado')
+  })
+
+  it('turno em andamento sem ações diz só "em andamento"', async () => {
+    const w = await mountWith({ state: 'running', items: [user('u1')] })
+    expect(w.find('[data-test="turn-stats"]').text()).toBe('em andamento')
+  })
+
+  it('turno concluído com ações e arquivos; sem ações, sem números', async () => {
+    const w = await mountWith({
+      state: 'idle',
+      items: [user('u1'), tool('r1', 'Read'), tool('r2', 'Read'), tool('e1', 'Edit'), tool('e2', 'Write'), user('u2'), text('a')],
+    })
+    const seps = w.findAll('[data-test="turn-separator"]')
+    expect(seps[0]!.find('[data-test="turn-stats"]').text()).toBe('4 ações · 2 arquivos alterados')
+    expect(seps[1]!.find('[data-test="turn-stats"]').exists()).toBe(false)
   })
 
   it('último turno termina quando a sessão para e junta o resultado', async () => {
@@ -70,9 +108,9 @@ describe('chat em turnos', () => {
     fake.session.get('s1')!(makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 1500, total_cost_usd: null }, 2))
     await flushPromises()
     const end = w.find('[data-test="turn-end"]')
-    expect(end.text()).toContain('1 ação')
-    expect(end.text()).not.toContain('arquivo')
-    expect(end.text()).toContain('1,5 s')
+    expect(w.find('[data-test="turn-stats"]').text()).toBe('1 ação')
+    expect(end.text()).not.toContain('ação')
+    expect(end.find('[data-test="turn-end-summary"]').text()).toBe('· 1,5 s')
     expect(w.find('[data-test="turn-footer"]').exists()).toBe(false)
   })
 
@@ -81,7 +119,7 @@ describe('chat em turnos', () => {
       state: 'running',
       items: [user('u1'), tool('b1', 'Bash', { result: { content: 'x', is_error: true, details: null } }), text('a'), tool('b2', 'Bash', { result: null })],
     })
-    const nodes = w.findAll('[data-test="rail-node"]')
+    const nodes = w.findAll('[data-test="turn-entry"] [data-test="rail-node"]')
     expect(nodes.map((n) => n.attributes('data-kind'))).toEqual(['error', 'text', 'running'])
     expect(nodes[0]!.attributes('aria-hidden')).toBe('true')
   })
@@ -92,7 +130,7 @@ describe('chat em turnos', () => {
       items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { result: null }), text('a'), tool('r2', 'Read', { result: null })],
       prompts: [{ prompt_id: 'p1', tool_name: 'Bash', input: { command: 'ls' }, can_always: false, tool_use_id: 'tu-b1' }],
     })
-    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['waiting', 'text', 'running'])
+    expect(w.findAll('[data-test="turn-entry"] [data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['waiting', 'text', 'running'])
   })
 
   it('a linha da ferramenta que espera o usuário diz "esperando você", e o resumo do bloco também', async () => {
@@ -124,7 +162,7 @@ describe('chat em turnos', () => {
     })
     const kinds = w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))
     expect(kinds).toEqual(['warning', 'agent'])
-    expect(w.find('[data-test="turn-end"]').text()).toContain('3 ações · 1 arquivo alterado')
+    expect(w.find('[data-test="turn-stats"]').text()).toBe('3 ações · 1 arquivo alterado')
   })
 
   it('turno sem mensagem mostra os itens sem cartão do usuário', async () => {
@@ -155,7 +193,7 @@ describe('bloco de trabalho', () => {
     expect(header(w).find('svg[data-open="false"]').exists()).toBe(true)
     expect(rowHeaders(w)).toHaveLength(0)
     expect(w.find('[data-test="work-activity"]').exists()).toBe(false)
-    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['running'])
+    expect(w.findAll('[data-test="turn-entry"] [data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['running'])
     await header(w).trigger('click')
     expect(header(w).attributes('aria-expanded')).toBe('true')
     expect(header(w).attributes('aria-label')).toContain('Recolher')
@@ -271,6 +309,26 @@ describe('bloco de trabalho', () => {
     expect(rows.map((r) => r.attributes('aria-expanded'))).toEqual(['false', 'true', 'false'])
     expect(w.findAll('[data-test="tool-error"]')).toHaveLength(1)
     expect(w.find('[data-test="tool-error"]').text()).toContain('deu ruim')
+    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['error'])
+  })
+
+  it('o bloco com falha refeita em seguida começa fechado', async () => {
+    const failed = { content: 'deu ruim', is_error: true, details: null }
+    const w = await mountWith({
+      state: 'idle',
+      items: [user('u1'), tool('b1', 'Bash', { input: { command: 'make' }, result: failed }), tool('b2', 'Bash', { input: { command: 'make -j2' } })],
+    })
+    expect(header(w).attributes('aria-expanded')).toBe('false')
+    expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['bash'])
+  })
+
+  it('o bloco com falha sem nova tentativa começa aberto e com o nó vermelho', async () => {
+    const failed = { content: 'deu ruim', is_error: true, details: null }
+    const w = await mountWith({
+      state: 'idle',
+      items: [user('u1'), tool('b1', 'Bash', { input: { command: 'make' }, result: failed }), tool('r1', 'Read')],
+    })
+    expect(header(w).attributes('aria-expanded')).toBe('true')
     expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['error'])
   })
 

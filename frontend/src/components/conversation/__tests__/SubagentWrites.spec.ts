@@ -79,7 +79,7 @@ describe('escritas de subagente na conversa', () => {
     await flushPromises()
     expect(rows[0]!.find('[data-test="subagent-children"]').exists()).toBe(true)
     // One count per action: the agent, the read and the two writes, not the writes twice.
-    expect(w.find('[data-test="turn-end-summary"]').text()).toBe('· 4 ações · 2 arquivos alterados')
+    expect(w.find('[data-test="turn-stats"]').text()).toBe('4 ações · 2 arquivos alterados')
   })
 
   it('pedido de permissão de uma escrita do subagente marca a linha como esperando você, uma vez', async () => {

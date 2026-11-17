@@ -2,7 +2,8 @@ import { formatTokens } from '../format'
 import type { ToolItem } from '../types/conversation'
 import { applyTaskTool, type TaskEntry } from './tasks'
 import type { Turn } from './turns'
-import { workActivity } from './work'
+import { commandFolder, str } from './tool'
+import { workActivity, workStatus } from './work'
 
 // What the end of a turn says while the turn runs (the task list and the live line) and after it.
 
@@ -47,6 +48,27 @@ export function liveActivity(turn: Turn, sessionActive: boolean, waiting: Readon
     else if (entry.item.type === 'text' && entry.item.streaming) writing = true
   }
   return workActivity(tools, sessionActive, waiting) || (writing ? 'Escrevendo' : 'Pensando')
+}
+
+/**
+ * The command under the live line: the first line of what runs, without its leading `cd <folder> &&`.
+ * It belongs to the action the line names (the last that runs), and only a command that has a
+ * description needs it: without one, the line already says the command.
+ */
+export function liveDetail(turn: Turn, sessionActive: boolean, waiting: ReadonlySet<string>): string {
+  const tools: ToolItem[] = []
+  for (const entry of turn.entries) {
+    if (entry.kind === 'group') tools.push(...entry.items)
+    else if (entry.item.type === 'tool') tools.push(entry.item)
+  }
+  const current = [...tools].reverse().find((item) => {
+    const status = workStatus(item, sessionActive, waiting)
+    return status === 'running' || status === 'waiting'
+  })
+  if (!current || current.name !== 'Bash' || workStatus(current, sessionActive, waiting) !== 'running') return ''
+  if (!str(current.input?.description).trim()) return ''
+  const { rest } = commandFolder(str(current.input?.command))
+  return rest.split('\n').find((line) => line.trim())?.trim() ?? ''
 }
 
 /** "353 tokens", "1,6 mil tokens"; empty when the count is not known yet. */

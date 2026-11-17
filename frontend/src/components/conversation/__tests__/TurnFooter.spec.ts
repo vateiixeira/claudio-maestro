@@ -61,25 +61,31 @@ async function mountWith(snapshot: Record<string, unknown>, fetches: Record<stri
 const ends = (w: Awaited<ReturnType<typeof mountWith>>) => w.findAll('[data-test="turn-end"]')
 
 describe('rodapé do turno', () => {
-  it('é uma linha discreta, sem caixa, com ✓, "Concluído" e o resumo', async () => {
+  it('é uma linha discreta, sem caixa, com ✓ e "Concluído"; os números do turno ficam no separador', async () => {
     const w = await mountWith({ state: 'idle', items: [user('u1'), tool('e1', 'Edit'), tool('r1', 'Read')] })
     const end = ends(w)[0]!
-    expect(end.text().replace(/\s+/g, ' ')).toBe('Concluído · 2 ações · 1 arquivo alterado')
+    expect(end.text().replace(/\s+/g, ' ')).toBe('Concluído')
+    expect(w.find('[data-test="turn-stats"]').text()).toBe('2 ações · 1 arquivo alterado')
     expect(end.find('svg').exists()).toBe(true)
     expect(end.classes()).not.toEqual(expect.arrayContaining(['bg-panel']))
     expect(end.classes().some((c) => c.startsWith('border') || c === 'rounded-lg')).toBe(false)
     expect(end.text()).not.toContain('Turno concluído')
   })
 
-  it('junta duração e custo, na ordem', async () => {
-    const w = await mountWith({ state: 'idle', items: [user('u1'), tool('r1', 'Read')] })
-    fake.session.get('s1')!(makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 48000, total_cost_usd: 0.12 }, 2))
+  it('junta duração e custo, na ordem, só no último turno', async () => {
+    const w = await mountWith({ state: 'idle', items: [user('u1'), tool('r1', 'Read'), user('u2'), tool('r2', 'Read')] })
+    fake.session.get('s1')!(makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 12300, total_cost_usd: 0.12 }, 2))
     await flushPromises()
-    expect(ends(w)[0]!.text().replace(/\s+/g, ' ')).toBe('Concluído · 1 ação · 48 s · US$ 0,12')
+    const [old, last] = ends(w)
+    expect(last!.find('[data-test="turn-end-summary"]').text()).toBe('· 12,3 s · US$ 0,12')
+    expect(last!.text().replace(/\s+/g, ' ')).toBe('Concluído · 12,3 s · US$ 0,12')
+    expect(old!.find('[data-test="turn-end-summary"]').exists()).toBe(false)
   })
 
   it('turnos antigos ficam todos em cinza; só o último tem ✓ e palavra em verde', async () => {
     const w = await mountWith({ state: 'idle', items: [user('u1'), tool('r1', 'Read'), user('u2'), tool('r2', 'Read')] })
+    fake.session.get('s1')!(makeEvent('turn.result', { subtype: 'success', is_error: false, duration_ms: 1000, total_cost_usd: null }, 2))
+    await flushPromises()
     const [old, last] = ends(w)
     expect(old!.find('.text-primary, .text-primary-soft').exists()).toBe(false)
     expect(old!.find('.text-fg-subtle').exists()).toBe(true)

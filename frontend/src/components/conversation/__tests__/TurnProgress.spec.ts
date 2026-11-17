@@ -227,24 +227,39 @@ describe('turno terminado', () => {
 describe('linha viva', () => {
   const base = [user('u1')]
 
-  it('três pontinhos pulsando em secundária, o que acontece, o tempo e os tokens', async () => {
+  it('nó girando no trilho, o que acontece em destaque, e o tempo e os tokens à direita', async () => {
     const w = await mountWith({ state: 'running', items: base, turn_output_tokens: 1600, ...started })
     const line = live(w)
-    expect(line.text().replace(/\s+/g, ' ')).toBe('Pensando · 17 s · 1,6 mil tokens')
-    const dots = line.findAll('[data-test="turn-live-dot"]')
-    expect(dots).toHaveLength(3)
-    for (const dot of dots) {
-      expect(dot.classes()).toEqual(expect.arrayContaining(['bg-secondary', 'animate-pulse', 'motion-reduce:animate-none']))
-      expect(dot.attributes('aria-hidden')).toBe('true')
-    }
-    expect(line.classes()).toEqual(expect.arrayContaining(['font-mono', 'text-[0.6875rem]']))
-    expect(line.find('[data-test="turn-live-activity"]').classes()).toContain('text-secondary-soft')
-    expect(line.find('[data-test="turn-live-meta"]').classes()).toContain('text-fg-subtle')
+    expect(line.find('[data-test="turn-live-activity"]').text()).toBe('Pensando')
+    const node = line.find('[data-test="turn-live-node"]').find('[data-test="rail-node"]')
+    expect(node.attributes('data-kind')).toBe('running')
+    expect(line.find('[data-test="turn-live-dot"]').exists()).toBe(false)
+    const activity = line.find('[data-test="turn-live-activity"]')
+    expect(activity.classes()).toEqual(expect.arrayContaining(['font-medium', 'text-secondary-soft']))
+    const meta = line.find('[data-test="turn-live-meta"]')
+    expect(meta.text()).toBe('17 s · 1,6 mil tokens')
+    expect(meta.classes()).toEqual(expect.arrayContaining(['font-mono', 'text-fg-subtle']))
+    expect(line.find('[data-test="turn-live-detail"]').exists()).toBe(false)
+  })
+
+  it('o comando que roda aparece em mono embaixo, quando a ação tem descrição', async () => {
+    const running = tool('b', 'Bash', { input: { command: 'cd /p && pnpm test', description: 'Rodar os testes' }, result: null })
+    const w = await mountWith({ state: 'running', items: [...base, running], ...started })
+    const detail = live(w).find('[data-test="turn-live-detail"]')
+    expect(detail.text()).toBe('pnpm test')
+    expect(detail.classes()).toEqual(expect.arrayContaining(['font-mono', 'truncate']))
+  })
+
+  it('sem descrição o comando não se repete embaixo', async () => {
+    const running = tool('b', 'Bash', { input: { command: 'pnpm test' }, result: null })
+    const w = await mountWith({ state: 'running', items: [...base, running], ...started })
+    expect(live(w).find('[data-test="turn-live-detail"]').exists()).toBe(false)
   })
 
   it('omite o pedaço dos tokens enquanto o número não é conhecido', async () => {
     const w = await mountWith({ state: 'running', items: base, ...started })
-    expect(live(w).text().replace(/\s+/g, ' ')).toBe('Pensando · 17 s')
+    expect(live(w).find('[data-test="turn-live-activity"]').text()).toBe('Pensando')
+    expect(live(w).find('[data-test="turn-live-meta"]').text()).toBe('17 s')
   })
 
   it('os tokens acompanham o evento turn.tokens', async () => {
@@ -274,7 +289,8 @@ describe('linha viva', () => {
 
   it('sem o início do turno a linha omite o tempo, sem inventar um', async () => {
     const w = await mountWith({ state: 'running', items: [user('u1', seconds - 600)] })
-    expect(live(w).text().replace(/\s+/g, ' ')).toBe('Pensando')
+    expect(live(w).find('[data-test="turn-live-activity"]').text()).toBe('Pensando')
+    expect(live(w).find('[data-test="turn-live-meta"]').exists()).toBe(false)
   })
 
   it('turno aberto pelo agente ao recarregar: conta desde o início do backend, não da última mensagem', async () => {
