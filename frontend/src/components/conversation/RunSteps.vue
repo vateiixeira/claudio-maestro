@@ -8,6 +8,7 @@ import { useConversationStore } from '../../stores/conversation'
 import { useSessionConversation } from '../../conversation/useSessionConversation'
 import { buildItemTree } from '../../conversation/subagents'
 import { buildTurns } from '../../conversation/turns'
+import { waitingIdsOf } from '../../conversation/waiting'
 import { workStatus } from '../../conversation/work'
 import type { ToolItem } from '../../types/conversation'
 
@@ -27,19 +28,7 @@ const tree = computed(() => buildItemTree(conv.value?.items ?? []))
 const turns = computed(() => buildTurns(tree.value.top))
 const sessionActive = computed(() => conv.value?.state === 'running' || conv.value?.state === 'awaiting_decision')
 const taskList = computed(() => conversations.taskList(props.sessionId))
-// The actions that wait for the user: the tool of each pending request and the subagents it runs inside.
-const waitingIds = computed(() => {
-  const ids = new Set<string>()
-  const items = conv.value?.items ?? []
-  const byToolUse = new Map(items.flatMap((i) => (i.type === 'tool' ? [[i.tool_use_id, i] as const] : [])))
-  for (const prompt of conv.value?.prompts ?? []) {
-    for (let id = prompt.tool_use_id; id && !ids.has(id); ) {
-      ids.add(id)
-      id = byToolUse.get(id)?.parent_tool_use_id
-    }
-  }
-  return ids
-})
+const waitingIds = computed(() => waitingIdsOf(conv.value?.items ?? [], conv.value?.prompts ?? []))
 
 // Open/closed chosen by the user per work block (by id); unset folds the block, except a failure.
 const groupChoice = reactive(new Map<string, boolean>())
