@@ -544,8 +544,12 @@ class ConversationBuilder:
                 sub["task_id"] = next(iter(task_ids))
             resumed_ids = [t for t in task_ids if t in resumes]
             resumed = max((resumes[t] for t in resumed_ids), default=None)
-            if resumed is not None and (end is None or end.get("at") is None or resumed > end["at"]):
+            stopped = end is not None and _SUBAGENT_STATUS.get(str(end.get("status"))) == "stopped"
+            if resumed is not None and (end is None or end.get("at") is None or resumed > end["at"]
+                                        or (stopped and resumed == end["at"])):
                 # Woken by a SendMessage after it ended (or with no notification at all).
+                # Times are whole seconds: a stop and the resume that follows it can
+                # share one, and taking it as stopped would let the idle close kill it.
                 if live:
                     sub["task_id"] = sub["task_id"] or max(resumed_ids, key=resumes.__getitem__)
                     sub["status"] = "running"
@@ -984,7 +988,23 @@ class ConversationBuilder:
         events = [self._put(tool)]
         if tool.name == "SendMessage" and not block.is_error:
             events.extend(self._resume_subagent(details))
+        if tool.name == "TaskStop" and not block.is_error:
+            events.extend(self._end_stopped_task(details))
         return events
+
+    def _end_stopped_task(self, details: dict[str, Any] | None) -> list[Event]:
+        """The model stopped a task with TaskStop: the CLI sends no task notification for a
+        background Bash/Monitor stopped this way, so the result (`task_id`) ends its card."""
+        task_id = details.get("task_id") if isinstance(details, dict) else None
+        tool_use_id = self._task_tools.get(task_id) if isinstance(task_id, str) else None
+        if tool_use_id is None:
+            return []
+        state = self._backgrounds.get(tool_use_id) or self._subagents.get(tool_use_id)
+        if state is None or state["status"] != "running":
+            return []
+        state["status"] = "stopped"
+        tool = self._tool_item(tool_use_id)
+        return [self._put(tool)] if tool is not None else []
 
     def _note_agent_id(self, tool: ToolItem, details: Any) -> None:
         """The Agent/Task result names the task (`agentId`): a later SendMessage

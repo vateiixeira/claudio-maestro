@@ -12,6 +12,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 ### Corrigido
 
 - Uma conversa parada não volta mais a aparecer como não lida (ícone laranja no menu lateral, com o aviso "Enquanto você estava fora") 30 minutos depois do último turno. O fechamento do processo ocioso grava metadados no histórico, e isso era contado como atividade.
+- Um comando em segundo plano que o Claude parou sozinho não aparece mais como "rodando" numa conversa já terminada. Depois que o app reiniciava, ele voltava como em execução e a conversa ficava marcada como trabalhando.
 
 ## [0.12.0] - 2026-11-12
 

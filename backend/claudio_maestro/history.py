@@ -400,6 +400,39 @@ def _collect_task_endings(entry: dict[str, Any], endings: dict[str, dict[str, An
             }
 
 
+def _collect_stop_calls(entry: dict[str, Any], stop_calls: set[str]) -> None:
+    """Note the ids of the model's TaskStop calls (their results come later in the file)."""
+    if entry.get("type") != "assistant":
+        return
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if (isinstance(block, dict) and block.get("type") == "tool_use"
+                and block.get("name") == "TaskStop" and isinstance(block.get("id"), str)):
+            stop_calls.add(block["id"])
+
+
+def _collect_task_stops(
+    entry: dict[str, Any], stop_calls: set[str], endings: dict[str, dict[str, Any]],
+) -> None:
+    """Note a task the model stopped: the CLI writes no `<task-notification>` for it, so
+    the successful TaskStop result (`toolUseResult.task_id`) is the only record of the end."""
+    blocks, details = _tool_result_blocks(entry)
+    task_id = details.get("task_id") if isinstance(details, dict) else None
+    if len(blocks) != 1 or not isinstance(task_id, str) or not task_id:
+        return
+    [block] = blocks
+    if block["tool_use_id"] not in stop_calls or block.get("is_error"):
+        return
+    stamp = _epoch_seconds(entry.get("timestamp"))
+    before = endings.get(task_id)
+    if before is not None and None not in (before["at"], stamp) and stamp < before["at"]:
+        return
+    endings[task_id] = {"status": "stopped", "at": stamp, "task_id": task_id, "summary": None}
+
+
 def _collect_task_resumes(entry: dict[str, Any], resumes: dict[str, int]) -> None:
     """Note when a SendMessage woke a subagent (`toolUseResult.resumedAgentId`)."""
     details = entry.get("toolUseResult")
@@ -704,6 +737,7 @@ def read_transcript_file(path: Path, *, with_subagents: bool = False) -> Transcr
     endings: dict[str, dict[str, Any]] = {}
     resumes: dict[str, int] = {}
     background_launches: dict[str, str] = {}
+    stop_calls: set[str] = set()
     skipped = 0
     for line, complete in _lines(path):
         try:
@@ -720,6 +754,10 @@ def read_transcript_file(path: Path, *, with_subagents: bool = False) -> Transcr
             _collect_tool_times(entry, times)
         if '"tool_use"' in line:
             _collect_background_launches(entry, background_launches)
+        if '"TaskStop"' in line:
+            _collect_stop_calls(entry, stop_calls)
+        if stop_calls and '"tool_result"' in line:
+            _collect_task_stops(entry, stop_calls, endings)
         if "<task-notification>" in line:
             _collect_task_endings(entry, endings)
         if "resumedAgentId" in line:

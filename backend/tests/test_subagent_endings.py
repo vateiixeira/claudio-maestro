@@ -361,3 +361,50 @@ def test_transcript_reads_the_resumes(tmp_path: Path):
     )
 
     assert read_transcript_file(path).task_resumes == {"agent-1": 3_500}
+
+
+# TaskStop ---------------------------------------------------------------------
+
+
+def test_subagent_stopped_by_the_model_stays_stopped():
+    builder = load(endings={"agent-1": ending("stopped", at=3_000, summary=None)})
+
+    assert sub_of(builder)["status"] == "stopped"
+    assert not builder.subagents_running
+
+
+def test_resume_in_the_same_second_as_the_stop_keeps_it_running():
+    """Seconds only: a stop and the SendMessage that woke it can share one. Taking it
+    as running is the safe side: a stopped card lets the idle close kill a live subagent."""
+    builder = load(endings={"agent-1": ending("stopped", at=3_000, summary=None)},
+                   resumes={"agent-1": 3_000})
+
+    assert sub_of(builder)["status"] == "running"
+    assert builder.subagents_running
+
+
+def test_live_task_stop_ends_the_subagent_card():
+    from claude_agent_sdk import ToolUseBlock
+
+    from claudio_maestro.agent.fake import (
+        response_messages,
+        task_started_message,
+        tool_result_message,
+    )
+
+    builder = ConversationBuilder()
+    messages = [
+        *response_messages("s-1", [ToolUseBlock(id="toolu_1", name="Agent", input={
+            "description": "x", "prompt": "y", "run_in_background": True})], stop_reason="tool_use"),
+        task_started_message("s-1", "agent-1", "toolu_1"),
+        *response_messages("s-1", [ToolUseBlock(id="toolu_stop", name="TaskStop", input={
+            "task_id": "agent-1"})], stop_reason="tool_use"),
+        tool_result_message("toolu_stop", "stopped", tool_use_result={
+            "message": "Successfully stopped task: agent-1", "task_id": "agent-1",
+            "task_type": "local_agent"}),
+    ]
+    for message in messages:
+        builder.handle(message)
+
+    assert sub_of(builder)["status"] == "stopped"
+    assert not builder.subagents_running

@@ -42,3 +42,48 @@ def test_monitor_events_without_status_do_not_end_tasks(tmp_path):
     path.write_text(queue(notification("toolu_bg", task_id="task-1"), 1400)
                     + queue(intermediate, 1500))
     assert read_transcript_file(path).task_endings["toolu_bg"]["status"] == "completed"
+
+
+STOPPED = {"message": "Successfully stopped task: task-1 (sleep 600)", "task_id": "task-1",
+           "task_type": "local_bash", "command": "sleep 600"}
+
+
+def task_stop(details, *, at=1600, is_error=False, name="TaskStop"):
+    """A stop call by the model and its result, as the CLI writes them."""
+    return (
+        entry("assistant", "a9", None, at - 1, message={"id": "m9", "role": "assistant", "content": [
+            {"type": "tool_use", "id": "toolu_stop", "name": name, "input": {"task_id": "task-1"}}]})
+        + entry("user", "u9", "a9", at, toolUseResult=details, message={"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_stop", "content": "stopped",
+             "is_error": is_error}]})
+    )
+
+
+def test_task_stop_ends_the_task_it_names(tmp_path):
+    """The CLI writes no `<task-notification>` for a task the model stopped."""
+    path = tmp_path / "s.jsonl"
+    path.write_text(task_stop(STOPPED))
+    assert read_transcript_file(path).task_endings == {"task-1": {
+        "status": "stopped", "at": 1600, "task_id": "task-1", "summary": None}}
+
+
+@pytest.mark.parametrize("details,is_error,name", [
+    ("Error: No task found with ID: task-1", True, "TaskStop"),
+    (STOPPED, True, "TaskStop"),
+    (STOPPED, False, "Read"),
+    ({"message": "ok"}, False, "TaskStop"),
+])
+def test_only_a_successful_task_stop_ends_a_task(tmp_path, details, is_error, name):
+    path = tmp_path / "s.jsonl"
+    path.write_text(task_stop(details, is_error=is_error, name=name))
+    assert read_transcript_file(path).task_endings == {}
+
+
+@pytest.mark.parametrize("notified_at,status", [(1500, "stopped"), (1700, "completed")])
+def test_the_latest_of_stop_and_notification_wins(tmp_path, notified_at, status):
+    """Same task id, whatever comes first in the file."""
+    path = tmp_path / "s.jsonl"
+    text = notification("toolu_bg", task_id="task-1").replace(
+        "<tool-use-id>toolu_bg</tool-use-id>\n", "")
+    path.write_text(task_stop(STOPPED, at=1600) + queue(text, notified_at))
+    assert read_transcript_file(path).task_endings["task-1"]["status"] == status

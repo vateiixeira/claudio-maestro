@@ -392,3 +392,33 @@ async def test_precompaction_launch_keeps_reconstruction_guards(
     await session.ensure_history(live=live, process_started_at=started)
     assert session.subagents_running is expected
     assert not any(item["type"] == "tool" for item in session.builder.snapshot())
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name", ["Bash", "Monitor"])
+async def test_reattach_does_not_revive_a_command_the_model_stopped(history_env, tmp_path, name):
+    """A TaskStop leaves no `<task-notification>`: its result is the only record of the end."""
+    input_ = {"command": "sleep 600"}
+    if name == "Bash":
+        input_["run_in_background"] = True
+    now = int(time.time())
+    path = tmp_path / "stopped.jsonl"
+    path.write_text(
+        entry("user", "u1", None, now - 60, message={"role": "user", "content": "oi"})
+        + entry("assistant", "a1", "u1", now - 50, message={"role": "assistant", "id": "m1", "content": [
+            {"type": "tool_use", "id": TOOL, "name": name, "input": input_}]})
+        + entry("user", "u2", "a1", now - 49,
+                toolUseResult={"backgroundTaskId" if name == "Bash" else "taskId": TASK},
+                message={"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": TOOL, "content": "launched"}]})
+        + entry("assistant", "a2", "u2", now - 40, message={"role": "assistant", "id": "m2", "content": [
+            {"type": "tool_use", "id": "toolu_stop", "name": "TaskStop", "input": {"task_id": TASK}}]})
+        + entry("user", "u3", "a2", now - 39,
+                toolUseResult={"message": f"Successfully stopped task: {TASK}", "task_id": TASK,
+                               "task_type": "local_bash" if name == "Bash" else "monitor"},
+                message={"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "toolu_stop", "content": "stopped"}]})
+    )
+    _, session = setup_session(history_env, read_transcript_file(path))
+    await session.ensure_history(live=True, process_started_at=None)
+    assert not session.subagents_running

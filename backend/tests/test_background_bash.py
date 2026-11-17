@@ -64,6 +64,35 @@ def started_builder() -> ConversationBuilder:
 # Builder ---------------------------------------------------------------------
 
 
+def stop_call(task_id="bg-1", *, is_error=False, details=None):
+    """The model stops a task with TaskStop; the CLI answers with its result."""
+    if details is None and not is_error:
+        details = {"message": f"Successfully stopped task: {task_id} (sleep 8; echo done)",
+                   "task_id": task_id, "task_type": "local_bash"}
+    return [
+        *response_messages(SID, [ToolUseBlock(id="toolu_stop", name="TaskStop",
+                                              input={"task_id": task_id})], stop_reason="tool_use"),
+        tool_result_message("toolu_stop", "stopped", is_error=is_error, tool_use_result=details),
+    ]
+
+
+def test_task_stop_ends_background_bash():
+    """The CLI sends no task notification for a task the model stopped."""
+    builder = started_builder()
+    feed(builder, stop_call())
+    assert background_of(builder)["status"] == "stopped"
+    assert not builder.subagents_running
+    assert builder.running_task_ids() == []
+
+
+@pytest.mark.parametrize("change", [{"is_error": True}, {"task_id": "other"}])
+def test_failed_or_foreign_task_stop_keeps_background_bash_running(change):
+    builder = started_builder()
+    feed(builder, stop_call(**change))
+    assert background_of(builder)["status"] == "running"
+    assert builder.subagents_running
+
+
 def test_bash_without_task_has_no_background_state():
     builder = ConversationBuilder()
     feed(builder, bash_call())
