@@ -19,9 +19,22 @@ it('mostra origem e caminho sem presumir assinatura e oferece trocar', async () 
   const w = setup()
   await flushPromises()
   expect(w.text()).toContain('Padrão do Claude')
-  expect(w.text()).toContain(initial.active_folder)
+  expect(w.text()).toContain('~/.claude')
   expect(w.text()).not.toContain('Assinatura')
   expect(w.get('[data-test="auth-change"]').text()).toBe('Trocar')
+})
+
+it('mostra a pasta com ~ numa linha só e guarda o caminho inteiro no title', async () => {
+  const w = setup({ ...initial, active_folder: '/home/ana/.claude', default_folder: '/home/ana/.claude' })
+  await flushPromises()
+  const active = w.get('[data-test="auth-active"]')
+  expect(active.text()).toContain('Padrão do Claude')
+  expect(active.text()).toContain('~/.claude')
+  expect(active.text()).not.toContain('/home/ana')
+  expect(active.attributes('title')).toBe('/home/ana/.claude')
+  expect(w.get('h2').classes()).toContain('sr-only')
+  expect(w.get('h2').text()).toBe('Autenticação do Claude')
+  expect(w.get('[data-test="auth-change"]').attributes('aria-label')).toBe('Trocar autenticação do Claude')
 })
 
 it('separa a origem ativa da escolha pendente de reinício', async () => {

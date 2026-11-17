@@ -3,26 +3,28 @@ import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { errorMessage, sendMessage } from '../api/http'
 import { AGENTS_NAVIGATION_KEY } from '../agentsNavigation'
+import { deliveryTitle, formatTime, localDay } from '../deliveries'
+import { useDeliveriesStore } from '../stores/deliveries'
 import { useOrgStore } from '../stores/org'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
-import { useTasksStore } from '../stores/tasks'
 import { needsYou } from '../conversation/needsYou'
-import { isDiscarded } from '../conversation/marks'
+import { isDiscarded, markLane } from '../conversation/marks'
 import { goalDrafts } from '../goalDrafts'
-import type { Task, TaskStatus } from '../types/org'
 import DecisionCard from '../components/org/tasks/DecisionCard.vue'
-import StartTaskRow from '../components/start/StartTaskRow.vue'
+import StartSessionRow from '../components/start/StartSessionRow.vue'
 import ClaudeAuthStatus from '../components/start/ClaudeAuthStatus.vue'
+import FilterChip from '../components/ui/FilterChip.vue'
 import { BTN, BTN_PRIMARY, ERROR } from '../components/org/styles'
 
-const ACTIVE: TaskStatus[] = ['in_progress', 'in_review', 'blocked']
-const ACTIVE_SHOWN = 8
-const RECENT_SHOWN = 5
+const COLUMN_ROWS = 8
+const DELIVERED_ROWS = 4
+const PROJECT_CHIPS = 3
 
 const org = useOrgStore()
-const tasks = useTasksStore()
 const projects = useProjectsStore()
+const sessions = useSessionsStore()
+const deliveries = useDeliveriesStore()
 const router = useRouter()
 const route = useRoute()
 const navigation = inject(AGENTS_NAVIGATION_KEY, undefined)
@@ -45,36 +47,38 @@ watch(selected, (value, before) => {
 const top = computed(() => (selected.value ? org.topOf(Number(selected.value)) : undefined))
 const noTop = computed(() => !!selected.value && org.loaded && !top.value)
 
+// The three projects with the most recent conversation; a project picked from "Outro…" takes the third place.
+const latestActivity = computed(() => {
+  const latest = new Map<number, number>()
+  for (const s of sessions.all) latest.set(s.project_id, Math.max(latest.get(s.project_id) ?? 0, s.last_activity_at))
+  return latest
+})
+const recentProjects = computed(() =>
+  projects.projects
+    .filter((p) => p.available && p.kind === 'regular')
+    .map((p, index) => ({ p, index, at: latestActivity.value.get(p.id) ?? 0 }))
+    .sort((a, b) => b.at - a.at || a.index - b.index)
+    .slice(0, PROJECT_CHIPS)
+    .map((x) => x.p),
+)
+const chips = computed(() => {
+  const base = recentProjects.value
+  const picked = selected.value ? projects.byId(Number(selected.value)) : undefined
+  if (!picked || base.some((p) => p.id === picked.id)) return base
+  return [...base.slice(0, PROJECT_CHIPS - 1), picked]
+})
+function toggleProject(id: number) {
+  selected.value = selected.value === String(id) ? '' : String(id)
+}
+function pickOther(event: Event) {
+  const select = event.target as HTMLSelectElement
+  if (select.value) selected.value = select.value
+  select.value = ''
+}
+
 const busy = ref(false)
 const error = ref('')
-const loading = ref(true)
-const loadError = ref('')
-const active = ref<Task[]>([])
-const recent = ref<Task[]>([])
-
-const waitingSessions = computed(() => useSessionsStore().all.filter((s) => s.display_state === 'waiting' && needsYou(s) && !isDiscarded(s)))
-const needCount = computed(() => org.decisionsPending.length + waitingSessions.value.length)
-
-let ticket = 0
 let alive = true
-async function load() {
-  const mine = ++ticket
-  loadError.value = ''
-  loading.value = true
-  const [open, done] = await Promise.allSettled([
-    tasks.list({ status: ACTIVE, limit: ACTIVE_SHOWN, order: 'recent' }),
-    tasks.list({ status: 'done', limit: RECENT_SHOWN, order: 'recent' }),
-  ])
-  if (mine !== ticket) return
-  if (open.status === 'fulfilled') active.value = open.value
-  if (done.status === 'fulfilled') recent.value = done.value
-  const failed = [open, done].find((r) => r.status === 'rejected')
-  if (failed?.status === 'rejected') loadError.value = errorMessage(failed.reason)
-  loading.value = false
-}
-watch(() => tasks.version, () => { void load() })
-void load()
-onBeforeUnmount(() => { ticket++; alive = false })
 
 async function submit() {
   const projectKey = selected.value
@@ -96,13 +100,61 @@ async function submit() {
   }
 }
 
-const SECTION_TITLE = 'm-0 text-[0.9375rem] font-medium'
+// "Com você": news from the agents, pending decisions and the conversations waiting for the user (the ones that ask first).
+const unreadByAgent = computed(() => {
+  const counts = new Map<number, number>()
+  for (const n of org.notices) if (n.read_at === null) counts.set(n.agent_id, (counts.get(n.agent_id) ?? 0) + 1)
+  return [...counts]
+    .map(([id, count]) => ({ name: org.byId(id)?.name ?? 'Outro agente', count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'pt-BR'))
+})
+const unreadTotal = computed(() => unreadByAgent.value.reduce((sum, a) => sum + a.count, 0))
+const unreadText = computed(() => unreadByAgent.value.map((a) => `${a.name} ${a.count}`).join(' · '))
+const waiting = computed(() =>
+  sessions.all
+    .filter((s) => s.display_state === 'waiting' && markLane(s) === 'now')
+    .sort((a, b) => Number(needsYou(b)) - Number(needsYou(a))),
+)
+const withYouText = computed(() => {
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+  return [
+    waiting.value.length ? plural(waiting.value.length, 'conversa', 'conversas') : '',
+    org.decisionsPending.length ? plural(org.decisionsPending.length, 'decisão', 'decisões') : '',
+    unreadTotal.value ? plural(unreadTotal.value, 'novidade', 'novidades') : '',
+  ].filter(Boolean).join(' · ')
+})
+
+const running = computed(() => sessions.all.filter((s) => s.display_state === 'running' && !isDiscarded(s)))
+
+// "Entregue hoje": the store is shared with the Entregas screen, which may have left another day in it.
+const today = localDay()
+const delivered = computed(() => (deliveries.day?.date === today ? [...deliveries.day.deliveries].sort((a, b) => a.finished_at - b.finished_at) : null))
+const deliveredShown = computed(() => (delivered.value ?? []).slice(-DELIVERED_ROWS))
+const deliveredProjects = computed(() => new Set((delivered.value ?? []).map((d) => d.project_id)).size)
+const deliveredText = computed(() => {
+  const n = delivered.value?.length ?? 0
+  return n ? `${n} em ${deliveredProjects.value} ${deliveredProjects.value === 1 ? 'projeto' : 'projetos'}` : ''
+})
+const reloadDeliveries = () => deliveries.load(today)
+void reloadDeliveries()
+onBeforeUnmount(() => {
+  alive = false
+  deliveries.release()
+})
+
+const SECTION = 'flex min-w-0 flex-col'
+const SECTION_HEAD = 'flex h-[34px] items-center gap-2 border-b border-line-strong'
+const SECTION_TITLE = 'm-0 text-[0.9375rem] font-semibold tracking-tight'
+const SECTION_COUNT = 'font-mono text-[0.71875rem] text-fg-subtle tabular-nums'
+const LINK = 'text-[0.8125rem] whitespace-nowrap text-info-soft no-underline hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
+const EMPTY = 'm-0 border-b border-line py-6 text-[0.8125rem] leading-relaxed text-fg-muted'
+const KBD = 'rounded-sm border border-line-strong px-1.5 py-0.5 font-mono text-[0.6875rem] text-fg-muted'
 </script>
 
 <template>
   <div class="h-full min-w-0 overflow-y-auto bg-surface">
-    <div class="mx-auto flex w-full max-w-[1100px] flex-col gap-6 px-4 py-6 lg:px-8">
-      <header class="flex min-w-0 items-center gap-3">
+    <div class="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 py-6 lg:px-10 lg:py-9">
+      <header class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
         <button
           v-if="navigation?.enabled.value"
           type="button"
@@ -114,89 +166,147 @@ const SECTION_TITLE = 'm-0 text-[0.9375rem] font-medium'
         >
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
-        <div class="min-w-0 grow">
-          <p class="m-0 mb-1 text-[0.6875rem] text-fg-subtle">Cláudio Maestro</p>
-          <h1 class="m-0 text-2xl font-semibold tracking-tight">O que vamos resolver?</h1>
-        </div>
-        <RouterLink :class="[BTN, 'inline-flex items-center no-underline']" to="/tarefas">Ver tarefas →</RouterLink>
+        <h1 class="m-0 min-w-0 grow text-2xl font-semibold tracking-tight">O que vamos resolver?</h1>
+        <ClaudeAuthStatus />
+        <RouterLink :class="[BTN, 'inline-flex items-center gap-2 no-underline']" to="/tarefas">
+          Ver tarefas
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+        </RouterLink>
       </header>
-      <ClaudeAuthStatus />
 
-      <form class="flex max-w-[900px] flex-col gap-3 rounded-[9px] border border-line-strong bg-panel px-4 pt-4 pb-3.5" @submit.prevent="submit">
-        <label>
+      <form class="flex min-w-0 flex-col rounded-2xl border border-line-strong bg-panel" @submit.prevent="submit">
+        <label class="block px-[18px] pt-4 pb-1.5">
           <span class="sr-only">Objetivo para o agente</span>
           <textarea
             v-model="goal"
             :disabled="busy"
             maxlength="6000"
             placeholder="Descreva um objetivo. O agente do topo organiza as tarefas e acompanha cada entrega."
-            class="min-h-[90px] w-full resize-y border-0 bg-transparent p-0 text-sm leading-[1.8] text-fg placeholder:text-fg-subtle focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+            class="block min-h-[4.5rem] w-full resize-y border-0 bg-transparent p-0 text-[0.9375rem] leading-relaxed text-fg placeholder:text-fg-subtle focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+            @keydown.ctrl.enter.exact.prevent="submit"
+            @keydown.meta.enter.exact.prevent="submit"
           />
         </label>
-        <p v-if="noTop" data-test="goal-no-top" class="m-0 text-xs text-secondary-soft">
+        <p v-if="noTop" data-test="goal-no-top" class="m-0 px-[18px] pb-2 text-xs text-secondary-soft">
           Este projeto ainda não tem um CTO. Crie um na <RouterLink class="text-info-soft hover:underline focus-visible:outline-2 focus-visible:outline-primary" :to="{ name: 'agents', params: { projectId: selected } }">Organização</RouterLink>.
         </p>
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <label class="flex min-w-0 items-center gap-2.5 text-[0.6875rem] text-fg-subtle">
-            Projeto
-            <select v-model="selected" :disabled="busy" aria-label="Projeto do objetivo" class="h-8 min-w-0 max-w-60 rounded-md border border-line-strong bg-surface px-2 text-xs text-fg focus-visible:outline-2 focus-visible:outline-primary">
-              <option value="">Escolher projeto</option>
+        <div class="flex flex-wrap items-center gap-2 px-2.5 pt-2 pb-2.5 pl-4">
+          <span class="mr-0.5 text-[0.78125rem] text-fg-muted">Projeto</span>
+          <FilterChip
+            v-for="project in chips"
+            :key="project.id"
+            data-test="goal-project"
+            :data-id="project.id"
+            :label="project.name"
+            :pressed="selected === String(project.id)"
+            @toggle="toggleProject(project.id)"
+          >
+            <template #icon><span class="size-2 shrink-0 rounded-[2px]" :style="{ backgroundColor: project.color }" /></template>
+          </FilterChip>
+          <span class="relative inline-flex">
+            <select
+              data-test="goal-project-other"
+              aria-label="Projeto do objetivo"
+              :disabled="busy"
+              :value="''"
+              class="h-[30px] cursor-pointer appearance-none rounded-full border border-line bg-transparent pr-7 pl-[11px] text-[0.78125rem] text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              @change="pickOther"
+            >
+              <option value="">Outro…</option>
               <option v-for="project in projects.projects" :key="project.id" :value="String(project.id)" :disabled="!project.available">{{ project.name }}{{ !project.available ? ' (indisponível)' : '' }}</option>
             </select>
-          </label>
-          <button data-test="goal-submit" :class="BTN_PRIMARY" :disabled="busy || !selected || !top || !goal.trim()" type="submit">
-            {{ busy ? 'Entregando…' : `Entregar a ${top?.name ?? 'um agente'}` }} <span aria-hidden="true">↗</span>
+            <svg class="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-fg-muted" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          </span>
+          <span class="flex-1" />
+          <span class="hidden items-center gap-1 sm:flex" aria-hidden="true"><kbd :class="KBD">Ctrl</kbd><kbd :class="KBD">Enter</kbd></span>
+          <button data-test="goal-submit" :class="[BTN_PRIMARY, 'ml-1.5']" :disabled="busy || !selected || !top || !goal.trim()" type="submit">
+            {{ busy ? 'Entregando…' : `Entregar a ${top?.name ?? 'um agente'}` }}
           </button>
         </div>
-        <p v-if="error" :class="ERROR" role="alert">{{ error }}</p>
+        <p v-if="error" :class="[ERROR, 'px-[18px] pb-3']" role="alert">{{ error }}</p>
       </form>
 
-      <p v-if="loadError" data-test="start-error" :class="ERROR" role="alert">
-        Não foi possível atualizar toda a visão geral. {{ loadError }}
-        <button type="button" data-test="start-retry" :class="BTN" @click="load">Tentar novamente</button>
-      </p>
-
-      <div v-if="loading && !active.length && !recent.length" role="status" class="grid gap-4 py-4">
-        <span class="sr-only">Carregando o trabalho…</span>
-        <span class="block h-[18px] max-w-[80%] rounded bg-panel" /><span class="block h-[18px] max-w-[65%] rounded bg-panel" /><span class="block h-[18px] max-w-[80%] rounded bg-panel" />
-      </div>
-      <template v-else>
-        <section v-if="needCount" aria-labelledby="need-you-title" class="flex min-w-0 flex-col gap-2">
-          <h2 id="need-you-title" :class="SECTION_TITLE">Precisam de você <span class="text-xs font-normal text-fg-subtle">{{ needCount }}</span></h2>
-          <DecisionCard v-for="decision in org.decisionsPending" :key="decision.id" :decision="decision" />
+      <div class="grid min-w-0 items-start gap-x-9 gap-y-8 lg:grid-cols-3">
+        <section data-test="start-with-you" aria-labelledby="with-you-title" :class="SECTION">
+          <div :class="SECTION_HEAD">
+            <h2 id="with-you-title" :class="SECTION_TITLE">Com você</h2>
+            <span v-if="withYouText" :class="SECTION_COUNT">{{ withYouText }}</span>
+          </div>
           <RouterLink
-            v-for="session in waitingSessions"
-            :key="session.session_id"
-            :to="`/sessions/${session.session_id}`"
-            data-test="start-waiting"
-            class="flex min-w-0 items-center justify-between gap-3 border-t border-line px-1 py-3 text-[0.8125rem] text-fg no-underline hover:bg-panel focus-visible:outline-2 focus-visible:outline-primary"
+            v-if="unreadTotal"
+            to="/inbox?aba=novidades"
+            data-test="start-notices"
+            class="flex min-w-0 items-start gap-2.5 border-b border-line px-1 py-2.5 text-fg no-underline hover:bg-panel focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            <span class="min-w-0 [overflow-wrap:anywhere]">{{ session.title || 'Conversa sem título' }}<span class="ml-3 text-[0.6875rem] text-fg-subtle">{{ projects.byId(session.project_id)?.name }}</span></span>
-            <span class="shrink-0 text-[0.6875rem] text-secondary-soft"><span aria-hidden="true">△ </span>Responder ao pedido</span>
+            <svg class="mt-1.5 shrink-0 stroke-secondary" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" /><path d="M12 10v4M12 17v.01" /></svg>
+            <span class="flex min-w-0 grow flex-col gap-0.5">
+              <span class="text-sm font-medium text-secondary-soft">{{ unreadTotal }} {{ unreadTotal === 1 ? 'novidade' : 'novidades' }} {{ unreadTotal === 1 ? 'de agente' : 'dos agentes' }}</span>
+              <span class="flex min-w-0 items-center gap-2 text-xs text-fg-muted">
+                <span class="min-w-0 truncate">{{ unreadText }}</span>
+                <span class="flex-1" />
+                <span class="shrink-0 text-info-soft">Abrir a Inbox</span>
+              </span>
+            </span>
           </RouterLink>
+          <div v-if="org.decisionsPending.length" class="flex min-w-0 flex-col gap-2 border-b border-line py-3">
+            <DecisionCard v-for="decision in org.decisionsPending" :key="decision.id" :decision="decision" />
+          </div>
+          <StartSessionRow v-for="session in waiting.slice(0, COLUMN_ROWS)" :key="session.session_id" data-test="start-waiting" :session="session" />
+          <RouterLink v-if="waiting.length > COLUMN_ROWS" data-test="start-waiting-more" to="/sessions?estado=sua-vez" :class="[LINK, 'pt-3']">Mais {{ waiting.length - COLUMN_ROWS }} {{ waiting.length - COLUMN_ROWS === 1 ? 'conversa' : 'conversas' }}</RouterLink>
+          <p v-if="!waiting.length && !unreadTotal && !org.decisionsPending.length" :class="EMPTY">Nada espera você agora.</p>
         </section>
 
-        <div class="grid min-w-0 gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-          <section aria-labelledby="active-title" class="flex min-w-0 flex-col">
-            <div class="mb-2 flex items-baseline justify-between gap-3">
-              <h2 id="active-title" :class="SECTION_TITLE">Tarefas em andamento</h2>
-              <RouterLink class="text-xs text-info-soft hover:underline focus-visible:outline-2 focus-visible:outline-primary" to="/tarefas">Ver todas</RouterLink>
-            </div>
-            <StartTaskRow v-for="task in active" :key="task.id" :task="task" />
-            <div v-if="!active.length && !loadError" class="border-t border-line py-8 text-[0.8125rem] leading-[1.8] text-fg-muted">
-              <strong class="mb-1 block text-[0.9375rem] font-medium text-fg">O próximo passo começa com um objetivo</strong>
-              Escolha o projeto acima e conte ao agente do topo o que precisa resolver.
-            </div>
-          </section>
-          <section aria-labelledby="recent-title" class="flex min-w-0 flex-col">
-            <div class="mb-2 flex items-baseline justify-between gap-3">
-              <h2 id="recent-title" :class="SECTION_TITLE">Concluídas recentes</h2>
-            </div>
-            <StartTaskRow v-for="task in recent" :key="task.id" :task="task" />
-            <div v-if="!recent.length && !loadError" class="border-t border-line py-8 text-[0.8125rem] leading-[1.8] text-fg-muted">As tarefas concluídas aparecem aqui.</div>
-          </section>
-        </div>
-      </template>
+        <section data-test="start-running-section" aria-labelledby="running-title" :class="SECTION">
+          <div :class="SECTION_HEAD">
+            <h2 id="running-title" :class="SECTION_TITLE">Em andamento</h2>
+            <span v-if="running.length" :class="SECTION_COUNT">{{ running.length }}</span>
+            <span class="flex-1" />
+            <RouterLink to="/dashboard" :class="LINK">Ver no Painel</RouterLink>
+          </div>
+          <StartSessionRow v-for="session in running.slice(0, COLUMN_ROWS)" :key="session.session_id" data-test="start-running" :session="session" />
+          <RouterLink v-if="running.length > COLUMN_ROWS" data-test="start-running-more" to="/dashboard" :class="[LINK, 'pt-3']">Mais {{ running.length - COLUMN_ROWS }} em andamento</RouterLink>
+          <p v-if="!running.length" :class="EMPTY">Nenhuma conversa em execução.</p>
+        </section>
+
+        <section data-test="start-delivered-section" aria-labelledby="delivered-title" :class="SECTION">
+          <div :class="SECTION_HEAD">
+            <h2 id="delivered-title" :class="SECTION_TITLE">Entregue hoje</h2>
+            <span v-if="deliveredText" :class="SECTION_COUNT">{{ deliveredText }}</span>
+            <span class="flex-1" />
+            <RouterLink to="/entregas" :class="LINK">Ver em Entregas</RouterLink>
+          </div>
+          <div v-if="deliveries.error" data-test="start-deliveries-error" :class="[ERROR, 'flex flex-wrap items-center gap-2 py-3']" role="alert">
+            <span class="min-w-0">Não foi possível carregar as entregas. {{ deliveries.error }}</span>
+            <button type="button" data-test="start-deliveries-retry" :class="BTN" @click="reloadDeliveries">Tentar novamente</button>
+          </div>
+          <div v-else-if="delivered === null" role="status" class="grid gap-3 py-4">
+            <span class="sr-only">Carregando as entregas…</span>
+            <span class="block h-4 max-w-[80%] rounded bg-panel" /><span class="block h-4 max-w-[65%] rounded bg-panel" /><span class="block h-4 max-w-[80%] rounded bg-panel" />
+          </div>
+          <template v-else>
+            <component
+              :is="d.session_id ? RouterLink : 'div'"
+              v-for="d in deliveredShown"
+              :key="d.id"
+              v-bind="d.session_id ? { to: { name: 'session', params: { id: d.session_id } } } : {}"
+              data-test="start-delivered"
+              class="flex min-w-0 items-start gap-2.5 border-b border-line px-1 py-2.5 text-fg no-underline"
+              :class="d.session_id ? 'hover:bg-panel focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary' : ''"
+            >
+              <span class="mt-[0.1875rem] w-[2.375rem] shrink-0 font-mono text-[0.71875rem] text-fg-subtle tabular-nums">{{ formatTime(d.finished_at) }}</span>
+              <span class="flex min-w-0 grow flex-col gap-1">
+                <span class="line-clamp-2 text-[0.84375rem] leading-5 [overflow-wrap:anywhere]">{{ deliveryTitle(d) }}</span>
+                <span class="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
+                  <span class="size-2 shrink-0 rounded-[2px]" :style="{ backgroundColor: (d.project_id === null ? undefined : projects.byId(d.project_id))?.color ?? 'var(--color-fg-subtle)' }" />
+                  <span class="truncate">{{ d.project_name }}</span>
+                </span>
+              </span>
+            </component>
+            <RouterLink v-if="delivered.length > DELIVERED_ROWS" data-test="start-delivered-more" to="/entregas" :class="[LINK, 'pt-3']">Mais {{ delivered.length - DELIVERED_ROWS }} {{ delivered.length - DELIVERED_ROWS === 1 ? 'entrega' : 'entregas' }} de hoje</RouterLink>
+            <p v-if="!delivered.length" :class="EMPTY">Nada entregue hoje ainda.</p>
+          </template>
+        </section>
+      </div>
     </div>
   </div>
 </template>
