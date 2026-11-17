@@ -121,6 +121,14 @@ describe('AgentRegistry', () => {
     expect(wrapper.findAll('[data-test="registry-chip"]')).toHaveLength(3)
   })
 
+  it('avisa quantos itens sobraram depois de remover', async () => {
+    const { wrapper } = await mountRegistry({ 'DELETE /api/agents/1/registry?key=chamado%3A1042': () => jsonResponse(undefined, 204) })
+    expect(wrapper.emitted('count')).toBeUndefined()
+    await wrapper.findAll('[data-test="item-row"]').find((r) => r.text().includes('chamado:1042'))!.get('[data-test="item-remove"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('count')).toEqual([[3]])
+  })
+
   it('sem itens diz que não há nada registrado', async () => {
     const { wrapper } = await mountRegistry({ 'GET /api/agents/1/registry': () => jsonResponse([]) })
     expect(wrapper.get('[data-test="items-empty"]').text()).toBe('Nada registrado ainda.')

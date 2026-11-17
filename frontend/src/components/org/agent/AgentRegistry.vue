@@ -11,6 +11,8 @@ import type { RegistryItem } from '../../../types/org'
 
 // One row per thing the agent handled, so it does not redo it.
 const props = defineProps<{ agentId: number }>()
+// How many items are left after one is removed here, so the tab badge of the panel follows.
+const emit = defineEmits<{ count: [value: number] }>()
 const org = useOrgStore()
 
 const items = ref<RegistryItem[]>([])
@@ -74,6 +76,7 @@ async function remove(key: string): Promise<void> {
     await deleteAgentRegistryItem(props.agentId, key)
     items.value = items.value.filter((i) => i.key !== key)
     error.value = null
+    emit('count', items.value.length)
   } catch (e) {
     error.value = errorMessage(e)
   }

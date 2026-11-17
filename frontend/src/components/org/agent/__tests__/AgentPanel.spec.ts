@@ -15,7 +15,10 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  document.body.innerHTML = ''
+})
 
 type Handlers = Parameters<typeof routeFetch>[0]
 const FILE = '---\nname: Dev\n---\nTrabalha.\n'
@@ -74,6 +77,7 @@ describe('AgentPanel', () => {
     expect(wrapper.find('[data-test="definition-text"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="definition-current-error"]').text()).toContain('Falta o campo name na linha 2.')
     expect(wrapper.get('[data-test="agent-run"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="agent-run-blocked"]').exists()).toBe(true)
   })
 
   it('a query aba escolhe a seção e vence o erro de definição', async () => {
@@ -132,13 +136,13 @@ describe('AgentPanel', () => {
     expect(wrapper.get('[data-test="agent-tab-definicao"]').text()).toContain('não salvo')
   })
 
-  it('o cabeçalho mostra nome, estado, descrição, chefe e modelo', async () => {
+  it('o cabeçalho mostra nome, descrição, chefe e modelo', async () => {
     const { wrapper, router } = await mountPanel('/agentes/1?agente=2', { model: 'sonnet', effort: 'high' })
-    expect(wrapper.get('h2').text()).toBe('Dev')
-    expect(wrapper.get('[data-test="agent-state"]').attributes('data-state')).toBe('idle')
+    expect(wrapper.get('[data-test="agent-header"] h2').text()).toBe('Dev')
     expect(wrapper.get('[data-test="agent-description"]').text()).toBe('Faz as tarefas')
     expect(wrapper.get('[data-test="agent-model"]').text()).toBe('Sonnet')
     expect(wrapper.get('[data-test="agent-effort"]').text()).toBe('high')
+    expect(wrapper.get('[data-test="agent-toggle"]').attributes('role')).toBe('switch')
     const boss = wrapper.get('[data-test="agent-boss-link"]')
     expect(boss.text()).toBe('CTO')
     await boss.trigger('click')
@@ -155,10 +159,66 @@ describe('AgentPanel', () => {
 
   it('excluir volta para a árvore', async () => {
     const { wrapper, router, org } = await mountPanel('/agentes/1?agente=2&aba=definicao', {}, { 'DELETE /api/agents/2': () => jsonResponse(undefined, 204) })
-    await wrapper.get('[data-test="agent-delete"]').trigger('click')
+    await wrapper.get('[data-test="agent-more"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-test="more-menu-item"][data-id="delete"]')!.click()
+    await flushPromises()
     await wrapper.get('[data-test="confirm-ok"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/agentes/1')
     expect(org.byId(2)).toBeUndefined()
+  })
+
+  describe('contagem do Registro', () => {
+    const item = (key: string) => ({ key, status: 'feito', note: null, link: null, created_at: 1_790_000_000, updated_at: 1_790_000_000 })
+
+    it('mostra quantos itens o agente registrou na aba Registro', async () => {
+      const { wrapper } = await mountPanel('/agentes/1?agente=2', {}, { 'GET /api/agents/2/registry': () => jsonResponse([item('a'), item('b'), item('c')]) })
+      expect(wrapper.get('[data-test="agent-tab-registro"] [data-test="agent-tab-count"]').text()).toBe('3')
+      expect(wrapper.get('[data-test="agent-tab-registro"]').text()).toBe('Registro 3')
+      expect(wrapper.findAll('[data-test="agent-tab-count"]')).toHaveLength(1)
+    })
+
+    it('sem itens não mostra a contagem', async () => {
+      const { wrapper } = await mountPanel('/agentes/1?agente=2')
+      expect(wrapper.find('[data-test="agent-tab-count"]').exists()).toBe(false)
+    })
+
+    it('relê quando o agente muda (evento da organização)', async () => {
+      let rows = [item('a')]
+      const { wrapper, org } = await mountPanel('/agentes/1?agente=2', {}, { 'GET /api/agents/2/registry': () => jsonResponse(rows) })
+      expect(wrapper.get('[data-test="agent-tab-count"]').text()).toBe('1')
+      rows = [item('a'), item('b')]
+      org.changes = { ...org.changes, 2: (org.changes[2] ?? 0) + 1 }
+      await flushPromises()
+      expect(wrapper.get('[data-test="agent-tab-count"]').text()).toBe('2')
+    })
+
+    it('relê ao sair da aba Registro (o agente pode ter apagado itens)', async () => {
+      let rows = [item('a'), item('b')]
+      const { wrapper } = await mountPanel('/agentes/1?agente=2&aba=registro', {}, { 'GET /api/agents/2/registry': () => jsonResponse(rows) })
+      expect(wrapper.get('[data-test="agent-tab-count"]').text()).toBe('2')
+      rows = [item('a')]
+      await wrapper.get('[data-test="agent-tab-conversa"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-test="agent-tab-count"]').text()).toBe('1')
+    })
+
+    it('atualiza a contagem quando um item é removido dentro da aba', async () => {
+      const { wrapper } = await mountPanel('/agentes/1?agente=2&aba=registro', {}, {
+        'GET /api/agents/2/registry': () => jsonResponse([item('a'), item('b')]),
+        'DELETE /api/agents/2/registry?key=a': () => jsonResponse(undefined, 204),
+      })
+      expect(wrapper.get('[data-test="agent-tab-count"]').text()).toBe('2')
+      await wrapper.findAll('[data-test="item-remove"]')[0]!.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-test="agent-tab-count"]').text()).toBe('1')
+    })
+
+    it('se a leitura falha, a aba segue sem contagem', async () => {
+      const { wrapper } = await mountPanel('/agentes/1?agente=2', {}, { 'GET /api/agents/2/registry': () => jsonResponse({ detail: 'erro' }, 500) })
+      expect(wrapper.find('[data-test="agent-tab-count"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="agent-tab-registro"]').text()).toBe('Registro')
+    })
   })
 })

@@ -1,26 +1,22 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
-import AgentStateIcon from '../AgentStateIcon.vue'
-import AgentActions from './AgentActions.vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AgentConversations from './AgentConversations.vue'
 import AgentDefinition from './AgentDefinition.vue'
+import AgentHeader from './AgentHeader.vue'
 import AgentMemory from './AgentMemory.vue'
 import AgentRegistry from './AgentRegistry.vue'
 import AgentRuns from './AgentRuns.vue'
 import AgentSecrets from './AgentSecrets.vue'
-import { formatModelName } from '../../../format'
-import { agentState } from '../../../org'
+import { listAgentRegistry } from '../../../api/http'
 import { useOrgStore } from '../../../stores/org'
-import { useSessionsStore } from '../../../stores/sessions'
 import type { DefinitionDraft } from './helpers'
 
-// The panel of one agent: who it is, what you can do with it, and its sections. The section comes from `?aba=`
+// The panel of one agent: the header (who it is and what you can do with it) and its sections. The section comes from `?aba=`
 // (`NewAgentDialog` opens `definicao`); the drafts of the AGENT.md and of the memory live here, so they survive
 // a change of section.
 const props = defineProps<{ agentId: number }>()
 const org = useOrgStore()
-const sessions = useSessionsStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -35,8 +31,6 @@ const SECTIONS = [
 type SectionId = (typeof SECTIONS)[number]['id']
 
 const agent = computed(() => org.byId(props.agentId))
-const state = computed(() => (agent.value ? agentState(agent.value, sessions.all) : 'idle'))
-const boss = computed(() => (agent.value?.reports_to != null ? org.byId(agent.value.reports_to) : undefined))
 
 // Without `aba`, an agent whose AGENT.md does not open starts in the editor. Decided once: a later error
 // does not pull you out of the section you are reading.
@@ -46,6 +40,24 @@ const active = computed<SectionId>(() => SECTIONS.find((s) => s.id === route.que
 const definitionDraft = ref<DefinitionDraft | null>(null)
 const memoryDraft = ref<string | null>(null)
 const hasDraft = (id: SectionId) => (id === 'definicao' ? definitionDraft.value !== null : id === 'memoria' ? memoryDraft.value !== null : false)
+
+// How many things the agent registered, for the badge on the tab. A failed read keeps the last number.
+const registryCount = ref(0)
+let registryRead = 0
+async function loadRegistryCount(): Promise<void> {
+  const mine = ++registryRead
+  try {
+    const items = await listAgentRegistry(props.agentId)
+    if (mine === registryRead) registryCount.value = items.length
+  } catch {
+    // The tab works without the number.
+  }
+}
+onMounted(() => { void loadRegistryCount() })
+watch(() => org.changes[props.agentId], () => { void loadRegistryCount() })
+// The tab reports its removals; the agent also writes during a run: reread when you leave the tab or the run changes.
+watch(() => org.byId(props.agentId)?.last_run?.outcome, () => { void loadRegistryCount() })
+watch(active, (now, before) => { if (before === 'registro' && now !== 'registro') void loadRegistryCount() })
 
 const buttons = ref<HTMLButtonElement[]>([])
 
@@ -77,22 +89,7 @@ function deleted(): void {
 <template>
   <div data-test="agent-panel" :data-agent-id="agentId" class="flex min-w-0 flex-col gap-4">
     <template v-if="agent">
-      <header class="flex min-w-0 flex-col gap-1.5">
-        <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <AgentStateIcon :state="state" :size="16" />
-          <h2 class="m-0 min-w-0 truncate text-lg font-semibold tracking-tight">{{ agent.name }}</h2>
-          <span v-if="!agent.enabled" class="text-xs text-fg-subtle">Desligado</span>
-          <span v-if="agent.model" data-test="agent-model" class="rounded border border-line px-1.5 py-0.5 font-mono text-[0.6875rem] text-fg-muted">{{ formatModelName(agent.model) }}</span>
-          <span v-if="agent.effort" data-test="agent-effort" class="rounded border border-line px-1.5 py-0.5 font-mono text-[0.6875rem] text-fg-muted">{{ agent.effort }}</span>
-        </div>
-        <p v-if="agent.description" data-test="agent-description" class="m-0 max-w-prose text-sm text-fg-muted">{{ agent.description }}</p>
-        <p v-if="boss" class="m-0 text-xs text-fg-subtle">
-          Chefe:
-          <RouterLink data-test="agent-boss-link" :to="{ name: 'agents', params: { projectId: boss.project_id }, query: { agente: String(boss.id) } }" class="rounded text-info-soft hover:underline focus-visible:outline-2 focus-visible:outline-primary">{{ boss.name }}</RouterLink>
-        </p>
-      </header>
-
-      <AgentActions :agent-id="agentId" @deleted="deleted" />
+      <AgentHeader :agent-id="agentId" @deleted="deleted" />
 
       <div class="flex min-w-0 flex-col gap-4">
         <div role="tablist" aria-label="Seções do agente" class="flex gap-1 overflow-x-auto border-b border-line">
@@ -113,6 +110,7 @@ function deleted(): void {
             @keydown="onKey($event, index)"
           >
             {{ section.label }}
+            <span v-if="section.id === 'registro' && registryCount > 0" data-test="agent-tab-count" class="ml-1.5 font-mono text-[0.6875rem] text-fg-muted">{{ registryCount }}</span>
             <template v-if="hasDraft(section.id)">
               <span aria-hidden="true" class="ml-1 text-secondary">•</span>
               <span class="sr-only"> (rascunho não salvo)</span>
@@ -124,7 +122,7 @@ function deleted(): void {
           <AgentDefinition v-else-if="active === 'definicao'" v-model:draft="definitionDraft" :agent-id="agentId" />
           <AgentMemory v-else-if="active === 'memoria'" v-model:draft="memoryDraft" :agent-id="agentId" />
           <AgentSecrets v-else-if="active === 'segredos'" :agent-id="agentId" />
-          <AgentRegistry v-else-if="active === 'registro'" :agent-id="agentId" />
+          <AgentRegistry v-else-if="active === 'registro'" :agent-id="agentId" @count="registryCount = $event" />
           <AgentRuns v-else :agent-id="agentId" />
         </div>
       </div>
