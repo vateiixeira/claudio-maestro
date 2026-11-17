@@ -47,30 +47,50 @@ describe('TasksView', () => {
   })
 })
 
-it('oferece acesso à organização no estado vazio e acompanha o projeto escolhido', async () => {
+it('mostra o subtítulo e a barra de tarefa rápida antes da lista', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([makeTask({ id: 3, title: 'Post novo' })])))
+  const router = createAppRouter(createMemoryHistory())
+  await router.push('/tarefas')
+  const w = mount(TasksView, { global: { plugins: [pinia, router] } })
+  await flushPromises()
+  expect(w.text()).toContain('O trabalho entregue às organizações de todos os projetos.')
+  const bar = w.get('[data-test="quick-task"]').element
+  const row = w.get('[data-test="task-row"]').element
+  expect(bar.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+it('sem organização em nenhum projeto a barra não aparece', async () => {
+  useOrgStore(pinia).agents = []
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
   const router = createAppRouter(createMemoryHistory())
   await router.push('/tarefas')
   const w = mount(TasksView, { global: { plugins: [pinia, router] } })
   await flushPromises()
-  expect(w.get('[data-test="tasks-empty"]').text()).toContain('Escolha um projeto')
-  await w.get('[data-test="project-filter"]').setValue('2')
-  await flushPromises()
-  expect(w.get('[data-test="tasks-open-organization"]').attributes('href')).toBe('/projects/2?visao=organizacao')
+  expect(w.find('[data-test="quick-task"]').exists()).toBe(false)
 })
 
-it('selecionar destino no vazio preserva o foco e não refaz a busca de tarefas', async () => {
+it('no estado vazio leva à organização do projeto', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
+  const router = createAppRouter(createMemoryHistory())
+  await router.push('/tarefas')
+  const w = mount(TasksView, { global: { plugins: [pinia, router] } })
+  await flushPromises()
+  expect(w.get('[data-test="tasks-empty"]').text()).toContain('Nenhuma tarefa aberta')
+  expect(w.get('[data-test="tasks-open-organization"]').attributes('href')).toBe('/projects/1?visao=organizacao')
+})
+
+it('Nova tarefa do "Onde criar" escolhe o projeto na barra e foca o título', async () => {
+  useOrgStore(pinia).agents = [makeAgent({ id: 1, name: 'CTO', project_id: 1 }), makeAgent({ id: 2, slug: 'b', name: 'Chefe do Blog', project_id: 2 })]
   const fetch = vi.fn(async () => jsonResponse([]))
   vi.stubGlobal('fetch', fetch)
   const router = createAppRouter(createMemoryHistory())
   await router.push('/tarefas')
   const w = mount(TasksView, { global: { plugins: [pinia, router] }, attachTo: document.body })
   await flushPromises()
-  const select = w.get<HTMLSelectElement>('[aria-label="Projeto para abrir organização"]')
-  select.element.focus()
-  await select.setValue('2')
+  expect(w.get<HTMLSelectElement>('[data-test="quick-task-project"]').element.value).toBe('2')
+  await w.get('[data-project-id="1"] [data-test="tasks-where-new"]').trigger('click')
   await flushPromises()
-  expect(document.activeElement).toBe(select.element)
-  expect(w.get('[data-test="tasks-open-organization"]').attributes('href')).toBe('/projects/2?visao=organizacao')
-  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(w.get<HTMLSelectElement>('[data-test="quick-task-project"]').element.value).toBe('1')
+  expect(w.get<HTMLSelectElement>('[data-test="quick-task-assignee"]').element.value).toBe('1')
+  expect(document.activeElement).toBe(w.get('[data-test="quick-task-title"]').element)
 })

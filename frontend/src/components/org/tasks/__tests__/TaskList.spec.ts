@@ -154,4 +154,133 @@ describe('TaskList', () => {
     expect(options).toContain('Blog')
     expect(options).not.toContain('Sem projeto')
   })
+
+  it('os quatro estados abertos são contadores ligados, e Concluída e Cancelada são chips desligados', async () => {
+    stubTasks(() => [])
+    const { wrapper } = await mountList()
+    for (const status of ['todo', 'in_progress', 'in_review', 'blocked']) {
+      const counter = wrapper.get(`[data-test="status-chip-${status}"]`)
+      expect(counter.attributes('aria-pressed')).toBe('true')
+      expect(counter.find('[data-test="status-count"]').exists()).toBe(true)
+    }
+    for (const status of ['done', 'cancelled']) {
+      const chip = wrapper.get(`[data-test="status-chip-${status}"]`)
+      expect(chip.attributes('aria-pressed')).toBe('false')
+      expect(chip.find('[data-test="status-count"]').exists()).toBe(false)
+    }
+    await wrapper.get('[data-test="status-chip-todo"]').trigger('click')
+    expect(wrapper.get('[data-test="status-chip-todo"]').attributes('aria-pressed')).toBe('false')
+    await wrapper.get('[data-test="status-chip-cancelled"]').trigger('click')
+    expect(wrapper.get('[data-test="status-chip-cancelled"]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('conta as tarefas abertas por estado, com os filtros de projeto e responsável', async () => {
+    const urls = stubTasks((p) => {
+      const all = [
+        makeTask({ id: 1, status: 'todo', assignee_agent_id: 1 }),
+        makeTask({ id: 2, status: 'todo', assignee_agent_id: 2 }),
+        makeTask({ id: 3, status: 'in_progress', assignee_agent_id: 2 }),
+        makeTask({ id: 4, status: 'done', assignee_agent_id: 2 }),
+      ]
+      const statuses = p.getAll('status')
+      return all.filter((t) => (statuses.length === 0 || statuses.includes(t.status)) && (!p.get('assignee_agent_id') || String(t.assignee_agent_id) === p.get('assignee_agent_id')))
+    })
+    const { wrapper } = await mountList()
+    expect(urls).toContain('/api/tasks?project_id=1&status=todo&status=in_progress&status=in_review&status=blocked&limit=500')
+    const counts = () => ['todo', 'in_progress', 'in_review', 'blocked'].map((s) => wrapper.get(`[data-test="status-chip-${s}"] [data-test="status-count"]`).text())
+    expect(counts()).toEqual(['2', '1', '0', '0'])
+    expect(wrapper.find('[data-test="tasks-counts-truncated"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="assignee-filter"]').setValue('2')
+    await flushPromises()
+    expect(urls).toContain('/api/tasks?project_id=1&status=todo&status=in_progress&status=in_review&status=blocked&assignee_agent_id=2&limit=500')
+    expect(counts()).toEqual(['1', '1', '0', '0'])
+
+    // The counts do not depend on which states are on.
+    await wrapper.get('[data-test="status-chip-todo"]').trigger('click')
+    await flushPromises()
+    expect(counts()).toEqual(['1', '1', '0', '0'])
+  })
+
+  it('avisa quando a contagem passa do limite lido', async () => {
+    stubTasks((p) => (p.get('limit') === '500' ? Array.from({ length: 500 }, (_, i) => makeTask({ id: i + 1 })) : []))
+    const { wrapper } = await mountList()
+    expect(wrapper.get('[data-test="tasks-counts-truncated"]').text()).toBe('Contagem das primeiras 500 tarefas abertas.')
+  })
+
+  it('vazio global com os filtros padrão explica a tarefa e mostra onde criar', async () => {
+    useProjectsStore(pinia).projects = [
+      makeProject({ id: 1, name: 'Loja Demo' }),
+      makeProject({ id: 2, name: 'Blog Demo' }),
+      makeProject({ id: 3, name: 'Docs Demo' }),
+    ]
+    useOrgStore(pinia).agents = [
+      makeAgent({ id: 1, name: 'Maestro', project_id: 1 }),
+      makeAgent({ id: 2, slug: 'revisor', name: 'Revisor', project_id: 1, reports_to: 1 }),
+      makeAgent({ id: 3, slug: 'triagem', name: 'Triagem', project_id: 1, reports_to: 1 }),
+    ]
+    stubTasks(() => [])
+    const openMain = vi.spyOn(useOrgStore(pinia), 'openMain').mockResolvedValue('s1')
+    const { wrapper, router } = await mountList({ syncQuery: true }, '/tarefas')
+    const empty = wrapper.get('[data-test="tasks-empty"]')
+    expect(empty.get('h2').text()).toBe('Nenhuma tarefa aberta')
+    expect(empty.text()).toContain('Uma tarefa é um pedido')
+    expect(empty.text()).toContain('Onde criar')
+    const rows = wrapper.findAll('[data-test="tasks-where-project"]')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.attributes('data-project-id')).toBe('1')
+    expect(rows[0]!.get('[data-test="tasks-open-organization"]').text()).toBe('Loja Demo')
+    expect(rows[0]!.get('[data-test="tasks-open-organization"]').attributes('href')).toBe('/projects/1?visao=organizacao')
+    expect(rows[0]!.get('[data-test="tasks-where-agents"]').text()).toBe('Maestro, Revisor e Triagem')
+
+    await rows[0]!.get('[data-test="tasks-where-new"]').trigger('click')
+    expect(wrapper.emitted('new-task')).toEqual([[1]])
+
+    await rows[0]!.get('[data-test="tasks-where-talk"]').trigger('click')
+    await flushPromises()
+    expect(openMain).toHaveBeenCalledWith(1, expect.anything())
+
+    const others = wrapper.get('[data-test="tasks-where-others"]')
+    expect(others.text()).toContain('Os outros 2 projetos ainda não têm organização.')
+    const link = others.get('a')
+    expect(link.text()).toBe('Criar uma organização')
+    expect(link.attributes('href')).toBe('/agentes')
+    void router
+  })
+
+  it('o aviso dos outros projetos fala no singular e some quando todos têm organização', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'Loja Demo' }), makeProject({ id: 2, name: 'Blog Demo' })]
+    useOrgStore(pinia).agents = [makeAgent({ id: 1, name: 'Maestro', project_id: 1 })]
+    stubTasks(() => [])
+    const { wrapper } = await mountList({ syncQuery: true }, '/tarefas')
+    expect(wrapper.get('[data-test="tasks-where-others"]').text()).toContain('O outro projeto ainda não tem organização.')
+    useOrgStore(pinia).agents = [makeAgent({ id: 1, name: 'Maestro', project_id: 1 }), makeAgent({ id: 2, slug: 'b', name: 'Blog', project_id: 2 })]
+    await flushPromises()
+    expect(wrapper.find('[data-test="tasks-where-others"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="tasks-where-project"]')).toHaveLength(2)
+  })
+
+  it('vazio com outros filtros usa a frase de sempre, sem o "Onde criar"', async () => {
+    stubTasks(() => [])
+    const { wrapper } = await mountList({ syncQuery: true }, '/tarefas?status=done')
+    const empty = wrapper.get('[data-test="tasks-empty"]')
+    expect(empty.text()).toContain('Nenhuma tarefa nos filtros selecionados.')
+    expect(empty.text()).not.toContain('Nenhuma tarefa aberta')
+    expect(wrapper.find('[data-test="tasks-where"]').exists()).toBe(false)
+  })
+
+  it('vazio dentro de um projeto orienta sem o "Onde criar"', async () => {
+    stubTasks(() => [])
+    const { wrapper } = await mountList()
+    expect(wrapper.get('[data-test="tasks-empty"]').text()).toContain('Crie uma tarefa em Nova tarefa ou peça ao CTO.')
+    expect(wrapper.find('[data-test="tasks-where"]').exists()).toBe(false)
+  })
+
+  it('sem projeto com organização o "Onde criar" não lista ninguém', async () => {
+    useOrgStore(pinia).agents = []
+    stubTasks(() => [])
+    const { wrapper } = await mountList({ syncQuery: true }, '/tarefas')
+    expect(wrapper.find('[data-test="tasks-where-project"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="tasks-where-others"]').text()).toContain('Nenhum projeto tem organização ainda.')
+  })
 })
