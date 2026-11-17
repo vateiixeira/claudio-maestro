@@ -64,20 +64,20 @@ describe('OrganizationView', () => {
     expect(wrapper.get('[data-test="org-tree"]').element.tagName).toBe('ASIDE')
   })
 
-  it('sem projeto mostra o seletor e lembra o último', async () => {
-    const first = await mountAt('/agentes')
-    const options = first.wrapper.findAll('[data-test="org-project-option"]')
-    expect(options.map((o) => o.text())).toEqual(['Loja', 'API'])
+  it('sem projeto mostra a visão geral, sem pular para o último projeto visto', async () => {
+    localStorage.setItem('maestro.org.project', '2')
+    const { wrapper, router } = await mountAt('/agentes')
+    expect(router.currentRoute.value.fullPath).toBe('/agentes')
+    expect(wrapper.find('[data-test="org-overview"]').exists()).toBe(true)
+    const options = wrapper.findAll('[data-test="org-project-option"]')
+    expect(options.map((o) => o.text())).toEqual([expect.stringContaining('Loja'), expect.stringContaining('API')])
     expect(options[1]!.attributes('href')).toBe('/agentes/2')
-    first.wrapper.unmount()
+  })
 
-    // Visitar um projeto o grava; a próxima visita sem projeto vai direto para ele.
+  it('visitar um projeto não grava mais o último projeto', async () => {
     const visit = await mountAt('/agentes/2')
-    expect(localStorage.getItem('maestro.org.project')).toBe('2')
+    expect(localStorage.getItem('maestro.org.project')).toBeNull()
     visit.wrapper.unmount()
-
-    const again = await mountAt('/agentes')
-    expect(again.router.currentRoute.value.fullPath).toBe('/agentes/2')
   })
 
   it('o projeto embutido não aparece no seletor de projetos nem no seletor de troca', async () => {
@@ -88,6 +88,37 @@ describe('OrganizationView', () => {
     expect(switcher).not.toContain('Sem projeto')
   })
 
+  it('com erro ao carregar os projetos mostra o erro e tenta de novo, em vez de Nenhum projeto ainda', async () => {
+    useProjectsStore().projects = []
+    useProjectsStore().loadError = 'Sem conexão'
+    const fetch = routeFetch({ 'GET /api/projects': () => jsonResponse([makeProject({ id: 1, name: 'Loja' })]) })
+    vi.stubGlobal('fetch', fetch)
+    const { wrapper } = await mountAt('/agentes')
+    expect(wrapper.get('[data-test="org-projects-error"]').text()).toContain('Sem conexão')
+    expect(wrapper.text()).not.toContain('Nenhum projeto ainda')
+    await wrapper.get('[data-test="org-projects-retry"]').trigger('click')
+    await flushPromises()
+    expect(fetch.mock.calls.some((c) => c[0] === '/api/projects')).toBe(true)
+    expect(wrapper.find('[data-test="org-projects-error"]').exists()).toBe(false)
+  })
+
+  it('projetos em erro e agentes ainda não carregados: tentar de novo traz os projetos e os agentes', async () => {
+    useProjectsStore().projects = []
+    useProjectsStore().loadError = 'Sem conexão'
+    useOrgStore().loaded = false
+    const fetch = routeFetch({
+      'GET /api/projects': () => jsonResponse([makeProject({ id: 1, name: 'Loja' })]),
+      'GET /api/agents': () => jsonResponse([makeAgent({ id: 1, project_id: 1 })]),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const { wrapper } = await mountAt('/agentes')
+    await wrapper.get('[data-test="org-projects-retry"]').trigger('click')
+    await flushPromises()
+    expect(fetch.mock.calls.some((c) => c[0] === '/api/agents')).toBe(true)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="org-overview-agent"]')).toHaveLength(1)
+  })
+
   it('com só o embutido cadastrado diz que não há projeto', async () => {
     useProjectsStore().projects = [makeProject({ id: 77, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
     const { wrapper } = await mountAt('/agentes')
@@ -95,22 +126,12 @@ describe('OrganizationView', () => {
     expect(wrapper.text()).toContain('Nenhum projeto ainda')
   })
 
-  it('o embutido não é um projeto da organização: nem pela URL nem como último lembrado', async () => {
-    localStorage.setItem('maestro.org.project', '77')
-    const { wrapper, router } = await mountAt('/agentes')
-    expect(router.currentRoute.value.fullPath).toBe('/agentes')
-    expect(wrapper.findAll('[data-test="org-project-option"]')).toHaveLength(2)
+  it('o embutido não é um projeto da organização: nem pela URL nem na visão geral', async () => {
+    const { wrapper } = await mountAt('/agentes')
+    expect(wrapper.text()).not.toContain('Sem projeto')
     wrapper.unmount()
     const direct = await mountAt('/agentes/77')
     expect(direct.wrapper.find('[data-test="org-project-missing"]').exists()).toBe(true)
-    expect(localStorage.getItem('maestro.org.project')).toBe('77')
-  })
-
-  it('ignora o último projeto lembrado quando ele não existe mais', async () => {
-    localStorage.setItem('maestro.org.project', '99')
-    const { wrapper, router } = await mountAt('/agentes')
-    expect(router.currentRoute.value.fullPath).toBe('/agentes')
-    expect(wrapper.findAll('[data-test="org-project-option"]')).toHaveLength(2)
   })
 
   it('com projeto lista a árvore e as abas', async () => {

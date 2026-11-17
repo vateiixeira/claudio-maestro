@@ -2,6 +2,7 @@
 import { computed, inject, ref, watchEffect, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import NewAgentDialog from '../components/org/NewAgentDialog.vue'
+import OrgOverview from '../components/org/OrgOverview.vue'
 import OrgTabs from '../components/org/OrgTabs.vue'
 import OrgTree from '../components/org/OrgTree.vue'
 import AgentPanel from '../components/org/agent/AgentPanel.vue'
@@ -15,9 +16,6 @@ import type { Agent } from '../types/org'
 
 const props = defineProps<{ projectId?: number; embedded?: boolean; compact?: boolean }>()
 
-// The last project looked at, so `/agentes` goes straight back to it.
-const STORAGE_KEY = 'maestro.org.project'
-
 const projects = useProjectsStore()
 const org = useOrgStore()
 const route = useRoute()
@@ -30,25 +28,6 @@ const navigationOpen = computed(() => navigation?.open.value ?? false)
 
 const project = computed(() => (props.projectId === undefined ? undefined : projects.regular.find((p) => p.id === props.projectId)))
 const projectsReady = computed(() => projects.loaded || projects.regular.length > 0)
-
-function remembered(): number | null {
-  try {
-    const value = Number(localStorage.getItem(STORAGE_KEY))
-    return Number.isInteger(value) && value > 0 ? value : null
-  } catch {
-    return null
-  }
-}
-
-watchEffect(() => {
-  if (props.projectId !== undefined) {
-    if (!project.value) return
-    try { localStorage.setItem(STORAGE_KEY, String(props.projectId)) } catch { /* the choice is only a convenience */ }
-    return
-  }
-  const last = remembered()
-  if (last !== null && projects.regular.some((p) => p.id === last)) void router.replace({ name: 'agents', params: { projectId: last } })
-})
 
 function switchProject(event: Event): void {
   const id = Number((event.target as HTMLSelectElement).value)
@@ -107,25 +86,22 @@ async function talkToTop(): Promise<void> {
 
 <template>
   <div class="flex min-h-0 min-w-0 flex-col bg-surface" :class="embedded ? 'min-h-80' : 'h-full'">
-    <!-- No project in the address: pick one -->
-    <section v-if="projectId === undefined" aria-labelledby="org-pick-title" class="mx-auto flex w-full max-w-[640px] flex-col gap-4 px-6 py-10">
-      <button v-if="compactNavigation" type="button" data-test="agents-mobile-menu" class="mobile-menu-button self-start" aria-label="Abrir navegação" :aria-expanded="navigationOpen" @click="navigation?.toggle($event.currentTarget as HTMLElement)">
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
-      </button>
-      <h1 id="org-pick-title" class="m-0 text-xl font-semibold tracking-tight">Agentes</h1>
+    <!-- No project in the address: every project at a glance -->
+    <section v-if="projectId === undefined" aria-labelledby="org-pick-title" class="mx-auto flex w-full max-w-[72rem] flex-col gap-5 px-6 py-9 lg:px-12">
+      <div class="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
+        <button v-if="compactNavigation" type="button" data-test="agents-mobile-menu" class="mobile-menu-button self-center" aria-label="Abrir navegação" :aria-expanded="navigationOpen" @click="navigation?.toggle($event.currentTarget as HTMLElement)">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+        <h1 id="org-pick-title" class="m-0 text-xl font-semibold tracking-tight">Agentes</h1>
+        <p v-if="projectsReady && projects.regular.length > 0" class="m-0 text-[0.84375rem] text-fg-muted">Escolha o projeto cuja organização você quer ver.</p>
+      </div>
       <p v-if="!projectsReady" role="status" class="m-0 text-fg-muted">Carregando projetos…</p>
+      <div v-else-if="projects.regular.length === 0 && projects.loadError" data-test="org-projects-error" class="flex flex-wrap items-center gap-3">
+        <p role="alert" class="m-0 text-sm text-diff-del-fg">Não foi possível carregar os projetos. {{ projects.loadError }}</p>
+        <button type="button" data-test="org-projects-retry" :class="BTN" @click="projects.load().catch(() => {})">Tentar de novo</button>
+      </div>
       <p v-else-if="projects.regular.length === 0" class="m-0 text-fg-muted">Nenhum projeto ainda. <RouterLink to="/projects/new">Registre um projeto</RouterLink> para montar a organização dele.</p>
-      <template v-else>
-        <p class="m-0 text-fg-muted">Escolha o projeto cuja organização você quer ver.</p>
-        <ul aria-labelledby="org-pick-title" class="m-0 flex list-none flex-col gap-px p-0">
-          <li v-for="p in projects.regular" :key="p.id">
-            <RouterLink :to="`/agentes/${p.id}`" data-test="org-project-option" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-fg no-underline hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">
-              <span class="size-3 shrink-0 rounded-[3px]" :style="{ backgroundColor: p.color }" aria-hidden="true" />
-              <span class="truncate">{{ p.name }}</span>
-            </RouterLink>
-          </li>
-        </ul>
-      </template>
+      <OrgOverview v-else />
     </section>
 
     <p v-else-if="!project && !projectsReady" role="status" class="m-0 p-8 text-fg-muted">Carregando projetos…</p>
