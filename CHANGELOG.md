@@ -4,8 +4,22 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- Nas Preferências, a aba Etiquetas ganhou uma linha para criar etiqueta, com paleta de cores, e o botão "Apagar as N sem uso".
+- Na aba Notificações, "Ouvir" toca o bipe de aviso e uma prévia mostra como o aviso aparece.
+
 ### Alterado
 
+- As etiquetas aparecem com fundo suave na cor delas e um ponto de cor cheia, em vez de fundo sólido.
+- Projetos virou uma tabela com branch, arquivos alterados e última atividade, separada em "Ativos hoje" e "Parados". Alterações paradas há mais de dois dias aparecem em destaque.
+- A janela de nova conversa dá destaque ao pedido: projeto, agrupador e branch numa linha acima, imagem, ditado, modelo, raciocínio e permissões numa barra dentro do campo, e o título opcional abaixo.
+- O seletor de etiquetas do painel de detalhes virou um campo com as etiquetas marcadas como chips, busca, contagem de uso e criação com paleta, tudo pelo teclado.
+- Na aba Etiquetas das Preferências, renomear e trocar a cor salvam na hora, a lista vem ordenada por uso e as etiquetas sem uso ficam num grupo à parte.
+- O seletor de tema mostra seis cores reais de cada tema, quatro temas por linha.
+- A aba Agente de resumos mostra as regras como frases, com a chave de ligar e "Rodar agora" no topo.
+- A aba Notificações organiza as opções em chaves agrupadas, avisa quando o navegador ainda não permitiu notificações e mantém "Enviar um teste" sempre visível, desabilitado sem permissão.
+- A aba Execução mostra modo, conexão e versão numa lista, e o comando de instalação ganhou o botão "Copiar".
 - A conversa principal de um agente mostra cada execução como mensagem dele, com o resultado completo e o passo a passo abrindo no lugar.
 - No menu lateral (e na busca dele), as etiquetas das conversas aparecem todas e com o nome inteiro, quebrando a linha quando não cabem, em vez de cortar o texto ou resumir em "+N".
 
