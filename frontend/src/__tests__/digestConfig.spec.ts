@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { digestConfigProblem, digestStatusText, type DigestForm } from '../digestConfig'
+import { digestConfigProblem, digestStatusText, digestUpdatedText, type DigestForm } from '../digestConfig'
 
 const form = (over: Partial<DigestForm> = {}): DigestForm => ({
   enabled: true, model: 'sonnet', effort: 'medium', extra_instructions: '',
@@ -34,5 +34,22 @@ describe('texto de estado do agente', () => {
     expect(digestStatusText({ enabled: true, running: false, next_run_at: at(14, 10), paused_until: at(18, 0) }, now)).toBe('Pausado até 18:00 (limite da assinatura)')
     expect(digestStatusText({ enabled: true, running: false, next_run_at: at(14, 32), paused_until: null }, now)).toBe('Próxima passada às 14:32')
     expect(digestStatusText({ enabled: false, running: true, next_run_at: null, paused_until: null }, now)).toBe('Rodando…')
+  })
+})
+
+describe('texto de atualização do resumo', () => {
+  const now = new Date(2026, 9, 3, 14, 0, 0)
+  const ago = (seconds: number) => Math.floor(now.getTime() / 1000) - seconds
+  it('agora, minutos, horas, ontem e data', () => {
+    expect(digestUpdatedText(ago(10), now)).toBe('atualizado agora')
+    expect(digestUpdatedText(ago(4 * 60), now)).toBe('atualizado há 4 min')
+    expect(digestUpdatedText(ago(2 * 3600), now)).toBe('atualizado há 2 h')
+    expect(digestUpdatedText(Math.floor(new Date(2026, 9, 2, 9, 0).getTime() / 1000), now)).toBe('atualizado ontem')
+    expect(digestUpdatedText(Math.floor(new Date(2026, 8, 26, 9, 0).getTime() / 1000), now)).toBe('atualizado em 26 set')
+  })
+  it('na virada do dia: menos de uma hora segue em minutos, mais de uma hora é "ontem"', () => {
+    const midnight = new Date(2026, 9, 3, 0, 30, 0)
+    expect(digestUpdatedText(Math.floor(new Date(2026, 9, 2, 23, 50).getTime() / 1000), midnight)).toBe('atualizado há 40 min')
+    expect(digestUpdatedText(Math.floor(new Date(2026, 9, 2, 23, 0).getTime() / 1000), midnight)).toBe('atualizado ontem')
   })
 })

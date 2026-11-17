@@ -66,26 +66,27 @@ describe('seção Resumo', () => {
     expect(phases).toHaveLength(2)
     expect(phases[0].text()).toContain('Plano')
     expect(phases[0].text()).toContain('Concluída')
-    expect(phases[0].text()).toContain('Tarefa 1: tabela')
     expect(phases[0].text()).toContain('agrupador.md')
     expect(phases[1].text()).toContain('Aberta')
     expect(phases[1].text()).toContain('Ordenar por nome')
-    expect(w.find('[data-test="digest-read-at"]').text()).toBe('Resumido há 2 min')
+    expect(w.find('[data-test="digest-read-at"]').text()).toBe('atualizado há 2 min')
     expect(w.find('[data-test="digest-plan-done"]').exists()).toBe(false)
   })
 
-  it('mostra o que falta antes do que foi feito', async () => {
+  it('"Falta" fica à vista, sem clicar, antes dos passos feitos', async () => {
     stub({ ...DIGEST, phases: [{ title: 'Ajustes', kind: 'adjustments', status: 'open', done: ['Feito A'], pending: ['Falta B'], ref: null }] })
     const w = await mountSection()
+    expect(w.findAll('[data-test="digest-pending-marker"]')).toHaveLength(1)
+    expect(w.find('[data-test="digest-phase"]').text()).toContain('Falta B')
+    expect(w.findAll('[data-test="digest-done-item"]')).toHaveLength(0)
     const text = w.find('[data-test="digest-phase"]').text()
-    expect(text.indexOf('Falta')).toBeGreaterThan(-1)
-    expect(text.indexOf('Falta B')).toBeLessThan(text.indexOf('Feito A'))
-    expect(text.indexOf('Falta')).toBeLessThan(text.indexOf('Feito'))
+    expect(text.indexOf('Falta B')).toBeLessThan(text.indexOf('Ver 1 passo'))
   })
 
   it('cada item de "Feito" tem um marcador discreto e "Falta" mantém o círculo vazio', async () => {
     stub({ ...DIGEST, phases: [{ title: 'Ajustes', kind: 'adjustments', status: 'open', done: ['Feito A', 'Feito B'], pending: ['Falta B'], ref: null }] })
     const w = await mountSection()
+    await w.find('[data-test="digest-steps-toggle"]').trigger('click')
     const done = w.findAll('[data-test="digest-done-item"]')
     expect(done).toHaveLength(2)
     for (const item of done) {
@@ -95,6 +96,75 @@ describe('seção Resumo', () => {
       expect(marker.classes()).toContain('bg-fg-subtle')
     }
     expect(w.findAll('[data-test="digest-pending-marker"]')).toHaveLength(1)
+  })
+
+  it('o carimbo de atualização fica na linha do título, depois de Resumo', async () => {
+    stub(DIGEST)
+    const w = await mountSection()
+    const row = w.find('[data-test="details-digest"] > div')
+    expect(row.text()).toMatch(/^Resumo/)
+    expect(row.find('[data-test="digest-read-at"]').exists()).toBe(true)
+  })
+
+  it('as fases ficam numa linha do tempo, com nó e rótulo do tipo', async () => {
+    stub(DIGEST)
+    const w = await mountSection()
+    const timeline = w.find('[data-test="digest-timeline"]')
+    expect(timeline.exists()).toBe(true)
+    const phases = timeline.findAll('[data-test="digest-phase"]')
+    expect(phases).toHaveLength(2)
+    expect(phases[0].find('[data-test="digest-phase-node"]').attributes('data-status')).toBe('done')
+    expect(phases[1].find('[data-test="digest-phase-node"]').attributes('data-status')).toBe('open')
+    expect(phases[0].find('[data-test="digest-phase-kind"]').text()).toBe('Plano')
+    expect(phases[1].find('[data-test="digest-phase-kind"]').text()).toBe('Ajustes')
+    expect(phases[0].find('[data-test="digest-phase-status"]').classes()).toContain('sr-only')
+    expect(phases[0].find('[data-test="digest-phase-status"]').text()).toBe('Concluída')
+    expect(phases[1].find('[data-test="digest-phase-status"]').text()).toBe('Aberta')
+  })
+
+  it('os passos feitos ficam recolhidos e abrem pelo botão', async () => {
+    stub({ ...DIGEST, phases: [{ title: 'Plano', kind: 'plan', status: 'done', done: ['A', 'B', 'C', 'D'], pending: [], ref: null }] })
+    const w = await mountSection()
+    const toggle = () => w.find('[data-test="digest-steps-toggle"]')
+    expect(toggle().text()).toBe('Ver os 4 passos')
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    expect(w.findAll('[data-test="digest-done-item"]')).toHaveLength(0)
+    await toggle().trigger('click')
+    expect(w.findAll('[data-test="digest-done-item"]')).toHaveLength(4)
+    expect(toggle().text()).toBe('4 passos')
+    expect(toggle().attributes('aria-expanded')).toBe('true')
+    await toggle().trigger('click')
+    expect(w.findAll('[data-test="digest-done-item"]')).toHaveLength(0)
+  })
+
+  it('um resumo novo na mesma sessão mantém a expansão na fase, não no índice', async () => {
+    const phase = (title: string) => ({ title, kind: 'plan' as const, status: 'done' as const, done: [`passo de ${title}`], pending: [], ref: null })
+    stub({ ...DIGEST, phases: [phase('Alfa'), phase('Beta')] })
+    const w = await mountSection()
+    await w.findAll('[data-test="digest-steps-toggle"]')[0].trigger('click')
+    expect(w.findAll('[data-test="digest-done-item"]').map((i) => i.text())).toEqual(['passo de Alfa'])
+    useDigestStore().applyDigest({ session_id: 's1', digest: { ...DIGEST, phases: [phase('Nova'), phase('Alfa'), phase('Beta')] } })
+    await flushPromises()
+    const phases = w.findAll('[data-test="digest-phase"]')
+    expect(phases).toHaveLength(3)
+    expect(phases[0].find('[data-test="digest-steps-toggle"]').attributes('aria-expanded')).toBe('false')
+    expect(phases[1].find('[data-test="digest-steps-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(phases[2].find('[data-test="digest-steps-toggle"]').attributes('aria-expanded')).toBe('false')
+    expect(w.findAll('[data-test="digest-done-item"]').map((i) => i.text())).toEqual(['passo de Alfa'])
+  })
+
+  it('com um passo feito o botão fica no singular', async () => {
+    stub({ ...DIGEST, phases: [{ title: 'Plano', kind: 'plan', status: 'done', done: ['A'], pending: [], ref: null }] })
+    const w = await mountSection()
+    expect(w.find('[data-test="digest-steps-toggle"]').text()).toBe('Ver 1 passo')
+    await w.find('[data-test="digest-steps-toggle"]').trigger('click')
+    expect(w.find('[data-test="digest-steps-toggle"]').text()).toBe('1 passo')
+  })
+
+  it('sem passos feitos não há botão', async () => {
+    stub({ ...DIGEST, phases: [{ title: 'Ajustes', kind: 'adjustments', status: 'open', done: [], pending: ['Falta'], ref: null }] })
+    const w = await mountSection()
+    expect(w.find('[data-test="digest-steps-toggle"]').exists()).toBe(false)
   })
 
   it('mostra o selo de plano concluído', async () => {

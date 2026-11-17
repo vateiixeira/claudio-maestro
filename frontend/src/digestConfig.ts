@@ -1,3 +1,4 @@
+import { formatActivity } from './format'
 import type { DigestPhaseKind, DigestStatus, Effort } from './types/api'
 
 export const MAX_INSTRUCTIONS = 4000
@@ -69,4 +70,10 @@ export function digestStatusText(status: DigestStatus | null, now: Date = new Da
   }
   if (status.next_run_at) return `Próxima passada às ${hhmm(status.next_run_at)}`
   return 'Ligado'
+}
+
+/** Stamp of the last summary: "atualizado agora", "atualizado há 4 min", "atualizado ontem", "atualizado em 26 set". */
+export function digestUpdatedText(readAt: number, now: Date = new Date()): string {
+  const when = formatActivity(readAt, now)
+  return /^\d/.test(when) ? `atualizado em ${when}` : `atualizado ${when}`
 }
