@@ -5,6 +5,8 @@ import { LABEL_PALETTE, labelStyle } from '../../labelColor'
 import { useLabelsStore } from '../../stores/labels'
 import { useSessionsStore } from '../../stores/sessions'
 import type { Label } from '../../types/api'
+import IconArrowDown from '../icons/IconArrowDown.vue'
+import IconArrowUp from '../icons/IconArrowUp.vue'
 import IconCheck from '../icons/IconCheck.vue'
 import IconClose from '../icons/IconClose.vue'
 import IconPlus from '../icons/IconPlus.vue'
@@ -299,7 +301,7 @@ function onKeydown(event: KeyboardEvent) {
           <LabelPalette v-model="color" data-test="label-new-color" />
         </div>
         <p class="m-0 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-2.5 pt-2 pb-1 text-[0.6875rem] text-fg-subtle">
-          <span><kbd class="rounded-[5px] border border-line-strong px-1.5 font-mono text-fg-muted">↑↓</kbd> navegar</span>
+          <span><kbd class="inline-flex items-center rounded-[5px] border border-line-strong px-1.5 py-px text-fg-muted" aria-label="Setas"><IconArrowUp :size="10" /><IconArrowDown :size="10" /></kbd> navegar</span>
           <span><kbd class="rounded-[5px] border border-line-strong px-1.5 font-mono text-fg-muted">Enter</kbd> {{ canCreate && active < 0 ? 'cria e marca' : 'marca' }}</span>
           <span><kbd class="rounded-[5px] border border-line-strong px-1.5 font-mono text-fg-muted">Esc</kbd> fecha</span>
         </p>
