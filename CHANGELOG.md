@@ -39,6 +39,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - A Memória do agente aparece como texto formatado, com "Editar" à parte e um medidor de uso que avisa perto do limite e acima dele.
 - O Registro do agente ganhou chips por situação, busca, situação colorida, link curto para PR e issue, e a contagem na aba.
 - A Definição do agente mostra ao lado do editor como o agente roda: cada campo do cabeçalho com o valor do arquivo ou o padrão, e a ajuda no próprio campo.
+- No Git, a linha de cada repositório mostra a branch e a situação em texto ("4 para enviar", "em dia"), Pull e Push com a contagem só quando têm o que fazer, e um menu "⋯" com ver commits, mesclar, buscar no remoto, atualizar e copiar o caminho.
+- O repositório aberto põe a caixa de commit ao lado dos arquivos, com campo de várias linhas (Ctrl+Enter commita), e lista em "Para enviar" os commits que o Push leva. Cada arquivo mostra o tipo por extenso ("modificado", "novo", "apagado").
+- O Git mostra no topo os totais (commits para enviar, para baixar, sem upstream, alterações e erros) e, com três repositórios ou mais, separa os repositórios em "Com pendências" e "Sem pendências". O filtro virou o chip "Só com pendências", com a contagem do que aparece.
+- A aba Git do projeto mostra quantos repositórios têm pendências, contando também os que estão atrás do remoto, com erro ou no meio de um merge.
 
 ### Corrigido
 
