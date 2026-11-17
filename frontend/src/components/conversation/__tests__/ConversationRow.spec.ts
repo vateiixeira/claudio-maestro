@@ -24,7 +24,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-function mountRow(session = makeSession(), variant?: 'inbox' | 'list' | 'compact', extra: Record<string, unknown> = {}) {
+function mountRow(session = makeSession(), variant?: 'inbox' | 'list', extra: Record<string, unknown> = {}) {
   const router = createAppRouter(createMemoryHistory())
   return mount(ConversationRow, { props: { session, variant, ...extra }, global: { plugins: [pinia, router] } })
 }
@@ -136,47 +136,11 @@ describe('linha de conversa', () => {
     expect(wrapper.find('[data-test="waiting-reason"]').classes()).toContain('text-secondary-soft')
   })
 
-  it('linha compacta esconde branch e motivo e deixa o título com largura mínima', () => {
-    const wrapper = mountRow(makeSession({ display_state: 'waiting', unread: true }), 'compact')
-
-    expect(wrapper.find('[data-test="row-branch"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="waiting-reason"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="row-title"]').classes()).toContain('grow')
-    expect(wrapper.find('[data-test="row-title"]').classes()).toContain('min-w-24')
-    expect(wrapper.find('[data-test="row-link"]').classes()).toContain('min-w-0')
-    expect(wrapper.find('[data-test="row-link"]').classes()).toContain('truncate')
-  })
-
-  it('linha compacta não renderiza selo de plano, agrupador, plano concluído nem resumo, só o título', () => {
-    useGroupsStore(pinia).groups = [makeGroup({ id: 2, name: 'Checkout' })]
-    const plan = { path: 'docs/plan.md', title: 'Plano', total: 12, done: 3, current: { number: 4, title: 'Criar o selo' } }
-    const wrapper = mountRow(
-      makeSession({ title: 'Corrigir login', display_state: 'running', plan, group_id: 2, plan_done: true, digest_short: 'Resumo curto' }),
-      'compact',
-    )
-
-    expect(wrapper.find('[data-test="row-link"]').text()).toBe('Corrigir login')
-    for (const id of ['plan-badge', 'group-tag', 'row-plan-done', 'row-digest']) {
-      expect(wrapper.find(`[data-test="${id}"]`).exists()).toBe(false)
-    }
-    expect(wrapper.find('[data-test="row-title"]').classes()).toContain('overflow-hidden')
-    expect(wrapper.find('[data-test="row-link"]').classes()).not.toContain('max-w-[55%]')
-  })
-
   it('leitor de tela: espera comum é "Sua vez" e a que pede você é "Aguardando você"', () => {
     const sr = (w: ReturnType<typeof mountRow>) => w.find('.sr-only').text()
     expect(sr(mountRow(makeSession({ display_state: 'waiting', state: 'idle' })))).toBe('Sua vez')
     expect(sr(mountRow(makeSession({ display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question' })))).toBe('Aguardando você')
     expect(sr(mountRow(makeSession({ display_state: 'running', state: 'running' })))).toBe('Em execução')
-  })
-
-  it('leitor de tela na compacta mantém o motivo da espera', () => {
-    const w = mountRow(makeSession({
-      display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'tool',
-      pending_permission: { prompt_id: 'p', tool_name: 'Bash', summary: 'ls', can_allow_always: false },
-    }), 'compact')
-    expect(w.find('.sr-only').text()).toContain('Aguardando você')
-    expect(w.find('.sr-only').text()).toContain('Pede permissão: Bash')
   })
 
   it('apaga o texto de finalizadas e oferece Reabrir', () => {
@@ -212,20 +176,12 @@ describe('linha de conversa', () => {
     expect(fetch).toHaveBeenCalledOnce()
   })
 
-  it('mostra o selo de fechamento e, na compacta, só a bolinha', () => {
+  it('mostra o selo de fechamento', () => {
     const session = makeSession({ display_state: 'waiting', closure_verdict: 'incomplete' })
     const full = mountRow(session)
     expect(full.get('[data-test="closure-badge"]').text()).toBe('Entrega incompleta')
-    const compact = mountRow(session, 'compact')
-    expect(compact.find('[data-test="closure-badge"]').exists()).toBe(false)
-    expect(compact.get('[data-test="closure-dot"]').attributes('aria-label')).toBe('Entrega incompleta')
+    expect(full.find('[data-test="closure-dot"]').exists()).toBe(false)
     expect(mountRow(makeSession({ closure_verdict: null })).find('[data-test="closure-badge"]').exists()).toBe(false)
-  })
-
-  it('a variante compacta não tem ações', () => {
-    const wrapper = mountRow(makeSession({ unread: true }), 'compact')
-    expect(wrapper.find('[data-test="row-finish"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="row-mark-read"]').exists()).toBe(false)
   })
 
   it('avisa o erro de uma ação', async () => {
@@ -434,8 +390,8 @@ describe('marcações na linha de conversa', () => {
   it('repete a marcação no title do link, que cobre o ícone', () => {
     const blocked = mountRow(makeSession({ mark: 'blocked', mark_note: 'esperando o deploy' }))
     expect(blocked.find('[data-test="row-link"]').attributes('title')).toBe('Bloqueada: esperando o deploy')
-    const compact = mountRow(makeSession({ mark: 'review' }), 'compact')
-    expect(compact.find('[data-test="row-link"]').attributes('title')).toBe('Para revisar')
+    const review = mountRow(makeSession({ mark: 'review' }))
+    expect(review.find('[data-test="row-link"]').attributes('title')).toBe('Para revisar')
     const plan = { path: 'docs/plan.md', title: 'Plano', total: 12, done: 3, current: { number: 4, title: 'Criar o selo' } }
     const both = mountRow(makeSession({ mark: 'blocked', mark_note: 'deploy', display_state: 'running', plan }))
     expect(both.find('[data-test="row-link"]').attributes('title')).toBe('Bloqueada: deploy · Tarefa 4 de 12: Criar o selo')
@@ -497,12 +453,6 @@ describe('etiquetas na linha de conversa', () => {
     const w = mountRow(makeSession({ label_ids: [1, 2, 3, 4] }))
     expect(labelsOf(w)).toEqual(['et1', 'et2', 'et3'])
     expect(w.get('[data-test="label-more"]').text()).toBe('+1')
-  })
-
-  it('a variante compact mostra 1 etiqueta e "+N"', () => {
-    const w = mountRow(makeSession({ label_ids: [1, 2, 3] }), 'compact')
-    expect(labelsOf(w)).toEqual(['et1'])
-    expect(w.get('[data-test="label-more"]').text()).toBe('+2')
   })
 
   it('a variante inbox também mostra, ao lado do título', () => {

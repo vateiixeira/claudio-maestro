@@ -179,13 +179,6 @@ export interface MarkdownFile { path: string; content: string; mtime: number }
 export interface PlanState { link: 'auto' | 'manual' | 'off'; path: string | null; plan: PlanSummary | null; tasks: PlanTask[] }
 export interface ProjectPlan { path: string; title: string; total: number; done: number }
 
-/** Conversations with messages on a day, per project (`GET /api/activity`). */
-export interface ActivityDay {
-  date: string
-  project_id: number
-  sessions: number
-}
-
 export interface ContextUsage {
   used_tokens: number
   max_tokens: number
