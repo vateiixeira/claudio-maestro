@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import WorkStatus from '../WorkStatus.vue'
 
 type Status = 'ok' | 'running' | 'waiting' | 'error' | 'stopped' | 'idle'
-const mountStatus = (props: { status: Status; meta?: string; elapsed?: string }) => mount(WorkStatus, { props })
+const mountStatus = (props: { status: Status; meta?: string; elapsed?: string; iconless?: boolean }) => mount(WorkStatus, { props })
 
 describe('WorkStatus', () => {
   it('é mono de 11px e leva o estado em data-status', () => {
@@ -134,5 +134,36 @@ describe('WorkStatus: troca de estado suave', () => {
     const w = mountStatus({ status: 'running', meta: '3 linhas' })
     await w.setProps({ status: 'ok' })
     expect(w.findAll('[data-test="work-meta"]')).toHaveLength(1)
+  })
+})
+
+describe('WorkStatus: iconless', () => {
+  it('ok não tem svg e mantém o texto para leitor de tela', () => {
+    const w = mountStatus({ status: 'ok', iconless: true })
+    expect(w.find('svg').exists()).toBe(false)
+    expect(w.find('.sr-only').text()).toBe('concluído')
+  })
+
+  it('erro continua com a palavra falhou', () => {
+    const w = mountStatus({ status: 'error', iconless: true })
+    expect(w.find('[data-test="work-word"]').text()).toBe('falhou')
+  })
+
+  it('rodando mostra o tempo, sem svg, e o sr-only continua', () => {
+    const w = mountStatus({ status: 'running', elapsed: '12 s', iconless: true })
+    expect(w.find('[data-test="work-elapsed"]').text()).toBe('12 s')
+    expect(w.find('svg').exists()).toBe(false)
+    expect(w.find('.sr-only').text()).toBe('rodando…')
+  })
+
+  it('esperando mostra a palavra, sem triângulo', () => {
+    const w = mountStatus({ status: 'waiting', iconless: true })
+    expect(w.find('svg').exists()).toBe(false)
+    expect(w.find('[data-test="work-word"]').text()).toBe('esperando você')
+  })
+
+  it('o meta continua', () => {
+    const w = mountStatus({ status: 'ok', meta: '0,2 s', iconless: true })
+    expect(w.find('[data-test="work-meta"]').text()).toBe('0,2 s')
   })
 })

@@ -6,7 +6,7 @@ type Kind = 'bash' | 'tool' | 'read' | 'search' | 'edit' | 'agent'
 type Props = {
   kind: Kind
   desc: string
-  status: 'ok' | 'running' | 'error' | 'stopped' | 'idle'
+  status: 'ok' | 'running' | 'waiting' | 'error' | 'stopped' | 'idle'
   label?: string
   tag?: string
   model?: string | null
@@ -16,6 +16,8 @@ type Props = {
   as?: 'div' | 'button'
   tint?: boolean
   mono?: boolean
+  grouped?: boolean
+  command?: string
 }
 const mountHeader = (props: Partial<Props> = {}, slots: Record<string, string> = {}) =>
   mount(WorkHeader, { props: { kind: 'bash', desc: 'Lista os arquivos', status: 'ok', ...props } as Props, slots })
@@ -191,5 +193,82 @@ describe('WorkHeader: chevron e botão', () => {
     expect(w.attributes('aria-expanded')).toBe('false')
     await w.trigger('click')
     expect(onClick).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('WorkHeader: linha agrupada', () => {
+  it('não tem ícone do tipo nem o rótulo do tipo', () => {
+    const w = mountHeader({ grouped: true })
+    expect(w.find('[data-test="work-icon"]').exists()).toBe(false)
+    expect(w.find('.cap').exists()).toBe(false)
+    expect(w.text()).not.toContain('Comando')
+  })
+
+  it('sem grouped o ícone e o rótulo continuam', () => {
+    const w = mountHeader()
+    expect(w.find('[data-test="work-icon"]').exists()).toBe(true)
+    expect(w.text()).toContain('Comando')
+    expect(w.find('[data-test="work-slot"]').exists()).toBe(false)
+  })
+
+  it('o erro põe um X vermelho no work-slot', () => {
+    const slot = mountHeader({ grouped: true, status: 'error' }).find('[data-test="work-slot"]')
+    expect(slot.attributes('data-status')).toBe('error')
+    expect(slot.classes()).toContain('text-diff-del-fg')
+    expect(slot.find('svg').exists()).toBe(true)
+  })
+
+  it.each(['ok', 'idle', 'stopped'] as const)('%s mostra só o ponto neutro, sem svg', (status) => {
+    const slot = mountHeader({ grouped: true, status }).find('[data-test="work-slot"]')
+    expect(slot.attributes('data-status')).toBe(status)
+    expect(slot.find('[data-test="work-pip"]').exists()).toBe(true)
+    expect(slot.find('svg').exists()).toBe(false)
+  })
+
+  it('rodando gira e respeita movimento reduzido', () => {
+    const svg = mountHeader({ grouped: true, status: 'running' }).find('[data-test="work-slot"] svg')
+    expect(svg.classes()).toEqual(expect.arrayContaining(['animate-spin', 'motion-reduce:animate-none']))
+  })
+
+  it('esperando mostra o triângulo', () => {
+    const slot = mountHeader({ grouped: true, status: 'waiting' }).find('[data-test="work-slot"]')
+    expect(slot.find('svg[data-shape="triangle"]').exists()).toBe(true)
+  })
+
+  it('o slot tem largura fixa e o estado fica sem ícone próprio', () => {
+    const w = mountHeader({ grouped: true, status: 'ok' })
+    expect(w.find('[data-test="work-slot"]').classes()).toEqual(expect.arrayContaining(['w-3.5', 'shrink-0']))
+    expect(w.find('[data-test="work-status"] svg').exists()).toBe(false)
+  })
+
+  it('o estado de erro continua legível ao lado do slot', () => {
+    const w = mountHeader({ grouped: true, status: 'error' })
+    expect(w.find('[data-test="work-word"]').text()).toBe('falhou')
+  })
+
+  it('o comando vem depois da descrição, em mono, e a descrição não encolhe', () => {
+    const w = mountHeader({ grouped: true, command: 'git status' })
+    const cmd = w.find('[data-test="work-command"]')
+    expect(cmd.text()).toBe('git status')
+    expect(cmd.classes()).toEqual(expect.arrayContaining(['font-mono', 'text-xs', 'text-fg-muted', 'truncate']))
+    const order = [...w.element.children].map((el) => el.getAttribute('data-test'))
+    expect(order.indexOf('work-command')).toBeGreaterThan(order.indexOf('work-desc'))
+    expect(w.find('[data-test="work-desc"]').classes()).toEqual(expect.arrayContaining(['max-w-[45%]', 'shrink-0']))
+  })
+
+  it('sem command não há coluna de comando e a descrição ocupa o resto', () => {
+    const w = mountHeader({ grouped: true })
+    expect(w.find('[data-test="work-command"]').exists()).toBe(false)
+    expect(w.find('[data-test="work-desc"]').classes()).not.toContain('max-w-[45%]')
+  })
+
+  it('fora do agrupado command é ignorado', () => {
+    expect(mountHeader({ command: 'ls' }).find('[data-test="work-command"]').exists()).toBe(false)
+  })
+
+  it('mantém o chevron e o clique', () => {
+    const w = mountHeader({ grouped: true, as: 'button', open: false })
+    expect(w.find('[data-test="work-chevron"]').exists()).toBe(true)
+    expect(w.element.tagName).toBe('BUTTON')
   })
 })
