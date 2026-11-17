@@ -21,4 +21,11 @@ describe('GroupHeader', () => {
     const wrapper = mount(GroupHeader, { props: { title: 'Sem uso' }, slots: { default: '<button data-test="act">Apagar</button>' } })
     expect(wrapper.get('[data-test="act"]').text()).toBe('Apagar')
   })
+
+  it('o slot icon vem antes do título', () => {
+    const wrapper = mount(GroupHeader, { props: { title: 'Sem uso' }, slots: { icon: '<svg data-test="ico" />' } })
+    const html = wrapper.get('[data-test="group-header"]').html()
+    expect(html.indexOf('data-test="ico"')).toBeGreaterThan(-1)
+    expect(html.indexOf('data-test="ico"')).toBeLessThan(html.indexOf('Sem uso'))
+  })
 })

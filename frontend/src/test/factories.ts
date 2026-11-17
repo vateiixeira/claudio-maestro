@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { Label, Project, Session, SessionGroup } from '../types/api'
+import type { Delivery, Label, Project, Session, SessionGroup } from '../types/api'
 
 export function makeProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -32,6 +32,22 @@ export function makeSession(overrides: Partial<Session> = {}): Session {
     display_state: 'waiting',
     unread: false,
     awaiting_decision: false,
+    ...overrides,
+  }
+}
+
+export function makeDelivery(overrides: Partial<Delivery> = {}): Delivery {
+  return {
+    id: 1,
+    session_id: 's1',
+    project_id: 1,
+    project_name: 'Loja',
+    title: 'Entrega',
+    finished_at: 1794916800,
+    status: 'done',
+    summary_title: null,
+    bullets: [],
+    error: null,
     ...overrides,
   }
 }
