@@ -8,6 +8,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - No menu lateral (e na busca dele), as etiquetas das conversas aparecem todas e com o nome inteiro, quebrando a linha quando não cabem, em vez de cortar o texto ou resumir em "+N".
 
+### Corrigido
+
+- Uma conversa parada não volta mais a aparecer como não lida (ícone laranja no menu lateral, com o aviso "Enquanto você estava fora") 30 minutos depois do último turno. O fechamento do processo ocioso grava metadados no histórico, e isso era contado como atividade.
+
 ## [0.12.0] - 2026-11-12
 
 As imagens devolvidas pelas ferramentas aparecem no chat, com visualizador, e a conversa ganha a aba Git. O Git do projeto foi reorganizado em abas, com busca, comparação entre branches e carregamento mais rápido.

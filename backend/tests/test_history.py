@@ -958,12 +958,12 @@ async def test_worktree_cache_is_pruned_only_by_a_sync_of_every_project(tmp_path
     fake.add(str(project), info("s1", str(project)))
     idx = make_index(db_path, fake)
     await idx.sync_all()
-    assert set(idx._worktree_cache) == {"s1"}
+    assert set(idx._file_cache) == {"s1"}
     fake.by_directory[str(project)] = []
     await idx.sync_project(pid)  # lists part of the sessions: keeps the cache
-    assert set(idx._worktree_cache) == {"s1"}
+    assert set(idx._file_cache) == {"s1"}
     await idx.sync_all()
-    assert idx._worktree_cache == {}
+    assert idx._file_cache == {}
 
 
 @pytest.mark.anyio
@@ -1160,3 +1160,177 @@ async def test_scratch_listing_failure_keeps_sessions(tmp_path: Path):
     await idx.sync_all()
 
     assert set(rows(db_path)) == {"sa", "sb"}
+
+
+# Activity from the transcript, not the file's mtime -------------------------
+
+# 2023-11-14T22:13:20Z: the time of the last dated entry of the transcripts below.
+TURN_END = 1_700_000_000
+TURN_END_ISO = "2023-11-14T22:13:20.000Z"
+
+
+def write_transcript(path: Path, *, closed: bool = True, mtime: int = TURN_END + 1800) -> Path:
+    """A finished turn and, when `closed`, the undated lines the CLI writes as its process exits."""
+    import json
+
+    lines = [
+        {"type": "user", "timestamp": "2023-11-14T22:10:00.000Z", "message": {"content": "oi"}},
+        {"type": "assistant", "timestamp": TURN_END_ISO, "message": {"content": [{"type": "text", "text": "ok"}]}},
+    ]
+    if closed:
+        lines += [
+            {"type": "last-prompt", "lastPrompt": "oi", "sessionId": path.stem},
+            {"type": "cost-state", "sessionId": path.stem, "totalCostUSD": 0.1},
+        ]
+    path.write_text("".join(json.dumps(line) + "\n" for line in lines))
+    os.utime(path, (mtime, mtime))
+    return path
+
+
+def test_last_entry_at_skips_the_undated_lines_written_when_the_cli_exits(tmp_path: Path):
+    from claudio_maestro.history import last_entry_at
+
+    assert last_entry_at(write_transcript(tmp_path / "s1.jsonl")) == TURN_END
+    assert last_entry_at(write_transcript(tmp_path / "s2.jsonl", closed=False)) == TURN_END
+
+
+def test_last_entry_at_is_none_without_a_dated_entry_or_file(tmp_path: Path):
+    from claudio_maestro.history import last_entry_at
+
+    undated = tmp_path / "s1.jsonl"
+    undated.write_text('{"type": "summary", "summary": "x"}\n')
+    assert last_entry_at(undated) is None
+    assert last_entry_at(tmp_path / "missing.jsonl") is None
+
+
+def test_last_entry_at_ignores_a_line_cut_by_the_tail(tmp_path: Path):
+    from claudio_maestro.history import last_entry_at
+
+    path = write_transcript(tmp_path / "s1.jsonl")
+    size = path.stat().st_size
+    # The first line read is cut in the middle: it is not parsed, the rest still is.
+    assert last_entry_at(path, tail_bytes=size - 10) == TURN_END
+
+
+def activity_index(db_path: Path, fake: FakeHistory, files: dict[str, Path]) -> HistoryIndex:
+    return HistoryIndex(
+        db_path, fake.list_sessions,
+        folder_signature=lambda d: None,
+        list_worktrees=_worktrees({}),
+        session_file=lambda sid, directory: files.get(sid),
+        detect_worktree=lambda path: (False, None),
+        file_exists=lambda sid, d: True,
+    )
+
+
+@pytest.mark.anyio
+async def test_sync_takes_activity_from_the_last_dated_entry(tmp_path: Path):
+    """The app closes an idle client 30 min after the turn; the CLI then writes undated
+    lines and the file's mtime moves. That is not activity: the session stays read."""
+    project = tmp_path / "proj"
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    transcript = write_transcript(tmp_path / "s1.jsonl", closed=False, mtime=TURN_END)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project), modified_ms=TURN_END * 1000))
+    idx = activity_index(db_path, fake, {"s1": transcript})
+    await idx.sync_all()
+    with closing(db.connect(db_path)) as conn:
+        conn.execute("UPDATE sessions SET last_seen_at = ? WHERE session_id = 's1'", (TURN_END + 5,))
+
+    write_transcript(transcript, closed=True, mtime=TURN_END + 1800)
+    fake.by_directory[str(project)] = [info("s1", str(project), modified_ms=(TURN_END + 1800) * 1000)]
+    await idx.sync_all()
+
+    row = rows(db_path)["s1"]
+    assert row["file_modified_at"] == TURN_END + 1800
+    assert row["last_activity_at"] == TURN_END
+    assert row["last_activity_at"] <= row["last_seen_at"]
+
+
+@pytest.mark.anyio
+async def test_sync_activity_never_passes_the_mtime_and_falls_back_to_it(tmp_path: Path):
+    project = tmp_path / "proj"
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    # An entry dated after the file's mtime (a clock ahead): the mtime caps it.
+    ahead = write_transcript(tmp_path / "s1.jsonl", closed=False, mtime=TURN_END - 100)
+    fake = FakeHistory()
+    fake.add(
+        str(project),
+        info("s1", str(project), modified_ms=(TURN_END - 100) * 1000),
+        info("s2", str(project), modified_ms=2_000_000_000_000),  # no file: the mtime
+    )
+    idx = activity_index(db_path, fake, {"s1": ahead})
+    await idx.sync_all()
+    assert rows(db_path)["s1"]["last_activity_at"] == TURN_END - 100
+    assert rows(db_path)["s2"]["last_activity_at"] == 2_000_000_000
+
+
+@pytest.mark.anyio
+async def test_update_session_takes_activity_from_the_last_dated_entry(tmp_path: Path):
+    project = tmp_path / "proj"
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    transcript = write_transcript(tmp_path / "s1.jsonl", closed=False, mtime=TURN_END)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project), modified_ms=TURN_END * 1000))
+    idx = activity_index(db_path, fake, {"s1": transcript})
+    await idx.sync_all()
+
+    write_transcript(transcript, closed=True, mtime=TURN_END + 1800)
+    # Without info (the CLI watcher's quick path) and with it.
+    assert idx.update_session("s1", TURN_END + 1800, None, transcript) is True
+    row = rows(db_path)["s1"]
+    assert (row["file_modified_at"], row["last_activity_at"]) == (TURN_END + 1800, TURN_END)
+    later = info("s1", str(project), modified_ms=(TURN_END + 1900) * 1000)
+    os.utime(transcript, (TURN_END + 1900, TURN_END + 1900))
+    idx.update_session("s1", TURN_END + 1900, later, transcript)
+    row = rows(db_path)["s1"]
+    assert (row["file_modified_at"], row["last_activity_at"]) == (TURN_END + 1900, TURN_END)
+
+
+@pytest.mark.anyio
+async def test_new_dated_entries_still_mark_the_session_unread(tmp_path: Path):
+    """Real activity (a turn in the terminal, outside the app) still counts, by both paths."""
+    import json
+
+    project = tmp_path / "proj"
+    db_path = new_db(tmp_path)
+    add_project(db_path, project)
+    transcript = write_transcript(tmp_path / "s1.jsonl", mtime=TURN_END + 1800)
+    fake = FakeHistory()
+    fake.add(str(project), info("s1", str(project), modified_ms=(TURN_END + 1800) * 1000))
+    idx = activity_index(db_path, fake, {"s1": transcript})
+    await idx.sync_all()
+    with closing(db.connect(db_path)) as conn:
+        conn.execute("UPDATE sessions SET last_seen_at = ? WHERE session_id = 's1'", (TURN_END + 1800,))
+
+    def append(timestamp: str, mtime: int) -> None:
+        with open(transcript, "a") as file:
+            file.write(json.dumps({"type": "user", "timestamp": timestamp}) + "\n")
+        os.utime(transcript, (mtime, mtime))
+
+    # The watcher's path, after `refresh_file_info` already stored the new mtime.
+    append("2023-11-14T23:00:00.000Z", TURN_END + 2800)
+    with closing(db.connect(db_path)) as conn:
+        conn.execute("UPDATE sessions SET file_modified_at = ? WHERE session_id = 's1'", (TURN_END + 2800,))
+    assert idx.update_session("s1", TURN_END + 2800, None, transcript) is True
+    row = rows(db_path)["s1"]
+    assert row["last_activity_at"] == TURN_END + 2800 > row["last_seen_at"]
+
+    # The periodic sync.
+    # The entry's own time, not the mtime written a few seconds later.
+    append("2023-11-14T23:09:50.000Z", TURN_END + 3400)
+    fake.by_directory[str(project)] = [info("s1", str(project), modified_ms=(TURN_END + 3400) * 1000)]
+    await idx.sync_all()
+    assert rows(db_path)["s1"]["last_activity_at"] == TURN_END + 3390
+
+
+def test_last_entry_at_skips_a_line_too_nested_to_read(tmp_path: Path):
+    from claudio_maestro.history import last_entry_at
+
+    path = write_transcript(tmp_path / "s1.jsonl", closed=False)
+    with open(path, "a") as file:
+        file.write("[" * 100_000 + "]" * 100_000 + "\n")
+    assert last_entry_at(path) == TURN_END

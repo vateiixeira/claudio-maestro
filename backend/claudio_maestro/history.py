@@ -257,6 +257,46 @@ def _epoch_seconds(value: Any) -> int | None:
     return int(moment.timestamp())
 
 
+ACTIVITY_TAIL_BYTES = 256 * 1024
+
+
+def last_entry_at(path: Path, tail_bytes: int = ACTIVITY_TAIL_BYTES) -> int | None:
+    """Time (epoch seconds) of the newest dated entry in the last `tail_bytes` of a transcript.
+
+    When its process exits, the CLI appends undated lines (`last-prompt`, `cost-state`) and the
+    file's mtime moves, although nothing happened in the conversation: the app closes an idle
+    client 30 minutes after the turn. None when the file is unreadable or the tail has no date.
+    """
+    try:
+        with open(path, "rb") as file:
+            file.seek(0, os.SEEK_END)
+            start = max(0, file.tell() - tail_bytes)
+            file.seek(start)
+            data = file.read()
+    except OSError:
+        return None
+    lines = data.split(b"\n")
+    if start > 0:
+        lines = lines[1:]  # cut by the tail
+    for raw in reversed(lines):
+        if not raw.strip():
+            continue
+        try:
+            entry = json.loads(raw)
+        except (ValueError, RecursionError):  # a line too nested is not read either
+            continue
+        if isinstance(entry, dict):
+            moment = _epoch_seconds(entry.get("timestamp"))
+            if moment is not None:
+                return moment
+    return None
+
+
+def _activity(mtime: int, entry_at: int | None) -> int:
+    """The conversation's last activity: its newest dated entry, never after the file's mtime."""
+    return mtime if entry_at is None else min(mtime, entry_at)
+
+
 def _collect_background_launches(entry: dict[str, Any], launches: dict[str, str]) -> None:
     if entry.get("type") != "assistant":
         return
@@ -1040,8 +1080,9 @@ class HistoryIndex:
         self._worktree_lists: dict[str, tuple[int, list[str]]] = {}
         self._session_file = session_file or sdk_session_file
         self._detect_worktree = detect_worktree or current_worktree
-        # session id -> (last_modified seen, detection result): a file read once per change.
-        self._worktree_cache: dict[str, tuple[Any, tuple[bool, Worktree | None]]] = {}
+        # session id -> (last_modified seen, worktree detection, last dated entry): a file
+        # read once per change.
+        self._file_cache: dict[str, tuple[Any, tuple[bool, Worktree | None], int | None]] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -1059,6 +1100,7 @@ class HistoryIndex:
         listing entry (title, summary) and its file (current worktree). Blocking:
         run it in a thread. True if the row changed."""
         worktree = self._detect_worktree(path) if path is not None else (False, None)
+        activity = _activity(mtime, last_entry_at(path) if path is not None else None)
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             row = conn.execute(
                 "SELECT project_id, cwd, history_dir, last_activity_at, file_modified_at,"
@@ -1069,7 +1111,8 @@ class HistoryIndex:
             if info is not None:
                 info = replace(info, last_modified=mtime * 1000)
                 return self._upsert(
-                    conn, info, row["project_id"], row["cwd"], row["history_dir"], worktree
+                    conn, info, row["project_id"], row["cwd"], row["history_dir"], worktree,
+                    activity,
                 ) is not False
             changed = False
             decided, found = worktree
@@ -1082,12 +1125,12 @@ class HistoryIndex:
                         (name, wpath, session_id),
                     )
                     changed = True
-            if row["file_modified_at"] == mtime and row["last_activity_at"] >= mtime:
+            if row["file_modified_at"] == mtime and row["last_activity_at"] >= activity:
                 return changed
             conn.execute(
                 "UPDATE sessions SET file_modified_at = ?,"
                 " last_activity_at = MAX(last_activity_at, ?) WHERE session_id = ?",
-                (mtime, mtime, session_id),
+                (mtime, activity, session_id),
             )
             return True
 
@@ -1127,8 +1170,8 @@ class HistoryIndex:
                     )
             candidates = self._missing_candidates(listed, complete)
             gone = await asyncio.to_thread(self._confirm_gone, candidates) if candidates else []
-            worktrees = await asyncio.to_thread(self._worktree_details, listed, only is None)
-            changed, projects_changed = self._store(listed, gone, worktrees)
+            details = await asyncio.to_thread(self._file_details, listed, only is None)
+            changed, projects_changed = self._store(listed, gone, details)
         if changed and self._on_change is not None:
             self._on_change(changed)
         if projects_changed and self._on_projects_changed is not None:
@@ -1256,39 +1299,41 @@ class HistoryIndex:
                 gone.append((session_id, project_id))
         return gone
 
-    def _worktree_details(
+    def _file_details(
         self, listed: dict[str, tuple[Any, str, int | None]], prune: bool = False
-    ) -> dict[str, tuple[bool, Worktree | None]]:
-        """Worktree of each listed session, reading a file only when it changed.
-        Runs in a thread.
+    ) -> dict[str, tuple[tuple[bool, Worktree | None], int | None]]:
+        """Worktree and last dated entry of each listed session, reading a file only
+        when it changed. Runs in a thread.
 
         `prune` (a sync of every project) forgets the sessions that are no longer
         listed. A single-project sync lists only part of them, so it leaves the rest.
         """
-        out: dict[str, tuple[bool, Worktree | None]] = {}
+        out: dict[str, tuple[tuple[bool, Worktree | None], int | None]] = {}
         for session_id, (info, directory, _) in listed.items():
-            cached = self._worktree_cache.get(session_id)
+            cached = self._file_cache.get(session_id)
             if cached is not None and cached[0] == info.last_modified:
-                out[session_id] = cached[1]
+                out[session_id] = (cached[1], cached[2])
                 continue
+            path: Path | None = None
             try:
                 path = self._session_file(session_id, directory)
                 result = self._detect_worktree(path) if path is not None else (False, None)
             except Exception:
                 logger.exception("Falha ao ler a worktree da sessão %s", session_id)
                 result = (False, None)
-            self._worktree_cache[session_id] = (info.last_modified, result)
-            out[session_id] = result
+            entry_at = last_entry_at(path) if path is not None else None
+            self._file_cache[session_id] = (info.last_modified, result, entry_at)
+            out[session_id] = (result, entry_at)
         if prune:
-            for session_id in self._worktree_cache.keys() - listed.keys():
-                del self._worktree_cache[session_id]
+            for session_id in self._file_cache.keys() - listed.keys():
+                del self._file_cache[session_id]
         return out
 
     def _store(
         self,
         listed: dict[str, tuple[Any, str, int | None]],
         gone: list[tuple[str, int]],
-        worktrees: dict[str, tuple[bool, Worktree | None]] | None = None,
+        details: dict[str, tuple[tuple[bool, Worktree | None], int | None]] | None = None,
     ) -> tuple[set[str], set[int]]:
         """Write the listing. Returns changed session ids and changed project ids.
 
@@ -1317,8 +1362,12 @@ class HistoryIndex:
                 if project_id is None:
                     continue
                 history_dir = directory if directory != cwd else None
-                worktree = (worktrees or {}).get(session_id, (False, None))
-                previous = self._upsert(conn, info, project_id, cwd, history_dir, worktree)
+                worktree, entry_at = (details or {}).get(session_id, ((False, None), None))
+                modified = _seconds(info.last_modified)
+                activity = None if modified is None else _activity(modified, entry_at)
+                previous = self._upsert(
+                    conn, info, project_id, cwd, history_dir, worktree, activity
+                )
                 if previous is not False:
                     changed.add(session_id)
                     projects_changed.add(project_id)
@@ -1345,9 +1394,15 @@ class HistoryIndex:
         cwd: str,
         history_dir: str | None = None,
         worktree: tuple[bool, Worktree | None] = (False, None),
+        activity: int | None = None,
     ) -> bool | int | None:
-        """False when nothing changed; otherwise the previous project id (None if new)."""
+        """False when nothing changed; otherwise the previous project id (None if new).
+
+        `activity` is the conversation's last activity (see `_activity`); the file's
+        mtime when not given.
+        """
         modified = _seconds(info.last_modified) or int(time.time())
+        activity = modified if activity is None else min(activity, modified)
         created = _seconds(info.created_at) or modified
         summary = truncate_text(info.summary)
         first_prompt = truncate_text(info.first_prompt)
@@ -1366,7 +1421,7 @@ class HistoryIndex:
                 " last_activity_at, last_seen_at, finished, summary, first_prompt,"
                 " file_modified_at, history_dir, git_branch, worktree_name, worktree_path)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)",
-                (info.session_id, project_id, cwd, title, created, modified, modified,
+                (info.session_id, project_id, cwd, title, created, activity, modified,
                  summary, first_prompt, modified, history_dir, branch,
                  found.name if found else None, found.path if found else None),
             )
@@ -1376,7 +1431,7 @@ class HistoryIndex:
             "summary": summary,
             "first_prompt": first_prompt,
             "file_modified_at": modified,
-            "last_activity_at": max(row["last_activity_at"], modified),
+            "last_activity_at": max(row["last_activity_at"], activity),
             "history_dir": history_dir,
         }
         if branch:
