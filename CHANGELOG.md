@@ -30,6 +30,15 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - Entregas virou uma linha do tempo única, com chips por projeto, "Copiar esta entrega" em cada uma e "Copiar o dia" respeitando o projeto escolhido. As colunas por projeto saíram.
 - O projeto mostra o caminho ao lado do nome, abas com contagem ("N em aberto", "N com pendências"), filtros em chips e as conversas em "Em execução", "Sua vez" e "Recentes".
 - As linhas de conversa das listas mostram o plano em segmentos, o selo de fechamento e o projeto com a branch em colunas. A bolinha azul de não lida saiu: na Inbox e em Conversas, a conversa não lida aparece com o título em destaque.
+- A Organização mostra cada agente como um cartão, com novidades ou a próxima hora da rotina, o histórico das últimas execuções e o estado. As abas trazem a contagem.
+- As Execuções da organização ficam agrupadas por dia, com filtro "Só problemas", aviso dos agentes desligados, resumo do período e duração com barra. Execuções bem mais lentas que o normal aparecem em laranja, perdidas no mesmo horário viram uma linha só, e cada linha abre com o relato inteiro.
+- As Rotinas mostram a agenda em frase, a próxima hora (e por que não roda, quando for o caso), a última execução, a chave de ligar que salva na hora e a semana com os horários de cada dia.
+- Tarefas ganhou uma barra para criar tarefa rápida, contadores dos estados abertos que também filtram e, na lista vazia, onde criar em cada projeto com organização.
+- `/agentes` agora sempre abre a visão geral: os projetos com organização, cada um com os agentes, as últimas execuções, as novidades e a próxima rotina, e os projetos sem organização com "Criar". Não pula mais para o último projeto visto.
+- O cabeçalho do agente reúne numa linha a chave de ligar, modelo e raciocínio, o chefe, "Rodar agora" e um menu com rodar com instrução, trocar chefe, duplicar e excluir. Com o agente desligado, um aviso diz o que deixa de rodar.
+- A Memória do agente aparece como texto formatado, com "Editar" à parte e um medidor de uso que avisa perto do limite e acima dele.
+- O Registro do agente ganhou chips por situação, busca, situação colorida, link curto para PR e issue, e a contagem na aba.
+- A Definição do agente mostra ao lado do editor como o agente roda: cada campo do cabeçalho com o valor do arquivo ou o padrão, e a ajuda no próprio campo.
 
 ### Corrigido
 
