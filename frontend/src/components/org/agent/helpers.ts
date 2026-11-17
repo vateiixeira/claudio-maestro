@@ -45,7 +45,8 @@ const unquote = (value: string) => value.replace(/^(["'])(.*)\1$/, '$2')
  * (`- item`). Quotes are removed and the rest is ignored. Null when the text has no header.
  */
 export function parseHeader(text: string): Record<string, string | string[]> | null {
-  const lines = text.split(/\r?\n/)
+  // A byte order mark at the start is not part of the header, as in the backend.
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/)
   if (lines[0]?.trim() !== '---') return null
   const result: Record<string, string | string[]> = {}
   let blockKey: string | null = null

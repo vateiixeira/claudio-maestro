@@ -119,8 +119,18 @@ describe('OrganizationView', () => {
     expect(wrapper.findAll('[data-test="org-overview-agent"]')).toHaveLength(1)
   })
 
+  it('a organização de um projeto lê os agentes quando o realtime não leu, também fora do modo embutido', async () => {
+    useOrgStore().loaded = false
+    const fetch = routeFetch({ 'GET /api/agents': () => jsonResponse([makeAgent({ id: 1, project_id: 1, name: 'Maestro' })]) })
+    vi.stubGlobal('fetch', fetch)
+    const { wrapper } = await mountAt('/agentes/1')
+    expect(fetch.mock.calls.filter((c) => c[0] === '/api/agents')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('Carregando agentes')
+    expect(wrapper.findAll('[data-test="org-node"]')).toHaveLength(1)
+  })
+
   it('com só o embutido cadastrado diz que não há projeto', async () => {
-    useProjectsStore().projects = [makeProject({ id: 77, name: 'Sem projeto', path: '/home/vi/.local/share/claudio-maestro/scratch', kind: 'scratch', position: 99 })]
+    useProjectsStore().projects = [makeProject({ id: 77, name: 'Sem projeto', path: '/home/exemplo/scratch', kind: 'scratch', position: 99 })]
     const { wrapper } = await mountAt('/agentes')
     expect(wrapper.findAll('[data-test="org-project-option"]')).toHaveLength(0)
     expect(wrapper.text()).toContain('Nenhum projeto ainda')

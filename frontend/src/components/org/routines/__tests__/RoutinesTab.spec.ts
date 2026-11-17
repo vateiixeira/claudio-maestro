@@ -130,6 +130,27 @@ describe('RoutinesTab', () => {
     expect(w.find('[data-test="routine-row-error"]').exists()).toBe(false)
   })
 
+  it('se o salvamento deu certo e só a releitura falha, a chave fica como foi salva e avisa', async () => {
+    let reads = 0
+    const { w } = await mountTab({
+      'PATCH /api/routines/1': () => jsonResponse({ ...triage, enabled: false }),
+      'GET /api/routines?project_id=1': () => (++reads === 1 ? jsonResponse([triage, weekly]) : jsonResponse({ detail: 'Sem conexão.' }, 500)),
+    })
+    await w.get('[data-test="routine-toggle"]').trigger('click')
+    await flushPromises()
+    expect(reads).toBe(2)
+    expect(w.findAll('[data-test="routine-toggle"]')[0]!.attributes('aria-checked')).toBe('false')
+    expect(useOrgStore(pinia).routinesOf(1)[0]!.enabled).toBe(false)
+    expect(w.get('[data-test="routine-row-error"]').text()).toBe('Salvo, mas não foi possível atualizar a lista.')
+  })
+
+  it('sem as execuções do agente lidas, a linha não diz que a rotina ainda não rodou', async () => {
+    const { w } = await mountTab({ 'GET /api/agents/1/runs?limit=50': () => jsonResponse({ detail: 'Quebrou.' }, 500) })
+    const rows = w.findAll('[data-test="routine-row"]')
+    expect(rows[0]!.get('[data-test="routine-last"]').text()).not.toContain('ainda não rodou')
+    expect(rows[1]!.get('[data-test="routine-last"]').text()).toContain('ainda não rodou')
+  })
+
   it('a chave que falha ao salvar volta ao estado anterior e mostra o erro', async () => {
     const { w } = await mountTab({ 'PATCH /api/routines/1': () => jsonResponse({ detail: 'Não deu para salvar.' }, 500) })
     await w.get('[data-test="routine-toggle"]').trigger('click')

@@ -124,6 +124,8 @@ async function openRunText(): Promise<void> {
 }
 
 function confirmRunText(): void {
+  // Busy with another action (a save, a run): the dialog stays open with what was typed instead of dropping the request.
+  if (busy.value) return
   runningWithText.value = false
   void run(instruction.value.trim() || undefined)
 }
@@ -252,7 +254,7 @@ const CHIP = 'rounded border border-line px-1.5 py-0.5 font-mono text-[0.6875rem
     <p v-if="notice" data-test="agent-run-ok" role="status" class="m-0 text-xs text-fg-muted">{{ notice }}</p>
     <p v-if="error" data-test="agent-error" role="alert" :class="ERROR">{{ error }}</p>
 
-    <ConfirmDialog v-if="runningWithText" title="Rodar com instrução" confirm-label="Rodar" :autofocus="false" @confirm="confirmRunText" @cancel="runningWithText = false">
+    <ConfirmDialog v-if="runningWithText" title="Rodar com instrução" confirm-label="Rodar" :confirm-disabled="busy" :autofocus="false" @confirm="confirmRunText" @cancel="runningWithText = false">
       <form class="flex flex-col gap-3" @submit.prevent="confirmRunText">
         <label class="flex flex-col gap-1 text-sm">
           <span class="text-fg-muted">Instrução (opcional)</span>

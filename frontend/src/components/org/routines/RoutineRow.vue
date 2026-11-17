@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { OUTCOME_LABELS, formatRunDate, outcomeShape } from '../../../org'
 import { formatRunningTime } from '../../../format'
 import type { Routine, Run } from '../../../types/org'
@@ -8,6 +8,7 @@ import ToggleSwitch from '../../ui/ToggleSwitch.vue'
 import RunHistory from '../RunHistory.vue'
 import { BTN_SMALL } from '../styles'
 import RoutineWeek from './RoutineWeek.vue'
+import { runTime } from '../runs/runDays'
 import { nextSlot, scheduleSentence, slotLabel } from './schedule'
 
 // One routine of the project: the switch, who runs it and when, the next and the last firing, and the actions.
@@ -19,6 +20,8 @@ const props = defineProps<{
   agentEnabled: boolean | null
   /** The runs of this routine, newest first. */
   runs: Run[]
+  /** Whether the runs of the agent were read: without them nothing is said about the last firing. */
+  runsLoaded: boolean
   /** The clock of the "next firing" label. */
   now: Date
   busy?: boolean
@@ -43,8 +46,10 @@ const blocked = computed<string | null>(() => {
   if (!props.agentEnabled) return 'não roda: agente desligado'
   return null
 })
+/** The next firing really happens: there is a time and nothing blocks it. */
+const active = computed(() => hasSchedule.value && blocked.value === null)
 
-const last = computed<Run | null>(() => props.runs.reduce<Run | null>((best, run) => (!best || run.started_at > best.started_at ? run : best), null))
+const last = computed<Run | null>(() => props.runs.reduce<Run | null>((best, run) => (!best || runTime(run) > runTime(best) ? run : best), null))
 const lastShape = computed(() => (last.value ? outcomeShape(last.value.outcome) : null))
 const lastStroke = computed(() => ({
   spinner: 'stroke-primary motion-safe:animate-spin',
@@ -54,7 +59,7 @@ const lastStroke = computed(() => ({
   cross: 'stroke-diff-del-fg',
   dash: 'stroke-fg-muted',
 })[lastShape.value ?? 'dash'])
-const lastDate = computed(() => (last.value ? formatRunDate(last.value.started_at, props.now) : ''))
+const lastDate = computed(() => (last.value ? formatRunDate(runTime(last.value), props.now) : ''))
 const lastOutcome = computed(() => {
   const outcome = last.value?.outcome
   if (!outcome || outcome === 'concluded' || outcome === 'closed') return null
@@ -65,6 +70,14 @@ const lastDuration = computed(() => {
   if (!run || run.ended_at === null || run.outcome === 'missed' || run.outcome === 'skipped') return null
   return formatRunningTime(run.ended_at - run.started_at)
 })
+
+const deleteConfirm = ref<HTMLButtonElement | null>(null)
+/** The menu closes and the confirmation takes its place: the focus follows it instead of falling to the page. */
+async function askDelete(): Promise<void> {
+  confirming.value = true
+  await nextTick()
+  deleteConfirm.value?.focus()
+}
 
 function confirmDelete(): void {
   confirming.value = false
@@ -120,13 +133,13 @@ function confirmDelete(): void {
           <span v-if="lastDuration" class="font-mono">{{ lastDuration }}</span>
           <RunHistory :runs="runs" class="ml-1.5" />
         </template>
-        <span v-else>ainda não rodou</span>
+        <span v-else-if="runsLoaded">ainda não rodou</span>
       </div>
 
       <div class="mt-2 flex flex-wrap items-center gap-2">
         <template v-if="confirming">
           <span class="text-xs text-fg-muted">Excluir esta rotina?</span>
-          <button type="button" data-test="routine-delete-confirm" :class="BTN_SMALL" class="!border-diff-del-fg !text-diff-del-fg" @click="confirmDelete">Excluir</button>
+          <button ref="deleteConfirm" type="button" data-test="routine-delete-confirm" :class="BTN_SMALL" class="!border-diff-del-fg !text-diff-del-fg" @click="confirmDelete">Excluir</button>
           <button type="button" data-test="routine-delete-cancel" :class="BTN_SMALL" @click="confirming = false">Cancelar</button>
         </template>
         <template v-else>
@@ -136,7 +149,7 @@ function confirmDelete(): void {
             data-test="routine-more"
             :label="`Mais ações da rotina ${routine.name}`"
             :items="[{ id: 'delete', label: 'Excluir', danger: true, disabled: busy }]"
-            @select="confirming = true"
+            @select="askDelete"
           />
         </template>
       </div>
@@ -145,6 +158,6 @@ function confirmDelete(): void {
       <p v-else-if="feedback" data-test="routine-feedback" role="status" class="m-0 text-xs text-fg-muted">{{ feedback.text }}</p>
     </div>
 
-    <RoutineWeek :schedules="routine.schedules" :now="now" />
+    <RoutineWeek :schedules="routine.schedules" :now="now" :active="active" />
   </li>
 </template>

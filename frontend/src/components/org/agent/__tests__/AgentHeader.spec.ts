@@ -180,6 +180,28 @@ describe('AgentHeader', () => {
       expect(wrapper.get<HTMLInputElement>('[data-test="agent-run-text"]').element.value).toBe('Limpar o cache')
     })
 
+    it('com outra ação em andamento, o diálogo não deixa confirmar e não descarta o pedido', async () => {
+      let release: (r: Response) => void = () => {}
+      const { wrapper, fetch } = await mountHeader({}, {
+        'PATCH /api/agents/2': () => new Promise<Response>((resolve) => { release = resolve }),
+        'POST /api/agents/2/wake': () => jsonResponse({ id: 5 }, 202),
+      })
+      await wrapper.get('[data-test="agent-toggle"]').trigger('click') // salvando: a tela fica ocupada
+      await choose(wrapper, 'run-with-text')
+      await wrapper.get('[data-test="agent-run-text"]').setValue('Limpar o cache')
+      expect(wrapper.get('[data-test="confirm-ok"]').attributes('disabled')).toBeDefined()
+      await wrapper.get('form').trigger('submit') // Enter no campo
+      await flushPromises()
+      expect(wrapper.find('[data-test="agent-run-text"]').exists()).toBe(true)
+      expect(fetch.mock.calls.some(([u]) => u === '/api/agents/2/wake')).toBe(false)
+      release(jsonResponse(makeAgent({ id: 2, slug: 'dev', name: 'Dev', reports_to: 1 })))
+      await flushPromises()
+      expect(wrapper.get('[data-test="confirm-ok"]').attributes('disabled')).toBeUndefined()
+      await wrapper.get('[data-test="confirm-ok"]').trigger('click')
+      await flushPromises()
+      expect(bodyOf(fetch, 'POST', '/api/agents/2/wake')).toEqual({ text: 'Limpar o cache' })
+    })
+
     it('cancelar o diálogo não pede nada', async () => {
       const { wrapper, fetch } = await mountHeader()
       fetch.mockClear()

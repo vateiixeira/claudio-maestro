@@ -43,3 +43,15 @@ describe('historyLabel', () => {
     expect(historyLabel(['ok'])).toBe('Última execução: 1 concluída')
   })
 })
+
+describe('historyBars com execuções perdidas', () => {
+  it('ordena pela hora agendada, não pela da detecção', () => {
+    const detected = 1_790_100_000
+    const sent = [
+      makeRun({ id: 2, outcome: 'missed', scheduled_for: 1_790_000_000, started_at: detected }),
+      makeRun({ id: 1, outcome: 'concluded', started_at: 1_790_050_000 }),
+    ]
+    // vinda da loja (por started_at, a perdida primeiro), a mais antiga pela hora agendada é a perdida
+    expect(historyBars(sent)).toEqual(['miss', 'ok'])
+  })
+})

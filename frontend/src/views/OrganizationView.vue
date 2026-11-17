@@ -58,7 +58,8 @@ function back(): void {
   void router.replace({ query })
 }
 
-watch(() => props.projectId, () => { if (props.embedded && !org.loaded) void org.load() }, { immediate: true })
+// The realtime load may not have run (it stops when the projects fail to load): ask for the agents, embedded or not.
+watch(() => props.projectId, () => { if (!org.loaded && !org.error) void org.load() }, { immediate: true })
 
 // The cards of the tree show the run history and the next routine slot: read them once for the project. A failure
 // leaves the card without them (the tabs show their own errors).

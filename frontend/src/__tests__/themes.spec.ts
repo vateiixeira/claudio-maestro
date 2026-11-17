@@ -110,6 +110,11 @@ describe.each(NEW_IDS)('contraste de %s', (id) => {
     atLeast('diff-del-fg', 'diff-del-bg', 4.5)
   })
 
+  it('o vermelho de perigo passa de 4,5:1 no menu (card) e no hover dos itens perigosos (diff-del-bg)', () => {
+    atLeast('diff-del-fg', 'card', 4.5)
+    atLeast('diff-del-fg', 'diff-del-bg', 4.5)
+  })
+
   it('o realce de código passa de 4,5:1 sobre o fundo do bloco (bg)', () => {
     for (const name of ['keyword', 'string', 'function', 'number', 'type', 'comment']) atLeast(`syntax-${name}`, 'bg', 4.5)
   })

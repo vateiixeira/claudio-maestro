@@ -203,8 +203,8 @@ function choose(item: MoreMenuItem) {
           :title="item.title"
           :aria-disabled="item.disabled ? 'true' : undefined"
           tabindex="-1"
-          class="cursor-pointer rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
-          :class="item.danger ? 'text-diff-del-fg' : 'text-fg'"
+          class="cursor-pointer rounded-md px-2.5 py-1.5 text-left text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
+          :class="item.danger ? 'text-diff-del-fg hover:bg-diff-del-bg focus:bg-diff-del-bg' : 'text-fg hover:bg-elevated focus:bg-elevated'"
           @click="choose(item)"
         >{{ item.label }}</button>
       </div>

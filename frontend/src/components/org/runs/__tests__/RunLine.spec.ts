@@ -13,7 +13,10 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 10, 17, 10, 40))
 })
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 const at = (day: number, hour: number, minute: number, second = 0) => new Date(2026, 10, day, hour, minute, second).getTime() / 1000
 const names: Record<number, string> = { 1: 'Triagem', 2: 'Revisor' }
@@ -93,19 +96,43 @@ describe('RunLine', () => {
     expect(w.find('[data-test="run-details"]').exists()).toBe(false)
   })
 
-  it('um relato longo mostra o começo e o botão de ler inteiro', async () => {
-    const long = `${'palavra '.repeat(60)}FIM`
-    const w = await mountLine(single(makeRun({ agent_id: 1, started_at: at(13, 18, 40), ended_at: at(13, 18, 41), outcome: 'concluded', summary: long })))
+  /** jsdom não tem layout: simula o relato que passa das 4 linhas (scrollHeight maior que a caixa cortada). */
+  function overflowing(on: boolean) {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(on ? 120 : 40)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(on ? 80 : 40)
+  }
+
+  it('o relato aberto é cortado em 4 linhas e, quando passa disso, tem o botão de ler inteiro', async () => {
+    overflowing(true)
+    const w = await mountLine(single(makeRun({ agent_id: 1, started_at: at(13, 18, 40), ended_at: at(13, 18, 41), outcome: 'concluded', summary: `${'palavra '.repeat(60)}FIM` })))
     await w.get('[data-test="run-toggle"]').trigger('click')
+    await w.vm.$nextTick()
+    const summary = w.get('[data-test="run-summary"]')
+    expect(summary.classes()).toContain('line-clamp-4')
+    expect(summary.text()).toContain('FIM') // cortado pelo CSS, não por caracteres
     const more = w.get('[data-test="run-summary-more"]')
     expect(more.text()).toBe('Ler o relato inteiro')
-    expect(w.get('[data-test="run-summary"]').text()).not.toContain('FIM')
     await more.trigger('click')
     expect(more.text()).toBe('Mostrar menos')
     expect(more.attributes('aria-expanded')).toBe('true')
-    expect(w.get('[data-test="run-summary"]').text()).toContain('FIM')
+    expect(summary.classes()).not.toContain('line-clamp-4')
     await more.trigger('click')
-    expect(w.get('[data-test="run-summary"]').text()).not.toContain('FIM')
+    expect(summary.classes()).toContain('line-clamp-4')
+  })
+
+  it('um relato que cabe nas 4 linhas, mesmo com mais de 280 caracteres, não tem o botão', async () => {
+    overflowing(false)
+    const w = await mountLine(single(makeRun({ agent_id: 1, started_at: at(13, 18, 40), ended_at: at(13, 18, 41), outcome: 'concluded', summary: 'palavra '.repeat(60) })))
+    await w.get('[data-test="run-toggle"]').trigger('click')
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="run-summary-more"]').exists()).toBe(false)
+  })
+
+  it('uma perdida mostra a hora agendada, não a da detecção', async () => {
+    const run = makeRun({ id: 4, agent_id: 1, outcome: 'missed', scheduled_for: at(13, 18, 40), started_at: at(16, 10, 15), ended_at: null })
+    const w = await mountLine(single(run))
+    expect(w.get('[data-test="run-started"]').text()).toBe('18:40')
+    expect(w.get('[data-test="run-started"]').attributes('datetime')).toBe(new Date(at(13, 18, 40) * 1000).toISOString())
   })
 
   it('um relato curto não tem o botão', async () => {

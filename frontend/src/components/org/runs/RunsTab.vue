@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { errorMessage } from '../../../api/http'
+import { useMinuteClock } from '../../../minuteClock'
 import { useOrgStore } from '../../../stores/org'
 import type { Run } from '../../../types/org'
 import FilterChip from '../../ui/FilterChip.vue'
 import { ERROR, FIELD } from '../styles'
 import RunLine from './RunLine.vue'
-import { PROBLEM_OUTCOMES, groupByDay, offAgentsText, runLines, runsSummary } from './runDays'
+import { PROBLEM_OUTCOMES, groupByDay, offAgentsText, runLines, runTime, runsSummary } from './runDays'
 
 // The runs of all the agents of the project, newest first, grouped by day, each with the name of its agent.
 const props = defineProps<{ projectId: number }>()
@@ -22,7 +23,7 @@ const failures = ref<Record<number, string>>({})
 const everyRun = computed<Run[]>(() =>
   agents.value
     .flatMap((agent) => org.runsOf(agent.id))
-    .sort((a, b) => b.started_at - a.started_at || b.id - a.id),
+    .sort((a, b) => runTime(b) - runTime(a) || b.id - a.id),
 )
 /** The runs of the agent in the filter (or of all), before the "Problemas" filter. */
 const ofAgent = computed(() =>
@@ -30,7 +31,9 @@ const ofAgent = computed(() =>
 )
 const problems = computed(() => ofAgent.value.filter((run) => PROBLEM_OUTCOMES.has(run.outcome)))
 const visible = computed(() => (onlyProblems.value ? problems.value : ofAgent.value))
-const days = computed(() => groupByDay(runLines(visible.value), new Date()))
+// The app clock, so "Hoje" and "Ontem" turn over at midnight without a reload.
+const clock = useMinuteClock()
+const days = computed(() => groupByDay(runLines(visible.value), new Date(clock.value)))
 const summary = computed(() => runsSummary(ofAgent.value))
 const offText = computed(() => offAgentsText(agents.value.filter((a) => !a.enabled).map((a) => a.name)))
 /** The longest duration, in seconds: the full width of the bars. */
@@ -101,12 +104,16 @@ watch(agents, (list) => {
       <p v-if="summary" data-test="runs-summary" class="m-0">{{ summary }}</p>
     </div>
 
-    <p v-if="agents.length === 0" data-test="runs-empty" class="m-0 text-sm text-fg-muted">Este projeto ainda não tem agentes, então não há execuções.</p>
-    <p v-else-if="!loaded && everyRun.length === 0" role="status" class="m-0 text-sm text-fg-muted">Carregando execuções…</p>
-    <p v-else-if="visible.length === 0" data-test="runs-empty" class="m-0 text-sm text-fg-muted">
+    <!-- Nothing is said about what has not been read: without the agents (or when their runs failed to load) the line stays out. -->
+    <template v-if="agents.length === 0">
+      <p v-if="org.loaded && !org.error" data-test="runs-empty" class="m-0 text-sm text-fg-muted">Este projeto ainda não tem agentes, então não há execuções.</p>
+      <p v-else-if="!org.loaded" data-test="runs-loading" role="status" class="m-0 text-sm text-fg-muted">Carregando execuções…</p>
+    </template>
+    <p v-else-if="!loaded && everyRun.length === 0" data-test="runs-loading" role="status" class="m-0 text-sm text-fg-muted">Carregando execuções…</p>
+    <p v-else-if="visible.length === 0 && (everyRun.length > 0 || errors.length === 0)" data-test="runs-empty" class="m-0 text-sm text-fg-muted">
       {{ everyRun.length === 0 ? 'Ainda não rodou.' : onlyProblems ? 'Nenhum problema nas execuções.' : 'Este agente ainda não rodou.' }}
     </p>
-    <ul v-else aria-labelledby="runs-heading" class="m-0 flex list-none flex-col gap-0.5 p-0">
+    <ul v-else-if="days.length > 0" aria-labelledby="runs-heading" class="m-0 flex list-none flex-col gap-0.5 p-0">
       <li v-for="day in days" :key="day.key" data-test="run-day" :data-day="day.key" class="min-w-0">
         <div class="mt-1 flex h-[1.875rem] items-center gap-3 text-fg-muted">
           <span data-test="run-day-label" class="font-mono text-[0.65625rem] font-semibold tracking-[0.08em] uppercase">{{ day.label }}</span>

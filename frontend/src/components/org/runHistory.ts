@@ -1,4 +1,5 @@
 import type { Run } from '../../types/org'
+import { runTime } from './runs/runDays'
 
 /** One bar of the history: concluded, failed, waiting for the person, or a run that did not happen. */
 export type HistoryBar = 'ok' | 'fail' | 'wait' | 'miss'
@@ -17,12 +18,14 @@ const KIND: Partial<Record<Run['outcome'], HistoryBar>> = {
 }
 
 /**
- * The bars of the last runs that ended, oldest first. `runs` comes newest first, as the store keeps it; runs
- * that are starting or running are not part of the history yet.
+ * The bars of the last runs that ended, oldest first. `runs` comes newest first, as the store keeps it (by
+ * `started_at`); a missed run is placed by the hour it was due, not by when the scheduler noticed it. Runs that
+ * are starting or running are not part of the history yet.
  */
 export function historyBars(runs: Run[], max: number = HISTORY_MAX): HistoryBar[] {
   const bars: HistoryBar[] = []
-  for (const run of runs) {
+  // A stable sort: runs of the same moment keep the order they came in.
+  for (const run of [...runs].sort((a, b) => runTime(b) - runTime(a))) {
     const kind = KIND[run.outcome]
     if (kind === undefined) continue
     bars.push(kind)

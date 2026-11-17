@@ -99,6 +99,16 @@ describe('OrgOverview', () => {
     expect(row.get('[data-test="org-overview-next"]').text()).toBe('sob demanda')
   })
 
+  it('sem as execuções e as rotinas lidas, não escreve sem execuções nem sob demanda', async () => {
+    useOrgStore().runs = {}
+    useOrgStore().routines = {}
+    vi.stubGlobal('fetch', routeFetch({}))
+    const { wrapper } = await mountOverview()
+    const row = wrapper.get('[data-test="org-overview-agent"][data-agent-id="10"]')
+    expect(row.find('[data-test="org-overview-history"]').exists()).toBe(false)
+    expect(row.get('[data-test="org-overview-next"]').text()).toBe('')
+  })
+
   it('agente desligado mostra o histórico, as novidades e desligado', async () => {
     const { wrapper } = await mountOverview()
     const row = wrapper.get('[data-test="org-overview-agent"][data-agent-id="11"]')

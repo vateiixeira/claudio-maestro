@@ -10,9 +10,18 @@ export const PROBLEM_OUTCOMES: ReadonlySet<RunOutcome> = new Set<RunOutcome>(['f
 /** A line of the list: one run, or the runs that were missed at the same minute (folded into one line). */
 export type RunLine = { kind: 'run'; run: Run } | { kind: 'missed'; runs: Run[] }
 
-const startOf = (line: RunLine): number => (line.kind === 'run' ? line.run.started_at : line.runs[0]!.started_at)
+/**
+ * The moment a run belongs to on the screen. A missed or skipped run never started: the backend writes
+ * `started_at` when the scheduler noticed the delay (maybe days later) and keeps the hour it was due in
+ * `scheduled_for`, which is the one the person cares about.
+ */
+export function runTime(run: Run): number {
+  return (run.outcome === 'missed' || run.outcome === 'skipped') && run.scheduled_for !== null ? run.scheduled_for : run.started_at
+}
 
-/** Folds the missed runs of the same minute into one line, keeping the order of the list (newest first). */
+const startOf = (line: RunLine): number => runTime(line.kind === 'run' ? line.run : line.runs[0]!)
+
+/** Folds the missed runs due at the same minute into one line, keeping the order of the list (newest first). */
 export function runLines(runs: Run[]): RunLine[] {
   const lines: RunLine[] = []
   const byMinute = new Map<number, Extract<RunLine, { kind: 'missed' }>>()
@@ -21,7 +30,7 @@ export function runLines(runs: Run[]): RunLine[] {
       lines.push({ kind: 'run', run })
       continue
     }
-    const minute = Math.floor(run.started_at / 60)
+    const minute = Math.floor(runTime(run) / 60)
     const known = byMinute.get(minute)
     if (known) {
       known.runs.push(run)
@@ -86,7 +95,7 @@ export function runsSummary(runs: Run[]): string | null {
     const mine = runs.filter((r) => outcomes.includes(r.outcome))
     if (mine.length === 0) continue
     parts.push(`${mine.length} ${mine.length === 1 ? one : many}`)
-    times.push(...mine.map((r) => r.started_at))
+    times.push(...mine.map(runTime))
   }
   if (parts.length === 0) return null
   const first = new Date(Math.min(...times) * 1000)

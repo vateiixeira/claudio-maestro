@@ -66,12 +66,17 @@ watchEffect(() => {
   }
 })
 
+/** The runs of the agent were read: only then "sem execuções" is true. */
+const runsRead = (agent: Agent): boolean => org.runs[agent.id] !== undefined
+
 function hasHistory(agent: Agent): boolean {
   return historyBars(org.runsOf(agent.id)).length > 0
 }
 
 function nextText(agent: Agent): string {
   if (!agent.enabled) return 'desligado'
+  // Nothing is said until the routines of the project are read.
+  if (org.routines[agent.project_id] === undefined) return ''
   const schedules = org
     .routinesOf(agent.project_id)
     .filter((routine) => routine.agent_id === agent.id && routine.enabled)
@@ -130,7 +135,7 @@ const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visi
               </span>
               <span class="hidden md:block">
                 <RunHistory v-if="hasHistory(line.agent)" :runs="org.runsOf(line.agent.id)" />
-                <span v-else data-test="org-overview-history" class="font-mono text-[0.71875rem] text-fg-muted">sem execuções</span>
+                <span v-else-if="runsRead(line.agent)" data-test="org-overview-history" class="font-mono text-[0.71875rem] text-fg-muted">sem execuções</span>
               </span>
               <span data-test="org-overview-agent-unseen" class="font-mono text-[0.71875rem] tabular-nums" :class="line.agent.unseen > 0 ? 'text-secondary' : 'text-fg-muted'">{{ line.agent.unseen > 0 ? line.agent.unseen : 'nenhuma' }}</span>
               <span data-test="org-overview-next" class="text-right font-mono text-[0.71875rem] tabular-nums" :class="line.agent.enabled ? 'text-fg-muted' : 'text-secondary'">{{ nextText(line.agent) }}</span>

@@ -95,12 +95,16 @@ async function toggle(routine: Routine, enabled: boolean): Promise<void> {
   if (busy.value.has(routine.id)) return
   setBusy(routine.id, true)
   pending.value = { ...pending.value, [routine.id]: enabled }
+  let saved = false
   try {
     await updateRoutine(routine.id, { enabled })
-    await org.loadRoutines(props.projectId)
+    saved = true
+    // The store takes the saved state at once: a reread that fails must not bring the old one back.
+    org.routines = { ...org.routines, [props.projectId]: org.routinesOf(props.projectId).map((r) => (r.id === routine.id ? { ...r, enabled } : r)) }
     delete feedback.value[routine.id]
+    await org.loadRoutines(props.projectId)
   } catch (e) {
-    feedback.value[routine.id] = { kind: 'error', text: errorMessage(e) }
+    feedback.value[routine.id] = { kind: 'error', text: saved ? 'Salvo, mas não foi possível atualizar a lista.' : errorMessage(e) }
   } finally {
     const rest = { ...pending.value }
     delete rest[routine.id]
@@ -205,6 +209,7 @@ const today = computed(() => ((now.value.getDay() + 6) % 7) + 1)
           :agent-name="agentName(routine.agent_id)"
           :agent-enabled="agentEnabled(routine.agent_id)"
           :runs="runsOfRoutine(routine)"
+          :runs-loaded="org.runs[routine.agent_id] !== undefined"
           :now="now"
           :busy="busy.has(routine.id)"
           :feedback="feedback[routine.id] ?? null"

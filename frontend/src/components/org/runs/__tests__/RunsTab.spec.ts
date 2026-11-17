@@ -4,6 +4,7 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import RunsTab from '../RunsTab.vue'
 import { createAppRouter } from '../../../../router'
+import { clockNow } from '../../../../minuteClock'
 import { useOrgStore } from '../../../../stores/org'
 import { jsonResponse, makeAgent, makeRun, routeFetch } from '../../../../test/factories'
 
@@ -54,6 +55,7 @@ describe('RunsTab', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 10, 17, 10, 40))
+    clockNow.value = Date.now()
   })
   afterEach(() => vi.useRealTimers())
 
@@ -180,5 +182,60 @@ describe('RunsTab', () => {
     const { w } = await mountTab()
     expect(w.get('[data-run-id="4"] [data-test="run-headline"]').text()).toBe('Rodando')
     expect(w.find('[data-run-id="4"] [data-test="run-duration-bar"]').exists()).toBe(false)
+  })
+
+  it('uma perdida entra no dia e na hora agendados, mesmo percebida dias depois', async () => {
+    const lost = (id: number, agent: number, scheduled: number) =>
+      makeRun({ id, agent_id: agent, outcome: 'missed', scheduled_for: scheduled, started_at: at(16, 10, 15), ended_at: null })
+    const { w } = await mountTab({
+      'GET /api/agents/1/runs?limit=50': () => jsonResponse([
+        lost(11, 1, at(13, 18, 40)),
+        makeRun({ id: 12, agent_id: 1, outcome: 'concluded', started_at: at(16, 9, 0), ended_at: at(16, 9, 5) }),
+      ]),
+      'GET /api/agents/2/runs?limit=50': () => jsonResponse([lost(13, 2, at(13, 7, 40)), lost(14, 2, at(13, 8, 40))]),
+    })
+    expect(days(w)).toEqual(['2026-11-16', '2026-11-13'])
+    // a concluída de segunda primeiro; sexta em ordem de hora agendada, 18:40 antes de 08:40 e 07:40; nada se juntou
+    expect(ids(w)).toEqual(['12', '11', '14', '13'])
+    expect(w.findAll('[data-test="run-started"]').map((e) => e.text())).toEqual(['09:00', '18:40', '08:40', '07:40'])
+    expect(w.find('[data-group-size]').exists()).toBe(false)
+  })
+
+  it('Hoje e Ontem viram à meia-noite com o relógio do app', async () => {
+    const { w } = await mountTab({
+      'GET /api/agents/1/runs?limit=50': () => jsonResponse([makeRun({ id: 1, agent_id: 1, outcome: 'concluded', started_at: at(17, 9, 0), ended_at: at(17, 9, 5) })]),
+      'GET /api/agents/2/runs?limit=50': () => jsonResponse([]),
+    })
+    const labels = () => w.findAll('[data-test="run-day-label"]').map((l) => l.text())
+    expect(labels()).toEqual(['Hoje'])
+    clockNow.value = new Date(2026, 10, 18, 0, 5).getTime()
+    await flushPromises()
+    expect(labels()).toEqual(['Ontem'])
+    clockNow.value = Date.now()
+  })
+
+  it('sem a organização lida, não afirma que o projeto não tem agentes', async () => {
+    useOrgStore(pinia).agents = []
+    useOrgStore(pinia).loaded = false
+    const { w } = await mountTab()
+    expect(w.find('[data-test="runs-empty"]').exists()).toBe(false)
+    useOrgStore(pinia).loaded = true
+    await flushPromises()
+    expect(w.get('[data-test="runs-empty"]').text()).toContain('ainda não tem agentes')
+  })
+
+  it('com erro ao ler os agentes, não afirma que o projeto não tem agentes', async () => {
+    useOrgStore(pinia).agents = []
+    useOrgStore(pinia).loaded = true
+    useOrgStore(pinia).error = 'Falha ao ler os agentes.'
+    const { w } = await mountTab()
+    expect(w.find('[data-test="runs-empty"]').exists()).toBe(false)
+  })
+
+  it('enquanto os agentes não chegam, diz que está carregando', async () => {
+    useOrgStore(pinia).agents = []
+    useOrgStore(pinia).loaded = false
+    const { w } = await mountTab()
+    expect(w.get('[data-test="runs-loading"]').text()).toBe('Carregando execuções…')
   })
 })

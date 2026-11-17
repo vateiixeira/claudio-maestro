@@ -7,8 +7,8 @@ enableAutoUnmount(afterEach)
 // Tuesday, 10:40.
 const now = new Date(2026, 10, 17, 10, 40)
 
-function mountWeek(schedules: { days: string; time: string }[]) {
-  return mount(RoutineWeek, { props: { schedules, now } })
+function mountWeek(schedules: { days: string; time: string }[], active = true) {
+  return mount(RoutineWeek, { props: { schedules, now, active } })
 }
 
 describe('RoutineWeek', () => {
@@ -28,6 +28,15 @@ describe('RoutineWeek', () => {
     expect(next).toHaveLength(1)
     expect(next[0]!.text()).toBe('18:40')
     expect(next[0]!.element.closest('[data-test="routine-week-day"]')!.getAttribute('data-day')).toBe('2')
+  })
+
+  it('o próximo só fica verde quando a rotina roda; senão, tom neutro', () => {
+    const slots = [{ days: '1234567', time: '18:40' }]
+    const on = mountWeek(slots).get('[data-test="routine-week-slot"][data-next="true"]')
+    expect(on.classes().join(' ')).toContain('text-primary-soft')
+    const off = mountWeek(slots, false).get('[data-test="routine-week-slot"][data-next="true"]')
+    expect(off.classes().join(' ')).not.toContain('primary')
+    expect(off.text()).toBe('18:40')
   })
 
   it('dias sem horário ficam vazios', () => {

@@ -69,6 +69,15 @@ describe('OrgTree', () => {
     expect(wrapper.find('[data-test="org-node-unseen"]').exists()).toBe(false)
   })
 
+  it('sem as rotinas do projeto lidas, o canto não afirma sem rotina', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 1 })]
+    const { wrapper } = await mountTree()
+    expect(wrapper.get('[data-test="org-node-aside"]').text()).toBe('')
+    useOrgStore(pinia).routines = { 1: [] }
+    await flushPromises()
+    expect(wrapper.get('[data-test="org-node-aside"]').text()).toBe('sem rotina')
+  })
+
   it('agente desligado com rotina ligada continua mostrando o próximo horário', async () => {
     useOrgStore(pinia).agents = [makeAgent({ id: 1, enabled: false })]
     useOrgStore(pinia).routines = { 1: [makeRoutine({ agent_id: 1, enabled: true, schedules: [{ id: 1, days: '1234567', time: '18:40', last_fired_at: null }] })] }

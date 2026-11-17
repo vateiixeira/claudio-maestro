@@ -47,7 +47,7 @@ const visible = computed(() => {
   return sorted.value.filter((item) => {
     if (activeFilter.value && statusId(item.status) !== activeFilter.value) return false
     if (!needle) return true
-    return item.key.toLocaleLowerCase('pt-BR').includes(needle) || (item.note ?? '').toLocaleLowerCase('pt-BR').includes(needle)
+    return [item.key, item.note, item.link].some((text) => (text ?? '').toLocaleLowerCase('pt-BR').includes(needle))
   })
 })
 
@@ -95,7 +95,7 @@ watch(() => org.byId(props.agentId)?.last_run?.outcome, () => { void load() })
       <div data-test="registry-filter" class="flex flex-wrap items-center gap-2">
         <FilterChip data-test="registry-chip" data-status="" label="Todos" :count="items.length" :pressed="activeFilter === ''" @toggle="statusFilter = ''" />
         <FilterChip v-for="chip in chips" :key="chip.id" data-test="registry-chip" :data-status="chip.status" :label="chip.label" :count="chip.count" :pressed="activeFilter === chip.id" @toggle="toggle(chip.id)" />
-        <input v-model="query" data-test="registry-search" type="search" aria-label="Buscar no registro" placeholder="Buscar chave ou nota" :class="[FIELD, 'ml-auto h-8 w-full text-[0.8125rem] sm:w-60']" />
+        <input v-model="query" data-test="registry-search" type="search" aria-label="Buscar no registro" placeholder="Buscar chave, nota ou link" :class="[FIELD, 'ml-auto h-8 w-full text-[0.8125rem] sm:w-60']" />
       </div>
       <p class="m-0 max-w-prose text-xs text-fg-subtle">Um item por coisa tratada, para o agente não refazer o que já fez.</p>
       <p v-if="visible.length === 0" data-test="registry-no-match" class="m-0 text-sm text-fg-muted">Nenhum item com esse filtro.</p>

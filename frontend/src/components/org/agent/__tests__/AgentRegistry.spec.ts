@@ -72,6 +72,14 @@ describe('AgentRegistry', () => {
     expect(wrapper.get('[data-test="registry-no-match"]').text()).toBe('Nenhum item com esse filtro.')
   })
 
+  it('a busca também procura no link, e o campo diz isso', async () => {
+    const { wrapper } = await mountRegistry()
+    const search = wrapper.get('[data-test="registry-search"]')
+    expect(search.attributes('placeholder')).toBe('Buscar chave, nota ou link')
+    await search.setValue('pull/12')
+    expect(wrapper.findAll('[data-test="item-key"]').map((k) => k.text())).toEqual(['chamado:1043'])
+  })
+
   it('desenha a situação com o tom e o texto certos', async () => {
     const { wrapper } = await mountRegistry()
     const byKey = (key: string) => wrapper.findAll('[data-test="item-row"]').find((r) => r.get('[data-test="item-key"]').text() === key)!.get('[data-test="item-status"]')

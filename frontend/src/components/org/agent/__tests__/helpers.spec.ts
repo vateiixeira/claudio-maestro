@@ -19,6 +19,10 @@ describe('parseHeader', () => {
     expect(parseHeader('---\nskills: []\n---\n')).toEqual({ skills: [] })
   })
 
+  it('tira o BOM do começo, como o backend', () => {
+    expect(parseHeader('\uFEFF---\nname: Triagem\n---\n')).toEqual({ name: 'Triagem' })
+  })
+
   it('sem cabeçalho devolve null', () => {
     expect(parseHeader('# Só corpo')).toBeNull()
   })

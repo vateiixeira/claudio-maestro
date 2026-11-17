@@ -41,6 +41,19 @@ describe('MoreMenu', () => {
     expect(menuItems().map((i) => i.dataset.id)).toEqual(['edit', 'lock', 'remove'])
   })
 
+  it('o item perigoso usa o realce vermelho no hover e no foco, não o cinza que reprova o contraste', async () => {
+    const { trigger } = mountMenu()
+    await trigger.trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    const danger = menuItems().find((i) => i.dataset.id === 'remove')!
+    expect(danger.className).toContain('text-diff-del-fg')
+    expect(danger.className).toContain('hover:bg-diff-del-bg')
+    expect(danger.className).toContain('focus:bg-diff-del-bg')
+    expect(danger.className).not.toMatch(/(^|\s)(hover|focus):bg-elevated/)
+    const plain = menuItems().find((i) => i.dataset.id === 'edit')!
+    expect(plain.className).toContain('hover:bg-elevated')
+  })
+
   it('seta para baixo foca o primeiro item', async () => {
     const { trigger } = mountMenu()
     await trigger.trigger('keydown', { key: 'ArrowDown' })

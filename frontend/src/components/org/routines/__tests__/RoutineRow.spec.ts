@@ -18,10 +18,10 @@ const routine = makeRoutine({
   ],
 })
 
-function mountRow(props: { routine?: Routine; agentName?: string | null; agentEnabled?: boolean | null; runs?: Run[] } = {}) {
+function mountRow(props: { routine?: Routine; agentName?: string | null; agentEnabled?: boolean | null; runs?: Run[]; runsLoaded?: boolean } = {}) {
   return mount(RoutineRow, {
     props: {
-      routine, agentName: 'Triagem', agentEnabled: true, runs: [], now,
+      routine, agentName: 'Triagem', agentEnabled: true, runs: [], runsLoaded: true, now,
       ...props,
     },
   })
@@ -76,7 +76,7 @@ describe('RoutineRow', () => {
 
   it('ocupada: a chave fica desabilitada', () => {
     expect(mountRow().get('[data-test="routine-toggle"]').attributes('disabled')).toBeUndefined()
-    const busy = mount(RoutineRow, { props: { routine, agentName: 'Triagem', agentEnabled: true, runs: [], now, busy: true } })
+    const busy = mount(RoutineRow, { props: { routine, agentName: 'Triagem', agentEnabled: true, runs: [], runsLoaded: true, now, busy: true } })
     expect(busy.get('[data-test="routine-toggle"]').attributes('disabled')).toBeDefined()
   })
 
@@ -101,13 +101,32 @@ describe('RoutineRow', () => {
     expect(none.find('[data-test="run-history"]').exists()).toBe(false)
   })
 
+  it('sem as execuções do agente lidas, não afirma que ainda não rodou', () => {
+    const w = mountRow({ runsLoaded: false })
+    expect(w.get('[data-test="routine-last"]').text()).not.toContain('ainda não rodou')
+    expect(w.get('[data-test="routine-last"]').text()).toContain('Última')
+  })
+
+  it('a última perdida mostra a hora agendada, não a da detecção', () => {
+    const run = makeRun({ routine_id: 5, outcome: 'missed', scheduled_for: at(13, 18, 40), started_at: at(16, 10, 15), ended_at: null })
+    expect(mountRow({ runs: [run] }).get('[data-test="routine-last"]').text()).toContain('13 nov 18:40')
+  })
+
+  it('o próximo horário na semana só fica verde quando a rotina roda', () => {
+    const slot = (w: ReturnType<typeof mountRow>) => w.get('[data-test="routine-week-slot"][data-next="true"]')
+    expect(slot(mountRow()).classes().join(' ')).toContain('text-primary-soft')
+    for (const w of [mountRow({ agentEnabled: false }), mountRow({ routine: { ...routine, enabled: false } }), mountRow({ agentEnabled: null })]) {
+      expect(slot(w).classes().join(' ')).not.toContain('primary')
+    }
+  })
+
   it('cria tarefa aparece como marca', () => {
     expect(mountRow({ routine: { ...routine, create_task: true } }).find('[data-test="routine-creates-task"]').exists()).toBe(true)
     expect(mountRow().find('[data-test="routine-creates-task"]').exists()).toBe(false)
   })
 
   it('rodar e editar emitem; o menu tem Excluir com confirmação', async () => {
-    const w = mountRow()
+    const w = mount(RoutineRow, { props: { routine, agentName: 'Triagem', agentEnabled: true, runs: [], runsLoaded: true, now }, attachTo: document.body })
     await w.get('[data-test="routine-run"]').trigger('click')
     await w.get('[data-test="routine-edit"]').trigger('click')
     expect(w.emitted('run')).toHaveLength(1)
@@ -119,6 +138,7 @@ describe('RoutineRow', () => {
     item.click()
     await w.vm.$nextTick()
     expect(w.emitted('delete')).toBeUndefined()
+    expect(document.activeElement).toBe(w.get('[data-test="routine-delete-confirm"]').element)
     await w.get('[data-test="routine-delete-confirm"]').trigger('click')
     expect(w.emitted('delete')).toHaveLength(1)
   })
@@ -135,9 +155,9 @@ describe('RoutineRow', () => {
 
   it('mostra o erro e o retorno da linha', () => {
     expect(mountRow().find('[data-test="routine-row-error"]').exists()).toBe(false)
-    const w = mount(RoutineRow, { props: { routine, agentName: 'T', agentEnabled: true, runs: [], now, feedback: { kind: 'error', text: 'Falhou.' } } })
+    const w = mount(RoutineRow, { props: { routine, agentName: 'T', agentEnabled: true, runs: [], runsLoaded: true, now, feedback: { kind: 'error', text: 'Falhou.' } } })
     expect(w.get('[data-test="routine-row-error"]').attributes('role')).toBe('alert')
-    const ok = mount(RoutineRow, { props: { routine, agentName: 'T', agentEnabled: true, runs: [], now, feedback: { kind: 'ok', text: 'Rotina disparada.' } } })
+    const ok = mount(RoutineRow, { props: { routine, agentName: 'T', agentEnabled: true, runs: [], runsLoaded: true, now, feedback: { kind: 'ok', text: 'Rotina disparada.' } } })
     expect(ok.get('[data-test="routine-feedback"]').text()).toBe('Rotina disparada.')
   })
 

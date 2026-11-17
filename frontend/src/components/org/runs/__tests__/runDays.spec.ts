@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  PROBLEM_OUTCOMES, dayLabel, durationShare, groupByDay, offAgentsText, runLines, runsSummary, slowFactor, slowText,
+  PROBLEM_OUTCOMES, dayLabel, durationShare, groupByDay, offAgentsText, runLines, runTime, runsSummary, slowFactor, slowText,
 } from '../runDays'
 import { makeRun } from '../../../../test/factories'
 import type { Run, RunOutcome } from '../../../../types/org'
@@ -155,5 +155,39 @@ describe('durationShare', () => {
     expect(durationShare(makeRun({ started_at: 100, ended_at: 700 }), 600)).toBe(100)
     expect(durationShare(makeRun({ started_at: 100, ended_at: null }), 600)).toBe(0)
     expect(durationShare(makeRun({ started_at: 100, ended_at: 160 }), 0)).toBe(0)
+  })
+})
+
+describe('hora de uma execução perdida', () => {
+  // O backend grava started_at = a hora em que o agendador percebeu o atraso; a hora agendada fica em scheduled_for.
+  const lost = (id: number, scheduled: number, detected: number, outcome: RunOutcome = 'missed') =>
+    makeRun({ id, outcome, scheduled_for: scheduled, started_at: detected, ended_at: null })
+
+  it('runTime: a agendada vale para perdida e pulada; as demais usam o início', () => {
+    expect(runTime(lost(1, at(13, 18, 40), at(16, 10, 15)))).toBe(at(13, 18, 40))
+    expect(runTime(lost(2, at(13, 18, 40), at(16, 10, 15), 'skipped'))).toBe(at(13, 18, 40))
+    expect(runTime(makeRun({ outcome: 'missed', scheduled_for: null, started_at: at(16, 10, 15) }))).toBe(at(16, 10, 15))
+    expect(runTime(concluded(3, at(16, 9, 0), { scheduled_for: at(16, 8, 59) }))).toBe(at(16, 9, 0))
+  })
+
+  it('duas agendadas em horas diferentes e percebidas juntas não se juntam', () => {
+    const detected = at(16, 10, 15)
+    const lines = runLines([lost(1, at(13, 8, 40), detected), lost(2, at(13, 7, 40), detected)])
+    expect(lines.map((l) => l.kind)).toEqual(['missed', 'missed'])
+  })
+
+  it('duas agendadas na mesma hora e percebidas em minutos diferentes se juntam', () => {
+    const lines = runLines([lost(2, at(13, 7, 40), at(16, 10, 16)), lost(1, at(13, 7, 40) + 10, at(16, 10, 15))])
+    expect(lines).toHaveLength(1)
+    expect(lines[0]!.kind === 'missed' && lines[0]!.runs).toHaveLength(2)
+  })
+
+  it('agrupa no dia agendado, não no dia em que foi percebida', () => {
+    const groups = groupByDay(runLines([concluded(5, at(16, 9, 0)), lost(1, at(13, 18, 40), at(16, 10, 15))]), now)
+    expect(groups.map((g) => g.key)).toEqual(['2026-11-16', '2026-11-13'])
+  })
+
+  it('o resumo do período usa a hora agendada', () => {
+    expect(runsSummary([lost(1, at(13, 18, 40), at(16, 10, 15))])).toBe('Em 13 nov: 1 perdida (o horário passou sem o Maestro disparar o agente).')
   })
 })

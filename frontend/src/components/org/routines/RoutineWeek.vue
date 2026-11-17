@@ -4,7 +4,7 @@ import { DAYS } from '../../../org'
 import { nextSlot, scheduleSentence, weekSlots, type ScheduleRow } from './schedule'
 
 // The week of a routine: the times it fires on each day, today in a tinted column and the next firing outlined.
-const props = defineProps<{ schedules: ScheduleRow[]; now: Date }>()
+const props = defineProps<{ schedules: ScheduleRow[]; now: Date; /** Whether the routine really fires: the next time is green only then. */ active: boolean }>()
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const isoDay = (d: Date) => ((d.getDay() + 6) % 7) + 1
@@ -38,7 +38,7 @@ const label = computed(() => {
         data-test="routine-week-slot"
         :data-next="next && next.day === index + 1 && next.time === time ? 'true' : undefined"
         class="rounded-[5px] px-1 font-mono text-[0.65625rem] leading-[1.125rem]"
-        :class="next && next.day === index + 1 && next.time === time ? 'bg-primary/20 text-primary-soft ring-1 ring-primary/45' : 'bg-elevated text-fg-muted'"
+        :class="next && next.day === index + 1 && next.time === time ? (active ? 'bg-primary/20 text-primary-soft ring-1 ring-primary/45' : 'bg-elevated text-fg ring-1 ring-line-strong') : 'bg-elevated text-fg-muted'"
       >{{ time }}</span>
     </div>
   </div>

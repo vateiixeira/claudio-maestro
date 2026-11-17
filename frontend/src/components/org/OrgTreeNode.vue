@@ -29,7 +29,9 @@ const stateText = computed(() => STATE_TEXT[state.value])
 
 // The corner of the card: the news, or else when the routines wake the agent next.
 const unseenText = computed(() => `${agent.value.unseen} ${agent.value.unseen === 1 ? 'novidade' : 'novidades'}`)
+// Empty until the routines of the project are read: it does not claim "sem rotina" about what it does not know.
 const routineText = computed(() => {
+  if (org.routines[agent.value.project_id] === undefined) return ''
   const schedules = org
     .routinesOf(agent.value.project_id)
     .filter((routine) => routine.agent_id === agent.value.id && routine.enabled)
