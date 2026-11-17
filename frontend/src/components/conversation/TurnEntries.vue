@@ -10,7 +10,7 @@ import type { ConversationItem, ToolItem } from '../../types/conversation'
 import type { TaskEntry } from '../../conversation/tasks'
 
 /** The rail of one turn: its text, thinking and tool rows, with the work blocks folded. */
-defineProps<{
+const props = defineProps<{
   entries: TurnEntry[]
   sessionActive: boolean
   waitingIds: ReadonlySet<string>
@@ -23,12 +23,22 @@ defineProps<{
   isOpen: (entry: { id: string; items: ToolItem[] }) => boolean
 }>()
 defineEmits<{ toggle: [entry: { id: string; items: ToolItem[] }]; reveal: [] }>()
+
+/** The time the entry started, when the history says. */
+function startOf(entry: TurnEntry): number | null {
+  return (entry.kind === 'group' ? entry.items[0]?.at : entry.item.at) ?? null
+}
+/** When a work block ended: the start of the entry after it, or null for the last of the turn. */
+const endOf = (index: number): number | null => {
+  const next = props.entries[index + 1]
+  return next ? startOf(next) : null
+}
 </script>
 
 <template>
   <div class="relative flex flex-col gap-[18px]">
     <div aria-hidden="true" class="absolute top-1.5 bottom-1.5 left-[13px] w-px bg-line" />
-    <div v-for="entry in entries" :key="entryKey(entry)" data-test="turn-entry" class="relative flex items-start gap-3" :class="{ 'animate-enter': isLive(entryKey(entry)) }">
+    <div v-for="(entry, index) in entries" :key="entryKey(entry)" data-test="turn-entry" class="relative flex items-start gap-3" :class="{ 'animate-enter': isLive(entryKey(entry)) }">
       <template v-if="entry.kind === 'group'">
         <RailNode :kind="groupNodeKind(entry.items, sessionActive, waitingIds)" align="group" :live="isLive(entryKey(entry))" />
         <WorkBlock
@@ -40,6 +50,7 @@ defineEmits<{ toggle: [entry: { id: string; items: ToolItem[] }]; reveal: [] }>(
           :children-of="childrenOf"
           :origin-of="originOf"
           :task-list="taskList"
+          :end-at="endOf(index)"
           @toggle="$emit('toggle', entry)"
         />
       </template>

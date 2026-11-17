@@ -3,16 +3,22 @@ import { computed, inject, reactive, ref, watch } from 'vue'
 import type { TaskEntry } from '../../conversation/tasks'
 import { formatRunningTime } from '../../format'
 import { SUBAGENT_FOCUS_KEY } from '../../conversation/subagents'
-import { workCaption, workRow, workStatus } from '../../conversation/work'
+import { resultText } from '../../conversation/tool'
+import { workCaption, workFailure, workRetries, workRow, workStatus, type WorkKind } from '../../conversation/work'
+import { workFolders, workGroups, workSpan } from '../../conversation/workGroups'
 import { useSecondClock } from '../../secondClock'
 import type { ConversationItem, ToolItem } from '../../types/conversation'
 import ConversationBlock from './ConversationBlock.vue'
 import ToolImageStrip from './ToolImageStrip.vue'
 import Collapse from '../Collapse.vue'
 import IconChevron from '../icons/IconChevron.vue'
+import IconWorkKind from '../icons/IconWorkKind.vue'
+import WorkArtifacts from './WorkArtifacts.vue'
+import WorkError from './WorkError.vue'
 import WorkHeader from './WorkHeader.vue'
 
-// Everything Claude did between two statements, in one collapsible box: one row per action.
+// Everything Claude did between two statements, in one collapsible box: the actions in groups of the same
+// kind, one row per action.
 const props = withDefaults(
   defineProps<{
     items: ToolItem[]
@@ -24,8 +30,10 @@ const props = withDefaults(
     /** The subagent a file write came from (a subagent's write shown as a row of its own); undefined for an action of the main agent. */
     originOf?: (item: ToolItem) => string | undefined
     taskList?: { tasks: TaskEntry[]; lastItemId: string | null } | null
+    /** When the block ended (Unix seconds): the time of whatever came after it in the turn. */
+    endAt?: number | null
   }>(),
-  { sessionActive: false, waitingIds: undefined, childrenOf: () => [], originOf: undefined, taskList: null },
+  { sessionActive: false, waitingIds: undefined, childrenOf: () => [], originOf: undefined, taskList: null, endAt: null },
 )
 const emit = defineEmits<{ toggle: [] }>()
 
@@ -35,15 +43,31 @@ const summary = computed(() => workCaption(props.items, props.sessionActive, pro
 const summaryChanged = ref(false)
 watch(summary, () => { summaryChanged.value = true })
 const running = computed(() => props.items.some((item) => workStatus(item, props.sessionActive, props.waitingIds) === 'running'))
-const failed = computed(() => props.items.some((item) => workStatus(item, props.sessionActive, props.waitingIds) === 'error'))
 const rows = computed(() => props.items.map((item) => ({ item, ...workRow(item, props.sessionActive, props.waitingIds, props.originOf?.(item)) })))
+const groups = computed(() => workGroups(rows.value))
 
-// The time of a running action ("12 s"). One clock for the whole app, on only while the block is open and
-// an action with a known start runs in it.
-const ticking = computed(() => props.open && rows.value.some((row) => row.status === 'running' && row.at != null))
+const failure = computed(() => workFailure(props.items, props.sessionActive, props.waitingIds))
+const retries = computed(() => workRetries(props.items, props.sessionActive, props.waitingIds))
+const retryIds = computed(() => new Set(retries.value.values()))
+const statusById = computed(() => new Map(rows.value.map((row) => [row.item.id, row.status])))
+// A failed action whose next attempt passed: the row says so.
+const retryPassed = (id: string) => {
+  const next = retries.value.get(id)
+  return next != null && statusById.value.get(next) === 'ok'
+}
+
+const folders = computed(() => workFolders(props.items))
+
+// The time of a running action ("12 s") and the block's own duration. One clock for the whole app, on only
+// while an action with a known start runs in the block, open or closed.
+const ticking = computed(() => running.value && (props.items[0]?.at != null || rows.value.some((row) => row.status === 'running' && row.at != null)))
 const now = useSecondClock(ticking)
 const elapsedOf = (row: { status: string; at?: number }) =>
   row.status === 'running' && row.at != null ? formatRunningTime(now.value / 1000 - row.at) : undefined
+const spanText = computed(() => {
+  const seconds = workSpan(props.items, props.endAt, now.value / 1000, running.value)
+  return seconds == null ? '' : formatRunningTime(Math.round(seconds))
+})
 
 // A row is closed unless the user opened it; one that failed opens by itself, until the user chooses otherwise.
 const choice = reactive(new Map<string, boolean>())
@@ -62,65 +86,116 @@ watch(focus, (target) => {
   choice.set(hit.id, true)
   if (!props.open) emit('toggle')
 })
+
+// A chip of what the closed block produced: open the block on the action behind it.
+function openFrom(id: string) {
+  choice.set(id, true)
+  if (!props.open) emit('toggle')
+}
+
+type Family = 'command' | 'file' | 'agent'
+const FAMILY: Record<WorkKind, Family> = { bash: 'command', tool: 'command', read: 'file', search: 'file', edit: 'file', agent: 'agent' }
+// Whole class names, so Tailwind finds them.
+const GROUP_TONE: Record<Family, string> = {
+  command: 'text-type-command bg-[color-mix(in_oklab,var(--color-type-command)_9%,transparent)]',
+  file: 'text-type-file bg-[color-mix(in_oklab,var(--color-type-file)_9%,transparent)]',
+  agent: 'text-type-agent bg-[color-mix(in_oklab,var(--color-type-agent)_9%,transparent)]',
+}
+const FAILED_FILL = 'bg-[color-mix(in_oklab,var(--color-diff-del-fg)_8%,transparent)]'
+const errorText = (item: ToolItem) => resultText(item.result?.content).trim()
 </script>
 
 <template>
   <div data-test="work-block" class="min-w-0">
-    <button
-      type="button"
-      data-test="work-block-toggle"
-      class="flex min-h-9 max-w-full cursor-pointer items-center gap-1.5 rounded border-none bg-transparent px-0 py-1 text-left text-sm text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      :aria-expanded="open"
-      :title="summary"
-      :aria-label="`${open ? 'Recolher' : 'Ver'} ${count}: ${summary}`"
-      @click="emit('toggle')"
-    >
-      <span data-test="work-count" class="sr-only">{{ count }}</span>
-      <span
-        :key="summary"
-        data-test="work-summary"
-        class="min-w-0 truncate"
-        :class="[
-          failed ? 'text-diff-del-fg' : running ? 'text-secondary-soft' : 'text-fg-muted',
-          summaryChanged ? 'animate-enter [animation-duration:var(--motion-state)]' : '',
-        ]"
-      >{{ summary }}</span>
-      <IconChevron :open="open" :size="12" class="text-fg-subtle duration-(--motion-enter) ease-(--ease-maestro)" />
-    </button>
-    <!-- The images of the block's own actions (not a subagent's), in view with the block closed. -->
-    <ToolImageStrip :items="items" :session-active="sessionActive" class="mt-1" />
+    <div class="flex flex-col gap-2.5">
+      <button
+        type="button"
+        data-test="work-block-toggle"
+        class="flex min-h-9 w-full max-w-full cursor-pointer items-center gap-2.5 rounded border-none bg-transparent px-0 py-1 text-left text-sm hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        :aria-expanded="open"
+        :title="summary"
+        :aria-label="`${open ? 'Recolher' : 'Ver'} ${count}: ${summary}${failure ? ` · ${failure}` : ''}`"
+        @click="emit('toggle')"
+      >
+        <span data-test="work-count" class="sr-only">{{ count }}</span>
+        <span
+          :key="summary"
+          data-test="work-summary"
+          class="min-w-0 truncate"
+          :class="[
+            running ? 'text-secondary-soft' : open ? 'text-fg' : 'text-fg-muted',
+            open ? 'font-medium' : '',
+            summaryChanged ? 'animate-enter [animation-duration:var(--motion-state)]' : '',
+          ]"
+        >{{ summary }}</span>
+        <span v-if="folders > 1" data-test="work-folders" class="shrink-0 font-mono text-xs text-fg-muted">em {{ folders }} pastas</span>
+        <span v-if="failure" data-test="work-failed" class="inline-flex h-[1.375rem] shrink-0 items-center gap-1.5 rounded-full bg-diff-del-bg px-2.5 text-xs font-medium text-diff-del-fg">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>{{ failure }}
+        </span>
+        <span class="grow" />
+        <span v-if="spanText" data-test="work-span" class="shrink-0 font-mono text-xs tabular-nums" :class="running ? 'text-secondary-soft' : 'text-fg-muted'">{{ spanText }}</span>
+        <IconChevron :open="open" :size="12" class="shrink-0 text-fg-subtle duration-(--motion-enter) ease-(--ease-maestro)" />
+      </button>
+      <!-- The images of the block's own actions (not a subagent's), in view with the block closed. -->
+      <ToolImageStrip :items="items" :session-active="sessionActive" />
+      <WorkArtifacts v-if="!open" :items="items" :session-active="sessionActive" @open="openFrom" />
+    </div>
     <Collapse :open="open">
-      <div class="mt-1 flex flex-col overflow-hidden rounded-lg border border-line bg-panel">
-        <div v-for="(row, index) in rows" :key="row.item.id" data-test="work-row" :class="index > 0 ? 'border-t border-line' : ''">
-          <WorkHeader
-            as="button"
-            :kind="row.kind"
-            :label="row.label"
-            :tag="row.tag"
-            :model="row.model"
-            :desc="row.desc"
-            :mono="row.mono"
-            :status="row.status"
-            :meta="row.meta"
-            :elapsed="elapsedOf(row)"
-            :open="isOpen(row.item.id, row.status === 'error')"
-            :aria-expanded="isOpen(row.item.id, row.status === 'error')"
-            @click="toggleRow(row.item.id, row.status === 'error')"
+      <div class="mt-2.5 flex flex-col overflow-hidden rounded-xl border border-line bg-panel">
+        <div v-for="(group, groupIndex) in groups" :key="group.key" data-test="work-group" :data-kind="group.kind" :class="groupIndex > 0 ? 'border-t border-line' : ''">
+          <div data-test="work-group-head" class="flex min-h-[2.125rem] items-center gap-2.5 px-3.5" :class="GROUP_TONE[FAMILY[group.kind]]">
+            <IconWorkKind :kind="group.kind" :size="13" />
+            <span data-test="work-group-label" class="cap">{{ group.label }}</span>
+            <span v-if="group.where" data-test="work-group-where" class="min-w-0 truncate font-mono text-xs text-fg-muted" :title="group.where">{{ group.where }}</span>
+            <span class="grow" />
+            <span data-test="work-group-count" class="shrink-0 font-mono text-xs text-fg-muted">{{ group.rows.length }}</span>
+          </div>
+          <div
+            v-for="row in group.rows"
+            :key="row.item.id"
+            data-test="work-row"
+            class="border-t border-line"
+            :class="row.status === 'error' ? FAILED_FILL : ''"
           >
-            <template v-if="row.command && !isOpen(row.item.id, row.status === 'error')" #desc>
-              <span class="block truncate">{{ row.desc }}</span>
-              <span data-test="work-command" class="block truncate font-mono text-xs text-fg-muted">{{ row.command }}</span>
-            </template>
-            <template v-if="row.diff" #trail>
-              <span class="shrink-0 font-mono text-xs text-diff-add-fg">+{{ row.diff.added }}</span>
-              <span class="shrink-0 font-mono text-xs text-diff-del-fg">−{{ row.diff.removed }}</span>
-            </template>
-          </WorkHeader>
-          <Collapse :open="isOpen(row.item.id, row.status === 'error')">
-            <div data-test="work-row-body" class="border-t border-line bg-surface">
-              <ConversationBlock headless :item="row.item" :session-active="sessionActive" :children-of="childrenOf" :task-list="taskList" />
-            </div>
-          </Collapse>
+            <WorkHeader
+              as="button"
+              grouped
+              :kind="row.kind"
+              :label="row.label"
+              :tag="row.tag"
+              :model="row.model"
+              :desc="row.desc"
+              :mono="row.mono"
+              :status="row.status"
+              :meta="row.meta"
+              :elapsed="elapsedOf(row)"
+              :command="isOpen(row.item.id, row.status === 'error') ? undefined : row.command"
+              :open="isOpen(row.item.id, row.status === 'error')"
+              :aria-expanded="isOpen(row.item.id, row.status === 'error')"
+              @click="toggleRow(row.item.id, row.status === 'error')"
+            >
+              <template v-if="row.diff" #trail>
+                <span v-if="row.diff.added" class="shrink-0 font-mono text-xs text-diff-add-fg">+{{ row.diff.added }}</span>
+                <span v-if="row.diff.removed" class="shrink-0 font-mono text-xs text-diff-del-fg">−{{ row.diff.removed }}</span>
+              </template>
+              <template v-else-if="retryIds.has(row.item.id)" #trail>
+                <span data-test="work-retry" class="cap shrink-0 text-fg-muted">Nova tentativa</span>
+              </template>
+            </WorkHeader>
+            <Collapse :open="isOpen(row.item.id, row.status === 'error')">
+              <div
+                data-test="work-row-body"
+                :class="row.status === 'error' ? 'mt-1 mr-3.5 mb-3.5 ml-10 overflow-hidden rounded-lg border border-line bg-surface' : 'border-t border-line bg-surface'"
+              >
+                <WorkError v-if="row.status === 'error' && errorText(row.item)" :text="errorText(row.item)" />
+                <ConversationBlock headless :item="row.item" :session-active="sessionActive" :children-of="childrenOf" :task-list="taskList" />
+                <div v-if="row.status === 'error' && retryPassed(row.item.id)" class="flex items-center gap-2 border-t border-line px-3 py-2 text-[0.78rem] text-fg-muted">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6" /></svg>
+                  <span data-test="work-retry-note">A tentativa seguinte passou.</span>
+                </div>
+              </div>
+            </Collapse>
+          </div>
         </div>
       </div>
     </Collapse>

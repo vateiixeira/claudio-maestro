@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { SUBAGENT_FOCUS_KEY, type SubagentFocus } from '../../../conversation/subagents'
@@ -12,7 +12,7 @@ function tool(id: string, name: string, input: Record<string, unknown> = {}, ext
   return { type: 'tool', id, tool_use_id: `tu-${id}`, name, input, result: done, streaming: false, parent_tool_use_id: null, ...extra }
 }
 
-type Props = { items: ToolItem[]; open?: boolean; sessionActive?: boolean }
+type Props = { items: ToolItem[]; open?: boolean; sessionActive?: boolean; endAt?: number | null }
 function mountBlock(props: Props, focus?: ReturnType<typeof ref<SubagentFocus | null>>) {
   return mount(WorkBlock, {
     props: { open: true, ...props },
@@ -27,7 +27,8 @@ describe('WorkBlock: cabeçalho', () => {
     expect(w.find('[data-test="work-count"]').text()).toBe('3 ações')
     expect(w.find('[data-test="work-count"]').classes()).toContain('sr-only')
     expect(w.classes()).not.toContain('border')
-    expect(w.find('[data-test="work-summary"]').text()).toBe('Executou 1 comando, editou a, 1 falhou')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Executou 1 comando, fez 1 leitura, editou a')
+    expect(w.find('[data-test="work-failed"]').text()).toBe('1 falhou')
     expect(w.find('[data-test="work-summary"]').classes()).toContain('truncate')
   })
 
@@ -213,5 +214,165 @@ describe('WorkBlock: animações', () => {
     const w = mountBlock({ items: [tool('r', 'Read')], open: true })
     const chevron = w.find('[data-test="work-block-toggle"] svg')
     expect(chevron.classes()).toEqual(expect.arrayContaining(['duration-(--motion-enter)', 'ease-(--ease-maestro)']))
+  })
+})
+
+describe('WorkBlock: grupos', () => {
+  const items = () => [
+    tool('b1', 'Bash', { command: 'cd /home/ana/dev/a && ls', description: 'Listar' }),
+    tool('b2', 'Bash', { command: 'cd /home/ana/dev/a && pwd' }),
+    tool('b3', 'Bash', { command: 'cd /home/ana/dev/b && ls' }),
+    tool('q', 'mcp__banco__query', { query: 'select 1' }),
+  ]
+
+  it('junta as ações seguidas do mesmo tipo e da mesma pasta, e mostra pastas', () => {
+    const w = mountBlock({ items: items() })
+    const groups = w.findAll('[data-test="work-group"]')
+    expect(groups).toHaveLength(3)
+    expect(groups[0]!.attributes('data-kind')).toBe('bash')
+    expect(groups[0]!.find('[data-test="work-group-label"]').text()).toBe('Comandos')
+    expect(groups[0]!.find('[data-test="work-group-where"]').text()).toBe('em ~/dev/a')
+    expect(groups[0]!.find('[data-test="work-group-count"]').text()).toBe('2')
+    expect(groups[2]!.find('[data-test="work-group-label"]').text()).toBe('Ferramenta')
+    expect(groups[2]!.find('[data-test="work-group-where"]').text()).toBe('banco · query')
+    expect(w.findAll('[data-test="work-row"]')).toHaveLength(4)
+    for (const header of rows(w)) expect(header.find('[data-test="work-slot"]').exists()).toBe(true)
+    expect(w.find('[data-test="work-folders"]').text()).toBe('em 2 pastas')
+  })
+
+  it('o título do grupo usa o tom do tipo', () => {
+    const w = mountBlock({ items: items() })
+    const head = w.find('[data-test="work-group"] [data-test="work-group-head"]')
+    expect(head.classes()).toContain('text-type-command')
+  })
+
+  it('com uma pasta só, não diz quantas', () => {
+    const w = mountBlock({ items: [tool('b1', 'Bash', { command: 'cd /home/ana/dev/a && ls' }), tool('b2', 'Bash', { command: 'cd /home/ana/dev/a && pwd' })] })
+    expect(w.find('[data-test="work-folders"]').exists()).toBe(false)
+  })
+
+  it('o comando sem o cd aparece na linha', () => {
+    const w = mountBlock({ items: [tool('b1', 'Bash', { command: 'cd /home/ana/dev/a && ls -la', description: 'Listar' })] })
+    expect(rows(w)[0]!.find('[data-test="work-command"]').text()).toBe('ls -la')
+  })
+})
+
+describe('WorkBlock: falha e nova tentativa', () => {
+  const sqlFail = () => tool('f', 'mcp__banco__query', { query: 'select x' }, { result: { content: 'column x does not exist\ndetalhe', is_error: true, details: null } })
+  const sqlOk = () => tool('o', 'mcp__banco__query', { query: 'select y' })
+
+  it('resume a falha refeita, abre a linha com a faixa Erro e marca a nova tentativa', () => {
+    const w = mountBlock({ items: [sqlFail(), sqlOk()] })
+    expect(w.find('[data-test="work-failed"]').text()).toBe('1 falhou, refeita em seguida')
+    expect(w.find('[data-test="work-summary"]').classes()).not.toContain('text-diff-del-fg')
+    const [first, second] = rows(w)
+    expect(first!.attributes('aria-expanded')).toBe('true')
+    expect(second!.find('[data-test="work-retry"]').text()).toBe('Nova tentativa')
+    expect(first!.find('[data-test="work-retry"]').exists()).toBe(false)
+    const body = w.find('[data-test="work-row-body"]')
+    expect(body.element.firstElementChild!.getAttribute('data-test')).toBe('work-error')
+    expect(body.find('[data-test="work-error-text"]').text()).toBe('column x does not exist')
+    expect(w.find('[data-test="work-retry-note"]').text()).toBe('A tentativa seguinte passou.')
+  })
+
+  it('sem nova tentativa não promete nada', () => {
+    const w = mountBlock({ items: [sqlFail(), tool('r', 'Read')] })
+    expect(w.find('[data-test="work-failed"]').text()).toBe('1 falhou')
+    expect(w.find('[data-test="work-retry"]').exists()).toBe(false)
+    expect(w.find('[data-test="work-retry-note"]').exists()).toBe(false)
+    expect(w.find('[data-test="work-error"]').exists()).toBe(true)
+  })
+
+  it('sem falha não mostra o aviso', () => {
+    const w = mountBlock({ items: [tool('r', 'Read')] })
+    expect(w.find('[data-test="work-failed"]').exists()).toBe(false)
+  })
+
+  it('o botão de copiar o erro copia o texto inteiro', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const w = mountBlock({ items: [sqlFail(), sqlOk()] })
+    const copy = w.find('[data-test="work-error-copy"]')
+    expect(copy.attributes('aria-label')).toBe('Copiar erro')
+    await copy.trigger('click')
+    expect(writeText).toHaveBeenCalledWith('column x does not exist\ndetalhe')
+  })
+
+  it('o botão do cabeçalho fechado diz a falha', () => {
+    const w = mountBlock({ items: [sqlFail(), sqlOk()], open: false })
+    expect(w.find('[data-test="work-block-toggle"]').attributes('aria-label')).toBe('Ver 2 ações: Usou 2 ferramentas · 1 falhou, refeita em seguida')
+  })
+})
+
+describe('WorkBlock: frase do cabeçalho', () => {
+  const summary = (w: ReturnType<typeof mountBlock>) => w.find('[data-test="work-summary"]')
+  it('aberta fica em destaque, fechada discreta, rodando laranja', () => {
+    const open = mountBlock({ items: [tool('r', 'Read')], open: true })
+    expect(summary(open).classes()).toEqual(expect.arrayContaining(['font-medium', 'text-fg']))
+    const closed = mountBlock({ items: [tool('r', 'Read')], open: false })
+    expect(summary(closed).classes()).toContain('text-fg-muted')
+    const live = mountBlock({ items: [tool('b', 'Bash', { command: 'ls' }, { result: null })], open: false, sessionActive: true })
+    expect(summary(live).classes()).toContain('text-secondary-soft')
+  })
+})
+
+describe('WorkBlock: duração', () => {
+  it('mostra do início da primeira ação até o fim, arredondado', () => {
+    const w = mountBlock({ items: [tool('a', 'Read', {}, { at: 100 }), tool('b', 'Read', {}, { at: 120 })], endAt: 138.4 })
+    expect(w.find('[data-test="work-span"]').text()).toBe('38 s')
+  })
+
+  it('sem fim e sem nada rodando, não mostra', () => {
+    const w = mountBlock({ items: [tool('a', 'Read', {}, { at: 100 })] })
+    expect(w.find('[data-test="work-span"]').exists()).toBe(false)
+  })
+
+  it('sem horário de início (histórico antigo), não mostra nem liga o relógio', () => {
+    const w = mountBlock({ items: [tool('a', 'Read'), tool('b', 'Read')], endAt: 138 })
+    expect(w.find('[data-test="work-span"]').exists()).toBe(false)
+  })
+})
+
+describe('WorkBlock: o que o bloco produziu', () => {
+  const edit = tool('e', 'Edit', { file_path: '/p/a.md', old_string: '', new_string: Array.from({ length: 41 }, (_, i) => `l${i}`).join('\n') })
+  const sub = { task_id: 't', subagent_type: 'Explore', description: 'Tarefa 1 · tela inicial', status: 'completed' as const, last_activity: null, usage: { total_tokens: 31000, duration_ms: 228000 }, summary: 'ok' }
+  const agent = tool('a', 'Agent', {}, { subagent: sub })
+
+  it('fechado, mostra o arquivo e o subagente', () => {
+    const w = mountBlock({ items: [edit, agent], open: false })
+    const file = w.find('[data-test="work-file-chip"]')
+    expect(file.attributes('data-path')).toBe('/p/a.md')
+    expect(file.text()).toContain('a.md')
+    expect(file.text()).toContain('+41')
+    expect(file.text()).not.toContain('−')
+    const chip = w.find('[data-test="work-agent-chip"]')
+    expect(chip.attributes('data-status')).toBe('completed')
+    expect(chip.text()).toContain('Tarefa 1 · tela inicial')
+    expect(chip.find('[data-test="work-agent-meta"]').text()).toBe('3 min 48 s · 31 mil tokens')
+  })
+
+  it('clicar no subagente abre o bloco e a linha dele', async () => {
+    const w = mountBlock({ items: [edit, agent], open: false })
+    await w.find('[data-test="work-agent-chip"]').trigger('click')
+    expect(w.emitted('toggle')).toHaveLength(1)
+    await w.setProps({ open: true })
+    const [, agentRow] = rows(w)
+    expect(agentRow!.attributes('aria-expanded')).toBe('true')
+    expect(w.find('[data-test="work-row-body"]').exists()).toBe(true)
+  })
+
+  it('aberto, os chips não aparecem', () => {
+    const w = mountBlock({ items: [edit, agent], open: true })
+    expect(w.find('[data-test="work-artifacts"]').exists()).toBe(false)
+  })
+
+  it('a tira de imagens continua nos dois estados', () => {
+    const img = tool('i', 'Read', { file_path: '/p/a.png' }, { result: { content: [{ type: 'image', omitted: true, index: 0, media_type: 'image/png', size: 10 }], is_error: false, details: null } })
+    expect(mountBlock({ items: [img], open: false }).find('[data-test="tool-image-strip"]').exists()).toBe(true)
+    expect(mountBlock({ items: [img], open: true }).find('[data-test="tool-image-strip"]').exists()).toBe(true)
+  })
+
+  it('sem arquivo nem subagente, não há faixa', () => {
+    expect(mountBlock({ items: [tool('r', 'Read')], open: false }).find('[data-test="work-artifacts"]').exists()).toBe(false)
   })
 })

@@ -93,12 +93,31 @@ describe('WorkBlock: tempo rodando', () => {
     expect(spy).toHaveBeenCalledTimes(1)
   })
 
-  it('bloco fechado, nada rodando ou sem hora: o relógio não liga', () => {
+  it('nada rodando ou sem hora: o relógio não liga', () => {
     const spy = spyOnTimer('setInterval')
-    mountBlock({ items: [running('a', 5)], open: false })
     mountBlock({ items: [tool('r', 'Read', {}, { at: nowSeconds() - 3 })] })
     mountBlock({ items: [running('n', null)] })
+    mountBlock({ items: [running('n', null)], open: false })
     expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('bloco fechado com uma ação rodando: o relógio liga e a duração avança', async () => {
+    const spy = spyOnTimer('setInterval')
+    const w = mountBlock({ items: [running('a', 12)], open: false })
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(w.find('[data-test="work-span"]').text()).toBe('12 s')
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(w.find('[data-test="work-span"]').text()).toBe('15 s')
+  })
+
+  it('a duração do bloco rodando usa o início da primeira ação', () => {
+    const w = mountBlock({ items: [tool('r', 'Read', {}, { at: nowSeconds() - 30 }), running('a', 12)], open: false })
+    expect(w.find('[data-test="work-span"]').text()).toBe('30 s')
+  })
+
+  it('rodando sem hora de início em nenhuma ação: sem duração', () => {
+    const w = mountBlock({ items: [running('n', null)], open: false })
+    expect(w.find('[data-test="work-span"]').exists()).toBe(false)
   })
 
   it('para o relógio quando a ação termina e quando o bloco é desmontado', async () => {

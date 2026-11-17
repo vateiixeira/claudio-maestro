@@ -72,8 +72,11 @@ describe('indicadores de rodando em âmbar', () => {
     const open = mount(WorkBlock, { props: { items, open: true, sessionActive: true } })
     const state = open.find('[data-test="work-row"] [data-test="work-status"]')
     expect(state.attributes('data-status')).toBe('running')
-    expect(state.find('svg').classes()).toEqual(expect.arrayContaining(['animate-spin', 'text-secondary-soft']))
-    expect(state.find('svg').classes()).not.toContain('text-primary')
+    // The spinner is in the row's slot (the status itself is iconless there).
+    const slot = open.find('[data-test="work-row"] [data-test="work-slot"]')
+    expect(slot.find('svg').classes()).toContain('animate-spin')
+    expect(slot.classes()).toContain('text-secondary-soft')
+    expect(slot.classes()).not.toContain('text-primary')
     const closed = mount(WorkBlock, { props: { items, open: false, sessionActive: true } })
     const line = closed.find('[data-test="work-summary"]')
     expect(line.text()).toBe('Leitura · /a')

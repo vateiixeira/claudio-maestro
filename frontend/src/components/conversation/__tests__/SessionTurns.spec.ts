@@ -246,7 +246,7 @@ describe('bloco de trabalho', () => {
     expect(rowHeaders(w)).toHaveLength(0)
     await header(w).trigger('click')
     const rows = rowHeaders(w)
-    expect(rows[0]!.text()).toContain('Leitura')
+    expect(w.find('[data-test="work-group-label"]').text()).toBe('Leituras')
     expect(rows[0]!.text()).toContain('/p/r1.py')
     expect(rows[0]!.text()).toContain('2 linhas')
     expect(rows[1]!.attributes('aria-expanded')).toBe('false')
@@ -265,7 +265,8 @@ describe('bloco de trabalho', () => {
       items: [user('u1'), tool('r1', 'Read'), tool('b1', 'Bash', { input: { command: 'make' }, result: { content: 'deu ruim', is_error: true, details: null } }), tool('r2', 'Read')],
     })
     expect(header(w).attributes('aria-expanded')).toBe('true')
-    expect(w.find('[data-test="work-summary"]').text()).toBe('Leu 2 arquivos, 1 falhou')
+    expect(w.find('[data-test="work-summary"]').text()).toBe('Executou 1 comando, leu 2 arquivos')
+    expect(w.find('[data-test="work-failed"]').text()).toBe('1 falhou')
     const rows = rowHeaders(w)
     expect(rows.map((r) => r.attributes('aria-expanded'))).toEqual(['false', 'true', 'false'])
     expect(w.findAll('[data-test="tool-error"]')).toHaveLength(1)
