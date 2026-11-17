@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { deliveriesMarkdown, deliveryTitle, formatDayLong, groupByProject, localDay, projectMarkdown, rulerLayout, shiftDay } from '../deliveries'
+import { deliveriesMarkdown, deliveryMarkdown, deliveryTitle, formatDayLong, groupByProject, localDay, projectCounts, projectMarkdown, rulerLayout, shiftDay } from '../deliveries'
+import { makeDelivery } from '../test/factories'
 import type { DeliveriesDay, Delivery } from '../types/api'
 
 function delivery(over: Partial<Delivery> = {}): Delivery {
@@ -54,6 +55,34 @@ describe('deliveries', () => {
     expect(projectMarkdown(day, 'app')).toBe(
       '## Quarta-feira, 7 de outubro\n\n### app\n**Leitura de markdown**\n- Rota\n- Página\n\n**Só título**\n',
     )
+  })
+})
+
+describe('deliveryMarkdown', () => {
+  it('escreve o título em negrito e um item de lista por tópico', () => {
+    expect(deliveryMarkdown(makeDelivery({ summary_title: 'Corrigir login', bullets: ['Causa achada', 'Teste novo'] })))
+      .toBe('**Corrigir login**\n- Causa achada\n- Teste novo\n')
+    expect(deliveryMarkdown(makeDelivery({ title: 'Só título', bullets: [] }))).toBe('**Só título**\n')
+  })
+
+  it('numa entrega pendente ou com erro copia só o título', () => {
+    expect(deliveryMarkdown(makeDelivery({ status: 'pending', summary_title: null, title: 'Conversa', bullets: ['x'] }))).toBe('**Conversa**\n')
+    expect(deliveryMarkdown(makeDelivery({ status: 'error', summary_title: 'Com erro', bullets: ['x'], error: 'Falhou.' }))).toBe('**Com erro**\n')
+  })
+
+  it('o markdown do dia usa a mesma regra', () => {
+    const day: DeliveriesDay = { date: '2026-10-07', agent_enabled: true, deliveries: [makeDelivery({ status: 'error', bullets: ['x'], summary_title: 'A' })], in_progress: [], prev_day: null, next_day: null }
+    expect(deliveriesMarkdown(day)).toContain('**A**\n')
+    expect(deliveriesMarkdown(day)).not.toContain('- x')
+  })
+})
+
+describe('projectCounts', () => {
+  it('conta por projeto, da maior contagem para a menor, depois pelo nome', () => {
+    expect(projectCounts([makeDelivery({ project_name: 'Loja' }), makeDelivery({ id: 2, project_id: 2, project_name: 'API' }), makeDelivery({ id: 3, project_name: 'Loja' })]))
+      .toEqual([{ project: 'Loja', projectId: 1, count: 2 }, { project: 'API', projectId: 2, count: 1 }])
+    expect(projectCounts([makeDelivery({ id: 1, project_name: 'b' }), makeDelivery({ id: 2, project_id: 2, project_name: 'a' })]).map((c) => c.project)).toEqual(['a', 'b'])
+    expect(projectCounts([])).toEqual([])
   })
 })
 

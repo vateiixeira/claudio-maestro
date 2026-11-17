@@ -44,15 +44,13 @@ async function mountAt(path: string, routes: Record<string, () => Response | Pro
 }
 
 describe('Entregas', () => {
-  it('mostra hoje agrupado por projeto, com bullets e link para a conversa', async () => {
+  it('mostra hoje numa linha do tempo, com tópicos e link para a conversa', async () => {
     localStorage.setItem('maestro:deliveries-detail', 'true')
     const { wrapper } = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, {
         deliveries: [delivery(), delivery({ id: 2, project_name: 'b', session_id: null, summary_title: null, title: 'Antiga', bullets: [], status: 'title_only' })],
       })),
     })
-    const groups = wrapper.findAll('[data-test="delivery-group"]')
-    expect(groups.map((g) => g.find('h2').text())).toEqual(['app', 'b'])
     const first = wrapper.findAll('[data-test="delivery"]')[0]!
     expect(first.find('a').attributes('href')).toBe('/sessions/s1')
     expect(first.findAll('li').map((li) => li.text())).toEqual(['Rota', 'Página'])
@@ -138,24 +136,32 @@ describe('Entregas', () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('**Leitura de markdown**\n- Rota'))
     expect(wrapper.find('[data-test="copy"]').text()).toBe('Copiado')
   })
-  it('o quadro é uma grade de raias, com "Em andamento" na última', async () => {
+  it('a linha do tempo lista as entregas em ordem de horário, sem raias', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'app', color: '#B28CFF' })]
+    const t = Math.floor(Date.now() / 1000)
     const { wrapper } = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, {
-        deliveries: [delivery({ project_name: 'zeta' }), delivery({ id: 2, project_name: 'beta' })],
-        in_progress: [{ session_id: 'x', project_id: 1, project_name: 'app', title: 'Tela', short: '' }],
+        deliveries: [
+          delivery({ id: 1, finished_at: t, summary_title: 'Última' }),
+          delivery({ id: 2, finished_at: t - 7200, project_id: 99, project_name: 'b', summary_title: 'Primeira', session_id: null }),
+        ],
       })),
     })
-    const grid = wrapper.get('[data-test="delivery-grid"]')
-    expect(grid.classes()).toContain('grid')
-    expect(grid.classes()).toContain('md:grid-flow-col')
-    expect(grid.classes()).toContain('md:overflow-x-auto')
-    const groups = grid.findAll('[data-test="delivery-group"]')
-    // alfabética, e "Em andamento" por último, dentro do mesmo quadro
-    expect(groups.map((g) => g.find('h2').text())).toEqual(['beta', 'zeta'])
-    expect(grid.find('[data-test="in-progress"]').exists()).toBe(false)
+    const timeline = wrapper.get('[data-test="delivery-timeline"]')
+    const rows = timeline.findAll('[data-test="delivery"]')
+    expect(rows.map((r) => r.attributes('data-delivery-id'))).toEqual(['2', '1'])
+    expect(rows[0]!.get('[data-test="delivery-time"]').text()).toBe(formatTime(t - 7200))
+    expect(rows[0]!.get('h2').text()).toBe('Primeira')
+    expect(rows[1]!.get('[data-test="project-tag"]').text()).toBe('app')
+    // projeto desconhecido: nome sem cor própria, ponto neutro
+    expect(rows[0]!.get('[data-test="project-tag"]').text()).toBe('b')
+    expect((rows[1]!.get('[data-test="delivery-dot"]').element as HTMLElement).style.backgroundColor).not.toBe('')
+    expect((rows[0]!.get('[data-test="delivery-dot"]').element as HTMLElement).style.backgroundColor).toBe('')
+    expect(wrapper.find('[data-test="delivery-group"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="delivery-grid"]').exists()).toBe(false)
   })
 
-  it('"Em andamento" é uma coluna fixa ao lado do quadro, que rola sozinho', async () => {
+  it('"Em andamento" é uma coluna fixa ao lado da linha do tempo', async () => {
     const { wrapper } = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, {
         deliveries: [delivery()],
@@ -163,9 +169,8 @@ describe('Entregas', () => {
       })),
     })
     const lane = wrapper.get('[data-test="in-progress"]')
-    expect(lane.classes()).toEqual(expect.arrayContaining(['md:w-72', 'md:shrink-0', 'border-dashed']))
-    const grid = wrapper.get('[data-test="delivery-grid"]')
-    const board = grid.element.parentElement!
+    expect(lane.classes()).toEqual(expect.arrayContaining(['md:shrink-0']))
+    const board = wrapper.get('[data-test="delivery-timeline"]').element.parentElement!
     expect(board.classList.contains('min-w-0') && board.classList.contains('flex-1')).toBe(true)
     expect(board.nextElementSibling).toBe(lane.element)
     expect(board.parentElement!.classList.contains('md:flex-row')).toBe(true)
@@ -177,38 +182,17 @@ describe('Entregas', () => {
     expect(wrapper.classes()).not.toContain('mx-auto')
   })
 
-  it('a raia não tem borda: o nome tem o quadradinho de cor e a contagem', async () => {
-    useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'app', color: '#B28CFF' })]
-    const { wrapper } = await mountAt('/entregas', {
-      [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, {
-        deliveries: [delivery(), delivery({ id: 3 }), delivery({ id: 2, project_id: 99, project_name: 'b' })],
-      })),
-    })
-    const [known, unknown] = wrapper.findAll('[data-test="delivery-group"]')
-    expect(known!.classes()).toContain('rounded-xl')
-    expect(known!.classes()).toContain('bg-panel')
-    expect(known!.classes()).not.toContain('border')
-    expect(known!.get('h2').classes()).toContain('font-semibold')
-    expect(known!.get('h2').classes()).not.toContain('font-mono')
-    expect(known!.get('h2').classes()).not.toContain('uppercase')
-    expect(known!.get('[data-test="lane-count"]').text()).toBe('2')
-    expect(unknown!.get('[data-test="lane-count"]').text()).toBe('1')
-    expect((known!.get('h2 [data-test="project-swatch"]').element as HTMLElement).style.backgroundColor).not.toBe('')
-    expect((unknown!.get('h2 [data-test="project-swatch"]').element as HTMLElement).style.backgroundColor).toBe('')
-  })
-
-  it('o registro é uma linha da raia, sem borda e sem cartão', async () => {
+  it('o registro não tem borda nem cartão', async () => {
     const { wrapper } = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, { deliveries: [delivery(), delivery({ id: 2 })] })),
     })
     for (const item of wrapper.findAll('[data-test="delivery"]')) {
-      expect(item.classes()).toContain('rounded-lg')
       expect(item.classes()).not.toContain('border')
       expect(item.classes()).not.toContain('border-t')
     }
   })
 
-  it('"Em andamento" tem o ícone de execução, a contagem e os itens como links', async () => {
+  it('"Em andamento" tem o ícone de execução, a contagem e os itens como links, só com quadradinho e título', async () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'app', color: '#B28CFF' })]
     const { wrapper } = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, {
@@ -223,32 +207,35 @@ describe('Entregas', () => {
     expect(lane.get('[data-test="lane-count"]').text()).toBe('2')
     const items = lane.findAll('a')
     expect(items.map((a) => a.attributes('href'))).toEqual(['/sessions/x', '/sessions/y'])
-    expect(items[0]!.text()).toContain('app')
+    expect(items[0]!.text()).toBe('Tela')
     expect(items[0]!.attributes('title')).toBe('Faz a rota')
-    expect(items[0]!.text()).not.toContain('Faz a rota')
+    expect((items[0]!.get('span').element as HTMLElement).style.backgroundColor).not.toBe('')
+    expect(lane.find('[data-test="label-badges"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Nada finalizado neste dia.')
-    expect(wrapper.find('[data-test="delivery-group"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="delivery-timeline"]').exists()).toBe(false)
   })
 
-  it('mostra só o primeiro tópico e abre o resto em "+ N itens"', async () => {
+  it('mostra só o primeiro tópico e abre o resto em "Mais N itens"', async () => {
     const { wrapper } = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, { deliveries: [delivery({ bullets: ['a', 'b', 'c', 'd', 'e'] })] })),
     })
     expect(wrapper.findAll('[data-test="delivery"] li').map((li) => li.text())).toEqual(['a'])
     const more = wrapper.get('[data-test="more-bullets"]')
-    expect(more.text()).toBe('+ 4 itens')
+    expect(more.text()).toBe('Mais 4 itens')
+    expect(more.attributes('aria-expanded')).toBe('false')
     await more.trigger('click')
     expect(wrapper.findAll('[data-test="delivery"] li')).toHaveLength(5)
-    expect(wrapper.get('[data-test="more-bullets"]').text()).toBe('menos')
+    expect(wrapper.get('[data-test="more-bullets"]').text()).toBe('Mostrar menos')
+    expect(wrapper.get('[data-test="more-bullets"]').attributes('aria-expanded')).toBe('true')
     await wrapper.get('[data-test="more-bullets"]').trigger('click')
     expect(wrapper.findAll('[data-test="delivery"] li')).toHaveLength(1)
   })
 
-  it('"+ 1 item" no singular e sem botão com um tópico só', async () => {
+  it('"Mais 1 item" no singular e sem botão com um tópico só', async () => {
     const two = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, { deliveries: [delivery({ bullets: ['a', 'b'] })] })),
     })
-    expect(two.wrapper.get('[data-test="more-bullets"]').text()).toBe('+ 1 item')
+    expect(two.wrapper.get('[data-test="more-bullets"]').text()).toBe('Mais 1 item')
     const one = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, { deliveries: [delivery({ bullets: ['a'] })] })),
     })
@@ -280,13 +267,13 @@ describe('Entregas', () => {
     expect(toggle.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('o horário fica numa coluna fixa à esquerda do título', async () => {
+  it('o horário fica numa coluna fixa antes do título', async () => {
     const { wrapper } = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, { deliveries: [delivery()] })),
     })
     const item = wrapper.get('[data-test="delivery"]')
     const time = item.get('[data-test="delivery-time"]')
-    expect(time.classes()).toEqual(expect.arrayContaining(['w-11', 'tabular-nums']))
+    expect(time.classes()).toEqual(expect.arrayContaining(['tabular-nums']))
     expect(time.text()).toBe(formatTime(delivery().finished_at))
     expect(time.element.compareDocumentPosition(item.get('a').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
@@ -442,7 +429,7 @@ describe('Entregas', () => {
       await vi.advanceTimersByTimeAsync(1900)
       expect(wrapper.find('[data-test="copy"]').text()).toBe('Copiado')
       await vi.advanceTimersByTimeAsync(200)
-      expect(wrapper.find('[data-test="copy"]').text()).toBe('Copiar')
+      expect(wrapper.find('[data-test="copy"]').text()).toBe('Copiar o dia')
 
       // trocar de dia limpa o timer pendente
       await wrapper.find('[data-test="copy"]').trigger('click')
@@ -450,7 +437,7 @@ describe('Entregas', () => {
       expect(vi.getTimerCount()).toBeGreaterThan(0)
       await wrapper.find('[data-test="prev-day"]').trigger('click')
       await vi.advanceTimersByTimeAsync(0)
-      expect(wrapper.find('[data-test="copy"]').text()).toBe('Copiar')
+      expect(wrapper.find('[data-test="copy"]').text()).toBe('Copiar o dia')
       expect(vi.getTimerCount()).toBe(0)
       wrapper.unmount()
     } finally {
@@ -494,7 +481,7 @@ describe('Entregas', () => {
       expect((marks[0]!.element as HTMLElement).style.left).toBe(`${(42 / 300) * 100}%`)
       expect(ruler.text()).toContain('10h')
       expect(ruler.text()).toContain('15h')
-      expect(ruler.element.nextElementSibling).toBe(wrapper.get('[data-test="delivery-grid"]').element)
+      expect(ruler.element.nextElementSibling).toBe(wrapper.get('[data-test="delivery-timeline"]').element)
     })
 
     it('o clique rola até o registro e o destaca por 1,5 s', async () => {
@@ -506,9 +493,9 @@ describe('Entregas', () => {
         await wrapper.findAll('[data-test="ruler-mark"]')[1]!.trigger('click')
         expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'nearest', inline: 'nearest' }))
         const target = wrapper.findAll('[data-test="delivery"]').find((d) => d.text().includes('Outra'))!
-        expect(target.classes()).toEqual(expect.arrayContaining(['bg-card', 'ring-1', 'ring-line-strong']))
+        expect(target.attributes('data-highlighted')).toBe('true')
         await vi.advanceTimersByTimeAsync(1600)
-        expect(wrapper.findAll('[data-test="delivery"]').find((d) => d.text().includes('Outra'))!.classes()).not.toContain('bg-card')
+        expect(wrapper.findAll('[data-test="delivery"]').find((d) => d.text().includes('Outra'))!.attributes('data-highlighted')).toBeUndefined()
       } finally {
         vi.useRealTimers()
         delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
@@ -547,33 +534,169 @@ describe('Entregas', () => {
     })
   })
 
-  describe('copiar um projeto', () => {
-    it('copia só o projeto da raia e mostra o visto por 2 s', async () => {
+  describe('filtro por projeto', () => {
+    const t = Math.floor(Date.now() / 1000)
+    const data = () => dayOf(today, {
+      deliveries: [
+        delivery({ id: 1, finished_at: t - 300, project_id: 1, project_name: 'Loja', summary_title: 'Um' }),
+        delivery({ id: 2, finished_at: t - 200, project_id: 2, project_name: 'API', summary_title: 'Dois' }),
+        delivery({ id: 3, finished_at: t - 100, project_id: 1, project_name: 'Loja', summary_title: 'Três' }),
+      ],
+      in_progress: [{ session_id: 'x', project_id: 1, project_name: 'Loja', title: 'Tela', short: null }],
+    })
+    const routes = () => ({ [`GET /api/deliveries?date=${today}`]: () => jsonResponse(data()) })
+    const chip = (wrapper: Awaited<ReturnType<typeof mountAt>>['wrapper'], project: string) => wrapper.get(`[data-test="delivery-filter"][data-project="${project}"]`)
+
+    it('"Todos" com o total e um chip por projeto, na ordem das contagens', async () => {
+      useProjectsStore(pinia).projects = [makeProject({ id: 1, name: 'Loja', color: '#B28CFF' })]
+      const { wrapper } = await mountAt('/entregas', routes())
+      const chips = wrapper.findAll('[data-test="delivery-filter"]')
+      expect(chips.map((c) => c.attributes('data-project'))).toEqual(['', 'Loja', 'API'])
+      expect(chips.map((c) => c.get('[data-test="filter-chip-count"]').text())).toEqual(['3', '2', '1'])
+      expect(chips.map((c) => c.attributes('aria-pressed'))).toEqual(['true', 'false', 'false'])
+      expect(chips[0]!.text()).toContain('Todos')
+    })
+
+    it('sem entregas não há chips', async () => {
+      const { wrapper } = await mountAt('/entregas', { [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today)) })
+      expect(wrapper.find('[data-test="delivery-filter"]').exists()).toBe(false)
+    })
+
+    it('escolher um projeto filtra a linha do tempo e a régua; clicar de novo volta para "Todos"', async () => {
+      const { wrapper } = await mountAt('/entregas', routes())
+      await chip(wrapper, 'API').trigger('click')
+      expect(chip(wrapper, 'API').attributes('aria-pressed')).toBe('true')
+      expect(chip(wrapper, '').attributes('aria-pressed')).toBe('false')
+      expect(wrapper.findAll('[data-test="delivery"]').map((d) => d.attributes('data-delivery-id'))).toEqual(['2'])
+      expect(wrapper.findAll('[data-test="ruler-mark"]')).toHaveLength(1)
+      expect(wrapper.get('[data-test="in-progress"]').text()).toContain('Tela')
+      await chip(wrapper, 'API').trigger('click')
+      expect(wrapper.findAll('[data-test="delivery"]')).toHaveLength(3)
+      expect(wrapper.findAll('[data-test="ruler-mark"]')).toHaveLength(3)
+      await chip(wrapper, 'Loja').trigger('click')
+      await chip(wrapper, '').trigger('click')
+      expect(wrapper.findAll('[data-test="delivery"]')).toHaveLength(3)
+    })
+
+    it('o filtro é estado da tela e não vai para o endereço', async () => {
+      const { wrapper, router } = await mountAt('/entregas', routes())
+      await chip(wrapper, 'API').trigger('click')
+      expect(router.currentRoute.value.query).toEqual({})
+    })
+
+    it('"Copiar o dia" copia só o projeto escolhido', async () => {
       const writeText = vi.fn((_text: string) => Promise.resolve())
       vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
-      const data = dayOf(today, {
-        deliveries: [delivery({ id: 1 }), delivery({ id: 2, project_name: 'b', summary_title: 'Outra' })],
-        in_progress: [{ session_id: 'x', project_id: 1, project_name: 'app', title: 'Tela', short: null }],
+      const { wrapper } = await mountAt('/entregas', routes())
+      await chip(wrapper, 'API').trigger('click')
+      await wrapper.get('[data-test="copy"]').trigger('click')
+      await flushPromises()
+      expect(writeText).toHaveBeenCalledWith(projectMarkdown(data(), 'API'))
+      expect(writeText.mock.calls[0]![0]).not.toContain('Loja')
+      expect(wrapper.get('[data-test="copy"]').text()).toBe('Copiado')
+      await chip(wrapper, '').trigger('click')
+      await wrapper.get('[data-test="copy"]').trigger('click')
+      await flushPromises()
+      expect(writeText.mock.calls[1]![0]).toContain('Loja')
+    })
+
+    it('Shift+C também copia só o projeto escolhido', async () => {
+      const writeText = vi.fn((_text: string) => Promise.resolve())
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+      const { wrapper } = await mountAt('/entregas', routes())
+      await chip(wrapper, 'API').trigger('click')
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'C', shiftKey: true }))
+      await flushPromises()
+      expect(writeText).toHaveBeenCalledWith(projectMarkdown(data(), 'API'))
+    })
+
+    it('trocar de dia sem entrega do projeto escolhido volta para "Todos"', async () => {
+      const y = shiftDay(today, -1)
+      const { wrapper, router } = await mountAt('/entregas', {
+        ...routes(),
+        [`GET /api/deliveries?date=${y}`]: () => jsonResponse(dayOf(y, { deliveries: [delivery({ id: 9, project_id: 1, project_name: 'Loja' })] })),
+        [`GET /api/deliveries?date=${shiftDay(today, -2)}`]: () => jsonResponse(dayOf(shiftDay(today, -2), { deliveries: [delivery({ id: 10, project_id: 2, project_name: 'API' })] })),
       })
-      const { wrapper } = await mountAt('/entregas', { [`GET /api/deliveries?date=${today}`]: () => jsonResponse(data) })
-      const buttons = wrapper.findAll('[data-test="copy-project"]')
-      expect(buttons).toHaveLength(2)
-      expect(buttons[1]!.attributes('aria-label')).toBe('Copiar b')
+      await chip(wrapper, 'API').trigger('click')
+      await router.push({ name: 'deliveries', query: { dia: y } })
+      await flushPromises()
+      expect(chip(wrapper, '').attributes('aria-pressed')).toBe('true')
+      expect(wrapper.findAll('[data-test="delivery"]')).toHaveLength(1)
+      // e a escolha antiga não volta sozinha num dia que tenha o projeto
+      await router.push({ name: 'deliveries', query: { dia: shiftDay(today, -2) } })
+      await flushPromises()
+      expect(chip(wrapper, '').attributes('aria-pressed')).toBe('true')
+      expect(wrapper.findAll('[data-test="delivery"]')).toHaveLength(1)
+    })
+
+    it('trocar de dia com o projeto escolhido presente no dia novo mantém o filtro', async () => {
+      const y = shiftDay(today, -1)
+      const { wrapper, router } = await mountAt('/entregas', {
+        ...routes(),
+        [`GET /api/deliveries?date=${y}`]: () => jsonResponse(dayOf(y, { deliveries: [
+          delivery({ id: 9, project_id: 1, project_name: 'Loja' }), delivery({ id: 8, project_id: 2, project_name: 'API' }),
+        ] })),
+      })
+      await chip(wrapper, 'API').trigger('click')
+      await router.push({ name: 'deliveries', query: { dia: y } })
+      await flushPromises()
+      expect(chip(wrapper, 'API').attributes('aria-pressed')).toBe('true')
+      expect(wrapper.findAll('[data-test="delivery"]').map((d) => d.attributes('data-delivery-id'))).toEqual(['8'])
+    })
+  })
+
+  describe('copiar uma entrega', () => {
+    const rows = () => dayOf(today, {
+      deliveries: [
+        delivery({ id: 1, summary_title: 'Pronta', bullets: ['a', 'b'] }),
+        delivery({ id: 2, status: 'pending', summary_title: null, title: 'Escrevendo', bullets: [] }),
+        delivery({ id: 3, status: 'error', summary_title: 'Falhou', bullets: ['x'], error: 'Limite.' }),
+      ],
+    })
+
+    it('copia o markdown da entrega, marca o visto por 2 s e anuncia', async () => {
+      const writeText = vi.fn((_text: string) => Promise.resolve())
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+      const { wrapper } = await mountAt('/entregas', { [`GET /api/deliveries?date=${today}`]: () => jsonResponse(rows()) })
+      const buttons = wrapper.findAll('[data-test="copy-delivery"]')
+      expect(buttons).toHaveLength(3)
+      expect(buttons[0]!.attributes('aria-label')).toBe('Copiar esta entrega')
       vi.useFakeTimers()
       try {
-        await buttons[1]!.trigger('click')
+        await buttons[0]!.trigger('click')
         await vi.advanceTimersByTimeAsync(0)
-        expect(writeText).toHaveBeenCalledWith(projectMarkdown(data, 'b'))
-        expect(writeText.mock.calls[0]![0]).not.toContain('Em andamento')
-        expect(wrapper.findAll('[data-test="copy-project"]')[1]!.attributes('data-copied')).toBe('true')
-        expect(wrapper.findAll('[data-test="copy-project"]')[0]!.attributes('data-copied')).toBeUndefined()
-        expect(wrapper.get('[data-test="copy-status"]').text()).toContain('b')
+        expect(writeText).toHaveBeenCalledWith('**Pronta**\n- a\n- b\n')
+        expect(wrapper.findAll('[data-test="copy-delivery"]')[0]!.attributes('data-copied')).toBe('true')
+        expect(wrapper.findAll('[data-test="copy-delivery"]')[1]!.attributes('data-copied')).toBeUndefined()
+        expect(wrapper.get('[data-test="copy-status"]').text()).toBe('Entrega copiada')
         await vi.advanceTimersByTimeAsync(2100)
-        expect(wrapper.findAll('[data-test="copy-project"]')[1]!.attributes('data-copied')).toBeUndefined()
+        expect(wrapper.findAll('[data-test="copy-delivery"]')[0]!.attributes('data-copied')).toBeUndefined()
         expect(wrapper.get('[data-test="copy-status"]').text()).toBe('')
       } finally {
         vi.useRealTimers()
       }
+    })
+
+    it('numa entrega pendente ou com erro copia só o título', async () => {
+      const writeText = vi.fn((_text: string) => Promise.resolve())
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+      const { wrapper } = await mountAt('/entregas', { [`GET /api/deliveries?date=${today}`]: () => jsonResponse(rows()) })
+      const buttons = wrapper.findAll('[data-test="copy-delivery"]')
+      await buttons[1]!.trigger('click')
+      await buttons[2]!.trigger('click')
+      await flushPromises()
+      expect(writeText.mock.calls.map((c) => c[0])).toEqual(['**Escrevendo**\n', '**Falhou**\n'])
+    })
+
+    it('copiar a entrega não muda o botão "Copiar o dia" e avisa quando falha', async () => {
+      const writeText = vi.fn(() => Promise.reject(new Error('negado')))
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+      const { wrapper } = await mountAt('/entregas', { [`GET /api/deliveries?date=${today}`]: () => jsonResponse(rows()) })
+      await wrapper.findAll('[data-test="copy-delivery"]')[0]!.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toBe('Não foi possível copiar.')
+      expect(wrapper.get('[data-test="copy"]').text()).toBe('Copiar o dia')
+      expect(wrapper.findAll('[data-test="copy-delivery"]')[0]!.attributes('data-copied')).toBeUndefined()
     })
   })
 
@@ -682,26 +805,15 @@ describe('Entregas', () => {
 })
 
 describe('etiquetas nas Entregas', () => {
-  it('mostra as etiquetas da conversa da entrega e das em andamento; sem sessão conhecida, não mostra', async () => {
-    useLabelsStore(pinia).labels = [makeLabel({ id: 1, slug: 'urgente' }), makeLabel({ id: 2, slug: 'backend' })]
-    useSessionsStore(pinia).setForProject(1, [
-      makeSession({ session_id: 's1', label_ids: [1, 2] }),
-      makeSession({ session_id: 'andamento', label_ids: [2] }),
-    ])
+  it('a linha do tempo e "Em andamento" mostram o projeto, não as etiquetas da conversa', async () => {
+    useLabelsStore(pinia).labels = [makeLabel({ id: 1, slug: 'urgente' })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', label_ids: [1] }), makeSession({ session_id: 'andamento', label_ids: [1] })])
     const { wrapper } = await mountAt('/entregas', {
       [`GET /api/deliveries?date=${today}`]: () => jsonResponse(dayOf(today, {
-        deliveries: [
-          delivery({ id: 1, session_id: 's1' }),
-          delivery({ id: 2, session_id: null, title: 'Antiga' }),
-          delivery({ id: 3, session_id: 'sumiu', title: 'Outra' }),
-        ],
+        deliveries: [delivery({ id: 1, session_id: 's1' })],
         in_progress: [{ session_id: 'andamento', project_id: 1, project_name: 'app', title: 'Rodando', short: null }],
       })),
     })
-    const rows = wrapper.findAll('[data-test="delivery"]')
-    expect(rows[0]!.findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['urgente', 'backend'])
-    expect(rows[1]!.find('[data-test="label-badges"]').exists()).toBe(false)
-    expect(rows[2]!.find('[data-test="label-badges"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="in-progress"]').findAll('[data-test="label-badge"]').map((b) => b.text())).toEqual(['backend'])
+    expect(wrapper.find('[data-test="label-badges"]').exists()).toBe(false)
   })
 })

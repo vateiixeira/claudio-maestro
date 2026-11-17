@@ -46,6 +46,28 @@ export function groupByProject(list: Delivery[]): { project: string; items: Deli
   return groups
 }
 
+/** Lines of one record: the title in bold and its bullets. A record still being written or with an error has only the title. */
+function deliveryLines(d: Delivery): string[] {
+  const bullets = d.status === 'pending' || d.status === 'error' ? [] : d.bullets
+  return [`**${deliveryTitle(d)}**`, ...bullets.map((b) => `- ${b}`)]
+}
+
+/** Markdown of a single record. */
+export function deliveryMarkdown(d: Delivery): string {
+  return deliveryLines(d).join('\n') + '\n'
+}
+
+/** How many records each project has, most first, then by name. */
+export function projectCounts(list: Delivery[]): { project: string; projectId: number | null; count: number }[] {
+  const counts: { project: string; projectId: number | null; count: number }[] = []
+  for (const d of list) {
+    const found = counts.find((c) => c.project === d.project_name)
+    if (found) found.count++
+    else counts.push({ project: d.project_name, projectId: d.project_id, count: 1 })
+  }
+  return counts.sort((a, b) => b.count - a.count || a.project.localeCompare(b.project, 'pt-BR'))
+}
+
 export function deliveriesMarkdown(day: DeliveriesDay): string {
   const lines = [`## ${formatDayLong(day.date)}`, '']
   if (!day.deliveries.length && !day.in_progress.length) {
@@ -55,7 +77,7 @@ export function deliveriesMarkdown(day: DeliveriesDay): string {
     lines.push(`### ${group.project}`)
     group.items.forEach((d, i) => {
       if (i > 0) lines.push('')
-      lines.push(`**${deliveryTitle(d)}**`, ...d.bullets.map((b) => `- ${b}`))
+      lines.push(...deliveryLines(d))
     })
     lines.push('')
   }
