@@ -86,12 +86,13 @@ describe('UserMessage', () => {
   })
 })
 
-it('mostra anúncios separados do balão e não cria balão vazio', () => {
-  const block = '<maestro-anuncios>\n[25/10 12:30] Feito (sessão run-1)\n</maestro-anuncios>'
-  const global = { stubs: { RouterLink: { template: '<a><slot /></a>' } } }
-  const w = mount(UserMessage, { props: { item: item({ text: `${block}\n\nExplique` }) }, global })
-  expect(w.get('[data-test="announcement-card"]').text()).toContain('Feito')
+it('troca os anúncios por uma linha com a contagem e não cria balão vazio', () => {
+  const block = '<maestro-anuncios>\n[25/10 12:30] Feito (sessão run-1)\n[25/10 12:40] Outro\n</maestro-anuncios>'
+  const w = mount(UserMessage, { props: { item: item({ text: `${block}\n\nExplique` }) } })
+  expect(w.get('[data-test="announcements-note"]').text()).toBe('O agente recebeu o resumo de 2 execuções')
+  expect(w.find('[data-test="announcement-card"]').exists()).toBe(false)
   expect(w.get('[data-test="user-message"]').text()).toBe('Explique')
-  const only = mount(UserMessage, { props: { item: item({ text: block }) }, global })
-  expect(only.find('[data-test="user-message-card"]').exists()).toBe(false)
+  const one = mount(UserMessage, { props: { item: item({ text: '<maestro-anuncios>\n[25/10 12:30] Feito\n</maestro-anuncios>' }) } })
+  expect(one.get('[data-test="announcements-note"]').text()).toBe('O agente recebeu o resumo de 1 execução')
+  expect(one.find('[data-test="user-message-card"]').exists()).toBe(false)
 })

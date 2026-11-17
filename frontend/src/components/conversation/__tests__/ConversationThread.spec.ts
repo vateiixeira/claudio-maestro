@@ -542,8 +542,8 @@ describe('conversa de agente da organização', () => {
   }
   const routes = () => ({
     'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ session_id: 's1' })),
-    'GET /api/agents/4/announcements?pending=true': () => jsonResponse([]),
     'GET /api/agents/4/runs?limit=50': () => jsonResponse([]),
+    'GET /api/routines?project_id=1': () => jsonResponse([]),
     'GET /api/models': () => jsonResponse([]),
   })
 
@@ -567,19 +567,203 @@ describe('conversa de agente da organização', () => {
     expect(wrapper.find('[data-test="task-run-note"]').exists()).toBe(false)
   })
 
-  it('a conversa principal lista as execuções do agente, sem a própria conversa', async () => {
+  const user = (id: string, at: number) => ({ type: 'user', id, text: `msg ${id}`, at }) as never
+  const mainSnapshot = () => makeSnapshot({
+    session_id: 's1',
+    items: [user('u1', 50), text('a1', 'resposta 1') as never, user('u2', 200), text('a2', 'resposta 2') as never],
+  })
+  const domOrder = (w: { findAll: (s: string) => { attributes: (n: string) => string | undefined }[] }) =>
+    w.findAll('[data-test="turn"], [data-test="run-entry"]').map((el) => (el.attributes('data-test') === 'turn' ? 'turn' : 'run-entry'))
+
+  it('shows the runs of the agent between the turns of its main conversation', async () => {
     const { org, makeAgent, makeRun } = await orgSetup()
     org.agents = [makeAgent({ id: 4, name: 'Triagem', main_session_id: 's1' })]
     vi.stubGlobal('fetch', routeFetch({
       ...routes(),
+      'GET /api/sessions/s1': () => jsonResponse(mainSnapshot()),
       'GET /api/agents/4/runs?limit=50': () => jsonResponse([
-        makeRun({ id: 8, agent_id: 4, session_id: 'run-8', outcome: 'running', started_at: 20 }),
-        makeRun({ id: 7, agent_id: 4, session_id: 's1', outcome: 'concluded', started_at: 10 }),
+        makeRun({ id: 8, agent_id: 4, session_id: 'run-8', outcome: 'concluded', started_at: 100, ended_at: 110, summary: 'Feito' }),
+        makeRun({ id: 7, agent_id: 4, session_id: 's1', outcome: 'concluded', started_at: 10, ended_at: 20 }),
       ]),
     }))
     const wrapper = await mountView()
-    const rows = wrapper.get('[data-test="main-runs"]').findAll('[data-test="run-row"]')
-    expect(rows).toHaveLength(1)
-    expect(rows[0]!.attributes('data-run-id')).toBe('8')
+    expect(domOrder(wrapper)).toEqual(['turn', 'run-entry', 'turn'])
+    expect(wrapper.findAll('[data-test="run-entry"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="run-entry"]').attributes('data-run-id')).toBe('8')
+  })
+
+  it('names the routine of a run in its entry', async () => {
+    const { org, makeAgent, makeRun } = await orgSetup()
+    org.agents = [makeAgent({ id: 4, main_session_id: 's1' })]
+    vi.stubGlobal('fetch', routeFetch({
+      ...routes(),
+      'GET /api/routines?project_id=1': () => jsonResponse([{ id: 3, project_id: 1, agent_id: 4, name: 'Revisão diária', instruction: '', enabled: true, create_task: false, created_at: 1, updated_at: 1, schedules: [] }]),
+      'GET /api/agents/4/runs?limit=50': () => jsonResponse([makeRun({ id: 8, agent_id: 4, session_id: 'run-8', source: 'routine', routine_id: 3, outcome: 'concluded', ended_at: 110 })]),
+    }))
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="run-entry"]').text()).toContain('Revisão diária')
+  })
+
+  it('shows no run entry outside a main conversation', async () => {
+    const { org, makeAgent, makeRun } = await orgSetup()
+    org.agents = [makeAgent({ id: 4, main_session_id: 'main' })]
+    org.runs = { 4: [makeRun({ id: 8, agent_id: 4, session_id: 'run-8', outcome: 'concluded', ended_at: 110 })] }
+    vi.stubGlobal('fetch', routeFetch(routes()))
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="run-entry"]').exists()).toBe(false)
+  })
+
+  it('no longer shows the runs list nor the announcement cards', async () => {
+    const { org, makeAgent, makeRun } = await orgSetup()
+    org.agents = [makeAgent({ id: 4, main_session_id: 's1' })]
+    vi.stubGlobal('fetch', routeFetch({
+      ...routes(),
+      'GET /api/agents/4/runs?limit=50': () => jsonResponse([makeRun({ id: 8, agent_id: 4, session_id: 'run-8', outcome: 'concluded', ended_at: 110 })]),
+    }))
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="main-runs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="announcement-card"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Execuções do agente')
+  })
+
+  it('shows the load error of the runs and retries', async () => {
+    const { org, makeAgent, makeRun } = await orgSetup()
+    org.agents = [makeAgent({ id: 4, main_session_id: 's1' })]
+    let calls = 0
+    vi.stubGlobal('fetch', routeFetch({
+      ...routes(),
+      'GET /api/agents/4/runs?limit=50': () => {
+        calls++
+        return calls === 1 ? jsonResponse({ detail: 'Banco fora do ar.' }, 500) : jsonResponse([makeRun({ id: 8, agent_id: 4, session_id: 'run-8', outcome: 'concluded', ended_at: 110 })])
+      },
+    }))
+    const wrapper = await mountView()
+    const alert = wrapper.get('[data-test="runs-error"]')
+    expect(alert.attributes('role')).toBe('alert')
+    expect(alert.text()).toContain('Banco fora do ar.')
+    await alert.get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="runs-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="run-entry"]').exists()).toBe(true)
+  })
+
+  it('reloads the runs on each change of the agent', async () => {
+    const { org, makeAgent } = await orgSetup()
+    org.agents = [makeAgent({ id: 4, main_session_id: 's1' })]
+    const fetchMock = routeFetch(routes())
+    vi.stubGlobal('fetch', fetchMock)
+    await mountView()
+    const loads = () => fetchMock.mock.calls.filter(([url]) => url === '/api/agents/4/runs?limit=50').length
+    expect(loads()).toBe(1)
+    org.applyEvent('agent.announcement', { agent_id: 4 })
+    await flushPromises()
+    expect(loads()).toBe(2)
+  })
+
+  it('tells the owner message carries the summary of the runs instead of cards', async () => {
+    const block = '<maestro-anuncios>\n[25/10 12:30] Feito (sessão run-1)\n</maestro-anuncios>'
+    vi.stubGlobal('fetch', routeFetch({
+      ...routes(),
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({ items: [{ type: 'user', id: 'u1', text: `${block}\n\nExplique` } as never] })),
+    }))
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="announcements-note"]').text()).toBe('O agente recebeu o resumo de 1 execução')
+    expect(wrapper.find('[data-test="announcement-card"]').exists()).toBe(false)
+  })
+
+  describe('answering a waiting run', () => {
+    async function waitingSetup() {
+      const { org, makeAgent, makeRun } = await orgSetup()
+      org.agents = [makeAgent({ id: 4, name: 'Triagem', main_session_id: 's1' })]
+      const waiting = makeRun({ id: 8, agent_id: 4, session_id: 'run-8', source: 'routine', outcome: 'waiting', started_at: 1_790_000_000 })
+      const fetchMock = routeFetch({
+        ...routes(),
+        'GET /api/sessions/run-8': () => jsonResponse(makeSnapshot({ session_id: 'run-8', state: 'idle' })),
+        'GET /api/agents/4/runs?limit=50': () => jsonResponse([waiting]),
+        'POST /api/sessions/s1/messages': () => jsonResponse({}, 202),
+        'POST /api/sessions/run-8/messages': () => jsonResponse({}, 202),
+        'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = await mountView()
+      return { org, waiting, wrapper, fetchMock }
+    }
+    const sentTo = (m: ReturnType<typeof routeFetch>, id: string) => m.mock.calls.filter((c) => c[0] === `/api/sessions/${id}/messages`)
+    async function send(wrapper: Awaited<ReturnType<typeof mountView>>, value: string) {
+      const ta = wrapper.get('textarea')
+      await ta.setValue(value)
+      await ta.trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+    }
+
+    it('answers a waiting run from the composer', async () => {
+      const { wrapper, fetchMock } = await waitingSetup()
+      const target = wrapper.get('[data-test="reply-target"]')
+      expect(target.text()).toMatch(/^Respondendo à rotina das \d{2}:\d{2}$/)
+      expect(target.get('[data-test="reply-target-dismiss"]').attributes('aria-label')).toBe('Voltar a falar com o agente')
+      await send(wrapper, 'pode seguir')
+      expect(sentTo(fetchMock, 'run-8')).toHaveLength(1)
+      expect(sentTo(fetchMock, 's1')).toHaveLength(0)
+    })
+
+    it('names any other origin than a routine as "execução"', async () => {
+      const { org, waiting, wrapper } = await waitingSetup()
+      org.applyEvent('agent.run', { ...waiting, source: 'manual' })
+      await flushPromises()
+      expect(wrapper.get('[data-test="reply-target"]').text()).toMatch(/^Respondendo à execução das \d{2}:\d{2}$/)
+    })
+
+    it('goes back to the main conversation when the run stops waiting', async () => {
+      const { org, waiting, wrapper, fetchMock } = await waitingSetup()
+      await wrapper.get('textarea').setValue('quase enviando')
+      org.applyEvent('agent.run', { ...waiting, outcome: 'running' })
+      await flushPromises()
+      expect(wrapper.find('[data-test="reply-target"]').exists()).toBe(false)
+      await send(wrapper, 'agora para a principal')
+      expect(sentTo(fetchMock, 's1')).toHaveLength(1)
+      expect(sentTo(fetchMock, 'run-8')).toHaveLength(0)
+    })
+
+    it('keeps the main conversation as the target after the dismiss', async () => {
+      const { org, waiting, wrapper, fetchMock } = await waitingSetup()
+      await wrapper.get('[data-test="reply-target-dismiss"]').trigger('click')
+      expect(wrapper.find('[data-test="reply-target"]').exists()).toBe(false)
+      await send(wrapper, 'falando com o agente')
+      expect(sentTo(fetchMock, 's1')).toHaveLength(1)
+      // A new event about the same run does not bring the target back.
+      org.applyEvent('agent.run', { ...waiting })
+      await flushPromises()
+      expect(wrapper.find('[data-test="reply-target"]').exists()).toBe(false)
+    })
+  })
+
+  it('marks an unread finished run as seen once', async () => {
+    const { org, sessions, makeAgent, makeRun, makeSession } = await orgSetup()
+    org.agents = [makeAgent({ id: 4, main_session_id: 's1' })]
+    sessions.setForProject(1, [makeSession({ session_id: 'run-8', agent_id: 4, unread: true }), makeSession({ session_id: 'run-9', agent_id: 4, unread: false })])
+    vi.useFakeTimers()
+    try {
+      const fetchMock = routeFetch({
+        ...routes(),
+        'GET /api/agents/4/runs?limit=50': () => jsonResponse([
+          makeRun({ id: 8, agent_id: 4, session_id: 'run-8', outcome: 'concluded', ended_at: 110 }),
+          makeRun({ id: 9, agent_id: 4, session_id: 'run-9', outcome: 'concluded', ended_at: 120 }),
+        ]),
+        'POST /api/sessions/s1/seen': () => jsonResponse(undefined, 204),
+        'POST /api/sessions/run-8/seen': () => jsonResponse(undefined, 204),
+        'POST /api/sessions/run-9/seen': () => jsonResponse(undefined, 204),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      await mountView()
+      await vi.advanceTimersByTimeAsync(1000)
+      const seen = (id: string) => fetchMock.mock.calls.filter(([url]) => url === `/api/sessions/${id}/seen`).length
+      expect(seen('run-8')).toBe(1)
+      expect(seen('run-9')).toBe(0)
+      org.applyEvent('agent.announcement', { agent_id: 4 })
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(seen('run-8')).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

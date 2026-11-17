@@ -206,8 +206,6 @@ describe('cliente da organização de agentes', () => {
     ['openAgentConversation', () => api.openAgentConversation(4, { new: true }), 'POST', '/api/agents/4/conversations', { new: true }],
     ['openAgentMain', () => api.openAgentMain(4), 'POST', '/api/agents/4/main', undefined],
     ['listAgentMessages', () => api.listAgentMessages(4, 's 1'), 'GET', '/api/agents/4/messages?session_id=s%201', undefined],
-    ['listAnnouncements', () => api.listAnnouncements(4), 'GET', '/api/agents/4/announcements', undefined],
-    ['listAnnouncements(pendentes)', () => api.listAnnouncements(4, true), 'GET', '/api/agents/4/announcements?pending=true', undefined],
     ['listAgentRuns', () => api.listAgentRuns(4, 20), 'GET', '/api/agents/4/runs?limit=20', undefined],
     ['wakeAgent', () => api.wakeAgent(4, 'Só os de hoje.'), 'POST', '/api/agents/4/wake', { text: 'Só os de hoje.' }],
     ['wakeAgent sem texto', () => api.wakeAgent(4), 'POST', '/api/agents/4/wake', {}],

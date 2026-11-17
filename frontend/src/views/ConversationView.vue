@@ -156,6 +156,19 @@ function jumpToEnd() {
   else el.scrollTop = el.scrollHeight
 }
 
+// The strip of the running agent: the thread scrolls to that run's entry and focuses it; with no entry for
+// the session (a turn of another conversation), it opens the session.
+function goToRun(sessionId: string) {
+  const entry = Array.from(column.value?.querySelectorAll<HTMLElement>('[data-run-session]') ?? []).find((el) => el.dataset.runSession === sessionId)
+  if (!entry) {
+    void router.push({ name: 'session', params: { id: sessionId } })
+    return
+  }
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  entry.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+  entry.focus({ preventScroll: true })
+}
+
 // "Ver alterações" in an edit card opens the panel (the drawer on narrow screens).
 watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (open) => {
   if (!open) return
@@ -230,7 +243,7 @@ watch(() => changesPanel.sessionId === props.id && changesPanel.edit != null, (o
           </template>
         </ConversationHeader>
         <!-- Outside the thread's scroller: it stays under the header while the messages scroll. -->
-        <AgentRunBanner :session-id="id" />
+        <AgentRunBanner :session-id="id" @select="goToRun" />
         <div v-if="awayShown && awayStats" data-test="away-slot" class="max-h-[45vh] shrink-0 overflow-y-auto px-4 pt-3">
           <div class="mx-auto w-full max-w-(--chat-width)">
             <AwaySummary

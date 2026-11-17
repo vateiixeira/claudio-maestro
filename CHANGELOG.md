@@ -6,6 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- A conversa principal de um agente mostra cada execução como mensagem dele, com o resultado completo e o passo a passo abrindo no lugar.
 - No menu lateral (e na busca dele), as etiquetas das conversas aparecem todas e com o nome inteiro, quebrando a linha quando não cabem, em vez de cortar o texto ou resumir em "+N".
 
 ### Corrigido

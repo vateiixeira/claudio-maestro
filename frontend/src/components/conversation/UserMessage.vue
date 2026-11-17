@@ -4,7 +4,6 @@ import { MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { localImagesFor } from '../../conversation/localImages'
 import type { Attachment, UserItem } from '../../types/conversation'
 import BashPane from './BashPane.vue'
-import AnnouncementCard from './AnnouncementCard.vue'
 import { splitAnnouncements } from '../../conversation/announcements'
 import TerminalRunBox from './TerminalRunBox.vue'
 import WorkHeader from './WorkHeader.vue'
@@ -12,6 +11,10 @@ import WorkHeader from './WorkHeader.vue'
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{ item: UserItem }>()
 const content = computed(() => splitAnnouncements(props.item.text))
+const announcementsNote = computed(() => {
+  const count = content.value.announcements.length
+  return count ? `O agente recebeu o resumo de ${count} ${count === 1 ? 'execução' : 'execuções'}` : null
+})
 const hasBubble = computed(() => content.value.rest || props.item.images?.length || props.item.terminal_snippets?.length)
 // Thumbnails exist only for images sent from this tab; the history keeps type and size.
 const previews = computed(() => localImagesFor(props.item.id))
@@ -52,7 +55,7 @@ function label(attachment: Attachment): string {
   />
   <!-- Like a messenger: what the user sends sits on the right, the model's replies on the left. -->
   <template v-else>
-  <AnnouncementCard v-for="(announcement, index) in content.announcements" :key="index" :announcement="announcement" />
+  <p v-if="announcementsNote" data-test="announcements-note" class="m-0 text-xs text-fg-subtle">{{ announcementsNote }}</p>
   <div v-if="hasBubble" v-bind="$attrs" data-test="user-message-row" class="flex w-full justify-end pl-10">
     <div
       data-test="user-message-card"

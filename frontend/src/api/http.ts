@@ -56,7 +56,6 @@ import type {
   AgentCreate,
   AgentDefinitionFile,
   AgentUpdate,
-  Announcement,
   Comment,
   Conversation,
   Decision,
@@ -702,11 +701,6 @@ export function openAgentMain(id: number): Promise<{ session_id: string }> {
 /** Messages queued for a conversation of the agent, waiting for a run to end. */
 export function listAgentMessages(id: number, sessionId: string): Promise<PendingMessage[]> {
   return request('GET', `/api/agents/${id}/messages?session_id=${encodeURIComponent(sessionId)}`)
-}
-
-/** What the runs announced to the main conversation, newest first; `pending` keeps the ones it has not received. */
-export function listAnnouncements(id: number, pending = false): Promise<Announcement[]> {
-  return request('GET', `/api/agents/${id}/announcements${query([['pending', pending ? true : undefined]])}`)
 }
 
 export function listAgentRuns(id: number, limit = 50): Promise<Run[]> {

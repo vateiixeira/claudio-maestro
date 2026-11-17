@@ -564,6 +564,45 @@ describe('página da conversa', () => {
     })
   })
 
+  describe('faixa do agente rodando', () => {
+    async function setupAgent(withEntry: boolean) {
+      const { useOrgStore } = await import('../../stores/org')
+      const { makeAgent, makeRun } = await import('../../test/factories')
+      const run = makeRun({ id: 8, agent_id: 1, session_id: 'run-8', outcome: 'running' })
+      const org = useOrgStore(pinia)
+      org.agents = [makeAgent({ id: 1, main_session_id: 's1', busy: true, last_run: run })]
+      useSessionsStore(pinia).setForProject(1, [
+        makeSession({ session_id: 's1', title: 'Corrigir login' }),
+        makeSession({ session_id: 'run-8', agent_id: 1, title: 'Revisar o PR', state: 'running' }),
+      ])
+      return mountAt('/sessions/s1', {
+        'GET /api/agents/1/runs?limit=50': () => jsonResponse(withEntry ? [run] : []),
+        'GET /api/routines?project_id=1': () => jsonResponse([]),
+        'GET /api/sessions/run-8': () => jsonResponse(makeSnapshot({ session_id: 'run-8', state: 'running' })),
+      })
+    }
+
+    it('rola até a entrada da execução e a foca', async () => {
+      const { wrapper, router } = await setupAgent(true)
+      const focused: Array<string | undefined> = []
+      const spy = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) { focused.push(this.dataset.runSession) })
+      try {
+        await wrapper.get('[data-test="agent-run-banner"]').trigger('click')
+      } finally {
+        spy.mockRestore()
+      }
+      expect(router.currentRoute.value.path).toBe('/sessions/s1')
+      expect(focused).toContain('run-8')
+    })
+
+    it('sem entrada para a sessão, abre a sessão', async () => {
+      const { wrapper, router } = await setupAgent(false)
+      await wrapper.get('[data-test="agent-run-banner"]').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe('/sessions/run-8')
+    })
+  })
+
   describe('embutida na tela do projeto', () => {
     async function mountEmbedded(handlers = {}, props: Record<string, unknown> = {}, query = '') {
       vi.stubGlobal('fetch', routeFetch({ ...baseFetch, ...handlers }))

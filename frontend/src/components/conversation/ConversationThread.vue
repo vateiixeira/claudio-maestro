@@ -11,9 +11,10 @@ import SubagentStrip from './SubagentStrip.vue'
 import TurnLiveLine from './TurnLiveLine.vue'
 import TurnTasks from './TurnTasks.vue'
 import UserMessage from './UserMessage.vue'
-import PendingAnnouncements from './PendingAnnouncements.vue'
-import MainRuns from './MainRuns.vue'
+import RunEntry from './RunEntry.vue'
 import { useOrgStore } from '../../stores/org'
+import { useSessionsStore } from '../../stores/sessions'
+import { buildAgentTimeline, IN_FLIGHT } from '../../conversation/agentTimeline'
 import { useRunTask } from './useRunTask'
 import { findLastMessage, MESSAGE_FOCUS_KEY } from '../../conversation/find'
 import { buildItemTree, deriveSubagents, stripSubagents, SUBAGENT_FOCUS_KEY, waitingText, type SubagentFocus } from '../../conversation/subagents'
@@ -27,6 +28,7 @@ import SessionControls from '../session/SessionControls.vue'
 import { useConversationStore } from '../../stores/conversation'
 import { useProjectsStore } from '../../stores/projects'
 import type { ToolItem } from '../../types/conversation'
+import type { Run } from '../../types/org'
 import { isBareShortcut } from '../../keyboardShortcutGuard'
 
 const props = withDefaults(defineProps<{ id: string; visible?: boolean; find?: string }>(), { visible: true })
@@ -36,6 +38,7 @@ const conversations = useConversationStore()
 const changesPanel = useChangesPanelStore()
 const projects = useProjectsStore()
 const org = useOrgStore()
+const sessionsStore = useSessionsStore()
 const mainAgent = computed(() => org.isMainSession(props.id))
 // A run of an agent (not its main conversation): the agent and the task it works on.
 const { agent: runAgent, taskId: runTaskId } = useRunTask(toRef(props, 'id'))
@@ -96,6 +99,7 @@ function cancelSeen() {
 }
 function markSeenSoon() {
   if (!canSee()) return
+  markRunsSeen()
   cancelSeen()
   const id = props.id
   seenTimer = setTimeout(() => {
@@ -115,6 +119,59 @@ watch(() => conv.value?.lastResult, (result, before) => {
 })
 watch(() => props.visible, (visible) => (visible ? markSeenSoon() : cancelSeen()))
 onBeforeUnmount(cancelSeen)
+
+// The runs of the agent whose main conversation this is: loaded (and loaded again on each change of the
+// agent), and drawn among the turns. Nothing of this exists in any other conversation.
+const runsError = ref<string | null>(null)
+let runsTicket = 0
+onBeforeUnmount(() => { runsTicket++ })
+async function loadRuns() {
+  const agent = mainAgent.value
+  if (!agent) return
+  const mine = ++runsTicket
+  try {
+    await org.loadRuns(agent.id)
+    if (mine === runsTicket) runsError.value = null
+  } catch (e) {
+    if (mine === runsTicket) runsError.value = errorMessage(e)
+  }
+}
+// One watch for both causes, so a change of agent that comes with a bump of `changes` loads once.
+watch(
+  [() => mainAgent.value?.id, () => (mainAgent.value ? org.changes[mainAgent.value.id] : undefined)] as const,
+  ([agentId], previous) => {
+    const agent = mainAgent.value
+    if (agentId !== previous?.[0]) runsError.value = null
+    if (!agent) { runsTicket++; return }
+    void loadRuns()
+    // The names of the routines label their runs; without them the entries still show.
+    if (agentId !== previous?.[0]) void org.loadRoutines(agent.project_id).catch(() => {})
+  },
+  { immediate: true },
+)
+const routineNames = computed(() => new Map(org.routinesOf(mainAgent.value?.project_id ?? -1).map((r) => [r.id, r.name])))
+const routineName = (run: Run) => (run.routine_id !== null ? routineNames.value.get(run.routine_id) ?? null : null)
+
+// A finished run whose session is unread was read here, in its entry: tells the backend, once per session.
+const seenRuns = new Set<string>()
+const unreadRunSessions = computed(() => {
+  const agent = mainAgent.value
+  if (!agent) return []
+  return org.runsOf(agent.id).flatMap((run) =>
+    run.session_id && run.session_id !== props.id && !IN_FLIGHT.has(run.outcome) && sessionsStore.find(run.session_id)?.unread === true
+      ? [run.session_id]
+      : [],
+  )
+})
+function markRunsSeen() {
+  if (!canSee()) return
+  for (const id of unreadRunSessions.value) {
+    if (seenRuns.has(id)) continue
+    seenRuns.add(id)
+    markSessionSeen(id).catch(() => { seenRuns.delete(id) })
+  }
+}
+watch([unreadRunSessions, () => props.visible], markRunsSeen, { immediate: true })
 
 // Leaving a conversation drops what the store kept of it: the next visit starts from
 // its snapshot (no stale turn result or decision card), and its images and diff go.
@@ -174,6 +231,43 @@ const turns = computed(() => {
       tasks: tasks.tasks, showTasks: showTurnTasks(tasks, done),
     }
   })
+})
+// In the main conversation of an agent each run is an entry, put by time among the turns; the runs that come
+// before turn i are drawn right before it (slot i), the ones after the last turn at the end (slot turns.length).
+const runSlots = computed(() => {
+  const slots = new Map<number, Run[]>()
+  const agent = mainAgent.value
+  if (!agent) return slots
+  let pending: Run[] = []
+  for (const row of buildAgentTimeline(turns.value.map((t) => t.turn.user?.at ?? null), org.runsOf(agent.id), props.id)) {
+    if (row.kind === 'run') pending.push(row.run)
+    else if (pending.length) { slots.set(row.index, pending); pending = [] }
+  }
+  if (pending.length) slots.set(turns.value.length, pending)
+  return slots
+})
+const runCount = computed(() => Array.from(runSlots.value.values()).reduce((n, runs) => n + runs.length, 0))
+watch(runCount, async (count, before) => {
+  if (count <= before || !atBottom.value) return
+  await nextTick()
+  const el = scroller.value
+  if (el && atBottom.value) scrollToEnd(el, true)
+})
+
+// A run that waits for the user is who the message field talks to, until they go back to the agent. Each
+// run is dismissed on its own; the target goes away by itself when the run stops waiting.
+const dismissedRuns = reactive(new Set<number>())
+const replyRun = computed(() => {
+  const agent = mainAgent.value
+  if (!agent) return null
+  const waiting = org.runsOf(agent.id).filter((run) => run.outcome === 'waiting' && run.session_id && run.session_id !== props.id && !dismissedRuns.has(run.id))
+  return waiting.sort((a, b) => b.started_at - a.started_at || b.id - a.id)[0] ?? null
+})
+const composerSession = computed(() => replyRun.value?.session_id ?? conv.value?.sessionId ?? props.id)
+const composerState = computed(() => (replyRun.value ? (conversations.get(composerSession.value)?.state ?? 'idle') : (conv.value?.state ?? 'idle')))
+const replyTime = computed(() => {
+  const at = replyRun.value?.started_at
+  return at === undefined ? '' : new Date(at * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 })
 // The line of the running turn: what it does now (a request waits, an action runs, a reply is written, or it thinks).
 const liveText = computed(() => {
@@ -522,6 +616,7 @@ function resolvePrompt(promptId: string) {
             Nenhuma mensagem ainda. Escreva abaixo para começar.
           </p>
           <template v-for="({ turn, done, last, waiting, summary, failed, tasks, showTasks }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
+            <RunEntry v-for="run in runSlots.get(index)" :key="`run-${run.id}`" :run="run" :routine-name="routineName(run)" />
             <div v-if="index > 0" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-11 focus-visible:outline-2 focus-visible:outline-primary items-center gap-2.5">
               <span class="cap text-fg-subtle">Turno {{ turn.number }}</span>
               <span aria-hidden="true" class="h-px grow bg-line" />
@@ -575,8 +670,8 @@ function resolvePrompt(promptId: string) {
               </div>
             </div>
           </template>
-          <PendingAnnouncements :session-id="id" />
-          <MainRuns v-if="mainAgent" :key="mainAgent.id" :agent-id="mainAgent.id" :main-session-id="id" />
+          <RunEntry v-for="run in runSlots.get(turns.length)" :key="`run-${run.id}`" :run="run" :routine-name="routineName(run)" />
+          <p v-if="runsError" data-test="runs-error" role="alert" class="m-0 text-xs text-diff-del-fg">Não foi possível carregar as execuções. {{ runsError }} <button type="button" class="cursor-pointer underline focus-visible:outline-2 focus-visible:outline-primary" @click="loadRuns">Tentar de novo</button></p>
           <PromptCards :session-id="conv.sessionId" :prompts="conv.prompts" :is-live="isLive" @resolved="resolvePrompt" />
         </div>
       </div>
@@ -615,8 +710,21 @@ function resolvePrompt(promptId: string) {
           <p v-if="loadError" role="alert" class="m-0 rounded-md border border-diff-del-fg/40 bg-diff-del-bg px-3 py-2 text-sm text-diff-del-fg">{{ loadError }}</p>
           <SubagentStrip :session-id="conv.sessionId" :entries="subagentEntries" @select="goToSubagent" />
           <p v-if="runTaskId != null" data-test="task-run-note" class="m-0 text-xs text-fg-muted">Execução de {{ runAgent?.name ?? 'um agente' }} na <RouterLink class="text-info-soft hover:underline focus-visible:outline-2 focus-visible:outline-primary" :to="`/tarefas/${runTaskId}`">tarefa #{{ runTaskId }}</RouterLink>. O resultado e os próximos passos ficam na tarefa.</p>
-          <MessageComposer ref="composer" :key="conv.sessionId" :session-id="conv.sessionId" :state="conv.state" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
-            <template #controls><SessionControls :session-id="conv.sessionId" /></template>
+          <div v-if="replyRun" data-test="reply-target" class="flex items-center gap-2 rounded-md border border-secondary/40 bg-secondary-tint py-1 pr-1 pl-3 text-xs text-fg">
+            <span class="min-w-0 grow truncate">Respondendo à {{ replyRun.source === 'routine' ? 'rotina' : 'execução' }} das {{ replyTime }}</span>
+            <button
+              type="button"
+              data-test="reply-target-dismiss"
+              aria-label="Voltar a falar com o agente"
+              title="Voltar a falar com o agente"
+              class="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+              @click="dismissedRuns.add(replyRun.id)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+            </button>
+          </div>
+          <MessageComposer ref="composer" :key="composerSession" :session-id="composerSession" :state="composerState" :blocked-reason="unavailableReason" @sending="ownSendAt = Date.now()">
+            <template #controls><SessionControls :session-id="composerSession" /></template>
           </MessageComposer>
         </div>
       </div>

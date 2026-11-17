@@ -43,7 +43,10 @@ describe('AgentRunBanner', () => {
     expect(banner.attributes('data-state')).toBe('running')
     expect(banner.text()).toContain('Rodando agora: Revisar o PR 42')
     expect(w.get('[data-test="agent-state"]').attributes('data-state')).toBe('busy')
-    expect(banner.attributes('href')).toBe('/sessions/run')
+    expect(banner.element.tagName).toBe('BUTTON')
+    expect(banner.attributes('href')).toBeUndefined()
+    await banner.trigger('click')
+    expect(w.emitted('select')).toEqual([['run']])
   })
 
   it('fica no tom de espera quando a sessão pede resposta', async () => {
@@ -88,6 +91,7 @@ describe('AgentRunBanner', () => {
     ])
     await flushPromises()
     expect(w.get('[data-test="agent-run-banner"]').text()).toContain('Rodando agora: Outra rotina')
-    expect(w.get('[data-test="agent-run-banner"]').attributes('href')).toBe('/sessions/run2')
+    await w.get('[data-test="agent-run-banner"]').trigger('click')
+    expect(w.emitted('select')).toEqual([['run2']])
   })
 })
