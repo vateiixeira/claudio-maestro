@@ -29,8 +29,9 @@ test('estado vazio de tarefas leva à organização do projeto escolhido', async
   await page.goto('/tarefas')
   const empty = page.getByTestId('tasks-empty')
   await expect(empty).toBeVisible()
-  await empty.getByRole('combobox', { name: 'Projeto para abrir organização' }).selectOption({ label: 'Loja Demo' })
-  await page.getByTestId('tasks-open-organization').click()
+  // "Onde criar" lists the projects that have an organization, each with its link.
+  await expect(empty.getByTestId('tasks-where-project')).toHaveCount(1)
+  await empty.getByTestId('tasks-where-project').filter({ hasText: 'Loja Demo' }).getByTestId('tasks-open-organization').click()
   await expect(page.getByTestId('project-tab-organizacao')).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByTestId('org-tree')).toBeVisible()
 })

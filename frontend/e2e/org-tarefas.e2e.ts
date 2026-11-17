@@ -123,3 +123,50 @@ test('a tarefa em revisão mostra o revisor e leva ao agente', async ({ page }) 
   await page.getByTestId('task-reviewer-link').click()
   await expect(page.getByTestId('agent-panel').getByRole('heading', { level: 2, name: 'Revisor' })).toBeVisible()
 })
+
+test('os quatro contadores somam as tarefas abertas e o chip de estado filtra a lista', async ({ page }) => {
+  await openOrganization(page)
+  const counts = page.getByTestId('status-count')
+  await expect(counts).toHaveCount(4)
+  for (const count of await counts.all()) await expect(count).toHaveText(/^\d+$/)
+  // Each card is also the filter of its state; turned on alone, it leaves only those tasks.
+  const todo = page.getByTestId('status-chip-todo')
+  await expect(todo).toHaveAttribute('aria-pressed', 'true')
+  for (const status of ['in_progress', 'in_review', 'blocked']) await page.getByTestId(`status-chip-${status}`).click()
+  await expect(todo).toHaveAttribute('aria-pressed', 'true')
+  // Whatever the other specs left in the list, no task of another state shows with only "A fazer" on.
+  await expect(page.getByTestId('task-row').filter({ has: page.locator('[data-test="task-status"]:not([data-status="todo"])') })).toHaveCount(0)
+  // The closed states are chips of their own, off by default, and the responsible one is a menu.
+  await expect(page.getByTestId('status-chip-done')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('status-chip-cancelled')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('assignee-filter').getByRole('option', { name: 'Qualquer responsável' })).toBeAttached()
+})
+
+test('a barra de tarefa rápida cria a tarefa no projeto e ela aparece na lista de todas as tarefas', async ({ page }) => {
+  await page.goto('/tarefas')
+  const bar = page.getByTestId('quick-task')
+  await expect(bar).toBeVisible()
+  const submit = bar.getByTestId('quick-task-submit')
+  await expect(submit).toBeDisabled()
+  await expect(bar.getByTestId('quick-task-project')).toContainText('Loja Demo')
+  // No assignee: creating the task wakes no agent, so no other spec sees it.
+  await bar.getByTestId('quick-task-assignee').selectOption({ label: 'Sem responsável' })
+  await bar.getByTestId('quick-task-title').fill('Conferir estoque')
+  await expect(submit).toBeEnabled()
+  await bar.getByTestId('quick-task-title').press('Enter')
+
+  const created = bar.getByTestId('quick-task-created')
+  await expect(created).toHaveText(/Tarefa #\d+ criada\./)
+  await expect(bar.getByTestId('quick-task-title')).toHaveValue('')
+  const row = taskRow(page, 'Conferir estoque')
+  await expect(row).toBeVisible()
+  await expect(row.getByTestId('task-row-project')).toHaveText('Loja Demo')
+  await expect(row.getByTestId('task-row-assignee')).toHaveText('Sem responsável')
+
+  // Opens through the link of the notice and cancels it, so the counters stay as the others expect.
+  await created.getByRole('link', { name: 'Abrir' }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Conferir estoque')
+  await page.getByTestId('task-cancel').click()
+  await page.getByTestId('task-cancel-confirm').click()
+  await expect(page.getByTestId('task-status').first()).toHaveAttribute('data-status', 'cancelled')
+})

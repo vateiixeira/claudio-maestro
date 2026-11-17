@@ -74,7 +74,8 @@ test('um agente novo nasce no projeto, abre no editor do AGENT.md e some ao ser 
   await expect(page.getByTestId('definition-text')).toHaveValue(/name: Ana Documentação/)
   await expect(page.getByTestId('org-node-button').filter({ hasText: 'Ana Documentação' })).toBeVisible()
 
-  await panel.getByTestId('agent-delete').click()
+  await panel.getByRole('button', { name: 'Mais ações do agente' }).click()
+  await page.getByRole('menuitem', { name: 'Excluir…' }).click()
   await page.getByRole('dialog', { name: 'Excluir Ana Documentação?' }).getByTestId('confirm-ok').click()
   await expect(page.getByTestId('org-tree-empty')).toBeVisible()
   await expect(page.getByTestId('agent-panel')).toHaveCount(0)

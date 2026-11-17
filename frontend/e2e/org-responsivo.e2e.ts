@@ -18,7 +18,7 @@ for (const width of [1920, 1440, 1280, 1024, 768, 430, 375]) {
 
     await page.getByTestId('org-node-button').filter({ hasText: 'Triagem' }).click()
     await expect(page.getByTestId('agent-panel').getByRole('heading', { level: 2, name: 'Triagem' })).toBeVisible()
-    for (const tab of ['conversa', 'definicao', 'execucoes']) {
+    for (const tab of ['conversa', 'definicao', 'memoria', 'registro', 'execucoes']) {
       await page.getByTestId(`agent-tab-${tab}`).click()
       await expect(page.getByTestId(`agent-tab-${tab}`)).toHaveAttribute('aria-selected', 'true')
       await expectNoHorizontalScroll(page)
