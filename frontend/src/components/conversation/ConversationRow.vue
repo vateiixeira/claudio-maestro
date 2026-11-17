@@ -47,11 +47,8 @@ const reason = computed(() => waitingReason(props.session))
 const wantsYou = computed(() => needsYou(props.session))
 const projectLayout = computed(() => props.projectContextId != null)
 const sameProjectContext = computed(() => props.projectContextId === props.session.project_id)
-// The project layout hides the visible reason, so screen readers still get it.
-const srState = computed(() => {
-  const label = displayStateLabel(props.session)
-  return projectLayout.value && reason.value && reason.value !== label ? `${label}: ${reason.value}` : label
-})
+// The waiting reason is text on the row (`waiting-reason`), so the hidden state only names the state.
+const srState = computed(() => displayStateLabel(props.session))
 // The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it on the link.
 const planTitle = computed(() => (planShown.value ? planPosition(props.session.plan!) : undefined))
 const busy = ref(false)

@@ -31,6 +31,24 @@ describe('SessionActivity', () => {
     expect(wrapper.text()).toContain('Revisar a tarefa')
   })
 
+  it('com o título da tarefa em texto, os segmentos saem do leitor de tela', () => {
+    const wrapper = mount(SessionActivity, { props: { session: makeSession({ display_state: 'running', plan }) } })
+    const segments = wrapper.get('[data-test="plan-segments"]')
+    expect(segments.attributes('aria-hidden')).toBe('true')
+    expect(segments.attributes('role')).toBeUndefined()
+    expect(segments.attributes('aria-label')).toBeUndefined()
+    expect(wrapper.text()).toContain('Revisar a tarefa')
+  })
+
+  it('plano parado: segmentos feitos e atual ficam neutros', () => {
+    const wrapper = mount(SessionActivity, { props: { session: makeSession({ display_state: 'waiting', unread: false, cli_running: false, plan }) } })
+    const states = wrapper.findAll('[data-test="plan-segment"]')
+    expect(states.map((s) => s.attributes('data-state'))).toEqual(['done', 'done', 'current', 'todo', 'todo'])
+    for (const s of states.slice(0, 3)) {
+      expect(s.classes().join(' ')).not.toContain('bg-primary')
+    }
+  })
+
   it('subagente leva o ícone de agente', () => {
     const wrapper = mount(SessionActivity, { props: { session: makeSession({ display_state: 'running', last_action: 'Agent: Revisar o diff' }) } })
     expect(wrapper.html()).toContain('text-type-agent')

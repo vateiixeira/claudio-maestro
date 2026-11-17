@@ -99,6 +99,17 @@ describe('menu lateral', () => {
     expect(wrapper.find('[data-test="nav-inbox"] .sr-only').text()).toContain('aguardando você')
   })
 
+  it('com o selo de aguardando você, a Inbox abre direto nessa aba; sem selo, abre sem aba', async () => {
+    useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'a', display_state: 'running' })])
+    const wrapper = mountSidebar()
+    expect(wrapper.get('[data-test="nav-inbox"]').attributes('href')).toBe('/inbox')
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'b', display_state: 'waiting', pending_kind: 'question' })])
+    await nextTick()
+    expect(wrapper.find('[data-test="inbox-count"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="nav-inbox"]').attributes('href')).toBe('/inbox?aba=pede-voce')
+  })
+
   it('não conta na Inbox nem no projeto a espera comum, sem novidade', () => {
     useProjectsStore(pinia).projects = [makeProject({ id: 1 })]
     useSessionsStore(pinia).setForProject(1, [
@@ -994,6 +1005,23 @@ describe('menu lateral: filtros e contagens', () => {
     expect(mixed.findAll('[data-test="sidebar-session"]').map((r) => r.get('[data-test="row-title"]').text())).not.toContain('Quieta no grupo')
     expect(w.text()).not.toContain('Quieta no grupo')
     expect(w.text()).not.toContain('Solta aguarda')
+  })
+
+  it('com um filtro ligado, o projeto recolhido mostra as conversas que batem', async () => {
+    seed()
+    setCollapsed('project', 2, true)
+    const w = mountSidebar()
+    expect(titles(w)).not.toContain('Pede você')
+    await chip(w, 'waiting').trigger('click')
+    expect(titles(w)).toEqual(['Pede você'])
+    // The arrow has no effect while a filter is on: it stays (the row keeps its shape) but disabled and open.
+    expect(w.get('[data-test="project-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(w.get('[data-test="project-toggle"]').attributes('disabled')).toBeDefined()
+    await chip(w, 'waiting').trigger('click')
+    expect(w.findAll('[data-test="project-toggle"]')[1]!.attributes('disabled')).toBeUndefined()
+    expect(titles(w)).not.toContain('Pede você')
+    expect(w.findAll('[data-test="project-toggle"]')[1]!.attributes('aria-expanded')).toBe('false')
+    setCollapsed('project', 2, false)
   })
 
   it('o projeto fica quando só o agrupador dele tem conversa que bate', async () => {

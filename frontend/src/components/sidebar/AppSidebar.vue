@@ -144,6 +144,8 @@ function hasChildren(projectId: number): boolean {
 }
 // "Conversas abertas": projects with an open conversation. "Outros projetos": the rest, kept in one folded line.
 const split = computed(() => splitProjects(projects.projects, sessions.all))
+// With a filter on, a collapsed project still shows the conversations that match: they are what was asked for.
+const projectOpen = (id: number) => sidebarFilter.value !== null || !isCollapsed('project', id)
 // With a filter on, the projects with no conversation that matches leave the list; the one on screen stays, so you can tell where you are.
 const listedActive = computed(() =>
   sidebarFilter.value === null ? split.value.active : split.value.active.filter((p) => p.id === activeProjectId.value || hasChildren(p.id)),
@@ -233,7 +235,7 @@ const itemClass = sidebarItemClass
       </RouterLink>
       <RouterLink to="/projects" data-test="nav-projects" :class="itemClass(route.name === 'projects' || route.name === 'project-new')" :aria-current="route.name === 'projects' ? 'page' : undefined"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg><span class="grow">Projetos</span></RouterLink>
       <details class="mt-2 text-fg-muted"><summary class="cursor-pointer px-2.5 py-2 text-xs text-fg-subtle">Mais ferramentas</summary>
-      <RouterLink to="/inbox" data-test="nav-inbox" :class="itemClass(route.name === 'inbox')" :aria-current="route.name === 'inbox' ? 'page' : undefined">
+      <RouterLink :to="waitingCount ? '/inbox?aba=pede-voce' : '/inbox'" data-test="nav-inbox" :class="itemClass(route.name === 'inbox')" :aria-current="route.name === 'inbox' ? 'page' : undefined">
         <IconInbox />
         <span class="grow">Inbox</span>
         <span v-if="waitingCount" class="flex shrink-0 items-center gap-1 text-xs font-semibold text-secondary">
@@ -319,13 +321,14 @@ const itemClass = sidebarItemClass
               v-if="hasChildren(project.id)"
               type="button"
               data-test="project-toggle"
-              :aria-expanded="!isCollapsed('project', project.id)"
-              :aria-label="`${isCollapsed('project', project.id) ? 'Expandir' : 'Recolher'} ${project.name}`"
-              class="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-card hover:text-fg"
+              :aria-expanded="projectOpen(project.id)"
+              :disabled="sidebarFilter !== null"
+              :aria-label="`${projectOpen(project.id) ? 'Recolher' : 'Expandir'} ${project.name}`"
+              class="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-card hover:text-fg disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-fg-subtle"
               @click="setCollapsed('project', project.id, !isCollapsed('project', project.id))"
-            ><IconChevron :open="!isCollapsed('project', project.id)" :size="12" /></button>
+            ><IconChevron :open="projectOpen(project.id)" :size="12" /></button>
           </div>
-          <template v-if="!isCollapsed('project', project.id)">
+          <template v-if="projectOpen(project.id)">
             <div v-if="looseByProject.get(project.id)?.length" data-test="project-sessions" class="ml-[14px] flex flex-col gap-px border-l border-line pl-2">
               <SidebarSessionRow v-for="s in looseByProject.get(project.id)" :key="s.session_id" data-test="project-session" :session="s" hide-project nested />
             </div>

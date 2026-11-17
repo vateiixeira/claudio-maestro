@@ -18,6 +18,7 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   useOrgStore(pinia).agents = [makeAgent({ id: 1, name: 'Triagem', project_id: 3 }), makeAgent({ id: 11, name: 'Filmes', project_id: 3 })]
+  useOrgStore(pinia).noticesLoaded = true
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -51,6 +52,38 @@ describe('NoticeFeed', () => {
     const w = await mountFeed()
     expect(w.get('[data-test="notices-empty"]').text()).toBe('Nenhuma novidade dos agentes.')
     expect(w.find('[data-test="notice-feed"]').exists()).toBe(false)
+  })
+
+  it('antes de os avisos carregarem mostra "Carregando…" e não o estado vazio', async () => {
+    useOrgStore(pinia).noticesLoaded = false
+    vi.spyOn(useOrgStore(pinia), 'loadNotices').mockReturnValue(new Promise(() => {}))
+    const w = await mountFeed()
+    expect(w.get('[data-test="notices-loading"]').text()).toBe('Carregando…')
+    expect(w.find('[data-test="notices-empty"]').exists()).toBe(false)
+  })
+
+  it('ao montar sem os avisos carregados pede a carga; com eles carregados, não', async () => {
+    const org = useOrgStore(pinia)
+    const load = vi.spyOn(org, 'loadNotices').mockResolvedValue()
+    org.noticesLoaded = false
+    await mountFeed()
+    expect(load).toHaveBeenCalledTimes(1)
+    load.mockClear()
+    org.noticesLoaded = true
+    await mountFeed()
+    expect(load).not.toHaveBeenCalled()
+  })
+
+  it('com a carga falha mostra o erro e "Tentar de novo" chama a carga outra vez', async () => {
+    const org = useOrgStore(pinia)
+    org.noticesLoaded = true
+    org.noticesError = 'Banco travado.'
+    const load = vi.spyOn(org, 'loadNotices').mockResolvedValue()
+    const w = await mountFeed()
+    expect(w.get('[data-test="notices-error"]').text()).toContain('Banco travado.')
+    expect(w.find('[data-test="notices-empty"]').exists()).toBe(false)
+    await w.get('[data-test="notices-retry"]').trigger('click')
+    expect(load).toHaveBeenCalledTimes(1)
   })
 
   it('agrupa por dia, do mais novo para o mais antigo, com lidos e não lidos', async () => {

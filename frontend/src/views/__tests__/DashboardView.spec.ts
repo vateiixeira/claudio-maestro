@@ -172,6 +172,21 @@ describe('Painel: números', () => {
     expect(wrapper.get('[data-test="stat-finished-today"] span').classes()).toContain('text-fg-subtle')
   })
 
+  it('o ícone de "Em execução" não gira nem fica verde com zero', async () => {
+    useSessionsStore(pinia).setForProject(1, [])
+    const { wrapper } = await mountDashboard()
+    const zero = wrapper.get('[data-test="stat-running"] [data-shape="spinner"]')
+    expect(zero.attributes('data-quiet')).toBe('true')
+    expect(zero.get('svg').classes()).not.toContain('motion-safe:animate-spin')
+  })
+
+  it('o ícone de "Em execução" gira e fica verde com contagem maior que zero', async () => {
+    const { wrapper } = await mountDashboard()
+    const icon = wrapper.get('[data-test="stat-running"] [data-shape="spinner"]')
+    expect(icon.attributes('data-quiet')).toBeUndefined()
+    expect(icon.get('svg').classes()).toContain('stroke-primary')
+  })
+
   it('número maior que zero fica em tom normal', async () => {
     const { wrapper } = await mountDashboard()
     expect(wrapper.get('[data-test="stat-running"] span').classes()).not.toContain('text-fg-subtle')

@@ -35,8 +35,10 @@ const view = computed<InboxView>(() => {
   if (isInboxTab(aba)) return aba
   return org.agents.length > 0 ? 'novidades' : 'pede-voce'
 })
-// Without `?aba=` the view depends on there being agents, so nothing is decided until they have loaded.
-const deciding = computed(() => !org.loaded && !(route.query.aba === 'novidades' || isInboxTab(route.query.aba)))
+// Without `?aba=` the view depends on there being agents, so nothing is decided until they have loaded. If the
+// projects failed to load the agents never will (the load stops there): the view falls to "Conversas", which
+// shows the error with a retry.
+const deciding = computed(() => !org.loaded && !projects.loadError && !(route.query.aba === 'novidades' || isInboxTab(route.query.aba)))
 const novidades = computed(() => view.value === 'novidades')
 const tab = computed<InboxTab>(() => (view.value === 'novidades' ? 'pede-voce' : view.value))
 // Same rule as the count in the menu.

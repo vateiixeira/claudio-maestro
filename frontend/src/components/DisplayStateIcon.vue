@@ -4,6 +4,7 @@ import type { DisplayState } from '../types/api'
 // Green arc spinning while it works (still under reduced motion), grey check when finished.
 // Waiting has two shapes, so the difference never rests on color alone: an orange triangle with "!" when it needs you,
 // and with `quiet` (a plain wait, nothing new) a grey outline triangle without the "!".
+// `quiet` on running (a count of zero) stops the arc and greys it out; the shape stays the same.
 withDefaults(defineProps<{ display: DisplayState; size?: number; quiet?: boolean }>(), { size: 12, quiet: false })
 </script>
 
@@ -12,6 +13,7 @@ withDefaults(defineProps<{ display: DisplayState; size?: number; quiet?: boolean
     class="flex shrink-0 items-center justify-center"
     :style="{ width: `${size}px` }"
     :data-shape="display === 'running' ? 'spinner' : display === 'waiting' ? (quiet ? 'triangle-quiet' : 'triangle') : 'check'"
+    :data-quiet="display === 'running' && quiet ? 'true' : undefined"
     aria-hidden="true"
   >
     <svg
@@ -19,7 +21,7 @@ withDefaults(defineProps<{ display: DisplayState; size?: number; quiet?: boolean
       :height="size"
       viewBox="0 0 24 24"
       fill="none"
-      :class="display === 'running' ? 'stroke-primary motion-safe:animate-spin' : display === 'waiting' ? (quiet ? 'stroke-fg-subtle' : 'stroke-secondary') : 'stroke-fg-muted'"
+      :class="display === 'running' ? (quiet ? 'stroke-fg-subtle' : 'stroke-primary motion-safe:animate-spin') : display === 'waiting' ? (quiet ? 'stroke-fg-subtle' : 'stroke-secondary') : 'stroke-fg-muted'"
       stroke-width="2.4"
       stroke-linecap="round"
       stroke-linejoin="round"

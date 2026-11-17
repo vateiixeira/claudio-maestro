@@ -4,6 +4,8 @@ import { computed, nextTick, onBeforeUnmount, ref, useAttrs } from 'vue'
 export interface MoreMenuItem {
   id: string
   label: string
+  /** Tooltip (and fallback description) that explains what the item does. */
+  title?: string
   danger?: boolean
   disabled?: boolean
 }
@@ -198,6 +200,7 @@ function choose(item: MoreMenuItem) {
           role="menuitem"
           data-test="more-menu-item"
           :data-id="item.id"
+          :title="item.title"
           :aria-disabled="item.disabled ? 'true' : undefined"
           tabindex="-1"
           class="cursor-pointer rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-elevated focus:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg-muted aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"

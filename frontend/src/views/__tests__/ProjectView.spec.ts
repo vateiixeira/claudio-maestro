@@ -178,6 +178,7 @@ describe('tela do projeto', () => {
     await wrapper.get('[data-test="project-actions"]').trigger('click')
     await flushPromises()
     expect(document.body.querySelectorAll('[data-test="more-menu-item"]')).toHaveLength(3)
+    expect(menuItem('sync')!.getAttribute('title')).toBe('Reler o histórico do CLI deste projeto')
     expect(menuItem('rename')!.textContent).toBe('Renomear')
     expect(menuItem('remove')!.textContent).toBe('Remover')
     expect(menuItem('sync')!.textContent).toBe('Atualizar')

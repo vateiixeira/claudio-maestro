@@ -61,9 +61,20 @@ describe('DisplayStateIcon', () => {
     expect(loud.findAll('line')).toHaveLength(2)
   })
 
-  it('ignores quiet for running and finished', () => {
-    const running = mount(DisplayStateIcon, { props: { display: 'running', quiet: true } }).find('svg')
-    expect(running.classes()).toContain('stroke-primary')
+  it('stops the running arc and greys it out when quiet (a count of zero)', () => {
+    const loud = mount(DisplayStateIcon, { props: { display: 'running' } }).find('svg')
+    expect(loud.classes()).toContain('stroke-primary')
+    expect(loud.classes()).toContain('motion-safe:animate-spin')
+    const quiet = mount(DisplayStateIcon, { props: { display: 'running', quiet: true } })
+    expect(quiet.attributes('data-shape')).toBe('spinner')
+    expect(quiet.attributes('data-quiet')).toBe('true')
+    const svg = quiet.find('svg')
+    expect(svg.classes()).toContain('stroke-fg-subtle')
+    expect(svg.classes()).not.toContain('stroke-primary')
+    expect(svg.classes()).not.toContain('motion-safe:animate-spin')
+  })
+
+  it('ignores quiet for finished', () => {
     const finished = mount(DisplayStateIcon, { props: { display: 'finished', quiet: true } }).find('svg')
     expect(finished.classes()).toContain('stroke-fg-muted')
   })

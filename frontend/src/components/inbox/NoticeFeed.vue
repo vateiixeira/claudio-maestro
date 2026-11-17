@@ -124,7 +124,12 @@ function onKey(event: KeyboardEvent) {
     }
   }
 }
-onMounted(() => document.addEventListener('keydown', onKey))
+onMounted(() => {
+  document.addEventListener('keydown', onKey)
+  // Normally the realtime load has read them; if it never got there (the projects failed first) this does, and the
+  // store joins a read already under way.
+  if (!org.noticesLoaded) void org.loadNotices()
+})
 onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 
 const kbdClass = 'rounded-sm border border-line-strong px-1.5 py-0.5 font-mono text-[0.6875rem] text-fg-muted'
@@ -132,7 +137,12 @@ const focusRing = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-
 </script>
 
 <template>
-  <p v-if="org.notices.length === 0" data-test="notices-empty" class="m-0 py-10 text-center text-fg-muted">Nenhuma novidade dos agentes.</p>
+  <p v-if="!org.noticesLoaded" data-test="notices-loading" class="m-0 py-10 text-center text-fg-muted">Carregando…</p>
+  <div v-else-if="org.notices.length === 0 && org.noticesError" data-test="notices-error" role="alert" class="flex flex-col items-center gap-2 py-10 text-center">
+    <p class="m-0 text-sm text-diff-del-fg">Não foi possível carregar as novidades. {{ org.noticesError }}</p>
+    <button type="button" data-test="notices-retry" :class="BTN_SMALL" @click="org.loadNotices()">Tentar de novo</button>
+  </div>
+  <p v-else-if="org.notices.length === 0" data-test="notices-empty" class="m-0 py-10 text-center text-fg-muted">Nenhuma novidade dos agentes.</p>
   <div v-else data-test="notice-feed" class="flex flex-col gap-2">
     <div class="flex flex-wrap items-center gap-2">
       <FilterChip data-test="notice-filter" data-filter="all" label="Tudo" :count="filters.total" :pressed="activeFilter === 'all'" @toggle="filter = 'all'" />
@@ -154,6 +164,7 @@ const focusRing = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-
       <span class="grow" />
       <button v-if="unreadVisible.length" type="button" data-test="agent-notices-read-all" :class="BTN_SMALL" :disabled="busy" @click="mark(unreadVisible.map((n) => n.id))">Marcar todas como lidas</button>
     </div>
+    <p v-if="org.noticesError" data-test="notices-error" role="alert" class="m-0 flex items-center gap-2 text-sm text-diff-del-fg">Não foi possível atualizar as novidades. {{ org.noticesError }}<button type="button" data-test="notices-retry" :class="BTN_SMALL" @click="org.loadNotices()">Tentar de novo</button></p>
     <p v-if="error" data-test="agent-notices-error" role="alert" class="m-0 text-sm text-diff-del-fg">{{ error }}</p>
     <section v-for="day in days" :key="day.label" :aria-label="day.label" class="flex flex-col">
       <div class="mt-1.5 flex h-[1.875rem] items-center gap-3 px-3">

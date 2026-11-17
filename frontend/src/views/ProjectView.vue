@@ -173,7 +173,7 @@ async function sync(): Promise<void> {
 const actionItems = computed<MoreMenuItem[]>(() => [
   { id: 'rename', label: 'Renomear' },
   { id: 'remove', label: 'Remover', danger: true },
-  { id: 'sync', label: syncing.value ? 'Atualizando…' : 'Atualizar', disabled: syncing.value },
+  { id: 'sync', label: syncing.value ? 'Atualizando…' : 'Atualizar', title: 'Reler o histórico do CLI deste projeto', disabled: syncing.value },
 ])
 function runAction(id: string): void {
   if (id === 'rename') void startRename()

@@ -215,15 +215,22 @@ export const useOrgStore = defineStore('org', () => {
     decisionsPending.value = await api.listDecisions({ pending: true })
   }
 
-  async function loadNotices(): Promise<void> {
-    try {
-      notices.value = await api.listAgentNotices()
-      noticesError.value = null
-    } catch (e) {
-      noticesError.value = api.errorMessage(e)
-    } finally {
-      noticesLoaded.value = true
-    }
+  // One read at a time: a screen that asks while the realtime load is under way joins it instead of repeating it.
+  let noticesLoading: Promise<void> | null = null
+  function loadNotices(): Promise<void> {
+    if (noticesLoading) return noticesLoading
+    noticesLoading = (async () => {
+      try {
+        notices.value = await api.listAgentNotices()
+        noticesError.value = null
+      } catch (e) {
+        noticesError.value = api.errorMessage(e)
+      } finally {
+        noticesLoaded.value = true
+        noticesLoading = null
+      }
+    })()
+    return noticesLoading
   }
 
   /** Rereads the runs and routines that were opened (after the socket came back: events were lost). */

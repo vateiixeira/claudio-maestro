@@ -5,7 +5,9 @@ import { planBadge, planPosition } from '../plan/planText'
 
 const MAX_SEGMENTS = 10
 
-const props = defineProps<{ plan: PlanSummary; stopped?: boolean }>()
+// `decorative`: the task title sits next to it in plain text, so the strip leaves the accessibility tree
+// (otherwise a screen reader would announce the same position and title twice).
+const props = defineProps<{ plan: PlanSummary; stopped?: boolean; decorative?: boolean }>()
 
 const segmented = computed(() => props.plan.total <= MAX_SEGMENTS)
 const percent = computed(() => (props.plan.total > 0 ? Math.round((props.plan.done / props.plan.total) * 100) : 0))
@@ -22,7 +24,7 @@ const segments = computed(() =>
 </script>
 
 <template>
-  <span data-test="plan-segments" role="img" :aria-label="planPosition(plan)" class="inline-flex shrink-0 items-center gap-2">
+  <span data-test="plan-segments" :role="decorative ? undefined : 'img'" :aria-label="decorative ? undefined : planPosition(plan)" :aria-hidden="decorative ? 'true' : undefined" class="inline-flex shrink-0 items-center gap-2">
     <span v-if="segmented" class="inline-flex items-center gap-0.5">
       <span
         v-for="(state, i) in segments"

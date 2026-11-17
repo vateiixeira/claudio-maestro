@@ -365,6 +365,16 @@ describe('org store: avisos', () => {
     await store.markRead([])
   })
 
+  it('loadNotices junta as chamadas simultâneas numa só leitura', async () => {
+    const fetch = routeFetch({ 'GET /api/agent-notices': () => jsonResponse([makeNotice({ id: 1 })]) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    await Promise.all([store.loadNotices(), store.loadNotices()])
+    expect(fetch.mock.calls.filter((c) => c[0] === '/api/agent-notices')).toHaveLength(1)
+    await store.loadNotices()
+    expect(fetch.mock.calls.filter((c) => c[0] === '/api/agent-notices')).toHaveLength(2)
+  })
+
   it('loadNotices guarda o erro', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/agent-notices': () => jsonResponse({ detail: 'Falhou.' }, 500) }))
     const store = useOrgStore()

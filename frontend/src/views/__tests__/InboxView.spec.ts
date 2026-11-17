@@ -26,6 +26,7 @@ beforeEach(() => {
   projects.loaded = true
   useSessionsStore(pinia).loaded = true
   useOrgStore(pinia).loaded = true
+  useOrgStore(pinia).noticesLoaded = true
   useSessionsStore(pinia).setForProject(1, [
     makeSession({ session_id: 'w1', title: 'Espera 1', display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question', last_activity_at: now }),
     makeSession({ session_id: 'r1', title: 'Roda 1', display_state: 'running', unread: true, last_activity_at: now }),
@@ -723,5 +724,17 @@ describe('Inbox: decisões', () => {
     const { wrapper } = await mountInbox()
     expect(wrapper.find('[data-test="empty"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-test="decision-card"]')).toHaveLength(2)
+  })
+  it('sem ?aba= e com a carga de projetos falha, mostra o erro das conversas em vez de ficar em Carregando', async () => {
+    // A cold load that failed: no projects, the store is marked loaded and holds the error.
+    useProjectsStore(pinia).projects = []
+    useOrgStore(pinia).loaded = false
+    useSessionsStore(pinia).loaded = false
+    useProjectsStore(pinia).loadError = 'Falha de rede'
+    const { wrapper } = await mountInbox()
+    expect(wrapper.find('[data-test="load-loading"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Criar o primeiro projeto')
+    expect(wrapper.get('[data-test="load-error"]').text()).toContain('Falha de rede')
+    expect(wrapper.find('[data-test="load-retry"]').exists()).toBe(true)
   })
 })

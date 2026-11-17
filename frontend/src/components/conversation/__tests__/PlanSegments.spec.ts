@@ -22,6 +22,23 @@ describe('PlanSegments', () => {
     expect(wrapper.get('[data-test="plan-segments-bar"]').attributes('style')).toContain('width: 50%')
   })
 
+  it('decorativo: some do leitor de tela e não tem nome acessível', () => {
+    const root = mount(PlanSegments, { props: { plan, decorative: true } }).get('[data-test="plan-segments"]')
+    expect(root.attributes('aria-hidden')).toBe('true')
+    expect(root.attributes('role')).toBeUndefined()
+    expect(root.attributes('aria-label')).toBeUndefined()
+  })
+
+  it('parado, o segmento atual fica neutro e não verde', () => {
+    const running = mount(PlanSegments, { props: { plan } }).findAll('[data-test="plan-segment"]')[2]!
+    expect(running.attributes('data-state')).toBe('current')
+    expect(running.classes()).toContain('bg-primary/50')
+    const stopped = mount(PlanSegments, { props: { plan, stopped: true } }).findAll('[data-test="plan-segment"]')[2]!
+    expect(stopped.attributes('data-state')).toBe('current')
+    expect(stopped.classes()).toContain('bg-fg-muted/50')
+    expect(stopped.classes()).not.toContain('bg-primary/50')
+  })
+
   it('parado, os segmentos feitos ficam neutros', () => {
     const running = mount(PlanSegments, { props: { plan } })
     expect(running.findAll('[data-test="plan-segment"]')[0].classes()).toContain('bg-primary')

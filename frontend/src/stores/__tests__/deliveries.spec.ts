@@ -30,6 +30,24 @@ describe('deliveries store', () => {
     expect(store.error).toBe('Data inválida.')
   })
 
+  it('zera o erro ao começar uma nova carga, sem esperar a resposta', async () => {
+    let answer: (r: Response) => void = () => {}
+    const responses: Array<Response | Promise<Response>> = [
+      jsonResponse({ detail: 'Banco travado.' }, 500),
+      new Promise<Response>((resolve) => { answer = resolve }),
+    ]
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(responses.shift()!)))
+    const store = useDeliveriesStore()
+    await store.load('2026-10-07')
+    expect(store.error).toBe('Banco travado.')
+    const second = store.load('2026-10-07')
+    expect(store.error).toBeNull()
+    answer(jsonResponse(day([delivery()])))
+    await second
+    expect(store.error).toBeNull()
+    expect(store.day?.deliveries).toHaveLength(1)
+  })
+
   it('troca o registro conhecido quando chega o evento', async () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/deliveries?date=2026-10-07': () => jsonResponse(day([delivery()])) }))
     const store = useDeliveriesStore()

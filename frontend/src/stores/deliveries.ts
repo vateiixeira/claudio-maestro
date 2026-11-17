@@ -26,6 +26,7 @@ export const useDeliveriesStore = defineStore('deliveries', () => {
     const mine = ++ticket
     date.value = wanted
     loading.value = true
+    error.value = null
     try {
       const fresh = await getDeliveries(wanted)
       if (mine !== ticket) return

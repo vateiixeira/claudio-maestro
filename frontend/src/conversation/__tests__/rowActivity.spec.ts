@@ -15,6 +15,11 @@ describe('sessionActivity', () => {
       .toEqual({ kind: 'summary', text: 'Resumo curto' })
   })
 
+  it('com o plano parado (espera comum, nada rodando) a atividade continua sendo a tarefa atual', () => {
+    expect(sessionActivity(makeSession({ display_state: 'waiting', unread: false, cli_running: false, plan })))
+      .toEqual({ kind: 'plan', text: 'Revisar a tarefa' })
+  })
+
   it('o plano vem antes da ação', () => {
     expect(sessionActivity(makeSession({ display_state: 'running', plan, last_action: 'Bash: pnpm test' })))
       .toEqual({ kind: 'plan', text: 'Revisar a tarefa' })

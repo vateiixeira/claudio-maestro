@@ -335,6 +335,22 @@ describe('Conversas: chips de estado', () => {
     expect(chip(wrapper, 'finalizadas').find('[data-test="filter-chip-count"]').exists()).toBe(false)
   })
 
+  it('o chip "Em execução" com contagem zero tem o ícone parado e apagado', async () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 'f', display_state: 'finished', last_activity_at: now })])
+    useSessionsStore(pinia).setForProject(2, [])
+    const { wrapper } = await mountList()
+    const icon = chip(wrapper, 'em-execucao').get('[data-shape="spinner"]')
+    expect(icon.attributes('data-quiet')).toBe('true')
+    expect(icon.get('svg').classes()).not.toContain('motion-safe:animate-spin')
+  })
+
+  it('o chip "Em execução" com sessões rodando gira e fica verde', async () => {
+    const { wrapper } = await mountList()
+    const icon = chip(wrapper, 'em-execucao').get('[data-shape="spinner"]')
+    expect(icon.attributes('data-quiet')).toBeUndefined()
+    expect(icon.get('svg').classes()).toContain('stroke-primary')
+  })
+
   it('clicar num chip guarda o estado na URL e filtra; Todas tira o estado', async () => {
     const { wrapper, router } = await mountList()
     await chip(wrapper, 'em-execucao').trigger('click')

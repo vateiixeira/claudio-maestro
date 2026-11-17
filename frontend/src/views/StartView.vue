@@ -11,12 +11,16 @@ import { useSessionsStore } from '../stores/sessions'
 import { needsYou } from '../conversation/needsYou'
 import { isDiscarded, markLane } from '../conversation/marks'
 import { goalDrafts } from '../goalDrafts'
+import { useMinuteClock } from '../minuteClock'
+import { isMacPlatform } from '../platform'
 import DecisionCard from '../components/org/tasks/DecisionCard.vue'
 import StartSessionRow from '../components/start/StartSessionRow.vue'
 import ClaudeAuthStatus from '../components/start/ClaudeAuthStatus.vue'
 import FilterChip from '../components/ui/FilterChip.vue'
 import { BTN, BTN_PRIMARY, ERROR } from '../components/org/styles'
 
+// The hint shows the key of the user's system; the field accepts both.
+const submitKey = isMacPlatform() ? '⌘' : 'Ctrl'
 const COLUMN_ROWS = 8
 const DELIVERED_ROWS = 4
 const PROJECT_CHIPS = 3
@@ -127,16 +131,19 @@ const withYouText = computed(() => {
 const running = computed(() => sessions.all.filter((s) => s.display_state === 'running' && !isDiscarded(s)))
 
 // "Entregue hoje": the store is shared with the Entregas screen, which may have left another day in it.
-const today = localDay()
-const delivered = computed(() => (deliveries.day?.date === today ? [...deliveries.day.deliveries].sort((a, b) => a.finished_at - b.finished_at) : null))
+// The day follows the clock, so a screen left open past midnight moves on to the new day.
+const clock = useMinuteClock()
+const today = computed(() => localDay(new Date(clock.value)))
+const delivered = computed(() => (deliveries.day?.date === today.value ? [...deliveries.day.deliveries].sort((a, b) => a.finished_at - b.finished_at) : null))
 const deliveredShown = computed(() => (delivered.value ?? []).slice(-DELIVERED_ROWS))
 const deliveredProjects = computed(() => new Set((delivered.value ?? []).map((d) => d.project_id)).size)
 const deliveredText = computed(() => {
   const n = delivered.value?.length ?? 0
   return n ? `${n} em ${deliveredProjects.value} ${deliveredProjects.value === 1 ? 'projeto' : 'projetos'}` : ''
 })
-const reloadDeliveries = () => deliveries.load(today)
+const reloadDeliveries = () => deliveries.load(today.value)
 void reloadDeliveries()
+watch(today, () => { void reloadDeliveries() })
 onBeforeUnmount(() => {
   alive = false
   deliveries.release()
@@ -183,6 +190,7 @@ const KBD = 'rounded-sm border border-line-strong px-1.5 py-0.5 font-mono text-[
             maxlength="6000"
             placeholder="Descreva um objetivo. O agente do topo organiza as tarefas e acompanha cada entrega."
             class="block min-h-[4.5rem] w-full resize-y border-0 bg-transparent p-0 text-[0.9375rem] leading-relaxed text-fg placeholder:text-fg-subtle focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+            aria-keyshortcuts="Control+Enter Meta+Enter"
             @keydown.ctrl.enter.exact.prevent="submit"
             @keydown.meta.enter.exact.prevent="submit"
           />
@@ -218,7 +226,7 @@ const KBD = 'rounded-sm border border-line-strong px-1.5 py-0.5 font-mono text-[
             <svg class="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-fg-muted" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
           </span>
           <span class="flex-1" />
-          <span class="hidden items-center gap-1 sm:flex" aria-hidden="true"><kbd :class="KBD">Ctrl</kbd><kbd :class="KBD">Enter</kbd></span>
+          <span data-test="goal-shortcut" class="hidden items-center gap-1 sm:flex" aria-hidden="true"><kbd :class="KBD">{{ submitKey }}</kbd><kbd :class="KBD">Enter</kbd></span>
           <button data-test="goal-submit" :class="[BTN_PRIMARY, 'ml-1.5']" :disabled="busy || !selected || !top || !goal.trim()" type="submit">
             {{ busy ? 'Entregando…' : `Entregar a ${top?.name ?? 'um agente'}` }}
           </button>

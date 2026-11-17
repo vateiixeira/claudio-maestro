@@ -80,6 +80,19 @@ describe('MoreMenu', () => {
     expect(document.body.querySelector('[role="menu"]')).toBeNull()
   })
 
+  it('o item com explicação a mostra no title; os outros ficam sem', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const wrapper = mount(MoreMenu, {
+      props: { label: 'Mais ações', items: [{ id: 'sync', label: 'Atualizar', title: 'Reler o histórico' }, { id: 'edit', label: 'Renomear' }] },
+      attachTo: host,
+    })
+    await wrapper.get('button[aria-haspopup="menu"]').trigger('click')
+    await nextTick()
+    expect(menuItems()[0]!.getAttribute('title')).toBe('Reler o histórico')
+    expect(menuItems()[1]!.hasAttribute('title')).toBe(false)
+  })
+
   it('item desabilitado não emite nem fecha', async () => {
     const { wrapper, trigger } = mountMenu()
     await trigger.trigger('click')

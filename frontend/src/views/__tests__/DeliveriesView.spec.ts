@@ -412,7 +412,7 @@ describe('Entregas', () => {
     expect(wrapper.findAll('[data-test="delivery"]')).toHaveLength(1)
   })
 
-  it('volta o botão para "Copiar" depois de 2 segundos e limpa o timer ao trocar de dia', async () => {
+  it('volta o botão para "Copiar o dia" depois de 2 segundos e limpa o timer ao trocar de dia', async () => {
     const writeText = vi.fn(() => Promise.resolve())
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)

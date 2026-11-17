@@ -6,6 +6,7 @@ import StartView from '../StartView.vue'
 import { createAppRouter } from '../../router'
 import { goalDrafts } from '../../goalDrafts'
 import { localDay } from '../../deliveries'
+import { clockNow } from '../../minuteClock'
 import { useDeliveriesStore } from '../../stores/deliveries'
 import { useOrgStore } from '../../stores/org'
 import { useProjectsStore } from '../../stores/projects'
@@ -30,7 +31,7 @@ beforeEach(() => {
   useOrgStore(pinia).agents = [makeAgent({ id: 11, name: 'CTO da Loja', project_id: 2, slug: 'cto' })]
   useOrgStore(pinia).loaded = true
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 function day(deliveries: Delivery[] = [], overrides: Partial<DeliveriesDay> = {}): DeliveriesDay {
   return { date: TODAY, agent_enabled: false, deliveries, in_progress: [], prev_day: null, next_day: null, ...overrides }
@@ -233,8 +234,20 @@ describe('envio pelo teclado', () => {
   it('mostra a dica Ctrl Enter', async () => {
     vi.stubGlobal('fetch', routes())
     const { wrapper } = await mountStart()
-    expect(wrapper.text()).toContain('Ctrl')
-    expect(wrapper.text()).toContain('Enter')
+    expect(wrapper.get('[data-test="goal-shortcut"]').text()).toBe('CtrlEnter')
+  })
+
+  it('no Mac a dica é ⌘ Enter', async () => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    vi.stubGlobal('fetch', routes())
+    const { wrapper } = await mountStart()
+    expect(wrapper.get('[data-test="goal-shortcut"]').text()).toBe('⌘Enter')
+  })
+
+  it('o campo do objetivo anuncia os atalhos de envio', async () => {
+    vi.stubGlobal('fetch', routes())
+    const { wrapper } = await mountStart()
+    expect(wrapper.get('textarea').attributes('aria-keyshortcuts')).toBe('Control+Enter Meta+Enter')
   })
 })
 
@@ -397,6 +410,33 @@ describe('Entregue hoje', () => {
     expect(store.date).toBe(TODAY)
     wrapper.unmount()
     expect(store.date).toBeNull()
+  })
+
+  it('quando o dia vira com a tela aberta, recarrega as entregas do dia novo', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date(2026, 10, 17, 23, 59, 40))
+      clockNow.value = Date.now()
+      const urls: string[] = []
+      const calls = { get value() { return urls.filter((u) => u.startsWith('/api/deliveries')) } }
+      vi.stubGlobal('fetch', vi.fn((input: string) => {
+        urls.push(input)
+        if (!input.startsWith('/api/deliveries')) return Promise.resolve(jsonResponse([]))
+        const date = new URL(input, 'http://x').searchParams.get('date')
+        return Promise.resolve(jsonResponse(day([], { date: date ?? undefined })))
+      }))
+      const { wrapper } = await mountStart()
+      expect(calls.value).toEqual(['/api/deliveries?date=2026-11-17'])
+      vi.setSystemTime(new Date(2026, 10, 18, 0, 0, 10))
+      clockNow.value = Date.now()
+      await flushPromises()
+      expect(calls.value).toEqual(['/api/deliveries?date=2026-11-17', '/api/deliveries?date=2026-11-18'])
+      expect(useDeliveriesStore(pinia).date).toBe('2026-11-18')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+      clockNow.value = Date.now()
+    }
   })
 
   it('mostra as quatro mais recentes em ordem de horário e o link para as demais', async () => {

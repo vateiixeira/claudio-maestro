@@ -123,7 +123,7 @@ const TIME = 'w-[3.875rem] shrink-0 text-right font-mono text-[0.71875rem] text-
       <section aria-label="Números" class="grid grid-cols-2 border-y border-line sm:grid-cols-3 lg:grid-cols-5">
         <RouterLink data-test="stat-running" to="/inbox?aba=em-execucao" :class="STAT">
           <span :class="[STAT_NUMBER, running === 0 ? 'text-fg-subtle' : 'text-fg']">{{ running }}</span>
-          <span :class="STAT_LABEL"><DisplayStateIcon display="running" :size="12" />Em execução</span>
+          <span :class="STAT_LABEL"><DisplayStateIcon display="running" :size="12" :quiet="running === 0" />Em execução</span>
         </RouterLink>
         <RouterLink data-test="stat-waiting" to="/inbox?aba=pede-voce" :class="STAT">
           <span :class="[STAT_NUMBER, waiting === 0 ? 'text-fg-subtle' : 'text-fg']">{{ waiting }}</span>

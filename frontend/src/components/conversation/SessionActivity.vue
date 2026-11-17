@@ -21,7 +21,7 @@ const stopped = computed(() => planStopped(props.session))
     class="flex min-w-0 items-center gap-2 text-xs"
     :class="activity.kind === 'waiting' ? 'text-secondary-soft' : 'text-fg-muted'"
   >
-    <PlanSegments v-if="activity.kind === 'plan' && session.plan" :plan="session.plan" :stopped="stopped" />
+    <PlanSegments v-if="activity.kind === 'plan' && session.plan" :plan="session.plan" :stopped="stopped" decorative />
     <IconTerminal v-else-if="activity.kind === 'command'" :size="13" class="shrink-0 text-type-command" />
     <IconAgents v-else-if="activity.kind === 'subagent'" :size="13" class="shrink-0 text-type-agent" />
     <span class="min-w-0 truncate" :class="activity.kind === 'command' || activity.kind === 'action' ? 'font-mono' : ''">{{ activity.text }}</span>

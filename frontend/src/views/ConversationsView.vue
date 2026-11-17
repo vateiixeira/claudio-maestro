@@ -131,7 +131,7 @@ watch(() => projects.projects.map((p) => p.id), (ids) => ids.forEach((id) => git
           :label="c.label" :count="c.counted ? counts[c.id] : undefined" :pressed="state === c.id"
           @toggle="setQuery('estado', c.id === 'todas' ? '' : c.id)"
         >
-          <template v-if="c.id === 'em-execucao'" #icon><DisplayStateIcon display="running" /></template>
+          <template v-if="c.id === 'em-execucao'" #icon><DisplayStateIcon display="running" :quiet="counts['em-execucao'] === 0" /></template>
           <template v-else-if="c.id === 'sua-vez'" #icon><DisplayStateIcon display="waiting" /></template>
           <template v-else-if="c.id === 'nao-lidas'" #icon><span class="size-[0.4375rem] shrink-0 rounded-full bg-fg" aria-hidden="true" /></template>
           <template v-else-if="c.id === 'finalizadas'" #icon><DisplayStateIcon display="finished" /></template>

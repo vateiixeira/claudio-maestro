@@ -136,6 +136,12 @@ describe('linha de conversa', () => {
     expect(wrapper.find('[data-test="waiting-reason"]').classes()).toContain('text-secondary-soft')
   })
 
+  it('no projeto o leitor de tela não repete o motivo da espera, que já está visível', () => {
+    const row = mountRow(makeSession({ display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question' }), undefined, { projectContextId: 1 })
+    expect(row.get('[data-test="waiting-reason"]').text()).toBe('Fez uma pergunta')
+    expect(row.get('.sr-only').text()).toBe('Aguardando você')
+  })
+
   it('leitor de tela: espera comum é "Sua vez" e a que pede você é "Aguardando você"', () => {
     const sr = (w: ReturnType<typeof mountRow>) => w.find('.sr-only').text()
     expect(sr(mountRow(makeSession({ display_state: 'waiting', state: 'idle' })))).toBe('Sua vez')
