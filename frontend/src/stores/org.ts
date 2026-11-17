@@ -211,6 +211,35 @@ export const useOrgStore = defineStore('org', () => {
     routines.value = { ...routines.value, [projectId]: await api.listRoutines(projectId) }
   }
 
+  // Read once: a screen that needs what was already read (or is being read) does not ask the server again.
+  // A failure is not remembered, so the next call tries again.
+  const runsLoading = new Map<number, Promise<void>>()
+  const routinesLoading = new Map<number, Promise<void>>()
+
+  /** Loads the runs of the agent unless they are loaded or on their way. Errors propagate: the caller shows them. */
+  function ensureRuns(agentId: number): Promise<void> {
+    if (runs.value[agentId] !== undefined) return Promise.resolve()
+    const pending = runsLoading.get(agentId)
+    if (pending) return pending
+    const request = loadRuns(agentId).finally(() => {
+      if (runsLoading.get(agentId) === request) runsLoading.delete(agentId)
+    })
+    runsLoading.set(agentId, request)
+    return request
+  }
+
+  /** Loads the routines of the project unless they are loaded or on their way. Errors propagate. */
+  function ensureRoutines(projectId: number): Promise<void> {
+    if (routines.value[projectId] !== undefined) return Promise.resolve()
+    const pending = routinesLoading.get(projectId)
+    if (pending) return pending
+    const request = loadRoutines(projectId).finally(() => {
+      if (routinesLoading.get(projectId) === request) routinesLoading.delete(projectId)
+    })
+    routinesLoading.set(projectId, request)
+    return request
+  }
+
   async function loadDecisions(): Promise<void> {
     decisionsPending.value = await api.listDecisions({ pending: true })
   }
@@ -375,6 +404,6 @@ export const useOrgStore = defineStore('org', () => {
   return {
     agents, loaded, error, notices, noticesLoaded, noticesError, runs, routines, decisionsPending, changes, unreadCount,
     byId, byProject, tree, topOf, isMainSession, runsOf, routinesOf, upsertAgent, removeAgent, deleteAgent,
-    load, loadNotices, loadRuns, loadRoutines, loadDecisions, reloadOpen, openMain, markRead, applyEvent, onNewNotice,
+    load, loadNotices, loadRuns, loadRoutines, ensureRuns, ensureRoutines, loadDecisions, reloadOpen, openMain, markRead, applyEvent, onNewNotice,
   }
 })

@@ -513,3 +513,85 @@ describe('org store: reloadOpen', () => {
     expect(fetch.mock.calls.map(([u]) => u).sort()).toEqual(['/api/agents/1/runs?limit=50', '/api/routines?project_id=1'])
   })
 })
+
+describe('org store: carregar uma vez', () => {
+  const calls = (fetch: ReturnType<typeof routeFetch>, url: string) => fetch.mock.calls.filter((c) => c[0] === url).length
+
+  it('ensureRuns junta as chamadas simultâneas e não repete depois de carregado', async () => {
+    const fetch = routeFetch({ 'GET /api/agents/5/runs?limit=50': () => jsonResponse([makeRun({ id: 1, agent_id: 5 })]) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    await Promise.all([store.ensureRuns(5), store.ensureRuns(5)])
+    expect(calls(fetch, '/api/agents/5/runs?limit=50')).toBe(1)
+    expect(store.runsOf(5)).toHaveLength(1)
+    await store.ensureRuns(5)
+    expect(calls(fetch, '/api/agents/5/runs?limit=50')).toBe(1)
+  })
+
+  it('ensureRuns de outro agente faz a própria leitura', async () => {
+    const fetch = routeFetch({
+      'GET /api/agents/5/runs?limit=50': () => jsonResponse([]),
+      'GET /api/agents/6/runs?limit=50': () => jsonResponse([]),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    await Promise.all([store.ensureRuns(5), store.ensureRuns(6)])
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('ensureRuns propaga a falha e tenta de novo na próxima chamada', async () => {
+    let fail = true
+    const fetch = routeFetch({
+      'GET /api/agents/5/runs?limit=50': () => (fail ? jsonResponse({ detail: 'Quebrou.' }, 500) : jsonResponse([makeRun({ agent_id: 5 })])),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    await expect(store.ensureRuns(5)).rejects.toThrow('Quebrou.')
+    fail = false
+    await store.ensureRuns(5)
+    expect(calls(fetch, '/api/agents/5/runs?limit=50')).toBe(2)
+    expect(store.runsOf(5)).toHaveLength(1)
+  })
+
+  it('ensureRuns lê de novo um agente removido', async () => {
+    const fetch = routeFetch({ 'GET /api/agents/5/runs?limit=50': () => jsonResponse([]) })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    await store.ensureRuns(5)
+    store.removeAgent(5)
+    await store.ensureRuns(5)
+    expect(calls(fetch, '/api/agents/5/runs?limit=50')).toBe(2)
+  })
+
+  it('ensureRoutines junta as simultâneas, não repete e tenta de novo depois de falhar', async () => {
+    let fail = true
+    const fetch = routeFetch({
+      'GET /api/routines?project_id=2': () => (fail ? jsonResponse({ detail: 'Quebrou.' }, 500) : jsonResponse([makeRoutine({ project_id: 2 })])),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    const first = [store.ensureRoutines(2), store.ensureRoutines(2)]
+    await expect(Promise.all(first)).rejects.toThrow('Quebrou.')
+    expect(calls(fetch, '/api/routines?project_id=2')).toBe(1)
+    fail = false
+    await store.ensureRoutines(2)
+    expect(calls(fetch, '/api/routines?project_id=2')).toBe(2)
+    await store.ensureRoutines(2)
+    expect(calls(fetch, '/api/routines?project_id=2')).toBe(2)
+    expect(store.routinesOf(2)).toHaveLength(1)
+  })
+
+  it('reloadOpen relê o que foi aberto por ensure', async () => {
+    const fetch = routeFetch({
+      'GET /api/agents/5/runs?limit=50': () => jsonResponse([]),
+      'GET /api/routines?project_id=2': () => jsonResponse([]),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const store = useOrgStore()
+    await store.ensureRuns(5)
+    await store.ensureRoutines(2)
+    fetch.mockClear()
+    await store.reloadOpen()
+    expect(fetch.mock.calls.map(([u]) => u).sort()).toEqual(['/api/agents/5/runs?limit=50', '/api/routines?project_id=2'])
+  })
+})
