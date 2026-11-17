@@ -45,7 +45,7 @@ describe('tela do projeto com a linha de conversa', () => {
     expect(rowOf(wrapper, 'Acabou')).toBeUndefined()
     await wrapper.get('[data-test="filter-all"]').trigger('click')
 
-    expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Rodando', 'Acabou', 'Esperando'])
+    expect(wrapper.findAll('[data-test="row-link"]').map((r) => r.text())).toEqual(['Rodando', 'Esperando', 'Acabou'])
     expect(wrapper.get('[data-section="running"]').text()).toContain('Rodando')
     expect(wrapper.find('#finalizadas').exists()).toBe(false)
 

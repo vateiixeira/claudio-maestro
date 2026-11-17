@@ -2,8 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import ConversationRow from '../conversation/ConversationRow.vue'
+import DisplayStateIcon from '../DisplayStateIcon.vue'
 import GroupRemoveConfirm from '../groups/GroupRemoveConfirm.vue'
 import IconPlus from '../icons/IconPlus.vue'
+import FilterChip from '../ui/FilterChip.vue'
 import { errorMessage } from '../../api/http'
 import { isDiscarded } from '../../conversation/marks'
 import { needsYou } from '../../conversation/needsYou'
@@ -51,18 +53,28 @@ const matching = computed(() => {
 })
 const openCount = computed(() => matching.value.filter(session => session.display_state !== 'finished').length)
 const filtered = computed(() => matching.value.filter(session => stateFilter.value === 'all' || (session.display_state === 'finished') === (stateFilter.value === 'finished')))
+type SectionId = 'running' | 'waiting' | 'recent'
+const SECTION_TITLES: Record<SectionId, string> = { running: 'Em execução', waiting: 'Sua vez', recent: 'Recentes' }
+const SECTION_ICONS = { running: 'running', waiting: 'waiting', recent: 'finished' } as const
+// Finished ones are "Recentes"; of the rest, anything that wants you goes to "Sua vez" (first), even if still running.
 const sections = computed(() => {
-  const buckets: Record<'needs' | 'running' | 'recent', Session[]> = { needs: [], running: [], recent: [] }
+  const buckets: Record<SectionId, Session[]> = { running: [], waiting: [], recent: [] }
   for (const session of filtered.value) {
-    const bucket = session.display_state === 'finished' ? 'recent' : needsYou(session) ? 'needs' : session.display_state === 'running' ? 'running' : 'recent'
+    const wants = needsYou(session)
+    const bucket: SectionId = session.display_state === 'finished' ? 'recent' : wants || session.display_state !== 'running' ? 'waiting' : 'running'
     buckets[bucket].push(session)
   }
-  return [
-    { id: 'needs', title: 'Precisam de você', sessions: buckets.needs },
-    { id: 'running', title: 'Em andamento', sessions: buckets.running },
-    { id: 'recent', title: 'Recentes', sessions: buckets.recent },
-  ].filter(section => section.sessions.length)
+  // Stable sort: keeps the last-activity order inside each half.
+  buckets.waiting.sort((a, b) => Number(needsYou(b)) - Number(needsYou(a)))
+  return (['running', 'waiting', 'recent'] as const)
+    .map(id => ({ id, title: SECTION_TITLES[id], icon: SECTION_ICONS[id], sessions: buckets[id] }))
+    .filter(section => section.sessions.length)
 })
+const STATE_FILTERS = [
+  { id: 'open', label: 'Em aberto' },
+  { id: 'finished', label: 'Finalizadas' },
+  { id: 'all', label: 'Todas' },
+] as const
 const emptyText = computed(() => {
   if (query.value.trim()) return 'Nenhuma conversa corresponde à busca.'
   if (stateFilter.value === 'finished') return 'Nenhuma conversa finalizada neste filtro.'
@@ -151,23 +163,27 @@ async function removed() {
 function removeError(message: string) {
   editError.value = message
 }
+// The group select looks like the state chips.
+const chipControl = 'h-[30px] cursor-pointer rounded-full border border-line bg-transparent px-[11px] text-[0.78125rem] text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
 const control = 'min-h-9 rounded-md border border-line-strong bg-elevated px-3 text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-primary'
 </script>
 
 <template>
   <section data-test="project-conversations" aria-label="Conversas do projeto" class="flex min-w-0 flex-col gap-5">
-    <div class="flex min-w-0 flex-wrap items-center gap-2">
-      <input v-model="query" data-test="conversation-search" type="search" aria-label="Buscar nas conversas do projeto" placeholder="Buscar neste projeto" :class="control" class="min-w-0 flex-[1_1_15rem]" />
-      <select ref="groupSelect" v-model="groupFilter" data-test="conversation-group-filter" aria-label="Agrupador" :class="control" class="min-w-0 max-w-full flex-[1_1_12rem] sm:max-w-64">
+    <div data-test="conversation-filters" class="flex min-w-0 flex-wrap items-center gap-2">
+      <div role="group" aria-label="Estado das conversas" class="flex min-w-0 flex-wrap items-center gap-2">
+        <FilterChip v-for="filter in STATE_FILTERS" :key="filter.id" :data-test="`filter-${filter.id}`" :label="filter.label" :count="filter.id === 'open' ? openCount : undefined" :pressed="stateFilter === filter.id" @toggle="stateFilter = filter.id" />
+      </div>
+      <span class="hidden flex-1 sm:block" />
+      <select ref="groupSelect" v-model="groupFilter" data-test="conversation-group-filter" aria-label="Agrupador" :class="chipControl" class="min-w-0 max-w-full sm:max-w-64">
         <option value="all">Agrupador: Todos</option>
         <option value="none">Sem agrupador</option>
         <option v-for="group in visibleGroups" :key="group.id" :value="String(group.id)">{{ groupOptionLabel(group, projectId, projects.projects) }}</option>
       </select>
-      <div role="group" aria-label="Estado das conversas" class="flex min-w-0 flex-wrap gap-1 rounded-md border border-line-strong p-0.5">
-        <button v-for="filter in (['open', 'finished', 'all'] as const)" :key="filter" type="button" :data-test="`filter-${filter}`" :aria-pressed="stateFilter === filter" class="min-h-8 rounded px-2.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-primary" :class="stateFilter === filter ? 'bg-primary/10 text-primary-soft' : 'text-fg-muted hover:bg-card hover:text-fg'" @click="stateFilter = filter">
-          {{ filter === 'open' ? 'Em aberto' : filter === 'finished' ? 'Finalizadas' : 'Todas' }}<span v-if="filter === 'open'" class="ml-1.5 font-mono text-fg-subtle">{{ openCount }}</span>
-        </button>
-      </div>
+      <label class="flex h-8 min-w-0 flex-[1_1_12rem] items-center gap-2 rounded-lg border border-line-strong px-2.5 text-fg-muted focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary sm:w-60 sm:flex-none">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+        <input v-model="query" data-test="conversation-search" type="search" aria-label="Buscar nas conversas do projeto" placeholder="Buscar neste projeto" class="min-w-0 flex-1 border-0 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-fg-muted" />
+      </label>
     </div>
 
     <div v-if="selectedGroup" data-test="selected-group-actions" class="flex min-w-0 flex-wrap items-center gap-1 text-xs">
@@ -191,7 +207,10 @@ const control = 'min-h-9 rounded-md border border-line-strong bg-elevated px-3 t
     </div>
     <p v-if="loading" data-test="conversations-loading" role="status" class="m-0 text-sm text-fg-muted">Carregando conversas…</p>
     <section v-for="section in sections" :key="section.id" data-test="conversation-section" :data-section="section.id" :aria-labelledby="`conversations-${projectId}-${section.id}`" class="min-w-0">
-      <h2 :id="`conversations-${projectId}-${section.id}`" data-test="conversation-section-title" class="m-0 mb-2 border-b border-line pb-2 text-xs font-semibold tracking-wide text-fg-muted">{{ section.title }}</h2>
+      <div class="flex h-[34px] items-center gap-2 border-b border-line-strong">
+        <h2 :id="`conversations-${projectId}-${section.id}`" data-test="conversation-section-title" class="m-0 flex items-center gap-2 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase"><DisplayStateIcon :display="section.icon" :size="12" />{{ section.title }}</h2>
+        <span data-test="conversation-section-count" class="font-mono text-[0.71875rem] text-fg-subtle tabular-nums">{{ section.sessions.length }}</span>
+      </div>
       <ConversationRow v-for="session in section.sessions" :key="session.session_id" :session="session" :project-context-id="projectId" :to="rowTarget?.(session.session_id)" :active="activeId === session.session_id" @error="emit('error', $event)" />
     </section>
     <p v-if="!loading && !loadError && !filtered.length" data-test="conversations-empty" class="m-0 py-5 text-sm text-fg-muted">{{ emptyText }}</p>

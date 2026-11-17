@@ -39,9 +39,43 @@ const titles = (w: ReturnType<typeof show>) => w.findAll('[data-test="row-link"]
 describe('conversas do projeto', () => {
   it('mostra uma lista única por prioridade, incluindo membros dos grupos visíveis', () => {
     const w = show()
-    expect(titles(w)).toEqual(['Revisar cadastro', 'Ajustar agenda', 'Contrato externo', 'Página de vendas'])
-    expect(w.findAll('[data-test="conversation-section-title"]').map(el => el.text())).toEqual(['Precisam de você', 'Em andamento', 'Recentes'])
+    expect(titles(w)).toEqual(['Ajustar agenda', 'Revisar cadastro', 'Contrato externo', 'Página de vendas'])
+    expect(w.findAll('[data-test="conversation-section-title"]').map(el => el.text())).toEqual(['Em execução', 'Sua vez'])
+    expect(w.findAll('[data-test="conversation-section"]').map(el => el.attributes('data-section'))).toEqual(['running', 'waiting'])
     expect(w.findAll('[data-test="row-details"] [data-test="project-tag"]').map(el => el.text())).toEqual(['API externa'])
+  })
+
+  it('agrupa em Em execução, Sua vez e Recentes, com as que pedem você primeiro, ícone e contagem', async () => {
+    const w = show()
+    await w.get('[data-test="filter-all"]').trigger('click')
+    const sections = w.findAll('[data-test="conversation-section"]')
+    expect(sections.map(el => el.attributes('data-section'))).toEqual(['running', 'waiting', 'recent'])
+    expect(sections.map(el => el.get('[data-test="conversation-section-title"]').text())).toEqual(['Em execução', 'Sua vez', 'Recentes'])
+    expect(sections.map(el => el.get('[data-test="conversation-section-count"]').text())).toEqual(['1', '3', '1'])
+    expect(sections[0]!.find('[data-test="conversation-section-title"] [data-shape="spinner"]').exists()).toBe(true)
+    expect(sections[1]!.find('[data-test="conversation-section-title"] [data-shape="triangle"]').exists()).toBe(true)
+    expect(sections[1]!.findAll('[data-test="row-link"]').map(row => row.text())).toEqual(['Revisar cadastro', 'Contrato externo', 'Página de vendas'])
+    expect(sections[1]!.findAll('[data-test="conversation-row"]').every(row => row.find('[data-test="row-project"]').exists() === false)).toBe(true)
+  })
+
+  it('os filtros de estado são FilterChip e o Em aberto leva a contagem', async () => {
+    const w = show()
+    const open = w.get('[data-test="filter-open"]')
+    expect(open.attributes('aria-pressed')).toBe('true')
+    expect(open.get('[data-test="filter-chip-count"]').text()).toBe('4')
+    expect(w.get('[data-test="filter-finished"]').attributes('aria-pressed')).toBe('false')
+    expect(w.get('[data-test="filter-all"]').find('[data-test="filter-chip-count"]').exists()).toBe(false)
+    await w.get('[data-test="filter-finished"]').trigger('click')
+    expect(w.get('[data-test="filter-finished"]').attributes('aria-pressed')).toBe('true')
+    expect(open.attributes('aria-pressed')).toBe('false')
+  })
+
+  it('a busca fica na linha dos chips, dentro do painel de conversas', () => {
+    const w = show()
+    const search = w.get('[data-test="conversation-search"]')
+    expect(search.element.closest('[data-test="project-conversations"]')).not.toBeNull()
+    expect(search.element.closest('[data-test="conversation-filters"]')).not.toBeNull()
+    expect(w.get('[data-test="filter-open"]').element.closest('[data-test="conversation-filters"]')).toBe(search.element.closest('[data-test="conversation-filters"]'))
   })
 
   it('busca por título e resumo, ignorando maiúsculas e acentos', async () => {
@@ -66,7 +100,7 @@ describe('conversas do projeto', () => {
 
   it('preserva destino e destaque da conversa aberta', () => {
     const w = show({ activeId: 'need', rowTarget: (id: string) => `/projects/1?sessao=${id}` })
-    const row = w.findAll('[data-test="conversation-row"]')[0]!
+    const row = w.findAll('[data-test="conversation-row"]').find(item => item.text().includes('Revisar cadastro'))!
     expect(row.attributes('data-active')).toBe('true')
     expect(row.get('[data-test="row-link"]').attributes('href')).toBe('/projects/1?sessao=need')
   })

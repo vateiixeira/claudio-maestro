@@ -30,6 +30,13 @@ function seed(available = true) {
   projects.loaded = true
 }
 
+// The MoreMenu panel is teleported to <body>.
+const menuItem = (id: string) => document.body.querySelector<HTMLElement>(`[data-test="more-menu-item"][data-id="${id}"]`)
+async function clickItem(id: string) {
+  menuItem(id)!.click()
+  await flushPromises()
+}
+
 async function mountView() {
   const wrapper = mount(ProjectView, { props: { id: 1 }, global: { plugins: [pinia, router] } })
   await flushPromises()
@@ -111,18 +118,81 @@ describe('tela do projeto', () => {
     expect(wrapper.get('[data-test="project-tab-conversas"]').attributes('aria-selected')).toBe('true')
   })
 
-  it('resume Git carregado sem consulta extra e mantém ações secundárias no menu', async () => {
+  it('mostra o caminho curto na linha do título, sem o resumo de Git', async () => {
     seed()
     useGitStore().set(1, [makeGitRepo({ changed: { staged: 1, unstaged: 2, untracked: 0 }, ahead: 10 })])
     const fetchMock = routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = await mountView()
-    expect(wrapper.get('[data-test="project-git-summary"]').text()).toContain('3 alterações')
-    expect(wrapper.get('[data-test="project-git-summary"]').text()).toContain('10 para enviar')
+    const path = wrapper.get('[data-test="project-path"]')
+    expect(path.text()).toBe('~/dev/loja-online')
+    expect(path.attributes('title')).toBe('/home/vi/dev/loja-online')
+    expect(path.element.parentElement).toBe(wrapper.get('h1').element.parentElement)
+    expect(wrapper.find('[data-test="project-git-summary"]').exists()).toBe(false)
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/git'))).toBe(false)
-    expect(wrapper.find('[data-test="rename"]').exists()).toBe(false)
+  })
+
+  it('a aba Conversas conta as em aberto do projeto, sem finalizadas nem descartadas', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([
+      makeSession({ session_id: 'a', title: 'Uma' }),
+      makeSession({ session_id: 'b', title: 'Duas', display_state: 'running' }),
+      makeSession({ session_id: 'c', title: 'Três' }),
+      makeSession({ session_id: 'd', title: 'Finalizada', display_state: 'finished' }),
+      makeSession({ session_id: 'e', title: 'Descartada', mark: 'discarded' }),
+    ]) }))
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="project-tab-conversas"] [data-test="project-tab-count"]').text()).toBe('3 em aberto')
+    expect(wrapper.find('[data-test="project-tab-organizacao"] [data-test="project-tab-count"]').exists()).toBe(false)
+  })
+
+  it('a aba Git conta os repositórios com pendências, em laranja', async () => {
+    seed()
+    useGitStore().set(1, [
+      makeGitRepo({ rel_path: 'a', changed: { staged: 0, unstaged: 1, untracked: 0 } }),
+      makeGitRepo({ rel_path: 'b', ahead: 2 }),
+      makeGitRepo({ rel_path: 'c' }),
+    ])
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
+    const wrapper = await mountView()
+    const count = wrapper.get('[data-test="project-tab-git"] [data-test="project-tab-count"]')
+    expect(count.text()).toBe('2 com pendências')
+    expect(count.classes()).toContain('text-secondary-soft')
+  })
+
+  it('a aba Git não tem contagem sem pendências nem com o git ainda sem carregar', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="project-tab-git"] [data-test="project-tab-count"]').exists()).toBe(false)
+    useGitStore().set(1, [makeGitRepo()])
+    await flushPromises()
+    expect(wrapper.find('[data-test="project-tab-git"] [data-test="project-tab-count"]').exists()).toBe(false)
+  })
+
+  it('o menu de ações abre o MoreMenu com Renomear, Remover e Atualizar', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
+    const wrapper = await mountView()
+    expect(menuItem('rename')).toBeNull()
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    expect(wrapper.get('[data-test="rename"]').text()).toBe('Renomear')
+    await flushPromises()
+    expect(document.body.querySelectorAll('[data-test="more-menu-item"]')).toHaveLength(3)
+    expect(menuItem('rename')!.textContent).toBe('Renomear')
+    expect(menuItem('remove')!.textContent).toBe('Remover')
+    expect(menuItem('sync')!.textContent).toBe('Atualizar')
+    expect(menuItem('remove')!.className).toContain('text-diff-del-fg')
+  })
+
+  it('Renomear foca o campo do nome', async () => {
+    seed()
+    vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
+    const wrapper = mount(ProjectView, { props: { id: 1 }, attachTo: document.body, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    await wrapper.get('[data-test="project-actions"]').trigger('click')
+    await clickItem('rename')
+    expect(document.activeElement).toBe(wrapper.get('#rename-project').element)
+    wrapper.unmount()
   })
 
   it('abre detalhes sem esperar resumo e compartilha o resultado com a barra lateral', async () => {
@@ -175,7 +245,7 @@ describe('tela do projeto', () => {
     const wrapper = await mountView()
 
     expect(wrapper.find('h1').text()).toBe('loja-online')
-    expect(wrapper.text()).toContain('/home/vi/dev/loja-online')
+    expect(wrapper.get('[data-test="project-path"]').text()).toBe('~/dev/loja-online')
     const rows = wrapper.findAll('[data-test="conversation-row"]')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('Cupom expirado')
@@ -288,7 +358,7 @@ describe('tela do projeto', () => {
     const wrapper = await mountView()
 
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    await wrapper.find('[data-test="remove"]').trigger('click')
+    await clickItem('remove')
     const dialog = wrapper.find('[data-test="confirm-remove"]')
     expect(dialog.exists()).toBe(true)
     expect(dialog.text()).toContain('A pasta e as conversas não são apagadas')
@@ -298,7 +368,7 @@ describe('tela do projeto', () => {
     expect(wrapper.find('[data-test="confirm-remove"]').exists()).toBe(false)
 
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    await wrapper.find('[data-test="remove"]').trigger('click')
+    await clickItem('remove')
     await wrapper.find('[data-test="confirm-remove-ok"]').trigger('click')
     await flushPromises()
 
@@ -320,7 +390,7 @@ describe('tela do projeto', () => {
     const wrapper = await mountView()
 
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    await wrapper.find('[data-test="rename"]').trigger('click')
+    await clickItem('rename')
     await wrapper.find('#rename-project').setValue('loja-nova')
     await wrapper.find('[data-test="rename-form"]').trigger('submit')
     await flushPromises()
@@ -334,7 +404,7 @@ describe('tela do projeto', () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
     const wrapper = await mountView()
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    await wrapper.find('[data-test="rename"]').trigger('click')
+    await clickItem('rename')
     const event = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true })
     wrapper.find('#rename-project').element.dispatchEvent(event)
     await flushPromises()
@@ -359,7 +429,7 @@ describe('tela do projeto', () => {
     }))
     const wrapper = await mountView()
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    await wrapper.find('[data-test="sync"]').trigger('click')
+    await clickItem('sync')
     await flushPromises()
     expect(sync).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('Veio do CLI')
@@ -375,7 +445,7 @@ describe('tela do projeto', () => {
     }))
     const wrapper = await mountView()
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    await wrapper.find('[data-test="sync"]').trigger('click')
+    await clickItem('sync')
     await flushPromises()
     expect(list).toHaveBeenCalledTimes(1)
     expect(useProjectsStore(pinia).byId(1)?.hidden_sessions).toBe(2)
@@ -387,7 +457,7 @@ describe('tela do projeto', () => {
     const wrapper = mount(ProjectView, { props: { id: 1 }, attachTo: document.body, global: { plugins: [pinia, router] } })
     await flushPromises()
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    await wrapper.find('[data-test="remove"]').trigger('click')
+    await clickItem('remove')
     await flushPromises()
     expect(document.activeElement).toBe(wrapper.find('[data-test="confirm-remove-cancel"]').element)
     await wrapper.find('[data-test="confirm-remove"]').trigger('keydown', { key: 'Escape' })
@@ -468,7 +538,7 @@ describe('tela do projeto', () => {
     expect(wrapper.findAll('[data-test="row-link"]').map(row => row.text())).toEqual(['Cupom'])
   })
 
-  it('ArrowUp no menu fechado foca a última ação e Esc devolve ao botão', async () => {
+  it('Esc no menu de ações devolve o foco ao botão', async () => {
     seed()
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
     const wrapper = mount(ProjectView, { props: { id: 1 }, attachTo: document.body, global: { plugins: [pinia, router] } })
@@ -476,28 +546,36 @@ describe('tela do projeto', () => {
     const trigger = wrapper.get('[data-test="project-actions"]')
     await trigger.trigger('keydown', { key: 'ArrowUp' })
     await flushPromises()
-    expect(document.activeElement).toBe(wrapper.get('[data-test="sync"]').element)
-    await wrapper.get('[data-test="sync"]').trigger('keydown', { key: 'Escape' })
+    expect(document.activeElement).toBe(menuItem('rename'))
+    menuItem('rename')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     await flushPromises()
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    expect(document.body.querySelector('[role="menu"]')).toBeNull()
     expect(document.activeElement).toBe(trigger.element)
+    wrapper.unmount()
   })
 
-  it('o teclado pula Atualizar enquanto a sincronização está pendente', async () => {
+  it('Atualizar fica desabilitado e diz Atualizando… enquanto a sincronização está pendente', async () => {
     seed()
     let finish!: (value: Response) => void
+    const sync = vi.fn(() => new Promise<Response>(resolve => { finish = resolve }))
     vi.stubGlobal('fetch', routeFetch({
       'GET /api/projects/1/sessions': () => jsonResponse([]),
-      'POST /api/projects/1/sync': () => new Promise<Response>(resolve => { finish = resolve }),
+      'POST /api/projects/1/sync': sync,
     }))
     const wrapper = mount(ProjectView, { props: { id: 1 }, attachTo: document.body, global: { plugins: [pinia, router] } })
     await flushPromises()
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    await wrapper.get('[data-test="sync"]').trigger('click')
-    await wrapper.get('[data-test="project-actions"]').trigger('keydown', { key: 'End' })
-    expect(document.activeElement).toBe(wrapper.get('[data-test="remove"]').element)
+    await clickItem('sync')
+    await wrapper.get('[data-test="project-actions"]').trigger('click')
+    await flushPromises()
+    expect(menuItem('sync')!.textContent).toBe('Atualizando…')
+    expect(menuItem('sync')!.getAttribute('aria-disabled')).toBe('true')
+    menuItem('sync')!.click()
+    await flushPromises()
+    expect(sync).toHaveBeenCalledTimes(1)
     finish(jsonResponse([]))
     await flushPromises()
+    wrapper.unmount()
   })
 
   it('mostra o estado git de cada repositório: sincronização, arquivos e commits', async () => {
@@ -561,7 +639,7 @@ describe('tela do projeto embutido "Sem projeto"', () => {
     expect(wrapper.find('h1').text()).toBe('Sem projeto')
     expect(wrapper.find('[data-test="new-session"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-test="conversation-row"]')).toHaveLength(1)
-    for (const t of ['rename', 'remove', 'open-editor', 'open-organization', 'sync', 'repos']) {
+    for (const t of ['rename', 'remove', 'open-editor', 'open-organization', 'sync', 'repos', 'project-actions', 'project-path', 'project-tab-count']) {
       expect(wrapper.find(`[data-test="${t}"]`).exists(), t).toBe(false)
     }
     expect(wrapper.text()).not.toContain('/home/vi/.local/share/claudio-maestro/scratch')
@@ -574,9 +652,11 @@ describe('tela do projeto embutido "Sem projeto"', () => {
     vi.stubGlobal('fetch', routeFetch({ 'GET /api/projects/1/sessions': () => jsonResponse([]) }))
     const wrapper = await mountView()
     await wrapper.get('[data-test="project-actions"]').trigger('click')
-    for (const t of ['rename', 'remove', 'open-editor', 'project-tab-organizacao', 'sync', 'new-session']) {
+    await flushPromises()
+    for (const t of ['open-editor', 'project-tab-organizacao', 'new-session', 'project-actions']) {
       expect(wrapper.find(`[data-test="${t}"]`).exists(), t).toBe(true)
     }
-    expect(wrapper.text()).toContain('/home/vi/dev/loja-online')
+    for (const id of ['rename', 'remove', 'sync']) expect(menuItem(id), id).not.toBeNull()
+    expect(wrapper.get('[data-test="project-path"]').text()).toBe('~/dev/loja-online')
   })
 })
