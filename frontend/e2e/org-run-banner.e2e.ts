@@ -105,12 +105,18 @@ test('a faixa mostra o run em outra sessão, vira laranja, abre a sessão e some
   await expect(banner).toHaveAttribute('data-state', 'waiting')
   await expect(banner).toContainText(`${RUN_TITLE} espera sua resposta`)
 
-  // Back to running, then the click takes to the session of the run.
+  // Back to running. The run has its entry in the chat: the click scrolls to it and stays on the same URL.
   server.outcome = 'running'
   server.runState = 'running'
   await staged.send('agent.run', staged.run())
   await expect(banner).toHaveAttribute('data-state', 'running')
+  const mainUrl = page.url()
   await banner.click()
+  const entry = page.locator(`[data-test="run-entry"][data-run-session="${staged.ids[RUN_TITLE]}"]`)
+  await expect(entry).toBeInViewport()
+  expect(page.url()).toBe(mainUrl)
+  // "Abrir sozinha" takes to the session of the run.
+  await entry.getByTestId('run-entry-open').click()
   await expect(page).toHaveURL(new RegExp(`/sessions/${staged.ids[RUN_TITLE]}$`))
   // The conversation of the run is not the main one of the agent: no strip there.
   await expect(page.getByTestId('agent-run-banner')).toHaveCount(0)
