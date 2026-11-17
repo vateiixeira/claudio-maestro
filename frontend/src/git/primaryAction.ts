@@ -50,7 +50,11 @@ export function primaryAction(repo: RepoDetails, message: string): PrimaryAction
     const label = staged === 1 ? 'Commitar 1 preparado' : `Commitar ${staged} preparados`
     return { kind: 'commit', label, disabled: empty, reason: messageReason }
   }
-  if (repo.files.length > 0) return { kind: 'commit', label: 'Commitar', disabled: empty, reason: messageReason }
+  const changed = new Set(repo.files.map((f) => f.path)).size
+  if (changed > 0) {
+    const label = changed === 1 ? 'Commitar 1 arquivo' : `Commitar ${changed} arquivos`
+    return { kind: 'commit', label, disabled: empty, reason: messageReason }
+  }
 
   const remotes = state?.remotes ?? []
   if (repo.upstream == null && !repo.detached && repo.branch && repo.head && remotes.length > 0) {

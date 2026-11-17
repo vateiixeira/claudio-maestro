@@ -30,8 +30,15 @@ describe('primaryAction', () => {
 
   it('alterações sem preparados: Commitar, e desligado sem mensagem', () => {
     const repo = makeRepoDetails({ files: [file('a', 'untracked')] })
-    expect(primaryAction(repo, 'x')).toMatchObject({ kind: 'commit', label: 'Commitar', disabled: false })
+    expect(primaryAction(repo, 'x')).toMatchObject({ kind: 'commit', label: 'Commitar 1 arquivo', disabled: false })
     expect(primaryAction(repo, '')).toMatchObject({ disabled: true, reason: 'Escreva a mensagem do commit' })
+  })
+
+  it('sem preparados, o rótulo conta os caminhos distintos', () => {
+    const dois = makeRepoDetails({ files: [file('a', 'unstaged'), file('b', 'untracked')] })
+    expect(primaryAction(dois, 'x')).toMatchObject({ kind: 'commit', label: 'Commitar 2 arquivos', disabled: false })
+    const repetido = makeRepoDetails({ files: [file('a', 'unstaged'), file('a', 'unstaged')] })
+    expect(primaryAction(repetido, 'x').label).toBe('Commitar 1 arquivo')
   })
 
   it('branch sem upstream: Publicar em origin ou no único remoto', () => {
@@ -46,12 +53,12 @@ describe('primaryAction', () => {
   it('HEAD destacado nunca oferece publicar', () => {
     const repo = makeRepoDetails({ detached: true, branch: null, upstream: null, ahead: null, behind: null })
     expect(primaryAction(repo, '')).toMatchObject({ label: 'Commitar', disabled: true })
-    expect(primaryAction(makeRepoDetails({ detached: true, branch: null, upstream: null, files: [file('a', 'unstaged')] }), 'x')).toMatchObject({ label: 'Commitar', disabled: false })
+    expect(primaryAction(makeRepoDetails({ detached: true, branch: null, upstream: null, files: [file('a', 'unstaged')] }), 'x')).toMatchObject({ label: 'Commitar 1 arquivo', disabled: false })
   })
 
   it('repositório sem commits oferece Commitar', () => {
     const repo = makeRepoDetails({ head: null, head_sha: null, upstream: null, ahead: null, behind: null, files: [file('a', 'untracked')] })
-    expect(primaryAction(repo, 'Primeiro')).toMatchObject({ kind: 'commit', label: 'Commitar', disabled: false })
+    expect(primaryAction(repo, 'Primeiro')).toMatchObject({ kind: 'commit', label: 'Commitar 1 arquivo', disabled: false })
   })
 
   it('sincronizar, enviar e baixar', () => {
