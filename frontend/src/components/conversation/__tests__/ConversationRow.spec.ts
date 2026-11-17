@@ -36,7 +36,7 @@ describe('linha de conversa', () => {
     const details = row.get('[data-test="row-details"]')
     expect(details.get('[data-test="row-digest"]').text()).toBe('Conferir disponibilidade')
     expect(details.get('[data-test="row-branch"]').text()).toContain('agenda')
-    expect(details.get('[data-test="closure-badge"]').text()).toBe('Entrega incompleta')
+    expect(row.get('[data-test="row-situation"]').get('[data-test="closure-badge"]').text()).toBe('Entrega incompleta')
     expect(details.find('[data-test="row-link"]').exists()).toBe(false)
   })
 
@@ -50,8 +50,10 @@ describe('linha de conversa', () => {
 
   it('conversa de outro projeto mantém sua identificação no contexto local', () => {
     const row = mountRow(makeSession(), undefined, { projectContextId: 2 })
-    expect(row.get('[data-test="row-project"]').text()).toContain('loja-online')
-    expect(row.get('[data-test="row-branch"]').text()).toContain('develop')
+    expect(row.find('[data-test="row-project"]').exists()).toBe(false)
+    const tag = row.get('[data-test="row-details"]').get('[data-test="project-tag"]')
+    expect(tag.text()).toContain('loja-online')
+    expect(tag.get('[data-test="project-tag-branch"]').text()).toBe('develop')
   })
 
   it('mostra título, projeto, branch e tempo, e abre a conversa', () => {
@@ -59,8 +61,9 @@ describe('linha de conversa', () => {
 
     expect(wrapper.find('[data-test="row-link"]').text()).toBe('Corrigir login')
     expect(wrapper.find('[data-test="row-link"]').attributes('href')).toBe('/sessions/abc')
-    expect(wrapper.find('[data-test="row-project"]').text()).toContain('loja-online')
-    expect(wrapper.find('[data-test="row-branch"]').text()).toContain('develop')
+    expect(wrapper.find('[data-test="row-project"] [data-test="project-tag"]').text()).toContain('loja-online')
+    expect(wrapper.find('[data-test="project-tag-branch"]').text()).toBe('develop')
+    expect(wrapper.find('[data-test="row-activity"]').text()).not.toBe('')
   })
 
   it('usa o destino recebido em vez da página da conversa', () => {
@@ -84,8 +87,8 @@ describe('linha de conversa', () => {
   it('linha da lista mostra a worktree no lugar do branch', () => {
     const wrapper = mountRow(makeSession({  worktree_name: 'melhorias', worktree_path: '/p/.claude/worktrees/melhorias', git_branch: 'worktree-melhorias' }))
 
-    expect(wrapper.find('[data-test="row-branch"]').text()).toContain('worktree melhorias · worktree-melhorias')
-    expect(wrapper.find('[data-test="row-branch"]').text()).not.toContain('develop')
+    expect(wrapper.find('[data-test="project-tag-branch"]').text()).toContain('worktree melhorias · worktree-melhorias')
+    expect(wrapper.find('[data-test="project-tag-branch"]').text()).not.toContain('develop')
   })
 
   it('marcada e não lida, sem pedido real: triângulo discreto e "Sua vez"', () => {
@@ -95,11 +98,22 @@ describe('linha de conversa', () => {
     expect(wrapper.find('[data-test="waiting-reason"]').text()).toBe('Sua vez')
   })
 
-  it('mostra a bolinha de não lida e o motivo da espera', () => {
+  it('mostra o motivo da espera na coluna Situação, sem bolinha de não lida', () => {
     const wrapper = mountRow(makeSession({ unread: true, display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question' }))
 
-    expect(wrapper.find('[data-test="unread-dot"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="waiting-reason"]').text()).toBe('Fez uma pergunta')
+    expect(wrapper.find('[data-test="unread-dot"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="row-situation"]').get('[data-test="waiting-reason"]').text()).toBe('Fez uma pergunta')
+    expect(wrapper.get('[data-test="waiting-reason"]').classes()).toContain('text-secondary-soft')
+    expect(wrapper.get('.sr-only').text()).toContain('com novidade')
+  })
+
+  it('não lida: título em text-fg e font-medium; lida: peso normal; finalizada: apagada', () => {
+    const unread = mountRow(makeSession({ unread: true })).get('[data-test="row-link"]').classes()
+    expect(unread).toEqual(expect.arrayContaining(['text-fg', 'font-medium']))
+    const read = mountRow(makeSession({ unread: false })).get('[data-test="row-link"]').classes()
+    expect(read).toContain('text-fg')
+    expect(read).not.toContain('font-medium')
+    expect(mountRow(makeSession({ display_state: 'finished', finished: true, unread: false })).get('[data-test="row-link"]').classes()).toContain('text-fg-muted')
   })
 
   it('espera comum, sem novidade: triângulo discreto e motivo neutro', () => {
@@ -224,32 +238,21 @@ describe('linha de conversa', () => {
     expect(wrapper.emitted('error')).toEqual([['Falhou.']])
   })
 
-  describe('selo do plano', () => {
+  describe('plano na coluna Situação', () => {
     const plan = { path: 'docs/plan.md', title: 'Plano', total: 12, done: 3, current: { number: 4, title: 'Criar o selo' } }
 
-    it.each(['inbox', 'list'] as const)('aparece depois do título na variante %s', (variant) => {
+    it.each(['inbox', 'list'] as const)('mostra as barrinhas do plano em row-situation na variante %s', (variant) => {
       const wrapper = mountRow(makeSession({ display_state: 'running', plan }), variant)
-      const badge = wrapper.find('[data-test="plan-badge"]')
+      const segments = wrapper.get('[data-test="row-situation"]').find('[data-test="plan-segments"]')
 
-      expect(badge.exists()).toBe(true)
-      expect(badge.text()).toContain('4/12')
-      const html = wrapper.html()
-      expect(html.indexOf('data-test="row-link"')).toBeLessThan(html.indexOf('data-test="plan-badge"'))
+      expect(segments.exists()).toBe(true)
+      expect(segments.attributes('aria-label')).toBe('Tarefa 4 de 12: Criar o selo')
+      expect(wrapper.find('[data-test="plan-badge"]').exists()).toBe(false)
     })
 
-    it('não empurra a coluna de horário: o título trunca e o selo não encolhe', () => {
-      const wrapper = mountRow(makeSession({ title: 'Um título muito longo '.repeat(10), display_state: 'running', plan }))
-
-      expect(wrapper.find('[data-test="row-link"]').classes()).toEqual(expect.arrayContaining(['min-w-0', 'truncate']))
-      expect(wrapper.find('[data-test="row-title"]').classes()).toEqual(expect.arrayContaining(['min-w-0', 'grow']))
-      expect(wrapper.find('[data-test="plan-badge"]').classes()).toContain('shrink-0')
-      expect(wrapper.find('.text-right').classes()).toContain('w-20')
-    })
-
-    it('repete a posição da tarefa no title do link da linha, que cobre o selo', () => {
+    it('repete a posição da tarefa no title do link da linha, que cobre as barrinhas', () => {
       const wrapper = mountRow(makeSession({ display_state: 'running', plan }))
       expect(wrapper.find('[data-test="row-link"]').attributes('title')).toBe('Tarefa 4 de 12: Criar o selo')
-      expect(wrapper.find('[data-test="plan-badge"]').attributes('aria-label')).toBe('Tarefa 4 de 12: Criar o selo')
     })
 
     it('não põe title no link quando não há plano visível', () => {
@@ -259,9 +262,77 @@ describe('linha de conversa', () => {
     it('não aparece sem plano, com plano concluído nem em conversa finalizada', () => {
       const done = { ...plan, done: 12, current: null }
 
-      expect(mountRow(makeSession({ plan: null })).find('[data-test="plan-badge"]').exists()).toBe(false)
-      expect(mountRow(makeSession({ plan: done })).find('[data-test="plan-badge"]').exists()).toBe(false)
-      expect(mountRow(makeSession({ display_state: 'finished', finished: true, plan })).find('[data-test="plan-badge"]').exists()).toBe(false)
+      expect(mountRow(makeSession({ plan: null })).find('[data-test="plan-segments"]').exists()).toBe(false)
+      expect(mountRow(makeSession({ plan: done })).find('[data-test="plan-segments"]').exists()).toBe(false)
+      expect(mountRow(makeSession({ display_state: 'finished', finished: true, plan })).find('[data-test="plan-segments"]').exists()).toBe(false)
+    })
+  })
+
+  describe('grade de colunas', () => {
+    const cols = 'md:grid-cols-[0.875rem_minmax(0,1fr)_11rem_10.5rem_4.25rem]'
+    const childTests = (row: ReturnType<typeof mountRow>) =>
+      Array.from(row.get('[data-test="conversation-row"]').element.children).map((c) => c.getAttribute('data-test'))
+
+    it.each(['list', 'inbox'] as const)('variante %s: ícone, conversa, situação, projeto e atividade, nesta ordem', (variant) => {
+      const row = mountRow(makeSession(), variant)
+      const root = row.get('[data-test="conversation-row"]')
+      expect(root.classes()).toContain('grid')
+      expect(root.classes()).toContain(cols)
+      const tests = childTests(row)
+      expect(tests.filter(Boolean).slice(0, 4)).toEqual(['row-title', 'row-situation', 'row-project', 'row-activity'])
+      expect(root.element.children[0]!.getAttribute('data-shape')).not.toBeNull()
+    })
+
+    it('abaixo de md a situação desce para baixo da conversa e o projeto some', () => {
+      const row = mountRow(makeSession())
+      expect(row.get('[data-test="conversation-row"]').classes()).toContain('grid-cols-[0.875rem_minmax(0,1fr)_auto]')
+      expect(row.get('[data-test="row-project"]').classes()).toContain('hidden')
+      expect(row.get('[data-test="row-situation"]').classes()).toEqual(expect.arrayContaining(['max-md:row-start-2', 'max-md:col-start-2']))
+    })
+
+    it('row-details vem depois do link e leva resumo, agente, agrupador e etiquetas', () => {
+      useGroupsStore(pinia).groups = [makeGroup({ id: 2, name: 'Checkout' })]
+      useLabelsStore(pinia).labels = [makeLabel({ id: 1, slug: 'et1' })]
+      useOrgStore(pinia).agents = [makeAgent({ id: 4, name: 'Triagem' })]
+      const row = mountRow(makeSession({ digest_short: 'Resumo curto', group_id: 2, label_ids: [1], agent_id: 4 }))
+      const html = row.html()
+      expect(html.indexOf('data-test="row-link"')).toBeLessThan(html.indexOf('data-test="row-details"'))
+      const details = row.get('[data-test="row-details"]')
+      expect(details.get('[data-test="row-digest"]').text()).toBe('Resumo curto')
+      for (const id of ['group-tag', 'agent-badge', 'label-badge']) expect(details.find(`[data-test="${id}"]`).exists()).toBe(true)
+    })
+
+    it('situação traz, quando valem, plano, "Plano concluído", entrega incompleta e o motivo, nesta ordem', () => {
+      const plan = { path: 'docs/plan.md', title: 'Plano', total: 5, done: 1, current: { number: 2, title: 'Seguir' } }
+      const row = mountRow(makeSession({ display_state: 'waiting', state: 'awaiting_decision', pending_kind: 'question', plan, plan_done: true, closure_verdict: 'incomplete' }))
+      const situation = row.get('[data-test="row-situation"]')
+      const order = Array.from(situation.element.querySelectorAll('[data-test]')).map((e) => e.getAttribute('data-test')).filter((t) => ['plan-segments', 'row-plan-done', 'closure-badge', 'waiting-reason'].includes(t!))
+      expect(order).toEqual(['plan-segments', 'row-plan-done', 'closure-badge', 'waiting-reason'])
+      expect(situation.get('[data-test="row-plan-done"]').text()).toBe('Plano concluído')
+    })
+
+    it('o slot status substitui o motivo da espera dentro da situação', () => {
+      const router = createAppRouter(createMemoryHistory())
+      const wrapper = mount(ConversationRow, {
+        props: { session: makeSession({ display_state: 'waiting' }), variant: 'inbox' },
+        slots: { status: '<span data-test="decided">Negado</span>' },
+        global: { plugins: [pinia, router] },
+      })
+      expect(wrapper.get('[data-test="row-situation"]').find('[data-test="decided"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="waiting-reason"]').exists()).toBe(false)
+    })
+
+    it('a atividade fica alinhada à direita', () => {
+      expect(mountRow(makeSession()).get('[data-test="row-activity"]').classes()).toContain('text-right')
+    })
+
+    it('no projeto: grade própria, situação à direita, sem coluna de projeto e título em font-medium', () => {
+      const row = mountRow(makeSession({ closure_verdict: 'incomplete' }), undefined, { projectContextId: 1 })
+      const root = row.get('[data-test="conversation-row"]')
+      expect(root.classes()).toContain('grid')
+      expect(row.find('[data-test="row-project"]').exists()).toBe(false)
+      expect(row.get('[data-test="row-situation"]').classes()).toContain('md:justify-end')
+      expect(row.get('[data-test="row-link"]').classes()).toContain('font-medium')
     })
   })
 
@@ -291,18 +362,14 @@ describe('linha de conversa', () => {
       expect(classes).toContain('[@media(hover:none)]:pointer-events-auto')
     })
 
-    it('projeto, branch e horário têm largura fixa, também numa linha sem branch', () => {
-      const withRepo = mountRow(makeSession({ project_id: 1 }))
+    it('projeto e atividade ocupam suas colunas mesmo numa linha sem branch', () => {
       useGitStore(pinia).set(2, [])
       useProjectsStore(pinia).projects.push(makeProject({ id: 2, name: 'sem-git', path: '/x' }))
       const noRepo = mountRow(makeSession({ project_id: 2 }))
 
-      for (const row of [withRepo, noRepo]) {
-        expect(row.find('[data-test="row-project"]').classes()).toContain('w-36')
-        expect(row.find('[data-test="row-branch"]').classes()).toContain('w-40')
-        expect(row.find('.text-right').classes()).toContain('w-20')
-      }
-      expect(noRepo.find('[data-test="row-branch"]').text()).toBe('')
+      expect(noRepo.find('[data-test="row-project"]').exists()).toBe(true)
+      expect(noRepo.find('[data-test="project-tag-branch"]').exists()).toBe(false)
+      expect(noRepo.find('[data-test="row-activity"]').exists()).toBe(true)
     })
 
     it('o link tem um anel visível quando recebe foco pelo teclado', () => {
@@ -328,7 +395,7 @@ describe('resumo na linha', () => {
     const w = mountRow(makeSession({ digest_short: 'Executa o plano do agrupador' }))
     await flushPromises()
     expect(w.find('[data-test="row-digest"]').text()).toBe('Executa o plano do agrupador')
-    expect(w.find('[data-test="row-link"]').classes()).toEqual(expect.arrayContaining(['max-w-[55%]', 'shrink-0', 'truncate']))
+    expect(w.find('[data-test="row-link"]').classes()).toEqual(expect.arrayContaining(['truncate', 'min-w-0']))
   })
 
   it('sem resumo não mostra nada a mais', async () => {

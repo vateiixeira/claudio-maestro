@@ -41,7 +41,7 @@ describe('conversas do projeto', () => {
     const w = show()
     expect(titles(w)).toEqual(['Revisar cadastro', 'Ajustar agenda', 'Contrato externo', 'Página de vendas'])
     expect(w.findAll('[data-test="conversation-section-title"]').map(el => el.text())).toEqual(['Precisam de você', 'Em andamento', 'Recentes'])
-    expect(w.findAll('[data-test="row-project"]').map(el => el.text())).toEqual(['API externa'])
+    expect(w.findAll('[data-test="row-details"] [data-test="project-tag"]').map(el => el.text())).toEqual(['API externa'])
   })
 
   it('busca por título e resumo, ignorando maiúsculas e acentos', async () => {

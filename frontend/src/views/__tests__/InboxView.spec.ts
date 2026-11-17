@@ -460,7 +460,7 @@ describe('Inbox: triagem pelo teclado', () => {
     })
   })
 
-  it('a linha de uma ferramenta mostra o comando, em mono, truncado e com o texto inteiro no title', async () => {
+  it('a linha de uma ferramenta mostra o comando, em mono, em linha própria na situação (até 3 linhas) e com o texto inteiro no title', async () => {
     const command = 'rm -rf /tmp/build && ' + 'x'.repeat(150)
     useSessionsStore(pinia).setForProject(1, [
       makeSession({ session_id: 't1', title: 'Ferramenta 1', display_state: 'waiting', pending_kind: 'tool', pending_permission: { ...prompt('p1'), summary: command }, last_activity_at: now }),
@@ -470,7 +470,12 @@ describe('Inbox: triagem pelo teclado', () => {
     const summary = wrapper.get('#inbox-option-t1').get('[data-test="row-pending-summary"]')
     expect(summary.text()).toBe(command)
     expect(summary.attributes('title')).toBe(command)
-    expect(summary.classes()).toEqual(expect.arrayContaining(['font-mono', 'truncate']))
+    expect(summary.classes()).toEqual(expect.arrayContaining(['font-mono', 'basis-full', 'line-clamp-3', 'break-all']))
+    expect(summary.classes()).not.toContain('truncate')
+    const situation = wrapper.get('#inbox-option-t1').get('[data-test="row-situation"]')
+    expect(situation.find('[data-test="row-pending-summary"]').exists()).toBe(true)
+    expect(summary.element.parentElement!.classList.contains('flex-wrap')).toBe(true)
+    expect(summary.element.parentElement!.classList.contains('basis-full')).toBe(true)
     expect(wrapper.get('#inbox-option-t1').get('[data-test="waiting-reason"]').text()).toContain('Bash')
     expect(wrapper.get('#inbox-option-q1').find('[data-test="row-pending-summary"]').exists()).toBe(false)
   })

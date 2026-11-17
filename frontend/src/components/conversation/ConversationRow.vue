@@ -7,20 +7,19 @@ import MarkIcon from '../MarkIcon.vue'
 import MarkPopover from '../marks/MarkPopover.vue'
 import { contextPoint } from '../marks/menuPoint'
 import ClosureBadge from '../ClosureBadge.vue'
-import BranchLabel from '../git/BranchLabel.vue'
 import GroupTag from '../groups/GroupTag.vue'
 import LabelBadges from '../labels/LabelBadges.vue'
 import WorktreeLabel from '../git/WorktreeLabel.vue'
-import PlanBadge from '../plan/PlanBadge.vue'
+import PlanSegments from './PlanSegments.vue'
+import ProjectTag from './ProjectTag.vue'
 import { errorMessage, markSessionSeen } from '../../api/http'
 import { markChipText, markLabels } from '../../conversation/marks'
 import { waitingReason } from '../../conversationList'
 import { needsYou } from '../../conversation/needsYou'
 import { formatActivity } from '../../format'
-import { planPosition, planVisible } from '../plan/planText'
+import { planPosition, planStopped, planVisible } from '../plan/planText'
 import { displayStateLabel } from '../../sessionState'
 import { repoLabel, useGitStore } from '../../stores/git'
-import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import type { Session } from '../../types/api'
 import { worktreeLabel } from '../../worktree'
@@ -36,14 +35,14 @@ const props = withDefaults(
 const target = computed<RouteLocationRaw>(() => props.to ?? { name: 'session', params: { id: props.session.session_id } })
 const emit = defineEmits<{ error: [message: string] }>()
 
-const projects = useProjectsStore()
 const git = useGitStore()
 const sessions = useSessionsStore()
 
-const project = computed(() => projects.byId(props.session.project_id))
 const repo = computed(() => git.reposFor(props.session.project_id)[0])
 const worktree = computed(() => worktreeLabel(props.session))
 const finished = computed(() => props.session.display_state === 'finished')
+const planShown = computed(() => planVisible(props.session))
+const branchText = computed(() => worktree.value ?? (repo.value ? repoLabel(repo.value) : null))
 const reason = computed(() => waitingReason(props.session))
 const wantsYou = computed(() => needsYou(props.session))
 const compact = computed(() => props.variant === 'compact')
@@ -55,7 +54,7 @@ const srState = computed(() => {
   return (compact.value || props.projectContextId != null) && reason.value && reason.value !== label ? `${label}: ${reason.value}` : label
 })
 // The link's stretched ::after covers the badge, so the badge's own title never shows: repeat it on the link.
-const planTitle = computed(() => (!compact.value && planVisible(props.session) ? planPosition(props.session.plan!) : undefined))
+const planTitle = computed(() => (!compact.value && planShown.value ? planPosition(props.session.plan!) : undefined))
 const busy = ref(false)
 const menuAt = ref<{ x: number; y: number } | null>(null)
 // Same reason for the mark's note ("Bloqueada: ..."): its icon sits under the link's ::after.
@@ -84,65 +83,73 @@ const markRead = () => run(() => markSessionSeen(props.session.session_id))
     :data-active="active ? 'true' : undefined"
     :data-focused="focused ? 'true' : undefined"
     @contextmenu.prevent="menuAt = contextPoint($event)"
-    class="group relative flex min-h-11 items-center gap-3 rounded-md px-2 hover:bg-card focus-within:bg-card"
-    :class="[active || focused ? 'bg-card shadow-[inset_2px_0_0_var(--color-primary)]' : '', projectLayout ? 'py-3' : '']"
+    class="group relative rounded-md hover:bg-card focus-within:bg-card"
+    :class="[
+      compact ? 'flex min-h-11 items-center gap-3 px-2' : 'grid min-h-[3.375rem] grid-cols-[0.875rem_minmax(0,1fr)_auto] gap-x-4 gap-y-1 px-2.5 py-2',
+      !compact && projectLayout ? 'items-start py-3 md:grid-cols-[0.875rem_minmax(0,1fr)_15.5rem_4.25rem]' : '',
+      !compact && !projectLayout ? 'items-center md:grid-cols-[0.875rem_minmax(0,1fr)_11rem_10.5rem_4.25rem]' : '',
+      active || focused ? 'bg-card shadow-[inset_2px_0_0_var(--color-primary)]' : '',
+    ]"
   >
-    <span class="flex w-2 shrink-0 justify-center">
-      <span v-if="session.unread" data-test="unread-dot" class="size-2 rounded-full bg-info" />
-    </span>
-    <DisplayStateIcon :display="session.display_state" :quiet="!wantsYou" />
-    <span v-if="session.mark" data-test="row-mark" role="img" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
-    <span v-if="session.priority" data-test="row-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" /></span>
+    <DisplayStateIcon :display="session.display_state" :quiet="!wantsYou" :class="!compact && projectLayout ? 'mt-1' : ''" />
     <!-- Not positioned, so the link's stretched ::after still covers the whole row (overflow-hidden only clips descendants whose containing block is inside it, and the ::after's is the row). -->
-    <div data-test="row-title" class="flex grow items-center gap-2" :class="[compact ? 'min-w-24 overflow-hidden' : 'min-w-0 overflow-hidden', projectLayout ? 'flex-col !items-start !gap-1.5' : '']">
-      <RouterLink
-        data-test="row-link"
-        :to="target"
-        :aria-current="active ? 'true' : undefined"
-        :title="linkTitle"
-        class="min-w-0 truncate no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
-        :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread ? 'font-semibold' : 'font-normal', session.digest_short && !compact && !projectLayout ? 'max-w-[55%] shrink-0' : '', projectLayout ? 'w-full font-medium' : '']"
-      >{{ session.title }}</RouterLink>
-      <div data-test="row-details" :class="projectLayout ? 'flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs' : 'contents'">
+    <div data-test="row-title" class="min-w-0 overflow-hidden" :class="compact ? 'flex min-w-24 grow items-center gap-2' : 'flex flex-col gap-1'">
+      <div :class="compact ? 'contents' : 'flex min-w-0 items-center gap-1.5'">
+        <span v-if="session.mark" data-test="row-mark" role="img" :aria-label="markLabels[session.mark]" class="shrink-0 text-fg-subtle"><MarkIcon :mark="session.mark" /></span>
+        <span v-if="session.priority" data-test="row-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" /></span>
+        <RouterLink
+          data-test="row-link"
+          :to="target"
+          :aria-current="active ? 'true' : undefined"
+          :title="linkTitle"
+          class="min-w-0 truncate text-sm no-underline after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
+          :class="[finished ? 'text-fg-muted' : 'text-fg', session.unread || projectLayout ? 'font-medium' : 'font-normal']"
+        >{{ session.title }}</RouterLink>
+      </div>
+      <div data-test="row-details" :class="compact ? 'contents' : 'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs empty:hidden'">
         <span
           v-if="session.digest_short && !compact"
           data-test="row-digest"
-          class="min-w-0 truncate text-xs text-fg-muted" :class="projectLayout ? 'basis-full' : 'order-1'"
+          class="min-w-0 basis-full truncate text-fg-muted" :class="projectLayout ? 'text-[0.8125rem]' : 'text-xs'"
         >{{ session.digest_short }}</span>
         <AgentBadge v-if="session.agent_id != null && !compact" :agent-id="session.agent_id" />
-        <PlanBadge v-if="!compact" :session="session" />
         <GroupTag v-if="!compact" :group-id="session.group_id" />
         <LabelBadges :ids="session.label_ids" :compact="compact" />
-        <span
-          v-if="session.plan_done && !compact"
-          data-test="row-plan-done"
-          class="shrink-0 rounded-full border border-primary/40 px-1.5 font-mono text-[0.6875rem] text-primary-soft"
-        >Plano concluído</span>
-        <ClosureBadge :session="session" :compact="compact" />
-        <span v-if="projectLayout && (!sameProjectContext || worktree)" data-test="row-branch" class="flex min-w-0 max-w-full text-fg-subtle">
-          <WorktreeLabel v-if="worktree" :text="worktree" muted />
-          <BranchLabel v-else-if="repo" :text="repoLabel(repo)" muted />
+        <ClosureBadge v-if="compact" :session="session" compact />
+        <span v-if="projectLayout && worktree" data-test="row-branch" class="flex min-w-0 max-w-full text-fg-subtle">
+          <WorktreeLabel :text="worktree" muted />
         </span>
+        <ProjectTag v-if="projectLayout && !sameProjectContext" :project-id="session.project_id" :branch="branchText" />
       </div>
     </div>
     <span class="sr-only">{{ srState }}{{ session.unread ? ', com novidade' : '' }}</span>
-    <div :class="projectLayout ? 'flex shrink-0 flex-col items-end gap-1.5 self-start pt-0.5' : 'contents'">
+    <div
+      v-if="!compact || $slots.status"
+      data-test="row-situation"
+      class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 max-md:col-span-2 max-md:col-start-2 max-md:row-start-2 max-md:empty:hidden"
+      :class="projectLayout ? 'self-start pt-0.5 md:justify-end' : ''"
+    >
+      <template v-if="!compact">
+        <PlanSegments v-if="planShown && session.plan" :plan="session.plan" :stopped="planStopped(session)" />
+        <span v-if="session.plan_done" data-test="row-plan-done" class="shrink-0 rounded-full border border-primary/40 px-1.5 font-mono text-[0.6875rem] text-primary-soft">Plano concluído</span>
+        <ClosureBadge :session="session" />
+      </template>
       <slot name="status">
-        <span v-if="reason && !compact" data-test="waiting-reason" class="max-w-64 shrink-0 truncate text-xs" :class="[wantsYou ? 'text-secondary-soft' : 'text-fg-muted', projectLayout ? 'max-w-28 sm:max-w-48' : '']">{{ reason }}</span>
+        <span v-if="reason && !compact" data-test="waiting-reason" class="min-w-0 max-w-full truncate text-xs" :class="wantsYou ? 'text-secondary-soft' : 'text-fg-muted'">{{ reason }}</span>
       </slot>
-      <!-- Fixed widths, kept even when empty, so the columns line up from row to row. The actions float over the right end instead of taking room from them. -->
-      <span v-if="!sameProjectContext" data-test="row-project" class="items-center gap-1.5 text-xs text-fg-subtle" :class="projectContextId != null ? 'flex w-20 min-w-0 shrink-0 sm:w-28' : ['hidden md:flex', compact ? 'w-28 min-w-0 shrink' : 'w-36 shrink-0']">
-        <template v-if="project">
-          <span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" />
-          <span class="truncate">{{ project.name }}</span>
-        </template>
-      </span>
-      <span v-if="!compact && !projectLayout && (!sameProjectContext || worktree)" data-test="row-branch" class="hidden w-40 shrink-0 lg:flex">
-        <WorktreeLabel v-if="worktree" :text="worktree" muted />
-        <BranchLabel v-else-if="repo" :text="repoLabel(repo)" muted />
-      </span>
-      <span class="shrink-0 whitespace-nowrap text-right text-xs text-fg-subtle" :class="compact || projectContextId != null ? 'min-w-12' : 'w-20'">{{ formatActivity(session.last_activity_at) }}</span>
     </div>
+    <!-- Kept even when empty, so the columns line up from row to row. The actions float over the right end instead of taking room from them. -->
+    <span
+      v-if="!projectLayout"
+      data-test="row-project"
+      class="hidden min-w-0 md:flex"
+      :class="compact ? 'w-28 shrink' : ''"
+    ><ProjectTag :project-id="session.project_id" :branch="compact ? null : branchText" /></span>
+    <span
+      data-test="row-activity"
+      class="whitespace-nowrap text-right text-xs text-fg-subtle max-md:col-start-3 max-md:row-start-1"
+      :class="compact ? 'min-w-12 shrink-0' : projectLayout ? 'pt-0.5' : ''"
+    >{{ formatActivity(session.last_activity_at) }}</span>
     <div
       v-if="variant !== 'compact'"
       data-test="row-actions"

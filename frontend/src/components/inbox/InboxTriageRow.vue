@@ -41,13 +41,13 @@ defineExpose({ decide, canDecide })
         <span data-test="row-decided" class="shrink-0 text-xs text-fg-muted">{{ verdict === 'allow_once' ? 'Permitido uma vez' : verdict === 'deny' ? 'Negado' : 'Respondido' }}</span>
       </template>
       <template v-else-if="session.pending_kind === 'tool' && decision.pending.value" #status>
-        <span class="flex min-w-0 max-w-[24rem] shrink items-center gap-2 text-xs">
+        <span class="flex min-w-0 max-w-full basis-full flex-wrap items-center gap-x-2 gap-y-1 text-xs">
           <span data-test="waiting-reason" class="shrink-0 text-secondary-soft">{{ waitingReason(session) }}</span>
           <span
             v-if="decision.pending.value.summary"
             data-test="row-pending-summary"
             :title="decision.pending.value.summary"
-            class="min-w-0 truncate font-mono text-fg-muted"
+            class="min-w-0 basis-full break-all font-mono text-fg-muted line-clamp-3"
           >{{ decision.pending.value.summary }}</span>
         </span>
       </template>
