@@ -7,13 +7,13 @@ const DAY = 86400
 
 describe('shortPath', () => {
   it('troca a pasta do usuário por ~', () => {
-    expect(shortPath('/home/vi/dev/wuats')).toBe('~/dev/wuats')
+    expect(shortPath('/home/ana/dev/loja-online')).toBe('~/dev/loja-online')
     expect(shortPath('/Users/ana/x')).toBe('~/x')
-    expect(shortPath('/home/vi')).toBe('~')
+    expect(shortPath('/home/ana')).toBe('~')
   })
   it('mantém o que está fora da pasta do usuário', () => {
     expect(shortPath('/opt/app')).toBe('/opt/app')
-    expect(shortPath('/homework/vi/x')).toBe('/homework/vi/x')
+    expect(shortPath('/homework/ana/x')).toBe('/homework/ana/x')
   })
 })
 

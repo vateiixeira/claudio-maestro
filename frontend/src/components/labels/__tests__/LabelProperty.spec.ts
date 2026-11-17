@@ -29,6 +29,7 @@ function mountProperty(handlers: Handlers = {}, labelIds: number[] = [], others:
     makeSession({ session_id: 's1', label_ids: labelIds }),
     ...others.map((ids, index) => makeSession({ session_id: `o${index}`, label_ids: ids })),
   ])
+  useSessionsStore(pinia).loaded = true
   const fetchMock = routeFetch(handlers)
   vi.stubGlobal('fetch', fetchMock)
   const Host = { components: { LabelProperty }, template: '<dl><LabelProperty session-id="s1" /></dl>' }
@@ -169,6 +170,33 @@ describe('propriedade Etiquetas', () => {
     expect(selected.backend).toBe('false')
   })
 
+  it('antes de as conversas carregarem, a contagem some em vez de dizer "sem uso"', async () => {
+    const { wrapper } = mountProperty({}, [1])
+    useSessionsStore(pinia).loaded = false
+    await openPanel(wrapper)
+    for (const option of options(wrapper)) expect(option.find('[data-test="label-count"]').text()).toBe('')
+    expect(wrapper.text()).not.toContain('sem uso')
+  })
+
+  it('com busca, o nome todo fica em text-fg (contraste) e o trecho que bate vira <mark> com sublinhado', async () => {
+    const { wrapper } = mountProperty()
+    await openPanel(wrapper)
+    await search(wrapper).setValue('avisar')
+    const option = options(wrapper)[0]
+    const name = option.find('span.truncate')
+    expect(name.classes()).toContain('text-fg')
+    expect(name.classes()).not.toContain('text-fg-muted')
+    expect(option.find('mark').classes()).toContain('underline')
+  })
+
+  it('a contagem usa text-fg-muted, que passa 4,5:1 sobre a linha destacada', async () => {
+    const { wrapper } = mountProperty({}, [1], [[1]])
+    await openPanel(wrapper)
+    const count = options(wrapper)[0].find('[data-test="label-count"]')
+    expect(count.classes()).toContain('text-fg-muted')
+    expect(count.classes()).not.toContain('text-fg-subtle')
+  })
+
   it('mostra "1 conversa" no singular', async () => {
     const { wrapper } = mountProperty({}, [1], [[2]])
     await openPanel(wrapper)
@@ -289,6 +317,25 @@ describe('propriedade Etiquetas', () => {
       expect(bodies(fetchMock, 'PUT /api/sessions/s1/labels')).toEqual([{ label_ids: [2] }])
       // The same option keeps the focus after saving.
       expect(input.attributes('aria-activedescendant')).toBe(options(wrapper)[1].attributes('id'))
+    })
+
+    it('Enter com o nome exato de uma etiqueta digitado e nenhuma linha em foco marca essa etiqueta', async () => {
+      const { wrapper, fetchMock } = mountProperty(putOk([2]))
+      await openPanel(wrapper)
+      await search(wrapper).setValue(' Backend ')
+      await search(wrapper).trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+      expect(bodies(fetchMock, 'POST /api/labels')).toEqual([])
+      expect(bodies(fetchMock, 'PUT /api/sessions/s1/labels')).toEqual([{ label_ids: [2] }])
+    })
+
+    it('Enter com o nome exato de uma etiqueta já marcada a desmarca', async () => {
+      const { wrapper, fetchMock } = mountProperty(putOk([]), [2])
+      await openPanel(wrapper)
+      await search(wrapper).setValue('backend')
+      await search(wrapper).trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+      expect(bodies(fetchMock, 'PUT /api/sessions/s1/labels')).toEqual([{ label_ids: [] }])
     })
 
     it('Enter desmarca uma opção marcada', async () => {

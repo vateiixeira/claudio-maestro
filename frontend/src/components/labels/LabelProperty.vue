@@ -167,7 +167,8 @@ function onKeydown(event: KeyboardEvent) {
     else active.value = (active.value + step + total) % total
   } else if (event.key === 'Enter') {
     event.preventDefault()
-    const label = options.value[active.value]
+    // The highlighted row, else the label named exactly as typed, else a new one.
+    const label = options.value[active.value] ?? labels.labels.find((l) => l.slug === term.value)
     if (label) void toggle(label.id)
     else if (canCreate.value) void createAndApply()
   }
@@ -265,13 +266,13 @@ function onKeydown(event: KeyboardEvent) {
               class="inline-flex h-6.5 min-w-0 items-center gap-1.5 rounded-full px-2.5 font-mono text-xs"
             >
               <span aria-hidden="true" class="size-2 shrink-0 rounded-full border border-fg-subtle" style="background: var(--label-dot)" />
-              <span class="min-w-0 truncate" :class="term ? 'text-fg-muted' : 'text-fg'">
-                <template v-if="parts(label.slug)">{{ parts(label.slug)!.before }}<mark class="bg-transparent font-medium text-fg underline underline-offset-[3px]">{{ parts(label.slug)!.match }}</mark>{{ parts(label.slug)!.after }}</template>
+              <span class="min-w-0 truncate text-fg">
+                <template v-if="parts(label.slug)">{{ parts(label.slug)!.before }}<mark class="bg-transparent font-bold text-fg underline underline-offset-[3px]">{{ parts(label.slug)!.match }}</mark>{{ parts(label.slug)!.after }}</template>
                 <template v-else>{{ label.slug }}</template>
               </span>
             </span>
             <span class="flex-1" />
-            <span data-test="label-count" class="shrink-0 text-xs text-fg-subtle">{{ usage.countText(label.id) }}</span>
+            <span data-test="label-count" class="shrink-0 text-xs text-fg-muted">{{ usage.countText(label.id) }}</span>
             <span class="flex w-4 shrink-0 justify-center text-primary" aria-hidden="true">
               <IconCheck v-if="selected.includes(label.id)" :size="14" />
             </span>

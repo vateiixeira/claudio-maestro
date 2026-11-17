@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { errorMessage } from '../../api/http'
 import { DEFAULT_LABEL_COLOR, LABEL_PALETTE, labelStyle } from '../../labelColor'
 import { useLabelsStore } from '../../stores/labels'
@@ -28,6 +28,7 @@ const colorTimers = new Map<number, { timer: ReturnType<typeof setTimeout>; colo
 const confirming = ref<number | null>(null)
 const paletteFor = ref<number | null>(null)
 const inputs = new Map<number, HTMLInputElement>()
+const colorButtons = new Map<number, HTMLButtonElement>()
 
 const createSlug = ref('')
 const createColor = ref(LABEL_PALETTE[4] ?? DEFAULT_LABEL_COLOR)
@@ -38,16 +39,23 @@ const confirmingUnused = ref(false)
 const bulkBusy = ref(false)
 const bulkError = ref('')
 
-// Most used first; ties keep the catalog order (the sort is stable).
-const sorted = computed(() => [...labels.labels].sort((a, b) => usage.count(b.id) - usage.count(a.id)))
+// Most used first; ties keep the catalog order (the sort is stable). Until the conversations are
+// loaded every count reads zero, which would make every label "unused": the list stays in catalog
+// order, in one group, and nothing can be deleted in bulk.
+const sorted = computed(() =>
+  usage.ready.value ? [...labels.labels].sort((a, b) => usage.count(b.id) - usage.count(a.id)) : [...labels.labels],
+)
 const used = computed(() => sorted.value.filter((l) => usage.count(l.id) > 0))
-const unused = computed(() => sorted.value.filter((l) => usage.count(l.id) === 0))
+const unused = computed(() => (usage.ready.value ? sorted.value.filter((l) => usage.count(l.id) === 0) : []))
 
 const groups = computed(() =>
-  [
-    { key: 'used', rows: used.value },
-    { key: 'unused', rows: unused.value },
-  ].filter((group) => group.rows.length > 0),
+  (usage.ready.value
+    ? [
+        { key: 'used', rows: used.value },
+        { key: 'unused', rows: unused.value },
+      ]
+    : [{ key: 'all', rows: sorted.value }]
+  ).filter((group) => group.rows.length > 0),
 )
 
 const draftOf = (id: number): string => drafts[id] ?? labels.byId(id)?.slug ?? ''
@@ -60,6 +68,7 @@ watch(
       for (const key of Object.keys(record)) if (!present.has(Number(key))) delete record[Number(key)]
     }
     for (const id of [...inputs.keys()]) if (!present.has(id)) inputs.delete(id)
+    for (const id of [...colorButtons.keys()]) if (!present.has(id)) colorButtons.delete(id)
     for (const id of [...colorTimers.keys()]) {
       if (present.has(id)) continue
       clearTimeout(colorTimers.get(id)?.timer)
@@ -79,6 +88,16 @@ watch(
 function setInput(id: number, el: unknown): void {
   if (el instanceof HTMLInputElement) inputs.set(id, el)
   else inputs.delete(id)
+}
+
+function setColorButton(id: number, el: unknown): void {
+  if (el instanceof HTMLButtonElement) colorButtons.set(id, el)
+  else colorButtons.delete(id)
+}
+
+function closePalette(id: number): void {
+  paletteFor.value = null
+  void nextTick(() => colorButtons.get(id)?.focus())
 }
 
 function onInput(id: number, event: Event): void {
@@ -175,7 +194,7 @@ function pickColor(id: number, color: string): void {
   if (waiting) clearTimeout(waiting.timer)
   colorTimers.delete(id)
   if (LABEL_PALETTE.includes(color.toLowerCase())) {
-    paletteFor.value = null
+    closePalette(id)
     enqueue(id, { color })
     return
   }
@@ -215,6 +234,8 @@ async function removeUnused(): Promise<void> {
   // One at a time and stopping at the first failure: the ones already gone stay gone, the rest stay listed.
   try {
     for (const label of targets) {
+      // The dialog was closed meanwhile: what is already deleted stays, the rest is left alone.
+      if (!confirmingUnused.value) break
       try {
         await labels.remove(label.id)
       } catch (e) {
@@ -271,7 +292,7 @@ const TEXT_BUTTON =
           placeholder="nova-etiqueta"
           maxlength="32"
           autocomplete="off"
-          class="h-9 min-w-0 flex-1 basis-48 rounded-[0.625rem] border border-line-strong bg-elevated px-3 font-mono text-[0.8125rem] text-fg outline-none placeholder:text-fg-subtle focus:border-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          class="h-9 min-w-0 flex-1 basis-48 rounded-[0.625rem] border border-line-strong bg-elevated px-3 font-mono text-[0.8125rem] text-fg outline-none placeholder:text-fg-muted focus:border-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           @keydown="onCreateKeydown"
         />
         <LabelPalette v-model="createColor" />
@@ -304,7 +325,7 @@ const TEXT_BUTTON =
           <button
             type="button"
             data-test="label-delete-unused"
-            :disabled="bulkBusy"
+            :disabled="bulkBusy || !usage.ready.value"
             class="h-7 cursor-pointer rounded-lg border border-line-strong bg-transparent px-2.5 text-xs font-medium text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50"
             @click="confirmingUnused = true"
           >{{ group.rows.length === 1 ? 'Apagar a 1 sem uso' : `Apagar as ${group.rows.length} sem uso` }}</button>
@@ -343,6 +364,7 @@ const TEXT_BUTTON =
               </span>
               <span>
                 <button
+                  :ref="(el) => setColorButton(label.id, el)"
                   type="button"
                   data-test="label-edit-color"
                   :aria-label="`Trocar a cor de ${label.slug}`"
@@ -352,7 +374,7 @@ const TEXT_BUTTON =
                   @click="paletteFor = paletteFor === label.id ? null : label.id"
                 />
               </span>
-              <span data-test="label-usage" :class="usage.count(label.id) === 0 ? 'text-fg-subtle' : 'text-fg-muted'">{{ usage.countText(label.id) }}</span>
+              <span data-test="label-usage" :class="usage.ready.value && usage.count(label.id) === 0 ? 'text-fg-subtle' : 'text-fg-muted'">{{ usage.countText(label.id) }}</span>
               <span class="flex justify-end gap-0.5">
                 <button type="button" :class="ICON_BUTTON" :aria-label="`Renomear ${label.slug}`" :title="`Renomear ${label.slug}`" @click="focusName(label.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" /></svg>
@@ -369,12 +391,13 @@ const TEXT_BUTTON =
                 </button>
               </span>
             </div>
-            <div v-if="paletteFor === label.id" class="pb-3">
+            <div v-if="paletteFor === label.id" class="pb-3" @keydown.esc.stop="closePalette(label.id)">
               <LabelPalette :model-value="chosen[label.id] ?? label.color" @update:model-value="pickColor(label.id, $event)" />
             </div>
             <div v-if="confirming === label.id" class="flex flex-wrap items-center gap-2 pb-3 text-sm">
-              <span v-if="usage.count(label.id) > 0">Apagar “{{ label.slug }}” tira a etiqueta de {{ usage.countText(label.id) }}.</span>
-              <span v-else>Apagar “{{ label.slug }}”? Nenhuma conversa usa essa etiqueta.</span>
+              <span v-if="usage.ready.value && usage.count(label.id) > 0">Apagar “{{ label.slug }}” tira a etiqueta de {{ usage.countText(label.id) }}.</span>
+              <span v-else-if="usage.ready.value">Apagar “{{ label.slug }}”? Nenhuma conversa usa essa etiqueta.</span>
+              <span v-else>Apagar “{{ label.slug }}”? Ela sai das conversas que a usam.</span>
               <button
                 type="button"
                 data-test="label-delete-confirm"

@@ -240,6 +240,33 @@ it('separa "Ativos hoje" e "Parados", cada grupo pela atividade mais recente', a
   expect(groups[1]!.get('[data-test="group-header-count"]').text()).toBe('3')
 })
 
+it('enquanto um projeto é renomeado, a ordem e o grupo das linhas ficam congelados', async () => {
+  useFixedNow()
+  const store = useProjectsStore()
+  store.loaded = true
+  store.projects = [makeProject({ id: 1, name: 'alfa' }), makeProject({ id: 2, name: 'beta' }), makeProject({ id: 3, name: 'gama' })]
+  const sessions = useSessionsStore()
+  sessions.setForProject(1, [makeSession({ session_id: 'a', display_state: 'finished', finished: true, last_activity_at: secondsAgo(60) })])
+  sessions.setForProject(2, [makeSession({ session_id: 'b', display_state: 'finished', finished: true, last_activity_at: secondsAgo(1800) })])
+  sessions.setForProject(3, [makeSession({ session_id: 'c', display_state: 'finished', finished: true, last_activity_at: secondsAgo(40 * 86400) })])
+  const w = await mountView()
+  const layout = () => w.findAll('[data-test="project-group"]').map(g => [g.attributes('data-group'), g.findAll('[data-test="project-row"] a').map(a => a.text())])
+  expect(layout()).toEqual([['active', ['alfa', 'beta']], ['idle', ['gama']]])
+  await w.get('[data-test="project-row"][data-project-id="2"] [data-test="project-actions"]').trigger('click')
+  await clickRename()
+  // Activity elsewhere reorders and regroups the live list...
+  sessions.setForProject(2, [makeSession({ session_id: 'b', display_state: 'finished', finished: true, last_activity_at: secondsAgo(40 * 86400) })])
+  sessions.setForProject(3, [makeSession({ session_id: 'c', display_state: 'finished', finished: true, last_activity_at: secondsAgo(5) })])
+  await flushPromises()
+  // ...but the row being edited stays where it was, with the others.
+  expect(layout()).toEqual([['active', ['alfa', 'beta']], ['idle', ['gama']]])
+  expect(document.activeElement).toBe(w.get('form input').element)
+  // Leaving the edit releases the layout.
+  await w.get('form').trigger('keydown', { key: 'Escape' })
+  await flushPromises()
+  expect(layout()).toEqual([['active', ['gama', 'alfa']], ['idle', ['beta']]])
+})
+
 it('omite o grupo que ficou vazio', async () => {
   useProjectsStore().projects = [makeProject()]
   const w = await mountView()

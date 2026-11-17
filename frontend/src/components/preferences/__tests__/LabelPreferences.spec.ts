@@ -22,13 +22,14 @@ beforeEach(() => {
     makeSession({ session_id: 's1', label_ids: [1] }),
     makeSession({ session_id: 's2', label_ids: [1, 2] }),
   ])
+  useSessionsStore(pinia).loaded = true
 })
 afterEach(() => vi.unstubAllGlobals())
 
 const mountPrefs = (handlers = {}) => {
   const fetchMock = routeFetch(handlers)
   vi.stubGlobal('fetch', fetchMock)
-  return { wrapper: mount(LabelPreferences, { global: { plugins: [pinia] } }), fetchMock }
+  return { wrapper: mount(LabelPreferences, { global: { plugins: [pinia] }, attachTo: document.body }), fetchMock }
 }
 
 const rowOf = (wrapper: VueWrapper, slug: string) => wrapper.find(`[data-test="label-row"][data-slug="${slug}"]`)
@@ -162,6 +163,33 @@ describe('preferências de etiquetas', () => {
       expect(useLabelsStore(pinia).byId(1)?.color).toBe('#78dce8')
       // The palette closes after the pick.
       expect(rowOf(wrapper, 'urgente').find('[data-test="palette-color"]').exists()).toBe(false)
+    })
+
+    it('depois de escolher uma cor da paleta, o foco volta à bolinha da linha', async () => {
+      const { wrapper } = mountPrefs({
+        'PATCH /api/labels/1': () => jsonResponse(makeLabel({ id: 1, slug: 'urgente', color: '#78dce8' })),
+      })
+      const row = rowOf(wrapper, 'urgente')
+      await row.find('[data-test="label-edit-color"]').trigger('click')
+      row.find<HTMLElement>('[data-test="palette-color"][data-color="#78dce8"]').element.focus()
+      await row.find('[data-test="palette-color"][data-color="#78dce8"]').trigger('click')
+      await flushPromises()
+      expect(document.activeElement).toBe(rowOf(wrapper, 'urgente').find('[data-test="label-edit-color"]').element)
+    })
+
+    it('Esc na paleta aberta fecha só a paleta e devolve o foco à bolinha', async () => {
+      const { wrapper } = mountPrefs()
+      const row = rowOf(wrapper, 'urgente')
+      await row.find('[data-test="label-edit-color"]').trigger('click')
+      const swatch = row.find('[data-test="palette-color"][data-color="#78dce8"]')
+      ;(swatch.element as HTMLElement).focus()
+      const outer = vi.fn()
+      document.addEventListener('keydown', outer)
+      await swatch.trigger('keydown', { key: 'Escape' })
+      document.removeEventListener('keydown', outer)
+      expect(outer).not.toHaveBeenCalled()
+      expect(rowOf(wrapper, 'urgente').find('[data-test="palette-color"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(rowOf(wrapper, 'urgente').find('[data-test="label-edit-color"]').element)
     })
 
     it('o botão da cor diz de qual etiqueta é e abre e fecha a paleta', async () => {
@@ -369,6 +397,57 @@ describe('preferências de etiquetas', () => {
     })
   })
 
+  describe('conversas ainda não carregadas', () => {
+    beforeEach(() => {
+      useSessionsStore(pinia).loaded = false
+    })
+
+    it('não separa o grupo "Sem uso" nem oferece apagar em lote', () => {
+      const { wrapper } = mountPrefs()
+      expect(wrapper.find('[data-test="label-unused-group"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="label-delete-unused"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-test="label-row"]').map((r) => r.attributes('data-slug'))).toEqual(['backend', 'urgente', 'zeta', 'omega'])
+    })
+
+    it('não mostra "sem uso" nem contagem como se fosse zero', () => {
+      const { wrapper } = mountPrefs()
+      expect(wrapper.text()).not.toContain('sem uso')
+      expect(wrapper.text()).not.toContain('Sem uso')
+      expect(rowOf(wrapper, 'zeta').find('[data-test="label-usage"]').text()).toBe('')
+    })
+
+    it('a confirmação de apagar uma etiqueta não afirma que nenhuma conversa a usa', async () => {
+      const { wrapper } = mountPrefs()
+      await rowOf(wrapper, 'zeta').find('[data-test="label-delete"]').trigger('click')
+      expect(rowOf(wrapper, 'zeta').text()).not.toContain('Nenhuma conversa usa')
+      expect(rowOf(wrapper, 'zeta').find('[data-test="label-delete-confirm"]').exists()).toBe(true)
+    })
+
+    it('quando as conversas chegam, o grupo "Sem uso" aparece', async () => {
+      const { wrapper } = mountPrefs()
+      useSessionsStore(pinia).loaded = true
+      await flushPromises()
+      expect(wrapper.find('[data-test="label-unused-group"]').exists()).toBe(true)
+      expect(rowOf(wrapper, 'zeta').find('[data-test="label-usage"]').text()).toBe('sem uso')
+    })
+  })
+
+  describe('carga parcial das conversas', () => {
+    it('com um projeto que falhou ao carregar, não separa "Sem uso" e o lote fica fora', async () => {
+      useSessionsStore(pinia).loaded = false
+      vi.stubGlobal('fetch', routeFetch({
+        'GET /api/projects/1/sessions': () => jsonResponse([makeSession({ session_id: 'a', project_id: 1, label_ids: [1] })]),
+        'GET /api/projects/2/sessions': () => jsonResponse({ detail: 'erro' }, 500),
+      }))
+      await useSessionsStore(pinia).loadAll([1, 2])
+      const wrapper = mount(LabelPreferences, { global: { plugins: [pinia] }, attachTo: document.body })
+      await flushPromises()
+      expect(wrapper.find('[data-test="label-unused-group"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="label-delete-unused"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('sem uso')
+    })
+  })
+
   describe('etiquetas sem uso', () => {
     const group = (wrapper: VueWrapper) => wrapper.find('[data-test="label-unused-group"]')
 
@@ -422,6 +501,24 @@ describe('preferências de etiquetas', () => {
       expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
       expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0)
       expect(useLabelsStore(pinia).labels).toHaveLength(4)
+    })
+
+    it('fechar a confirmação durante o lote para de apagar as restantes', async () => {
+      let release: (r: Response) => void = () => {}
+      const { wrapper, fetchMock } = mountPrefs({
+        'DELETE /api/labels/3': () => new Promise<Response>((resolve) => { release = resolve }),
+        'DELETE /api/labels/4': () => new Response(null, { status: 204 }),
+      })
+      await wrapper.find('[data-test="label-delete-unused"]').trigger('click')
+      await wrapper.find('[role="dialog"] [data-test="confirm-ok"]').trigger('click')
+      await flushPromises()
+      // The first delete is in flight; the dialog is dismissed (Esc / Cancel).
+      await wrapper.find('[role="dialog"] [data-test="confirm-cancel"]').trigger('click')
+      release(new Response(null, { status: 204 }))
+      await flushPromises()
+      expect(calls(fetchMock, 'DELETE /api/labels/3')).toHaveLength(1)
+      expect(calls(fetchMock, 'DELETE /api/labels/4')).toHaveLength(0)
+      expect(useLabelsStore(pinia).labels.map((l) => l.slug)).toEqual(['backend', 'urgente', 'omega'])
     })
 
     it('se a segunda falhar, a primeira sai, a outra fica e o erro aparece', async () => {

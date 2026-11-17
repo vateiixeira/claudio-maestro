@@ -112,3 +112,69 @@ describe('store de sessões', () => {
     expect(session.pending_permission).toBeNull()
   })
 })
+
+describe('carga completa (complete)', () => {
+  const stub = (second: () => Response) =>
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/projects/1/sessions': () => jsonResponse([makeSession({ session_id: 'a', project_id: 1 })]),
+      'GET /api/projects/2/sessions': second,
+    }))
+
+  it('só fica true depois de loadAll sem falhas', async () => {
+    stub(() => jsonResponse([]))
+    const store = useSessionsStore()
+    expect(store.complete).toBe(false)
+    await store.loadAll([1, 2])
+    expect(store.complete).toBe(true)
+  })
+
+  it('loadAll com um projeto rejeitado e sem dados anteriores deixa complete false', async () => {
+    stub(() => jsonResponse({ detail: 'erro' }, 500))
+    const store = useSessionsStore()
+    await store.loadAll([1, 2])
+    expect(store.loaded).toBe(true)
+    expect(store.complete).toBe(false)
+  })
+
+  it('um setForProject depois volta a true', async () => {
+    stub(() => jsonResponse({ detail: 'erro' }, 500))
+    const store = useSessionsStore()
+    await store.loadAll([1, 2])
+    store.setForProject(2, [])
+    expect(store.complete).toBe(true)
+  })
+
+  it('forgetProject também limpa a falha', async () => {
+    stub(() => jsonResponse({ detail: 'erro' }, 500))
+    const store = useSessionsStore()
+    await store.loadAll([1, 2])
+    store.forgetProject(2)
+    expect(store.complete).toBe(true)
+  })
+
+  it('uma recarga que falha mantém os dados anteriores e não entra no conjunto', async () => {
+    const store = useSessionsStore()
+    stub(() => jsonResponse([makeSession({ session_id: 'b', project_id: 2 })]))
+    await store.loadAll([1, 2])
+    stub(() => jsonResponse({ detail: 'erro' }, 500))
+    await store.loadAll([1, 2])
+    expect(store.find('b')).toBeDefined()
+    expect(store.complete).toBe(true)
+  })
+
+  it('falhar de novo um projeto que já falhou continua incompleto', async () => {
+    stub(() => jsonResponse({ detail: 'erro' }, 500))
+    const store = useSessionsStore()
+    await store.loadAll([1, 2])
+    await store.loadAll([1, 2])
+    expect(store.complete).toBe(false)
+  })
+
+  it('um projeto que saiu da lista de carga deixa de contar como falho', async () => {
+    stub(() => jsonResponse({ detail: 'erro' }, 500))
+    const store = useSessionsStore()
+    await store.loadAll([1, 2])
+    await store.loadAll([1])
+    expect(store.complete).toBe(true)
+  })
+})

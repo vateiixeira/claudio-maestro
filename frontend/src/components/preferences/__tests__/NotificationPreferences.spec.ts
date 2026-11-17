@@ -75,6 +75,9 @@ describe('preferências de notificações', () => {
     vi.stubGlobal('Notification', undefined)
     const w = mount(NotificationPreferences)
     expect(w.find('[data-test="notif-unsupported"]').exists()).toBe(true)
+    // Nothing for the person to do, so no orange (orange is for what waits on them).
+    expect(w.find('[data-test="notif-unsupported"]').classes()).not.toContain('bg-secondary-tint')
+    expect(w.find('[data-test="notif-unsupported"]').html()).not.toContain('secondary')
     expect(w.find('[data-test="notif-enable"]').exists()).toBe(false)
     expect(w.find('[data-test="notif-test"]').attributes('disabled')).toBeDefined()
     expect(w.text()).not.toContain('O teste fica disponível depois de ativar.')

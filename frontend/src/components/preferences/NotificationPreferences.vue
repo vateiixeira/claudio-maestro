@@ -55,12 +55,9 @@ function ask() {
 
 <template>
   <div class="flex flex-col gap-5 px-7 py-6" aria-label="Preferências de notificações" role="group">
-    <div v-if="notificationPermission === 'unsupported'" data-test="notif-unsupported" :class="noticeClass">
-      <svg class="shrink-0 text-secondary" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M12 3 22 20H2L12 3Z" />
-      </svg>
-      <p class="m-0 min-w-0 flex-1">Este navegador não oferece notificações do sistema.</p>
-    </div>
+    <p v-if="notificationPermission === 'unsupported'" data-test="notif-unsupported" class="m-0 text-sm text-fg-muted">
+      Este navegador não oferece notificações do sistema.
+    </p>
 
     <div v-else-if="notificationPermission === 'default'" data-test="notif-notice" :class="noticeClass">
       <svg class="shrink-0 text-secondary" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

@@ -10,6 +10,10 @@ export const useSessionsStore = defineStore('sessions', () => {
   // Newest first, as the backend lists them.
   const byProject = ref<Record<number, Session[]>>({})
   const loaded = ref(false)
+  // Projects whose first load failed: they hold no data, not "no sessions".
+  const failed = ref(new Set<number>())
+  /** Every project was read at least once; false after a load in which a project failed and had no data. */
+  const complete = computed(() => loaded.value && failed.value.size === 0)
 
   // Ordering is by arrival, not by `seq`: the backend's `seq` restarts at 0 when it
   // restarts or drops a session from memory. `clock` ticks on every request and
@@ -57,10 +61,12 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   function setForProject(projectId: number, sessions: Session[], sentAt = Infinity): void {
     byProject.value[projectId] = merged(projectId, sessions, sentAt)
+    failed.value.delete(projectId)
   }
 
   function forgetProject(projectId: number): void {
     delete byProject.value[projectId]
+    failed.value.delete(projectId)
   }
 
   function takeTicket(projectId: number): number {
@@ -89,12 +95,17 @@ export const useSessionsStore = defineStore('sessions', () => {
     const tickets = projectIds.map(takeTicket)
     const results = await Promise.allSettled(projectIds.map((id) => api.listSessions(id)))
     const next: Record<number, Session[]> = {}
+    // A rejected project with nothing to keep (or already failed before) stays "unknown"; a reload that
+    // fails over data from an earlier load keeps that data and is not counted as a failure.
+    const nextFailed = new Set<number>()
     projectIds.forEach((id, index) => {
       const result = results[index]!
       const current = listTicket.get(id) === tickets[index]
+      if (result.status === 'rejected' && (!(id in byProject.value) || failed.value.has(id))) nextFailed.add(id)
       next[id] = result.status === 'fulfilled' && current ? merged(id, result.value, tickets[index]!) : forProject(id)
     })
     byProject.value = next
+    failed.value = nextFailed
     loaded.value = true
   }
 
@@ -217,7 +228,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   return {
-    byProject, loaded, all, forProject, find, setForProject, forgetProject,
+    byProject, loaded, complete, all, forProject, find, setForProject, forgetProject,
     loadForProject, loadAll, sync, create, setFinished, rename, setGroup, setLabels, setMark, setPriority, applyEvent,
   }
 })

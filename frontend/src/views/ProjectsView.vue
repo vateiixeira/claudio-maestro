@@ -36,14 +36,31 @@ const noActivity = { running: 0, open: 0, latest: 0 }
 const activityOf = (project: Project) => activity.value[project.id] ?? noActivity
 
 // Newest activity first inside each group; "active today" also counts open conversations.
-const groups = computed(() => {
+const liveGroups = computed(() => {
   const byRecent = [...visibleProjects.value].sort((a, b) => activityOf(b).latest - activityOf(a).latest)
   const active = byRecent.filter(p => isActiveToday(activityOf(p).latest, activityOf(p).open, now.value))
   const idle = byRecent.filter(p => !active.includes(p))
   return [
     { key: 'active', title: 'Ativos hoje', projects: active },
     { key: 'idle', title: 'Parados', projects: idle },
-  ].filter(group => group.projects.length)
+  ]
+})
+
+// While a name is being edited, each row keeps its group and position: a row that jumped away under
+// the field would take the focus with it. Projects that appear meanwhile fall back to the live order.
+const frozen = ref<Map<number, { key: string; index: number }> | null>(null)
+const groups = computed(() => {
+  const live = liveGroups.value
+  const places = frozen.value
+  if (!places) return live.filter(group => group.projects.length)
+  return live.map(group => ({
+    ...group,
+    projects: live
+      .flatMap(g => g.projects.map(project => ({ project, key: places.get(project.id)?.key ?? g.key })))
+      .filter(entry => entry.key === group.key)
+      .map(entry => entry.project)
+      .sort((a, b) => (places.get(a.id)?.index ?? Infinity) - (places.get(b.id)?.index ?? Infinity)),
+  })).filter(group => group.projects.length)
 })
 
 // Folders that are gone have no repository to read; the rest loads once, like the Painel.
@@ -92,6 +109,7 @@ let renameTrigger: HTMLElement | null = null
 async function startRename(project: Project) {
   if (saving.value) return
   renameTrigger = document.querySelector<HTMLElement>(`[data-test="project-row"][data-project-id="${project.id}"] [data-test="project-actions"]`)
+  frozen.value = new Map(liveGroups.value.flatMap(group => group.projects.map((p, index) => [p.id, { key: group.key, index }] as const)))
   editing.value = project.id
   name.value = project.name
   error.value = ''
@@ -104,6 +122,7 @@ async function startRename(project: Project) {
 async function cancelRename() {
   if (saving.value) return
   editing.value = null
+  frozen.value = null
   error.value = ''
   await nextTick()
   if (renameTrigger?.isConnected) renameTrigger.focus()
