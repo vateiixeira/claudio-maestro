@@ -621,7 +621,7 @@ describe('tela do projeto', () => {
     const repo = wrapper.find('[data-test="repos"] [data-test="scm-repo"]')
     expect(repo.text()).toContain('loja-online')
     expect(repo.find('[data-test="sync-counts"]').attributes('aria-label')).toBe('0 para baixar, 1 para subir')
-    expect(repo.find('[data-test="scm-branch"]').text()).toBe('main*')
+    expect(repo.find('[data-test="scm-branch"]').text()).toBe('main')
     expect(repo.find('[data-test="scm-file"]').text()).toContain('a.py')
     expect(wrapper.find('[data-test="scm-section"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="commits-section"]').exists()).toBe(false)

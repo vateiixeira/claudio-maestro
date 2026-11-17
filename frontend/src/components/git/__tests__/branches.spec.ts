@@ -125,7 +125,7 @@ describe('tela do projeto', () => {
     })
     const rows = w.findAll('[data-test="scm-repo"]')
     expect(rows).toHaveLength(2)
-    expect(rows[0]!.find('[data-test="scm-branch"]').text()).toBe('main*')
+    expect(rows[0]!.find('[data-test="scm-branch"]').text()).toBe('main')
     expect(rows[0]!.findAll('[data-test="scm-file"]')).toHaveLength(2)
     expect(rows[1]!.find('[data-test="scm-branch"]').text()).toBe('abc1234')
     expect(rows[1]!.find('[data-test="scm-body"]').exists()).toBe(false)

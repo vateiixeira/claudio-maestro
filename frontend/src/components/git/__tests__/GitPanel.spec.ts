@@ -76,7 +76,8 @@ it('Limpar filtros desliga o chip e limpa a busca', async () => {
 
 it('abre diretamente o histórico do repositório, sem repetir a lista de alterações', async () => {
   const wrapper = await setup()
-  await wrapper.get('[data-repo="/p/api"] [data-test="repo-history"]').trigger('click')
+  await wrapper.get('[data-repo="/p/api"] [data-test="repo-more"]').trigger('click')
+  await wrapper.get('[data-repo="/p/api"] [data-test="menu-history"]').trigger('click')
   await flushPromises()
   expect(wrapper.get('[data-test="scm-section"]').isVisible()).toBe(false)
   const target = wrapper.get('[data-repo="/p/api"] [data-test="commits-repo-toggle"]')
@@ -87,11 +88,13 @@ it('abre diretamente o histórico do repositório, sem repetir a lista de altera
 
 it('reabre o histórico pelo atalho mesmo depois de recolher esse repositório', async () => {
   const wrapper = await setup()
-  await wrapper.get('[data-repo="/p/api"] [data-test="repo-history"]').trigger('click')
+  await wrapper.get('[data-repo="/p/api"] [data-test="repo-more"]').trigger('click')
+  await wrapper.get('[data-repo="/p/api"] [data-test="menu-history"]').trigger('click')
   await flushPromises()
   await wrapper.get('[data-repo="/p/api"] [data-test="commits-repo-toggle"]').trigger('click')
   await wrapper.get('[data-test="git-view-changes"]').trigger('click')
-  await wrapper.get('[data-repo="/p/api"] [data-test="repo-history"]').trigger('click')
+  await wrapper.get('[data-repo="/p/api"] [data-test="repo-more"]').trigger('click')
+  await wrapper.get('[data-repo="/p/api"] [data-test="menu-history"]').trigger('click')
   expect(wrapper.get('[data-repo="/p/api"] [data-test="commits-repo-toggle"]').attributes('aria-expanded')).toBe('true')
 })
 

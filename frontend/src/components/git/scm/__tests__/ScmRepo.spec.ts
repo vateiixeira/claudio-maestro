@@ -52,10 +52,10 @@ describe('repositório na seção Alterações', () => {
     expect(wrapper.get('[data-test="scm-repo-toggle"]').attributes('title')).toContain('angular-body/.worktrees/perf-abertura-agenda')
   })
 
-  it('ações de rede mostram texto além dos ícones', () => {
+  it('ações de rede mostram texto e contagem além dos ícones', () => {
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 2, behind: 1 }))
-    expect(wrapper.get('[data-test="repo-pull"]').text()).toBe('Pull')
-    expect(wrapper.get('[data-test="repo-push"]').text()).toBe('Push')
+    expect(wrapper.get('[data-test="repo-pull"]').text()).toBe('Pull 1')
+    expect(wrapper.get('[data-test="repo-push"]').text()).toBe('Push 2')
   })
 
   it.each([
@@ -131,7 +131,7 @@ describe('repositório na seção Alterações', () => {
     const button = wrapper.find('[data-test="primary-action"]')
     expect(button.text()).toBe('Commitando…')
     expect(button.attributes('aria-busy')).toBe('true')
-    expect(wrapper.find('[data-test="repo-commit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="branch-chip"]').attributes('disabled')).toBeDefined()
     release()
     await flushPromises()
   })
@@ -289,5 +289,185 @@ describe('repositório na seção Alterações', () => {
       expect(node!.className, test).toContain('opacity-0')
       expect(node!.className, test).toContain('group-focus-within:opacity-100')
     }
+  })
+})
+
+const closedRepo = (overrides: Partial<RepoDetails> = {}) => {
+  const repo = makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 0, behind: 0, ...overrides })
+  useGitDetailsStore(pinia).byProject[1] = { repos: [repo], limit_reached: false }
+  vi.stubGlobal('fetch', routeFetch({}))
+  return mount(ScmRepo, { props: { projectId: 1, repo, collapseAll: 0, startOpen: false }, global: { plugins: [pinia] }, attachTo: document.body })
+}
+
+describe('linha do repositório', () => {
+  it('fechado com commits para enviar: só o Push, com a contagem e o rótulo para leitor de tela', async () => {
+    const wrapper = closedRepo({ ahead: 5 })
+    expect(wrapper.find('[data-test="repo-pull"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="repo-push"]').attributes('aria-label')).toBe('Push 5 commits')
+    expect(wrapper.get('[data-test="repo-push-count"]').text()).toBe('5')
+    await wrapper.setProps({ repo: makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 1, behind: 0 }) })
+    expect(wrapper.get('[data-test="repo-push"]').attributes('aria-label')).toBe('Push 1 commit')
+  })
+
+  it('fechado com commits para baixar: só o Pull, com a contagem', () => {
+    const wrapper = closedRepo({ behind: 2 })
+    expect(wrapper.find('[data-test="repo-push"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="repo-pull"]').attributes('aria-label')).toBe('Pull 2 commits')
+    expect(wrapper.get('[data-test="repo-pull-count"]').text()).toBe('2')
+  })
+
+  it('fechado e em dia: sem Pull nem Push', () => {
+    const wrapper = closedRepo()
+    expect(wrapper.find('[data-test="repo-pull"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="repo-push"]').exists()).toBe(false)
+  })
+
+  it('aberto e em dia: os dois existem, desligados, com o motivo e sem contagem', async () => {
+    const wrapper = closedRepo()
+    await wrapper.get('[data-test="scm-repo-toggle"]').trigger('click')
+    for (const [test, label, title] of [['repo-pull', 'Pull', 'Nada para baixar'], ['repo-push', 'Push', 'Nada para enviar']]) {
+      const button = wrapper.get(`[data-test="${test}"]`)
+      expect(button.attributes('disabled'), test).toBeDefined()
+      expect(button.attributes('title'), test).toBe(title)
+      expect(button.attributes('aria-label'), test).toBe(label)
+      expect(wrapper.find(`[data-test="${test}-count"]`).exists(), test).toBe(false)
+    }
+  })
+
+  it('sem upstream e fechado, nenhum botão de rede', () => {
+    const wrapper = closedRepo({ upstream: null, ahead: null, behind: null })
+    expect(wrapper.find('[data-test="repo-pull"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="repo-push"]').exists()).toBe(false)
+  })
+
+  it('Merge, Commitar, Atualizar e Commits saíram da linha', async () => {
+    const wrapper = closedRepo({ ahead: 1 })
+    await wrapper.get('[data-test="scm-repo-toggle"]').trigger('click')
+    for (const test of ['repo-merge', 'repo-commit', 'repo-refresh', 'repo-history']) {
+      expect(wrapper.find(`[data-test="${test}"]`).exists(), test).toBe(false)
+    }
+  })
+
+  it('a branch aparece sem o asterisco, mesmo com arquivos alterados', () => {
+    const wrapper = closedRepo({ files: [file('a.ts', 'unstaged')] })
+    expect(wrapper.get('[data-test="scm-branch"]').text()).toBe('main')
+  })
+
+  it('data-open acompanha abrir e fechar, e o li é um contêiner', async () => {
+    const wrapper = closedRepo()
+    const li = wrapper.get('[data-test="scm-repo"]')
+    expect(li.classes()).toContain('@container')
+    expect(li.attributes('data-open')).toBe('false')
+    expect(li.classes()).not.toContain('rounded-xl')
+    await wrapper.get('[data-test="scm-repo-toggle"]').trigger('click')
+    expect(li.attributes('data-open')).toBe('true')
+    expect(li.classes()).toContain('rounded-xl')
+    expect(li.classes()).toContain('bg-panel')
+    expect(li.classes()).not.toContain('odd:bg-panel')
+    await wrapper.get('[data-test="scm-repo-toggle"]').trigger('click')
+    expect(li.attributes('data-open')).toBe('false')
+  })
+
+  it('quiet liga data-quiet e deixa o nome em text-fg-muted, sem negrito', async () => {
+    const wrapper = closedRepo()
+    expect(wrapper.get('[data-test="scm-repo"]').attributes('data-quiet')).toBe('false')
+    expect(wrapper.get('[data-test="repo-short-name"]').classes()).toContain('text-fg')
+    await wrapper.setProps({ quiet: true })
+    expect(wrapper.get('[data-test="scm-repo"]').attributes('data-quiet')).toBe('true')
+    const name = wrapper.get('[data-test="repo-short-name"]')
+    expect(name.classes()).toContain('text-fg-muted')
+    expect(name.classes()).not.toContain('font-semibold')
+  })
+})
+
+describe('menu de mais ações', () => {
+  const labels = (wrapper: ReturnType<typeof closedRepo>) => wrapper.findAll('[role="menuitem"]').map((i) => [i.attributes('data-test'), i.text()])
+
+  it('tem o rótulo "Mais ações de loja" e abre com as ações na ordem', async () => {
+    const wrapper = closedRepo({ rel_path: '.' })
+    const more = wrapper.get('[data-test="repo-more"]')
+    expect(more.attributes('aria-label')).toBe('Mais ações de loja')
+    await more.trigger('click')
+    expect(labels(wrapper)).toEqual([
+      ['menu-history', 'Ver commits'],
+      ['menu-merge', 'Mesclar uma branch…'],
+      ['menu-fetch', 'Buscar no remoto'],
+      ['menu-refresh', 'Atualizar'],
+      ['menu-copy-path', 'Copiar caminho'],
+    ])
+  })
+
+  it('durante um merge o Abortar merge vem por último e o Mesclar fica desligado com o motivo', async () => {
+    const wrapper = closedRepo({ state: makeRepoState({ merging: true, merge_branch: 'feat', conflicts: [] }) })
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    expect(labels(wrapper).map((l) => l[0])).toEqual(['menu-history', 'menu-merge', 'menu-fetch', 'menu-refresh', 'menu-copy-path', 'menu-abort'])
+    expect(wrapper.get('[data-test="menu-merge"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="menu-merge-reason"]').text()).toBe('Já há um merge em andamento')
+  })
+
+  it('o motivo do no_merge e o de repositório sem commits aparecem no Mesclar', async () => {
+    const reason = 'Este repositório tem um driver de merge próprio (npm).'
+    const wrapper = closedRepo({ state: makeRepoState({ no_merge: reason }) })
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    expect(wrapper.get('[data-test="menu-merge"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="menu-merge-reason"]').text()).toBe(reason)
+    wrapper.unmount()
+    const empty = closedRepo({ head: null, branch: 'main', upstream: null, ahead: null, behind: null })
+    await empty.get('[data-test="repo-more"]').trigger('click')
+    expect(empty.get('[data-test="menu-merge"]').attributes('disabled')).toBeDefined()
+    expect(empty.get('[data-test="menu-merge-reason"]').text()).toBe('Ainda não há commits.')
+  })
+
+  it('com o Mesclar ligado não mostra motivo', async () => {
+    const wrapper = closedRepo()
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    expect(wrapper.get('[data-test="menu-merge"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-test="menu-merge-reason"]').exists()).toBe(false)
+  })
+
+  it('Ver commits emite history e fecha o menu', async () => {
+    const wrapper = closedRepo()
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    await wrapper.get('[data-test="menu-history"]').trigger('click')
+    expect(wrapper.emitted('history')).toHaveLength(1)
+    expect(wrapper.find('[data-test="repo-menu"]').exists()).toBe(false)
+  })
+
+  it('Mesclar abre o menu de branches em modo merge; fechar sem escolher devolve o foco ao chip', async () => {
+    const wrapper = closedRepo()
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    await wrapper.get('[data-test="menu-merge"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="repo-menu"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="branch-menu"]').exists()).toBe(true)
+    await wrapper.get('[data-test="branch-menu-backdrop"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="branch-menu"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get('[data-test="branch-chip"]').element)
+  })
+
+  it('Atualizar relê o estado do projeto e fecha o menu', async () => {
+    const repo = makeRepoDetails({ path: PATH })
+    useGitDetailsStore(pinia).byProject[1] = { repos: [repo], limit_reached: false }
+    const fetchMock = routeFetch({ 'GET /api/projects/1/git/details': () => jsonResponse({ repos: [repo], limit_reached: false }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ScmRepo, { props: { projectId: 1, repo, collapseAll: 0, startOpen: false }, global: { plugins: [pinia] }, attachTo: document.body })
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    await wrapper.get('[data-test="menu-refresh"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('/git/details'))).toHaveLength(1)
+    expect(wrapper.find('[data-test="repo-menu"]').exists()).toBe(false)
+  })
+
+  it('com uma ação em andamento o Atualizar fica desligado', async () => {
+    const repo = makeRepoDetails({ path: PATH, upstream: 'origin/main', ahead: 0, behind: 2 })
+    useGitDetailsStore(pinia).byProject[1] = { repos: [repo], limit_reached: false }
+    vi.stubGlobal('fetch', routeFetch({ 'POST /api/projects/1/git/pull': () => new Promise<Response>(() => {}) }))
+    const wrapper = mount(ScmRepo, { props: { projectId: 1, repo, collapseAll: 0, startOpen: true }, global: { plugins: [pinia] }, attachTo: document.body })
+    await wrapper.get('[data-test="primary-action"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="repo-more"]').trigger('click')
+    expect(wrapper.get('[data-test="menu-refresh"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="menu-merge-reason"]').text()).toBe('Baixando 2 commits…')
   })
 })

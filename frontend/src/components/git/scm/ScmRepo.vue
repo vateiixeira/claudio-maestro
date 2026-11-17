@@ -18,6 +18,7 @@ import { conflictPrompt } from '../../../git/conflictPrompt'
 import { clearDraft, readDraft, readMergeMessage, writeDraft, writeMergeMessage } from '../../../git/commitDraft'
 import { runningLine, type Confirmation } from '../../../git/confirmation'
 import { primaryAction, type PrimaryKind } from '../../../git/primaryAction'
+import { REPO_ROW_GRID } from '../../../git/repoRowGrid'
 import { useRepoExpansion } from '../../../git/repoExpansion'
 import { repoLabel, syncCounts } from '../../../git/repoLabel'
 import { runningSessionIn } from '../../../git/runningSession'
@@ -28,7 +29,14 @@ import { useSessionsStore } from '../../../stores/sessions'
 import { useMediaQuery } from '../../../useMediaQuery'
 import type { BranchRef, GitOpAnswer, GitOpKind, RepoDetails, RepoFile } from '../../../types/api'
 
-const props = defineProps<{ projectId: number; repo: RepoDetails; collapseAll: number; startOpen: boolean }>()
+const props = withDefaults(defineProps<{
+  projectId: number
+  repo: RepoDetails
+  collapseAll: number
+  startOpen: boolean
+  /** A repository with nothing to do: a lower row with a muted name. */
+  quiet?: boolean
+}>(), { quiet: false })
 
 const emit = defineEmits<{ history: [] }>()
 const details = useGitDetailsStore()
@@ -291,6 +299,15 @@ const canPull = computed(() => pullReason.value === null)
 const canPush = computed(() => pushReason.value === null)
 const pullTitle = computed(() => pullReason.value ?? 'Baixar (pull)')
 const pushTitle = computed(() => pushReason.value ?? 'Enviar (push)')
+const aheadCount = computed(() => props.repo.ahead ?? 0)
+const behindCount = computed(() => props.repo.behind ?? 0)
+// Closed, only what there is to do shows; open, both are there, off when there is nothing to do.
+const showPull = computed(() => open.value || behindCount.value > 0)
+const showPush = computed(() => open.value || aheadCount.value > 0)
+const commitsLabel = (n: number) => (n === 1 ? '1 commit' : `${n} commits`)
+const pullLabel = computed(() => (behindCount.value > 0 ? `Pull ${commitsLabel(behindCount.value)}` : 'Pull'))
+const pushLabel = computed(() => (aheadCount.value > 0 ? `Push ${commitsLabel(aheadCount.value)}` : 'Push'))
+const quietRow = computed(() => props.quiet && !open.value)
 const syncTitle = computed(() => (sync.value.kind === 'diverged' ? `${sync.value.behind} para baixar, ${sync.value.ahead} para subir` : undefined))
 
 /** Pull and sync change the files: a running session is asked about first. */
@@ -336,6 +353,22 @@ async function copyPath(): Promise<void> {
   }
 }
 
+function showHistory(): void {
+  closeMore()
+  emit('history')
+}
+
+function startMerge(): void {
+  // The focus goes to the branch list that opens, not back to the "..." button.
+  closeMore(false)
+  menu.value = 'merge'
+}
+
+function refreshNow(): void {
+  closeMore()
+  void details.load(props.projectId)
+}
+
 function abortFromMenu(): void {
   closeMore()
   void abortMerge()
@@ -373,93 +406,83 @@ const branchTitle = computed(() => {
   if (busy.value) return busy.value
   return 'Trocar de branch'
 })
-const mergeTitle = computed(() => {
+/** Why Mesclar is off, shown in the menu; null when it is on. */
+const mergeReason = computed(() => {
   if (readOnly.value) return readOnly.value
   if (busy.value) return busy.value
   if (merging.value) return 'Já há um merge em andamento'
   if (state.value?.no_merge) return state.value.no_merge
   if (!props.repo.head) return 'Ainda não há commits.'
-  return `Mesclar uma branch em ${branchName.value}`
-})
-const commitTitle = computed(() => {
-  if (readOnly.value) return readOnly.value
-  if (busy.value) return busy.value
-  if (action.value.kind === 'merge-continue') return 'Conclua o merge com Concluir merge'
-  if (action.value.kind !== 'commit') return 'Nada para commitar'
-  return action.value.disabled ? (action.value.reason ?? 'Commitar') : 'Commitar'
+  return null
 })
 
+const networkIdle = 'border-line-strong text-fg-muted'
+const networkActive = 'border-fg-muted text-fg'
 const iconButton = 'flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent'
-const networkButton = 'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-line-strong bg-panel px-2 text-xs font-medium text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50 disabled:hover:bg-panel'
+const networkButton = 'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border bg-panel px-2 text-xs font-medium hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-50 disabled:hover:bg-panel'
 
 // For the tasks that fill this component further (branch menu, merge, conflicts, sync).
 defineExpose({ ask, act, handlers })
 </script>
 
 <template>
-  <li data-test="scm-repo" :data-repo="repo.path" class="relative flex min-w-0 flex-col rounded-md border border-line odd:bg-panel even:bg-card/40">
-    <div class="flex min-h-10 flex-wrap items-center gap-x-2 gap-y-1 rounded-t-md px-2 py-1.5" :class="open ? 'border-b border-line bg-elevated/60' : 'hover:bg-elevated/60'">
-      <button type="button" data-test="scm-repo-toggle" :title="name" :aria-expanded="open" class="flex min-w-0 flex-[1_1_9rem] items-center gap-1.5 py-0.5 text-left sm:max-w-[35%] sm:flex-none" @click="open = !open">
-        <IconChevron :open="open" :size="12" class="text-fg-subtle" />
-        <RepoName :name="name" />
+  <li
+    data-test="scm-repo"
+    :data-repo="repo.path"
+    :data-open="String(open)"
+    :data-quiet="String(quiet)"
+    class="@container relative flex min-w-0 flex-col"
+    :class="open ? 'rounded-xl border border-line-strong bg-panel' : 'border-b border-line'"
+  >
+    <div
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5"
+      :class="[REPO_ROW_GRID, quietRow ? 'min-h-9 @3xl:min-h-[2.375rem]' : 'min-h-10 @3xl:min-h-[2.875rem]', open ? 'rounded-t-xl border-b border-line bg-elevated/60' : 'rounded-md hover:bg-panel']"
+    >
+      <button type="button" data-test="scm-repo-toggle" :title="name" :aria-expanded="open" class="flex min-w-0 flex-[1_1_9rem] items-center gap-1.5 rounded py-0.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary @xl:max-w-[35%] @xl:flex-none @3xl:col-span-2 @3xl:max-w-none @3xl:gap-3.5" @click="open = !open">
+        <span class="flex w-3.5 shrink-0 justify-center"><IconChevron :open="open" :size="12" class="text-fg-subtle" /></span>
+        <RepoName :name="name" :quiet="quietRow" />
 
         <span v-if="readOnly" data-test="read-only-tag" class="ml-1 text-xs text-fg-subtle">só leitura</span>
       </button>
-      <slot name="branch" :branch="branchName" :dirty="dirty">
-        <button
-          ref="chip"
-          type="button"
-          data-test="branch-chip"
-          :disabled="!!readOnly || !!busyKind || preparingMerge || merging"
-          :title="branchTitle"
-          class="max-w-[45%] truncate rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg disabled:hover:bg-transparent sm:max-w-56"
-          @click="menu = 'switch'"
-        ><span data-test="scm-branch" :title="repo.detached ? 'HEAD solto' : undefined">{{ branchName }}{{ dirty ? '*' : '' }}</span></button>
-        <span v-if="merging" data-test="merging-tag" class="flex shrink-0 items-center gap-1 text-xs text-secondary"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>merge em andamento</span>
-      </slot>
+      <div class="flex min-w-0 max-w-[45%] items-center gap-2 @xl:max-w-56 @3xl:max-w-full">
+        <slot name="branch" :branch="branchName" :dirty="dirty">
+          <button
+            ref="chip"
+            type="button"
+            data-test="branch-chip"
+            :disabled="!!readOnly || !!busyKind || preparingMerge || merging"
+            :title="branchTitle"
+            class="min-w-0 truncate rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-xs text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:hover:bg-transparent"
+            @click="menu = 'switch'"
+          ><span data-test="scm-branch" :title="repo.detached ? 'HEAD solto' : undefined">{{ branchName }}</span></button>
+          <span v-if="merging" data-test="merging-tag" class="flex shrink-0 items-center gap-1 text-xs text-secondary"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>merge em andamento</span>
+        </slot>
+      </div>
       <RepoStateBadges :sync="sync" :changes="repo.changed.staged + repo.changed.unstaged + repo.changed.untracked" :error="!!repo.error || !!error" :title="syncTitle" />
-      <div v-if="!repo.error" class="ml-auto flex shrink-0 items-center gap-0.5 lg:ml-2">
-        <button
-          type="button"
-          data-test="repo-merge"
-          :class="iconButton"
-          :disabled="!!readOnly || !!busyKind || preparingMerge || merging || !!state?.no_merge || !repo.head"
-          aria-label="Mesclar uma branch"
-          :title="mergeTitle"
-          @click="menu = 'merge'"
-        ><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" /></svg></button>
-        <button
-          type="button"
-          data-test="repo-commit"
-          :class="iconButton"
-          :disabled="!!readOnly || !!busyKind || action.kind !== 'commit' || action.disabled"
-          aria-label="Commitar"
-          :title="commitTitle"
-          @click="commit"
-        ><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg></button>
-        <button
-          type="button"
-          data-test="repo-pull"
-          :class="networkButton"
-          :disabled="!!busyKind || !canPull"
-          aria-label="Pull"
-          :title="pullTitle"
-          @click="bringIn('pull')"
-        ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" /></svg>Pull</button>
-        <button
-          type="button"
-          data-test="repo-push"
-          :class="networkButton"
-          :disabled="!!busyKind || !canPush"
-          aria-label="Push"
-          :title="pushTitle"
-          @click="pushNow"
-        ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4" /></svg>Push</button>
-        <button type="button" data-test="repo-refresh" :class="iconButton" :disabled="!!busyKind" aria-label="Atualizar" title="Reler o estado git" @click="details.load(projectId)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
-        </button>
-        <button type="button" data-test="repo-history" class="inline-flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Ver commits de ${name}`" @click="emit('history')">Commits</button>
-        <button ref="moreButton" type="button" data-test="repo-more" :class="iconButton" aria-haspopup="menu" :aria-expanded="moreOpen" aria-label="Mais ações" title="Mais ações" @click="moreOpen = !moreOpen">
+      <div v-if="!repo.error" class="ml-auto flex shrink-0 items-center gap-1 @3xl:contents">
+        <div class="flex items-center justify-end gap-1.5 empty:hidden @3xl:col-start-5 @3xl:empty:flex">
+          <button
+            v-if="showPull"
+            type="button"
+            data-test="repo-pull"
+            :class="[networkButton, behindCount > 0 ? networkActive : networkIdle]"
+            :disabled="!!busyKind || !canPull"
+            :aria-label="pullLabel"
+            :title="pullTitle"
+            @click="bringIn('pull')"
+          ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" /></svg>Pull <span v-if="behindCount > 0" data-test="repo-pull-count" class="tabular-nums">{{ behindCount }}</span></button>
+          <button
+            v-if="showPush"
+            type="button"
+            data-test="repo-push"
+            :class="[networkButton, aheadCount > 0 ? networkActive : networkIdle]"
+            :disabled="!!busyKind || !canPush"
+            :aria-label="pushLabel"
+            :title="pushTitle"
+            @click="pushNow"
+          ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4" /></svg>Push <span v-if="aheadCount > 0" data-test="repo-push-count" class="tabular-nums">{{ aheadCount }}</span></button>
+        </div>
+        <button ref="moreButton" type="button" data-test="repo-more" :class="iconButton" class="@3xl:col-start-6" aria-haspopup="menu" :aria-expanded="moreOpen" :aria-label="`Mais ações de ${name}`" title="Mais ações" @click="moreOpen = !moreOpen">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
         </button>
       </div>
@@ -477,7 +500,21 @@ defineExpose({ ask, act, handlers })
       @create="(initial) => { menu = null; creating = { initial, error: null } }"
     />
 
-    <ScmRepoMenu v-if="moreOpen" :merging="merging && !readOnly" :can-fetch="hasUpstream && !busyKind" @close="(restore) => closeMore(restore !== false)" @fetch="fetchNow" @copy="copyPath" @abort="abortFromMenu" />
+    <ScmRepoMenu
+      v-if="moreOpen"
+      :merging="merging && !readOnly"
+      :can-fetch="hasUpstream && !busyKind"
+      :can-merge="mergeReason === null"
+      :merge-reason="mergeReason"
+      :can-refresh="!busyKind"
+      @close="(restore) => closeMore(restore !== false)"
+      @history="showHistory"
+      @merge="startMerge"
+      @fetch="fetchNow"
+      @refresh="refreshNow"
+      @copy="copyPath"
+      @abort="abortFromMenu"
+    />
 
     <!-- Outside the body: the error of a fetch must show with the repository collapsed too. -->
     <div v-if="error" data-test="scm-error-area" class="flex flex-col gap-1.5 px-3 py-2">

@@ -33,6 +33,10 @@ function mountRepo(repo: RepoDetails, handlers: Record<string, () => Response | 
 const kinds = (fetchMock: ReturnType<typeof routeFetch>) =>
   fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST').map((c) => String(c[0]).split('/git/').pop())
 
+const openMenu = async (wrapper: ReturnType<typeof mountRepo>['wrapper']) => {
+  await wrapper.find('[data-test="repo-more"]').trigger('click')
+}
+
 describe('rede no repositório', () => {
   it('o botão largo sincroniza, envia, baixa e publica', async () => {
     const answer = () => jsonResponse({ repo: makeRepoDetails({ path: PATH }), conflicts: false, remote: 'origin' })
@@ -203,15 +207,18 @@ describe('rede no repositório', () => {
     expect(wrapper.find('[data-test="repo-push"]').attributes('title')).toBe(push)
   })
 
-  it('em repositório só leitura, Mesclar, Commitar, Baixar e Enviar ficam desligados com o motivo', () => {
+  it('em repositório só leitura, Baixar e Enviar ficam desligados com o motivo, e o menu desliga o Mesclar', async () => {
     const reason = 'Este repositório usa LFS.'
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, ahead: 1, behind: 1, state: makeRepoState({ read_only: reason }) }))
-    for (const test of ['repo-merge', 'repo-commit', 'repo-pull', 'repo-push']) {
+    for (const test of ['repo-pull', 'repo-push']) {
       const button = wrapper.find(`[data-test="${test}"]`)
       expect(button.exists(), test).toBe(true)
       expect(button.attributes('disabled'), test).toBeDefined()
       expect(button.attributes('title'), test).toBe(reason)
     }
+    await openMenu(wrapper)
+    expect(wrapper.find('[data-test="menu-merge"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="menu-merge-reason"]').text()).toBe(reason)
   })
 
   it('o motivo do no_merge vira o título do Baixar, e Ctrl+Enter não baixa com a ação desligada', async () => {
@@ -239,20 +246,19 @@ describe('rede no repositório', () => {
   })
 
   it.each([
-    ['sem alterações e com commits para enviar', { ahead: 1, behind: 0 }, 'Nada para commitar'],
-    ['sem alterações e sem nada a fazer', { ahead: 0, behind: 0 }, 'Não há alterações para commitar'],
     ['com alterações e sem mensagem', { files: [{ path: 'a.ts', status: 'unstaged', kind: 'M', added: 1, removed: 0 }] }, 'Escreva a mensagem do commit'],
-    ['em merge', { state: makeRepoState({ merging: true, merge_branch: 'feat', conflicts: [] }) }, 'Conclua o merge com Concluir merge'],
-  ] as const)('o título do ícone Commitar diz por que está desligado: %s', (_label, overrides, title) => {
+    ['em merge', { state: makeRepoState({ merging: true, merge_branch: 'feat', conflicts: ['a.ts'] }) }, 'Falta resolver 1 arquivo'],
+  ] as const)('o título do botão largo diz por que está desligado: %s', (_label, overrides, title) => {
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, ...overrides } as Partial<RepoDetails>))
-    expect(wrapper.find('[data-test="repo-commit"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('[data-test="repo-commit"]').attributes('title')).toBe(title)
+    expect(wrapper.find('[data-test="primary-action"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="primary-action"]').attributes('title')).toBe(title)
   })
 
-  it('sem commits o ícone Mesclar diz "Ainda não há commits."', () => {
+  it('sem commits o Mesclar do menu diz "Ainda não há commits."', async () => {
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, head: null, branch: 'main', upstream: null, ahead: null, behind: null }))
-    expect(wrapper.find('[data-test="repo-merge"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('[data-test="repo-merge"]').attributes('title')).toBe('Ainda não há commits.')
+    await openMenu(wrapper)
+    expect(wrapper.find('[data-test="menu-merge"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="menu-merge-reason"]').text()).toBe('Ainda não há commits.')
   })
 
   it('o chip de branch em repositório só leitura diz o motivo', () => {
@@ -262,17 +268,18 @@ describe('rede no repositório', () => {
     expect(wrapper.find('[data-test="branch-chip"]').attributes('title')).toBe(reason)
   })
 
-  it('com uma ação em andamento, Commitar, Mesclar e o chip de branch dizem o rótulo de ocupado', async () => {
+  it('com uma ação em andamento, o chip de branch e o Mesclar do menu dizem o rótulo de ocupado', async () => {
     let release!: () => void
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, ahead: 0, behind: 3 }), {
       'POST /api/projects/1/git/pull': () => new Promise<Response>((r) => { release = () => r(jsonResponse({ repo: makeRepoDetails({ path: PATH }), conflicts: false })) }),
     })
     await wrapper.find('[data-test="primary-action"]').trigger('click')
     await flushPromises()
-    for (const test of ['repo-commit', 'repo-merge', 'branch-chip']) {
-      expect(wrapper.find(`[data-test="${test}"]`).attributes('disabled'), test).toBeDefined()
-      expect(wrapper.find(`[data-test="${test}"]`).attributes('title'), test).toBe('Baixando 3 commits…')
-    }
+    expect(wrapper.find('[data-test="branch-chip"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="branch-chip"]').attributes('title')).toBe('Baixando 3 commits…')
+    await openMenu(wrapper)
+    expect(wrapper.find('[data-test="menu-merge"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="menu-merge-reason"]').text()).toBe('Baixando 3 commits…')
     release()
     await flushPromises()
   })

@@ -1,8 +1,15 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
-defineProps<{ merging: boolean; canFetch: boolean }>()
-const emit = defineEmits<{ fetch: []; abort: []; copy: []; close: [restoreFocus?: boolean] }>()
+defineProps<{
+  merging: boolean
+  canFetch: boolean
+  canMerge: boolean
+  /** Why Mesclar is off; shown under it. */
+  mergeReason: string | null
+  canRefresh: boolean
+}>()
+const emit = defineEmits<{ history: []; merge: []; fetch: []; refresh: []; abort: []; copy: []; close: [restoreFocus?: boolean] }>()
 const panel = ref<HTMLElement | null>(null)
 
 const enabledItems = () => [...(panel.value?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? [])]
@@ -45,8 +52,12 @@ const item = 'flex h-7 w-full items-center rounded px-2 text-left text-[0.8125re
 <template>
   <div class="fixed inset-0 z-40" data-test="repo-menu-backdrop" @click="emit('close')" />
   <div ref="panel" role="menu" aria-label="Mais ações" data-test="repo-menu" class="absolute top-7 right-0 z-50 flex w-56 flex-col rounded-lg border border-line-strong bg-panel p-1 shadow-2xl" @keydown="onKeydown" @focusout="onFocusout">
+    <button type="button" role="menuitem" data-test="menu-history" :class="item" @click="emit('history')">Ver commits</button>
+    <button type="button" role="menuitem" data-test="menu-merge" :class="item" :disabled="!canMerge" @click="emit('merge')">Mesclar uma branch…</button>
+    <p v-if="mergeReason" data-test="menu-merge-reason" class="m-0 px-2 pb-1 text-xs leading-snug text-fg-muted">{{ mergeReason }}</p>
     <button type="button" role="menuitem" data-test="menu-fetch" :class="item" :disabled="!canFetch" @click="emit('fetch')">Buscar no remoto</button>
-    <button v-if="merging" type="button" role="menuitem" data-test="menu-abort" :class="item" @click="emit('abort')">Abortar merge</button>
+    <button type="button" role="menuitem" data-test="menu-refresh" :class="item" :disabled="!canRefresh" @click="emit('refresh')">Atualizar</button>
     <button type="button" role="menuitem" data-test="menu-copy-path" :class="item" @click="emit('copy')">Copiar caminho</button>
+    <button v-if="merging" type="button" role="menuitem" data-test="menu-abort" :class="item" @click="emit('abort')">Abortar merge</button>
   </div>
 </template>

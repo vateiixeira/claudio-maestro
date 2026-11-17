@@ -43,6 +43,12 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
+/** The merge starts from the repository's "more actions" menu. */
+async function startMerge(wrapper: ReturnType<typeof mountRepo>['wrapper']): Promise<void> {
+  await wrapper.find('[data-test="repo-more"]').trigger('click')
+  await wrapper.find('[data-test="menu-merge"]').trigger('click')
+}
+
 function mountRepo(repo: RepoDetails, handlers: Record<string, (init?: RequestInit) => Response | Promise<Response>> = {}) {
   useGitDetailsStore(pinia).byProject[1] = { repos: [repo], limit_reached: false }
   const fetchMock = routeFetch({ [BRANCHES]: () => jsonResponse(LIST), ...handlers })
@@ -150,7 +156,7 @@ describe('branches e merge no repositório', () => {
       [`GET /api/projects/1/git/compare?${new URLSearchParams({ repo: PATH, ref: 'refs/heads/feat/agente' })}`]: () => jsonResponse({ incoming: 6 }),
       'POST /api/projects/1/git/merge': () => jsonResponse({ repo: after, conflicts: true }),
     })
-    await wrapper.find('[data-test="repo-merge"]').trigger('click')
+    await startMerge(wrapper)
     await flushPromises()
     await wrapper.find('[data-name="feat/agente"]').trigger('click')
     await flushPromises()
@@ -232,7 +238,6 @@ describe('branches e merge no repositório', () => {
     const button = wrapper.find('[data-test="primary-action"]')
     expect(button.attributes('disabled')).toBeDefined()
     expect(button.attributes('title')).toBe('Resolva os conflitos pelo terminal')
-    expect(wrapper.find('[data-test="repo-commit"]').attributes('disabled')).toBeDefined()
   })
 
   it('dentro de um merge o aviso de conflito fora de merge não aparece', () => {
@@ -276,12 +281,12 @@ describe('branches e merge no repositório', () => {
     expect(router.currentRoute.value.params.id).toBe('nova')
   })
 
-  it('driver de merge desliga o botão de merge com o motivo', () => {
+  it('driver de merge desliga o Mesclar do menu com o motivo', async () => {
     const reason = 'Este repositório tem um driver de merge próprio (npm).'
     const { wrapper } = mountRepo(makeRepoDetails({ path: PATH, state: makeRepoState({ no_merge: reason }) }))
-    const button = wrapper.find('[data-test="repo-merge"]')
-    expect(button.attributes('disabled')).toBeDefined()
-    expect(button.attributes('title')).toBe(reason)
+    await wrapper.find('[data-test="repo-more"]').trigger('click')
+    expect(wrapper.find('[data-test="menu-merge"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="menu-merge-reason"]').text()).toBe(reason)
   })
 
   it('descartar durante o merge avisa que também desfaz o que o merge trouxe', async () => {
@@ -350,14 +355,15 @@ describe('branches e merge no repositório', () => {
         return new Promise<Response>((resolve) => { release = resolve })
       },
     })
-    await wrapper.find('[data-test="repo-merge"]').trigger('click')
+    await startMerge(wrapper)
     await flushPromises()
     await wrapper.find('[data-name="feat/agente"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="primary-action"]').text()).toBe('Mesclando…')
-    expect(wrapper.find('[data-test="repo-merge"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-test="branch-chip"]').attributes('disabled')).toBeDefined()
-    await wrapper.find('[data-test="repo-merge"]').trigger('click')
+    await wrapper.find('[data-test="repo-more"]').trigger('click')
+    expect(wrapper.find('[data-test="menu-merge"]').attributes('disabled')).toBeDefined()
+    await wrapper.find('[data-test="menu-merge"]').trigger('click')
     expect(wrapper.find('[data-test="branch-menu"]').exists()).toBe(false)
     release(jsonResponse({ incoming: 2 }))
     await flushPromises()
@@ -371,7 +377,7 @@ describe('branches e merge no repositório', () => {
     const { wrapper, fetchMock } = mountRepo(makeRepoDetails({ path: PATH, rel_path: 'api', branch: 'develop' }), {
       [`GET /api/projects/1/git/compare?${new URLSearchParams({ repo: PATH, ref: 'refs/heads/feat/agente' })}`]: () => jsonResponse({ incoming: 1 }),
     })
-    await wrapper.find('[data-test="repo-merge"]').trigger('click')
+    await startMerge(wrapper)
     await flushPromises()
     await wrapper.find('[data-name="feat/agente"]').trigger('click')
     await flushPromises()
