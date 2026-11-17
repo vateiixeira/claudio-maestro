@@ -3,7 +3,7 @@ import { backgroundState } from './background'
 import { diffCounts, toolDiff } from './diff'
 import { agentStatus } from './subagents'
 import { toolImagesOf } from './toolImages'
-import { askedModel, countLines, resultText, str, toolLabel } from './tool'
+import { askedModel, commandFolder, countLines, mainInput, resultText, str, toolLabel } from './tool'
 import { AGENT_TOOLS, EDIT_TOOLS, SEARCH_TOOLS, toolRunning, type NodeKind } from './turns'
 
 // What a work block (the actions between two statements) says about each of its actions.
@@ -58,6 +58,8 @@ export interface WorkRow {
   meta?: string
   /** First line of a command that has a description, shown on a second line while the row is closed. */
   command?: string
+  /** The folder a command was run in, from its leading `cd` (Bash only). */
+  folder?: string
   /** Lines added and removed by an edit. */
   diff?: { added: number; removed: number }
   /** When the action started (Unix seconds), when the history says. */
@@ -106,8 +108,10 @@ export function workRow(item: ToolItem, sessionActive: boolean, waiting?: Readon
     row.diff = editDiff(item)
     if (origin) row.tag = origin
   } else if (kind === 'bash') {
-    const command = str(input.command).split('\n', 1)[0] ?? ''
+    const { folder, rest } = commandFolder(str(input.command))
+    const command = rest.split('\n', 1)[0] ?? ''
     const description = str(input.description)
+    if (folder) row.folder = folder
     row.desc = description || command
     row.mono = !description
     if (description && command) row.command = command
@@ -117,7 +121,7 @@ export function workRow(item: ToolItem, sessionActive: boolean, waiting?: Readon
     row.desc = item.subagent?.description || str(input.description)
     row.mono = false
   } else {
-    row.desc = toolLabel(item.name)
+    row.desc = mainInput(input).split('\n', 1)[0]!.trim() || toolLabel(item.name)
   }
   if (item.result_missing) meta = 'Resultado não disponível no histórico'
   else if (status === 'idle' && !item.result) meta = 'sem resultado'
@@ -147,18 +151,63 @@ export function workActivity(items: ToolItem[], sessionActive: boolean, waiting?
   return ''
 }
 
+const program = (command: string) => commandFolder(command).rest.trim().split(/\s+/, 1)[0] ?? ''
+
+/**
+ * The failed actions that the very next action of the block tried again: failed id → id of the new
+ * attempt. A new attempt has the same tool name (in Bash, also the same program) and has not
+ * failed itself; a subagent is never retried.
+ */
+export function workRetries(items: ToolItem[], sessionActive: boolean, waiting?: ReadonlySet<string>): Map<string, string> {
+  const retries = new Map<string, string>()
+  for (let i = 0; i < items.length - 1; i++) {
+    const item = items[i]!
+    const next = items[i + 1]!
+    if (AGENT_TOOLS.has(item.name) || AGENT_TOOLS.has(next.name)) continue
+    if (workStatus(item, sessionActive, waiting) !== 'error') continue
+    if (next.name !== item.name) continue
+    if (item.name === 'Bash' && program(str(item.input?.command)) !== program(str(next.input?.command))) continue
+    if (workStatus(next, sessionActive, waiting) === 'error') continue
+    retries.set(item.id, next.id)
+  }
+  return retries
+}
+
+/** The failures of a block, as a phrase ("2 falharam, refeitas em seguida"); empty when nothing failed. */
+export function workFailure(items: ToolItem[], sessionActive: boolean, waiting?: ReadonlySet<string>): string {
+  const failed = items.filter((item) => workStatus(item, sessionActive, waiting) === 'error')
+  if (!failed.length) return ''
+  const retries = workRetries(items, sessionActive, waiting)
+  const byId = new Map(items.map((item) => [item.id, item]))
+  const redone = failed.every((item) => {
+    const retry = byId.get(retries.get(item.id) ?? '')
+    return retry && workStatus(retry, sessionActive, waiting) === 'ok'
+  })
+  const text = plural(failed.length, 'falhou', 'falharam')
+  return redone ? `${text}, ${failed.length === 1 ? 'refeita' : 'refeitas'} em seguida` : text
+}
+
+/** A failure no later action of the block tried again with success: the block still has something to look at. */
+export function hasUnrecoveredFailure(items: ToolItem[], sessionActive: boolean, waiting?: ReadonlySet<string>): boolean {
+  const retries = workRetries(items, sessionActive, waiting)
+  const byId = new Map(items.map((item) => [item.id, item]))
+  return items.some((item) => {
+    if (workStatus(item, sessionActive, waiting) !== 'error') return false
+    const retry = byId.get(retries.get(item.id) ?? '')
+    return !retry || workStatus(retry, sessionActive, waiting) !== 'ok'
+  })
+}
+
 /** One sentence for a collapsed group, using only facts already present in the conversation. */
 export function workCaption(items: ToolItem[], sessionActive: boolean, waiting?: ReadonlySet<string>): string {
   const states = items.map((item) => ({ item, status: workStatus(item, sessionActive, waiting) }))
   if (states.some(({ status }) => status === 'waiting')) return 'Esperando você'
-  const failed = states.filter(({ status }) => status === 'error').length
-  const failure = failed ? plural(failed, 'falhou', 'falharam') : ''
   const running = [...states].reverse().find(({ status }) => status === 'running')?.item
   if (running) {
     const description = running.subagent?.last_activity || running.subagent?.description || str(running.input?.description)
-    return [description || workActivity([running], sessionActive, waiting), failure].filter(Boolean).join(' · ')
+    return description || workActivity([running], sessionActive, waiting)
   }
-  const completed = states.filter(({ status }) => status === 'ok').map(({ item }) => item)
+  const completed = states.filter(({ status }) => status === 'ok' || status === 'error').map(({ item }) => item)
   const parts: string[] = []
   const commands = completed.filter((item) => workKind(item) === 'bash').length
   if (commands) parts.push(`executou ${plural(commands, 'comando', 'comandos')}`)
@@ -176,7 +225,6 @@ export function workCaption(items: ToolItem[], sessionActive: boolean, waiting?:
     const count = completed.filter((item) => workKind(item) === kind).length
     if (count) parts.push(`${kind === 'search' ? 'fez' : kind === 'agent' ? 'executou' : 'usou'} ${plural(count, ...SUMMARY_WORDS[kind])}`)
   }
-  if (failure) parts.push(failure)
   const missing = states.filter(({ status }) => status === 'idle').length
   const stopped = states.filter(({ status }) => status === 'stopped').length
   if (missing) parts.push(`${plural(missing, 'ação', 'ações')} sem resultado`)
@@ -194,6 +242,6 @@ export function groupNodeKind(items: ToolItem[], sessionActive: boolean, waiting
   if (waiting && items.some((item) => waiting.has(item.tool_use_id))) return 'waiting'
   const statuses = items.map((item) => workStatus(item, sessionActive))
   if (statuses.includes('running')) return 'running'
-  if (statuses.includes('error')) return 'error'
+  if (hasUnrecoveredFailure(items, sessionActive, waiting)) return 'error'
   return workKind(items[0]!)
 }

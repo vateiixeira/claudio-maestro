@@ -56,6 +56,30 @@ export function str(value: unknown): string {
 }
 
 /**
+ * A leading `cd <folder> &&` (or `;`) of a command: the folder and the command that follows it.
+ * The folder may be quoted. A bare `cd`, or one with nothing after it, is left in the command.
+ */
+export function commandFolder(command: string): { folder: string | null; rest: string } {
+  const match = /^\s*cd\s+(?:"([^"]*)"|'([^']*)'|([^\s&;|"']+))\s*(?:&&|;)\s*(\S[\s\S]*)$/.exec(command)
+  if (!match) return { folder: null, rest: command }
+  return { folder: match[1] ?? match[2] ?? match[3] ?? null, rest: match[4]! }
+}
+
+const MAIN_INPUT_KEYS = ['query', 'sql', 'command', 'code', 'prompt', 'url', 'path'] as const
+
+/** The text that says what a tool call does: the first of the usual fields, else its first text value; empty when none. */
+export function mainInput(input: Record<string, unknown>): string {
+  for (const key of MAIN_INPUT_KEYS) {
+    const value = input[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  for (const value of Object.values(input)) {
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return ''
+}
+
+/**
  * The model an Agent call asked for, as the fallback until the subagent's own messages name the
  * real one. "inherit" (the default) says nothing, so it gives null.
  */

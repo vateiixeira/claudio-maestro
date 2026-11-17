@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolItem } from '../../types/conversation'
-import { workCaption } from '../work'
+import { workCaption, workFailure } from '../work'
 
 const tool = (id: string, name: string, input: ToolItem['input'] = {}, extra: Partial<ToolItem> = {}): ToolItem => ({
   type: 'tool', id, tool_use_id: `tu-${id}`, name, input,
@@ -30,8 +30,14 @@ describe('resumo de trabalho em uma linha', () => {
   it('permissão e falha não somem atrás de outra ação em execução', () => {
     const pending = tool('b', 'Bash', { command: 'pnpm test' }, { result: null })
     const failed = tool('a', 'Bash', {}, { result: { content: 'erro', is_error: true, details: null } })
-    expect(workCaption([failed, pending], true)).toContain('1 falhou')
+    expect(workCaption([failed, pending], true)).toBe('Comando · pnpm test')
+    expect(workFailure([failed, pending], true)).toBe('1 falhou')
     expect(workCaption([pending], true, new Set(['tu-b']))).toBe('Esperando você')
+  })
+
+  it('conta por tipo as ações que falharam também, sem acrescentar "falhou"', () => {
+    const failed = { content: 'erro', is_error: true, details: null }
+    expect(workCaption([tool('a', 'Bash'), tool('b', 'Bash', {}, { result: failed })], false)).toBe('Executou 2 comandos')
   })
 
   it('não apresenta ferramenta sem resultado como trabalho concluído', () => {

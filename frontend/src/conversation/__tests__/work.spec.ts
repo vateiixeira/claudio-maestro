@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupNodeKind, workActivity, workRow, workStatus, workCaption } from '../work'
+import { groupNodeKind, hasUnrecoveredFailure, workActivity, workCaption, workFailure, workRetries, workRow, workStatus } from '../work'
 import type { ToolItem } from '../../types/conversation'
 
 const done = { content: 'ok', is_error: false, details: null }
@@ -79,6 +79,20 @@ describe('workRow', () => {
     expect(workRow(tool('m', 'mcp__s__t'), false)).toMatchObject({ kind: 'tool', desc: 's · t' })
   })
 
+  it('comando com cd: a pasta sai do comando', () => {
+    expect(workRow(tool('b', 'Bash', { command: 'cd /home/ana/dev/a && ls', description: 'Listar' }), false))
+      .toMatchObject({ desc: 'Listar', command: 'ls', folder: '/home/ana/dev/a', mono: false })
+    expect(workRow(tool('b', 'Bash', { command: 'cd /home/ana/dev/a && pwd' }), false))
+      .toMatchObject({ desc: 'pwd', mono: true, folder: '/home/ana/dev/a' })
+    expect(workRow(tool('b', 'Bash', { command: 'pwd' }), false).folder).toBeUndefined()
+  })
+
+  it('ferramenta com entrada de texto: a primeira linha dela, em monoespaçada', () => {
+    expect(workRow(tool('m', 'mcp__banco__query', { query: 'select 1\nfrom t' }), false))
+      .toMatchObject({ kind: 'tool', desc: 'select 1', mono: true })
+    expect(workRow(tool('m', 'mcp__banco__ping'), false)).toMatchObject({ desc: 'banco · ping' })
+  })
+
   it('sem resultado e resultado ausente no histórico', () => {
     expect(workRow(tool('m', 'ToolSearch', {}, { result: null }), false).meta).toBe('sem resultado')
     expect(workRow(tool('m', 'ToolSearch', {}, { result: null, result_missing: true }), false).meta).toBe('Resultado não disponível no histórico')
@@ -86,22 +100,22 @@ describe('workRow', () => {
 })
 
 describe('workCaption', () => {
-  it('resume por tipo e mantém as falhas visíveis', () => {
+  it('resume por tipo, contando também as ações que falharam', () => {
     const items = [
       tool('e', 'Edit', { file_path: '/a' }),
       tool('b', 'Bash', { command: 'ls' }),
       tool('x', 'Read', {}, { result: failed }),
     ]
-    expect(workCaption(items, false)).toBe('Executou 1 comando, editou a, 1 falhou')
+    expect(workCaption(items, false)).toBe('Executou 1 comando, fez 1 leitura, editou a')
   })
 
-  it('plural, ordem fixa e falhas no plural', () => {
+  it('plural e ordem fixa', () => {
     const items = [
       tool('a', 'Agent'), tool('b', 'Bash'), tool('c', 'Bash'), tool('d', 'Edit'), tool('e', 'MultiEdit'),
       tool('f', 'Read'), tool('g', 'Grep'), tool('h', 'mcp__s__t'),
       tool('i', 'Bash', {}, { result: failed }), tool('j', 'Edit', {}, { result: failed }),
     ]
-    expect(workCaption(items, false)).toBe('Executou 2 comandos, fez 1 leitura, fez 2 edições, fez 1 busca, usou 1 ferramenta, executou 1 subagente, 2 falharam')
+    expect(workCaption(items, false)).toBe('Executou 3 comandos, fez 1 leitura, fez 3 edições, fez 1 busca, usou 1 ferramenta, executou 1 subagente')
   })
 
   it('a atividade substitui o resumo enquanto executa', () => {
@@ -218,5 +232,53 @@ describe('workRow: leitura de imagem', () => {
     expect(workRow(read([marker(0)]), false).meta).toBe('1 imagem')
     expect(workRow(read([marker(0), marker(1)]), false).meta).toBe('2 imagens')
     expect(workRow(read([{ type: 'text', text: 'a\nb' }, marker(0)]), false).meta).toBe('2 linhas')
+  })
+})
+
+describe('novas tentativas', () => {
+  const bashItem = (id: string, command: string, extra: Partial<ToolItem> = {}) => tool(id, 'Bash', { command }, extra)
+  const erro = (id: string, command = 'grep x') => bashItem(id, command, { result: failed })
+
+  it('workRetries liga a falha à ação seguinte do mesmo tipo (e do mesmo programa no Bash)', () => {
+    expect(workRetries([erro('a'), bashItem('b', 'grep y')], false)).toEqual(new Map([['a', 'b']]))
+    expect(workRetries([erro('a'), bashItem('b', 'cd /p && grep y')], false)).toEqual(new Map([['a', 'b']]))
+    expect(workRetries([erro('a'), bashItem('b', 'ls')], false).size).toBe(0)
+    expect(workRetries([
+      tool('a', 'mcp__banco__query', {}, { result: failed }), tool('b', 'mcp__banco__query'),
+    ], false)).toEqual(new Map([['a', 'b']]))
+    expect(workRetries([tool('a', 'Read', {}, { result: failed }), tool('b', 'Read', {}, { result: failed })], false).size).toBe(0)
+  })
+
+  it('só a ação seguinte conta, e subagente nunca', () => {
+    expect(workRetries([erro('a'), tool('r', 'Read'), bashItem('b', 'grep y')], false).size).toBe(0)
+    const agent = (id: string, status: 'failed' | 'completed') => tool(id, 'Agent', {}, { subagent: sub(status) })
+    expect(workRetries([agent('a', 'failed'), agent('b', 'completed')], false).size).toBe(0)
+  })
+
+  it('workFailure diz quantas falharam e se foram refeitas', () => {
+    const ok = (id: string) => bashItem(id, 'grep y')
+    expect(workFailure([erro('a'), ok('b')], false)).toBe('1 falhou, refeita em seguida')
+    expect(workFailure([erro('a'), ok('b'), erro('c'), ok('d')], false)).toBe('2 falharam, refeitas em seguida')
+    expect(workFailure([erro('a'), ok('b'), erro('c', 'ls')], false)).toBe('2 falharam')
+    expect(workFailure([ok('a')], false)).toBe('')
+    expect(workFailure([erro('a'), erro('b', 'ls')], false)).toBe('2 falharam')
+  })
+
+  it('uma nova tentativa que ainda não deu certo não conta como refeita', () => {
+    const rodando = bashItem('b', 'grep y', { result: null })
+    expect(workFailure([erro('a'), rodando], true)).toBe('1 falhou')
+    expect(workFailure([erro('a'), erro('b', 'grep z')], false)).toBe('2 falharam')
+  })
+
+  it('hasUnrecoveredFailure', () => {
+    expect(hasUnrecoveredFailure([erro('a'), bashItem('b', 'grep y')], false)).toBe(false)
+    expect(hasUnrecoveredFailure([erro('a')], false)).toBe(true)
+    expect(hasUnrecoveredFailure([tool('a', 'Agent', {}, { subagent: sub('failed') })], false)).toBe(true)
+    expect(hasUnrecoveredFailure([tool('a', 'Read')], false)).toBe(false)
+  })
+
+  it('o nó do bloco só vira erro com falha sem nova tentativa', () => {
+    expect(groupNodeKind([erro('a'), bashItem('b', 'grep y')], false)).toBe('bash')
+    expect(groupNodeKind([erro('a')], false)).toBe('error')
   })
 })
