@@ -240,14 +240,18 @@ test('onze repositórios continuam distintos em temas e larguras diferentes', as
       await page.setViewportSize({ width, height: 1000 })
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
       const repo = page.getByTestId('scm-repo').first()
-      for (const [testId, label] of [['repo-pull', 'Pull'], ['repo-push', 'Push']]) {
-        const action = repo.getByTestId(testId!)
-        await expect(action).toHaveText(label!)
+      // The first repository is `api`, which has commits to send and to pull: both buttons carry
+      // their count and still fit the row.
+      for (const [testId, label] of [['repo-pull', /^Pull \d+$/], ['repo-push', /^Push \d+$/]] as const) {
+        const action = repo.getByTestId(testId)
+        await expect(action).toHaveText(label)
         const box = (await action.boundingBox())!
         expect(box.height).toBeGreaterThanOrEqual(32)
         expect(box.x).toBeGreaterThanOrEqual(0)
         expect(box.x + box.width).toBeLessThanOrEqual(width + 1)
       }
+      // The column header is only drawn when the panel is wide enough to align the rows in a grid.
+      await expect(page.getByTestId('scm-columns')).toBeVisible({ visible: width === 1440 })
       for (const theme of ['', 'dracula', 'monokai-pro']) {
         await page.evaluate(theme => {
           if (theme) document.documentElement.setAttribute('data-theme', theme)

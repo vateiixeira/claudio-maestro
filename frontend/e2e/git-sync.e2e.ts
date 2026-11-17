@@ -4,6 +4,7 @@ import { rmSync, writeFileSync } from 'node:fs'
 import { expect, test } from './fixtures'
 
 type Page = import('@playwright/test').Page
+type Locator = import('@playwright/test').Locator
 
 async function openProject(page: Page) {
   await page.goto('/inbox')
@@ -20,6 +21,22 @@ const repo = (page: Page, name: string) =>
 
 test.describe.configure({ mode: 'serial' })
 
+/** Rereads one repository through its "⋯" menu (the row no longer has a refresh icon). */
+async function refreshRepo(page: Page, row: Locator): Promise<void> {
+  await row.getByTestId('repo-more').click()
+  await page.getByTestId('menu-refresh').click()
+}
+
+/** A repository may open by itself when its state changes; this leaves it open either way. */
+async function ensureOpen(row: Locator): Promise<void> {
+  const toggle = row.getByTestId('scm-repo-toggle')
+  await expect(async () => {
+    if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true', { timeout: 1_000 })
+  }).toPass()
+  await expect(row.getByTestId('scm-body')).toBeVisible()
+}
+
 test('sincronizar, publicar e buscar no remoto', async ({ page }) => {
   await openProject(page)
   const loja = repo(page, 'loja')
@@ -30,7 +47,7 @@ test('sincronizar, publicar e buscar no remoto', async ({ page }) => {
   await expect(loja.getByTestId('commit-message')).toHaveCount(0)
 
   const site = repo(page, 'site')
-  if (await site.getByTestId('primary-action').count() === 0) await site.getByTestId('scm-repo-toggle').click()
+  await ensureOpen(site)
   await expect(site.getByTestId('primary-action')).toHaveText('Publicar branch em origin')
   await site.getByTestId('primary-action').click()
   await expect(site.getByTestId('sync-counts')).toHaveText('em dia')
@@ -88,7 +105,11 @@ test('enviar puro: o botão largo e o ícone seguem o estado, e a seção Commit
   const loja = repo(page, 'loja')
   const local = await lojaPath(page)
   commitLocal(local, 'so-envio.md')
-  await loja.getByTestId('repo-refresh').click()
+  await refreshRepo(page, loja)
+  // Only ahead: the repository starts collapsed and the row offers just Push, with the count.
+  await expect(loja.getByTestId('repo-push')).toHaveText('Push 1')
+  await expect(loja.getByTestId('repo-pull')).toHaveCount(0)
+  await loja.getByTestId('scm-repo-toggle').click()
   await expect(loja.getByTestId('primary-action')).toHaveText('Enviar 1 commit')
   await expect(loja.getByTestId('repo-pull')).toBeDisabled()
   await expect(loja.getByTestId('repo-pull')).toHaveAttribute('title', 'Nada para baixar')
@@ -113,6 +134,10 @@ test('baixar puro: o botão largo baixa e a seção Commits mostra o grupo Para 
   commitOnRemote(await lojaPath(page), 'so-baixar.md')
   await loja.getByTestId('repo-more').click()
   await page.getByTestId('menu-fetch').click()
+  // Only behind: the collapsed row offers just Pull, with the count.
+  await expect(loja.getByTestId('repo-pull')).toHaveText('Pull 1')
+  await expect(loja.getByTestId('repo-push')).toHaveCount(0)
+  await ensureOpen(loja)
   await expect(loja.getByTestId('primary-action')).toHaveText('Baixar 1 commit')
   await expect(loja.getByTestId('repo-push')).toBeDisabled()
   await page.getByTestId('git-view-commits').click()
@@ -134,10 +159,11 @@ test('envio recusado: o erro aparece com o repositório recolhido, mostra a saí
   commitOnRemote(local, 'remoto-na-frente.md')
   commitLocal(local, 'local-atrasado.md')
   // Not fetched: the app still believes there is nothing to pull, so Enviar is on and git refuses.
-  await loja.getByTestId('repo-refresh').click()
-  await expect(loja.getByTestId('repo-push')).toBeEnabled()
-  await loja.getByTestId('scm-repo-toggle').click()
+  await refreshRepo(page, loja)
+  // `loja` was collapsed when the page loaded and stays so; the row offers Push with the count.
   await expect(loja.getByTestId('scm-body')).toHaveCount(0)
+  await expect(loja.getByTestId('repo-push')).toBeEnabled()
+  await expect(loja.getByTestId('repo-push')).toHaveText('Push 1')
   await loja.getByTestId('repo-push').click()
   const error = loja.getByTestId('scm-error')
   await expect(error).toBeVisible()
@@ -149,7 +175,7 @@ test('envio recusado: o erro aparece com o repositório recolhido, mostra a saí
   expectRefusal(consoleErrors)
 
   // Recover: fetch, then sync.
-  await loja.getByTestId('scm-repo-toggle').click()
+  await ensureOpen(loja)
   await loja.getByTestId('repo-more').click()
   await page.getByTestId('menu-fetch').click()
   await expect(loja.getByTestId('primary-action')).toHaveText('Sincronizar 1↓ 1↑')
@@ -194,13 +220,17 @@ test('menu Mais ações: teclado, Esc, foco e Copiar caminho', async ({ page }) 
   const menu = loja.getByTestId('repo-menu')
 
   await more.click()
-  await expect(menu.getByRole('menuitem')).toHaveText(['Buscar no remoto', 'Copiar caminho'])
+  await expect(menu.getByRole('menuitem')).toHaveText(['Ver commits', 'Mesclar uma branch…', 'Buscar no remoto', 'Atualizar', 'Copiar caminho'])
   await expect(menu.getByTestId('menu-abort')).toHaveCount(0)
-  await expect(menu.getByTestId('menu-fetch')).toBeFocused()
+  await expect(menu.getByTestId('menu-history')).toBeFocused()
   await page.keyboard.press('ArrowDown')
+  await expect(menu.getByTestId('menu-merge')).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await expect(menu.getByTestId('menu-history')).toBeFocused()
+  await page.keyboard.press('ArrowUp')
   await expect(menu.getByTestId('menu-copy-path')).toBeFocused()
   await page.keyboard.press('ArrowDown')
-  await expect(menu.getByTestId('menu-fetch')).toBeFocused()
+  await expect(menu.getByTestId('menu-history')).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
   await expect(more).toBeFocused()
@@ -210,14 +240,17 @@ test('menu Mais ações: teclado, Esc, foco e Copiar caminho', async ({ page }) 
   await expect(menu).toHaveCount(0)
 
   await more.click()
-  // Tab walks the two items, and the next one leaves the menu.
-  await page.keyboard.press('Tab')
-  await expect(menu.getByTestId('menu-copy-path')).toBeFocused()
+  // Tab walks the five items, and the next one leaves the menu.
+  for (const id of ['menu-merge', 'menu-fetch', 'menu-refresh', 'menu-copy-path']) {
+    await page.keyboard.press('Tab')
+    await expect(menu.getByTestId(id)).toBeFocused()
+  }
   await page.keyboard.press('Tab')
   await expect(menu).toHaveCount(0)
 
   await more.click()
-  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowUp')
+  await expect(menu.getByTestId('menu-copy-path')).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(menu).toHaveCount(0)
   await expect(more).toBeFocused()
@@ -228,7 +261,11 @@ test('menu Mais ações: teclado, Esc, foco e Copiar caminho', async ({ page }) 
 test('repositório em dia desliga Baixar e Enviar com o motivo', async ({ page }) => {
   await openProject(page)
   const site = repo(page, 'site')
-  // The first test published `site`, so there is nothing to pull or push.
+  // The first test published `site`, so there is nothing to pull or push: the collapsed row
+  // does not offer either button, and the open one shows them off, with the reason.
+  await expect(site.getByTestId('repo-pull')).toHaveCount(0)
+  await expect(site.getByTestId('repo-push')).toHaveCount(0)
+  await ensureOpen(site)
   await expect(site.getByTestId('repo-pull')).toBeDisabled()
   await expect(site.getByTestId('repo-pull')).toHaveAttribute('title', 'Nada para baixar')
   await expect(site.getByTestId('repo-push')).toHaveAttribute('title', 'Nada para enviar')
@@ -249,6 +286,7 @@ async function divergeLoja(page: Page, file: string): Promise<{ local: string; b
   const local = await lojaPath(page)
   commitOnRemote(local, `${file}-remoto.md`)
   commitLocal(local, `${file}-local.md`)
+  await ensureOpen(loja)
   await loja.getByTestId('repo-more').click()
   await page.getByTestId('menu-fetch').click()
   await expect(loja.getByTestId('primary-action')).toHaveText('Sincronizar 1↓ 1↑')
@@ -325,7 +363,8 @@ test('Ctrl+Enter ainda commita com arquivo preparado', async ({ page }) => {
   const local = await lojaPath(page)
   writeFileSync(join(local, 'atalho-commit.md'), 'x\n')
   git(local, 'add', 'atalho-commit.md')
-  await loja.getByTestId('repo-refresh').click()
+  await refreshRepo(page, loja)
+  await ensureOpen(loja)
   await expect(loja.getByTestId('primary-action')).toHaveText('Commitar 1 preparado')
   const message = loja.getByTestId('commit-message')
   await message.fill('Commit pelo atalho')
@@ -335,12 +374,16 @@ test('Ctrl+Enter ainda commita com arquivo preparado', async ({ page }) => {
   await syncLoja(page)
 })
 
-test('ícones desligados mostram o motivo na dica', async ({ page }) => {
+test('sem alterações: não há botão de commit, o menu libera Mesclar e a branch tem dica', async ({ page }) => {
   await openProject(page)
   const loja = repo(page, 'loja')
   await expect(loja.getByTestId('sync-counts')).toHaveText('em dia')
-  await expect(loja.getByTestId('repo-commit')).toBeDisabled()
-  await expect(loja.getByTestId('repo-commit')).toHaveAttribute('title', 'Não há alterações para commitar')
-  await expect(loja.getByTestId('repo-merge')).toBeEnabled()
+  await ensureOpen(loja)
+  // Nothing to commit: there is no commit button, and the box says so.
+  await expect(loja.getByTestId('primary-action')).toHaveCount(0)
+  await expect(loja.getByTestId('no-changes')).toHaveText('Nenhuma alteração local.')
+  await loja.getByTestId('repo-more').click()
+  await expect(page.getByTestId('menu-merge')).toBeEnabled()
+  await page.keyboard.press('Escape')
   await expect(loja.getByTestId('branch-chip')).toHaveAttribute('title', 'Trocar de branch')
 })

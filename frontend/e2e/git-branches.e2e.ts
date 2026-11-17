@@ -45,14 +45,15 @@ test('criar branch, trocar e mesclar sem conflito', async ({ page }) => {
   await page.getByTestId('branch-search').press('Enter')
   await expect(repo.getByTestId('branch-chip')).toHaveText('main')
 
-  await repo.getByTestId('repo-merge').click()
+  await repo.getByTestId('repo-more').click()
+  await page.getByTestId('menu-merge').click()
   await expect(page.getByTestId('branch-search')).toHaveAttribute('type', 'search')
   await page.locator('[data-test="branch-item"][data-name="feat/docs"]').click()
   await expect(page.getByRole('dialog')).toContainText('Entra 1 commit de feat/docs.')
   const merged = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/git/merge'))
   await page.getByRole('dialog').getByTestId('confirm-ok').click()
   expect((await merged).ok()).toBe(true)
-  await expect(repo.getByTestId('repo-refresh')).toBeEnabled()
+  await expect(repo.getByTestId('branch-chip')).toBeEnabled()
   await expect(repo.getByTestId('merge-banner')).toHaveCount(0)
   const commits = await openCommits(page)
   await expect(commits.getByTestId('commit-row').first()).toContainText("Merge branch 'feat/docs'")
@@ -60,7 +61,8 @@ test('criar branch, trocar e mesclar sem conflito', async ({ page }) => {
 
 test('merge com conflito mostra o bloco e aborta', async ({ page, consoleErrors }) => {
   const repo = await openRepo(page)
-  await repo.getByTestId('repo-merge').click()
+  await repo.getByTestId('repo-more').click()
+  await page.getByTestId('menu-merge').click()
   await page.locator('[data-test="branch-item"][data-name="feat/cupom"]').click()
   await page.getByRole('dialog').getByTestId('confirm-ok').click()
   const banner = repo.getByTestId('merge-banner')
@@ -76,8 +78,12 @@ test('merge com conflito mostra o bloco e aborta', async ({ page, consoleErrors 
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
   // While the merge is open the disabled icons say why.
-  await expect(repo.getByTestId('repo-commit')).toHaveAttribute('title', 'Conclua o merge com Concluir merge')
-  await expect(repo.getByTestId('repo-merge')).toHaveAttribute('title', 'Já há um merge em andamento')
+  await repo.getByTestId('repo-more').click()
+  await expect(page.getByTestId('menu-merge')).toBeDisabled()
+  await expect(page.getByTestId('menu-merge-reason')).toHaveText('Já há um merge em andamento')
+  await expect(page.getByTestId('menu-abort')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('repo-menu')).toHaveCount(0)
   await expect(repo.getByTestId('branch-chip')).toHaveAttribute('title', 'Conclua ou aborte o merge antes de trocar de branch')
   // The API refuses to stage or discard a file in conflict, even though the screen does not offer it.
   const refusals = await page.evaluate(async (repoPath) => {
@@ -124,7 +130,8 @@ test('merge com conflito mostra o bloco e aborta', async ({ page, consoleErrors 
 
 test('merge com conflito até concluir', async ({ page }) => {
   const repo = await openRepo(page)
-  await repo.getByTestId('repo-merge').click()
+  await repo.getByTestId('repo-more').click()
+  await page.getByTestId('menu-merge').click()
   await page.locator('[data-test="branch-item"][data-name="feat/limpeza"]').click()
   await page.getByRole('dialog').getByTestId('confirm-ok').click()
   await expect(repo.getByTestId('merge-banner')).toContainText('parou em 1 arquivo com conflito')
@@ -136,7 +143,7 @@ test('merge com conflito até concluir', async ({ page }) => {
   const continued = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/git/merge-continue'))
   await repo.getByTestId('primary-action').click()
   expect((await continued).ok()).toBe(true)
-  await expect(repo.getByTestId('repo-refresh')).toBeEnabled()
+  await expect(repo.getByTestId('branch-chip')).toBeEnabled()
   await expect(repo.getByTestId('merge-banner')).toHaveCount(0)
   await expect(repo.getByTestId('commit-message')).toHaveCount(0)
   const commits = await openCommits(page)
@@ -180,7 +187,8 @@ test('menu de branches: teclado, Esc, clique fora e foco fora', async ({ page })
   await expect(menu).toHaveCount(0)
 
   // Esc in the merge menu too, and the branch stays main.
-  await repo.getByTestId('repo-merge').click()
+  await repo.getByTestId('repo-more').click()
+  await page.getByTestId('menu-merge').click()
   await expect(page.getByTestId('branch-search')).toBeFocused()
   await expect(page.locator('[data-test="branch-item"][data-name="main"]')).toHaveCount(0)
   await page.getByTestId('branch-search').press('Escape')
