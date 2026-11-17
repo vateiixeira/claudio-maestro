@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
@@ -6,12 +6,16 @@ import OrgTree from '../OrgTree.vue'
 import { createAppRouter } from '../../../router'
 import { useOrgStore } from '../../../stores/org'
 import { useSessionsStore } from '../../../stores/sessions'
-import { makeAgent, makeRun, makeSession } from '../../../test/factories'
+import { makeAgent, makeRoutine, makeRun, makeSession } from '../../../test/factories'
 
 enableAutoUnmount(afterEach)
+afterEach(() => vi.useRealTimers())
 let pinia: Pinia
 
 beforeEach(() => {
+  // Tuesday 10:40 local time; only the clock is fake, so the promises of the tests still run.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 10, 17, 10, 40))
   pinia = createPinia()
   setActivePinia(pinia)
   useOrgStore(pinia).loaded = true
@@ -48,6 +52,77 @@ describe('OrgTree', () => {
     const { wrapper } = await mountTree()
     expect(wrapper.get('[data-test="org-node-description"]').text()).toBe('Coordena o time')
     expect(wrapper.get('[data-test="org-node-unseen"]').text()).toContain('3')
+  })
+
+  it('escreve as novidades por extenso, no singular quando é uma só', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 1, unseen: 6 }), makeAgent({ id: 2, slug: 'b', name: 'B', reports_to: 1, unseen: 1 })]
+    const { wrapper } = await mountTree()
+    expect(wrapper.get('[data-agent-id="1"] [data-test="org-node-unseen"]').text()).toBe('6 novidades')
+    expect(wrapper.get('[data-agent-id="2"] [data-test="org-node-unseen"]').text()).toBe('1 novidade')
+  })
+
+  it('sem novidades e sem rotina com horário o canto diz sem rotina', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 1 })]
+    useOrgStore(pinia).routines = { 1: [makeRoutine({ agent_id: 1, enabled: false, schedules: [{ id: 1, days: '1234567', time: '18:40', last_fired_at: null }] }), makeRoutine({ id: 2, agent_id: 1, enabled: true, schedules: [] })] }
+    const { wrapper } = await mountTree()
+    expect(wrapper.get('[data-test="org-node-aside"]').text()).toBe('sem rotina')
+    expect(wrapper.find('[data-test="org-node-unseen"]').exists()).toBe(false)
+  })
+
+  it('agente desligado com rotina ligada continua mostrando o próximo horário', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 1, enabled: false })]
+    useOrgStore(pinia).routines = { 1: [makeRoutine({ agent_id: 1, enabled: true, schedules: [{ id: 1, days: '1234567', time: '18:40', last_fired_at: null }] })] }
+    const { wrapper } = await mountTree()
+    expect(wrapper.get('[data-agent-id="1"] [data-test="org-node-aside"]').text()).toBe('hoje 18:40')
+  })
+
+  it('sem novidades o canto mostra o próximo horário da rotina ligada', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 1 }), makeAgent({ id: 2, slug: 'b', name: 'B', reports_to: 1 })]
+    useOrgStore(pinia).routines = { 1: [
+      makeRoutine({ agent_id: 1, enabled: true, schedules: [{ id: 1, days: '1234567', time: '18:40', last_fired_at: null }] }),
+      makeRoutine({ id: 2, agent_id: 2, enabled: true, schedules: [{ id: 2, days: '123456', time: '08:40', last_fired_at: null }] }),
+    ] }
+    const { wrapper } = await mountTree()
+    expect(wrapper.get('[data-agent-id="1"] [data-test="org-node-aside"]').text()).toBe('hoje 18:40')
+    expect(wrapper.get('[data-agent-id="2"] [data-test="org-node-aside"]').text()).toBe('amanhã 08:40')
+  })
+
+  it('com novidades o canto mostra só as novidades', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 1, unseen: 2 })]
+    useOrgStore(pinia).routines = { 1: [makeRoutine({ agent_id: 1, schedules: [{ id: 1, days: '1234567', time: '18:40', last_fired_at: null }] })] }
+    const { wrapper } = await mountTree()
+    expect(wrapper.get('[data-test="org-node-aside"]').text()).toBe('2 novidades')
+  })
+
+  it('escreve o estado quando não é ocioso e mantém o ícone', async () => {
+    useOrgStore(pinia).agents = [
+      makeAgent({ id: 1, name: 'A', enabled: false }),
+      makeAgent({ id: 2, slug: 'b', name: 'B', busy: true }),
+      makeAgent({ id: 3, slug: 'c', name: 'C', last_run: makeRun({ agent_id: 3, outcome: 'waiting' }) }),
+      makeAgent({ id: 4, slug: 'd', name: 'D' }),
+    ]
+    const { wrapper } = await mountTree()
+    const text = (id: number) => wrapper.find(`[data-agent-id="${id}"] [data-test="org-node-state"]`)
+    expect(text(1).text()).toBe('desligado')
+    expect(wrapper.get('[data-agent-id="1"] [data-test="agent-state"]').attributes('data-state')).toBe('off')
+    expect(text(2).text()).toBe('executando')
+    expect(text(3).text()).toBe('aguardando você')
+    expect(text(4).exists()).toBe(false)
+    expect(wrapper.find('[data-agent-id="4"] [data-test="agent-state"]').exists()).toBe(true)
+  })
+
+  it('mostra o histórico das execuções que terminaram e nada sem execuções', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 1 }), makeAgent({ id: 2, slug: 'b', name: 'B', reports_to: 1 })]
+    useOrgStore(pinia).runs = {
+      1: [
+        makeRun({ id: 3, agent_id: 1, outcome: 'concluded', ended_at: 1_790_000_300 }),
+        makeRun({ id: 2, agent_id: 1, outcome: 'failed', ended_at: 1_790_000_200 }),
+        makeRun({ id: 1, agent_id: 1, outcome: 'concluded', ended_at: 1_790_000_100 }),
+      ],
+    }
+    const { wrapper } = await mountTree()
+    expect(wrapper.get('[data-agent-id="1"] [data-test="run-history"]').findAll('[data-test="run-history-bar"]')).toHaveLength(3)
+    expect(wrapper.find('[data-agent-id="2"] [data-test="run-history"]').exists()).toBe(false)
   })
 
   it('agente com erro de definição mostra aviso', async () => {

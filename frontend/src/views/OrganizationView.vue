@@ -81,6 +81,14 @@ function back(): void {
 
 watch(() => props.projectId, () => { if (props.embedded && !org.loaded) void org.load() }, { immediate: true })
 
+// The cards of the tree show the run history and the next routine slot: read them once for the project. A failure
+// leaves the card without them (the tabs show their own errors).
+watchEffect(() => {
+  if (!project.value) return
+  void org.ensureRoutines(project.value.id).catch(() => {})
+  for (const agent of org.byProject(project.value.id)) void org.ensureRuns(agent.id).catch(() => {})
+})
+
 const opening = ref(false)
 const openError = ref<string | null>(null)
 async function talkToTop(): Promise<void> {
@@ -127,19 +135,21 @@ async function talkToTop(): Promise<void> {
     </section>
 
     <template v-else>
-      <header class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line py-3" :class="embedded ? 'justify-end' : 'px-4 lg:px-6'">
+      <header class="flex min-h-[60px] flex-wrap items-center gap-x-4 gap-y-2 border-b border-line py-2" :class="embedded ? 'justify-end' : 'px-4 lg:px-6'">
         <button v-if="compactNavigation" type="button" data-test="agents-mobile-menu" class="mobile-menu-button" aria-label="Abrir navegação" :aria-expanded="navigationOpen" @click="navigation?.toggle($event.currentTarget as HTMLElement)">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
         <div v-if="!embedded" class="flex min-w-0 grow items-center gap-3">
-          <span class="size-3 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" aria-hidden="true" />
+          <span class="size-2.5 shrink-0 rounded-[3px]" :style="{ backgroundColor: project.color }" aria-hidden="true" />
           <h1 class="m-0 truncate text-xl font-semibold tracking-tight">{{ project.name }}</h1>
-          <label v-if="projects.regular.length > 1" class="shrink-0 text-xs text-fg-subtle">
-            <span class="sr-only">Trocar de projeto</span>
-            <select data-test="org-project-select" class="h-8 max-w-40 rounded-md border border-line-strong bg-surface px-2 text-xs text-fg-muted focus-visible:outline-2 focus-visible:outline-primary" :value="project.id" @change="switchProject">
+          <!-- The chip is what you see; the select over it is what you use. -->
+          <span v-if="projects.regular.length > 1" data-test="org-project-chip" class="relative inline-flex h-[30px] shrink-0 items-center gap-[7px] rounded-full border border-line px-[11px] text-[0.78125rem] text-fg-muted hover:bg-card hover:text-fg has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary">
+            Trocar
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+            <select data-test="org-project-select" aria-label="Trocar de projeto" class="absolute inset-0 size-full cursor-pointer appearance-none rounded-full opacity-0" :value="project.id" @change="switchProject">
               <option v-for="p in projects.regular" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select>
-          </label>
+          </span>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button v-if="top" type="button" data-test="talk-cto" :class="BTN" :disabled="opening" @click="talkToTop">Conversar com o CTO</button>
@@ -153,7 +163,7 @@ async function talkToTop(): Promise<void> {
       </div>
 
       <div class="flex min-h-0 min-w-0 flex-1" :class="wide ? 'flex-row' : 'flex-col overflow-y-auto'">
-        <aside v-if="wide" data-test="org-tree" aria-label="Organização" class="w-[280px] shrink-0 overflow-y-auto border-r border-line p-2">
+        <aside v-if="wide" data-test="org-tree" aria-label="Organização" class="w-[18.75rem] shrink-0 overflow-y-auto border-r border-line px-3 py-3.5">
           <OrgTree :project-id="project.id" @create="creating = true" />
         </aside>
         <details v-else data-test="org-tree" open class="shrink-0 border-b border-line">

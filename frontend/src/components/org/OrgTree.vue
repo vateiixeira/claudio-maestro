@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import OrgTreeNode from './OrgTreeNode.vue'
 import { BTN_PRIMARY } from './styles'
@@ -9,6 +9,11 @@ const props = defineProps<{ projectId: number }>()
 const emit = defineEmits<{ create: [] }>()
 const org = useOrgStore()
 const route = useRoute()
+
+// The clock behind "hoje 18:40": it moves every minute so the next slot never stays in the past.
+const now = ref(new Date())
+const tick = setInterval(() => { now.value = new Date() }, 60_000)
+onBeforeUnmount(() => clearInterval(tick))
 
 const nodes = computed(() => org.tree(props.projectId))
 const selectedId = computed(() => {
@@ -20,8 +25,8 @@ const selectedId = computed(() => {
 
 <template>
   <div>
-    <ul v-if="nodes.length" aria-label="Agentes do projeto" class="m-0 flex flex-col gap-px p-0">
-      <OrgTreeNode v-for="node in nodes" :key="node.agent.id" :node="node" :selected-id="selectedId" />
+    <ul v-if="nodes.length" aria-label="Agentes do projeto" class="m-0 flex flex-col gap-0.5 p-0">
+      <OrgTreeNode v-for="node in nodes" :key="node.agent.id" :node="node" :selected-id="selectedId" :now="now" />
     </ul>
     <div v-else-if="org.loaded" data-test="org-tree-empty" class="flex flex-col items-start gap-3 px-2 py-3">
       <p class="m-0 text-sm text-fg-muted">Nenhum agente ainda. Crie o primeiro: um CTO para este projeto.</p>

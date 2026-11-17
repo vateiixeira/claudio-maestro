@@ -128,6 +128,46 @@ describe('OrganizationView', () => {
     expect(wrapper.get('[data-test="org-tab-rotinas"]').attributes('aria-selected')).toBe('true')
   })
 
+  it('o seletor de projeto tem o nome acessível Trocar de projeto', async () => {
+    const { wrapper } = await mountAt('/agentes/1')
+    const select = wrapper.get('[data-test="org-project-select"]')
+    expect(select.attributes('aria-label')).toBe('Trocar de projeto')
+    expect(wrapper.get('[data-test="org-project-chip"]').text()).toContain('Trocar')
+  })
+
+  it('lê as rotinas do projeto e as execuções de cada agente uma vez só', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 10, project_id: 2 }), makeAgent({ id: 11, slug: 'b', name: 'B', project_id: 2, reports_to: 10 }), makeAgent({ id: 12, slug: 'c', name: 'C', project_id: 1 })]
+    const fetch = routeFetch({
+      'GET /api/routines?project_id=2': () => jsonResponse([]),
+      'GET /api/agents/10/runs?limit=50': () => jsonResponse([]),
+      'GET /api/agents/11/runs?limit=50': () => jsonResponse([]),
+    })
+    vi.stubGlobal('fetch', fetch)
+    await mountAt('/agentes/2')
+    await flushPromises()
+    const urls = fetch.mock.calls.map((c) => c[0])
+    expect(urls.filter((u) => u === '/api/routines?project_id=2')).toHaveLength(1)
+    expect(urls.filter((u) => u === '/api/agents/10/runs?limit=50')).toHaveLength(1)
+    expect(urls.filter((u) => u === '/api/agents/11/runs?limit=50')).toHaveLength(1)
+    expect(urls.some((u) => String(u).includes('/api/agents/12/runs'))).toBe(false)
+  })
+
+  it('um agente novo na loja também tem as execuções lidas', async () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 10, project_id: 2 })]
+    const fetch = routeFetch({
+      'GET /api/routines?project_id=2': () => jsonResponse([]),
+      'GET /api/agents/10/runs?limit=50': () => jsonResponse([]),
+      'GET /api/agents/11/runs?limit=50': () => jsonResponse([]),
+    })
+    vi.stubGlobal('fetch', fetch)
+    await mountAt('/agentes/2')
+    useOrgStore(pinia).upsertAgent(makeAgent({ id: 11, slug: 'b', name: 'B', project_id: 2, reports_to: 10 }))
+    await flushPromises()
+    const urls = fetch.mock.calls.map((c) => c[0])
+    expect(urls.filter((u) => u === '/api/agents/11/runs?limit=50')).toHaveLength(1)
+    expect(urls.filter((u) => u === '/api/agents/10/runs?limit=50')).toHaveLength(1)
+  })
+
   it('a aba vem da query e uma aba inválida cai em Tarefas', async () => {
     useOrgStore(pinia).agents = [makeAgent({ id: 1 })]
     const ok = await mountAt('/agentes/1?aba=execucoes')

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useOrgStore } from '../../stores/org'
 import RoutinesTab from './routines/RoutinesTab.vue'
 import RunsTab from './runs/RunsTab.vue'
 import TasksTab from './tasks/TasksTab.vue'
@@ -12,10 +13,14 @@ const TABS = [
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
-defineProps<{ projectId: number }>()
+const props = defineProps<{ projectId: number }>()
+const org = useOrgStore()
 const route = useRoute()
 const router = useRouter()
 const buttons = ref<HTMLButtonElement[]>([])
+
+// How many routines the project has, shown next to the Rotinas tab; nothing when there is none.
+const routineCount = computed(() => org.routinesOf(props.projectId).length)
 
 // A missing or unknown `aba` is the first tab.
 const active = computed<TabId>(() => TABS.find((t) => t.id === route.query.aba)?.id ?? 'tarefas')
@@ -51,11 +56,14 @@ async function onKey(event: KeyboardEvent, index: number): Promise<void> {
         :aria-selected="active === tab.id"
         aria-controls="org-tabpanel"
         :tabindex="active === tab.id ? 0 : -1"
-        class="-mb-px h-9 cursor-pointer border-0 border-b-2 bg-transparent px-3 text-sm font-medium hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+        class="-mb-px inline-flex h-11 cursor-pointer items-center border-0 border-b-2 bg-transparent px-3 text-sm font-medium hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
         :class="active === tab.id ? 'border-primary text-fg' : 'border-transparent text-fg-muted'"
         @click="select(tab.id)"
         @keydown="onKey($event, index)"
-      >{{ tab.label }}</button>
+      >
+        {{ tab.label }}
+        <span v-if="tab.id === 'rotinas' && routineCount > 0" data-test="org-tab-count" class="ml-[7px] font-mono text-[0.71875rem] text-fg-subtle tabular-nums">{{ routineCount }}</span>
+      </button>
     </div>
     <div id="org-tabpanel" role="tabpanel" :aria-labelledby="`org-tab-${active}`">
       <TasksTab v-if="active === 'tarefas'" :project-id="projectId" />
