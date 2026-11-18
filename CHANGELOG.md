@@ -43,6 +43,9 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - O repositório aberto põe a caixa de commit ao lado dos arquivos, com campo de várias linhas (Ctrl+Enter commita), e lista em "Para enviar" os commits que o Push leva. Cada arquivo mostra o tipo por extenso ("modificado", "novo", "apagado").
 - O Git mostra no topo os totais (commits para enviar, para baixar, sem upstream, alterações e erros) e, com três repositórios ou mais, separa os repositórios em "Com pendências" e "Sem pendências". O filtro virou o chip "Só com pendências", com a contagem do que aparece.
 - A aba Git do projeto mostra quantos repositórios têm pendências, contando também os que estão atrás do remoto, com erro ou no meio de um merge.
+- O bloco de trabalho da conversa agrupa as ações seguidas do mesmo tipo e da mesma pasta, diz quando uma falha foi refeita em seguida (sem abrir o bloco nem pintar o trilho de vermelho), mostra a faixa de erro com "Copiar", a duração do bloco e, fechado, chips com os arquivos editados e os subagentes.
+- Cada turno começa com uma linha "Turno N" e os números dele (ações e arquivos alterados); a linha do que está rodando agora fica no trilho, com o comando logo abaixo. O compositor virou uma moldura única com os subagentes em cima, os controles numa barra embaixo e a dica de teclado abaixo.
+- No painel Detalhes, o plano vem primeiro, com a barra em segmentos, a tarefa atual e um menu "⋯" para trocar ou desligar; o resumo vem logo abaixo como linha do tempo, com os passos de cada fase recolhidos em "Ver os N passos".
 
 ### Corrigido
 
