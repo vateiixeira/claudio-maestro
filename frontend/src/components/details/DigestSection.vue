@@ -82,6 +82,15 @@ const bodyId = useId()
       <template v-else>
         <p v-if="digest?.short" data-test="digest-short" class="m-0 text-base leading-normal text-fg" :class="{ 'line-clamp-2': collapsed }" :title="collapsed ? digest.short : undefined">{{ digest.short }}</p>
         <ClosureBlock :session-id="sessionId" />
+        <!-- Folded with no short sentence, the phases would be the only content: say they are there. -->
+        <button
+          v-if="collapsed && !digest?.short && phases.length"
+          type="button"
+          data-test="digest-show-phases"
+          :aria-controls="bodyId"
+          class="inline-flex h-6 w-fit items-center gap-1 rounded text-[0.78125rem] text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          @click="toggleCollapsed"
+        >{{ phases.length === 1 ? 'Ver a fase' : `Ver as ${phases.length} fases` }}</button>
         <ol
           v-if="!collapsed"
           data-test="digest-timeline"

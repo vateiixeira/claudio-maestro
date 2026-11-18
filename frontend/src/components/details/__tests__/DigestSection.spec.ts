@@ -279,6 +279,23 @@ describe('Resumo recolhido', () => {
     expect(localStorage.getItem('maestro:digest-collapsed')).toBe('true')
   })
 
+  it('recolhido e sem frase curta, mostra quantas fases há e abre por esse botão', async () => {
+    stub({ ...DIGEST, short: '' })
+    const w = await mountSection()
+    const more = w.get('[data-test="digest-show-phases"]')
+    expect(more.text()).toBe('Ver as 2 fases')
+    await more.trigger('click')
+    expect(w.get('[data-test="digest-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(w.findAll('[data-test="digest-phase"]')).toHaveLength(2)
+    expect(w.find('[data-test="digest-show-phases"]').exists()).toBe(false)
+  })
+
+  it('com frase curta, o recolhido não mostra a contagem de fases', async () => {
+    stub(DIGEST)
+    const w = await mountSection()
+    expect(w.find('[data-test="digest-show-phases"]').exists()).toBe(false)
+  })
+
   it('abre aberto quando a escolha guardada é aberto', async () => {
     localStorage.setItem('maestro:digest-collapsed', 'false')
     stub(DIGEST)
