@@ -40,15 +40,18 @@ async function stagePlan(page: Page) {
   const withPlan = (session: Record<string, unknown>) => ({ ...session, plan: PLAN })
   await page.route(/\/api\/projects\/\d+\/sessions$/, async (route) => {
     if (route.request().method() !== 'GET') return route.fallback()
-    const response = await route.fetch()
-    const list = await response.json() as Record<string, unknown>[]
-    await route.fulfill({ response, json: list.map((s) => (s.title === 'Explique a estrutura do projeto' ? withPlan(s) : s)) })
+    const response = await route.fetch().catch(() => null)
+    const list = response && ((await response.json().catch(() => null)) as Record<string, unknown>[] | null)
+    if (!response || !list) return
+    await route.fulfill({ response, json: list.map((s) => (s.title === 'Explique a estrutura do projeto' ? withPlan(s) : s)) }).catch(() => {})
   })
   await page.route(/\/api\/sessions\/[0-9a-f-]+$/, async (route) => {
     if (route.request().method() !== 'GET') return route.fallback()
-    const response = await route.fetch()
-    const snapshot = await response.json()
-    await route.fulfill({ response, json: withPlan(snapshot) })
+    // A reload may drop this request while it is in flight: nothing to answer then.
+    const response = await route.fetch().catch(() => null)
+    const snapshot = response && (await response.json().catch(() => null))
+    if (!response || snapshot === null) return
+    await route.fulfill({ response, json: withPlan(snapshot) }).catch(() => {})
   })
   const calls: string[] = []
   let state: Record<string, unknown> = { link: 'auto', path: PLAN_PATH, plan: PLAN, tasks: TASKS }
@@ -79,6 +82,13 @@ async function openDetails(page: Page) {
   await expect(page.getByTestId('turn-number').first()).toBeVisible()
   if (!(await page.getByTestId('details-panel').isVisible())) await page.getByTestId('toggle-details').first().click()
   await expect(page.getByTestId('details-plan')).toBeVisible()
+}
+
+/** Opens the Resumo section, which starts folded. */
+async function openDigest(page: Page) {
+  const toggle = page.getByTestId('details-digest').getByTestId('digest-toggle')
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 }
 
 test('o painel Detalhes abre com Plano e Resumo no topo, antes das Propriedades', async ({ page }) => {
@@ -148,6 +158,7 @@ test('o menu "⋯" do plano troca, desliga e volta a ligar automaticamente', asy
 test('o resumo mostra o texto curto, a hora da leitura e as fases como linha do tempo', async ({ page }) => {
   await stagePlan(page)
   await openDetails(page)
+  await openDigest(page)
   const digest = page.getByTestId('details-digest')
   await expect(digest.getByTestId('digest-short')).toHaveText('O carrinho soma os itens e falta calcular o frete.')
   await expect(digest.getByTestId('digest-read-at')).toHaveText(/^atualizado há 2 min$/)
@@ -166,6 +177,7 @@ test('o resumo mostra o texto curto, a hora da leitura e as fases como linha do 
 test('"Ver os N passos" abre e recolhe os passos feitos de uma fase', async ({ page }) => {
   await stagePlan(page)
   await openDetails(page)
+  await openDigest(page)
   const phases = page.getByTestId('details-digest').getByTestId('digest-phase')
   const first = phases.nth(0).getByTestId('digest-steps-toggle')
   await expect(first).toHaveText('Ver os 2 passos')
@@ -182,6 +194,31 @@ test('"Ver os N passos" abre e recolhe os passos feitos de uma fase', async ({ p
   await page.keyboard.press('Enter')
   await expect(first).toHaveAttribute('aria-expanded', 'false')
   await expect(phases.nth(0).getByTestId('digest-done-item')).toHaveCount(0)
+})
+
+test('o resumo começa recolhido, abre pelo título e lembra a escolha depois de recarregar', async ({ page }) => {
+  await stagePlan(page)
+  await openDetails(page)
+  const digest = page.getByTestId('details-digest')
+  const toggle = digest.getByTestId('digest-toggle')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(digest.getByTestId('digest-short')).toHaveText('O carrinho soma os itens e falta calcular o frete.')
+  await expect(digest.getByTestId('digest-phase')).toHaveCount(0)
+  await expect(digest.getByTestId('digest-request')).toBeVisible()
+
+  await toggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(digest.getByTestId('digest-phase')).toHaveCount(2)
+
+  await page.reload()
+  await expect(page.getByTestId('details-digest').getByTestId('digest-toggle')).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('details-digest').getByTestId('digest-phase')).toHaveCount(2)
+
+  await page.getByTestId('details-digest').getByTestId('digest-toggle').click()
+  await page.reload()
+  await expect(page.getByTestId('details-digest').getByTestId('digest-toggle')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('details-digest').getByTestId('digest-phase')).toHaveCount(0)
 })
 
 test('o menu "⋯" do plano abre pelo teclado, anda com as setas e devolve o foco ao fechar', async ({ page }) => {

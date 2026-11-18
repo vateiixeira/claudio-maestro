@@ -32,10 +32,13 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   posts = 0
+  // The tests below read the open section; the folded one has its own block.
+  localStorage.setItem('maestro:digest-collapsed', 'false')
 })
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  localStorage.clear()
 })
 
 function stub(digest: SessionDigest | null) {
@@ -243,6 +246,78 @@ describe('seção Resumo', () => {
     release()
     await flushPromises()
     expect(w.find('[data-test="digest-short"]').text()).toBe('Segunda')
+  })
+})
+
+describe('Resumo recolhido', () => {
+  beforeEach(() => { localStorage.removeItem('maestro:digest-collapsed') })
+
+  it('começa recolhido: fica a frase curta e o botão, sem a linha do tempo', async () => {
+    stub(DIGEST)
+    const w = await mountSection()
+    const toggle = w.get('[data-test="digest-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(w.get('[data-test="digest-short"]').text()).toBe('Executa o plano do agrupador')
+    expect(w.get('[data-test="digest-short"]').classes()).toContain('line-clamp-2')
+    expect(w.find('[data-test="digest-timeline"]').exists()).toBe(false)
+    expect(w.find('[data-test="digest-request"]').exists()).toBe(true)
+    expect(w.find('[data-test="digest-read-at"]').exists()).toBe(true)
+  })
+
+  it('o título abre e recolhe a seção e a escolha fica guardada', async () => {
+    stub(DIGEST)
+    const w = await mountSection()
+    const toggle = w.get('[data-test="digest-toggle"]')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(w.findAll('[data-test="digest-phase"]')).toHaveLength(2)
+    expect(w.get('[data-test="digest-short"]').classes()).not.toContain('line-clamp-2')
+    expect(localStorage.getItem('maestro:digest-collapsed')).toBe('false')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(w.find('[data-test="digest-timeline"]').exists()).toBe(false)
+    expect(localStorage.getItem('maestro:digest-collapsed')).toBe('true')
+  })
+
+  it('abre aberto quando a escolha guardada é aberto', async () => {
+    localStorage.setItem('maestro:digest-collapsed', 'false')
+    stub(DIGEST)
+    const w = await mountSection()
+    expect(w.get('[data-test="digest-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(w.findAll('[data-test="digest-phase"]')).toHaveLength(2)
+  })
+
+  it('o botão do título controla o corpo da seção e leva o nome Resumo', async () => {
+    stub(DIGEST)
+    const w = await mountSection()
+    const toggle = w.get('[data-test="digest-toggle"]')
+    expect(toggle.element.tagName).toBe('BUTTON')
+    expect(toggle.text()).toContain('Resumo')
+    const body = w.get(`#${toggle.attributes('aria-controls')}`)
+    expect(body.attributes('data-test')).toBe('digest-body')
+  })
+
+  it('recolhido e sem resumo ainda diz que não foi resumida', async () => {
+    stub(null)
+    const w = await mountSection()
+    expect(w.get('[data-test="digest-empty"]').text()).toBe('Ainda não resumida')
+  })
+
+  it('o veredito de fechamento continua à vista com a seção recolhida', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1/digest': () => jsonResponse(DIGEST),
+      'GET /api/sessions/s1/closure': () => jsonResponse({ session_id: 's1', verdict: 'can_close', user_actions: [], missing: [], evidence: null, checked_at: 5, error: null, error_at: null }),
+    }))
+    useSessionsStore().setForProject(1, [makeSession({ closure_verdict: 'can_close' })])
+    const w = await mountSection()
+    expect(w.get('[data-test="digest-toggle"]').attributes('aria-expanded')).toBe('false')
+    expect(w.get('[data-test="closure-badge"]').text()).toBe('Pode fechar')
+  })
+
+  it('o erro continua à vista com a seção recolhida', async () => {
+    stub({ ...DIGEST, error: 'O agente de resumos falhou' })
+    const w = await mountSection()
+    expect(w.get('[data-test="digest-error"]').text()).toBe('O agente de resumos falhou')
   })
 })
 

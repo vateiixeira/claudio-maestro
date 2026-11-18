@@ -11,6 +11,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- No painel Detalhes, o Resumo começa recolhido, com só a frase curta, e abre pelo título para mostrar a linha do tempo. O app lembra se você deixou aberto ou recolhido.
 - As etiquetas aparecem com fundo suave na cor delas e um ponto de cor cheia, em vez de fundo sólido.
 - Projetos virou uma tabela com branch, arquivos alterados e última atividade, separada em "Ativos hoje" e "Parados". Alterações paradas há mais de dois dias aparecem em destaque.
 - A janela de nova conversa dá destaque ao pedido: projeto, agrupador e branch numa linha acima, imagem, ditado, modelo, raciocínio e permissões numa barra dentro do campo, e o título opcional abaixo.

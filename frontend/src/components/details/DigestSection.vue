@@ -1,10 +1,11 @@
 <!-- frontend/src/components/details/DigestSection.vue -->
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, useId, watch } from 'vue'
 import { PHASE_KIND_LABELS, digestUpdatedText } from '../../digestConfig'
 import ClosureBlock from './ClosureBlock.vue'
 import { useDigestStore } from '../../stores/digest'
 import { useMinuteClock } from '../../minuteClock'
+import { readDigestCollapsed, writeDigestCollapsed } from '../../digestCollapsePref'
 
 const props = defineProps<{ sessionId: string }>()
 const store = useDigestStore()
@@ -39,18 +40,38 @@ watch(() => props.sessionId, () => { for (const key of Object.keys(expanded)) de
 const stepsLabel = (count: number) => `${count} ${count === 1 ? 'passo' : 'passos'}`
 
 const fileName = (path: string) => path.split('/').pop() ?? path
+
+// Folded, the section keeps the short sentence (two lines), the closure and the button; the timeline,
+// which grows with long plans, opens from the title. The choice is remembered for every conversation.
+const collapsed = ref(readDigestCollapsed())
+function toggleCollapsed(): void {
+  collapsed.value = !collapsed.value
+  writeDigestCollapsed(collapsed.value)
+}
+const bodyId = useId()
 </script>
 
 <template>
   <section data-test="details-digest" aria-labelledby="digest-title" class="flex flex-col gap-3.5">
     <div class="flex items-center gap-2.5">
       <h3 id="digest-title" class="m-0 flex items-center gap-2 font-mono text-[0.65625rem] font-semibold tracking-[0.08em] text-fg-subtle uppercase">
-        Resumo
+        <button
+          type="button"
+          data-test="digest-toggle"
+          :aria-expanded="!collapsed"
+          :aria-controls="bodyId"
+          class="-ml-1 inline-flex h-6 items-center gap-1 rounded px-1 font-semibold tracking-[0.08em] uppercase text-fg-subtle hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          @click="toggleCollapsed"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="collapsed ? 'm9 6 6 6-6 6' : 'm6 9 6 6 6-6'" /></svg>
+          Resumo
+        </button>
         <span v-if="digest?.plan_done" data-test="digest-plan-done" class="rounded-full border border-primary/40 px-2 font-sans text-[0.6875rem] font-normal tracking-normal normal-case text-primary-soft">Plano concluído</span>
       </h3>
       <span v-if="loaded && digest?.read_at" data-test="digest-read-at" class="ml-auto text-xs text-fg-muted">{{ digestUpdatedText(digest.read_at, new Date(clock)) }}</span>
     </div>
 
+    <div :id="bodyId" data-test="digest-body" class="flex flex-col gap-3.5">
     <div v-if="!loaded" class="flex items-center justify-between gap-2 text-sm">
       <span :class="requestError ? 'text-diff-del-fg' : 'text-fg-muted'" :role="requestError ? 'alert' : undefined">{{ requestError ?? 'Carregando…' }}</span>
       <button v-if="requestError" type="button" class="h-8 rounded-md px-2 text-xs text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="store.load(sessionId)">Tentar de novo</button>
@@ -59,9 +80,10 @@ const fileName = (path: string) => path.split('/').pop() ?? path
       <p v-if="!hasSummary" data-test="digest-empty" class="m-0 text-sm text-fg-muted">Ainda não resumida</p>
       <ClosureBlock v-if="!hasSummary" :session-id="sessionId" />
       <template v-else>
-        <p v-if="digest?.short" data-test="digest-short" class="m-0 text-base leading-normal text-fg">{{ digest.short }}</p>
+        <p v-if="digest?.short" data-test="digest-short" class="m-0 text-base leading-normal text-fg" :class="{ 'line-clamp-2': collapsed }" :title="collapsed ? digest.short : undefined">{{ digest.short }}</p>
         <ClosureBlock :session-id="sessionId" />
         <ol
+          v-if="!collapsed"
           data-test="digest-timeline"
           class="relative m-0 mt-1.5 flex list-none flex-col gap-[1.375rem] p-0 before:absolute before:top-2.5 before:bottom-2.5 before:left-[0.59375rem] before:w-px before:bg-line before:content-['']"
         >
@@ -132,5 +154,6 @@ const fileName = (path: string) => path.split('/').pop() ?? path
         >{{ pending ? 'Resumindo…' : 'Resumir agora' }}</button>
       </div>
     </template>
+    </div>
   </section>
 </template>
