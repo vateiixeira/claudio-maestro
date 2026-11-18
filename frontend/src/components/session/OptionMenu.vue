@@ -196,8 +196,8 @@ function choose(value: string) {
       aria-haspopup="menu"
       :aria-expanded="open"
       :disabled="disabled"
-      class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-2.5 text-[0.8125rem] focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
-      :class="highlight ? 'border-transparent bg-secondary-tint text-secondary-soft' : 'border-line text-fg-muted hover:text-fg'"
+      class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-[0.8125rem] focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
+      :class="highlight ? 'border-transparent bg-secondary-tint text-secondary-soft' : 'border-line bg-transparent text-fg-muted hover:text-fg'"
       @click="toggle"
       @keydown="onTriggerKey"
     >

@@ -425,5 +425,13 @@ describe('footer', () => {
     expect(classes).toContain('text-secondary-soft')
     expect(classes).not.toContain('border-secondary/60')
     expect(classes).not.toContain('text-secondary')
+    // bg-transparent comes later in the built CSS and would hide the tint.
+    expect(classes).not.toContain('bg-transparent')
+  })
+
+  it('sem destaque, o botão fica transparente com borda', () => {
+    const { trigger } = mountMenu(rect(50, 700))
+    expect(trigger.classes()).toContain('bg-transparent')
+    expect(trigger.classes()).toContain('border-line')
   })
 })

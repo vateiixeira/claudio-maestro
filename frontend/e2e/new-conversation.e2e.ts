@@ -241,4 +241,6 @@ test('o menu de modo destaca "Sem perguntas" depois da confirmação', async ({ 
   await expect(mode).toHaveClass(/bg-secondary-tint/)
   // The highlighted button has no visible border (marco 40: orange tint, no border).
   await expect(mode).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+  // The orange tint must actually paint (a later bg-transparent once hid it).
+  await expect(mode).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
 })
