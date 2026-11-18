@@ -952,22 +952,22 @@ async def test_cancel_run_interrupts_the_turn_and_frees_the_agent(world):
     pause.release.set()
 
 
-async def test_discarding_the_session_cancels_the_run_and_frees_the_agent(world):
+async def test_discarding_the_session_cancels_the_run_at_once_and_frees_the_agent(world):
     agent = world.add_agent()
     run, pause = await paused_run(world, agent)
     client = world.factory.clients[0]
 
     await world.manager.update(run.session_id, mark="discarded")
-    pause.release.set()
-    await asyncio.sleep(0.1)
 
     [saved] = world.runs(agent)
     assert (saved.outcome, saved.reason) == ("cancelled", "Descartada por você.")
     assert saved.ended_at == NOW
-    assert client.closed is True
+    assert client.interrupts == 1
+    assert client.closed is False  # the process waits for the grace
     assert world.announcements(agent) == []
     await world.service.wake(agent, source="manual", text="Seguinte.")
     await wait_until(lambda: len(world.runs(agent)) == 2)
+    pause.release.set()
 
 
 async def test_discarding_a_session_without_an_open_run_changes_no_run(world):

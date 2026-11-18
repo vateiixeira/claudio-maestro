@@ -226,6 +226,9 @@ ReadToolResults = history_module.ReadToolResults
 FileMtime = Callable[[str, str], float | None]
 
 DEFAULT_IDLE_TIMEOUT = 30 * 60  # seconds
+# How long a discarded session may live on (finishing a turn, background work, its
+# terminal) before the sweep closes it; the user can take the mark off meanwhile.
+DEFAULT_DISCARD_GRACE = 60 * 60  # seconds
 DEFAULT_HISTORY_LIMIT = 500  # messages loaded when opening an old session
 # A history file modified this recently by someone else counts as external activity.
 EXTERNAL_ACTIVITY_WINDOW = 60  # seconds
@@ -1319,6 +1322,11 @@ class ActiveSession:
     def busy(self) -> bool:
         """A send or connect holds the lock."""
         return self._lock.locked()
+
+    @property
+    def sending_message(self) -> bool:
+        """A message is being recorded and sent (it may not hold the send lock yet)."""
+        return self._message_lock.locked()
 
     @property
     def foreign_pending(self) -> bool:
@@ -3522,7 +3530,9 @@ class SessionManager:
         session_file: Callable[[str, str], Path | None] | None = None,
         on_turn_end: Callable[[int], None] | None = None,
         on_finished: Callable[[str, int], None] | None = None,
-        on_discarded: Callable[[str], None] | None = None,
+        on_discarded: Callable[[str], Awaitable[None]] | None = None,
+        close_terminal: Callable[[str], Awaitable[None]] | None = None,
+        discard_grace: float = DEFAULT_DISCARD_GRACE,
         default_permission_mode: Callable[[], str | None] | None = None,
         read_transcript: history_module.ReadTranscript | None = None,
         read_edits: history_module.ReadEdits | None = None,
@@ -3580,8 +3590,15 @@ class SessionManager:
         self._on_turn_end = on_turn_end
         # Called with (session_id, finished_at) when a session goes from open to finished.
         self._on_finished = on_finished
-        # Called with the session id when a session is discarded, before its client closes.
+        # Awaited with the session id when a session is discarded (the agents feature cancels
+        # its open run and interrupts the turn at once; the process waits for the grace).
         self._on_discarded = on_discarded
+        # Closes the terminal of a session (the terminals live in the app, not here).
+        self._close_terminal = close_terminal
+        self._discard_grace = discard_grace
+        # Monotonic time each session was discarded, kept in memory only: after a restart
+        # the grace starts again at the first sweep that finds it open (see close_discarded).
+        self._discarded_at: dict[str, float] = {}
         self._db_path = db_path
         self._file_mtime = file_mtime or history_module.sdk_session_file_mtime
         # session_file(session_id, directory): path of the session's `.jsonl`, or None.
@@ -4789,17 +4806,17 @@ class SessionManager:
         if remote_control is not None:
             # After the changes above: reopening and turning it on can come together.
             await session.set_remote_control(remote_control)
-        if changes.get("mark") == "discarded":
-            if self._on_discarded is not None:
-                # Agentes: an open run ends `cancelled` before the close, so the close is not
-                # read as the end of its turn (a task run would wake the agent again).
-                try:
-                    self._on_discarded(session_id)
-                except Exception:
-                    logger.exception("Falha ao tratar o descarte da sessão %s", session_id)
-            # Discarding closes for real: the turn, subagents and background work end now
-            # instead of at the idle sweep. Taking the mark off resumes on the next message.
-            await session.close()
+        if "mark" in changes:
+            # A discarded session is closed for real once the grace is over (close_discarded).
+            if changes["mark"] == "discarded":
+                self._discarded_at[session_id] = time.monotonic()
+                if self._on_discarded is not None:
+                    try:
+                        await self._on_discarded(session_id)
+                    except Exception:
+                        logger.exception("Falha ao tratar o descarte da sessão %s", session_id)
+            else:
+                self._discarded_at.pop(session_id, None)
         session.emit_updated()
         return session.summary()
 
@@ -4948,6 +4965,49 @@ class SessionManager:
                 logger.info("Sessão %s ociosa; fechando o cliente", session.session_id)
                 await session.close()
         self.forget_closed()
+
+    async def close_discarded(self) -> None:
+        """Close the sessions discarded longer than the grace: the client (turn, subagents
+        and background work with it) and the terminal. Unlike the idle sweep it does not
+        wait for the session to stop. One still discarded is checked first (a message takes
+        the mark off); one busy with a message, send or connect is tried again at the next
+        sweep. An open run of an agent was already cancelled at the discard (see `update`)."""
+        now = time.monotonic()
+        for session_id, session in self._sessions.items():
+            if (
+                session.record.mark == "discarded"
+                and session.state != "closed"
+                and session_id not in self._discarded_at
+            ):
+                # Discarded before a backend restart: the grace starts again now.
+                self._discarded_at[session_id] = now
+        for session_id, since in list(self._discarded_at.items()):
+            if now - since < self._discard_grace:
+                continue
+            session = self._sessions.get(session_id)
+            try:
+                mark = session.record.mark if session is not None else self.find_record(
+                    session_id
+                ).mark
+            except SessionNotFoundError:
+                mark = None
+            if mark != "discarded":
+                self._discarded_at.pop(session_id, None)
+                continue
+            if session is not None and (session.busy or session.sending_message):
+                continue
+            self._discarded_at.pop(session_id, None)
+            logger.info("Sessão %s descartada há mais de %ss; fechando", session_id,
+                        int(self._discard_grace))
+            if session is not None and session.state != "closed":
+                await session.close()
+                if session.record.mark != "discarded":
+                    continue  # a message took the mark off during the close: keep the terminal
+            if self._close_terminal is not None:
+                try:
+                    await self._close_terminal(session_id)
+                except Exception:
+                    logger.exception("Falha ao fechar o terminal da sessão %s", session_id)
 
     def forget_closed(self) -> None:
         """Drop from memory sessions that are closed and not in use."""
@@ -5165,6 +5225,10 @@ class SessionManager:
     async def run_idle_sweep(self, interval: float) -> None:
         while True:
             await asyncio.sleep(interval)
+            try:
+                await self.close_discarded()
+            except Exception:
+                logger.exception("Falha na varredura de sessões descartadas")
             try:
                 await self.close_idle()
             except Exception:

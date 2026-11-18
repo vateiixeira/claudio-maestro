@@ -6,7 +6,7 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
-- Descartar uma sessão agora a encerra de fato: interrompe o turno em andamento, os subagentes e o que roda em segundo plano, e fecha o terminal dela. Antes ela só sumia das listas e o processo ficava aberto até 30 minutos parado. Numa sessão de agente, a execução aberta termina como cancelada e o agente fica livre. Tirar a marca e mandar mensagem retoma a conversa.
+- Uma sessão descartada agora é encerrada de fato uma hora depois do descarte: o turno em andamento, os subagentes, o que roda em segundo plano e o terminal dela. Antes o processo podia ficar aberto indefinidamente. Nessa hora dá para voltar atrás tirando a marca ou mandando mensagem. Numa sessão de agente, descartar cancela na hora a execução aberta, como o botão Cancelar: o turno é interrompido e o agente fica livre. Só o processo espera a hora.
 
 ## [0.13.0] - 2026-11-18
 

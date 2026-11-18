@@ -509,17 +509,21 @@ def test_finish_session_kills_terminal_without_sending(api, home, factory):
     assert not any(c.sent for c in factory.clients)
 
 
-def test_discard_session_kills_terminal_without_sending(api, home, factory):
+def test_discard_keeps_the_terminal_until_the_grace_ends(api, home, factory):
     session = new_session(api, home)
-    assert api.post(run_url(session["session_id"]), json={"command": "sleep 30"}).status_code == 202
-    terminal = get_terminal(api, session["session_id"])
-    assert terminal is not None
-    pid = terminal.pid
+    sid = session["session_id"]
+    assert api.post(run_url(sid), json={"command": "sleep 30"}).status_code == 202
+    pid = get_terminal(api, sid).pid
+    manager = api.app.state.sessions
 
-    response = api.patch(f"/api/sessions/{session['session_id']}", json={"mark": "discarded"})
+    assert api.patch(f"/api/sessions/{sid}", json={"mark": "discarded"}).status_code == 200
+    api.portal.call(manager.close_discarded)
+    assert get_terminal(api, sid) is not None
 
-    assert response.status_code == 200
-    assert get_terminal(api, session["session_id"]) is None
+    manager._discard_grace = 0
+    api.portal.call(manager.close_discarded)
+
+    assert get_terminal(api, sid) is None
     assert not process_alive(pid)
     time.sleep(0.2)
     assert not any(c.sent for c in factory.clients)

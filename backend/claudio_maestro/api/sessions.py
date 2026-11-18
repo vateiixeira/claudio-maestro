@@ -350,10 +350,10 @@ async def update_session(
         raise _http_error(exc) from exc
     except groups.GroupError as exc:
         raise group_http_error(exc) from exc
-    if body.finished is True or body.mark == "discarded":
-        # Finishing or discarding by hand closes the terminal of the session, and what it was
-        # running is not sent to the conversation. The automatic finish (idleness) does not
-        # come through here.
+    if body.finished is True:
+        # Finishing by hand closes the terminal of the session, and what it was running is not
+        # sent to the conversation. The automatic finish (idleness) does not come through here.
+        # A discarded session loses it when the grace is over (see `close_discarded`).
         await request.app.state.terminals.kill(session_id, interrupted=True)
     return updated
 

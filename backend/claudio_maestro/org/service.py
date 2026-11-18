@@ -2664,14 +2664,16 @@ class OrgService:
             ended_at=finished_at, announce=False,
         )
 
-    def on_discarded(self, session_id: str) -> None:
-        """The person discarded the session, which is about to close: a run still open ends
-        `cancelled` (like "Cancelar"; no failure, no new wakeup) and the agent is free."""
+    async def on_discarded(self, session_id: str) -> None:
+        """The person discarded the session: like "Cancelar", a run still open ends
+        `cancelled` (no failure, no new wakeup), its turn is interrupted and the agent is
+        free. The process itself goes later, when the grace of the discard is over."""
         run = self._set_outcome(
             session_id, "cancelled", DISCARDED_BY_USER, only_from=OPEN_OUTCOMES, announce=False
         )
         if run is not None:
             self._forget_wake_text(run.id)
+            await self._interrupt(session_id)
 
     def on_turn_error(self, session_id: str, error: str) -> None:
         """A turn or the session ended in error: a run still starting or running failed."""

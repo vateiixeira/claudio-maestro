@@ -942,7 +942,8 @@ async def test_cancelled_task_run_leaves_an_app_comment_and_is_not_rewoken(board
     assert ("app", "Execução cancelada pela pessoa.") in comments(board, task.id)
 
 
-async def test_task_run_discarded_by_the_person_is_cancelled_and_not_rewoken(board):
+async def test_task_run_discarded_is_cancelled_and_not_rewoken_when_its_turn_ends(board):
+    # The turn ends within the grace, with the process still up: no `sem_relato`.
     agent = board.add_agent()
     pauses = scripted_pauses(board, 0)
     task = await new_task(board, agent)
@@ -956,6 +957,7 @@ async def test_task_run_discarded_by_the_person_is_cancelled_and_not_rewoken(boa
     assert (saved.outcome, saved.reason) == ("cancelled", "Descartada por você.")
     assert ("app", "Execução cancelada pela pessoa.") in comments(board, task.id)
     assert not any((w.payload or {}).get("reason") == "sem_relato" for w in board.wakeups(agent))
+    assert board.manager.get(run.session_id).state != "closed"
 
 
 async def test_task_run_finished_by_the_person_is_not_rewoken(board):
