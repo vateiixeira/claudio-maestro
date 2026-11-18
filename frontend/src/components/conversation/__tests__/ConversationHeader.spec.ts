@@ -113,7 +113,8 @@ describe('faixa compacta', () => {
       makeSession({ session_id: 's2', display_state: 'waiting', unread: true }),
     ])
     const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
-    expect(wrapper.get('[data-test="header-strip"] [data-test="next-needs-you"]').text()).toContain('Próxima (1)')
+    expect(wrapper.get('[data-test="header-strip"] [data-test="next-needs-you"]').text()).toContain('Próxima')
+    expect(wrapper.get('[data-test="next-count"]').text()).toBe('1')
     const embedded = mount(ConversationHeader, { props: { id: 's1', showPath: false }, global: { plugins: [pinia, router] } })
     expect(embedded.find('[data-test="next-needs-you"]').exists()).toBe(false)
   })
@@ -468,5 +469,71 @@ describe('link para configurar o agente', () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1' })])
     const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
     expect(wrapper.find('[data-test="configure-agent"]').exists()).toBe(false)
+  })
+})
+
+describe('grupo de ações da conversa', () => {
+  const names = (group: ReturnType<ReturnType<typeof mountHeader>['get']>) => group.findAll('button').map((b) => b.attributes('data-test'))
+
+  it('reúne Marcar, Finalizar e Descartar, nessa ordem, num grupo segmentado', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1' })])
+    const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    const group = wrapper.get('[data-test="header-actions-group"]')
+    expect(group.attributes('role')).toBe('group')
+    expect(group.attributes('aria-label')).toBe('Ações da conversa')
+    expect(group.classes()).toEqual(expect.arrayContaining(['h-[30px]', 'rounded-lg', 'border-line-strong']))
+    expect(names(group)).toEqual(['mark-button', 'toggle-finished', 'header-discard'])
+    for (const button of group.findAll('button')) expect(button.find('svg[aria-hidden="true"]').exists()).toBe(true)
+    expect(group.get('[data-test="mark-button"]').text()).toBe('Marcar')
+    expect(group.get('[data-test="toggle-finished"]').text()).toBe('Finalizar')
+    expect(group.get('[data-test="header-discard"]').text()).toBe('Descartar')
+  })
+
+  it('numa conversa descartada o grupo não tem Descartar', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', mark: 'discarded' })])
+    const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    const group = wrapper.get('[data-test="header-actions-group"]')
+    expect(names(group)).toEqual(['mark-button', 'toggle-finished'])
+    expect(group.find('[data-test="header-discard"]').exists()).toBe(false)
+  })
+
+  it('numa conversa finalizada o segundo botão é Reabrir, em verde', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', display_state: 'finished' })])
+    const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    const reopen = wrapper.get('[data-test="header-actions-group"] [data-test="toggle-finished"]')
+    expect(reopen.text()).toBe('Reabrir')
+    expect(reopen.classes()).toContain('text-primary-soft')
+  })
+
+  it('separa os botões por divisória, sem borda própria', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1' })])
+    const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    const group = wrapper.get('[data-test="header-actions-group"]')
+    expect(group.classes()).toContain('[&>button+button]:border-l')
+    for (const button of group.findAll('button')) {
+      expect(button.classes()).not.toContain('border')
+      expect(button.classes()).toContain('text-fg-muted')
+    }
+  })
+
+  it('"Configurar agente" tem ícone de engrenagem e 30px de altura', () => {
+    useOrgStore(pinia).agents = [makeAgent({ id: 4, name: 'Triagem', main_session_id: 's1' })]
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', agent_id: 4 })])
+    const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    const link = wrapper.get('[data-test="configure-agent"]')
+    expect(link.find('svg[aria-hidden="true"]').exists()).toBe(true)
+    expect(link.classes()).toContain('h-[30px]')
+    expect(link.classes()).toContain('rounded-lg')
+    expect(link.text()).toBe('Configurar agente')
+  })
+
+  it('"⋯" e terminal são ícones de 30px com raio 8, sem borda', () => {
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1' })])
+    const wrapper = mount(ConversationHeader, { props: { id: 's1' }, global: { plugins: [pinia, router] } })
+    for (const test of ['header-menu', 'terminal-button']) {
+      const button = wrapper.get(`[data-test="${test}"]`)
+      expect(button.classes()).toEqual(expect.arrayContaining(['size-[30px]', 'rounded-lg']))
+      expect(button.classes()).not.toContain('border')
+    }
   })
 })

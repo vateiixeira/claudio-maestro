@@ -46,12 +46,27 @@ describe('botão "Próxima"', () => {
     )
     const { wrapper } = await mountButton()
     const button = wrapper.get('[data-test="next-needs-you"]')
-    expect(button.text()).toContain('Próxima (2)')
+    expect(button.text()).toContain('Próxima')
+    expect(button.get('[data-test="next-count"]').text()).toBe('2')
     expect(button.attributes('title')).toContain('(n)')
     expect(button.attributes('title')).toContain('sem contar esta')
     expect(button.attributes('aria-keyshortcuts')).toBe('n')
     expect(button.attributes('aria-label')).toBe('Próxima conversa que aguarda você, 2 outras')
     expect(button.find('svg[aria-hidden="true"]').exists()).toBe(true)
+  })
+
+  it('tem fundo laranja claro, sem borda, e o número numa bolinha', async () => {
+    seed(
+      makeSession({ session_id: 's1', display_state: 'waiting', unread: true }),
+      makeSession({ session_id: 's2', display_state: 'waiting', unread: true }),
+    )
+    const { wrapper } = await mountButton()
+    const button = wrapper.get('[data-test="next-needs-you"]')
+    expect(button.classes()).toContain('bg-secondary-tint')
+    expect(button.classes()).toContain('text-secondary-soft')
+    expect(button.classes()).not.toContain('border')
+    const count = button.get('[data-test="next-count"]')
+    expect(count.classes()).toEqual(expect.arrayContaining(['bg-secondary', 'text-secondary-fg', 'font-mono']))
   })
 
   it('o clique abre a primeira da fila, na ordem da Inbox', async () => {
@@ -91,6 +106,6 @@ describe('botão "Próxima"', () => {
       makeSession({ session_id: 's2', display_state: 'waiting', unread: true }),
     )
     await flushPromises()
-    expect(wrapper.get('[data-test="next-needs-you"]').text()).toContain('Próxima (1)')
+    expect(wrapper.get('[data-test="next-count"]').text()).toBe('1')
   })
 })

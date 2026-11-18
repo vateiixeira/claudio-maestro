@@ -35,6 +35,7 @@ const props = withDefaults(defineProps<{ id: string; detailsOpen?: boolean; show
 
 const sessions = useSessionsStore()
 const org = useOrgStore()
+const SEG = 'flex items-center gap-1.5 px-[11px] text-[0.78125rem] whitespace-nowrap text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 -outline-offset-2 focus-visible:outline-primary'
 const BADGE = 'max-w-56 shrink-0 truncate rounded-full border border-line-strong px-1.5 font-mono text-[0.6875rem] text-fg-muted'
 const conversations = useConversationStore()
 const projects = useProjectsStore()
@@ -254,26 +255,40 @@ async function openProject() {
         </button>
         <span v-if="listed?.priority" data-test="header-priority" role="img" title="Prioridade" aria-label="Prioridade" class="shrink-0 text-fg-muted"><MarkIcon mark="priority" :size="13" /></span>
         <span v-if="copied" role="status" class="shrink-0 text-xs text-primary-soft">ID copiado</span>
-        <RouterLink v-if="mainOf" :to="{ name: 'agents', params: { projectId: mainOf.project_id }, query: { agente: String(mainOf.id), aba: 'definicao' } }" data-test="configure-agent" class="flex h-8 shrink-0 items-center rounded-md border border-line-strong px-3 text-sm font-medium text-fg no-underline hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">Configurar agente</RouterLink>
+        <RouterLink v-if="mainOf" :to="{ name: 'agents', params: { projectId: mainOf.project_id }, query: { agente: String(mainOf.id), aba: 'definicao' } }" data-test="configure-agent" class="flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg border border-line-strong px-[11px] text-[0.78125rem] text-fg-muted no-underline hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>Configurar agente
+        </RouterLink>
         <NextNeedsYou v-if="showPath" :current-id="id" />
-        <button v-if="listed" ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary" @click="toggleMark">Marcar</button>
-        <button
+        <div
           v-if="listed"
-          type="button"
-          data-test="toggle-finished"
-          class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
-          :class="isFinished ? 'text-primary-soft' : 'text-fg'"
-          :disabled="toggling"
-          @click="requestToggleFinished"
-        >{{ isFinished ? 'Reabrir' : 'Finalizar' }}</button>
-        <button
-          v-if="listed && !isDiscarded(listed)"
-          type="button"
-          data-test="header-discard"
-          class="h-8 shrink-0 rounded-md border border-line-strong px-3 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
-          :disabled="toggling"
-          @click="discardSession"
-        >Descartar</button>
+          data-test="header-actions-group"
+          role="group"
+          aria-label="Ações da conversa"
+          class="inline-flex h-[30px] shrink-0 overflow-hidden rounded-lg border border-line-strong [&>button+button]:border-l [&>button+button]:border-line"
+        >
+          <button ref="markButton" type="button" data-test="mark-button" aria-haspopup="menu" :aria-expanded="!!markAt" :class="SEG" @click="toggleMark">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z" /></svg>Marcar
+          </button>
+          <button
+            type="button"
+            data-test="toggle-finished"
+            :class="[SEG, 'disabled:opacity-40', isFinished ? 'text-primary-soft' : 'text-fg-muted']"
+            :disabled="toggling"
+            @click="requestToggleFinished"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17 19 7" /></svg>{{ isFinished ? 'Reabrir' : 'Finalizar' }}
+          </button>
+          <button
+            v-if="!isDiscarded(listed)"
+            type="button"
+            data-test="header-discard"
+            :class="[SEG, 'disabled:opacity-40']"
+            :disabled="toggling"
+            @click="discardSession"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>Descartar
+          </button>
+        </div>
         <div ref="menuWrap" class="relative shrink-0">
           <button
             ref="menuButton"
@@ -283,7 +298,7 @@ async function openProject() {
             title="Mais ações"
             aria-haspopup="menu"
             :aria-expanded="menuOpen"
-            class="flex size-8 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+            class="flex size-[30px] items-center justify-center rounded-lg text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
             @click="menuOpen = !menuOpen"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>
@@ -303,7 +318,7 @@ async function openProject() {
           data-test="terminal-button"
           aria-label="Abrir o terminal"
           title="Abrir o terminal"
-          class="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+          class="flex size-[30px] shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
           @click="terminal.openPanel(id)"
         ><IconTerminal :size="16" /></button>
         <slot name="details-toggle" />

@@ -143,6 +143,20 @@ describe('página da conversa', () => {
     expect(toggle.find('svg[aria-hidden="true"]').exists()).toBe(true)
   })
 
+  it('o botão de Detalhes fica marcado quando o painel está aberto', async () => {
+    const { wrapper } = await mountAt('/sessions/s1')
+    let toggle = wrapper.get('[data-test="toggle-details"]')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(toggle.classes()).toEqual(expect.arrayContaining(['bg-card', 'text-fg']))
+    expect(toggle.classes()).toEqual(expect.arrayContaining(['size-[30px]', 'rounded-lg']))
+
+    await toggle.trigger('click')
+    toggle = wrapper.get('[data-test="toggle-details"]')
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(toggle.classes()).not.toContain('bg-card')
+    expect(toggle.classes()).toContain('text-fg-muted')
+  })
+
   it('projeto, agrupador e branch só aparecem abaixo da faixa com o painel fechado', async () => {
     useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', title: 'Corrigir login', display_state: 'waiting', group_id: 2 })])
     useGroupsStore(pinia).groups = [makeGroup({ id: 2, name: 'Checkout' })]

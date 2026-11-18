@@ -26,12 +26,13 @@ function goNext() {
     :title="`Abrir a próxima conversa que aguarda você, sem contar esta (n). Outras aguardando: ${queue.length}`"
     :aria-label="`Próxima conversa que aguarda você, ${queue.length} ${queue.length === 1 ? 'outra' : 'outras'}`"
     aria-keyshortcuts="n"
-    class="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-sm font-medium text-fg hover:bg-card focus-visible:outline-2 focus-visible:outline-primary"
+    class="inline-flex h-[30px] shrink-0 items-center gap-[7px] rounded-lg bg-secondary-tint py-0 pr-2 pl-2.5 text-[0.78125rem] font-medium whitespace-nowrap text-secondary-soft hover:brightness-110 focus-visible:outline-2 focus-visible:outline-primary"
     @click="goNext"
   >
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary" aria-hidden="true">
-      <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" />
     </svg>
-    <span>Próxima ({{ queue.length }})</span>
+    <span>Próxima</span>
+    <span data-test="next-count" class="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-secondary px-[5px] font-mono text-[0.65625rem] font-semibold text-secondary-fg">{{ queue.length }}</span>
   </button>
 </template>
