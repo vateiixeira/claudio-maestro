@@ -102,6 +102,13 @@ describe('seletores da sessão', () => {
     const trigger = button(w, 'Modelo')
     expect(trigger.text()).toBe('Default')
     expect(trigger.attributes('aria-label')).toBe('Modelo: Default (recommended)')
+    // Two models may share the short name; the tooltip tells them apart.
+    expect(trigger.attributes('title')).toMatch(/^Default \(recommended\)/)
+  })
+
+  it('não repete o nome do modelo no title quando ele já cabe inteiro no botão', async () => {
+    const w = await mountControls()
+    expect(button(w, 'Modelo').attributes('title')).not.toMatch(/^Sonnet 5 ·/)
   })
 
   it('lista os modelos da API num menu e troca com PATCH', async () => {

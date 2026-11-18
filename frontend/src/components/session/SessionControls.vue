@@ -26,7 +26,12 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const modelValue = computed(() => options.value?.model ?? 'default')
 const currentModel = computed(() => modelsStore.models.find((m) => m.value === modelValue.value))
 const modelText = computed(() => currentModel.value?.displayName ?? options.value?.model ?? 'Padrão')
-const modelTitle = computed(() => (options.value?.model_resolved ? `Em uso: ${options.value.model_resolved}` : undefined))
+// The button shows the short name; when that drops a suffix, the tooltip keeps the full one.
+const modelTitle = computed(() => {
+  const parts = shortModelLabel(modelText.value) !== modelText.value ? [modelText.value] : []
+  if (options.value?.model_resolved) parts.push(`Em uso: ${options.value.model_resolved}`)
+  return parts.length ? parts.join(' · ') : undefined
+})
 const modelOptions = computed<MenuOption[]>(() =>
   modelsStore.models.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
 )
