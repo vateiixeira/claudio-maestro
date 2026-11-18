@@ -190,8 +190,8 @@ test('a linha viva mostra a ação, o tempo que passa e os tokens quando chegam'
 
   // Only thinking, tokens unknown: no tokens in the line.
   await expect(live.getByTestId('turn-live-activity')).toHaveText('Pensando')
-  await expect(live.getByTestId('turn-live-dot')).toHaveCount(3)
-  await expect(live.getByTestId('turn-live-meta')).toHaveText(/^ · 1 min \d+ s$/)
+  await expect(live.getByTestId('turn-live-node')).toHaveCount(1)
+  await expect(live.getByTestId('turn-live-meta')).toHaveText(/^1 min \d+ s$/)
   const first = await live.getByTestId('turn-live-meta').innerText()
   await expect.poll(() => live.getByTestId('turn-live-meta').innerText()).not.toBe(first)
 
@@ -254,7 +254,7 @@ test('recarregar a página no meio do turno mantém a lista, o tempo e os tokens
   expect(await marks(page)).toEqual(['completed', 'in_progress'])
   await expect(live.getByTestId('turn-live-meta')).toContainText('2,4 mil tokens')
   // The time keeps counting from the start of the turn (65 s before the stage), not from zero.
-  await expect(live.getByTestId('turn-live-meta')).toHaveText(/ · 1 min \d+ s · /)
+  await expect(live.getByTestId('turn-live-meta')).toHaveText(/^1 min \d+ s · /)
 })
 
 test('um turno só com TodoWrite não deixa trilho vazio', async ({ page }) => {
@@ -266,16 +266,16 @@ test('um turno só com TodoWrite não deixa trilho vazio', async ({ page }) => {
 })
 
 const animations = (page: Page) =>
-  page.locator('[data-test="turn-task-mark"], [data-test="turn-live-dot"]').evaluateAll((els) =>
+  page.locator('[data-test="turn-task-mark"], [data-test="turn-live-node"] svg').evaluateAll((els) =>
     els.map((el) => getComputedStyle(el).animationName),
   )
 
-test('o círculo laranja gira e os pontos pulsam; com movimento reduzido nada gira nem pulsa', async ({ page }) => {
+test('os círculos laranja giram; com movimento reduzido nada gira nem pulsa', async ({ page }) => {
   const turn = await stageRunningTurn(page)
   await turn.upsert(todos('todo-1', [['Fazer', 'in_progress'], ['Depois', 'pending']]))
   await expect(page.getByTestId('turn-task-mark').first()).toBeVisible()
   const moving = await animations(page)
-  expect(moving.filter((name) => name !== 'none').length).toBeGreaterThanOrEqual(4) // the spinner and the 3 dots
+  expect(moving.filter((name) => name !== 'none').length).toBeGreaterThanOrEqual(2) // the task's spinner and the live node's
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await expect.poll(async () => (await animations(page)).every((name) => name === 'none')).toBe(true)

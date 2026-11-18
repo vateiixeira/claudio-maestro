@@ -54,7 +54,7 @@ test('a escrita de um subagente aparece na conversa com o nome dele e continua n
   await expect(children.getByText('leia-me.md')).toBeVisible()
 
   // The write is counted once in the footer of the turn.
-  await expect(page.getByTestId('turn-end-summary').first()).toContainText('3 ações · 1 arquivo alterado')
+  await expect(page.getByTestId('turn-stats').first()).toContainText('3 ações · 1 arquivo alterado')
 })
 
 // A richer conversation: text of the main agent between writes, several writes in a row, a nested
@@ -134,7 +134,7 @@ test('várias escritas de subagentes, aninhado e texto no meio', async ({ page }
   await expect(blocks.nth(1).getByText('novo')).toBeVisible()
 
   // Each write counts once in the footer: 10 actions (two subagents, a read and a command included), 6 files.
-  await expect(page.getByTestId('turn-end-summary').first()).toContainText('10 ações · 6 arquivos alterados')
+  await expect(page.getByTestId('turn-stats').first()).toContainText('10 ações · 6 arquivos alterados')
 
   // The card of the main subagent lists all its actions, nested subagent's write included in its own card.
   await first.nth(1).getByTestId('work-header').click()
