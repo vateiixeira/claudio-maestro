@@ -3522,6 +3522,7 @@ class SessionManager:
         session_file: Callable[[str, str], Path | None] | None = None,
         on_turn_end: Callable[[int], None] | None = None,
         on_finished: Callable[[str, int], None] | None = None,
+        on_discarded: Callable[[str], None] | None = None,
         default_permission_mode: Callable[[], str | None] | None = None,
         read_transcript: history_module.ReadTranscript | None = None,
         read_edits: history_module.ReadEdits | None = None,
@@ -3579,6 +3580,8 @@ class SessionManager:
         self._on_turn_end = on_turn_end
         # Called with (session_id, finished_at) when a session goes from open to finished.
         self._on_finished = on_finished
+        # Called with the session id when a session is discarded, before its client closes.
+        self._on_discarded = on_discarded
         self._db_path = db_path
         self._file_mtime = file_mtime or history_module.sdk_session_file_mtime
         # session_file(session_id, directory): path of the session's `.jsonl`, or None.
@@ -4786,6 +4789,17 @@ class SessionManager:
         if remote_control is not None:
             # After the changes above: reopening and turning it on can come together.
             await session.set_remote_control(remote_control)
+        if changes.get("mark") == "discarded":
+            if self._on_discarded is not None:
+                # Agentes: an open run ends `cancelled` before the close, so the close is not
+                # read as the end of its turn (a task run would wake the agent again).
+                try:
+                    self._on_discarded(session_id)
+                except Exception:
+                    logger.exception("Falha ao tratar o descarte da sessão %s", session_id)
+            # Discarding closes for real: the turn, subagents and background work end now
+            # instead of at the idle sweep. Taking the mark off resumes on the next message.
+            await session.close()
         session.emit_updated()
         return session.summary()
 

@@ -942,6 +942,22 @@ async def test_cancelled_task_run_leaves_an_app_comment_and_is_not_rewoken(board
     assert ("app", "Execução cancelada pela pessoa.") in comments(board, task.id)
 
 
+async def test_task_run_discarded_by_the_person_is_cancelled_and_not_rewoken(board):
+    agent = board.add_agent()
+    pauses = scripted_pauses(board, 0)
+    task = await new_task(board, agent)
+    run = await first_run(board, agent, pauses[0], task.id)
+
+    await board.manager.update(run.session_id, mark="discarded")
+    pauses[0].release.set()
+    await asyncio.sleep(0.1)
+
+    [saved] = task_runs(board, task.id)
+    assert (saved.outcome, saved.reason) == ("cancelled", "Descartada por você.")
+    assert ("app", "Execução cancelada pela pessoa.") in comments(board, task.id)
+    assert not any((w.payload or {}).get("reason") == "sem_relato" for w in board.wakeups(agent))
+
+
 async def test_task_run_finished_by_the_person_is_not_rewoken(board):
     agent = board.add_agent()
     pauses = scripted_pauses(board, 0)

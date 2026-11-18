@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Alterado
+
+- Descartar uma sessão agora a encerra de fato: interrompe o turno em andamento, os subagentes e o que roda em segundo plano, e fecha o terminal dela. Antes ela só sumia das listas e o processo ficava aberto até 30 minutos parado. Numa sessão de agente, a execução aberta termina como cancelada e o agente fica livre. Tirar a marca e mandar mensagem retoma a conversa.
+
 ## [0.13.0] - 2026-11-18
 
 Redesenho de quase todas as telas: Projetos, Conversas, Início, Painel, Inbox, Organização, Git, Preferências e a conversa da sessão ganham um visual mais limpo e leitura mais rápida. Também corrige conversas paradas que voltavam como não lidas e comandos que pareciam rodando depois de terminar.

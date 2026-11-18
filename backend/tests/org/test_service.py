@@ -76,6 +76,7 @@ class World:
             history_exists=fake_history(self.factory),
             session_setup=lambda record: self.service.session_setup(record),
             on_finished=lambda sid, at: self.service.on_finished(sid, at),
+            on_discarded=lambda sid: self.service.on_discarded(sid),
             on_turn_error=lambda sid, error: self.service.on_turn_error(sid, error),
             on_init=lambda sid, servers: self.service.on_init(sid, servers),
             on_pr_created=lambda sid, url: self.service.on_pr_created(sid, url),

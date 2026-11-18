@@ -98,6 +98,7 @@ _SUBJECT_KEYS = ("command", "file_path", "path", "url", "pattern")
 SESSION_NOT_CREATED = "Não foi possível criar a sessão do agente."
 FINISHED_BY_USER = "Finalizada por você"
 CANCELLED_BY_USER = "Cancelada por você."
+DISCARDED_BY_USER = "Descartada por você."
 UNCERTAIN_SEND = (
     "O envio foi interrompido. Confira a conversa antes de rodar de novo."
 )
@@ -2662,6 +2663,15 @@ class OrgService:
             session_id, "concluded", FINISHED_BY_USER, only_from=OPEN_OUTCOMES,
             ended_at=finished_at, announce=False,
         )
+
+    def on_discarded(self, session_id: str) -> None:
+        """The person discarded the session, which is about to close: a run still open ends
+        `cancelled` (like "Cancelar"; no failure, no new wakeup) and the agent is free."""
+        run = self._set_outcome(
+            session_id, "cancelled", DISCARDED_BY_USER, only_from=OPEN_OUTCOMES, announce=False
+        )
+        if run is not None:
+            self._forget_wake_text(run.id)
 
     def on_turn_error(self, session_id: str, error: str) -> None:
         """A turn or the session ended in error: a run still starting or running failed."""

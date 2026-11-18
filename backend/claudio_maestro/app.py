@@ -353,6 +353,7 @@ def create_app(
             # hooks look it up when called.
             session_setup=lambda record: app.state.org.session_setup(record),
             on_turn_error=lambda session_id, error: app.state.org.on_turn_error(session_id, error),
+            on_discarded=lambda session_id: app.state.org.on_discarded(session_id),
             on_init=lambda session_id, servers: app.state.org.on_init(session_id, servers),
             prepare_message=lambda record, text: app.state.org.prepare_message(record, text),
             on_pr_created=lambda session_id, url: app.state.org.on_pr_created(session_id, url),
