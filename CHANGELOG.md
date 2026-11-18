@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+## [0.13.0] - 2026-11-18
+
+Redesenho de quase todas as telas: Projetos, Conversas, Início, Painel, Inbox, Organização, Git, Preferências e a conversa da sessão ganham um visual mais limpo e leitura mais rápida. Também corrige conversas paradas que voltavam como não lidas e comandos que pareciam rodando depois de terminar.
+
 ### Adicionado
 
 - Nas Preferências, a aba Etiquetas ganhou uma linha para criar etiqueta, com paleta de cores, e o botão "Apagar as N sem uso".
@@ -13,8 +17,6 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 - Na conversa, Marcar, Finalizar e Descartar viram um grupo compacto com ícones, "Próxima" ganhou destaque laranja com o número numa bolinha e os botões do terminal e dos Detalhes ficaram mais discretos.
 - A barra "Turno N de M", o botão Copiar das respostas e os avisos da conversa seguem o novo visual: setas e Copiar sem borda, e avisos como uma linha no trilho, sem caixa.
-- A barra do compositor cabe numa linha mesmo com os Detalhes abertos: Remote Control virou só o ícone, o modelo aparece sem o parêntese ("Default") e Permissões mostra só o modo. A dica "Enter envia · Ctrl+Enter quebra linha" saiu de baixo do compositor.
-- No painel Detalhes, o Resumo começa recolhido, com só a frase curta, e abre pelo título para mostrar a linha do tempo. O app lembra se você deixou aberto ou recolhido.
 - As etiquetas aparecem com fundo suave na cor delas e um ponto de cor cheia, em vez de fundo sólido.
 - Projetos virou uma tabela com branch, arquivos alterados e última atividade, separada em "Ativos hoje" e "Parados". Alterações paradas há mais de dois dias aparecem em destaque.
 - A janela de nova conversa dá destaque ao pedido: projeto, agrupador e branch numa linha acima, imagem, ditado, modelo, raciocínio e permissões numa barra dentro do campo, e o título opcional abaixo.
@@ -48,8 +50,8 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 - O Git mostra no topo os totais (commits para enviar, para baixar, sem upstream, alterações e erros) e, com três repositórios ou mais, separa os repositórios em "Com pendências" e "Sem pendências". O filtro virou o chip "Só com pendências", com a contagem do que aparece.
 - A aba Git do projeto mostra quantos repositórios têm pendências, contando também os que estão atrás do remoto, com erro ou no meio de um merge.
 - O bloco de trabalho da conversa agrupa as ações seguidas do mesmo tipo e da mesma pasta, diz quando uma falha foi refeita em seguida (sem abrir o bloco nem pintar o trilho de vermelho), mostra a faixa de erro com "Copiar", a duração do bloco e, fechado, chips com os arquivos editados e os subagentes.
-- Cada turno começa com uma linha "Turno N" e os números dele (ações e arquivos alterados); a linha do que está rodando agora fica no trilho, com o comando logo abaixo. O compositor virou uma moldura única com os subagentes em cima, os controles numa barra embaixo e a dica de teclado abaixo.
-- No painel Detalhes, o plano vem primeiro, com a barra em segmentos, a tarefa atual e um menu "⋯" para trocar ou desligar; o resumo vem logo abaixo como linha do tempo, com os passos de cada fase recolhidos em "Ver os N passos".
+- Cada turno começa com uma linha "Turno N" e os números dele (ações e arquivos alterados); a linha do que está rodando agora fica no trilho, com o comando logo abaixo. O compositor virou uma moldura única com os subagentes em cima e os controles numa barra embaixo, que cabe numa linha mesmo com os Detalhes abertos: Remote Control virou só o ícone, o modelo aparece sem o parêntese ("Default") e Permissões mostra só o modo. A dica "Enter envia · Ctrl+Enter quebra linha" saiu de baixo do compositor.
+- No painel Detalhes, o plano vem primeiro, com a barra em segmentos, a tarefa atual e um menu "⋯" para trocar ou desligar; o Resumo vem logo abaixo e começa recolhido, com só a frase curta; aberto pelo título, mostra a linha do tempo, com os passos de cada fase recolhidos em "Ver os N passos". O app lembra se você deixou o Resumo aberto ou recolhido.
 
 ### Corrigido
 
