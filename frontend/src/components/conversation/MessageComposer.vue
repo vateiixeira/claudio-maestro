@@ -368,7 +368,6 @@ async function interrupt() {
     <span v-if="dictation.recording.value" data-test="recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
       <span class="size-2 animate-pulse rounded-full bg-secondary" aria-hidden="true" />Gravando… clique no microfone para parar
     </span>
-    <div data-test="composer-hint" class="composer-keyboard-hint text-right font-mono text-xs text-fg-subtle">Enter envia · Ctrl+Enter quebra linha</div>
   </div>
 </template>
 
@@ -379,6 +378,5 @@ async function interrupt() {
 .compact-mobile-composer .composer-options-toggle:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
 .compact-mobile-composer .composer-options:not(.mobile-expanded){display:none}
 .compact-mobile-composer .composer-options.mobile-expanded{flex-basis:100%;max-height:96px;overflow-y:auto}
-.compact-mobile-composer .composer-keyboard-hint{display:none}
 }
 </style>

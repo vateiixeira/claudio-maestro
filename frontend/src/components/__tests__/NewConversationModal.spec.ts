@@ -437,12 +437,12 @@ describe('modal de nova conversa: "Sem perguntas"', () => {
 
   it('confirmar destaca o botão e a criação envia confirm_bypass', async () => {
     const { wrapper, fetch } = await openModal(2)
-    expect(modeButton(wrapper).classes()).not.toContain('text-secondary')
+    expect(modeButton(wrapper).classes()).not.toContain('text-secondary-soft')
     await chooseMode(wrapper, 'Sem perguntas')
     await wrapper.find('[data-test="bypass-confirm"]').trigger('click')
     await flushPromises()
     expect(modeButton(wrapper).text()).toBe('Sem perguntas')
-    expect(modeButton(wrapper).classes()).toContain('text-secondary')
+    expect(modeButton(wrapper).classes()).toContain('text-secondary-soft')
     await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
     await wrapper.find('[data-test="nc-submit"]').trigger('click')
     await flushPromises()
@@ -474,7 +474,7 @@ describe('modal de nova conversa: "Sem perguntas"', () => {
       'GET /api/state': () => jsonResponse({ preferences: { new_session_mode: 'bypassPermissions' } }),
     })
     expect(modeButton(wrapper).text()).toBe('Sem perguntas')
-    expect(modeButton(wrapper).classes()).toContain('text-secondary')
+    expect(modeButton(wrapper).classes()).toContain('text-secondary-soft')
     await wrapper.find('[data-test="nc-prompt"]').setValue('oi')
     await wrapper.find('[data-test="nc-submit"]').trigger('click')
     await flushPromises()
@@ -785,13 +785,13 @@ describe('layout da nova conversa', () => {
     expect(document.activeElement).toBe(wrapper.find('[data-test="nc-prompt"]').element)
   })
 
-  it('a barra não apaga a borda de destaque do modo sem perguntas', async () => {
+  it('a barra mantém o destaque (fundo laranja) do modo sem perguntas', async () => {
     // The saved default is "Sem perguntas": the Modo button is highlighted as a warning.
     const { wrapper } = await openModal(2, { 'GET /api/state': () => jsonResponse({ preferences: { new_session_mode: 'bypassPermissions' } }) })
     const toolbar = wrapper.find('[data-test="nc-toolbar"]')
     const mode = toolbar.find('button[aria-label="Modo"]').element
     const model = toolbar.find('button[aria-label="Modelo"]').element
-    expect(mode.className).toContain('border-secondary/60')
+    expect(mode.className).toContain('bg-secondary-tint')
     // The toolbar strips the border through a descendant variant: it must leave the highlighted button out.
     const selector = '[aria-haspopup=menu]:not(.bg-secondary-tint)'
     expect(toolbar.classes().some((c) => c.includes(`[&_${selector}]:border-transparent`))).toBe(true)

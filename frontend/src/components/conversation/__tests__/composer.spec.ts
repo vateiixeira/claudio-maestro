@@ -274,15 +274,10 @@ describe('moldura única do compositor', () => {
     expect(classes).not.toContain(':hover]:bg-elevated')
   })
 
-  it('a dica de teclas fica abaixo da moldura, fora dela, mantendo a classe do modo compacto', () => {
+  it('não mostra a dica de teclas no compositor', () => {
     const w = mount(MessageComposer, { props: { sessionId: 's1', state: 'idle' }, attachTo: document.body })
-    const frame = w.get('[data-test="composer-frame"]').element
-    const hint = w.get('[data-test="composer-hint"]')
-    expect(hint.text()).toBe('Enter envia · Ctrl+Enter quebra linha')
-    expect(hint.classes()).toContain('composer-keyboard-hint')
-    expect(inside(frame, hint.element)).toBe(false)
-    expect(before(frame, hint.element)).toBe(true)
-    expect(w.get('[data-test="composer-options"]').text()).not.toContain('Enter envia')
+    expect(w.find('[data-test="composer-hint"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('Enter envia')
     w.unmount()
   })
 

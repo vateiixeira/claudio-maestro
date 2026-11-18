@@ -161,19 +161,19 @@ function turnOff() {
       aria-haspopup="menu"
       :aria-expanded="state === 'off' ? undefined : open"
       :disabled="disabled"
-      class="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-[0.8125rem] focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
+      class="flex size-8 cursor-pointer items-center justify-center rounded-md border focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
       :class="active ? 'border-info/60 bg-info/10 text-info-soft' : 'border-line bg-transparent text-fg-muted hover:text-fg'"
       @click="onClick"
       @keydown="onTriggerKey"
     >
-      <svg v-if="state === 'connecting'" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" class="shrink-0 motion-safe:animate-spin"><path d="M21 12a9 9 0 1 1-6.22-8.56" /></svg>
-      <IconAlert v-else-if="state === 'failed'" :size="13" class="text-diff-del-fg" />
-      <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" class="shrink-0">
+      <svg v-if="state === 'connecting'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" class="shrink-0 motion-safe:animate-spin"><path d="M21 12a9 9 0 1 1-6.22-8.56" /></svg>
+      <IconAlert v-else-if="state === 'failed'" :size="15" class="text-diff-del-fg" />
+      <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" class="shrink-0">
         <circle cx="12" cy="12" r="2.2" :fill="active ? 'currentColor' : 'none'" />
         <path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4" />
         <path v-if="state !== 'elsewhere'" d="M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2" />
       </svg>
-      <span>Remote Control</span>
+      <span class="sr-only">Remote Control</span>
     </button>
     <Teleport to="body">
       <div

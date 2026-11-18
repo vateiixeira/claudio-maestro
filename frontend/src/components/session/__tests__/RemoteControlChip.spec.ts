@@ -21,6 +21,16 @@ const trigger = (w: ReturnType<typeof mountChip>) => w.find('button[aria-label^=
 const menuItems = () => body().findAll('[role="menu"] [role="menuitem"]')
 
 describe('RemoteControlChip', () => {
+  it('é só o ícone: o texto fica para leitor de tela e o botão é quadrado', () => {
+    const w = mountChip()
+    const label = trigger(w).find('span.sr-only')
+    expect(label.exists()).toBe(true)
+    expect(label.text()).toBe('Remote Control')
+    expect(trigger(w).attributes('aria-label')).toBe('Remote Control: desligado')
+    expect(trigger(w).classes()).toContain('size-8')
+    expect(trigger(w).classes()).not.toContain('px-2.5')
+  })
+
   it('desligado: mostra o rótulo, o aviso de ligar e o clique liga sem abrir menu', async () => {
     const w = mountChip()
     expect(trigger(w).text()).toBe('Remote Control')

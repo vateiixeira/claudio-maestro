@@ -13,6 +13,7 @@ const MODELS = [
   { value: 'default', displayName: 'Padrão', description: 'Recomendado', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] },
   { value: 'sonnet', displayName: 'Sonnet 5', description: 'Equilíbrio', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { value: 'haiku', displayName: 'Haiku', description: 'Rápido', supportsEffort: false },
+  { value: 'recommended', displayName: 'Default (recommended)', description: 'Recomendado', supportsEffort: true, supportedEffortLevels: ['low', 'medium'] },
 ]
 
 const CLAUDE_CLI = {
@@ -92,14 +93,22 @@ describe('seletores da sessão', () => {
     expect(button(w, 'Modelo').text()).toBe('Sonnet 5')
     expect(button(w, 'Modelo').attributes('title')).toContain('claude-sonnet-5-20260901')
     expect(button(w, 'Raciocínio').text()).toBe('Raciocínio médio')
-    expect(button(w, 'Permissões').text()).toBe('Permissões: Aceita edições')
+    expect(button(w, 'Permissões').text()).toBe('Aceita edições')
+  })
+
+  it('tira o parêntese final do nome do modelo no botão e mantém o nome completo no nome acessível', async () => {
+    setup({ model: 'recommended' })
+    const w = await mountControls()
+    const trigger = button(w, 'Modelo')
+    expect(trigger.text()).toBe('Default')
+    expect(trigger.attributes('aria-label')).toBe('Modelo: Default (recommended)')
   })
 
   it('lista os modelos da API num menu e troca com PATCH', async () => {
     const w = await mountControls()
     await button(w, 'Modelo').trigger('click')
     const items = body().findAll('[role="menu"] [role="menuitemradio"]')
-    expect(items).toHaveLength(3)
+    expect(items).toHaveLength(4)
     expect(items[1]!.text()).toContain('Sonnet 5')
     expect(items[1]!.text()).toContain('Equilíbrio')
     await items.find((i) => i.text().includes('Haiku'))!.trigger('click')
@@ -188,8 +197,9 @@ describe('seletores da sessão', () => {
   it('"Sem perguntas" ativo fica destacado', async () => {
     setup({ permission_mode: 'bypassPermissions' })
     const w = await mountControls()
-    expect(button(w, 'Permissões').text()).toBe('Permissões: Sem perguntas')
-    expect(button(w, 'Permissões').classes()).toContain('text-secondary')
+    expect(button(w, 'Permissões').text()).toBe('Sem perguntas')
+    expect(button(w, 'Permissões').classes()).toContain('text-secondary-soft')
+    expect(button(w, 'Permissões').classes()).toContain('bg-secondary-tint')
   })
 
   it('aplica session.options e mostra o pendente', async () => {
@@ -201,7 +211,7 @@ describe('seletores da sessão', () => {
     await flushPromises()
     expect(button(w, 'Modelo').text()).toBe('Padrão')
     expect(button(w, 'Raciocínio').text()).toBe('Raciocínio alto')
-    expect(button(w, 'Permissões').text()).toBe('Permissões: Planejamento')
+    expect(button(w, 'Permissões').text()).toBe('Planejamento')
     expect(w.text()).toContain('vale a partir do próximo turno')
   })
 
@@ -269,14 +279,13 @@ describe('seletores da sessão', () => {
 describe('seletor de modo', () => {
   const MODE_ORDER = ['Pede permissão', 'Aceita edições', 'Planejamento', 'Sem perguntas', 'Automático', 'Só o pré-aprovado']
 
-  it('mostra o rótulo "Permissões:" em tom suave antes do valor', async () => {
+  it('o botão mostra só o modo; o nome acessível continua "Permissões: …"', async () => {
     setup()
     const w = await mountControls()
     const trigger = button(w, 'Permissões')
     expect(trigger.attributes('aria-label')).toBe('Permissões: aceita edições')
-    const prefix = trigger.find('[data-test="option-prefix"]')
-    expect(prefix.text()).toBe('Permissões:')
-    expect(prefix.classes()).toContain('text-fg-subtle')
+    expect(trigger.find('[data-test="option-prefix"]').exists()).toBe(false)
+    expect(trigger.text()).toBe('Aceita edições')
   })
 
   it('o rótulo de Modelo e Raciocínio não ganha prefixo extra', async () => {
@@ -321,7 +330,7 @@ describe('seletor de modo', () => {
     setup({ permission_mode: 'bypassPermissions' })
     const w = await mountControls()
     const trigger = button(w, 'Permissões')
-    expect(trigger.classes()).toContain('text-secondary')
+    expect(trigger.classes()).toContain('text-secondary-soft')
     expect(trigger.classes()).toContain('bg-secondary-tint')
   })
 })
@@ -330,13 +339,13 @@ describe('modos automático, só o pré-aprovado e desconhecido', () => {
   it('modo auto vindo do init não quebra e mostra o rótulo', async () => {
     setup({ permission_mode: 'auto' })
     const w = await mountControls()
-    expect(button(w, 'Permissões').text()).toBe('Permissões: Automático')
+    expect(button(w, 'Permissões').text()).toBe('Automático')
   })
 
   it('modo desconhecido mostra o valor cru', async () => {
     setup({ permission_mode: 'novoModo' })
     const w = await mountControls()
-    expect(button(w, 'Permissões').text()).toBe('Permissões: novoModo')
+    expect(button(w, 'Permissões').text()).toBe('novoModo')
   })
 
   it.each([['Automático', 'auto'], ['Só o pré-aprovado', 'dontAsk']])('%s troca sem confirmação', async (label, value) => {
@@ -367,7 +376,7 @@ describe('resposta do PATCH', () => {
     }, 2))
     release(jsonResponse({ ...makeSession(), model: 'haiku', effort: 'medium', permission_mode: 'acceptEdits', effort_pending: false, model_resolved: null }))
     await flushPromises()
-    expect(button(w, 'Permissões').text()).toBe('Permissões: Planejamento')
+    expect(button(w, 'Permissões').text()).toBe('Planejamento')
   })
 })
 

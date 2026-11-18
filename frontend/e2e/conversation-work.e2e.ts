@@ -166,7 +166,7 @@ test('o bloco aberto, a falha e o compositor não geram rolagem horizontal em 36
 const THEME_IDS = ['maestro', 'dracula', 'monokai-pro', 'monokai-machine', 'monokai-octagon', 'monokai-ristretto', 'monokai-spectrum', 'monokai-classic']
 const READABLE = [
   'work-summary', 'work-failed', 'work-span', 'work-group-label', 'work-group-where', 'work-group-count', 'work-retry',
-  'work-command', 'work-error-text', 'work-retry-note', 'work-file-chip', 'turn-number', 'turn-stats', 'turn-end-label', 'composer-hint',
+  'work-command', 'work-error-text', 'work-retry-note', 'work-file-chip', 'turn-number', 'turn-stats', 'turn-end-label',
 ]
 
 for (const theme of THEME_IDS) {

@@ -5,6 +5,7 @@ import { useConversationStore } from '../../stores/conversation'
 import { useModelsStore } from '../../stores/models'
 import { useSessionsStore } from '../../stores/sessions'
 import type { Effort, PermissionMode, RemoteControlState, SessionUpdate } from '../../types/api'
+import { shortModelLabel } from '../../modelLabel'
 import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, modeLabel } from '../../sessionOptions'
 import BypassConfirmDialog from './BypassConfirmDialog.vue'
 import ClaudeCliFooter from './ClaudeCliFooter.vue'
@@ -115,7 +116,7 @@ function confirmBypass() {
 </script>
 
 <template>
-  <div v-if="options" class="flex min-w-0 grow flex-wrap items-center gap-2">
+  <div v-if="options" class="flex min-w-0 grow flex-wrap items-center gap-0.5">
     <RemoteControlChip
       :state="remoteState"
       :url="options.remote_control_url"
@@ -125,7 +126,7 @@ function confirmBypass() {
     />
     <OptionMenu
       :name="`Modelo: ${modelText}`"
-      :text="modelText"
+      :text="shortModelLabel(modelText)"
       :title="modelTitle"
       :options="modelOptions"
       :selected="modelValue"
@@ -145,7 +146,6 @@ function confirmBypass() {
     />
     <OptionMenu
       :name="`Permissões: ${modeLabel(mode).toLowerCase()}`"
-      prefix="Permissões:"
       :text="modeLabel(mode)"
       :options="modeOptions"
       :selected="mode"

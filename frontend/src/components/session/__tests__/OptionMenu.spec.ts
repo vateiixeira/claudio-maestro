@@ -417,4 +417,13 @@ describe('footer', () => {
     expect(menuEl()).not.toBeNull()
     expect(wrapper.emitted('select')).toBeUndefined()
   })
+
+  it('o destaque é um fundo laranja claro, sem borda laranja', () => {
+    const { trigger } = mountMenu(rect(50, 700), { highlight: true })
+    const classes = trigger.classes()
+    expect(classes).toContain('bg-secondary-tint')
+    expect(classes).toContain('text-secondary-soft')
+    expect(classes).not.toContain('border-secondary/60')
+    expect(classes).not.toContain('text-secondary')
+  })
 })

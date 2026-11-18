@@ -23,7 +23,7 @@ async function stageSubagents(page: Page, items: Item[]) {
   })
 }
 
-test('o compositor é uma moldura só: campo, barra de controles dentro e a dica logo abaixo', async ({ page }) => {
+test('o compositor é uma moldura só: campo e barra de controles dentro, sem dica de teclado', async ({ page }) => {
   await openSeededSession(page)
   const frame = page.getByTestId('composer-frame')
   const box = page.getByRole('combobox', { name: 'Mensagem para a sessão' })
@@ -33,19 +33,14 @@ test('o compositor é uma moldura só: campo, barra de controles dentro e a dica
   await expect(toolbar.getByTestId('send')).toBeVisible()
   await expect(toolbar.getByTestId('composer-options')).toBeVisible()
 
-  const hint = page.getByTestId('composer-hint')
-  await expect(hint).toHaveText('Enter envia · Ctrl+Enter quebra linha')
-  await expect(frame.getByTestId('composer-hint')).toHaveCount(0)
+  await expect(page.getByTestId('composer-hint')).toHaveCount(0)
+  await expect(page.getByText('Enter envia · Ctrl+Enter quebra linha')).toHaveCount(0)
   const frameBox = (await frame.boundingBox())!
-  const hintBox = (await hint.boundingBox())!
   const fieldBox = (await box.boundingBox())!
   const toolbarBox = (await toolbar.boundingBox())!
-  // Field above the toolbar, both inside the frame; the hint under the frame.
+  // Field above the toolbar, both inside the frame.
   expect(fieldBox.y + fieldBox.height).toBeLessThanOrEqual(toolbarBox.y + 1)
   expect(toolbarBox.y + toolbarBox.height).toBeLessThanOrEqual(frameBox.y + frameBox.height + 1)
-  expect(hintBox.y).toBeGreaterThanOrEqual(frameBox.y + frameBox.height - 1)
-  // The hint sits at the right edge of the frame.
-  expect(hintBox.x + hintBox.width).toBeGreaterThan(frameBox.x + frameBox.width - 40)
 })
 
 test('a lista de / e de @ abre acima do campo, inteira e sem corte, e o realce acompanha o texto', async ({ page }) => {
