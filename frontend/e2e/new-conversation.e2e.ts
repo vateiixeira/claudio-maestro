@@ -239,6 +239,6 @@ test('o menu de modo destaca "Sem perguntas" depois da confirmação', async ({ 
   await page.getByTestId('bypass-confirm').click()
   await expect(mode).toContainText('Sem perguntas')
   await expect(mode).toHaveClass(/bg-secondary-tint/)
-  // The highlighted button keeps its border (the other menus have none).
-  await expect(mode).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+  // The highlighted button has no visible border (marco 40: orange tint, no border).
+  await expect(mode).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
 })
