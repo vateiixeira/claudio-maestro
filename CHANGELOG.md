@@ -11,6 +11,9 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ### Alterado
 
+- Na conversa, Marcar, Finalizar e Descartar viram um grupo compacto com ícones, "Próxima" ganhou destaque laranja com o número numa bolinha e os botões do terminal e dos Detalhes ficaram mais discretos.
+- A barra "Turno N de M", o botão Copiar das respostas e os avisos da conversa seguem o novo visual: setas e Copiar sem borda, e avisos como uma linha no trilho, sem caixa.
+- A barra do compositor cabe numa linha mesmo com os Detalhes abertos: Remote Control virou só o ícone, o modelo aparece sem o parêntese ("Default") e Permissões mostra só o modo. A dica "Enter envia · Ctrl+Enter quebra linha" saiu de baixo do compositor.
 - No painel Detalhes, o Resumo começa recolhido, com só a frase curta, e abre pelo título para mostrar a linha do tempo. O app lembra se você deixou aberto ou recolhido.
 - As etiquetas aparecem com fundo suave na cor delas e um ponto de cor cheia, em vez de fundo sólido.
 - Projetos virou uma tabela com branch, arquivos alterados e última atividade, separada em "Ativos hoje" e "Parados". Alterações paradas há mais de dois dias aparecem em destaque.
