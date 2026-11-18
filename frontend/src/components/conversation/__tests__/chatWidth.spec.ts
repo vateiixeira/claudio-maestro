@@ -67,6 +67,8 @@ describe('largura da coluna do chat', () => {
     const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] } })
     await flushPromises()
     expect(w.find('[data-test="chat-bar-column"]').classes()).toContain('h-9')
+    // A jump to a turn stops its separator right under the bar, so the offset follows the bar height.
+    for (const separator of w.findAll('[data-test="turn-separator"]')) expect(separator.classes()).toContain('scroll-mt-9')
     for (const label of ['Turno anterior', 'Próximo turno']) {
       const arrow = w.find(`[aria-label="${label}"]`)
       expect(arrow.classes(), label).toEqual(expect.arrayContaining(['size-[26px]', 'rounded-[7px]']))

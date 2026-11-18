@@ -91,7 +91,7 @@ const control = 'cursor-pointer rounded border-none bg-transparent p-0 text-xs t
     :data-run-id="run.id"
     :data-run-session="run.session_id ?? undefined"
     tabindex="-1"
-    class="flex scroll-mt-11 flex-col gap-2.5 focus-visible:outline-2 focus-visible:outline-primary"
+    class="flex scroll-mt-9 flex-col gap-2.5 focus-visible:outline-2 focus-visible:outline-primary"
   >
     <div data-test="run-entry-marker" class="mt-1.5 flex items-center gap-2.5">
       <span class="cap min-w-0 truncate text-fg-subtle">{{ label }}</span>

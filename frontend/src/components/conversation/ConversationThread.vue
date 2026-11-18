@@ -481,7 +481,7 @@ function onScroll() {
 }
 
 // Sticky turn bar: the current turn is the last one whose start is above the bar.
-const TURN_BAR_HEIGHT = 44
+const TURN_BAR_HEIGHT = 36
 const currentTurn = ref(0)
 const turnAnchors = () => Array.from(scroller.value?.querySelectorAll<HTMLElement>('[data-turn-anchor]') ?? [])
 let turnFrame: number | null = null
@@ -630,7 +630,7 @@ function resolvePrompt(promptId: string) {
           </p>
           <template v-for="({ turn, done, last, waiting, summary, stats, failed, tasks, showTasks }, index) in turns" :key="turn.user?.id ?? 'before-first-message'">
             <RunEntry v-for="run in runSlots.get(index)" :key="`run-${run.id}`" :run="run" :routine-name="routineName(run)" />
-            <div v-if="turn.user" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-11 items-center gap-3 focus-visible:outline-2 focus-visible:outline-primary">
+            <div v-if="turn.user" data-test="turn-separator" data-turn-anchor tabindex="-1" class="mt-1.5 flex scroll-mt-9 items-center gap-3 focus-visible:outline-2 focus-visible:outline-primary">
               <span data-test="turn-number" class="cap text-fg-subtle">Turno {{ turn.number }}</span>
               <span aria-hidden="true" class="h-px grow bg-line" />
               <span v-if="stats" data-test="turn-stats" class="shrink-0 font-mono text-xs text-fg-subtle">{{ stats }}</span>
@@ -639,7 +639,7 @@ function resolvePrompt(promptId: string) {
               data-test="turn"
               :data-turn-anchor="turn.user ? undefined : ''"
               :tabindex="turn.user ? undefined : -1"
-              class="flex scroll-mt-11 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
+              class="flex scroll-mt-9 flex-col gap-3.5 focus-visible:outline-2 focus-visible:outline-primary"
             >
               <UserMessage v-if="turn.user" :item="turn.user" :class="{ 'animate-enter': isLive(turn.user.id) }" />
               <TurnEntries
