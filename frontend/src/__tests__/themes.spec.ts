@@ -137,6 +137,14 @@ describe.each(IDS)('contraste sobre a superfície de destaque (card) em %s', (id
   })
 })
 
+describe.each(IDS)('contraste sobre o painel (panel) em %s', (id) => {
+  // O chip de subagente do bloco fechado (com o estado "falhou" ou "parado") e o corpo do bloco aberto pintam esta superfície.
+  const t = themes.get(id)!
+  it.each(['diff-del-fg', 'diff-add-fg', 'fg-muted'])('%s passa de 4,5:1', (fg) => {
+    expect(contrast(channels(t.get(fg)!), channels(t.get('panel')!)), `${fg} sobre panel`).toBeGreaterThanOrEqual(4.5)
+  })
+})
+
 describe.each(IDS)('etiqueta tingida em %s', (id) => {
   it('o texto em fg passa de 4,5:1 sobre a etiqueta mais clara possível (branco a 24% sobre elevated)', () => {
     const t = themes.get(id)!

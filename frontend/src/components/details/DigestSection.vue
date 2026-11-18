@@ -4,9 +4,11 @@ import { computed, reactive, watch } from 'vue'
 import { PHASE_KIND_LABELS, digestUpdatedText } from '../../digestConfig'
 import ClosureBlock from './ClosureBlock.vue'
 import { useDigestStore } from '../../stores/digest'
+import { useMinuteClock } from '../../minuteClock'
 
 const props = defineProps<{ sessionId: string }>()
 const store = useDigestStore()
+const clock = useMinuteClock()
 
 const loaded = computed(() => props.sessionId in store.digests)
 const digest = computed(() => store.digests[props.sessionId] ?? null)
@@ -46,7 +48,7 @@ const fileName = (path: string) => path.split('/').pop() ?? path
         Resumo
         <span v-if="digest?.plan_done" data-test="digest-plan-done" class="rounded-full border border-primary/40 px-2 font-sans text-[0.6875rem] font-normal tracking-normal normal-case text-primary-soft">Plano concluído</span>
       </h3>
-      <span v-if="loaded && digest?.read_at" data-test="digest-read-at" class="ml-auto text-xs text-fg-muted">{{ digestUpdatedText(digest.read_at) }}</span>
+      <span v-if="loaded && digest?.read_at" data-test="digest-read-at" class="ml-auto text-xs text-fg-muted">{{ digestUpdatedText(digest.read_at, new Date(clock)) }}</span>
     </div>
 
     <div v-if="!loaded" class="flex items-center justify-between gap-2 text-sm">
@@ -57,7 +59,7 @@ const fileName = (path: string) => path.split('/').pop() ?? path
       <p v-if="!hasSummary" data-test="digest-empty" class="m-0 text-sm text-fg-muted">Ainda não resumida</p>
       <ClosureBlock v-if="!hasSummary" :session-id="sessionId" />
       <template v-else>
-        <p v-if="digest?.short" data-test="digest-short" class="m-0 text-sm leading-normal text-fg">{{ digest.short }}</p>
+        <p v-if="digest?.short" data-test="digest-short" class="m-0 text-base leading-normal text-fg">{{ digest.short }}</p>
         <ClosureBlock :session-id="sessionId" />
         <ol
           data-test="digest-timeline"

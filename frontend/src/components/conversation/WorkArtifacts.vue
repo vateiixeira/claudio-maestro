@@ -57,7 +57,13 @@ const STATUS_WORD: Record<WorkAgent['status'], string> = { running: 'rodando', c
       <svg v-if="agent.status === 'completed'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-primary" aria-hidden="true"><path d="M5 12.5 10 17 19 7" /></svg>
       <svg v-else-if="agent.status === 'failed'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true" class="shrink-0 text-diff-del-fg"><path d="M6 6l12 12M18 6 6 18" /></svg>
       <svg v-else-if="agent.status === 'running'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" class="shrink-0 animate-spin text-secondary-soft motion-reduce:animate-none" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" stroke-linecap="round" /></svg>
-      <span class="sr-only">{{ STATUS_WORD[agent.status] }}</span>
+      <span
+        v-if="agent.status === 'failed' || agent.status === 'stopped'"
+        data-test="work-agent-state"
+        class="shrink-0 text-xs"
+        :class="agent.status === 'failed' ? 'text-diff-del-fg' : 'text-fg-muted'"
+      >{{ STATUS_WORD[agent.status] }}</span>
+      <span v-else class="sr-only">{{ STATUS_WORD[agent.status] }}</span>
       <span v-if="agentMeta(agent)" data-test="work-agent-meta" class="shrink-0 font-mono text-xs text-fg-muted">{{ agentMeta(agent) }}</span>
     </button>
   </div>

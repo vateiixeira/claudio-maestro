@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, reactive, ref, watch } from 'vue'
+import { computed, inject, nextTick, reactive, ref, watch } from 'vue'
 import type { TaskEntry } from '../../conversation/tasks'
 import { formatRunningTime } from '../../format'
 import { SUBAGENT_FOCUS_KEY } from '../../conversation/subagents'
@@ -87,11 +87,26 @@ watch(focus, (target) => {
   if (!props.open) emit('toggle')
 })
 
-// A chip of what the closed block produced: open the block on the action behind it.
-function openFrom(id: string) {
+// A chip of what the closed block produced: open the block on the action behind it. The chip goes away
+// with the closed block, so the focus follows to the button of the row that opens.
+const root = ref<HTMLElement | null>(null)
+const focusRowOf = ref<string | null>(null)
+async function openFrom(id: string) {
   choice.set(id, true)
+  focusRowOf.value = id
   if (!props.open) emit('toggle')
+  // The parent answers in the same flush; if the block is still closed after it, the focus has nowhere to go
+  // and must not jump to the row when the block opens for another reason.
+  await nextTick()
+  if (!props.open) focusRowOf.value = null
 }
+watch([() => props.open, focusRowOf], async ([open, id]) => {
+  if (!open || !id) return
+  focusRowOf.value = null
+  await nextTick()
+  const rowsInBlock = Array.from(root.value?.querySelectorAll<HTMLElement>('[data-row-id]') ?? [])
+  rowsInBlock.find((row) => row.dataset.rowId === id)?.querySelector<HTMLElement>('[data-test="work-header"]')?.focus()
+})
 
 type Family = 'command' | 'file' | 'agent'
 const FAMILY: Record<WorkKind, Family> = { bash: 'command', tool: 'command', read: 'file', search: 'file', edit: 'file', agent: 'agent' }
@@ -106,7 +121,7 @@ const errorText = (item: ToolItem) => resultText(item.result?.content).trim()
 </script>
 
 <template>
-  <div data-test="work-block" class="min-w-0">
+  <div ref="root" data-test="work-block" class="min-w-0">
     <div class="flex flex-col gap-2.5">
       <button
         type="button"
@@ -154,6 +169,7 @@ const errorText = (item: ToolItem) => resultText(item.result?.content).trim()
             v-for="row in group.rows"
             :key="row.item.id"
             data-test="work-row"
+            :data-row-id="row.item.id"
             class="border-t border-line"
             :class="row.status === 'error' ? FAILED_FILL : ''"
           >
@@ -174,12 +190,12 @@ const errorText = (item: ToolItem) => resultText(item.result?.content).trim()
               :aria-expanded="isOpen(row.item.id, row.status === 'error')"
               @click="toggleRow(row.item.id, row.status === 'error')"
             >
-              <template v-if="row.diff" #trail>
-                <span v-if="row.diff.added" class="shrink-0 font-mono text-xs text-diff-add-fg">+{{ row.diff.added }}</span>
-                <span v-if="row.diff.removed" class="shrink-0 font-mono text-xs text-diff-del-fg">−{{ row.diff.removed }}</span>
-              </template>
-              <template v-else-if="retryIds.has(row.item.id)" #trail>
-                <span data-test="work-retry" class="cap shrink-0 text-fg-muted">Nova tentativa</span>
+              <template v-if="row.diff || retryIds.has(row.item.id)" #trail>
+                <template v-if="row.diff">
+                  <span v-if="row.diff.added" class="shrink-0 font-mono text-xs text-diff-add-fg">+{{ row.diff.added }}</span>
+                  <span v-if="row.diff.removed" class="shrink-0 font-mono text-xs text-diff-del-fg">−{{ row.diff.removed }}</span>
+                </template>
+                <span v-if="retryIds.has(row.item.id)" data-test="work-retry" class="cap shrink-0 text-fg-muted">Nova tentativa</span>
               </template>
             </WorkHeader>
             <Collapse :open="isOpen(row.item.id, row.status === 'error')">

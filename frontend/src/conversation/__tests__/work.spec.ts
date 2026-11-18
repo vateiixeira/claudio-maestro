@@ -270,6 +270,81 @@ describe('novas tentativas', () => {
     expect(workFailure([erro('a'), erro('b', 'grep z')], false)).toBe('2 falharam')
   })
 
+  it('uma edição de outro arquivo não refaz a falha; a do mesmo arquivo sim', () => {
+    const edit = (id: string, file: string, extra: Partial<ToolItem> = {}) => tool(id, 'Edit', { file_path: file }, extra)
+    const falha = edit('a', '/p/a.py', { result: failed })
+    expect(workRetries([falha, edit('b', '/p/b.py')], false).size).toBe(0)
+    expect(workFailure([falha, edit('b', '/p/b.py')], false)).toBe('1 falhou')
+    expect(hasUnrecoveredFailure([falha, edit('b', '/p/b.py')], false)).toBe(true)
+    expect(groupNodeKind([falha, edit('b', '/p/b.py')], false)).toBe('error')
+    expect(workRetries([falha, edit('b', '/p/a.py')], false)).toEqual(new Map([['a', 'b']]))
+    const nb = (id: string, file: string, extra: Partial<ToolItem> = {}) => tool(id, 'NotebookEdit', { notebook_path: file }, extra)
+    expect(workRetries([nb('a', '/p/n.ipynb', { result: failed }), nb('b', '/p/m.ipynb')], false).size).toBe(0)
+    expect(workRetries([nb('a', '/p/n.ipynb', { result: failed }), nb('b', '/p/n.ipynb')], false).size).toBe(1)
+  })
+
+  it('git push seguido de git status não é nova tentativa; o mesmo subcomando é', () => {
+    const falha = erro('a', 'git push origin x')
+    expect(workRetries([falha, bashItem('b', 'git status')], false).size).toBe(0)
+    expect(workFailure([falha, bashItem('b', 'git status')], false)).toBe('1 falhou')
+    expect(hasUnrecoveredFailure([falha, bashItem('b', 'git status')], false)).toBe(true)
+    expect(groupNodeKind([falha, bashItem('b', 'git status')], false)).toBe('error')
+    expect(workRetries([falha, bashItem('b', 'git --no-pager push --force')], false)).toEqual(new Map([['a', 'b']]))
+    expect(workRetries([erro('a', 'pnpm test'), bashItem('b', 'pnpm build')], false).size).toBe(0)
+    expect(workRetries([erro('a', 'pytest'), bashItem('b', 'pytest -x')], false).size).toBe(1)
+    expect(workRetries([erro('a', 'grep x'), bashItem('b', 'grep y')], false).size).toBe(1)
+  })
+
+  it.each([
+    ['uv run pytest', 'uv run ruff check'],
+    ['pnpm --dir frontend test', 'pnpm --dir frontend build'],
+    ['git -C /p/app push', 'git -C /p/app status'],
+    ['pnpm exec vitest run', 'pnpm exec vue-tsc -b'],
+    ['npm run test', 'npm run lint'],
+    ['docker compose up', 'docker compose logs'],
+    ['pnpm --filter=app test', 'pnpm --filter=app build'],
+  ])('"%s" seguido de "%s" não é nova tentativa', (first, second) => {
+    const falha = erro('m1:0', first)
+    const next = () => bashItem('m2:0', second)
+    expect(workRetries([falha, next()], false).size).toBe(0)
+    expect(workFailure([falha, next()], false)).toBe('1 falhou')
+    expect(hasUnrecoveredFailure([falha, next()], false)).toBe(true)
+    expect(groupNodeKind([falha, next()], false)).toBe('error')
+  })
+
+  it.each([
+    ['uv run pytest', 'uv run pytest -x'],
+    ['pnpm --dir frontend test', 'pnpm --dir frontend test --retry 1'],
+    ['git -C /p/app push', 'git -C /p/app push --force'],
+    ['pnpm --dir a exec vitest run x', 'pnpm --dir a exec vitest run y'],
+    ['grep x', 'grep y'],
+    ['pytest', 'pytest -x'],
+  ])('"%s" seguido de "%s" é nova tentativa', (first, second) => {
+    expect(workRetries([erro('m1:0', first), bashItem('m2:0', second)], false).size).toBe(1)
+  })
+
+  it('chamadas paralelas (da mesma mensagem) não são nova tentativa', () => {
+    const batch = (id: string, command: string, extra: Partial<ToolItem> = {}) => bashItem(id, command, extra)
+    const falha = batch('msg1:1', 'grep x', { result: failed })
+    expect(workRetries([falha, batch('msg1:2', 'grep y')], false).size).toBe(0)
+    expect(workFailure([falha, batch('msg1:2', 'grep y')], false)).toBe('1 falhou')
+    expect(hasUnrecoveredFailure([falha, batch('msg1:2', 'grep y')], false)).toBe(true)
+    expect(groupNodeKind([falha, batch('msg1:2', 'grep y')], false)).toBe('error')
+    expect(workRetries([falha, batch('msg2:0', 'grep y')], false)).toEqual(new Map([['msg1:1', 'msg2:0']]))
+  })
+
+  it('a nova tentativa em andamento deixa a falha pendente, não pendurada', () => {
+    const rodando = bashItem('b', 'pytest -x', { result: null })
+    const falha = erro('a', 'pytest')
+    expect(hasUnrecoveredFailure([falha, rodando], true)).toBe(false)
+    expect(groupNodeKind([falha, rodando], true)).toBe('running')
+    expect(hasUnrecoveredFailure([falha, rodando], true, new Set(['tu-b']))).toBe(false)
+    expect(groupNodeKind([falha, rodando], true, new Set(['tu-b']))).toBe('waiting')
+    expect(workFailure([falha, rodando], true)).toBe('1 falhou')
+    expect(hasUnrecoveredFailure([falha, bashItem('b', 'pytest -x')], false)).toBe(false)
+    expect(hasUnrecoveredFailure([falha, erro('b', 'pytest -x')], false)).toBe(true)
+  })
+
   it('hasUnrecoveredFailure', () => {
     expect(hasUnrecoveredFailure([erro('a'), bashItem('b', 'grep y')], false)).toBe(false)
     expect(hasUnrecoveredFailure([erro('a')], false)).toBe(true)

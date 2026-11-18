@@ -6,6 +6,7 @@ import DigestSection from '../DigestSection.vue'
 import { jsonResponse, makeSession, routeFetch } from '../../../test/factories'
 import { useDigestStore } from '../../../stores/digest'
 import { useSessionsStore } from '../../../stores/sessions'
+import { clockNow } from '../../../minuteClock'
 import type { SessionDigest } from '../../../types/api'
 
 enableAutoUnmount(afterEach)
@@ -71,6 +72,23 @@ describe('seção Resumo', () => {
     expect(phases[1].text()).toContain('Ordenar por nome')
     expect(w.find('[data-test="digest-read-at"]').text()).toBe('atualizado há 2 min')
     expect(w.find('[data-test="digest-plan-done"]').exists()).toBe(false)
+  })
+
+  it('o "atualizado há…" acompanha o relógio, sem recarregar o resumo', async () => {
+    stub(DIGEST)
+    const w = await mountSection()
+    expect(w.find('[data-test="digest-read-at"]').text()).toBe('atualizado há 2 min')
+    vi.setSystemTime(new Date(MIDDAY.getTime() + 3 * 60_000))
+    clockNow.value = Date.now()
+    await flushPromises()
+    expect(w.find('[data-test="digest-read-at"]').text()).toBe('atualizado há 5 min')
+  })
+
+  it('a frase curta do resumo vai em texto maior', async () => {
+    stub(DIGEST)
+    const w = await mountSection()
+    expect(w.find('[data-test="digest-short"]').classes()).toContain('text-base')
+    expect(w.find('[data-test="digest-short"]').classes()).not.toContain('text-sm')
   })
 
   it('"Falta" fica à vista, sem clicar, antes dos passos feitos', async () => {

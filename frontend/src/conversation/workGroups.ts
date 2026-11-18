@@ -2,6 +2,7 @@ import type { SubagentStatus, ToolItem } from '../types/conversation'
 import { shortPath } from '../projectsList'
 import { agentStatus } from './subagents'
 import { commandFolder, str, toolLabel } from './tool'
+import { editSucceeded } from './turns'
 import { workKind, workRow, type WorkKind } from './work'
 
 // What the work block groups and counts from its actions: the runs of the same kind, the folders,
@@ -92,7 +93,7 @@ export function workArtifacts(items: ToolItem[], sessionActive: boolean): { file
     const kind = workKind(item)
     if (kind === 'edit') {
       const row = workRow(item, sessionActive)
-      if (!row.desc || row.status === 'error') continue
+      if (!row.desc || !editSucceeded(item)) continue
       const file = files.get(row.desc) ?? { path: row.desc, name: row.desc.split(/[/\\]/).filter(Boolean).at(-1) || row.desc, added: 0, removed: 0, itemId: item.id }
       file.added += row.diff?.added ?? 0
       file.removed += row.diff?.removed ?? 0

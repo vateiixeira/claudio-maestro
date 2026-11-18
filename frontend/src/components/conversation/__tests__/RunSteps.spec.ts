@@ -56,6 +56,24 @@ describe('passo a passo da execução', () => {
     expect(entries[1]!.findComponent({ name: 'WorkBlock' }).exists()).toBe(true)
   })
 
+  describe('a failed action in a block', () => {
+    const failed = { content: 'deu ruim', is_error: true, details: null }
+    const ok = { content: 'ok', is_error: false, details: null }
+    const bash = (id: string, command: string, result: unknown) => ({ ...tool(id, 'Bash'), input: { command }, result })
+    const expanded = async (second: unknown) => {
+      const w = await mountSteps(() => jsonResponse(snapshot({ state: 'idle', items: [user('u1'), bash('b1', 'make', failed), second] })))
+      return w.find('[data-test="work-block-toggle"]').attributes('aria-expanded')
+    }
+
+    it('stays folded when the next attempt passed', async () => {
+      expect(await expanded(bash('b2', 'make -j2', ok))).toBe('false')
+    })
+
+    it('opens the block when nobody tried again', async () => {
+      expect(await expanded(bash('b2', 'ls', ok))).toBe('true')
+    })
+  })
+
   it('shows the pending request of the session', async () => {
     const w = await mountSteps(() => jsonResponse(snapshot({
       state: 'awaiting_decision',

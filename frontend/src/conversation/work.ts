@@ -151,12 +151,59 @@ export function workActivity(items: ToolItem[], sessionActive: boolean, waiting?
   return ''
 }
 
-const program = (command: string) => commandFolder(command).rest.trim().split(/\s+/, 1)[0] ?? ''
+const FILE_TOOLS = new Set(['Read', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+// Programs whose first word after the name says what they do: `git push` is not `git status`.
+const SUBCOMMAND_PROGRAMS = new Set(['git', 'gh', 'npm', 'pnpm', 'yarn', 'npx', 'uv', 'pip', 'cargo', 'go', 'docker', 'kubectl', 'make', 'poetry', 'bun'])
+
+// Options that take their value as the next word (`--dir frontend`); `--opt=value` is one word and needs no entry.
+const VALUE_OPTIONS = new Set(['--dir', '-C', '--prefix', '--filter', '--cwd', '-f', '-p'])
+// Subcommands that only say how to run something else: what they run is part of the action.
+const RUNNER_SUBCOMMANDS = new Set(['run', 'exec', 'x', 'dlx', 'compose'])
+
+/** The words of a command that are not options (nor the value of one that takes a value). */
+function plainWords(words: string[]): string[] {
+  const plain: string[] = []
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!
+    if (!word.startsWith('-')) plain.push(word)
+    else if (VALUE_OPTIONS.has(word)) i++
+  }
+  return plain
+}
+
+/**
+ * The program of a Bash command (after a leading `cd`) and, for those that have them, its subcommand
+ * (`git push`, `pnpm test`); after `run`, `exec`, `x`, `dlx` or `compose` also the word that follows
+ * (`uv run pytest`, `docker compose logs`).
+ */
+function commandKey(command: string): string {
+  const [name = '', ...rest] = commandFolder(command).rest.trim().split(/\s+/)
+  if (!SUBCOMMAND_PROGRAMS.has(name)) return name
+  const [sub = '', next = ''] = plainWords(rest)
+  return RUNNER_SUBCOMMANDS.has(sub) ? `${name} ${sub} ${next}` : `${name} ${sub}`
+}
+
+const filePath = (item: ToolItem) => str(item.input?.file_path) || str(item.input?.notebook_path)
+
+/** The response an action came from: assistant item ids are `{message id}:{block index}`. Ids without it belong to no batch. */
+const batchOf = (item: ToolItem) => (item.id.includes(':') ? item.id.slice(0, item.id.lastIndexOf(':')) : null)
+
+/** Whether `next` is the same attempt as the failed `item`, redone: the same file, the same command, the same tool. */
+function triesAgain(item: ToolItem, next: ToolItem): boolean {
+  if (item.name !== next.name) return false
+  // Actions of the same response ran together: the later one did not learn from the failure.
+  const batch = batchOf(item)
+  if (batch !== null && batch === batchOf(next)) return false
+  if (FILE_TOOLS.has(item.name)) return filePath(item) !== '' && filePath(item) === filePath(next)
+  if (item.name === 'Bash') return commandKey(str(item.input?.command)) === commandKey(str(next.input?.command))
+  return true
+}
 
 /**
  * The failed actions that the very next action of the block tried again: failed id → id of the new
- * attempt. A new attempt has the same tool name (in Bash, also the same program) and has not
- * failed itself; a subagent is never retried.
+ * attempt. A new attempt is the same tool on the same file (a file tool), or the same program and
+ * subcommand (Bash), from a later response; it may still run, but has not failed itself. A subagent
+ * is never retried.
  */
 export function workRetries(items: ToolItem[], sessionActive: boolean, waiting?: ReadonlySet<string>): Map<string, string> {
   const retries = new Map<string, string>()
@@ -165,8 +212,7 @@ export function workRetries(items: ToolItem[], sessionActive: boolean, waiting?:
     const next = items[i + 1]!
     if (AGENT_TOOLS.has(item.name) || AGENT_TOOLS.has(next.name)) continue
     if (workStatus(item, sessionActive, waiting) !== 'error') continue
-    if (next.name !== item.name) continue
-    if (item.name === 'Bash' && program(str(item.input?.command)) !== program(str(next.input?.command))) continue
+    if (!triesAgain(item, next)) continue
     if (workStatus(next, sessionActive, waiting) === 'error') continue
     retries.set(item.id, next.id)
   }
@@ -187,14 +233,19 @@ export function workFailure(items: ToolItem[], sessionActive: boolean, waiting?:
   return redone ? `${text}, ${failed.length === 1 ? 'refeita' : 'refeitas'} em seguida` : text
 }
 
-/** A failure no later action of the block tried again with success: the block still has something to look at. */
+/**
+ * A failure nobody is trying again, or whose new attempt did not work: the block still has something to
+ * look at. While the new attempt runs or waits for the user the failure is pending, not a failure.
+ */
 export function hasUnrecoveredFailure(items: ToolItem[], sessionActive: boolean, waiting?: ReadonlySet<string>): boolean {
   const retries = workRetries(items, sessionActive, waiting)
   const byId = new Map(items.map((item) => [item.id, item]))
   return items.some((item) => {
     if (workStatus(item, sessionActive, waiting) !== 'error') return false
     const retry = byId.get(retries.get(item.id) ?? '')
-    return !retry || workStatus(retry, sessionActive, waiting) !== 'ok'
+    if (!retry) return true
+    const status = workStatus(retry, sessionActive, waiting)
+    return status !== 'ok' && status !== 'running' && status !== 'waiting'
   })
 }
 

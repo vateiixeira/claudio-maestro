@@ -5,6 +5,9 @@ export const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit'])
 export const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'WebSearch', 'WebFetch'])
 export const AGENT_TOOLS = new Set(['Agent', 'Task'])
 
+/** An edit that went through: it has a result and the result is not an error. The one rule behind every "files changed" count. */
+export const editSucceeded = (item: ToolItem): boolean => !item.streaming && item.result != null && !item.result.is_error
+
 /**
  * One row of the assistant's rail: a single item (text, thinking, notice, question or
  * plan), or a group, the work block: everything Claude did between two statements. A group's id
@@ -107,7 +110,7 @@ export function buildTurns(items: ConversationItem[]): Turn[] {
 export interface TurnSummary {
   /** Tool calls in the turn, including those inside subagents. */
   actions: number
-  /** Distinct `file_path` of edit tools. */
+  /** Distinct `file_path` of the edits that went through. */
   files: number
 }
 
@@ -121,7 +124,7 @@ export function turnSummary(turn: Turn, childrenOf: (toolUseId: string) => Conve
     seen.add(item.id)
     actions++
     const path = item.input.file_path
-    if (EDIT_TOOLS.has(item.name) && typeof path === 'string' && path) files.add(path)
+    if (EDIT_TOOLS.has(item.name) && editSucceeded(item) && typeof path === 'string' && path) files.add(path)
     childrenOf(item.tool_use_id).forEach(visit)
   }
   turn.entries.forEach((e) => (e.kind === 'group' ? e.items.forEach(visit) : visit(e.item)))

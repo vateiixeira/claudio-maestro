@@ -251,6 +251,29 @@ describe('moldura única do compositor', () => {
     w.unmount()
   })
 
+  it('Ditar, Interromper e Enviar ficam num contêiner próprio que não encolhe, depois das opções, que são quem encolhe e quebra', () => {
+    const w = mount(MessageComposer, { props: { sessionId: 's1', state: 'running' }, slots: { controls: '<button>Modelo</button>' }, attachTo: document.body })
+    const actions = w.get('[data-test="composer-actions"]')
+    const options = w.get('[data-test="composer-options"]')
+    expect(actions.classes()).toContain('shrink-0')
+    expect(actions.element.parentElement).toBe(w.get('[data-test="composer-toolbar"]').element)
+    expect(before(options.element, actions.element)).toBe(true)
+    expect(inside(actions.element, options.element)).toBe(false)
+    for (const name of ['send', 'interrupt']) expect(inside(actions.element, w.get(`[data-test="${name}"]`).element)).toBe(true)
+    if (w.find('[data-test="dictate"]').exists()) expect(inside(actions.element, w.get('[data-test="dictate"]').element)).toBe(true)
+    // A base mínima (12rem) faz a coluna estreita descer os botões juntos, em vez de passar os controles por baixo deles.
+    expect(options.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-wrap', 'grow', 'basis-48']))
+    expect(options.classes()).not.toContain('basis-0')
+    w.unmount()
+  })
+
+  it('o hover dos botões de menu da barra usa card: fg-subtle não passa de 4,5:1 sobre elevated', () => {
+    const w = mount(MessageComposer, { props: { sessionId: 's1', state: 'idle' } })
+    const classes = w.get('[data-test="composer-toolbar"]').classes().join(' ')
+    expect(classes).toContain(':hover]:bg-card')
+    expect(classes).not.toContain(':hover]:bg-elevated')
+  })
+
   it('a dica de teclas fica abaixo da moldura, fora dela, mantendo a classe do modo compacto', () => {
     const w = mount(MessageComposer, { props: { sessionId: 's1', state: 'idle' }, attachTo: document.body })
     const frame = w.get('[data-test="composer-frame"]').element

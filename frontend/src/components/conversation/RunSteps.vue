@@ -9,7 +9,7 @@ import { useSessionConversation } from '../../conversation/useSessionConversatio
 import { buildItemTree } from '../../conversation/subagents'
 import { buildTurns } from '../../conversation/turns'
 import { waitingIdsOf } from '../../conversation/waiting'
-import { workStatus } from '../../conversation/work'
+import { hasUnrecoveredFailure } from '../../conversation/work'
 import type { ToolItem } from '../../types/conversation'
 
 /**
@@ -31,11 +31,11 @@ const sessionActive = computed(() => conv.value?.state === 'running' || conv.val
 const taskList = computed(() => conversations.taskList(props.sessionId))
 const waitingIds = computed(() => waitingIdsOf(conv.value?.items ?? [], conv.value?.prompts ?? []))
 
-// Open/closed chosen by the user per work block (by id); unset folds the block, except a failure.
+// Open/closed chosen by the user per work block (by id); unset folds the block, except a failure nobody tried again.
 const groupChoice = reactive(new Map<string, boolean>())
 function blockOpen(entry: { id: string; items: ToolItem[] }): boolean {
   return groupChoice.get(entry.id)
-    ?? entry.items.some((item) => workStatus(item, sessionActive.value) === 'error')
+    ?? hasUnrecoveredFailure(entry.items, sessionActive.value, waitingIds.value)
 }
 function toggleBlock(entry: { id: string; items: ToolItem[] }) {
   groupChoice.set(entry.id, !blockOpen(entry))

@@ -733,6 +733,13 @@ describe('layout da nova conversa', () => {
     expect(prompt.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('o hover dos botões de menu da barra usa card, não elevated (contraste do texto discreto)', async () => {
+    const { wrapper } = await openModal(2)
+    const classes = wrapper.find('[data-test="nc-toolbar"]').classes().join(' ')
+    expect(classes).toContain(':hover]:bg-card')
+    expect(classes).not.toContain(':hover]:bg-elevated')
+  })
+
   it('imagem e ditado ficam na barra dentro da moldura do pedido', async () => {
     const { wrapper } = await openModal(2)
     const toolbar = wrapper.find('[data-test="nc-toolbar"]')

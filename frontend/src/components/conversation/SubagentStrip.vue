@@ -109,7 +109,7 @@ async function stopAll() {
         <button
           type="button"
           data-test="subagent-row"
-          class="flex min-h-9 w-full cursor-pointer flex-col justify-center gap-0.5 border-none bg-transparent px-3 py-1.5 text-left text-fg hover:bg-elevated focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+          class="flex min-h-9 w-full cursor-pointer flex-col justify-center gap-0.5 border-none bg-transparent px-3 py-1.5 text-left text-fg hover:bg-card focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
           :title="entry.type === 'command' ? 'Ir ao cartão do comando' : 'Ir ao cartão do subagente'"
           @click="emit('select', entry.id)"
         >

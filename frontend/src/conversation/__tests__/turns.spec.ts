@@ -104,6 +104,18 @@ describe('turnSummary', () => {
     expect(turnSummary(turn, (id) => kids[id] ?? [])).toEqual({ actions: 5, files: 2 })
   })
 
+  it('só as edições que deram certo contam como arquivos alterados', () => {
+    const failed = { content: 'boom', is_error: true, details: null }
+    const turn = buildTurns([
+      user('u'),
+      tool('e1', 'Edit', { file_path: '/p/a.py' }),
+      tool('e2', 'Edit', { file_path: '/p/b.py' }, { result: failed }),
+      tool('e3', 'Write', { file_path: '/p/c.py' }, { result: null }),
+      tool('e4', 'Edit', { file_path: '/p/d.py' }, { result: null, result_missing: true }),
+    ])[0]!
+    expect(turnSummary(turn, () => [])).toEqual({ actions: 4, files: 1 })
+  })
+
   it('uma escrita de subagente que aparece no topo e no cartão conta uma vez só', () => {
     const agent = tool('ag', 'Agent')
     const hoisted = tool('k1', 'Write', { file_path: '/p/a.py' }, { parent_tool_use_id: 'tu-ag' })

@@ -29,6 +29,12 @@ describe('faixa de subagentes', () => {
     expect(rows(w)[2]!.find('[data-status="failed"]').attributes('aria-label')).toBe('Com erro')
   })
 
+  it('o hover da linha usa card: fg-subtle (última ação, tempo, estado) não passa de 4,5:1 sobre elevated', () => {
+    const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'completed')] } })
+    expect(rows(w)[0]!.classes()).toContain('hover:bg-card')
+    expect(rows(w)[0]!.classes()).not.toContain('hover:bg-elevated')
+  })
+
   it('mostra o modelo ao lado do tipo, com o id completo na dica', () => {
     const w = mount(SubagentStrip, { props: { sessionId: 's1', entries: [entry('a', 'running', { model: 'claude-sonnet-5-5' })] } })
     const chip = rows(w)[0]!.find('[data-test="model-chip"]')

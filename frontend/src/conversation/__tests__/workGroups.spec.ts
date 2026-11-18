@@ -91,6 +91,17 @@ describe('workArtifacts', () => {
     expect(workArtifacts(items, false).files).toEqual([])
   })
 
+  it('só entra a edição que deu certo, como na contagem do separador do turno', () => {
+    const items = [
+      tool('e1', 'Edit', { file_path: '/p/a.md', old_string: 'x', new_string: 'y' }),
+      tool('e2', 'Edit', { file_path: '/p/b.md' }, { result: null }),
+      tool('e3', 'Edit', { file_path: '/p/c.md' }, { result: null, result_missing: true }),
+      tool('e4', 'Write', { file_path: '/p/d.md', content: 'x' }, { streaming: true }),
+    ]
+    expect(workArtifacts(items, true).files.map((file) => file.path)).toEqual(['/p/a.md'])
+    expect(workArtifacts(items, false).files.map((file) => file.path)).toEqual(['/p/a.md'])
+  })
+
   it('subagentes: duração, tokens e estado', () => {
     const sub = (extra = {}) => ({
       task_id: 't', subagent_type: 'Explore', description: 'Tarefa 1 · tela inicial', status: 'completed' as const,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { SUBAGENT_FOCUS_KEY, type SubagentFocus } from '../../../conversation/subagents'
 import WorkBlock from '../WorkBlock.vue'
 import Collapse from '../../Collapse.vue'
@@ -275,6 +275,16 @@ describe('WorkBlock: falha e nova tentativa', () => {
     expect(w.find('[data-test="work-retry-note"]').text()).toBe('A tentativa seguinte passou.')
   })
 
+  it('uma nova tentativa de edição mostra as linhas e a marca ao mesmo tempo', () => {
+    const edit = (id: string, extra: Partial<ToolItem> = {}) => tool(id, 'Edit', { file_path: '/p/a.md', old_string: 'x', new_string: 'y\nz' }, extra)
+    const w = mountBlock({ items: [edit('e1', { result: failed }), edit('e2')] })
+    const [first, second] = rows(w)
+    expect(second!.find('[data-test="work-retry"]').text()).toBe('Nova tentativa')
+    expect(second!.text()).toContain('+2')
+    expect(first!.find('[data-test="work-retry"]').exists()).toBe(false)
+    expect(first!.text()).toContain('+2')
+  })
+
   it('sem nova tentativa não promete nada', () => {
     const w = mountBlock({ items: [sqlFail(), tool('r', 'Read')] })
     expect(w.find('[data-test="work-failed"]').text()).toBe('1 falhou')
@@ -359,6 +369,58 @@ describe('WorkBlock: o que o bloco produziu', () => {
     const [, agentRow] = rows(w)
     expect(agentRow!.attributes('aria-expanded')).toBe('true')
     expect(w.find('[data-test="work-row-body"]').exists()).toBe(true)
+  })
+
+  it('clicar num chip leva o foco ao botão da linha aberta, em vez de deixá-lo no chip que sumiu', async () => {
+    const w = mount(WorkBlock, {
+      props: { items: [edit, agent], open: false, onToggle: () => { void w.setProps({ open: true }) } },
+      attachTo: document.body,
+    })
+    const chip = w.find('[data-test="work-agent-chip"]')
+    ;(chip.element as HTMLElement).focus()
+    await chip.trigger('click')
+    await nextTick()
+    const [, agentRow] = rows(w)
+    expect(document.activeElement).toBe(agentRow!.element)
+    w.unmount()
+  })
+
+  it('se o bloco não abre depois do clique no chip, o foco não pula para a linha quando ele abrir mais tarde', async () => {
+    const w = mount(WorkBlock, { props: { items: [edit, agent], open: false }, attachTo: document.body })
+    const chip = w.find('[data-test="work-agent-chip"]')
+    ;(chip.element as HTMLElement).focus()
+    await chip.trigger('click')
+    await nextTick()
+    const toggle = w.find('[data-test="work-block-toggle"]')
+    ;(toggle.element as HTMLElement).focus()
+    await w.setProps({ open: true })
+    await nextTick()
+    expect(document.activeElement).toBe(toggle.element)
+    w.unmount()
+  })
+
+  it('abrir o bloco pelo cabeçalho não move o foco para nenhuma linha', async () => {
+    const w = mount(WorkBlock, { props: { items: [edit, agent], open: false }, attachTo: document.body })
+    const toggle = w.find('[data-test="work-block-toggle"]')
+    ;(toggle.element as HTMLElement).focus()
+    await toggle.trigger('click')
+    await w.setProps({ open: true })
+    await nextTick()
+    expect(document.activeElement).toBe(toggle.element)
+    w.unmount()
+  })
+
+  it('subagente parado ou com falha diz o estado em texto visível, na cor do significado', () => {
+    const chipOf = (status: 'stopped' | 'failed' | 'completed') => mountBlock({ items: [tool('a', 'Agent', {}, { subagent: { ...sub, status } })], open: false }).find('[data-test="work-agent-chip"]')
+    const stopped = chipOf('stopped').find('[data-test="work-agent-state"]')
+    expect(stopped.text()).toBe('parado')
+    expect(stopped.classes()).not.toContain('sr-only')
+    expect(stopped.classes()).toContain('text-fg-muted')
+    const failedChip = chipOf('failed').find('[data-test="work-agent-state"]')
+    expect(failedChip.text()).toBe('falhou')
+    expect(failedChip.classes()).toContain('text-diff-del-fg')
+    expect(chipOf('completed').find('[data-test="work-agent-state"]').exists()).toBe(false)
+    expect(chipOf('completed').find('.sr-only').text()).toBe('concluído')
   })
 
   it('aberto, os chips não aparecem', () => {

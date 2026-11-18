@@ -332,6 +332,29 @@ describe('bloco de trabalho', () => {
     expect(w.findAll('[data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['error'])
   })
 
+  it('a falha com nova tentativa em andamento não abre o bloco nem pinta o nó; só abre se a tentativa falhar', async () => {
+    const failed = { content: 'deu ruim', is_error: true, details: null }
+    const retry = (extra: Record<string, unknown>) => tool('b2', 'Bash', { input: { command: 'pytest -x' }, ...extra })
+    const w = await mountWith({
+      state: 'running',
+      items: [user('u1'), tool('b1', 'Bash', { input: { command: 'pytest' }, result: failed }), retry({ result: null })],
+    })
+    const upsert = (item: unknown, seq: number) => fake.session.get('s1')!(makeEvent('item.upsert', item, seq))
+    expect(header(w).attributes('aria-expanded')).toBe('false')
+    expect(w.findAll('[data-test="turn-entry"] [data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['running'])
+    expect(header(w).attributes('aria-label')).toContain('1 falhou')
+    expect(header(w).attributes('aria-label')).not.toContain('refeita')
+    upsert(retry({}), 2)
+    await flushPromises()
+    expect(header(w).attributes('aria-expanded')).toBe('false')
+    expect(w.findAll('[data-test="turn-entry"] [data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['bash'])
+    expect(header(w).attributes('aria-label')).toContain('1 falhou, refeita em seguida')
+    upsert(retry({ result: failed }), 3)
+    await flushPromises()
+    expect(header(w).attributes('aria-expanded')).toBe('true')
+    expect(w.findAll('[data-test="turn-entry"] [data-test="rail-node"]').map((n) => n.attributes('data-kind'))).toEqual(['error'])
+  })
+
   it('fechado e rodando, mostra numa linha o que está acontecendo', async () => {
     const w = await mountWith({
       state: 'running',

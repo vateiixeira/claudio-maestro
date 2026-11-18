@@ -511,7 +511,7 @@ function onKeydown(event: KeyboardEvent) {
             </div>
             <div
               data-test="nc-toolbar"
-              class="flex flex-wrap items-center gap-0.5 px-2 pt-1.5 pb-2 [&_[aria-haspopup=menu]]:h-8 [&_[aria-haspopup=menu]:not(.bg-secondary-tint)]:border-transparent [&_[aria-haspopup=menu]:not(.bg-secondary-tint):hover]:bg-elevated"
+              class="flex flex-wrap items-center gap-0.5 px-2 pt-1.5 pb-2 [&_[aria-haspopup=menu]]:h-8 [&_[aria-haspopup=menu]:not(.bg-secondary-tint)]:border-transparent [&_[aria-haspopup=menu]:not(.bg-secondary-tint):hover]:bg-card"
             >
               <input ref="fileInput" type="file" data-test="nc-file-input" :accept="IMAGE_TYPES.join(',')" multiple tabindex="-1" class="hidden" @change="onPick" />
               <button type="button" data-test="nc-attach" aria-label="Anexar imagem" title="Anexar imagem" class="flex size-8 cursor-pointer items-center justify-center rounded-lg border-none bg-transparent text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary" @click="fileInput?.click()">

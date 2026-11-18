@@ -319,47 +319,50 @@ async function interrupt() {
       </div>
       <div
         data-test="composer-toolbar"
-        class="flex flex-wrap items-center gap-1 px-2 pt-1.5 pb-2 [&_[aria-haspopup=menu]]:h-8 [&_[aria-haspopup=menu]:not(.bg-secondary-tint)]:border-transparent [&_[aria-haspopup=menu]:not(.bg-secondary-tint):hover]:bg-elevated"
+        class="flex flex-wrap items-center gap-1 px-2 pt-1.5 pb-2 [&_[aria-haspopup=menu]]:h-8 [&_[aria-haspopup=menu]:not(.bg-secondary-tint)]:border-transparent [&_[aria-haspopup=menu]:not(.bg-secondary-tint):hover]:bg-card"
       >
         <button v-if="compactOnMobile" type="button" data-test="composer-options-toggle" class="composer-options-toggle" :aria-expanded="mobileOptionsOpen" :aria-controls="`composer-options-${sessionId}`" @click="mobileOptionsOpen = !mobileOptionsOpen">{{ mobileOptionsOpen ? 'Fechar opções da conversa' : 'Opções da conversa' }}</button>
-        <div :id="`composer-options-${sessionId}`" data-test="composer-options" class="composer-options flex min-w-0 grow flex-wrap items-center gap-0.5" :class="{ 'mobile-expanded': mobileOptionsOpen }">
+        <div :id="`composer-options-${sessionId}`" data-test="composer-options" class="composer-options flex min-w-0 grow basis-48 flex-wrap items-center gap-0.5" :class="{ 'mobile-expanded': mobileOptionsOpen }">
           <slot name="controls" />
         </div>
-        <button
-          v-if="dictation.supported"
-          type="button"
-          data-test="dictate"
-          :aria-label="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
-          :aria-pressed="dictation.recording.value"
-          :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
-          class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-[0.625rem] border-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          :class="dictation.recording.value ? 'bg-secondary-tint text-secondary' : 'bg-transparent text-fg-muted hover:bg-elevated hover:text-fg'"
-          @click="dictation.toggle"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
-        </button>
-        <button
-          v-if="busy"
-          type="button"
-          data-test="interrupt"
-          class="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-[0.625rem] border border-line-strong bg-transparent px-3.5 text-sm font-medium text-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
-          :disabled="interrupting"
-          @click="interrupt"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
-          Interromper
-        </button>
-        <button
-          type="button"
-          data-test="send"
-          class="h-9 shrink-0 cursor-pointer rounded-[0.625rem] border-none bg-primary px-4 text-sm font-semibold text-primary-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:bg-elevated disabled:text-fg-subtle"
-          :disabled="!canSend"
-          :title="blockedReason || undefined"
-          :aria-describedby="blockedReason ? `blocked-${sessionId}` : undefined"
-          @click="send"
-        >
-          Enviar
-        </button>
+        <!-- Dictate, interrupt and send never wrap: the group of controls beside them is what shrinks. -->
+        <div data-test="composer-actions" class="ml-auto flex shrink-0 items-center gap-1">
+          <button
+            v-if="dictation.supported"
+            type="button"
+            data-test="dictate"
+            :aria-label="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+            :aria-pressed="dictation.recording.value"
+            :title="dictation.recording.value ? 'Parar ditado' : 'Ditar mensagem'"
+            class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-[0.625rem] border-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            :class="dictation.recording.value ? 'bg-secondary-tint text-secondary' : 'bg-transparent text-fg-muted hover:bg-elevated hover:text-fg'"
+            @click="dictation.toggle"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+          </button>
+          <button
+            v-if="busy"
+            type="button"
+            data-test="interrupt"
+            class="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-[0.625rem] border border-line-strong bg-transparent px-3.5 text-sm font-medium text-fg hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+            :disabled="interrupting"
+            @click="interrupt"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
+            Interromper
+          </button>
+          <button
+            type="button"
+            data-test="send"
+            class="h-9 shrink-0 cursor-pointer rounded-[0.625rem] border-none bg-primary px-4 text-sm font-semibold text-primary-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:bg-elevated disabled:text-fg-subtle"
+            :disabled="!canSend"
+            :title="blockedReason || undefined"
+            :aria-describedby="blockedReason ? `blocked-${sessionId}` : undefined"
+            @click="send"
+          >
+            Enviar
+          </button>
+        </div>
       </div>
     </div>
     <span v-if="dictation.recording.value" data-test="recording" role="status" class="flex items-center gap-1.5 text-xs text-secondary">
