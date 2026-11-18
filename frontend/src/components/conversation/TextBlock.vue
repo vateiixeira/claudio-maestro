@@ -84,9 +84,13 @@ onBeforeUnmount(() => clearTimeout(timer))
         type="button"
         data-test="copy"
         aria-label="Copiar resposta"
-        class="rounded-md border border-line-strong px-2 py-0.5 text-fg-muted opacity-0 pointer-events-none transition-opacity hover:text-fg focus-visible:opacity-100 focus-visible:pointer-events-auto focus-visible:outline-2 focus-visible:outline-primary group-hover/text:opacity-100 group-hover/text:pointer-events-auto group-focus-within/text:opacity-100 group-focus-within/text:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
+        class="inline-flex h-[26px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-xs text-fg-muted opacity-0 pointer-events-none transition-opacity hover:bg-card hover:text-fg focus-visible:opacity-100 focus-visible:pointer-events-auto focus-visible:outline-2 focus-visible:outline-primary group-hover/text:opacity-100 group-hover/text:pointer-events-auto group-focus-within/text:opacity-100 group-focus-within/text:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
         @click="copy"
       >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2" />
+          <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+        </svg>
         Copiar
       </button>
       <span data-test="copy-status" class="text-fg-subtle" aria-live="polite">{{ status }}</span>

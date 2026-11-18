@@ -54,6 +54,27 @@ describe('largura da coluna do chat', () => {
     }
   })
 
+  it('a barra do turno tem 36 px e setas de ícone, sem borda', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/sessions/s1': () => jsonResponse(makeSnapshot({
+        state: 'idle',
+        seq: 4,
+        items: [user('u1', 'primeira'), reply('a1'), user('u2', 'segunda'), reply('a2')] as never,
+      })),
+    }))
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/sessions/s1')
+    const w = mount(ConversationThread, { props: { id: 's1', visible: true }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="chat-bar-column"]').classes()).toContain('h-9')
+    for (const label of ['Turno anterior', 'Próximo turno']) {
+      const arrow = w.find(`[aria-label="${label}"]`)
+      expect(arrow.classes(), label).toEqual(expect.arrayContaining(['size-[26px]', 'rounded-[7px]']))
+      expect(arrow.classes(), label).not.toContain('border')
+      expect(arrow.classes(), label).not.toContain('border-line-strong')
+    }
+  })
+
   it('texto do assistente e mensagem do usuário têm largura de leitura própria', () => {
     const text = mount(ConversationBlock, { props: { item: { type: 'text', id: 'x', text: 'oi', streaming: false, parent_tool_use_id: null } } })
     expect(text.find('.markdown').classes()).toContain('max-w-[72ch]')

@@ -592,7 +592,7 @@ function resolvePrompt(promptId: string) {
           data-test="turn-bar"
           class="sticky top-0 z-10 border-b border-line bg-panel"
         >
-          <div data-test="chat-bar-column" class="mx-auto flex h-11 w-full max-w-(--chat-width) items-center gap-2.5 px-4">
+          <div data-test="chat-bar-column" class="mx-auto flex h-9 w-full max-w-(--chat-width) items-center gap-2.5 px-4">
             <span class="cap shrink-0 text-fg-subtle">Turno {{ currentTurn + 1 }} de {{ turns.length }}</span>
             <span class="min-w-0 grow truncate text-[0.8125rem] text-fg">{{ currentTurnText }}</span>
             <button
@@ -600,7 +600,7 @@ function resolvePrompt(promptId: string) {
               aria-label="Turno anterior"
               title="Turno anterior ([)"
               aria-keyshortcuts="["
-              class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-transparent text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
+              class="flex size-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[7px] bg-transparent text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
               :disabled="currentTurn === 0"
               @click="goToTurn(currentTurn - 1)"
             >
@@ -611,7 +611,7 @@ function resolvePrompt(promptId: string) {
               aria-label="Próximo turno"
               title="Próximo turno (])"
               aria-keyshortcuts="]"
-              class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-transparent text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
+              class="flex size-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[7px] bg-transparent text-fg-muted hover:bg-card hover:text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
               :disabled="currentTurn >= turns.length - 1"
               @click="goToTurn(currentTurn + 1)"
             >

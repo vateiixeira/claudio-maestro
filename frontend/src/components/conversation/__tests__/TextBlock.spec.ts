@@ -147,3 +147,38 @@ describe('play nos blocos de comando', () => {
     expect(w.find('[data-code-run]').exists()).toBe(false)
   })
 })
+
+describe('botão Copiar da resposta', () => {
+  const copyButton = () => mountBlock('oi').wrapper.find('[data-test="copy"]')
+
+  it('é um botão sem borda, com ícone decorativo e o texto "Copiar"', () => {
+    const button = copyButton()
+    expect(button.attributes('aria-label')).toBe('Copiar resposta')
+    expect(button.text()).toBe('Copiar')
+    expect(button.find('svg[aria-hidden="true"]').exists()).toBe(true)
+    expect(button.classes()).not.toContain('border')
+    expect(button.classes()).toEqual(expect.arrayContaining(['h-[26px]', 'rounded-[7px]', 'text-xs']))
+  })
+
+  it('só aparece no hover ou no foco, e sempre em tela sem hover', () => {
+    expect(copyButton().classes()).toEqual(expect.arrayContaining([
+      'opacity-0',
+      'pointer-events-none',
+      'focus-visible:opacity-100',
+      'group-hover/text:opacity-100',
+      'group-focus-within/text:opacity-100',
+      '[@media(hover:none)]:opacity-100',
+      '[@media(hover:none)]:pointer-events-auto',
+    ]))
+  })
+
+  it('continua copiando a resposta inteira', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { wrapper } = mountBlock('resposta **inteira**')
+    await wrapper.find('[data-test="copy"]').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('resposta **inteira**')
+    expect(wrapper.find('[data-test="copy-status"]').text()).toBe('Copiado')
+  })
+})

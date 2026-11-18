@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import RailNode from '../RailNode.vue'
 import WorkHeader from '../WorkHeader.vue'
 import ThinkingBlock from '../ThinkingBlock.vue'
+import NoticeBlock from '../NoticeBlock.vue'
 import type { NodeKind } from '../../../conversation/turns'
 import type { RailAlign } from '../../../conversation/railAlign'
 
@@ -127,15 +128,28 @@ describe('RailNode: alinhamento vertical', () => {
   }
 
   it('o centro cai no meio da primeira linha de cada cartão, seja qual for o nó', () => {
-    // text: 12; thinking block (py-1.5 + 16px line): 14; notice: 19; work block header (44px): 22; plain card: 17
+    // text: 12; thinking block (py-1.5 + 16px line): 14; notice: 14 (py-[3px] + 21.6px line / 2 = 13.8); work block header (44px): 22; plain card: 17
     expect(top('text', 'text') + 3.5).toBe(12)
     expect(top('thinking', 'thinking') + 9).toBe(14)
-    expect(top('info', 'notice') + 3.5).toBe(19)
-    expect(top('error', 'notice') + 11).toBe(19)
+    expect(top('info', 'notice') + 3.5).toBe(14)
+    expect(top('warning', 'notice') + 3.5).toBe(14)
     expect(top('read', 'group') + 11).toBe(22)
     expect(top('running', 'group') + 11).toBe(22)
     expect(top('waiting', 'group') + 11).toBe(22)
     expect(top('task', 'card') + 3.5).toBe(17)
+  })
+
+  it('o nó do aviso fica a menos de 0,5px do meio da linha real do NoticeBlock', () => {
+    // Derives the line's middle from the classes the notice actually renders:
+    // padding-top + (font-size * line-height) / 2.
+    const classes = mount(NoticeBlock, { props: { item: { type: 'notice', id: 'n', level: 'info', text: 'aviso' } } }).classes()
+    const pick = (re: RegExp) => Number(classes.map((c) => re.exec(c)?.[1]).find(Boolean))
+    const padTop = pick(/^py-\[([\d.]+)px\]$/)
+    const fontPx = pick(/^text-\[([\d.]+)rem\]$/) * 16
+    const leading = pick(/^leading-\[([\d.]+)\]$/)
+    const lineMiddle = padTop + (fontPx * leading) / 2 // 3 + 10.8 = 13.8
+    expect(lineMiddle).toBeCloseTo(13.8, 5)
+    expect(Math.abs(top('info', 'notice') + 3.5 - lineMiddle)).toBeLessThanOrEqual(0.5)
   })
 
   it('sem align, o cartão comum', () => {

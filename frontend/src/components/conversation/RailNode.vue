@@ -33,7 +33,7 @@ const DOT: Partial<Record<NodeKind, string>> = {
 const CENTER: Record<RailAlign, number> = {
   text: 12, // running text (15px, leading 1.65) under pt-2
   thinking: 14, // py-1.5 + text-xs line (16px)
-  notice: 19, // border + py-2 + 20px line
+  notice: 14, // py-[3px] + half of the 21.6px line (0.84375rem x 1.6) = 13.8
   group: 22, // 44px header
   card: 17, // cards with a py-2 header
 }
