@@ -10,7 +10,7 @@ test('Início mostra a autenticação em uso e permite escolher outra sem confun
   await expect(status.getByTestId('auth-active')).toContainText('Padrão do Claude')
   await page.screenshot({ path: testInfo.outputPath('home-auth-default.png') })
   await status.getByRole('link', { name: 'Trocar autenticação do Claude' }).click()
-  await expect(page).toHaveURL(/preferencias\?aba=geral#claude-authentication$/)
+  await expect(page).toHaveURL(/preferencias\?aba=conversas#claude-authentication$/)
   const section = page.getByRole('region', { name: 'Pasta do Claude' })
   await expect(section).toBeFocused()
   try {

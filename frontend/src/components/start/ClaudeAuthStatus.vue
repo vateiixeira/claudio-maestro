@@ -63,7 +63,7 @@ onBeforeUnmount(() => {
         <span class="min-w-0 truncate font-mono text-xs text-fg-subtle" :title="state.active_folder">{{ shortPath(state.active_folder) }}</span>
       </p>
     </div>
-    <RouterLink data-test="auth-change" to="/preferencias?aba=geral#claude-authentication" aria-label="Trocar autenticação do Claude" class="inline-flex min-h-9 items-center rounded-md px-2 text-info-soft hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">Trocar</RouterLink>
+    <RouterLink data-test="auth-change" to="/preferencias?aba=conversas#claude-authentication" aria-label="Trocar autenticação do Claude" class="inline-flex min-h-9 items-center rounded-md px-2 text-info-soft hover:bg-card focus-visible:outline-2 focus-visible:outline-primary">Trocar</RouterLink>
     <p v-if="!loading && !failed && state?.restart_required" data-test="auth-pending" class="m-0 basis-full break-words text-xs text-fg-muted">
       Após reiniciar: {{ state.selected_folder === null ? 'Padrão do Claude' : 'API' }} ·
       <span class="break-all font-mono">{{ state.selected_folder ?? state.default_folder }}</span>

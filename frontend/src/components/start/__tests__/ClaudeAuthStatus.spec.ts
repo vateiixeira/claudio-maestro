@@ -90,3 +90,11 @@ it('ignora uma consulta antiga que termina depois da atualização mais recente'
   await flushPromises()
   expect(w.get('[data-test="auth-active"]').text()).toContain('API')
 })
+
+it('o link de trocar abre a aba Conversas, onde fica a pasta do Claude', async () => {
+  socket.status = ref('connected')
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(initial)))
+  const w = mount(ClaudeAuthStatus, { global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } })
+  await flushPromises()
+  expect(w.get('[data-test="auth-change"]').attributes('href')).toBe('/preferencias?aba=conversas#claude-authentication')
+})
