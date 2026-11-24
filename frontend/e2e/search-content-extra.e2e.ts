@@ -81,11 +81,11 @@ test('o trecho fica em no máximo duas linhas', async ({ page }) => {
 })
 
 test('o termo destacado tem contraste legível em todos os temas', async ({ page }) => {
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   const ids = await page.locator('[data-test="theme-option"]').count()
   expect(ids).toBeGreaterThan(1)
   for (let i = 0; i < ids; i++) {
-    await page.goto('/preferencias')
+    await page.goto('/preferencias?aba=aparencia')
     await page.locator('[data-test="theme-option"]').nth(i).click()
     await page.goto('/sessions')
     await searchUntilSnippet(page, TERM)

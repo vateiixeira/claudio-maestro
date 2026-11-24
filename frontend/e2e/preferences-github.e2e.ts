@@ -75,14 +75,15 @@ test('segredo com espaço nas pontas é recusado sem ecoar a entrada', async ({ 
   consoleErrors.length = 0
 })
 
-test('setas trocam de aba e a aba Etiquetas segue funcionando', async ({ page }) => {
+test('setas saem do GitHub, dão a volta na lista e retornam a ele', async ({ page }) => {
   await page.goto('/preferencias?aba=github')
   await page.locator('[data-test="tab-github"]').focus()
+  // GitHub é a última aba: a seta para a direita volta à primeira (Geral).
   await page.keyboard.press('ArrowRight')
-  await expect(page.locator('[data-test="tab-labels"]')).toBeFocused()
-  await page.keyboard.press('Enter')
-  await expect(page.locator('[data-test="tab-labels"]')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('[data-test="tab-general"]')).toBeFocused()
+  await expect(page.locator('[data-test="tab-general"]')).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('[data-test="github-login"]')).toHaveCount(0)
   await page.keyboard.press('ArrowLeft')
   await expect(page.locator('[data-test="tab-github"]')).toBeFocused()
+  await expect(page.locator('[data-test="github-login"]')).toBeVisible()
 })

@@ -4,7 +4,7 @@ test('pasta do Claude fica pendente até reiniciar e pode voltar ao padrão', as
   const response = await request.get('/api/projects', { headers: { 'X-Maestro': '1' } })
   const projects = await response.json()
   const folder = projects[0].path as string
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=conversas')
   const section = page.getByRole('region', { name: 'Pasta do Claude' })
   await expect(section).toContainText('Suas conversas, projetos, agentes e preferências continuam os mesmos.')
   const active = await section.getByTestId('profile-active').textContent()

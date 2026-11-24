@@ -6,7 +6,7 @@ const option = (page: import('@playwright/test').Page, name: string) =>
   page.locator('[data-test="theme-option"]', { hasText: name })
 
 test('trocar o tema muda as cores do app e a escolha sobrevive ao recarregar', async ({ page }) => {
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   await expect(page.getByRole('heading', { name: 'Preferências', level: 1 })).toBeVisible()
 
   // Maestro (padrão): fundo #0b0b0c e nenhum data-theme.
@@ -39,7 +39,7 @@ test('trocar o tema muda as cores do app e a escolha sobrevive ao recarregar', a
 
 test('um tema salvo que não existe mais abre o Maestro, sem erro', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('maestro:theme', 'tema-removido'))
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   await expect(page.getByRole('heading', { name: 'Preferências', level: 1 })).toBeVisible()
   await expect(page.locator('html')).not.toHaveAttribute('data-theme', /.+/)
   expect(await background(page)).toBe('rgb(11, 11, 12)')

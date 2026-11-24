@@ -147,7 +147,7 @@ test('barra em largura reduzida (800px): nada transborda e o menu cabe na tela',
 
 for (const [id, label] of [['maestro', 'Maestro'], ['dracula', 'Dracula'], ['monokai-ristretto', 'Monokai Ristretto'], ['monokai-classic', 'Monokai Classic']] as const) {
   test(`tema ${label}: o chip ligado tem fundo e cor distintos do desligado`, async ({ page }) => {
-    await page.goto('/preferencias')
+    await page.goto('/preferencias?aba=aparencia')
     await page.locator('[data-test="theme-option"]', { hasText: label }).click()
     const rc = await stage(page)
     await expect(chip(page)).toBeVisible()

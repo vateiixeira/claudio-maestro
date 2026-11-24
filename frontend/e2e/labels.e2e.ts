@@ -270,7 +270,7 @@ test('o texto do selo tem contraste legível sobre o fundo tingido, com cor clar
 
   try {
     for (const theme of ['Maestro', 'Dracula', 'Monokai Pro', 'Monokai Machine', 'Monokai Octagon', 'Monokai Ristretto', 'Monokai Spectrum', 'Monokai Classic']) {
-      await page.goto('/preferencias')
+      await page.goto('/preferencias?aba=aparencia')
       await page.locator('[data-test="theme-option"]', { hasText: theme }).click()
       await page.goto('/sessions')
       const listRow = page.getByTestId('conversation-row').filter({ hasText: TITLE })
@@ -279,7 +279,7 @@ test('o texto do selo tem contraste legível sobre o fundo tingido, com cor clar
       }
     }
   } finally {
-    await page.goto('/preferencias')
+    await page.goto('/preferencias?aba=aparencia')
     await page.locator('[data-test="theme-option"]', { hasText: 'Maestro' }).click()
   }
 })

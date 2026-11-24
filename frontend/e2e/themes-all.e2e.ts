@@ -13,7 +13,7 @@ const THEMES = [
 
 for (const theme of THEMES) {
   test(`o tema ${theme.label} muda o fundo, marca o cartão e vale em outras telas`, async ({ page }) => {
-    await page.goto('/preferencias')
+    await page.goto('/preferencias?aba=aparencia')
     const option = page.locator('[data-test="theme-option"]', { hasText: theme.label })
     await option.click()
     await expect(option.locator('input')).toBeChecked()
@@ -30,7 +30,7 @@ for (const theme of THEMES) {
 }
 
 test('a prévia de sessão segue o cartão sob o mouse e volta ao tema ativo', async ({ page }) => {
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   const preview = page.locator('[data-test="theme-preview"]')
   await expect(preview).toHaveAttribute('data-theme', 'maestro')
   await page.locator('[data-test="theme-option"]', { hasText: 'Dracula' }).hover()
@@ -43,7 +43,7 @@ test('a prévia de sessão segue o cartão sob o mouse e volta ao tema ativo', a
 })
 
 test('cada cartão é pintado com o próprio tema', async ({ page }) => {
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   const panel = (name: string) =>
     page.locator('[data-test="theme-option"]', { hasText: name }).evaluate((el) => getComputedStyle(el).backgroundColor)
   expect(await panel('Maestro')).toBe('rgb(25, 25, 28)')
@@ -52,7 +52,7 @@ test('cada cartão é pintado com o próprio tema', async ({ page }) => {
 })
 
 test('o tema troca pelo teclado, com as setas', async ({ page }) => {
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   const maestro = page.locator('[data-test="theme-option"]', { hasText: 'Maestro' }).locator('input')
   await maestro.focus()
   await page.keyboard.press('ArrowRight')
@@ -68,7 +68,7 @@ for (const label of ['Monokai Ristretto', 'Monokai Spectrum']) {
   test(`o nome ${label} aparece inteiro no cartão ativo`, async ({ page }) => {
     // Viewport estreito: os cartões ficam na largura mínima da grade, o pior caso para o nome.
     await page.setViewportSize({ width: 560, height: 800 })
-    await page.goto('/preferencias')
+    await page.goto('/preferencias?aba=aparencia')
     const option = page.locator('[data-test="theme-option"]', { hasText: label })
     await option.click()
     await expect(option.locator('input')).toBeChecked()
@@ -87,7 +87,7 @@ const card = (page: import('@playwright/test').Page, id: string) =>
   page.locator(`[data-test="theme-option"][data-theme="${id}"]`)
 
 test('a marca Ativo aparece só no cartão do tema ativo e os cartões são distintos', async ({ page }) => {
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   for (const id of ['dracula', 'monokai-classic', 'maestro']) {
     await card(page, id).click()
     await expect(page.locator('[data-test="theme-active"]')).toHaveCount(1)
@@ -104,7 +104,7 @@ test('a marca Ativo aparece só no cartão do tema ativo e os cartões são dist
 
 test('os nomes dos cartões não são cortados nem quebram em 1100 px', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 800 })
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   const names = await page.locator('[data-test="theme-name"]').evaluateAll((els) =>
     els.map((el) => {
       const range = document.createRange()
@@ -117,7 +117,7 @@ test('os nomes dos cartões não são cortados nem quebram em 1100 px', async ({
 })
 
 test('a prévia segue o foco do teclado, fica inerte e a legenda é lida', async ({ page }) => {
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   const preview = page.locator('[data-test="theme-preview"]')
   await card(page, 'maestro').locator('input').focus()
   await page.keyboard.press('ArrowRight')
@@ -134,7 +134,7 @@ test('a prévia segue o foco do teclado, fica inerte e a legenda é lida', async
 })
 
 test('nenhuma cor do tema ativo vaza para dentro da prévia de outro tema', async ({ page }) => {
-  await page.goto('/preferencias')
+  await page.goto('/preferencias?aba=aparencia')
   const preview = page.locator('[data-test="theme-preview"]')
   const signature = () =>
     preview.evaluate((root) =>
