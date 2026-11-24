@@ -133,10 +133,13 @@ describe('amostras de cor de cada tema', () => {
     expect(w.text()).not.toContain("'ok'")
   })
 
-  it('a grade tem quatro colunas em tela larga', () => {
+  it('a grade escolhe as colunas pela largura do painel, não da janela', () => {
+    // Ao lado da lista de abas o painel é estreito mesmo em janela larga.
     const w = mountPicker()
     const grid = options(w)[0].element.parentElement!
-    expect(grid.className).toContain('lg:grid-cols-4')
+    expect(grid.parentElement!.className).toContain('@container')
+    expect(grid.className).toContain('@3xl:grid-cols-4')
+    expect(grid.className).not.toContain('lg:grid-cols-4')
   })
 })
 

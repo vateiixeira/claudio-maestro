@@ -14,9 +14,9 @@ const SWATCH_TOKENS = ['bg', 'elevated', 'primary', 'secondary', 'info', 'diff-d
 </script>
 
 <template>
-  <fieldset class="m-0 flex min-w-0 flex-col gap-2 border-0 p-0" aria-describedby="pref-theme-help">
+  <fieldset class="@container m-0 flex min-w-0 flex-col gap-2 border-0 p-0" aria-describedby="pref-theme-help">
     <legend class="mb-2 p-0 font-mono text-xs tracking-[0.08em] text-fg-muted uppercase">Tema</legend>
-    <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="grid grid-cols-1 gap-2.5 @xs:grid-cols-2 @3xl:grid-cols-4">
       <!-- Each card is painted with its own theme (data-theme scopes the variables to the card). -->
       <label
         v-for="item in THEMES"
