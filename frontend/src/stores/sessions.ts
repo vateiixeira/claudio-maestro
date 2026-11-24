@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as api from '../api/http'
 import { deriveDisplay } from '../sessionState'
-import type { Session, SessionMark, SessionUpdate } from '../types/api'
+import type { AgentProvider, Session, SessionMark, SessionUpdate } from '../types/api'
 import type { SessionStateData, SessionTitleData, WsEvent } from '../types/events'
 
 /** Sessions indexed by project, kept up to date by the session events. */
@@ -123,8 +123,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     else byProject.value[session.project_id] = [session, ...list]
   }
 
-  async function create(projectId: number, groupId: number | null = null): Promise<Session> {
-    const session = await api.createSession(projectId, groupId)
+  async function create(projectId: number, groupId: number | null = null, provider: AgentProvider = 'claude'): Promise<Session> {
+    const session = await api.createSession(projectId, groupId, provider)
     noteEvent(session.session_id)
     upsert(session)
     return session

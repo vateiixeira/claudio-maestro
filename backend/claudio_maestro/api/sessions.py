@@ -17,7 +17,7 @@ from fastapi import (
 from fastapi import Path as PathParam
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from claudio_maestro import groups, history, labels, projects, sessions
+from claudio_maestro import groups, history, labels, projects, providers, sessions
 from claudio_maestro.api.deps import DbDep
 
 router = APIRouter(prefix="/api")
@@ -95,6 +95,8 @@ class SessionOut(BaseModel):
     project_id: int
     cwd: str
     title: str
+    # Agent provider: "claude" (Claude Code) or "kimi" (Kimi Code).
+    provider: str = "claude"
     created_at: int
     last_activity_at: int
     last_seen_at: int | None
@@ -191,7 +193,7 @@ class SessionPatch(BaseModel):
     finished: bool | None = None
     title: Title | None = None
     model: Annotated[
-        str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9._\[\]-]{1,100}$")
+        str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9._/\[\]-]{1,100}$")
     ] | None = None
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     permission_mode: Literal[
@@ -211,6 +213,7 @@ class SessionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     group_id: int | None = None
+    provider: Literal["claude", "kimi"] = "claude"
 
 
 class SeenManyIn(BaseModel):
@@ -237,6 +240,7 @@ _STATUS = {
     sessions.InvalidMarkError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     sessions.ContinuedElsewhereError: status.HTTP_409_CONFLICT,
     sessions.RemoteControlUnavailable: status.HTTP_409_CONFLICT,
+    sessions.ProviderUnavailableError: status.HTTP_409_CONFLICT,
     sessions.SessionClosedError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
@@ -294,7 +298,10 @@ async def create_session(
 ) -> dict[str, Any]:
     project = _get_project(conn, project_id)
     try:
-        record = manager.create_session(project, group_id=body.group_id if body else None)
+        record = manager.create_session(
+            project, group_id=body.group_id if body else None,
+            provider=body.provider if body else "claude",
+        )
     except sessions.SessionError as exc:
         raise _http_error(exc) from exc
     except groups.GroupError as exc:
@@ -372,9 +379,21 @@ async def mark_seen(session_id: str, manager: ManagerDep) -> dict[str, Any]:
 
 
 @router.get("/models")
-async def list_models(manager: ManagerDep) -> list[dict[str, Any]]:
-    """Models of the SDK (cached after the first connected session), or a fixed list."""
-    return manager.list_models()
+async def list_models(
+    manager: ManagerDep,
+    provider: Literal["claude", "kimi"] = "claude",
+) -> list[dict[str, Any]]:
+    """Models of the provider (cached after the first connected session), or a fixed list."""
+    if provider == "kimi":
+        await manager.refresh_kimi_models()
+    return manager.list_models(provider)
+
+
+@router.get("/providers")
+async def list_providers(conn: DbDep) -> list[dict[str, Any]]:
+    """The agent providers and whether each can be used (enabled in the Preferências
+    and installed on this machine)."""
+    return providers.provider_choices(providers.preferences_from(conn))
 
 
 @router.get("/sessions/{session_id}")

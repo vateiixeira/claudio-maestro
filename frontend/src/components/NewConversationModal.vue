@@ -6,7 +6,7 @@ import SuggestionMenu, { type SuggestionAnchor } from './conversation/Suggestion
 import BypassConfirmDialog from './session/BypassConfirmDialog.vue'
 import ClaudeCliFooter from './session/ClaudeCliFooter.vue'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
-import { errorMessage, getAppState, sendMessage, updateSession } from '../api/http'
+import { errorMessage, getAppState, listProviders, sendMessage, updateSession } from '../api/http'
 import { type DraftImage, IMAGE_TYPES, attachImages, base64Of, filesFrom, formatSize } from '../conversation/images'
 import { useDictation } from '../conversation/dictation'
 import { useComposerSuggestions } from '../conversation/useComposerSuggestions'
@@ -21,7 +21,7 @@ import { useModelsStore } from '../stores/models'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
-import type { Effort, PermissionMode, SessionUpdate } from '../types/api'
+import type { AgentProvider, Effort, PermissionMode, ProviderInfo, SessionUpdate } from '../types/api'
 import IconClose from './icons/IconClose.vue'
 import IconExpand from './icons/IconExpand.vue'
 
@@ -39,6 +39,9 @@ void models.ensure()
 const prefModel = ref<string | null>(null)
 const prefEffort = ref<Effort | null>(null)
 const prefMode = ref<PermissionMode | null>(null)
+// The Kimi defaults of the Preferências, used to label the buttons of a Kimi conversation.
+const prefKimiModel = ref<string | null>(null)
+const prefKimiEffort = ref<Effort | null>(null)
 getAppState()
   .then((state) => {
     const prefs = (state as { preferences?: Record<string, unknown> } | null)?.preferences
@@ -46,11 +49,28 @@ getAppState()
     prefModel.value = typeof prefs.new_session_model === 'string' && prefs.new_session_model.trim() !== '' ? prefs.new_session_model : null
     prefEffort.value = ALL_EFFORTS.find((e) => e === prefs.new_session_effort) ?? null
     prefMode.value = ALL_MODES.find((m) => m === prefs.new_session_mode) ?? null
+    prefKimiModel.value = typeof prefs.kimi_new_session_model === 'string' && prefs.kimi_new_session_model.trim() !== '' ? prefs.kimi_new_session_model : null
+    prefKimiEffort.value = ALL_EFFORTS.find((e) => e === prefs.kimi_new_session_effort) ?? null
   })
   .catch(() => {}) // without them the buttons say "Padrão", as before
 
 const available = computed(() => projects.projects.filter((p) => p.available))
 const draft = ref<ConversationDraft>(loadDraft())
+// Agent providers usable on this machine (`GET /api/providers`); the choice only
+// appears when Kimi Code is enabled in the Preferências and installed.
+const providers = ref<ProviderInfo[]>([])
+listProviders()
+  .then((list) => { providers.value = Array.isArray(list) ? list : [] })
+  .catch(() => {}) // without the list only Claude Code is offered, as before
+const kimiUsable = computed(() => providers.value.some((p) => p.id === 'kimi' && p.enabled && p.available))
+const providerOptions: MenuOption[] = [
+  { value: 'claude', label: 'Claude Code' },
+  { value: 'kimi', label: 'Kimi Code' },
+]
+const provider = computed<AgentProvider>(() => (kimiUsable.value ? draft.value.provider : 'claude'))
+// The model and effort lists are the provider's own; the saved defaults are Claude's.
+const providerModels = computed(() => models.modelsFor(provider.value))
+const KIMI_EFFORTS: Effort[] = ['low', 'high', 'max']
 // Branch of the chosen project, read where the Painel reads it. Without a repository nothing is shown.
 watch(() => draft.value.projectId, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
 const branch = computed(() => {
@@ -62,6 +82,12 @@ const error = ref<string | null>(null)
 const submitting = ref(false)
 // Once the session exists it is kept across attempts, so a retry does not create a second one.
 const createdId = ref<string | null>(null)
+// Switching the provider loads its models and drops the chosen model: a model of
+// one provider means nothing to the other.
+watch(provider, (value) => {
+  void models.ensureFor(value)
+  if (createdId.value === null) draft.value.model = null
+})
 // Mode the session was created in, as the backend answered (the saved default or the CLI's).
 const createdMode = ref<PermissionMode | null>(null)
 const optionsApplied = ref(false)
@@ -101,6 +127,7 @@ function pickGroup() {
 onMounted(async () => {
   pickProject()
   pickGroup()
+  void models.ensureFor(provider.value)
   await nextTick()
   promptEl.value?.focus()
 })
@@ -128,23 +155,25 @@ watch(
 
 const modelOptions = computed<MenuOption[]>(() => [
   { value: 'default', label: 'Padrão' },
-  ...models.models.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
+  ...providerModels.value.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
 ])
 const modelText = computed(() => {
-  const value = draft.value.model ?? prefModel.value
-  return value == null ? 'Padrão' : (models.models.find((m) => m.value === value)?.displayName ?? (draft.value.model ? 'Padrão' : value))
+  // Each provider has its own saved default; it only labels the button.
+  const pref = provider.value === 'claude' ? prefModel.value : prefKimiModel.value
+  const value = draft.value.model ?? pref
+  return value == null ? 'Padrão' : (providerModels.value.find((m) => m.value === value)?.displayName ?? (draft.value.model ? 'Padrão' : value))
 })
 const effortText = computed(() => {
-  const value = draft.value.effort ?? prefEffort.value
+  const value = draft.value.effort ?? (provider.value === 'claude' ? prefEffort.value : prefKimiEffort.value)
   return `Raciocínio ${value ? EFFORT_LABELS[value] : 'padrão'}`
 })
 const modeText = computed(() => {
-  const value = draft.value.permissionMode ?? prefMode.value
+  const value = draft.value.permissionMode ?? (provider.value === 'claude' ? prefMode.value : null)
   return value ? MODE_LABELS[value] : 'Modo padrão'
 })
 const effortOptions = computed<MenuOption[]>(() => [
   { value: 'default', label: 'Padrão' },
-  ...ALL_EFFORTS.map((e) => ({ value: e, label: EFFORT_LABELS[e] })),
+  ...(provider.value === 'kimi' ? KIMI_EFFORTS : ALL_EFFORTS).map((e) => ({ value: e, label: EFFORT_LABELS[e] })),
 ])
 const modeOptions: MenuOption[] = [
   { value: 'default-account', label: 'Padrão da conta' },
@@ -312,7 +341,7 @@ async function submit() {
   const { projectId, groupId, title, prompt, model, effort, permissionMode } = draft.value
   if (createdId.value === null) {
     try {
-      const created = await sessions.create(projectId!, groupId)
+      const created = await sessions.create(projectId!, groupId, provider.value)
       createdId.value = created.session_id
       createdMode.value = created.permission_mode ?? null
     } catch (e) {
@@ -456,6 +485,12 @@ function onKeydown(event: KeyboardEvent) {
             </label>
             <span v-if="branch" data-test="nc-branch" :title="`Branch: ${branch}`" class="max-w-48 truncate font-mono text-xs text-fg-subtle">{{ branch }}</span>
             <span class="grow" />
+            <label v-if="kimiUsable" class="flex items-center gap-2 text-sm text-fg-muted">
+              Agente
+              <select v-model="draft.provider" data-test="nc-provider" aria-label="Agente" :disabled="createdId !== null" class="h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60">
+                <option v-for="o in providerOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+              </select>
+            </label>
             <label v-if="projectGroups.length" class="flex items-center gap-2 text-sm text-fg-muted">
               <select v-model="draft.groupId" data-test="nc-group" aria-label="Agrupador" :disabled="createdId !== null" class="h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60">
                 <option :value="null">Nenhum</option>
@@ -532,7 +567,7 @@ function onKeydown(event: KeyboardEvent) {
               </button>
               <span class="mx-1.5 h-4 w-px bg-line-strong" aria-hidden="true" />
               <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)">
-                <template #footer><ClaudeCliFooter /></template>
+                <template v-if="provider === 'claude'" #footer><ClaudeCliFooter /></template>
               </OptionMenu>
               <OptionMenu name="Raciocínio" :text="effortText" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
               <OptionMenu name="Modo" :text="modeText" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" :highlight="(draft.permissionMode ?? prefMode) === 'bypassPermissions'" @select="selectMode" />

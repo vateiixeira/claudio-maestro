@@ -1,4 +1,5 @@
 import type { EventSocket } from '../api/socket'
+import type { AgentProvider } from '../types/api'
 import { useClaudeCliStore } from './claudeCli'
 import { useClosureStore } from './closure'
 import { useDeliveriesStore } from './deliveries'
@@ -72,7 +73,8 @@ export function bindRealtime(socket: EventSocket): () => void {
     }),
     socket.on('project.git', (event) => useGitStore().applyEvent(event)),
     socket.on('models.updated', (event) => {
-      useModelsStore().apply((event.data as { models?: unknown } | null)?.models)
+      const data = event.data as { models?: unknown; provider?: AgentProvider } | null
+      useModelsStore().apply(data?.models, data?.provider ?? 'claude')
     }),
     socket.on('app.update', (event) => useUpdatesStore().apply(event.data)),
     socket.on('app.update.progress', (event) => useUpdatesStore().applyProgress(event.data)),

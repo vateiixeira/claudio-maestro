@@ -150,6 +150,8 @@ export interface Session {
   label_ids?: number[]
   /** The agent (`/agentes`) that started the session; null (or absent) for an ordinary one. */
   agent_id?: number | null
+  /** Agent provider: Claude Code (absent in old records) or Kimi Code. */
+  provider?: AgentProvider
 }
 
 /** A session found by the search; `match` is present when the term is in the text of its messages. */
@@ -270,6 +272,17 @@ export interface ModelInfo {
   description: string
   supportsEffort?: boolean
   supportedEffortLevels?: Effort[]
+}
+
+/** Agent provider of a session: Claude Code or Kimi Code. */
+export type AgentProvider = 'claude' | 'kimi'
+
+/** A provider as `GET /api/providers` lists it: whether it can be used here. */
+export interface ProviderInfo {
+  id: AgentProvider
+  name: string
+  enabled: boolean
+  available: boolean
 }
 
 export interface SessionUpdate {

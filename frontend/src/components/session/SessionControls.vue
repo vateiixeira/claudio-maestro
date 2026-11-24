@@ -17,14 +17,20 @@ const props = defineProps<{ sessionId: string }>()
 
 const conversations = useConversationStore()
 const modelsStore = useModelsStore()
+// The session summary is refreshed by events; the snapshot only holds what it had at load.
+const sessionsStore = useSessionsStore()
 void modelsStore.ensure()
 
 const options = computed(() => conversations.get(props.sessionId)?.options)
+// The provider never changes during the session; the summary knows it.
+const provider = computed(() => sessionsStore.find(props.sessionId)?.provider ?? 'claude')
+const providerModels = computed(() => modelsStore.modelsFor(provider.value))
+void modelsStore.ensureFor(provider.value)
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 const modelValue = computed(() => options.value?.model ?? 'default')
-const currentModel = computed(() => modelsStore.models.find((m) => m.value === modelValue.value))
+const currentModel = computed(() => providerModels.value.find((m) => m.value === modelValue.value))
 const modelText = computed(() => currentModel.value?.displayName ?? options.value?.model ?? 'Padrão')
 // The button shows the short name; when that drops a suffix, the tooltip keeps the full one.
 const modelTitle = computed(() => {
@@ -33,13 +39,13 @@ const modelTitle = computed(() => {
   return parts.length ? parts.join(' · ') : undefined
 })
 const modelOptions = computed<MenuOption[]>(() =>
-  modelsStore.models.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
+  providerModels.value.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
 )
 
 // Levels of the chosen model; every level while the model list is unknown.
 const effortLevels = computed<Effort[]>(() => {
   const model = currentModel.value
-  if (!model) return modelsStore.models.length ? [] : ALL_EFFORTS
+  if (!model) return providerModels.value.length ? [] : ALL_EFFORTS
   if (!model.supportsEffort) return []
   return model.supportedEffortLevels?.length ? model.supportedEffortLevels : ALL_EFFORTS
 })
@@ -61,14 +67,19 @@ const MODE_DESCRIPTIONS: Record<PermissionMode, string> = {
   auto: 'Modo automático do Claude. Nem todo modelo aceita.',
   dontAsk: 'Não pergunta: só roda o que já está pré-aprovado.',
 }
+// No Kimi os modos do app viram os modos dele (default, plan, auto, yolo).
+const KIMI_MODE_DESCRIPTIONS: Partial<Record<PermissionMode, string>> = {
+  acceptEdits: 'Aprova operações seguras automaticamente (modo Auto do Kimi).',
+  auto: 'Aprova operações seguras automaticamente (modo Auto do Kimi).',
+  dontAsk: 'Aprova tudo sem perguntar (modo YOLO do Kimi).',
+  bypassPermissions: 'Aprova tudo sem perguntar (modo YOLO do Kimi). Pede confirmação ao ativar.',
+}
 const modeOptions: MenuOption[] = (Object.keys(MODE_LABELS) as PermissionMode[]).map((m) => ({
   value: m,
   label: MODE_LABELS[m],
-  description: MODE_DESCRIPTIONS[m],
+  description: (provider.value === 'kimi' ? KIMI_MODE_DESCRIPTIONS[m] : undefined) ?? MODE_DESCRIPTIONS[m],
 }))
 
-// The session summary is refreshed by events; the snapshot only holds what it had at load.
-const sessionsStore = useSessionsStore()
 // An agent session stays in the default mode: the backend refuses every change (422).
 const isAgentSession = computed(() => sessionsStore.find(props.sessionId)?.agent_id != null)
 const AGENT_MODE_HINT = 'Sessões de agente ficam no modo padrão; as ações para fora seguem a autonomia do agente.'
@@ -123,6 +134,7 @@ function confirmBypass() {
 <template>
   <div v-if="options" class="flex min-w-0 grow flex-wrap items-center gap-0.5">
     <RemoteControlChip
+      v-if="provider === 'claude'"
       :state="remoteState"
       :url="options.remote_control_url"
       :error="options.remote_control_error"
@@ -138,7 +150,7 @@ function confirmBypass() {
       :disabled="saving"
       @select="(v) => apply({ model: v })"
     >
-      <template #footer><ClaudeCliFooter /></template>
+      <template v-if="provider === 'claude'" #footer><ClaudeCliFooter /></template>
     </OptionMenu>
     <OptionMenu
       v-if="effortLevels.length"

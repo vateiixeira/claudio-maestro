@@ -1,5 +1,5 @@
 import { ALL_EFFORTS, ALL_MODES } from './sessionOptions'
-import type { Effort, PermissionMode } from './types/api'
+import type { AgentProvider, Effort, PermissionMode } from './types/api'
 
 const KEY = 'maestro:new-conversation'
 const LAST_PROJECT_KEY = 'maestro:new-conversation-last-project'
@@ -9,13 +9,14 @@ export interface ConversationDraft {
   groupId: number | null
   title: string
   prompt: string
+  provider: AgentProvider
   model: string | null
   effort: Effort | null
   permissionMode: PermissionMode | null
 }
 
 export function emptyDraft(): ConversationDraft {
-  return { projectId: null, groupId: null, title: '', prompt: '', model: null, effort: null, permissionMode: null }
+  return { projectId: null, groupId: null, title: '', prompt: '', provider: 'claude', model: null, effort: null, permissionMode: null }
 }
 
 /** The saved draft, or an empty one when there is none, it is invalid or storage fails. */
@@ -29,6 +30,7 @@ export function loadDraft(): ConversationDraft {
       groupId: typeof value.groupId === 'number' ? value.groupId : null,
       title: typeof value.title === 'string' ? value.title : '',
       prompt: typeof value.prompt === 'string' ? value.prompt : '',
+      provider: value.provider === 'kimi' ? 'kimi' : 'claude',
       model: typeof value.model === 'string' ? value.model : null,
       effort: ALL_EFFORTS.includes(value.effort as Effort) ? (value.effort as Effort) : null,
       // "Sem perguntas" is never restored from a draft: it only counts when it was just chosen and confirmed.

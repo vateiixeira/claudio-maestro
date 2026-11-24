@@ -100,6 +100,8 @@ const projectRepos = computed(() => (projectId.value != null ? gitDetails.reposF
 // A conversation in a worktree starts the Git tab on that worktree's repository.
 const focusPath = computed(() => (session.value?.worktree_name ? session.value.worktree_path ?? null : null))
 const context = computed(() => session.value?.context ?? conv.value?.context ?? null)
+// The provider that runs the session; old records have none and are Claude Code.
+const providerName = computed(() => (session.value?.provider === 'kimi' ? 'Kimi Code' : 'Claude Code'))
 const turns = computed(() => (conv.value?.items ?? []).filter((i) => i.type === 'user' && !('parent_tool_use_id' in i && i.parent_tool_use_id)).length)
 const stateText = computed(() => {
   const s = session.value
@@ -323,6 +325,8 @@ function resetWidth() {
               <dd data-test="prop-state" class="m-0 flex items-center gap-1.5" :class="session?.display_state === 'waiting' ? (needsYou(session) ? 'font-medium text-secondary-soft' : 'text-fg-muted') : ''">
                 <DisplayStateIcon v-if="session" :display="session.display_state" :quiet="!needsYou(session)" />{{ stateText }}
               </dd>
+              <dt class="text-fg-muted">Provedor</dt>
+              <dd data-test="prop-provider" class="m-0">{{ providerName }}</dd>
               <dt class="text-fg-muted">Turnos</dt>
               <dd data-test="prop-turns" class="m-0">{{ turns }}</dd>
               <dt class="text-fg-muted">Início</dt>

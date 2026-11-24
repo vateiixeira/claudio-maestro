@@ -1171,7 +1171,8 @@ def test_migration_34_drops_work_tables(tmp_path: Path):
 
 def test_runs_summary_is_backfilled_from_the_announcement(tmp_path: Path):
     with open_db(tmp_path / "summary.db") as conn:
-        migrate_to(conn, db.SCHEMA_VERSION - 1)
+        # Version 36 is the one that adds runs.summary; start just before it.
+        migrate_to(conn, 35)
         assert "summary" not in {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
         conn.execute(
             "INSERT INTO projects (id, name, path, color, position, created_at)"

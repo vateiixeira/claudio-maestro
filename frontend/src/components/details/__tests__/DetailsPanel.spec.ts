@@ -102,7 +102,7 @@ describe('painel Detalhes', () => {
 
     const groups = wrapper.find('[data-test="details-properties"]').findAll('dl')
     expect(groups).toHaveLength(2)
-    expect(groups[0].findAll('dt').map((dt) => dt.text())).toEqual(['Estado', 'Turnos', 'Início', 'Última atividade'])
+    expect(groups[0].findAll('dt').map((dt) => dt.text())).toEqual(['Estado', 'Provedor', 'Turnos', 'Início', 'Última atividade'])
     expect(groups[1].findAll('dt').map((dt) => dt.text())).toEqual(['Projeto', 'Branch', 'Contexto', 'Agrupador', 'Etiquetas'])
     expect(groups[0].find('[data-test="prop-state"]').exists()).toBe(true)
     expect(groups[1].find('[data-test="prop-group"]').exists()).toBe(true)

@@ -314,8 +314,10 @@ def create_app(
             # Up to 5 s if `claude --version` hangs; then the bundled CLI is used.
             await app.state.claude_cli.refresh()
             from claudio_maestro.agent.sdk_client import sdk_agent_factory
+            from claudio_maestro.sessions import provider_factory
 
-            factory = sdk_agent_factory(app.state.claude_cli.cli_path)
+            # Claude sessions use the SDK factory; Kimi sessions go to the ACP client.
+            factory = provider_factory(sdk_agent_factory(app.state.claude_cli.cli_path))
         else:
             factory = agent_factory
         app.state.textindex = TextIndex(

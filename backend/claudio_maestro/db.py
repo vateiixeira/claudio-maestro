@@ -1432,6 +1432,14 @@ MIGRATIONS.append([
     ") WHERE outcome = 'concluded'",
 ])
 
+# Agent provider of the session: 'claude' (Claude Code, the default) or 'kimi'
+# (Kimi Code, over ACP). `provider_session_id` is the id the provider's own CLI
+# gave the conversation (the ACP session id), used to resume it.
+MIGRATIONS.append([
+    "ALTER TABLE sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'",
+    "ALTER TABLE sessions ADD COLUMN provider_session_id TEXT",
+])
+
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

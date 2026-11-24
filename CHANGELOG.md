@@ -4,6 +4,10 @@ Mudanças que quem usa o app percebe. Formato inspirado no [Keep a Changelog](ht
 
 ## [Não lançado]
 
+### Adicionado
+
+- Kimi Code como provedor de agente, junto do Claude Code. Em Preferências → Geral → Agentes, ligue o Kimi Code (precisa do comando `kimi` instalado e logado); a janela de nova conversa passa a mostrar a escolha do agente, e cada conversa nova pode rodar com um deles. Nas conversas do Kimi, modelo, raciocínio e permissões valem como no Claude (os modos viram default, plan, auto e yolo do Kimi), as permissões de ferramentas aparecem nos cartões de sempre e a conversa é retomada pelo próprio Kimi depois de fechada ou de um reinício do app. Remote Control, resumo de contexto e os resumos do agente de resumos continuam só no Claude Code.
+
 ### Alterado
 
 - Uma sessão descartada agora é encerrada de fato uma hora depois do descarte: o turno em andamento, os subagentes, o que roda em segundo plano e o terminal dela. Antes o processo podia ficar aberto indefinidamente. Nessa hora dá para voltar atrás tirando a marca ou mandando mensagem. Numa sessão de agente, descartar cancela na hora a execução aberta, como o botão Cancelar: o turno é interrompido e o agente fica livre. Só o processo espera a hora.

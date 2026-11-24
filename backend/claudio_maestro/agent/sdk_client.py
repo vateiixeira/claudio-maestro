@@ -238,6 +238,8 @@ class SdkAgentClient:
     `sdk_client` exists for tests: they pass a stub so no process is started.
     """
 
+    provider = "claude"
+
     def __init__(
         self,
         options: AgentOptions,

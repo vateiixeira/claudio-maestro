@@ -71,10 +71,17 @@ async def put_state(key: str, request: Request, conn: DbDep) -> Any:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Os dias para ocultar sessões precisam ser um número inteiro de 1 a 365.",
             )
+        if "kimi_enabled" in value and not isinstance(value["kimi_enabled"], bool):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A opção do Kimi Code precisa ser verdadeiro ou falso.",
+            )
         checks = (
             ("new_session_model", valid_default_model, "O modelo padrão precisa ser um texto de até 100 caracteres."),
             ("new_session_effort", valid_default_effort, "Raciocínio padrão inválido."),
             ("new_session_mode", valid_default_mode, "Modo padrão inválido."),
+            ("kimi_new_session_model", valid_default_model, "O modelo padrão do Kimi precisa ser um texto de até 100 caracteres."),
+            ("kimi_new_session_effort", valid_default_effort, "Raciocínio padrão do Kimi inválido."),
         )
         for name, valid, message in checks:
             # null means "no default": the CLI decides, as before.

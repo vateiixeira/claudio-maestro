@@ -1,4 +1,5 @@
 import type {
+  AgentProvider,
   BranchList,
   BranchComparison,
   ComparisonDirection,
@@ -39,6 +40,7 @@ import type {
   ProjectGitDetails,
   ProjectPlan,
   ProjectUpdate,
+  ProviderInfo,
   SendResult,
   Session,
   SessionClosure,
@@ -293,8 +295,15 @@ export function syncProject(projectId: number): Promise<Session[]> {
   return request('POST', `/api/projects/${projectId}/sync`)
 }
 
-export function createSession(projectId: number, groupId: number | null = null): Promise<Session> {
-  return request('POST', `/api/projects/${projectId}/sessions`, groupId != null ? { group_id: groupId } : undefined)
+export function createSession(
+  projectId: number,
+  groupId: number | null = null,
+  provider: AgentProvider = 'claude',
+): Promise<Session> {
+  const body: Record<string, unknown> = {}
+  if (groupId != null) body.group_id = groupId
+  if (provider !== 'claude') body.provider = provider
+  return request('POST', `/api/projects/${projectId}/sessions`, Object.keys(body).length ? body : undefined)
 }
 
 // Groups
@@ -363,8 +372,13 @@ export function searchFiles(scope: SuggestionScope, q: string, signal?: AbortSig
 }
 
 /** Models the agent offers (or a fixed list before the first connection). */
-export function listModels(): Promise<ModelInfo[]> {
-  return request('GET', '/api/models')
+export function listModels(provider: AgentProvider = 'claude'): Promise<ModelInfo[]> {
+  return request('GET', provider === 'claude' ? '/api/models' : `/api/models?provider=${provider}`)
+}
+
+/** The agent providers and whether each can be used on this machine. */
+export function listProviders(): Promise<ProviderInfo[]> {
+  return request('GET', '/api/providers')
 }
 
 export function interruptSession(sessionId: string): Promise<void> {

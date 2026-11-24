@@ -31,6 +31,7 @@ Se você não lê português, o tradutor do navegador dá conta, e o próprio Cl
 - **Terminal da sessão.** Uma aba Terminal no painel da conversa abre um shell na pasta da sessão. O play nos comandos sugeridos roda o comando ali e manda a saída ao Claude, e dá para anexar trechos do terminal à mensagem.
 - **Continuidade com o CLI.** As conversas ficam em `~/.claude/projects`, como no CLI e na extensão. Dá para retomar no Maestro uma conversa começada no terminal, e vice-versa.
 - **Controles por conversa.** Modelo, nível de raciocínio, modo de permissão, imagens coladas, comandos `/` e menções `@`.
+- **Kimi Code como alternativa.** Ligue o Kimi Code em Preferências → Geral → Agentes e a janela de nova conversa passa a oferecer a escolha do agente: Claude Code ou Kimi Code (precisa do `kimi` instalado e logado). Modelo, raciocínio e permissões valem nas duas; Remote Control e os resumos automáticos continuam só no Claude Code.
 - **Resumo das conversas.** Um agente do próprio app pode resumir em fases o que cada conversa em andamento já fez.
 - **Resumo ao voltar.** Ao reabrir uma conversa depois de um tempo, um card mostra o que aconteceu enquanto você estava fora e o que falta.
 - **Temas.** Maestro (o padrão), Dracula e os filtros do Monokai, escolhidos em Preferências → Geral → Tema, com uma prévia de uma sessão aberta. Veja os [Créditos](#créditos).

@@ -43,6 +43,7 @@ from claude_agent_sdk import (
 
 from claudio_maestro import db, groups, labels
 from claudio_maestro import history as history_module
+from claudio_maestro import providers as providers_module
 from claudio_maestro import scratch as scratch_module
 from claudio_maestro.agent.agentd_client import AgentdUnavailable
 from claudio_maestro.agent.base import (
@@ -162,8 +163,8 @@ EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
 PERMISSION_MODES: tuple[str, ...] = (
     "default", "acceptEdits", "plan", "bypassPermissions", "auto", "dontAsk"
 )
-# Model ids and aliases, e.g. "opus", "claude-opus-5-5", "opus[1m]".
-MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._\[\]-]{1,100}$")
+# Model ids and aliases, e.g. "opus", "claude-opus-5-5", "opus[1m]", "kimi-code/k3".
+MODEL_PATTERN = re.compile(r"^[A-Za-z0-9._/\[\]-]{1,100}$")
 # How long an agent's policy may take to decide a tool call before the user is asked.
 POLICY_TIMEOUT = 10.0
 AGENT_SETUP_FAILED_TEXT = "Não foi possível preparar a sessão do agente."
@@ -180,6 +181,7 @@ MODEL_FIELDS = ("value", "displayName", "description", "supportsEffort", "suppor
 # The stored models list is asked again after this long (3 times a day).
 MODELS_MAX_AGE = 8 * 3600
 MODELS_CACHE_KEY = "models_cache"
+KIMI_MODELS_CACHE_KEY = "kimi_models_cache"
 # After the last background subagent ends, the CLI opens a turn by itself. The
 # session keeps showing the subagent as running this long, waiting for that turn, so
 # the state does not flash "waiting" in between. Past it, the session settles.
@@ -349,6 +351,13 @@ class RemoteControlUnavailable(SessionError):
     pass
 
 
+class ProviderUnavailableError(SessionError):
+    """The session asked for a provider that is disabled or not installed."""
+
+
+REMOTE_KIMI_TEXT = "O Remote Control só existe nas sessões do Claude Code."
+
+
 CONTINUED_ELSEWHERE_TEXT = (
     "Esta conversa continuou em outro processo enquanto uma tarefa em segundo plano "
     "rodava aqui. Pare as tarefas em segundo plano para o app retomar a conversa do disco."
@@ -427,6 +436,10 @@ class SessionRecord:
     # Agente that started this session; None for a regular one or when the
     # agent was removed.
     agent_id: int | None = None
+    # Agent provider: "claude" (Claude Code) or "kimi" (Kimi Code over ACP).
+    provider: str = "claude"
+    # The id the provider's CLI gave the conversation (the ACP session id), to resume it.
+    provider_session_id: str | None = None
 
     @property
     def history_directory(self) -> str:
@@ -470,12 +483,13 @@ _COLUMNS = (
     + ", history_dir, worktree_name, worktree_path, git_branch, turn_open"
     + ", mark, mark_note, mark_until, priority, detached_at"
     + ", remote_control, remote_control_bridge, spawn_version, agent_id"
+    + ", provider, provider_session_id"
 )
 # Record fields kept out of what the frontend receives.
 _INTERNAL_FIELDS = (
     "title_custom", "rename_pending", "file_modified_at", "app_modified_at",
     "plan_path", "plan_link", "history_dir", "turn_open", "detached_at",
-    "remote_control_bridge", "spawn_version",
+    "remote_control_bridge", "spawn_version", "provider_session_id",
 )
 _BOOL_FIELDS = (
     "finished", "title_custom", "rename_pending", "turn_open", "priority", "remote_control"
@@ -903,6 +917,23 @@ def new_session_defaults(conn: sqlite3.Connection) -> tuple[str | None, str | No
     return model, effort, mode
 
 
+def kimi_new_session_defaults(conn: sqlite3.Connection) -> tuple[str | None, str | None]:
+    """Saved Kimi model and effort for new sessions, as `(model, effort)`.
+
+    They come from `preferences` in `app_state` (`kimi_new_session_model`,
+    `kimi_new_session_effort`). A missing, unreadable or invalid value is None,
+    which leaves the decision to the Kimi CLI."""
+    preferences = providers_module.preferences_from(conn)
+    model = preferences.get("kimi_new_session_model")
+    effort = preferences.get("kimi_new_session_effort")
+    model = model.strip() if isinstance(model, str) else None
+    if not model or len(model) > 100 or not MODEL_PATTERN.match(model):
+        model = None
+    if not isinstance(effort, str) or effort not in EFFORTS:
+        effort = None
+    return model, effort
+
+
 def user_default_permission_mode() -> str | None:
     """`permissions.defaultMode` of the user's CLI settings, used by new sessions.
 
@@ -940,10 +971,23 @@ def sdk_rename_session(session_id: str, title: str, directory: str) -> None:
     claude_agent_sdk.rename_session(session_id, title, directory=directory)
 
 
+def provider_factory(claude_factory: AgentFactory) -> AgentFactory:
+    """Dispatch by provider: Kimi sessions go to the ACP client, the rest to `claude_factory`."""
+
+    def factory(options: AgentOptions) -> AgentClient:
+        if options.provider == providers_module.KIMI:
+            from claudio_maestro.agent.kimi_client import KimiAgentClient
+
+            return KimiAgentClient(options)
+        return claude_factory(options)
+
+    return factory
+
+
 def default_agent_factory(options: AgentOptions) -> AgentClient:
     from claudio_maestro.agent.sdk_client import SdkAgentClient
 
-    return SdkAgentClient(options)
+    return provider_factory(lambda opts: SdkAgentClient(opts))(options)
 
 
 def _stored_details(
@@ -1214,6 +1258,8 @@ class ActiveSession:
         self.idle_since: float | None = None
         # Disposal of a discarded client still in progress.
         self._disposal: asyncio.Task[None] | None = None
+        # Background reconnect that replays a Kimi conversation on open.
+        self._replay_task: asyncio.Task[None] | None = None
 
         self._get_session_messages = get_session_messages
         self._read_tool_results = read_tool_results
@@ -1502,6 +1548,11 @@ class ActiveSession:
         """
         if self._history_loaded:
             return
+        if self.record.provider != providers_module.CLAUDE:
+            # Kimi has no transcript the app reads: the conversation is replayed by
+            # the CLI on connect (session/load), never loaded from disk.
+            self._history_loaded = True
+            return
         async with self._history_lock:
             if self._history_loaded:
                 return
@@ -1555,6 +1606,31 @@ class ActiveSession:
         items = self.builder.items
         return all(getattr(item, "text", None) == HISTORY_LOAD_FAILED for item in items)
 
+    def ensure_replay(self) -> None:
+        """Kimi sessions have no transcript the app reads: opening one reconnects in
+        the background, and the CLI replays the conversation (session/load) into the
+        live stream. Does nothing for Claude sessions, with a client, or while one
+        connects."""
+        if (
+            self.record.provider == providers_module.CLAUDE
+            or self.client is not None
+            or self._connecting
+            or self._final
+            or not self.record.provider_session_id
+            or (self._replay_task is not None and not self._replay_task.done())
+        ):
+            return
+        self._replay_task = asyncio.create_task(self._replay_history())
+
+    async def _replay_history(self) -> None:
+        try:
+            async with self._lock:
+                await self._wait_disposal()
+                if self.client is None and not self._connecting and not self._final:
+                    await self._connect(enable_remote=False)
+        except Exception:
+            logger.exception("Falha ao recarregar a conversa da sessão %s", self.session_id)
+
     async def _load_entries(
         self,
     ) -> tuple[
@@ -1598,7 +1674,11 @@ class ActiveSession:
 
     async def _apply_pending_rename(self) -> None:
         """Write a title chosen before the conversation existed on disk."""
-        if not self.record.rename_pending or self._rename_session is None:
+        if (
+            not self.record.rename_pending
+            or self._rename_session is None
+            or self.record.provider != providers_module.CLAUDE
+        ):
             return
         try:
             await asyncio.to_thread(
@@ -1689,6 +1769,17 @@ class ActiveSession:
             raise SessionClosedError("O servidor está encerrando. A mensagem não foi enviada.")
         # The saved conversation comes first, so the new message goes after it.
         await self.ensure_history()
+        if (
+            self.record.provider != providers_module.CLAUDE
+            and self.client is None
+            and self.record.provider_session_id is not None
+        ):
+            # Kimi has no transcript on disk: reconnecting replays the conversation,
+            # and the replay must come before the new message is recorded.
+            async with self._lock:
+                await self._wait_disposal()
+                if not self._final and self.client is None:
+                    await self._connect()
         # The user's message is recorded first so it is never lost.
         sent_text, commit = self._prepare(text)
         self._emit_events(self.builder.add_user_message(sent_text, markers, message_id=dispatch_id))
@@ -1871,6 +1962,14 @@ class ActiveSession:
             self._refresh_state()
             return False
         self._start_reader(client)
+        provider_session_id = getattr(client, "provider_session_id", None)
+        if provider_session_id and provider_session_id != self.record.provider_session_id:
+            # The id the provider's CLI gave the conversation, kept to resume it.
+            self.save(provider_session_id=provider_session_id)
+        if self.record.provider != providers_module.CLAUDE:
+            # The wire log already has the turns from before a restart: the meter
+            # shows a value at once, not only at the end of the next turn.
+            self._request_context(client)
         if not await self._reconcile_options(client, options):
             return False
         if self._on_connected is not None:
@@ -2007,6 +2106,8 @@ class ActiveSession:
                 session_id=self.session_id,
                 resume=resume,
                 can_use_tool=self._can_use_tool,
+                provider=self.record.provider,
+                provider_session_id=self.record.provider_session_id,
                 model=None if model == DEFAULT_MODEL_VALUE else model,
                 effort=self.record.effort,
                 # A session of an agent runs in the mode its definition says, whatever the
@@ -2040,6 +2141,9 @@ class ActiveSession:
         )
 
     async def _check_history(self) -> bool:
+        if self.record.provider != providers_module.CLAUDE:
+            # A Kimi conversation can be resumed once the CLI gave it an id.
+            return self.record.provider_session_id is not None
         try:
             return await asyncio.to_thread(
                 self._history_exists, self.session_id, self.record.history_directory
@@ -2116,6 +2220,9 @@ class ActiveSession:
                     if (
                         message.parent_tool_use_id is None
                         and (message.origin or {}).get("kind") == "human"
+                        # Only the phone writes to a Claude session; a Kimi replay
+                        # also carries human messages and must not reopen anything.
+                        and self.record.provider == providers_module.CLAUDE
                         and self._reopen_if_finished()
                     ):
                         # Typed in the phone: it reopens the session as a send would.
@@ -2562,6 +2669,8 @@ class ActiveSession:
         conversation). A finished session cannot turn it on. Turning it off takes
         effect at once (mark, bridge and state); the request to the client follows
         under the lock, after an `enable` still in flight."""
+        if enabled and self.record.provider != providers_module.CLAUDE:
+            raise RemoteControlUnavailable(REMOTE_KIMI_TEXT)
         if enabled == self.record.remote_control and not (
             enabled
             and self.remote_state in ("failed", "off")
@@ -3641,6 +3750,8 @@ class SessionManager:
         self._models: list[dict[str, Any]] | None = None
         self._models_fetched_at = 0.0
         self._models_cli: dict[str, Any] | None = None
+        # Kimi models, from the config options of a connected (or throwaway) client.
+        self._kimi_models: list[dict[str, Any]] | None = None
         self._load_models()
         # Short sentence and plan seal of the digest agent, by session (memory copy).
         self._digest_briefs: dict[str, tuple[str | None, bool]] = {}
@@ -3651,7 +3762,9 @@ class SessionManager:
         self._label_ids: dict[str, list[int]] = {}
         self._load_label_ids()
 
-    def list_models(self) -> list[dict[str, Any]]:
+    def list_models(self, provider: str = providers_module.CLAUDE) -> list[dict[str, Any]]:
+        if provider == providers_module.KIMI:
+            return [dict(m) for m in (self._kimi_models or [])]
         return [dict(m) for m in (self._models or FALLBACK_MODELS)]
 
     def _load_models(self) -> None:
@@ -3660,10 +3773,14 @@ class SessionManager:
                 row = conn.execute(
                     "SELECT value FROM app_state WHERE key = ?", (MODELS_CACHE_KEY,)
                 ).fetchone()
+                kimi_row = conn.execute(
+                    "SELECT value FROM app_state WHERE key = ?", (KIMI_MODELS_CACHE_KEY,)
+                ).fetchone()
             stored = json.loads(row["value"]) if row is not None else None
             models = normalize_models(stored)
             fetched_at = stored.get("fetched_at") if isinstance(stored, dict) else None
             cli = stored.get("cli") if isinstance(stored, dict) else None
+            kimi_stored = json.loads(kimi_row["value"]) if kimi_row is not None else None
         except (sqlite3.Error, ValueError):
             logger.exception("Falha ao ler a lista de modelos guardada")
             return
@@ -3671,6 +3788,9 @@ class SessionManager:
             self._models = models
             self._models_fetched_at = float(fetched_at)
             self._models_cli = cli if isinstance(cli, dict) else None
+        kimi_models = normalize_models(kimi_stored)
+        if kimi_models is not None:
+            self._kimi_models = kimi_models
 
     def _save_models(self) -> None:
         value = json.dumps(
@@ -3712,12 +3832,66 @@ class SessionManager:
         if changed:
             self._publish({
                 "session_id": None, "seq": 0, "type": "models.updated",
-                "data": {"models": self.list_models()},
+                "data": {"models": self.list_models(), "provider": providers_module.CLAUDE},
             })
         return True
 
+    async def _fetch_kimi_models(self, client: AgentClient) -> bool:
+        """Keep the Kimi model list from a connected (or throwaway) Kimi client."""
+        try:
+            info = await client.get_server_info()
+        except Exception:
+            logger.exception("Falha ao consultar os modelos do Kimi")
+            return False
+        models = normalize_models(info)
+        if models is None or models == self._kimi_models:
+            return models is not None
+        self._kimi_models = models
+        try:
+            with closing(db.connect(self._db_path)) as conn:
+                conn.execute(
+                    "INSERT INTO app_state (key, value) VALUES (?, ?)"
+                    " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (KIMI_MODELS_CACHE_KEY, json.dumps({"models": models}, ensure_ascii=False)),
+                )
+        except sqlite3.Error:
+            logger.exception("Falha ao guardar a lista de modelos do Kimi")
+        self._publish({
+            "session_id": None, "seq": 0, "type": "models.updated",
+            "data": {"models": self.list_models(providers_module.KIMI),
+                     "provider": providers_module.KIMI},
+        })
+        return True
+
+    async def refresh_kimi_models(self) -> bool:
+        """Fetch the Kimi models with a throwaway client when none is stored yet."""
+        if self._kimi_models is not None or not providers_module.kimi_available():
+            return False
+        from claudio_maestro.agent.kimi_client import KimiAgentClient
+
+        client: AgentClient | None = None
+        try:
+            client = KimiAgentClient(AgentOptions(
+                cwd=Path.home(),
+                session_id=str(uuid.uuid4()),
+                resume=False,
+                can_use_tool=_deny_all,
+                provider=providers_module.KIMI,
+            ))
+            await client.connect()
+            return await self._fetch_kimi_models(client)
+        except Exception:
+            logger.exception("Falha ao atualizar a lista de modelos do Kimi")
+            return False
+        finally:
+            if client is not None:
+                with suppress(Exception):
+                    await client.close()
+
     async def _on_connected(self, client: AgentClient) -> None:
-        if self._models_stale():
+        if getattr(client, "provider", providers_module.CLAUDE) == providers_module.KIMI:
+            await self._fetch_kimi_models(client)
+        elif self._models_stale():
             await self._fetch_models(client)
 
     async def refresh_models_if_stale(self, force: bool = False) -> bool:
@@ -3771,14 +3945,16 @@ class SessionManager:
         model: str | None = None,
         effort: str | None = None,
         cwd: str | None = None,
+        provider: str = providers_module.CLAUDE,
     ) -> SessionRecord:
         """A new session. For an agent (`agent_id`) it always starts in the default
         permission mode, whatever the saved preference: its policy needs the CLI to ask.
         `cwd` is the folder it works in: the project folder (default) or a linked worktree of
-        the project (see `_session_folder`)."""
+        the project (see `_session_folder`). `provider` is the agent provider (Claude Code
+        or, when enabled in the Preferências, Kimi Code)."""
         with closing(db.connect(self._db_path)) as conn, db.transaction(conn):
             return self.create_session_in_transaction(conn, project, group_id,
-                agent_id=agent_id, model=model, effort=effort, cwd=cwd)
+                agent_id=agent_id, model=model, effort=effort, cwd=cwd, provider=provider)
 
     def create_session_in_transaction(
         self,
@@ -3790,6 +3966,7 @@ class SessionManager:
         model: str | None = None,
         effort: str | None = None,
         cwd: str | None = None,
+        provider: str = providers_module.CLAUDE,
     ) -> SessionRecord:
         """A new session. For an agent (`agent_id`) it always starts in the default
         permission mode, whatever the saved preference: its policy needs the CLI to ask.
@@ -3797,19 +3974,41 @@ class SessionManager:
         the project (see `_session_folder`)."""
         if not conn.in_transaction:
             raise RuntimeError('Criar sessão exige uma transação ativa.')
+        if not providers_module.valid_provider(provider):
+            raise InvalidDecisionError("Provedor de agente inválido.")
         if effort is not None and effort not in EFFORTS:
             raise InvalidDecisionError("Nível de raciocínio inválido.")
         if model is not None and not MODEL_PATTERN.match(model):
             raise InvalidDecisionError("Modelo inválido.")
         if not project.available:
             raise ProjectUnavailableError("A pasta do projeto não está disponível.")
+        if provider == providers_module.KIMI:
+            preferences = providers_module.preferences_from(conn)
+            if not providers_module.kimi_enabled(preferences):
+                raise ProviderUnavailableError(
+                    "O Kimi Code está desativado. Ligue-o em Preferências → Geral."
+                )
+            if not providers_module.kimi_available():
+                raise ProviderUnavailableError(
+                    "O comando `kimi` não foi encontrado nesta máquina."
+                )
         # Same transaction: the group cannot vanish between the check and the insert. It comes
         # before the folder, which a scratch session creates on disk: a failure leaves no orphan.
         if group_id is not None:
             groups.get_group(conn, group_id)
         folder, worktree_name, worktree_path = _session_folder(project, cwd)
         now = _now()
-        default_model, default_effort, mode = new_session_defaults(conn)
+        if provider == providers_module.CLAUDE:
+            default_model, default_effort, mode = new_session_defaults(conn)
+            # Saved preference, then the user's CLI `defaultMode`, then None.
+            default_mode = "default" if agent_id is not None else (
+                mode or self._default_permission_mode()
+            )
+        else:
+            # Kimi has defaults of its own (Preferências → Conversas novas); without
+            # them its CLI decides. The mode always starts on the CLI's default.
+            default_model, default_effort = kimi_new_session_defaults(conn)
+            default_mode = None
         record = SessionRecord(
             session_id=str(uuid.uuid4()),
             project_id=project.id,
@@ -3823,18 +4022,15 @@ class SessionManager:
             finished=False,
             model=model or default_model,
             effort=effort or default_effort,
-            # Saved preference, then the user's CLI `defaultMode`, then None.
-            permission_mode=(
-                "default" if agent_id is not None
-                else mode or self._default_permission_mode()
-            ),
+            permission_mode=default_mode,
             group_id=group_id,
             agent_id=agent_id,
+            provider=provider,
         )
         conn.execute(
             f"INSERT INTO sessions ({_INSERT_COLUMNS}, model, effort, permission_mode, group_id,"
-            " agent_id, worktree_name, worktree_path)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " agent_id, worktree_name, worktree_path, provider)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.session_id,
                 record.project_id,
@@ -3851,6 +4047,7 @@ class SessionManager:
                 record.agent_id,
                 record.worktree_name,
                 record.worktree_path,
+                record.provider,
             ),
         )
         return record
@@ -3940,6 +4137,7 @@ class SessionManager:
         try:
             await session.reload_if_modified()
             await session.ensure_history()
+            session.ensure_replay()
             await self.refresh_file_info(session)
             if session.client is None or session.context is None:
                 # No value from a connected client: the last message of the history.
@@ -3960,6 +4158,10 @@ class SessionManager:
         process measures a copy of it (`_probe_details`), so the answer is `live: False`
         with the time of that measurement. Without anything to show, `no_process`."""
         record = self.find_record(session_id)  # SessionNotFoundError for an unknown id
+        if record.provider != providers_module.CLAUDE:
+            # ACP does not expose the context window usage, and there is no
+            # transcript a temporary process could measure.
+            return {"available": False, "reason": "no_process", "context": None}
         session = self._sessions.get(session_id)
         if session is None:
             kept = self._kept_breakdowns.get(session_id)
@@ -4786,7 +4988,11 @@ class SessionManager:
             except Exception:
                 logger.exception("Falha ao registrar a entrega da sessão %s", session_id)
         if "title" in changes:
-            if await session.has_history():
+            if session.record.provider != providers_module.CLAUDE:
+                # A Kimi conversation has no SDK transcript to rename: the title
+                # lives only in the app's database.
+                pass
+            elif await session.has_history():
                 try:
                     await asyncio.to_thread(
                         self._rename_session, session_id, changes["title"], session.record.history_directory
