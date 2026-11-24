@@ -1,20 +1,17 @@
-"""Agent providers: Claude Code (always on) and Kimi Code (optional, over ACP).
-
-The provider of a session is chosen when it is created and never changes.
-Kimi Code is enabled in the Preferências (`kimi_enabled`) and needs the `kimi`
-command on the machine.
-"""
+"""Agent providers and whether they are enabled and installed."""
 
 import json
 import sqlite3
 from typing import Any
 
+from claudio_maestro.agent.codex_transport import codex_binary
 from claudio_maestro.agent.kimi_client import kimi_binary
 
 CLAUDE = "claude"
 KIMI = "kimi"
-PROVIDERS: tuple[str, ...] = (CLAUDE, KIMI)
-PROVIDER_NAMES = {CLAUDE: "Claude Code", KIMI: "Kimi Code"}
+CODEX = "codex"
+PROVIDERS: tuple[str, ...] = (CLAUDE, KIMI, CODEX)
+PROVIDER_NAMES = {CLAUDE: "Claude", KIMI: "Kimi Code", CODEX: "Codex CLI"}
 
 
 def valid_provider(value: Any) -> bool:
@@ -29,6 +26,14 @@ def kimi_available() -> bool:
 def kimi_enabled(preferences: dict[str, Any]) -> bool:
     """The user turned Kimi Code on in the Preferências."""
     return preferences.get("kimi_enabled") is True
+
+
+def codex_available() -> bool:
+    return codex_binary() is not None
+
+
+def codex_enabled(preferences: dict[str, Any]) -> bool:
+    return preferences.get("codex_enabled") is True
 
 
 def preferences_from(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -51,5 +56,6 @@ def provider_choices(preferences: dict[str, Any]) -> list[dict[str, Any]]:
         for provider, enabled, available in (
             (CLAUDE, True, True),
             (KIMI, kimi_enabled(preferences), kimi_available()),
+            (CODEX, codex_enabled(preferences), codex_available()),
         )
     ]

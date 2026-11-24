@@ -7,6 +7,8 @@ import type {
   ComparisonFiles,
   ClaudeCliInfo,
   ClaudeCliUpdateResult,
+  CodexCliInfo,
+  CodexCliUpdateResult,
   CommandInfo,
   CommitDetail,
   ContextDetailsResponse,
@@ -227,6 +229,18 @@ export function getClaudeCli(): Promise<ClaudeCliInfo> {
 
 export function updateClaudeCli(): Promise<ClaudeCliUpdateResult> {
   return request('POST', '/api/claude-cli/update')
+}
+
+export function getCodexCli(): Promise<CodexCliInfo> {
+  return request('GET', '/api/codex-cli')
+}
+
+export function refreshCodexCli(): Promise<CodexCliInfo> {
+  return request('POST', '/api/codex-cli/refresh')
+}
+
+export function updateCodexCli(): Promise<CodexCliUpdateResult> {
+  return request('POST', '/api/codex-cli/update')
 }
 
 // Usage

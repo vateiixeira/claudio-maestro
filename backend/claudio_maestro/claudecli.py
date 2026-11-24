@@ -224,7 +224,7 @@ def run_version_command(path: str) -> str | None:
 
 
 async def run_update_command(argv: list[str], timeout: float) -> CommandResult:
-    """Run `claude update` in its own process group; kill the group on timeout."""
+    """Run a CLI updater in its own process group and reap it if interrupted."""
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv,
@@ -237,11 +237,13 @@ async def run_update_command(argv: list[str], timeout: float) -> CommandResult:
         return CommandResult(None, str(error))
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout)
-    except TimeoutError:
+    except (TimeoutError, asyncio.CancelledError) as error:
         with suppress(ProcessLookupError, PermissionError):
             os.killpg(proc.pid, signal.SIGKILL)
         with suppress(Exception):
             await proc.wait()
+        if isinstance(error, asyncio.CancelledError):
+            raise
         return CommandResult(None, TIMEOUT_TEXT)
     return CommandResult(proc.returncode, out.decode("utf-8", "replace"))
 

@@ -22,6 +22,7 @@ from claudio_maestro.claudecli import CACHE_SECONDS as CLAUDE_CLI_CACHE_SECONDS
 from claudio_maestro.claudecli import ClaudeCli, ClaudeCliResolver
 from claudio_maestro.claudeprofile import profile_environment
 from claudio_maestro.cliwatch import CliWatcher
+from claudio_maestro.codexcli import CodexCli
 from claudio_maestro.commands import CommandCatalog
 from claudio_maestro.config import (
     Settings,
@@ -175,6 +176,7 @@ def create_app(
     claude_cli: ClaudeCliResolver | None = None,
     terminal_env_overrides: dict[str, str] | None = None,
     gh_runner: GhRunner | None = None,
+    fetch_codex_version: Callable[[], str | None] | None = None,
 ) -> FastAPI:
     """Build the app. Without `settings`, they are read from the environment at startup.
 
@@ -200,6 +202,7 @@ def create_app(
     `terminal_env_overrides`: environment variables set in the shells of the session terminals
     (tests pass a temporary `HOME`, so the user's `~/.bashrc` stays out of them).
     `gh_runner`: runs `gh` for the sweep of PR comments (tests pass fakes; None runs the real one).
+    `fetch_codex_version`: replaces the release lookup for the Codex CLI.
     """
 
     @asynccontextmanager
@@ -293,6 +296,9 @@ def create_app(
         # Sessions outlive a restart of the app only when new ones also go through the agentd.
         app.state.agentd_new_sessions = app.state.agentd is not None and new_through_agentd
         app.state.claude_cli = claude_cli or ClaudeCliResolver()
+        app.state.codex_cli = CodexCli(
+            app.state.settings.home_dir, app.state.hub.publish, fetch_codex_version,
+        )
 
         def cli_identity() -> dict[str, Any]:
             cli = app.state.claude_cli.current()
@@ -316,7 +322,7 @@ def create_app(
             from claudio_maestro.agent.sdk_client import sdk_agent_factory
             from claudio_maestro.sessions import provider_factory
 
-            # Claude sessions use the SDK factory; Kimi sessions go to the ACP client.
+            # Claude sessions use the SDK factory; other providers have their own clients.
             factory = provider_factory(sdk_agent_factory(app.state.claude_cli.cli_path))
         else:
             factory = agent_factory

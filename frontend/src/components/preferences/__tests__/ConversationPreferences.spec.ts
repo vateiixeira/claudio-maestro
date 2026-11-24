@@ -22,10 +22,11 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-function stub(preferences: Record<string, unknown>) {
+function stub(preferences: Record<string, unknown>, codexModels: unknown[] = []) {
   vi.stubGlobal('fetch', routeFetch({
     'GET /api/state': () => jsonResponse({ preferences }),
     'GET /api/models': () => jsonResponse(MODELS),
+    'GET /api/models?provider=codex': () => jsonResponse(codexModels),
     'PUT /api/state/preferences': (init) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>
       puts.push(body)
@@ -92,6 +93,7 @@ describe('preferências de conversas: padrões das conversas novas', () => {
       editor_command: ['code'], finished_after_days: 7,
       new_session_model: 'sonnet', new_session_effort: 'medium', new_session_mode: 'acceptEdits', kimi_enabled: false,
       kimi_new_session_model: null, kimi_new_session_effort: null,
+      codex_enabled: false, codex_new_session_model: null, codex_new_session_effort: null,
     }])
   })
 
@@ -157,6 +159,25 @@ describe('preferências de conversas: padrões das conversas novas', () => {
     expect(trigger(w, 'pref-new-model').text()).toBe('Padrão')
     expect(trigger(w, 'pref-new-effort').text()).toBe('Raciocínio padrão')
     expect(trigger(w, 'pref-new-mode').text()).toBe('Modo padrão')
+  })
+
+  it('ativa Codex e salva o modelo e um nível de raciocínio oferecido pelo catálogo', async () => {
+    stub({ editor_command: ['code'] }, [
+      { value: 'codex-fast', displayName: 'Codex rápido', description: '', supportsEffort: true, supportedEffortLevels: ['low'], isDefault: true },
+      { value: 'codex-deep', displayName: 'Codex completo', description: '', supportsEffort: true, supportedEffortLevels: ['high', 'xhigh'] },
+    ])
+    const w = await mountTab()
+    await w.get('[data-test="pref-codex"]').setValue(true)
+    await flushPromises()
+    expect(trigger(w, 'pref-codex-model').text()).toContain('Codex rápido')
+    await choose(w, 'pref-codex-model', 'Codex completo')
+    expect(await menuLabels(w, 'pref-codex-effort')).toEqual(['Padrão', 'alto', 'muito alto'])
+    await choose(w, 'pref-codex-effort', 'muito alto')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(puts[0]).toMatchObject({
+      editor_command: ['code'], codex_enabled: true, codex_new_session_model: 'codex-deep', codex_new_session_effort: 'xhigh',
+    })
   })
 })
 

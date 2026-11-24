@@ -169,6 +169,28 @@ describe('seletores da sessão', () => {
     expect(patches).toEqual([{ effort: 'max' }])
   })
 
+  it('mostra os níveis nativos do Codex e o contexto da sessão', async () => {
+    setup({ model: null, model_resolved: 'codex-deep', effort: null, context: BREAKDOWN.context })
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', provider: 'codex' })])
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /api/models': () => jsonResponse(MODELS),
+      'GET /api/models?provider=codex': () => jsonResponse([{
+        value: 'codex-deep', displayName: 'Codex completo', description: '', isDefault: true,
+        supportsEffort: true, supportedEffortLevels: ['medium', 'ultra'], defaultEffort: 'medium',
+      }]),
+      'GET /api/sessions/s1/context': () => jsonResponse(BREAKDOWN),
+    }))
+    const w = await mountControls()
+    expect(button(w, 'Remote Control').exists()).toBe(false)
+    expect(button(w, 'Modelo').text()).toContain('Codex completo')
+    await button(w, 'Raciocínio').trigger('click')
+    expect(body().findAll('[role="menuitemradio"]').map(labelOf)).toContain('Ultra')
+    await body().find('[role="menu"]').trigger('keydown', { key: 'Escape' })
+    await w.get('[data-test="context-usage"]').trigger('click')
+    await flushPromises()
+    expect(body().find('[data-test="ctx-percent"]').text()).toBe('21% usado')
+  })
+
   it('menu navega por setas e fecha com Esc', async () => {
     const w = await mountControls()
     const trigger = button(w, 'Permissões')

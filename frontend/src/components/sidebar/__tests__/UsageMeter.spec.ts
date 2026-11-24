@@ -3,6 +3,7 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import type { UsageSnapshot } from '../../../types/api'
 import UsageMeter from '../UsageMeter.vue'
+import { useCodexCliStore } from '../../../stores/codexCli'
 import { useUsageStore } from '../../../stores/usage'
 
 enableAutoUnmount(afterEach)
@@ -39,6 +40,21 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('medidor de consumo', () => {
+  it('identifica o plano do Codex quando os limites estão indisponíveis', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useCodexCliStore(pinia).info = {
+      installed: true, version: '0.172.0', latest: null, can_update: true, update_available: false,
+      auth: 'chatgpt', requires_auth: true, default_model: 'codex-demo', default_effort: 'medium',
+      models_refreshed: true, error: null,
+      usage: snapshot({ plan: 'Plus', limits: [], error: 'Limites temporariamente indisponíveis' }),
+    }
+    const wrapper = mount(UsageMeter, { props: { provider: 'codex' }, global: { plugins: [pinia] } })
+    expect(wrapper.get('[data-test="codex-usage-plan"]').text()).toContain('Codex')
+    expect(wrapper.get('[data-test="codex-usage-plan"]').text()).toContain('Plus')
+    expect(wrapper.get('[data-test="codex-usage-unavailable"]').attributes('title')).toContain('temporariamente')
+  })
+
   it('sem snapshot não mostra nada', () => {
     expect(mountWith(null).find('[data-test="usage-meter"]').exists()).toBe(false)
   })

@@ -219,11 +219,12 @@ def e2e_port(environ: Mapping[str, str]) -> int:
 
 
 def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, str]:
-    """`base` without anything of the app or of the Claude CLI, pointed at `root`."""
+    """`base` without agent configuration or credentials, pointed at `root`."""
     env = {
         key: value
         for key, value in base.items()
-        if not key.startswith(("MAESTRO_", "CLAUDE", "GIT_CONFIG", "GH_", "GITHUB_")) and key != "XDG_CONFIG_HOME"
+        if not key.startswith(("MAESTRO_", "CLAUDE", "CODEX", "OPENAI_", "GIT_CONFIG",
+                               "GH_", "GITHUB_")) and key != "XDG_CONFIG_HOME"
     }
     env.update(
         {
@@ -231,6 +232,8 @@ def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, st
             "MAESTRO_HOME": str(root / "home"),
             "MAESTRO_DATA_DIR": str(root / "data"),
             "CLAUDE_CONFIG_DIR": str(root / "claude-config"),
+            "CODEX_HOME": str(root / "codex-config"),
+            "MAESTRO_CODEX_CLI": str(root / "codex-fixture"),
             "MAESTRO_PORT": str(port),
             "MAESTRO_AGENTD": "0",
             "MAESTRO_REMOTE_RECONNECT": "0",
@@ -248,6 +251,12 @@ def isolated_env(base: Mapping[str, str], root: Path, port: int) -> dict[str, st
         }
     )
     return env
+
+
+def install_codex_fixture(path: Path) -> None:
+    source = Path(__file__).with_name("e2e_codex.py")
+    path.write_text(f"#!{sys.executable}\n" + source.read_text(encoding="utf-8"), encoding="utf-8")
+    path.chmod(0o700)
 
 
 def _history_folder(projects_dir: Path, project_dir: Path) -> Path:
@@ -920,6 +929,7 @@ def build_app(port: int) -> FastAPI:
     from claudio_maestro.agent.fake import FakeAgentClient, text_turn
     from claudio_maestro.app import create_app
     from claudio_maestro.commands import NO_HOOKS
+    from claudio_maestro.sessions import provider_factory
 
     clients: list[FakeAgentClient] = []
 
@@ -935,8 +945,18 @@ def build_app(port: int) -> FastAPI:
         return client
 
     chat_enabled = os.environ.get("MAESTRO_E2E_CHAT") == "1"
+
+    def isolated_agent(options: AgentOptions) -> AgentClient:
+        # Codex may run only the fixture installed in the temporary root.
+        if options.provider == "codex":
+            return provider_factory(refuse_agent)(options)
+        return chat_agent(options) if chat_enabled else refuse_agent(options)
+
+    factory = isolated_agent if Path(os.environ["MAESTRO_CODEX_CLI"]).is_file() else (
+        chat_agent if chat_enabled else refuse_agent
+    )
     app = create_app(
-        agent_factory=chat_agent if chat_enabled else refuse_agent,
+        agent_factory=factory,
         rename_session=(lambda *args: None) if chat_enabled else None,
         history_exists=(lambda sid, cwd: any(c.options.session_id == sid and c.sent for c in clients)) if chat_enabled else None,
         spawn_editor=_refuse_editor,
@@ -954,6 +974,7 @@ def build_app(port: int) -> FastAPI:
         restart=None,
         run_mode=RunMode("unknown"),
         claude_cli=inert_claude_resolver(),
+        fetch_codex_version=lambda: "0.173.0",
     )
     return app
 
@@ -1017,6 +1038,7 @@ def main() -> int:
         env = isolated_env(os.environ, root, port)
         os.environ.clear()
         os.environ.update(env)
+        install_codex_fixture(Path(env["MAESTRO_CODEX_CLI"]))
         seed(root)
         serve(port)
         return 0

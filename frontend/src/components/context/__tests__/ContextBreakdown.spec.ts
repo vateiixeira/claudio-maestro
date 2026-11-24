@@ -255,11 +255,19 @@ describe('ContextBreakdown', () => {
     })
   })
 
-  it.each(['timeout', 'failed', 'unsupported'] as const)('%s mostra a frase de erro', async (reason) => {
+  it.each(['timeout', 'failed'] as const)('%s mostra a frase de erro', async (reason) => {
     getSessionContext.mockResolvedValue(unavailable(reason))
     const w = mountIt()
     await flushPromises()
     expect(w.text()).toContain('Não foi possível calcular o detalhamento agora.')
+  })
+
+  it('mantém o total de tokens quando o agente não oferece o detalhamento', async () => {
+    getSessionContext.mockResolvedValue(unavailable('unsupported'))
+    const w = mountIt()
+    await flushPromises()
+    expect(w.get('[data-test="ctx-percent"]').text()).toBe('21% usado')
+    expect(w.get('[data-test="ctx-message"]').text()).toBe('O agente informou o total de tokens do contexto.')
   })
 
   it('falha mantém o detalhamento anterior e mostra a frase de erro', async () => {

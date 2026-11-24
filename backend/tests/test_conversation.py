@@ -327,6 +327,19 @@ def test_plain_user_echo_is_ignored():
     assert builder.items == []
 
 
+def test_codex_image_only_replay_becomes_a_local_user_item():
+    builder = ConversationBuilder()
+    marker = {"type": "image", "media_type": "image/png", "size": 10}
+    builder.handle(UserMessage(
+        content="", uuid="from-codex",
+        origin={"kind": "codex_replay", "images": [marker]},
+    ))
+    [item] = builder.snapshot()
+    assert item["id"] == "user-from-codex"
+    assert item["images"] == [marker]
+    assert not item["remote"]
+
+
 def test_remote_user_message_becomes_user_item():
     builder = ConversationBuilder()
 

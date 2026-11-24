@@ -32,7 +32,7 @@ const footer = ref<HTMLElement | null>(null)
 const items = () => Array.from(menu.value?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [])
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-const footerTarget = () => footer.value?.querySelector<HTMLElement>(FOCUSABLE) ?? null
+const footerTargets = () => Array.from(footer.value?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])
 
 const GAP = 4 // between the button and the panel
 const MARGIN = 8 // kept free at the viewport edges
@@ -73,7 +73,7 @@ async function show() {
   place()
   const list = items()
   const index = Math.max(0, props.options.findIndex((o) => o.value === props.selected))
-  list[index]?.focus()
+  ;(list[index] ?? footerTargets()[0] ?? menu.value)?.focus()
 }
 
 function removeListeners() {
@@ -144,14 +144,19 @@ function onMenuKey(event: KeyboardEvent) {
     hide()
     return
   } else if (event.key === 'Tab') {
-    const inFooter = !!footer.value?.contains(document.activeElement)
-    const target = footerTarget()
-    if (!event.shiftKey && !inFooter && target) {
+    const controls = footerTargets()
+    const footerIndex = controls.indexOf(document.activeElement as HTMLElement)
+    if (!event.shiftKey && footerIndex + 1 < controls.length) {
       event.preventDefault()
-      target.focus()
+      controls[footerIndex + 1]?.focus()
       return
     }
-    if (event.shiftKey && inFooter) {
+    if (event.shiftKey && footerIndex > 0) {
+      event.preventDefault()
+      controls[footerIndex - 1]?.focus()
+      return
+    }
+    if (event.shiftKey && footerIndex === 0 && list.length) {
       event.preventDefault()
       const index = Math.max(0, props.options.findIndex((o) => o.value === props.selected))
       list[index]?.focus()
@@ -209,9 +214,10 @@ function choose(value: string) {
       v-if="open"
       ref="menu"
       role="menu"
+      tabindex="-1"
       :aria-label="name"
       style="position: fixed; visibility: hidden"
-      class="z-[60] flex min-w-48 flex-col overflow-y-auto rounded-lg border border-line-strong bg-card p-1 shadow-lg"
+      class="z-[60] flex min-w-48 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto rounded-lg border border-line-strong bg-card p-1 shadow-lg"
       @keydown="onMenuKey"
     >
       <button

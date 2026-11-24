@@ -922,9 +922,14 @@ class ConversationBuilder:
 
     def _on_user(self, message: UserMessage) -> list[Event]:
         events: list[Event] = []
+        origin = message.origin or {}
         if message.parent_tool_use_id is not None:
             events.extend(self._note_alive(message.parent_tool_use_id))
-        if message.parent_tool_use_id is None and (message.origin or {}).get("kind") == "human":
+        elif origin.get("kind") == "codex_replay" and isinstance(message.content, str):
+            return self.add_user_message(
+                message.content, origin.get("images"), message_id=message.uuid
+            )
+        elif origin.get("kind") == "human":
             return [*events, *self._on_remote_user(message)]
         # Plain text is the echo of what the user sent; add_user_message has it.
         # Output of a local command (e.g. after set_model) becomes a notice.

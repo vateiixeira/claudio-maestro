@@ -1,55 +1,54 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, reactive } from 'vue'
 import { listModels } from '../api/http'
 import type { AgentProvider, ModelInfo } from '../types/api'
 
 /** Models offered by each agent provider, fetched once and shared by every column. */
 export const useModelsStore = defineStore('models', () => {
-  const models = ref<ModelInfo[]>([])
-  const kimiModels = ref<ModelInfo[]>([])
-  let loading: Promise<void> | null = null
-  let kimiLoading: Promise<void> | null = null
+  const catalog = reactive<Record<AgentProvider, ModelInfo[]>>({ claude: [], kimi: [], codex: [] })
+  const requests = new Map<AgentProvider, Promise<void>>()
+  const requested = new Set<AgentProvider>()
 
-  function ensure(): Promise<void> {
-    loading ??= listModels()
-      .then((list) => { models.value = Array.isArray(list) ? list : [] })
-      .catch(() => { loading = null }) // tries again next time a column opens
-    return loading
-  }
-
-  function ensureKimi(): Promise<void> {
-    kimiLoading ??= listModels('kimi')
-      .then((list) => { kimiModels.value = Array.isArray(list) ? list : [] })
-      .catch(() => { kimiLoading = null })
-    return kimiLoading
-  }
+  const models = computed(() => catalog.claude)
+  const kimiModels = computed(() => catalog.kimi)
+  const codexModels = computed(() => catalog.codex)
 
   function ensureFor(provider: AgentProvider): Promise<void> {
-    return provider === 'kimi' ? ensureKimi() : ensure()
+    requested.add(provider)
+    const current = requests.get(provider)
+    if (current) return current
+    const request = listModels(provider)
+      .then((list) => {
+        if (requests.get(provider) === request) catalog[provider] = Array.isArray(list) ? list : []
+      })
+      .catch(() => {
+        if (requests.get(provider) === request) requests.delete(provider)
+      })
+    requests.set(provider, request)
+    return request
   }
 
-  function modelsFor(provider: AgentProvider): ModelInfo[] {
-    return provider === 'kimi' ? kimiModels.value : models.value
+  const ensure = () => ensureFor('claude')
+  const ensureKimi = () => ensureFor('kimi')
+  const modelsFor = (provider: AgentProvider) => catalog[provider]
+
+  function reloadFor(provider: AgentProvider): Promise<void> {
+    requests.delete(provider)
+    return ensureFor(provider)
   }
 
-  /** Fetches again (after the socket comes back, a `models.updated` may have been lost). */
-  function reload(): Promise<void> {
-    loading = null
-    kimiLoading = null
-    return ensure()
+  /** Only refresh providers already used here when a socket reconnects. */
+  async function reload(): Promise<void> {
+    await Promise.all([...new Set<AgentProvider>(['claude', ...requested])].map(reloadFor))
   }
 
   /** The backend learned the real list from the agent (`models.updated`). */
   function apply(list: unknown, provider: AgentProvider = 'claude'): void {
-    if (!Array.isArray(list)) return
-    if (provider === 'kimi') {
-      kimiModels.value = list as ModelInfo[]
-      kimiLoading ??= Promise.resolve()
-      return
-    }
-    models.value = list as ModelInfo[]
-    loading ??= Promise.resolve()
+    if (!Object.hasOwn(catalog, provider) || !Array.isArray(list)) return
+    requested.add(provider)
+    catalog[provider] = list as ModelInfo[]
+    requests.set(provider, Promise.resolve())
   }
 
-  return { models, kimiModels, ensure, ensureKimi, ensureFor, modelsFor, apply, reload }
+  return { models, kimiModels, codexModels, ensure, ensureKimi, ensureFor, modelsFor, apply, reload, reloadFor }
 })

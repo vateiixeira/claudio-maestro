@@ -136,6 +136,7 @@ const measuredLabel = computed(() => {
 
 const message = computed(() => {
   if (failure.value === 'no_process') return breakdown.value ? null : CLOSED_PHRASE
+  if (failure.value === 'unsupported') return total.value ? 'O agente informou o total de tokens do contexto.' : 'O agente ainda não informou o uso do contexto.'
   if (failure.value) return ERROR_PHRASE
   return loading.value && !breakdown.value ? 'Calculando…' : null
 })

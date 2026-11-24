@@ -68,7 +68,8 @@ def test_port_refuses_blocked_or_invalid_ports(port):
 def test_isolated_env_points_everything_inside_root(tmp_path):
     env = e2e.isolated_env({}, tmp_path, 6620)
 
-    for key in ("HOME", "MAESTRO_HOME", "MAESTRO_DATA_DIR", "CLAUDE_CONFIG_DIR"):
+    for key in ("HOME", "MAESTRO_HOME", "MAESTRO_DATA_DIR", "CLAUDE_CONFIG_DIR",
+                "CODEX_HOME", "MAESTRO_CODEX_CLI"):
         assert Path(env[key]).is_relative_to(tmp_path), key
     assert env["MAESTRO_PORT"] == "6620"
 
@@ -82,15 +83,20 @@ def test_isolated_env_drops_inherited_variables(tmp_path):
         "MAESTRO_HOME": "/home/real",
         "CLAUDE_CODE_ENTRYPOINT": "cli",
         "CLAUDECODE": "1",
+        "CODEX_HOME": "/host-codex",
+        "MAESTRO_CODEX_CLI": "/host-codex/bin/codex",
+        "OPENAI_API_KEY": "sentinel",
     }
 
     env = e2e.isolated_env(base, tmp_path, 6620)
 
     assert env["PATH"] == "/usr/bin"
     for dropped in ("MAESTRO_PREVIEW_PORT", "MAESTRO_DEV_PORT", "MAESTRO_RUN_MODE",
-                    "CLAUDE_CODE_ENTRYPOINT", "CLAUDECODE"):
+                    "CLAUDE_CODE_ENTRYPOINT", "CLAUDECODE", "OPENAI_API_KEY"):
         assert dropped not in env
     assert env["MAESTRO_HOME"] != "/home/real"
+    assert env["CODEX_HOME"] != "/host-codex"
+    assert env["MAESTRO_CODEX_CLI"] != "/host-codex/bin/codex"
 
 
 def test_isolated_env_keeps_the_git_config_of_whoever_runs_it_out(tmp_path):
@@ -845,3 +851,38 @@ def test_seeded_organization_is_served_by_the_api(tmp_path, monkeypatch):
     assert [c['text'] for c in detail['comments']] == list(e2e.URGENT_COMMENTS.values())
     assert len(detail['runs']) == 1 and len(detail['decisions']) == 1
     assert attempts == []
+
+
+def test_codex_native_session_replays_after_backend_restart(tmp_path, monkeypatch):
+    env = e2e.isolated_env({}, tmp_path, 6620)
+    apply_env(monkeypatch, env)
+    e2e.install_codex_fixture(Path(env["MAESTRO_CODEX_CLI"]))
+    e2e.seed(tmp_path)
+    headers = {"x-maestro": "1", "origin": "http://localhost:6620"}
+    reply = "Resposta do Codex de teste: Retomar depois"
+
+    def wait_for_reply(client, route):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            response = client.get(route)
+            assert response.is_success, response.text
+            snapshot = response.json()
+            if any(item.get("text") == reply for item in snapshot["items"]):
+                return snapshot
+            time.sleep(0.05)
+        pytest.fail("A conversa do Codex não trouxe a resposta.")
+
+    with TestClient(e2e.build_app(6620), base_url="http://127.0.0.1:6620", headers=headers) as client:
+        project = next(p for p in client.get("/api/projects").json() if p["name"] == "Loja Demo")
+        assert client.put("/api/state/preferences", json={"codex_enabled": True}).is_success
+        created = client.post(f"/api/projects/{project['id']}/sessions", json={"provider": "codex"})
+        assert created.status_code == 201, created.text
+        route = f"/api/sessions/{created.json()['session_id']}"
+        assert client.post(f"{route}/messages", json={"text": "Retomar depois"}).is_success
+        original = wait_for_reply(client, route)
+        assert original["codex_thread_id"]
+
+    with TestClient(e2e.build_app(6620), base_url="http://127.0.0.1:6620", headers=headers) as client:
+        restored = wait_for_reply(client, route)
+        assert restored["codex_thread_id"] == original["codex_thread_id"]
+        assert [item.get("text") for item in restored["items"]].count(reply) == 1

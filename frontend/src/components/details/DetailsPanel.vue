@@ -27,6 +27,7 @@ import {
   clampDetailsWidth, detailsMaxWidth, readDetailsWidth, writeDetailsWidth,
 } from '../../detailsWidthPref'
 import type { DetailsTab } from '../../detailsTabPref'
+import { PROVIDER_NAMES } from '../../sessionOptions'
 import { displayStateLabel } from '../../sessionState'
 import { useChangesPanelStore } from '../../stores/changesPanel'
 import { useConversationStore } from '../../stores/conversation'
@@ -38,6 +39,7 @@ import { useTerminalStore } from '../../stores/terminal'
 import type { ChangedFile, ChangesGroup } from '../../types/api'
 import IconBack from '../icons/IconBack.vue'
 import IconClose from '../icons/IconClose.vue'
+import IconCopy from '../icons/IconCopy.vue'
 import IconExpand from '../icons/IconExpand.vue'
 
 const props = withDefaults(defineProps<{ sessionId: string; drawer?: boolean; tab?: DetailsTab }>(), { drawer: false, tab: 'details' })
@@ -100,8 +102,24 @@ const projectRepos = computed(() => (projectId.value != null ? gitDetails.reposF
 // A conversation in a worktree starts the Git tab on that worktree's repository.
 const focusPath = computed(() => (session.value?.worktree_name ? session.value.worktree_path ?? null : null))
 const context = computed(() => session.value?.context ?? conv.value?.context ?? null)
-// The provider that runs the session; old records have none and are Claude Code.
-const providerName = computed(() => (session.value?.provider === 'kimi' ? 'Kimi Code' : 'Claude Code'))
+const providerName = computed(() => PROVIDER_NAMES[session.value?.provider ?? 'claude'])
+const resumeCommand = computed(() => {
+  const id = session.value?.provider === 'codex' ? session.value.codex_thread_id : null
+  return id && /^[\da-z][\da-z_-]*$/i.test(id) ? `codex resume ${id}` : null
+})
+const resumeFeedback = ref<string | null>(null)
+watch(resumeCommand, () => { resumeFeedback.value = null })
+
+async function copyResumeCommand(): Promise<void> {
+  const command = resumeCommand.value
+  if (!command) return
+  try {
+    await navigator.clipboard.writeText(command)
+    if (resumeCommand.value === command) resumeFeedback.value = 'Comando copiado'
+  } catch {
+    if (resumeCommand.value === command) resumeFeedback.value = 'Não foi possível copiar o comando.'
+  }
+}
 const turns = computed(() => (conv.value?.items ?? []).filter((i) => i.type === 'user' && !('parent_tool_use_id' in i && i.parent_tool_use_id)).length)
 const stateText = computed(() => {
   const s = session.value
@@ -327,6 +345,21 @@ function resetWidth() {
               </dd>
               <dt class="text-fg-muted">Provedor</dt>
               <dd data-test="prop-provider" class="m-0">{{ providerName }}</dd>
+              <template v-if="resumeCommand">
+                <dt class="col-span-2 text-fg-muted">Retomar no terminal</dt>
+                <dd data-test="codex-resume-command" class="col-span-2 m-0 flex min-w-0 flex-wrap items-center gap-2">
+                  <code class="min-w-0 flex-1 break-all text-xs">{{ resumeCommand }}</code>
+                  <button
+                    type="button"
+                    data-test="codex-resume-copy"
+                    aria-label="Copiar comando do Codex"
+                    title="Copiar comando do Codex"
+                    class="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-elevated hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+                    @click="copyResumeCommand"
+                  ><IconCopy /></button>
+                  <span v-if="resumeFeedback" data-test="codex-resume-feedback" role="status" class="w-full text-xs text-fg-muted">{{ resumeFeedback }}</span>
+                </dd>
+              </template>
               <dt class="text-fg-muted">Turnos</dt>
               <dd data-test="prop-turns" class="m-0">{{ turns }}</dd>
               <dt class="text-fg-muted">Início</dt>

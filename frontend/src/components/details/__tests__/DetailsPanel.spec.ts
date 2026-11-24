@@ -76,6 +76,21 @@ async function mountPanel(fetchHandlers = {}, props: Record<string, unknown> = {
 }
 
 describe('painel Detalhes', () => {
+  it('copia o comando para retomar a conversa nativa do Codex', async () => {
+    const id = '018f0000-0000-7000-8000-000000000000'
+    useSessionsStore(pinia).setForProject(1, [makeSession({ session_id: 's1', provider: 'codex', codex_thread_id: id })])
+    const copy = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { userAgent: navigator.userAgent, clipboard: { writeText: copy } })
+    const wrapper = await mountPanel()
+
+    expect(wrapper.get('[data-test="prop-provider"]').text()).toBe('Codex')
+    expect(wrapper.get('[data-test="codex-resume-command"] code').text()).toBe(`codex resume ${id}`)
+    await wrapper.get('[data-test="codex-resume-copy"]').trigger('click')
+    await flushPromises()
+    expect(copy).toHaveBeenCalledWith(`codex resume ${id}`)
+    expect(wrapper.get('[data-test="codex-resume-feedback"]').text()).toBe('Comando copiado')
+  })
+
   it('separa o painel da conversa com a borda forte à esquerda', async () => {
     const wrapper = await mountPanel()
 

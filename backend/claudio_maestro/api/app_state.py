@@ -7,7 +7,8 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from claudio_maestro.api.deps import DbDep
 from claudio_maestro.api.editor import valid_editor_command
-from claudio_maestro.sessions import EFFORTS, PERMISSION_MODES
+from claudio_maestro.codexcli import CODEX_EFFORTS
+from claudio_maestro.sessions import EFFORTS, MODEL_PATTERN, PERMISSION_MODES
 
 router = APIRouter(prefix="/api/state")
 
@@ -30,6 +31,14 @@ def valid_default_model(model: object) -> bool:
 
 def valid_default_effort(effort: object) -> bool:
     return isinstance(effort, str) and effort in EFFORTS
+
+
+def valid_codex_effort(effort: object) -> bool:
+    return isinstance(effort, str) and effort in CODEX_EFFORTS
+
+
+def valid_codex_model(model: object) -> bool:
+    return isinstance(model, str) and MODEL_PATTERN.fullmatch(model.strip()) is not None
 
 
 def valid_default_mode(mode: object) -> bool:
@@ -71,17 +80,20 @@ async def put_state(key: str, request: Request, conn: DbDep) -> Any:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Os dias para ocultar sessões precisam ser um número inteiro de 1 a 365.",
             )
-        if "kimi_enabled" in value and not isinstance(value["kimi_enabled"], bool):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="A opção do Kimi Code precisa ser verdadeiro ou falso.",
-            )
+        for name, provider in (("kimi_enabled", "Kimi Code"), ("codex_enabled", "Codex CLI")):
+            if name in value and not isinstance(value[name], bool):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"A opção do {provider} precisa ser verdadeiro ou falso.",
+                )
         checks = (
             ("new_session_model", valid_default_model, "O modelo padrão precisa ser um texto de até 100 caracteres."),
             ("new_session_effort", valid_default_effort, "Raciocínio padrão inválido."),
             ("new_session_mode", valid_default_mode, "Modo padrão inválido."),
             ("kimi_new_session_model", valid_default_model, "O modelo padrão do Kimi precisa ser um texto de até 100 caracteres."),
             ("kimi_new_session_effort", valid_default_effort, "Raciocínio padrão do Kimi inválido."),
+            ("codex_new_session_model", valid_codex_model, "Identificador de modelo padrão do Codex inválido."),
+            ("codex_new_session_effort", valid_codex_effort, "Raciocínio padrão do Codex inválido."),
         )
         for name, valid, message in checks:
             # null means "no default": the CLI decides, as before.

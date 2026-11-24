@@ -28,6 +28,7 @@ import { filteredProjectTree, splitProjects } from '../../sidebarTree'
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_KEY_STEP, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, clampSidebarWidth, sidebarWidth, writeSidebarWidth } from '../../sidebarWidthPref'
 import { repoLabel, useGitStore } from '../../stores/git'
 import { useGroupsStore } from '../../stores/groups'
+import { useLayoutStore } from '../../stores/layout'
 import { useNewConversationStore } from '../../stores/newConversation'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
@@ -46,6 +47,7 @@ import IconPlus from '../icons/IconPlus.vue'
 import IconSettings from '../icons/IconSettings.vue'
 
 const projects = useProjectsStore()
+const layout = useLayoutStore()
 const sessions = useSessionsStore()
 const org = useOrgStore()
 const tasks = useTasksStore()
@@ -388,6 +390,7 @@ const itemClass = sidebarItemClass
     </div>
 
     <UsageMeter />
+    <UsageMeter v-if="layout.codexEnabled" provider="codex" />
     <div class="flex h-12 shrink-0 items-center gap-1.5 border-t border-line px-2.5">
       <RouterLink to="/preferencias" data-test="preferences" :class="[itemClass(route.name === 'preferences'), 'grow']" :aria-current="route.name === 'preferences' ? 'page' : undefined">
         <IconSettings />Preferências

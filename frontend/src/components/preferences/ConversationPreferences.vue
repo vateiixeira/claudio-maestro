@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { errorMessage, getAppState, listProviders, putAppState } from '../../api/http'
-import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, ALL_MODES } from '../../sessionOptions'
+import { ALL_EFFORTS, ALL_MODES, CODEX_EFFORTS, EFFORT_LABELS, KIMI_EFFORTS, MODE_LABELS } from '../../sessionOptions'
 import { useModelsStore } from '../../stores/models'
+import { useLayoutStore } from '../../stores/layout'
 import type { Effort, PermissionMode } from '../../types/api'
 import BypassConfirmDialog from '../session/BypassConfirmDialog.vue'
 import OptionMenu, { type MenuOption } from '../session/OptionMenu.vue'
 import ClaudeProfilePreferences from './ClaudeProfilePreferences.vue'
+import CodexPreferences from './CodexPreferences.vue'
 
 // Menu value of "Padrão"; it must not collide with a real option (the "default" mode, the SDK's "default" model).
 const INHERIT = 'inherit-default'
 
 const models = useModelsStore()
+const layout = useLayoutStore()
 void models.ensure()
 
 const loading = ref(true)
@@ -26,7 +29,11 @@ const kimiInstalled = ref<boolean | null>(null)
 // Defaults for new Kimi conversations; `null` is "Padrão" (the Kimi CLI decides).
 const kimiNewModel = ref<string | null>(null)
 const kimiNewEffort = ref<Effort | null>(null)
-void models.ensureKimi()
+const codexEnabled = ref(false)
+const codexInstalled = ref<boolean | null>(null)
+const codexNewModel = ref<string | null>(null)
+const codexNewEffort = ref<Effort | null>(null)
+watch(kimiEnabled, (enabled) => { if (enabled) void models.ensureKimi() })
 // "Sem perguntas" runs every tool without asking, so choosing it opens a confirmation first.
 const confirmingBypass = ref(false)
 function selectMode(value: string) {
@@ -57,8 +64,6 @@ const modeOptions: MenuOption[] = [
   { value: INHERIT, label: 'Padrão da conta' },
   ...ALL_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] })),
 ]
-// The Kimi thinking levels the app maps to (low, high and max).
-const KIMI_EFFORTS: Effort[] = ['low', 'high', 'max']
 const kimiModelOptions = computed<MenuOption[]>(() => [
   { value: INHERIT, label: 'Padrão' },
   ...models.kimiModels.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
@@ -87,6 +92,9 @@ async function load(): Promise<void> {
     kimiEnabled.value = prefs.kimi_enabled === true
     kimiNewModel.value = typeof prefs.kimi_new_session_model === 'string' && prefs.kimi_new_session_model.trim() !== '' ? prefs.kimi_new_session_model : null
     kimiNewEffort.value = KIMI_EFFORTS.find((e) => e === prefs.kimi_new_session_effort) ?? null
+    codexEnabled.value = prefs.codex_enabled === true
+    codexNewModel.value = typeof prefs.codex_new_session_model === 'string' && prefs.codex_new_session_model.trim() !== '' ? prefs.codex_new_session_model : null
+    codexNewEffort.value = CODEX_EFFORTS.find((e) => e === prefs.codex_new_session_effort) ?? null
     saved.value = false
     error.value = null
   } catch (e) {
@@ -96,14 +104,15 @@ async function load(): Promise<void> {
   }
   listProviders()
     .then((list) => {
-      const kimi = (Array.isArray(list) ? list : []).find((p) => p.id === 'kimi')
-      kimiInstalled.value = kimi ? kimi.available : null
+      const entries = Array.isArray(list) ? list : []
+      kimiInstalled.value = entries.find((p) => p.id === 'kimi')?.available ?? null
+      codexInstalled.value = entries.find((p) => p.id === 'codex')?.available ?? null
     })
     .catch(() => {}) // without the status the help text just does not say it
 }
 
 // Any edit takes the confirmation away.
-watch([newModel, newEffort, newMode, kimiEnabled, kimiNewModel, kimiNewEffort], () => { saved.value = false })
+watch([newModel, newEffort, newMode, kimiEnabled, kimiNewModel, kimiNewEffort, codexEnabled, codexNewModel, codexNewEffort], () => { saved.value = false })
 
 async function save(): Promise<void> {
   if (!ready.value || saving.value) return
@@ -119,7 +128,11 @@ async function save(): Promise<void> {
     prefs.kimi_enabled = kimiEnabled.value
     prefs.kimi_new_session_model = kimiNewModel.value
     prefs.kimi_new_session_effort = kimiNewEffort.value
+    prefs.codex_enabled = codexEnabled.value
+    prefs.codex_new_session_model = codexNewModel.value
+    prefs.codex_new_session_effort = codexNewEffort.value
     await putAppState('preferences', prefs)
+    layout.codexEnabled = prefs.codex_enabled === true
     await nextTick() // let the edit watcher run before confirming
     saved.value = true
   } catch (e) {
@@ -182,7 +195,7 @@ onMounted(load)
           />
         </div>
         <p id="pref-new-help" class="m-0 text-xs text-fg-muted">
-          Valem para toda conversa nova. "Padrão" deixa a decisão com o Claude: o modelo e o raciocínio dele e o modo do seu
+          Valem para novas conversas com o Claude. "Padrão" segue o modelo e o raciocínio do Claude e o modo do seu
           <span class="font-mono">settings.json</span>. Dá para mudar na própria conversa. "Sem perguntas" pede confirmação ao escolher.
         </p>
       </fieldset>
@@ -200,7 +213,7 @@ onMounted(load)
           Kimi Code
         </label>
         <p id="pref-kimi-help" class="m-0 text-xs text-fg-muted">
-          Mostra a escolha do agente (Claude Code ou Kimi Code) ao iniciar uma conversa.
+          Oferece o Kimi como agente para novas conversas.
           Precisa do <span class="font-mono">kimi</span> instalado e logado nesta máquina.
           <template v-if="kimiInstalled === true">O comando <span class="font-mono">kimi</span> foi encontrado.</template>
           <template v-else-if="kimiInstalled === false">O comando <span class="font-mono">kimi</span> não foi encontrado nesta máquina.</template>
@@ -232,6 +245,13 @@ onMounted(load)
             Dá para mudar na própria conversa.
           </p>
         </div>
+        <CodexPreferences
+          v-model:enabled="codexEnabled"
+          v-model:model="codexNewModel"
+          v-model:effort="codexNewEffort"
+          :disabled="!ready"
+          :installed="codexInstalled"
+        />
       </fieldset>
 
       <ClaudeProfilePreferences />

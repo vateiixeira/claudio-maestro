@@ -207,6 +207,9 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MAESTRO_USAGE_CHECK", "0")
     # The CLI history watcher never looks at the real ~/.claude.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
+    # Codex tests explicitly provide a fake executable or transport.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-config"))
+    monkeypatch.setenv("MAESTRO_CODEX_CLI", str(tmp_path / "codex-unavailable"))
 
 
 @pytest.fixture(autouse=True)

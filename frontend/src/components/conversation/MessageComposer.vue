@@ -9,6 +9,7 @@ import { formatTerminalAttachments } from '../../conversation/terminalText'
 import { useComposerSuggestions } from '../../conversation/useComposerSuggestions'
 import { rememberSentImages } from '../../conversation/localImages'
 import { useConversationStore } from '../../stores/conversation'
+import { useSessionsStore } from '../../stores/sessions'
 import { useTerminalStore } from '../../stores/terminal'
 import type { SessionState } from '../../types/api'
 import MentionMirror from './MentionMirror.vue'
@@ -85,10 +86,12 @@ function onDrop(event: DragEvent) {
   void addFiles(files)
 }
 
+const sessions = useSessionsStore()
 const suggestions = useComposerSuggestions({
   textarea,
   text,
   scope: () => ({ sessionId: props.sessionId }),
+  commandsEnabled: () => sessions.find(props.sessionId)?.provider !== 'codex',
   onApplied: resize,
 })
 

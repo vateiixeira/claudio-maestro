@@ -150,8 +150,10 @@ export interface Session {
   label_ids?: number[]
   /** The agent (`/agentes`) that started the session; null (or absent) for an ordinary one. */
   agent_id?: number | null
-  /** Agent provider: Claude Code (absent in old records) or Kimi Code. */
+  /** Agent provider, absent in old Claude records. */
   provider?: AgentProvider
+  /** Native conversation identifier used by `codex resume`. */
+  codex_thread_id?: string | null
 }
 
 /** A session found by the search; `match` is present when the term is in the text of its messages. */
@@ -241,7 +243,7 @@ export interface SendResult {
   run_id?: number
 }
 
-export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'auto' | 'dontAsk'
 
 /** What is true about the Remote Control of a session right now. `off` with the mark on means nothing holds the request yet. */
@@ -272,10 +274,11 @@ export interface ModelInfo {
   description: string
   supportsEffort?: boolean
   supportedEffortLevels?: Effort[]
+  isDefault?: boolean
+  defaultEffort?: Effort | null
 }
 
-/** Agent provider of a session: Claude Code or Kimi Code. */
-export type AgentProvider = 'claude' | 'kimi'
+export type AgentProvider = 'claude' | 'kimi' | 'codex'
 
 /** A provider as `GET /api/providers` lists it: whether it can be used here. */
 export interface ProviderInfo {
@@ -289,7 +292,7 @@ export interface SessionUpdate {
   finished?: boolean
   title?: string
   model?: string
-  effort?: Effort
+  effort?: Effort | 'default'
   permission_mode?: PermissionMode
   confirm_bypass?: boolean
   remote_control?: boolean
@@ -738,4 +741,24 @@ export interface ClaudeCliInfo {
   /** Newest version published for the update channel; null until the backend has checked. */
   latest: { version: string; channel: string; checked_at: number } | null
   update_available: boolean
+}
+
+export interface CodexCliInfo {
+  installed: boolean
+  version: string | null
+  latest: string | null
+  can_update: boolean
+  update_available: boolean
+  auth: string | null
+  requires_auth: boolean | null
+  default_model: string | null
+  default_effort: Effort | null
+  usage: UsageSnapshot | null
+  models_refreshed: boolean
+  error: string | null
+}
+
+export interface CodexCliUpdateResult extends CodexCliInfo {
+  ok: boolean
+  message: string
 }

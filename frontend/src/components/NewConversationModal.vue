@@ -5,6 +5,7 @@ import MentionMirror from './conversation/MentionMirror.vue'
 import SuggestionMenu, { type SuggestionAnchor } from './conversation/SuggestionMenu.vue'
 import BypassConfirmDialog from './session/BypassConfirmDialog.vue'
 import ClaudeCliFooter from './session/ClaudeCliFooter.vue'
+import CodexCliFooter from './session/CodexCliFooter.vue'
 import OptionMenu, { type MenuOption } from './session/OptionMenu.vue'
 import { errorMessage, getAppState, listProviders, sendMessage, updateSession } from '../api/http'
 import { type DraftImage, IMAGE_TYPES, attachImages, base64Of, filesFrom, formatSize } from '../conversation/images'
@@ -14,10 +15,11 @@ import { rememberSentImages } from '../conversation/localImages'
 import { setPendingDraft } from '../conversation/pendingDrafts'
 import { groupOptionLabel, selectorGroups } from '../groupList'
 import { clearDraft, loadDraft, loadLastProject, saveDraft, saveLastProject, type ConversationDraft } from '../newConversationDraft'
-import { ALL_EFFORTS, EFFORT_LABELS, MODE_LABELS, ALL_MODES } from '../sessionOptions'
+import { ALL_EFFORTS, ALL_MODES, CODEX_EFFORTS, codexDefaultModel, codexEffortLevels, EFFORT_LABELS, KIMI_EFFORTS, MODE_LABELS, PROVIDER_NAMES } from '../sessionOptions'
 import { repoLabel, useGitStore } from '../stores/git'
 import { useGroupsStore } from '../stores/groups'
 import { useModelsStore } from '../stores/models'
+import { useCodexCliStore } from '../stores/codexCli'
 import { useNewConversationStore } from '../stores/newConversation'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
@@ -29,10 +31,10 @@ const store = useNewConversationStore()
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const models = useModelsStore()
+const codexCli = useCodexCliStore()
 const groups = useGroupsStore()
 const git = useGitStore()
 const router = useRouter()
-void models.ensure()
 
 // Defaults saved in the Preferências: they are what a conversation uses when the draft leaves a field on "Padrão".
 // The backend applies them when the session is created; here they only label the buttons.
@@ -42,6 +44,8 @@ const prefMode = ref<PermissionMode | null>(null)
 // The Kimi defaults of the Preferências, used to label the buttons of a Kimi conversation.
 const prefKimiModel = ref<string | null>(null)
 const prefKimiEffort = ref<Effort | null>(null)
+const prefCodexModel = ref<string | null>(null)
+const prefCodexEffort = ref<Effort | null>(null)
 getAppState()
   .then((state) => {
     const prefs = (state as { preferences?: Record<string, unknown> } | null)?.preferences
@@ -50,27 +54,21 @@ getAppState()
     prefEffort.value = ALL_EFFORTS.find((e) => e === prefs.new_session_effort) ?? null
     prefMode.value = ALL_MODES.find((m) => m === prefs.new_session_mode) ?? null
     prefKimiModel.value = typeof prefs.kimi_new_session_model === 'string' && prefs.kimi_new_session_model.trim() !== '' ? prefs.kimi_new_session_model : null
-    prefKimiEffort.value = ALL_EFFORTS.find((e) => e === prefs.kimi_new_session_effort) ?? null
+    prefKimiEffort.value = KIMI_EFFORTS.find((e) => e === prefs.kimi_new_session_effort) ?? null
+    prefCodexModel.value = typeof prefs.codex_new_session_model === 'string' && prefs.codex_new_session_model.trim() !== '' ? prefs.codex_new_session_model : null
+    prefCodexEffort.value = CODEX_EFFORTS.find((e) => e === prefs.codex_new_session_effort) ?? null
   })
   .catch(() => {}) // without them the buttons say "Padrão", as before
 
 const available = computed(() => projects.projects.filter((p) => p.available))
 const draft = ref<ConversationDraft>(loadDraft())
-// Agent providers usable on this machine (`GET /api/providers`); the choice only
-// appears when Kimi Code is enabled in the Preferências and installed.
+// The provider choice also keeps the provider of a draft restored before the request finishes.
 const providers = ref<ProviderInfo[]>([])
-listProviders()
-  .then((list) => { providers.value = Array.isArray(list) ? list : [] })
-  .catch(() => {}) // without the list only Claude Code is offered, as before
-const kimiUsable = computed(() => providers.value.some((p) => p.id === 'kimi' && p.enabled && p.available))
-const providerOptions: MenuOption[] = [
-  { value: 'claude', label: 'Claude Code' },
-  { value: 'kimi', label: 'Kimi Code' },
-]
-const provider = computed<AgentProvider>(() => (kimiUsable.value ? draft.value.provider : 'claude'))
-// The model and effort lists are the provider's own; the saved defaults are Claude's.
+const provider = computed(() => draft.value.provider)
+const providerOptions = computed(() => (Object.keys(PROVIDER_NAMES) as AgentProvider[]).filter((id) =>
+  id === 'claude' || providers.value.some((entry) => entry.id === id && entry.enabled && entry.available),
+))
 const providerModels = computed(() => models.modelsFor(provider.value))
-const KIMI_EFFORTS: Effort[] = ['low', 'high', 'max']
 // Branch of the chosen project, read where the Painel reads it. Without a repository nothing is shown.
 watch(() => draft.value.projectId, (id) => { if (id != null) git.ensure(id) }, { immediate: true })
 const branch = computed(() => {
@@ -82,12 +80,28 @@ const error = ref<string | null>(null)
 const submitting = ref(false)
 // Once the session exists it is kept across attempts, so a retry does not create a second one.
 const createdId = ref<string | null>(null)
-// Switching the provider loads its models and drops the chosen model: a model of
-// one provider means nothing to the other.
+
 watch(provider, (value) => {
   void models.ensureFor(value)
-  if (createdId.value === null) draft.value.model = null
-})
+  if (value === 'codex') void codexCli.load()
+}, { immediate: true })
+
+function selectProvider(value: AgentProvider) {
+  if (value === provider.value || createdId.value !== null) return
+  draft.value.provider = value
+  draft.value.model = null
+  draft.value.effort = null
+  draft.value.permissionMode = null
+}
+
+listProviders()
+  .then((list) => { providers.value = Array.isArray(list) ? list : [] })
+  .catch(() => {})
+  .finally(() => {
+    if (providerOptions.value.includes(provider.value)) return
+    selectProvider('claude')
+    error.value = 'O agente do rascunho está indisponível. O Claude foi selecionado.'
+  })
 // Mode the session was created in, as the backend answered (the saved default or the CLI's).
 const createdMode = ref<PermissionMode | null>(null)
 const optionsApplied = ref(false)
@@ -127,7 +141,6 @@ function pickGroup() {
 onMounted(async () => {
   pickProject()
   pickGroup()
-  void models.ensureFor(provider.value)
   await nextTick()
   promptEl.value?.focus()
 })
@@ -153,19 +166,38 @@ watch(
   },
 )
 
-const modelOptions = computed<MenuOption[]>(() => [
-  { value: 'default', label: 'Padrão' },
-  ...providerModels.value.map((m) => ({ value: m.value, label: m.displayName, description: m.description })),
-])
+const INHERIT = 'inherit-default'
+const savedModel = computed(() => ({ claude: prefModel.value, kimi: prefKimiModel.value, codex: prefCodexModel.value })[provider.value])
+const configuredCodexModel = computed(() => codexDefaultModel(models.codexModels, codexCli.info?.default_model))
+const selectedModel = computed(() => {
+  const value = draft.value.model ?? savedModel.value
+  if (value) return providerModels.value.find((entry) => entry.value === value)
+  return provider.value === 'codex' ? configuredCodexModel.value : undefined
+})
 const modelText = computed(() => {
-  // Each provider has its own saved default; it only labels the button.
-  const pref = provider.value === 'claude' ? prefModel.value : prefKimiModel.value
-  const value = draft.value.model ?? pref
-  return value == null ? 'Padrão' : (providerModels.value.find((m) => m.value === value)?.displayName ?? (draft.value.model ? 'Padrão' : value))
+  const explicit = draft.value.model ?? savedModel.value
+  if (explicit) return selectedModel.value?.displayName ?? explicit
+  if (provider.value !== 'codex') return 'Padrão'
+  const fallback = selectedModel.value?.displayName ?? codexCli.info?.default_model
+  return fallback ? `Padrão · ${fallback}` : 'Padrão'
+})
+const modelOptions = computed<MenuOption[]>(() => [
+  { value: INHERIT, label: 'Padrão' },
+  ...providerModels.value.filter((entry) => entry.value !== 'default')
+    .map((entry) => ({ value: entry.value, label: entry.displayName, description: entry.description })),
+])
+const effortLevels = computed(() => {
+  if (provider.value === 'codex') return codexEffortLevels(selectedModel.value)
+  return provider.value === 'kimi' ? KIMI_EFFORTS : ALL_EFFORTS
 })
 const effortText = computed(() => {
-  const value = draft.value.effort ?? (provider.value === 'claude' ? prefEffort.value : prefKimiEffort.value)
-  return `Raciocínio ${value ? EFFORT_LABELS[value] : 'padrão'}`
+  const saved = { claude: prefEffort.value, kimi: prefKimiEffort.value, codex: prefCodexEffort.value }[provider.value]
+  const value = draft.value.effort ?? saved
+  if (value && (provider.value !== 'codex' || effortLevels.value.includes(value))) return `Raciocínio ${EFFORT_LABELS[value]}`
+  const cliDefault = provider.value === 'codex'
+    ? (draft.value.model || savedModel.value ? selectedModel.value?.defaultEffort : (codexCli.info?.default_effort ?? selectedModel.value?.defaultEffort))
+    : null
+  return cliDefault ? `Raciocínio padrão · ${EFFORT_LABELS[cliDefault]}` : 'Raciocínio padrão'
 })
 const modeText = computed(() => {
   const value = draft.value.permissionMode ?? (provider.value === 'claude' ? prefMode.value : null)
@@ -173,12 +205,18 @@ const modeText = computed(() => {
 })
 const effortOptions = computed<MenuOption[]>(() => [
   { value: 'default', label: 'Padrão' },
-  ...(provider.value === 'kimi' ? KIMI_EFFORTS : ALL_EFFORTS).map((e) => ({ value: e, label: EFFORT_LABELS[e] })),
+  ...effortLevels.value.map((e) => ({ value: e, label: EFFORT_LABELS[e] })),
 ])
 const modeOptions: MenuOption[] = [
   { value: 'default-account', label: 'Padrão da conta' },
   ...ALL_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] })),
 ]
+
+function selectModel(value: string) {
+  draft.value.model = value === INHERIT ? null : value
+  const effort = draft.value.effort
+  if (provider.value === 'codex' && effort && !effortLevels.value.includes(effort)) draft.value.effort = null
+}
 
 // "Sem perguntas" runs every tool without asking, so choosing it opens a confirmation first.
 const confirmingBypass = ref(false)
@@ -200,7 +238,7 @@ function confirmBypass() {
 const BYPASS_WARNING = 'A conversa ficou no modo "Sem perguntas".'
 const leftInBypass = computed(() => createdMode.value === 'bypassPermissions' && draft.value.permissionMode !== null && draft.value.permissionMode !== 'bypassPermissions')
 
-const canSubmit = computed(() => !submitting.value && draft.value.projectId != null && (draft.value.prompt.trim() !== '' || images.value.length > 0))
+const canSubmit = computed(() => !submitting.value && providerOptions.value.includes(provider.value) && draft.value.projectId != null && (draft.value.prompt.trim() !== '' || images.value.length > 0))
 
 async function addFiles(files: File[]) {
   const { error: problem } = await attachImages(() => images.value, files)
@@ -247,6 +285,7 @@ const suggestions = useComposerSuggestions({
   textarea: promptEl,
   text: promptText,
   scope: () => (draft.value.projectId != null ? { projectId: draft.value.projectId } : null),
+  commandsEnabled: () => provider.value !== 'codex',
 })
 // The highlight layer behind the prompt follows its scroll.
 const promptScrollTop = ref(0)
@@ -359,6 +398,7 @@ async function submit() {
     if (title.trim()) changes.title = title.trim()
     if (model) changes.model = model
     if (effort) changes.effort = effort
+    else if (provider.value === 'codex' && model && prefCodexEffort.value && !effortLevels.value.includes(prefCodexEffort.value)) changes.effort = 'default'
     if (permissionMode) changes.permission_mode = permissionMode
     // The confirmation was given when the mode was chosen in this window.
     if (permissionMode === 'bypassPermissions') changes.confirm_bypass = true
@@ -485,10 +525,10 @@ function onKeydown(event: KeyboardEvent) {
             </label>
             <span v-if="branch" data-test="nc-branch" :title="`Branch: ${branch}`" class="max-w-48 truncate font-mono text-xs text-fg-subtle">{{ branch }}</span>
             <span class="grow" />
-            <label v-if="kimiUsable" class="flex items-center gap-2 text-sm text-fg-muted">
+            <label v-if="providerOptions.length > 1" class="flex items-center gap-2 text-sm text-fg-muted">
               Agente
-              <select v-model="draft.provider" data-test="nc-provider" aria-label="Agente" :disabled="createdId !== null" class="h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60">
-                <option v-for="o in providerOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+              <select :value="provider" data-test="nc-provider" aria-label="Agente" :disabled="createdId !== null || submitting" class="h-9 cursor-pointer rounded-md border border-line-strong bg-elevated px-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60" @change="selectProvider(($event.target as HTMLSelectElement).value as AgentProvider)">
+                <option v-for="id in providerOptions" :key="id" :value="id">{{ PROVIDER_NAMES[id] }}</option>
               </select>
             </label>
             <label v-if="projectGroups.length" class="flex items-center gap-2 text-sm text-fg-muted">
@@ -566,11 +606,12 @@ function onKeydown(event: KeyboardEvent) {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
               </button>
               <span class="mx-1.5 h-4 w-px bg-line-strong" aria-hidden="true" />
-              <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? 'default'" @select="(v) => (draft.model = v === 'default' ? null : v)">
+              <OptionMenu name="Modelo" :text="modelText" :options="modelOptions" :selected="draft.model ?? INHERIT" @select="selectModel">
                 <template v-if="provider === 'claude'" #footer><ClaudeCliFooter /></template>
+                <template v-else-if="provider === 'codex'" #footer><CodexCliFooter /></template>
               </OptionMenu>
               <OptionMenu name="Raciocínio" :text="effortText" :options="effortOptions" :selected="draft.effort ?? 'default'" @select="(v) => (draft.effort = v === 'default' ? null : (v as Effort))" />
-              <OptionMenu name="Modo" :text="modeText" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" :highlight="(draft.permissionMode ?? prefMode) === 'bypassPermissions'" @select="selectMode" />
+              <OptionMenu name="Modo" :text="modeText" :options="modeOptions" :selected="draft.permissionMode ?? 'default-account'" :highlight="(draft.permissionMode ?? (provider === 'claude' ? prefMode : null)) === 'bypassPermissions'" @select="selectMode" />
             </div>
           </div>
           <div v-if="images.length" class="flex flex-wrap gap-2">

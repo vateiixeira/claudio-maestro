@@ -1,4 +1,4 @@
-import { ALL_EFFORTS, ALL_MODES } from './sessionOptions'
+import { ALL_EFFORTS, ALL_MODES, CODEX_EFFORTS, KIMI_EFFORTS } from './sessionOptions'
 import type { AgentProvider, Effort, PermissionMode } from './types/api'
 
 const KEY = 'maestro:new-conversation'
@@ -25,14 +25,16 @@ export function loadDraft(): ConversationDraft {
     const raw = localStorage.getItem(KEY)
     if (!raw) return emptyDraft()
     const value = JSON.parse(raw) as Partial<ConversationDraft>
+    const provider = value.provider === 'kimi' || value.provider === 'codex' ? value.provider : 'claude'
+    const efforts = { claude: ALL_EFFORTS, kimi: KIMI_EFFORTS, codex: CODEX_EFFORTS }[provider]
     return {
       projectId: typeof value.projectId === 'number' ? value.projectId : null,
       groupId: typeof value.groupId === 'number' ? value.groupId : null,
       title: typeof value.title === 'string' ? value.title : '',
       prompt: typeof value.prompt === 'string' ? value.prompt : '',
-      provider: value.provider === 'kimi' ? 'kimi' : 'claude',
+      provider,
       model: typeof value.model === 'string' ? value.model : null,
-      effort: ALL_EFFORTS.includes(value.effort as Effort) ? (value.effort as Effort) : null,
+      effort: efforts.find((level) => level === value.effort) ?? null,
       // "Sem perguntas" is never restored from a draft: it only counts when it was just chosen and confirmed.
       permissionMode: value.permissionMode !== 'bypassPermissions' && ALL_MODES.includes(value.permissionMode as PermissionMode) ? (value.permissionMode as PermissionMode) : null,
     }

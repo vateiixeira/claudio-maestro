@@ -95,8 +95,9 @@ class SessionOut(BaseModel):
     project_id: int
     cwd: str
     title: str
-    # Agent provider: "claude" (Claude Code) or "kimi" (Kimi Code).
+    # Agent provider: "claude", "kimi" or "codex".
     provider: str = "claude"
+    codex_thread_id: str | None = None
     created_at: int
     last_activity_at: int
     last_seen_at: int | None
@@ -195,7 +196,7 @@ class SessionPatch(BaseModel):
     model: Annotated[
         str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9._/\[\]-]{1,100}$")
     ] | None = None
-    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    effort: Literal["default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] | None = None
     permission_mode: Literal[
         "default", "acceptEdits", "plan", "bypassPermissions", "auto", "dontAsk"
     ] | None = None
@@ -213,7 +214,7 @@ class SessionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     group_id: int | None = None
-    provider: Literal["claude", "kimi"] = "claude"
+    provider: Literal["claude", "kimi", "codex"] = "claude"
 
 
 class SeenManyIn(BaseModel):
@@ -380,10 +381,15 @@ async def mark_seen(session_id: str, manager: ManagerDep) -> dict[str, Any]:
 
 @router.get("/models")
 async def list_models(
+    request: Request,
     manager: ManagerDep,
-    provider: Literal["claude", "kimi"] = "claude",
+    provider: Literal["claude", "kimi", "codex"] = "claude",
 ) -> list[dict[str, Any]]:
     """Models of the provider (cached after the first connected session), or a fixed list."""
+    if provider == "codex":
+        cli = request.app.state.codex_cli
+        await cli.refresh(check_latest=False)
+        return cli.models()
     if provider == "kimi":
         await manager.refresh_kimi_models()
     return manager.list_models(provider)

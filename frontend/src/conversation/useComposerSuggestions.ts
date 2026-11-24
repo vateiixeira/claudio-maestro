@@ -26,6 +26,7 @@ export interface ComposerSuggestionsOptions {
   textarea: Ref<HTMLTextAreaElement | null>
   text: Ref<string>
   scope: () => SuggestionScope | null
+  commandsEnabled?: () => boolean
   /** After the text changed by a choice (e.g. `resize`). */
   onApplied?: () => void
 }
@@ -70,7 +71,8 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
   let searchTimer: ReturnType<typeof setTimeout> | null = null
   let searchAbort: AbortController | null = null
   let lastSeq = 0
-  const scopeKey = () => JSON.stringify(options.scope())
+  const commandsEnabled = () => options.commandsEnabled?.() ?? true
+  const scopeKey = () => JSON.stringify([options.scope(), commandsEnabled()])
 
   const kind = computed<TriggerKind | null>(() => trigger.value?.kind ?? null)
   const isOpen = computed(() => trigger.value !== null && !suppressed.value)
@@ -144,7 +146,7 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
   async function loadCommands(quiet = false) {
     const scope = options.scope()
     const key = scopeKey()
-    if (!scope || loadingKey === key) return
+    if (!scope || !commandsEnabled() || loadingKey === key) return
     loadingKey = key
     if (!quiet) {
       status.value = 'loading'
@@ -216,7 +218,7 @@ export function useComposerSuggestions(options: ComposerSuggestionsOptions): {
     const el = options.textarea.value
     // Without a source (new-conversation modal with no project) there is nothing to list.
     const found = el && options.scope() ? findTrigger(options.text.value, el.selectionStart ?? options.text.value.length) : null
-    if (!found) {
+    if (!found || (found.kind === 'command' && !commandsEnabled())) {
       cancelSearch()
       trigger.value = null
       suppressed.value = false
