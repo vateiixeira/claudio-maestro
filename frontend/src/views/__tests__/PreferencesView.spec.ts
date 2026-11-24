@@ -74,6 +74,31 @@ describe('tela de preferências', () => {
     expect(w.find('#pref-editor').exists()).toBe(false)
   })
 
+  it('a aba Aparência abre pela URL e aplica na hora, sem Salvar', async () => {
+    stub({ preferences: {} })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias?aba=aparencia')
+    const w = mount(PreferencesView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="tab-appearance"]').attributes('aria-selected')).toBe('true')
+    expect(w.findAll('[data-test="ui-scale-option"]').length).toBeGreaterThan(0)
+    expect(w.find('form').exists()).toBe(false)
+    expect(w.find('#pref-editor').exists()).toBe(false)
+  })
+
+  it('a aba Conversas abre pela URL com os padrões e a pasta do Claude', async () => {
+    stub({ preferences: {} })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/preferencias?aba=conversas')
+    const w = mount(PreferencesView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(w.find('[data-test="tab-conversations"]').attributes('aria-selected')).toBe('true')
+    expect(w.find('[data-test="pref-new-model"]').exists()).toBe(true)
+    expect(w.find('[data-test="pref-kimi"]').exists()).toBe(true)
+    expect(w.find('#claude-authentication').exists()).toBe(true)
+    expect(w.find('#pref-editor').exists()).toBe(false)
+  })
+
   it('a aba Execução abre pela URL', async () => {
     stub({ preferences: {} })
     const router = createAppRouter(createMemoryHistory())
@@ -86,7 +111,7 @@ describe('tela de preferências', () => {
     expect(w.find('#pref-editor').exists()).toBe(false)
   })
 
-  it('a aba Notificações abre pela URL e tem a ordem Geral, Agente, Execução, Notificações, GitHub, Etiquetas nas setas', async () => {
+  it('a aba Notificações abre pela URL e as setas seguem a ordem dos grupos', async () => {
     stub({ preferences: {} })
     vi.stubGlobal('Notification', undefined)
     const router = createAppRouter(createMemoryHistory())
@@ -105,13 +130,10 @@ describe('tela de preferências', () => {
     expect(w.find('[data-test="tab-github"]').attributes('aria-selected')).toBe('true')
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()
-    expect(w.find('[data-test="tab-labels"]').attributes('aria-selected')).toBe('true')
-    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
-    await flushPromises()
     expect(w.find('[data-test="tab-general"]').attributes('aria-selected')).toBe('true')
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
     await flushPromises()
-    expect(router.currentRoute.value.query.aba).toBe('etiquetas')
+    expect(router.currentRoute.value.query.aba).toBe('github')
   })
 
   it('a aba Etiquetas abre pela URL, mostra o catálogo e entra na navegação por setas', async () => {
@@ -128,7 +150,7 @@ describe('tela de preferências', () => {
     expect(w.find('#pref-editor').exists()).toBe(false)
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
     await flushPromises()
-    expect(router.currentRoute.value.query.aba).toBe('github')
+    expect(router.currentRoute.value.query.aba).toBe('conversas')
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()
     expect(router.currentRoute.value.query.aba).toBe('etiquetas')
@@ -157,6 +179,15 @@ describe('tela de preferências', () => {
     await flushPromises()
     expect(w.find('[data-test="tab-agent"]').attributes('aria-selected')).toBe('true')
     expect(w.find('[data-test="tab-general"]').attributes('tabindex')).toBe('-1')
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
+    await flushPromises()
+    expect(router.currentRoute.value.query.aba).toBe('etiquetas')
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
+    await flushPromises()
+    expect(router.currentRoute.value.query.aba).toBe('conversas')
+    await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
+    await flushPromises()
+    expect(router.currentRoute.value.query.aba).toBe('aparencia')
     await w.find('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
     await flushPromises()
     expect(router.currentRoute.value.query.aba).toBeUndefined()
@@ -188,7 +219,7 @@ describe('tela de preferências', () => {
     await w.find('form').trigger('submit')
     await flushPromises()
 
-    expect(saved).toEqual([{ editor_command: ['/opt/meu editor/bin', '--wait'], finished_after_days: 10, tema: 'escuro', new_session_model: null, new_session_effort: null, new_session_mode: null }])
+    expect(saved).toEqual([{ editor_command: ['/opt/meu editor/bin', '--wait'], finished_after_days: 10, tema: 'escuro' }])
     expect(w.find('[data-test="saved"]').text()).toContain('Preferências salvas')
     expect(w.find('[role="alert"]').exists()).toBe(false)
     expect(useLayoutStore(pinia).finishedAfterDays).toBe(10)
@@ -200,7 +231,7 @@ describe('tela de preferências', () => {
     await editor(w).setValue('')
     await w.find('form').trigger('submit')
     await flushPromises()
-    expect(saved).toEqual([{ finished_after_days: 3, outro: 1, new_session_model: null, new_session_effort: null, new_session_mode: null }])
+    expect(saved).toEqual([{ finished_after_days: 3, outro: 1 }])
   })
 
   it('mostra o erro do backend e não confirma nem muda o layout', async () => {
@@ -271,6 +302,6 @@ describe('tela de preferências', () => {
     const w = await mountView()
     await w.find('form').trigger('submit')
     await flushPromises()
-    expect(saved).toEqual([{ finished_after_days: 3, nova: true, new_session_model: null, new_session_effort: null, new_session_mode: null }])
+    expect(saved).toEqual([{ finished_after_days: 3, nova: true }])
   })
 })
