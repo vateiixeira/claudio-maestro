@@ -802,8 +802,9 @@ class Terminal:
             # Cancelled while waiting: the processes must still not outlive us.
             self._signal(signal.SIGKILL)
             raise
-        self._signal(signal.SIGKILL)
         try:
+            # Scanned off the loop like the rest; only a cancelled close scans in place.
+            self._signal(signal.SIGKILL, await self._scan())
             await self._wait_gone(KILL_GRACE_SECONDS, resignal=signal.SIGKILL)
         except BaseException:
             self._signal(signal.SIGKILL)

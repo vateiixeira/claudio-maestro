@@ -671,6 +671,32 @@ async def test_ps_scan_runs_off_the_loop(
     assert threads and threading.get_ident() not in threads
 
 
+async def test_ps_scan_before_final_sigkill_runs_off_the_loop(
+    manager: TerminalManager, workdir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A process that outlives the SIGHUP grace reaches the final SIGKILL, whose
+    scan must not run `ps` on the loop either (this failed on macOS in CI)."""
+    import threading
+
+    monkeypatch.setattr(terminal_module, "_HAS_PROC", False)
+    monkeypatch.setattr(terminal_module, "KILL_GRACE_SECONDS", 2.0)
+    loop_thread = threading.get_ident()
+    on_loop: list[bool] = []
+    real = terminal_module._ps_members
+
+    def spy(sid: int) -> list[int]:
+        on_loop.append(threading.get_ident() == loop_thread)
+        return real(sid)
+
+    terminal = await manager.open("s1", workdir)
+    await manager.run("s1", workdir, "sh -c 'trap \"\" HUP; sleep 300'")
+    await until(lambda: any("sleep 300" in p for p in session_processes(terminal.pid)))
+    monkeypatch.setattr(terminal_module, "_ps_members", spy)
+    await manager.kill("s1", interrupted=True)
+    assert on_loop and not any(on_loop)
+    assert session_processes(terminal.pid) == []
+
+
 async def test_shell_is_picked_off_the_loop(
     manager: TerminalManager, workdir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
