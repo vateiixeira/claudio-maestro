@@ -223,7 +223,10 @@ async def test_rename_before_history_is_applied_after_first_connection(make_env)
 
     await env.manager.send(sid, "primeira")
     session = env.manager.get(sid)
-    await wait_until(lambda: session.state == "idle" and env.fake.renames)
+    # The rename runs in a thread; the pending flag is saved only after it returns.
+    await wait_until(
+        lambda: session.state == "idle" and env.fake.renames and not session.record.rename_pending
+    )
 
     assert env.fake.renames == [(sid, "Meu nome", str(env.folder))]
     with closing(db.connect(env.db_path)) as conn:
